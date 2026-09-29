@@ -17,18 +17,21 @@ fn sweep_input() -> (
     [crate::records::topology::construction::DesignConstructionOperandGroup; 2],
 ) {
     let mut scope = scope();
-    scope.try_edit(|draft| {
-        draft.payload = DesignScopePayload::Sweep(Some(DesignSweepScope {
-            construction: Some(DesignSweepConstruction {
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 128,
-                values: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0].map(|value| FiniteReal::new(value).unwrap()),
-                record_indexes: [0; 6],
-                value_offsets: [128; 6],
-            }),
-            sweep_profile: None,
-        }));
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.payload = DesignScopePayload::Sweep(Some(DesignSweepScope {
+                construction: Some(DesignSweepConstruction {
+                    operation: DesignExtrudeOperation::NewBody,
+                    operation_offset: 128,
+                    values: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
+                        .map(|value| FiniteReal::new(value).unwrap()),
+                    record_indexes: [0; 6],
+                    value_offsets: [128; 6],
+                }),
+                sweep_profile: None,
+            }));
+        })
+        .unwrap();
     let mut profile = profile_group(100, 0);
     profile.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     let mut path = profile_group(101, 1);
@@ -46,8 +49,10 @@ fn project(
 
 fn assert_sweep_limit(operation: &'static str, dimension: ResourceDimension) {
     let (scope, groups) = sweep_input();
-    assert!(matches!(project(None, &scope, &groups).unwrap().unwrap(),
-        FeatureDefinition::Operation(FeatureOperation::Sweep { .. })));
+    assert!(matches!(
+        project(None, &scope, &groups).unwrap().unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
+    ));
     for limit in 0..256 {
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -74,7 +79,10 @@ fn sweep_scope_group_refuses_collection_limit() {
 
 #[test]
 fn sweep_profile_group_refuses_collection_limit() {
-    assert_sweep_limit("f3d Sweep profile group", ResourceDimension::CollectionItems);
+    assert_sweep_limit(
+        "f3d Sweep profile group",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
@@ -116,16 +124,20 @@ fn guide_surface_input() -> (
     crate::records::topology::entity_selection::DesignEntitySelectionOperand,
 ) {
     let (mut scope, [mut selected, path]) = sweep_input();
-    selected.try_set_members(vec![crate::records::identity::Located {
-        value: 2788,
-        offset: selected.members()[0].offset,
-    }]).unwrap();
+    selected
+        .try_set_members(vec![crate::records::identity::Located {
+            value: 2788,
+            offset: selected.members()[0].offset,
+        }])
+        .unwrap();
     let mut carrier = profile_group(102, 3);
     carrier.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
-    carrier.try_set_members(vec![crate::records::identity::Located {
-        value: 2795,
-        offset: carrier.members()[0].offset,
-    }]).unwrap();
+    carrier
+        .try_set_members(vec![crate::records::identity::Located {
+            value: 2795,
+            offset: carrier.members()[0].offset,
+        }])
+        .unwrap();
     let mut guide = profile_group(103, 4);
     guide.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::FACES);
     let profile = crate::records::topology::sketch_profile::DesignSketchProfileOperand::try_new(
@@ -134,7 +146,10 @@ fn guide_surface_input() -> (
             record_index: 2795,
             byte_offset: 32_000,
             class_tag: "312".to_owned().try_into().unwrap(),
-            asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned().try_into().unwrap(),
+            asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                .to_owned()
+                .try_into()
+                .unwrap(),
             asset_id_offset: 32_040,
             entity_id: "0_2718".to_owned().try_into().unwrap(),
             entity_reference_offset: 32_080,
@@ -142,50 +157,75 @@ fn guide_surface_input() -> (
             paired_class_tag: "258".to_owned().try_into().unwrap(),
             paired_byte_offset: 32_180,
         },
-    ).unwrap();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Sweep(slot) = scope.payload_mut() {
+    )
+    .unwrap();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Sweep(slot) = scope.payload_mut()
+    {
         slot.get_or_insert_with(Default::default).sweep_profile = Some(profile);
     }
-    let selection = crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
-        crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
-            id: "f3d:Design/BulkStream.dat:entity-selection#2788".into(),
-            scope_record_index: scope.record_index,
-            group_record_index: selected.record_index,
-            group_member_ordinal: 0,
-            record_index: 2788,
-            byte_offset: 31_000,
-            class_tag: "310".to_owned().try_into().unwrap(),
-            asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned().try_into().unwrap(),
-            asset_id_offset: 31_040,
-            context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned().try_into().unwrap(),
-            context_id_offset: 31_080,
-            identity_record_index: 2791,
-            identity_record_offset: 31_180,
-            primary_identity: 2718,
-            primary_identity_offset: 31209,
-            secondary: Some(crate::records::identity::DesignSecondaryIdentity {
-                identity: crate::records::identity::Located { value: 164, offset: 31217 },
-                curve_identity: None,
-            }),
-            historical_edge_candidates: Vec::new(),
-            historical_face_candidates: Vec::new(),
-            resolved_edge_slot: None,
-            next_record_index: 2792,
-            next_byte_offset: 31225,
-        },
-    ).unwrap();
+    let selection =
+        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+                id: "f3d:Design/BulkStream.dat:entity-selection#2788".into(),
+                scope_record_index: scope.record_index,
+                group_record_index: selected.record_index,
+                group_member_ordinal: 0,
+                record_index: 2788,
+                byte_offset: 31_000,
+                class_tag: "310".to_owned().try_into().unwrap(),
+                asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                asset_id_offset: 31_040,
+                context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                context_id_offset: 31_080,
+                identity_record_index: 2791,
+                identity_record_offset: 31_180,
+                primary_identity: 2718,
+                primary_identity_offset: 31209,
+                secondary: Some(crate::records::identity::DesignSecondaryIdentity {
+                    identity: crate::records::identity::Located {
+                        value: 164,
+                        offset: 31217,
+                    },
+                    curve_identity: None,
+                }),
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: Vec::new(),
+                resolved_edge_slot: None,
+                next_record_index: 2792,
+                next_byte_offset: 31225,
+            },
+        )
+        .unwrap();
     (scope, vec![selected, carrier, path, guide], selection)
 }
 
 fn assert_guide_surface_limit(operation: &'static str, dimension: ResourceDimension) {
     let (scope, groups, selection) = guide_surface_input();
-    assert!(matches!(project_fixed_sweep(&scope, &groups, &[], &[],
-        std::slice::from_ref(&selection), &[], None).unwrap().unwrap(),
+    assert!(matches!(
+        project_fixed_sweep(
+            &scope,
+            &groups,
+            &[],
+            &[],
+            std::slice::from_ref(&selection),
+            &[],
+            None
+        )
+        .unwrap()
+        .unwrap(),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
             orientation: Some(cadmpeg_ir::features::SweepOrientation::GuideSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(_),
-            }), ..
-        })));
+            }),
+            ..
+        })
+    ));
     for limit in 0..256 {
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -208,10 +248,16 @@ fn assert_guide_surface_limit(operation: &'static str, dimension: ResourceDimens
 
 #[test]
 fn sweep_guide_surface_group_refuses_collection_limit() {
-    assert_guide_surface_limit("f3d Sweep guide surface group", ResourceDimension::CollectionItems);
+    assert_guide_surface_limit(
+        "f3d Sweep guide surface group",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn sweep_guide_surface_id_refuses_retained_limit() {
-    assert_guide_surface_limit("f3d Sweep guide surface id", ResourceDimension::RetainedBytes);
+    assert_guide_surface_limit(
+        "f3d Sweep guide surface id",
+        ResourceDimension::RetainedBytes,
+    );
 }

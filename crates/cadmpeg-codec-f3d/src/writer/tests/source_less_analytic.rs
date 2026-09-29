@@ -1431,7 +1431,8 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     );
     assert!(round_trip.ir().model.edges[0].curve().is_some());
     assert!(
-        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail")
+        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
@@ -1508,7 +1509,8 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         Some([0.5, 2.0])
     );
     assert!(
-        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail")
+        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)

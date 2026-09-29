@@ -1389,7 +1389,8 @@ impl DesignAssemblyOperandPath {
             self.byte_offset,
             occurrences,
             identities,
-        ).ok())
+        )
+        .ok())
     }
 }
 

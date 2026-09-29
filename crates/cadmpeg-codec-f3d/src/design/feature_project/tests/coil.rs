@@ -131,7 +131,9 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
 }
 
 fn owned_parameters(parameters: &[DesignParameter; 5]) -> Vec<(u32, &DesignParameter)> {
-    parameters.iter().enumerate()
+    parameters
+        .iter()
+        .enumerate()
         .map(|(ordinal, parameter)| (ordinal as u32, parameter))
         .collect()
 }
@@ -142,7 +144,9 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     let owned = owned_parameters(&parameters);
 
     let FeatureDefinition::Operation(FeatureOperation::Coil { construction, .. }) =
-        project_coil(None, &scope, &owned, &[]).unwrap().expect("typed long Coil")
+        project_coil(None, &scope, &owned, &[])
+            .unwrap()
+            .expect("typed long Coil")
     else {
         panic!("expected Coil definition")
     };
@@ -218,7 +222,10 @@ fn coil_body_group() -> crate::records::topology::construction::DesignConstructi
         record_index: 60,
         byte_offset: 0,
         class_tag: "282".to_owned().try_into().unwrap(),
-        members: vec![crate::records::identity::Located { value: 61, offset: 0 }],
+        members: vec![crate::records::identity::Located {
+            value: 61,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame::try_from(
             DesignConstructionOperandGroupFrameDraft {
@@ -235,14 +242,16 @@ fn coil_body_group() -> crate::records::topology::construction::DesignConstructi
                 opaque_scalar_offset: 22,
                 variant: false,
             },
-        ).unwrap(),
+        )
+        .unwrap(),
         operand_role: DesignConstructionOperandRole::Other(
             crate::records::topology::extrude_selection::DesignOperandRole::BODIES_B,
         ),
         role_offset: 0,
         paired_class_tag: "261".to_owned().try_into().unwrap(),
         paired_byte_offset: 0,
-    }).unwrap()
+    })
+    .unwrap()
 }
 
 #[test]
@@ -260,15 +269,19 @@ fn coil_boolean_target_group_id_refuses_retained_limit() {
     let group = coil_body_group();
     let owned = owned_parameters(&parameters);
     let definition = project_coil(None, &scope, &owned, std::slice::from_ref(&group))
-        .unwrap().unwrap();
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Coil {
-            result: CoilResult::Boolean { .. }, ..
+            result: CoilResult::Boolean { .. },
+            ..
         })
     ));
     assert_coil_retained_refusal(
-        &scope, &parameters, std::slice::from_ref(&group),
+        &scope,
+        &parameters,
+        std::slice::from_ref(&group),
         "f3d Coil Boolean target group id",
     );
 }

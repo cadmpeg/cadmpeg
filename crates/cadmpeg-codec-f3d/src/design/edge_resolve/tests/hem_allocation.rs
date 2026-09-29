@@ -12,7 +12,7 @@ fn assert_hem_candidate_refusal(operation: &'static str) {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match unique_hem_transition_edge_candidate(&[63, 106, 110, 167], references, Some(&ctx)) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected Hem refusal at {operation}: {other:?}"),
         }
     }
@@ -41,16 +41,19 @@ fn hem_historical_group_id_refuses_retained_limit() {
     operand.recipe_reference_contexts = [None, Some(167), Some(106), Some(110)]
         .into_iter()
         .enumerate()
-        .map(|(ordinal, edge)| serde_json::from_value(serde_json::json!({
-            "reference_ordinal": ordinal,
-            "result_faces": if edge.is_some() { vec!["f3d:model:face#1"] } else { Vec::new() },
-            "result_shared_edge_slots": [],
-            "preceding_faces": [],
-            "preceding_support_face_slots": if edge.is_some() { vec![2] } else { Vec::new() },
-            "shared_edge_slots": [],
-            "changed_shared_edge_slots": [],
-            "changed_reference_edge_slots": edge.into_iter().collect::<Vec<_>>(),
-        })).unwrap())
+        .map(|(ordinal, edge)| {
+            serde_json::from_value(serde_json::json!({
+                "reference_ordinal": ordinal,
+                "result_faces": if edge.is_some() { vec!["f3d:model:face#1"] } else { Vec::new() },
+                "result_shared_edge_slots": [],
+                "preceding_faces": [],
+                "preceding_support_face_slots": if edge.is_some() { vec![2] } else { Vec::new() },
+                "shared_edge_slots": [],
+                "changed_shared_edge_slots": [],
+                "changed_reference_edge_slots": edge.into_iter().collect::<Vec<_>>(),
+            }))
+            .unwrap()
+        })
         .collect();
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#hem").unwrap();
     for limit in 0..256 {
@@ -59,11 +62,20 @@ fn hem_historical_group_id_refuses_retained_limit() {
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match crate::design::edge_resolve::resolved_hem_edge_group(
-            &selection_group, std::slice::from_ref(&selection_group),
-            std::slice::from_ref(&operand), &[], Some(7), &feature_id, Some(&ctx),
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            std::slice::from_ref(&operand),
+            &[],
+            Some(7),
+            &feature_id,
+            Some(&ctx),
         ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d hem historical group id" => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d hem historical group id" =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected Hem group ID refusal: {other:?}"),
         }
     }

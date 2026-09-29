@@ -126,10 +126,10 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
 fn sketch_visibility_accepts_settled_container_header() {
     let (bytes, metadata) = visibility_stream();
 
-    let visibilities =
-        crate::design::test_support::with_test_decode_context(|ctx| {
-            decode_sketch_visibilities_in_stream(ctx, &bytes, &metadata)
-        }).expect("settled header");
+    let visibilities = crate::design::test_support::with_test_decode_context(|ctx| {
+        decode_sketch_visibilities_in_stream(ctx, &bytes, &metadata)
+    })
+    .expect("settled header");
     assert_eq!(visibilities.len(), 1);
     assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
     assert!(visibilities[0].1.visible);
@@ -146,7 +146,9 @@ fn sketch_visibility_output_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = decode_sketch_visibilities_in_stream(&ctx, &bytes, &metadata)
         .expect_err("collection limit must refuse decoded visibility");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d sketch visibility records"));
+            && failure.operation == "f3d sketch visibility records")
+    );
 }

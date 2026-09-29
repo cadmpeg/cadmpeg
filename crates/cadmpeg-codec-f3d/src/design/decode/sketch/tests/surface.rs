@@ -128,8 +128,10 @@ fn sketch_surface_collections_refuse_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = parse_sketch_surface(&ctx, &payload, 0)
             .expect_err("collection limit must refuse surface geometry");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation));
+                && failure.operation == operation)
+        );
     }
 }

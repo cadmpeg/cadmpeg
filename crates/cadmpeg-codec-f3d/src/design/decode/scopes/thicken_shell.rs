@@ -51,7 +51,8 @@ pub(super) fn exact_legacy_thicken_class_347(
     if guid_end != start + thicken_347::ZERO_RUN_3 {
         return None;
     }
-    let kind_end = fixed_utf16_ascii_eq(bytes, start + thicken_347::KIND_CODE_UNIT_COUNT, "Thicken")?;
+    let kind_end =
+        fixed_utf16_ascii_eq(bytes, start + thicken_347::KIND_CODE_UNIT_COUNT, "Thicken")?;
     if kind_end != start + thicken_347::FEATURE_ORDINAL {
         return None;
     }
@@ -135,7 +136,8 @@ pub(super) fn exact_shell_class_369_261(
     if guid_end != start + shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES {
         return None;
     }
-    let kind_end = fixed_utf16_ascii_eq(bytes, start + shell_369_261::KIND_CODE_UNIT_COUNT, "Shell")?;
+    let kind_end =
+        fixed_utf16_ascii_eq(bytes, start + shell_369_261::KIND_CODE_UNIT_COUNT, "Shell")?;
     if kind_end != start + shell_369_261::FEATURE_ORDINAL {
         return None;
     }

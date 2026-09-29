@@ -9,11 +9,11 @@
 mod curves;
 mod index;
 mod lost_edge;
-mod placement;
 mod persistent;
+mod placement;
 mod points;
-mod relation_classes;
 mod reference_list;
+mod relation_classes;
 mod relations;
 mod surface;
 mod text;

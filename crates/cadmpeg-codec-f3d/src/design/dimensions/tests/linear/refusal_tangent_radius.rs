@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{parse_design_parameter_record, parameter_record, Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    parameter_record, parse_design_parameter_record, Point2, SketchConstraintDefinitionInput,
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 const EPS_REFUSAL_LINEAR: f64 = 1.0e-6;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("generated:test:sketch#presentation").unwrap();
     let entity = |record_index: u32, geometry: SketchGeometry| {
         SketchEntity::new(
@@ -132,22 +134,34 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         1.27,
     ))
     .expect("synthetic tangent radius dimension");
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| crate::design::dimensions::presentation_dimension_definition(Some(ctx),
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        crate::design::dimensions::presentation_dimension_definition(
+            Some(ctx),
             "stream",
             &frame(vec![operand(796)]),
             &projected,
             &tangent_radius,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16")
+                .expect("identity grammar"),
             EPS_REFUSAL_LINEAR,
-        ).transpose().map(|_| ()));
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn tangent_radius_entity_id_refuses_retained_limit() {
-    fixture("f3d tangent radius entity id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d tangent radius entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn tangent_radius_parameter_id_refuses_retained_limit() {
-    fixture("f3d tangent radius parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d tangent radius parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }

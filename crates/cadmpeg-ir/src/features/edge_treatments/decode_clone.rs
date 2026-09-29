@@ -2,7 +2,8 @@
 //! Copy admitted feature fields under the caller decode resource policy.
 
 use super::{
-    ChamferGroup, ChamferSpec, FilletGroup, FullRoundFilletGroup, FullRoundSideSelection, RadiusForm, RadiusSpec, VariableRadii, VariableRadius
+    ChamferGroup, ChamferSpec, FilletGroup, FullRoundFilletGroup, FullRoundSideSelection,
+    RadiusForm, RadiusSpec, VariableRadii, VariableRadius,
 };
 
 clone_record_for_decode!(ChamferGroup; { edges, spec });

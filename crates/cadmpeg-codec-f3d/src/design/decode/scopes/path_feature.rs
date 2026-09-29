@@ -30,15 +30,15 @@ fn exact_pipe_owner_lanes(
     let stream = native_stream(&scope.id)?;
     let mut owners = [None; 4];
     for owner in parameter_owners.iter().filter(|owner| {
-            native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|value| value == &owner.record_index())
-                && owner.class_tag().as_str() == "342"
-                && owner.frame_length() == 103
-        }) {
+        native_stream(owner.id()) == Some(stream)
+            && owner.scope_record_index() == scope.record_index
+            && scope
+                .reference_members()
+                .values()
+                .any(|value| value == &owner.record_index())
+            && owner.class_tag().as_str() == "342"
+            && owner.frame_length() == 103
+    }) {
         let ordinal = usize::try_from(owner.local_ordinal()).ok()?;
         let slot = owners.get_mut(ordinal)?;
         if slot.replace(owner).is_some() {
@@ -219,15 +219,23 @@ pub(super) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Sweep => {
-            let mut candidate_lanes = scope
-                .reference_members()
-                .values()
-                .filter_map(|record_index| {
-                    let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-                    (scalar.owner_record_index == Some(scope.record_index))
-                        .then_some((*record_index, scalar))
-                });
-            let lanes = [candidate_lanes.next()?, candidate_lanes.next()?, candidate_lanes.next()?, candidate_lanes.next()?, candidate_lanes.next()?, candidate_lanes.next()?];
+            let mut candidate_lanes =
+                scope
+                    .reference_members()
+                    .values()
+                    .filter_map(|record_index| {
+                        let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
+                        (scalar.owner_record_index == Some(scope.record_index))
+                            .then_some((*record_index, scalar))
+                    });
+            let lanes = [
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+            ];
             if candidate_lanes.next().is_some() {
                 return None;
             }

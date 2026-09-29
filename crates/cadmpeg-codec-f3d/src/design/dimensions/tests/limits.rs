@@ -6,18 +6,20 @@ use crate::design::dimensions::{
     DimensionConstraintInputs,
 };
 use crate::design::test_support::parameter_record;
-use crate::records::parameters::{
-    DesignCompanionPayload, DesignParameter, DesignParameterCompanion, DesignParameterOwner,
-    DesignParameterOwnerWire,
-};
 use crate::records::dimensions::{
     DesignDimensionAnnotationFrame, DesignDimensionAnnotationFrameDraft,
     DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionLocusPairDraft, DesignDimensionRecipeRecord,
 };
+use crate::records::parameters::{
+    DesignCompanionPayload, DesignParameter, DesignParameterCompanion, DesignParameterOwner,
+    DesignParameterOwnerWire,
+};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::sketch_geometry::SketchCurveIdentity;
-use crate::records::sketch_placement::{DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement};
+use crate::records::sketch_placement::{
+    DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3};
@@ -43,8 +45,13 @@ impl Fixture {
             placements: std::slice::from_ref(&self.placement),
             parameters: std::slice::from_ref(&self.parameter),
             owners: std::slice::from_ref(&self.owner),
-            pairs: &[], groups: &[], annotation_frames: &[], null_pairs: &[],
-            companions: &[], recipe_records: &[], points: &[],
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: &[],
+            recipe_records: &[],
+            points: &[],
             curves: std::slice::from_ref(&self.curve),
             entities: std::slice::from_ref(&self.entity),
         }
@@ -57,8 +64,10 @@ impl Fixture {
             SpatialSketchGeometry::try_line_from_parts(
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
-            ).unwrap(),
-        ).with_native_ref(Some(self.curve.id.clone()))
+            )
+            .unwrap(),
+        )
+        .with_native_ref(Some(self.curve.id.clone()))
     }
 }
 
@@ -68,15 +77,23 @@ fn fixture() -> Fixture {
         frame: DesignSketchFrame::new(0, DesignSketchFrameForm::ScopeCompact).unwrap(),
         id: format!("{stream}:placement#7"),
         scope_record_index: Some(10),
-        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_7".to_owned()).unwrap(),
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_7".to_owned())
+            .unwrap(),
         visibility: None,
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 7,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("260".to_owned())
+            .unwrap(),
     };
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(21), "1 mm", "Linear Dimension", Some("mm"), "d1", 0.1,
-    )).unwrap();
+        Some(21),
+        "1 mm",
+        "Linear Dimension",
+        Some("mm"),
+        "d1",
+        0.1,
+    ))
+    .unwrap();
     parameter.id = format!("{stream}:design-parameter#20");
     parameter.record_index = 20;
     let owner = DesignParameterOwner::try_from(DesignParameterOwnerWire {
@@ -93,7 +110,8 @@ fn fixture() -> Fixture {
         owned_ordinal: 0,
         variant: Some(0),
         companion_record_index: 22,
-    }).unwrap();
+    })
+    .unwrap();
     let curve = SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#30"),
         record_index: 30,
@@ -110,15 +128,28 @@ fn fixture() -> Fixture {
         SketchEntityId::mint("synthetic:test:id#dimension-curve").unwrap(),
         crate::ids::neutral_sketch_id(&placement),
         SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(0.0, 0.0), end: Point2::new(1.0, 0.0),
-        }).unwrap(),
-    ).with_native_ref(Some(curve.id.clone()));
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        })
+        .unwrap(),
+    )
+    .with_native_ref(Some(curve.id.clone()));
     let spatial = SpatialSketch {
         id: crate::ids::neutral_spatial_sketch_id(&placement),
-        name: None, configuration: None, visible: None,
-        profiles: Vec::new(), native_ref: Some(placement.id.clone()),
+        name: None,
+        configuration: None,
+        visible: None,
+        profiles: Vec::new(),
+        native_ref: Some(placement.id.clone()),
     };
-    Fixture { placement, parameter, owner, curve, entity, spatial }
+    Fixture {
+        placement,
+        parameter,
+        owner,
+        curve,
+        entity,
+        spatial,
+    }
 }
 
 fn native_fallback_curves(fixture: &mut Fixture) -> [SketchCurveIdentity; 2] {
@@ -132,7 +163,10 @@ fn native_fallback_curves(fixture: &mut Fixture) -> [SketchCurveIdentity; 2] {
 fn native_fallback_pair() -> DesignDimensionLocusPair {
     let mut draft = companion_pair().into_draft();
     draft.governing_companion_record_index = 22;
-    draft.opaque_index = Some(crate::records::identity::Located { value: 0, offset: 35 });
+    draft.opaque_index = Some(crate::records::identity::Located {
+        value: 0,
+        offset: 35,
+    });
     draft.loci = [
         DesignDimensionAnnotationOperand {
             geometry_record_index: std::num::NonZeroU32::new(30),
@@ -159,7 +193,10 @@ fn native_fallback_group() -> DesignDimensionLocusGroup {
         record_index: 32,
         frame_length: 100,
         loci: vec![DesignDimensionLocus {
-            returned: crate::records::identity::Located { value: 31, offset: 10 },
+            returned: crate::records::identity::Located {
+                value: 31,
+                offset: 10,
+            },
             geometry_record_index: 30,
             geometry_reference_offset: 20,
             role: 1,
@@ -171,7 +208,8 @@ fn native_fallback_group() -> DesignDimensionLocusGroup {
         owner_role_offset: 50,
         state: 1,
         state_offset: 60,
-        next_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        next_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
         next_record_index: 33,
         next_byte_offset: 100,
     }
@@ -187,12 +225,19 @@ fn assert_exact_pair_variant_refusal(
     if variant == "points" {
         fixture.entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        }).unwrap();
+        })
+        .unwrap();
     }
     if variant == "angle" {
         let mut parameter = parse_design_parameter_record(&parameter_record(
-            Some(21), "0.1 rad", "Angular Dimension", Some("rad"), "a1", 0.1,
-        )).unwrap();
+            Some(21),
+            "0.1 rad",
+            "Angular Dimension",
+            Some("rad"),
+            "a1",
+            0.1,
+        ))
+        .unwrap();
         parameter.id = fixture.parameter.id.clone();
         parameter.record_index = fixture.parameter.record_index;
         fixture.parameter = parameter;
@@ -206,14 +251,16 @@ fn assert_exact_pair_variant_refusal(
             end: Point2::new(0.1_f64.cos(), 0.1_f64.sin()),
         },
         _ => SketchGeometryDefinition::Line {
-            start: Point2::new(0.0, 1.0), end: Point2::new(1.0, 1.0),
+            start: Point2::new(0.0, 1.0),
+            end: Point2::new(1.0, 1.0),
         },
     };
     let second = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#dimension-second-curve").unwrap(),
         fixture.entity.sketch.clone(),
         SketchGeometry::try_from(second_geometry).unwrap(),
-    ).with_native_ref(Some(curves[1].id.clone()));
+    )
+    .with_native_ref(Some(curves[1].id.clone()));
     let entities = [fixture.entity.clone(), second];
     let pair = native_fallback_pair();
     let mut inputs = fixture.inputs();
@@ -231,8 +278,11 @@ fn assert_exact_pair_variant_refusal(
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.dimension == dimension && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -246,51 +296,78 @@ fn assert_exact_pair_refusal(operation: &'static str, dimension: ResourceDimensi
 
 #[test]
 fn exact_dimension_entity_refuses_collection_limit() {
-    assert_exact_pair_refusal("f3d exact dimension entity", ResourceDimension::CollectionItems);
+    assert_exact_pair_refusal(
+        "f3d exact dimension entity",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn exact_directional_parameter_refuses_retained_limit() {
-    assert_exact_pair_refusal("f3d exact directional parameter id", ResourceDimension::RetainedBytes);
+    assert_exact_pair_refusal(
+        "f3d exact directional parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn exact_distance_entity_id_refuses_retained_limit() {
-    assert_exact_pair_refusal("f3d exact distance entity id", ResourceDimension::RetainedBytes);
+    assert_exact_pair_refusal(
+        "f3d exact distance entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn exact_distance_entity_refuses_collection_limit() {
-    assert_exact_pair_refusal("f3d exact distance entity", ResourceDimension::CollectionItems);
+    assert_exact_pair_refusal(
+        "f3d exact distance entity",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn exact_pair_companion_refuses_collection_limit() {
-    assert_exact_pair_refusal("f3d exact pair companion", ResourceDimension::CollectionItems);
+    assert_exact_pair_refusal(
+        "f3d exact pair companion",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn exact_first_distance_locus_refuses_retained_limit() {
-    assert_exact_pair_variant_refusal("points", "f3d exact first distance locus id",
-        ResourceDimension::RetainedBytes);
+    assert_exact_pair_variant_refusal(
+        "points",
+        "f3d exact first distance locus id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn exact_second_distance_locus_refuses_retained_limit() {
-    assert_exact_pair_variant_refusal("points", "f3d exact second distance locus id",
-        ResourceDimension::RetainedBytes);
+    assert_exact_pair_variant_refusal(
+        "points",
+        "f3d exact second distance locus id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn exact_first_angle_entity_refuses_retained_limit() {
-    assert_exact_pair_variant_refusal("angle", "f3d exact first angle entity id",
-        ResourceDimension::RetainedBytes);
+    assert_exact_pair_variant_refusal(
+        "angle",
+        "f3d exact first angle entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn exact_second_angle_entity_refuses_retained_limit() {
-    assert_exact_pair_variant_refusal("angle", "f3d exact second angle entity id",
-        ResourceDimension::RetainedBytes);
+    assert_exact_pair_variant_refusal(
+        "angle",
+        "f3d exact second angle entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 fn native_fallback_null_pair() -> DesignDimensionLocusPair {
@@ -332,11 +409,13 @@ fn native_fallback_annotation() -> DesignDimensionAnnotationFrame {
             value: std::num::NonZeroU32::new(30).unwrap(),
             offset: 127,
         }],
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+            .unwrap(),
         paired_byte_offset: 100,
         owner_reference: 7,
         owner_reference_offset: 120,
-    }).unwrap()
+    })
+    .unwrap()
 }
 
 fn dimension_recipe_record(index: u32) -> DesignDimensionRecipeRecord {
@@ -372,8 +451,11 @@ fn assert_recipe_group_refusal(operation: &'static str) {
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -381,14 +463,17 @@ fn assert_recipe_group_refusal(operation: &'static str) {
     panic!("no {operation} refusal");
 }
 
-fn assert_recipe_projection_refusal(
-    operation: &'static str,
-    dimension: ResourceDimension,
-) {
+fn assert_recipe_projection_refusal(operation: &'static str, dimension: ResourceDimension) {
     let mut fixture = fixture();
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(21), "0.1 rad", "Angular Dimension", Some("rad"), "a1", 0.1,
-    )).unwrap();
+        Some(21),
+        "0.1 rad",
+        "Angular Dimension",
+        Some("rad"),
+        "a1",
+        0.1,
+    ))
+    .unwrap();
     parameter.id = fixture.parameter.id.clone();
     parameter.record_index = fixture.parameter.record_index;
     fixture.parameter = parameter;
@@ -408,8 +493,11 @@ fn assert_recipe_projection_refusal(
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.dimension == dimension && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -417,14 +505,17 @@ fn assert_recipe_projection_refusal(
     panic!("no {operation} refusal");
 }
 
-fn assert_companion_projection_refusal(
-    operation: &'static str,
-    dimension: ResourceDimension,
-) {
+fn assert_companion_projection_refusal(operation: &'static str, dimension: ResourceDimension) {
     let mut fixture = fixture();
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(21), "0.1 rad", "Angular Dimension", Some("rad"), "a1", 0.1,
-    )).unwrap();
+        Some(21),
+        "0.1 rad",
+        "Angular Dimension",
+        Some("rad"),
+        "a1",
+        0.1,
+    ))
+    .unwrap();
     parameter.id = fixture.parameter.id.clone();
     parameter.record_index = fixture.parameter.record_index;
     fixture.parameter = parameter;
@@ -442,8 +533,11 @@ fn assert_companion_projection_refusal(
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.dimension == dimension && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -453,40 +547,56 @@ fn assert_companion_projection_refusal(
 
 #[test]
 fn companion_dimension_sketch_refuses_retained_limit() {
-    assert_companion_projection_refusal("f3d companion dimension sketch id",
-        ResourceDimension::RetainedBytes);
+    assert_companion_projection_refusal(
+        "f3d companion dimension sketch id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn companion_native_parameter_refuses_retained_limit() {
-    assert_companion_projection_refusal("f3d companion native parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_companion_projection_refusal(
+        "f3d companion native parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn companion_native_operand_reference_refuses_retained_limit() {
-    assert_companion_projection_refusal("f3d companion native operand reference",
-        ResourceDimension::RetainedBytes);
+    assert_companion_projection_refusal(
+        "f3d companion native operand reference",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn companion_constraint_native_reference_refuses_retained_limit() {
-    assert_companion_projection_refusal("f3d companion constraint native reference",
-        ResourceDimension::RetainedBytes);
+    assert_companion_projection_refusal(
+        "f3d companion constraint native reference",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn companion_dimension_constraint_refuses_collection_limit() {
-    assert_companion_projection_refusal("f3d companion dimension constraint",
-        ResourceDimension::CollectionItems);
+    assert_companion_projection_refusal(
+        "f3d companion dimension constraint",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn parallel_group_parameter_refuses_retained_limit() {
     let mut fixture = fixture();
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(21), "0.1 rad", "Angular Dimension", Some("rad"), "a1", 0.1,
-    )).unwrap();
+        Some(21),
+        "0.1 rad",
+        "Angular Dimension",
+        Some("rad"),
+        "a1",
+        0.1,
+    ))
+    .unwrap();
     parameter.id = fixture.parameter.id.clone();
     parameter.record_index = fixture.parameter.record_index;
     fixture.parameter = parameter;
@@ -506,8 +616,11 @@ fn parallel_group_parameter_refuses_retained_limit() {
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -517,38 +630,50 @@ fn parallel_group_parameter_refuses_retained_limit() {
 
 #[test]
 fn recipe_dimension_sketch_refuses_retained_limit() {
-    assert_recipe_projection_refusal("f3d recipe dimension sketch id",
-        ResourceDimension::RetainedBytes);
+    assert_recipe_projection_refusal(
+        "f3d recipe dimension sketch id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn recipe_repeated_parameter_refuses_retained_limit() {
-    assert_recipe_projection_refusal("f3d recipe repeated parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_recipe_projection_refusal(
+        "f3d recipe repeated parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn recipe_native_operand_reference_refuses_retained_limit() {
-    assert_recipe_projection_refusal("f3d recipe native operand reference",
-        ResourceDimension::RetainedBytes);
+    assert_recipe_projection_refusal(
+        "f3d recipe native operand reference",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn recipe_native_operand_refuses_collection_limit() {
-    assert_recipe_projection_refusal("f3d recipe native operand",
-        ResourceDimension::CollectionItems);
+    assert_recipe_projection_refusal(
+        "f3d recipe native operand",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn recipe_constraint_native_reference_refuses_retained_limit() {
-    assert_recipe_projection_refusal("f3d recipe constraint native reference",
-        ResourceDimension::RetainedBytes);
+    assert_recipe_projection_refusal(
+        "f3d recipe constraint native reference",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn recipe_dimension_constraint_refuses_collection_limit() {
-    assert_recipe_projection_refusal("f3d recipe dimension constraint",
-        ResourceDimension::CollectionItems);
+    assert_recipe_projection_refusal(
+        "f3d recipe dimension constraint",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
@@ -563,56 +688,83 @@ fn dimension_recipe_group_member_refuses_collection_limit() {
 
 #[test]
 fn projected_dimension_parameter_id_refuses_retained_limit() {
-    assert_native_fallback_refusal(false, "f3d projected dimension parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_native_fallback_refusal(
+        false,
+        "f3d projected dimension parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn projected_dimension_parameter_refuses_collection_limit() {
-    assert_native_fallback_refusal(false, "f3d projected dimension parameter",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        false,
+        "f3d projected dimension parameter",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn group_dimension_constraint_refuses_collection_limit() {
-    assert_native_fallback_refusal(true, "f3d group dimension constraint",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        true,
+        "f3d group dimension constraint",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn pair_dimension_output_refuses_collection_limit() {
-    assert_native_fallback_refusal(false, "f3d dimension constraint output",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        false,
+        "f3d dimension constraint output",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn group_dimension_output_refuses_collection_limit() {
-    assert_native_fallback_refusal(true, "f3d dimension constraint output",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        true,
+        "f3d dimension constraint output",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn annotation_dimension_output_refuses_collection_limit() {
-    assert_native_auxiliary_refusal(true, "f3d dimension constraint output",
-        ResourceDimension::CollectionItems);
+    assert_native_auxiliary_refusal(
+        true,
+        "f3d dimension constraint output",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn annotation_dimension_index_refuses_collection_limit() {
-    assert_native_auxiliary_refusal(true, "f3d annotation dimension index",
-        ResourceDimension::CollectionItems);
+    assert_native_auxiliary_refusal(
+        true,
+        "f3d annotation dimension index",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn group_dimension_locus_index_refuses_collection_limit() {
-    assert_native_fallback_refusal(true, "f3d group dimension locus index",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        true,
+        "f3d group dimension locus index",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn null_pair_dimension_output_refuses_collection_limit() {
-    assert_native_auxiliary_refusal(false, "f3d dimension constraint output",
-        ResourceDimension::CollectionItems);
+    assert_native_auxiliary_refusal(
+        false,
+        "f3d dimension constraint output",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 fn assert_native_auxiliary_refusal(
@@ -640,8 +792,11 @@ fn assert_native_auxiliary_refusal(
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.dimension == dimension && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -676,8 +831,11 @@ fn assert_native_fallback_refusal(
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.dimension == dimension && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -700,8 +858,14 @@ fn assert_exact_group_variant_refusal(
     }
     if variant == "angular" {
         let mut parameter = parse_design_parameter_record(&parameter_record(
-            Some(21), "0.1 rad", "Angular Dimension", Some("rad"), "a1", 0.1,
-        )).unwrap();
+            Some(21),
+            "0.1 rad",
+            "Angular Dimension",
+            Some("rad"),
+            "a1",
+            0.1,
+        ))
+        .unwrap();
         parameter.id = fixture.parameter.id.clone();
         parameter.record_index = fixture.parameter.record_index;
         fixture.parameter = parameter;
@@ -720,8 +884,11 @@ fn assert_exact_group_variant_refusal(
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.dimension == dimension && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -732,8 +899,14 @@ fn assert_exact_group_variant_refusal(
 fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceDimension) {
     let mut fixture = fixture();
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(21), "1 mm", "Radial Dimension-2", Some("mm"), "r1", 0.1,
-    )).unwrap();
+        Some(21),
+        "1 mm",
+        "Radial Dimension-2",
+        Some("mm"),
+        "r1",
+        0.1,
+    ))
+    .unwrap();
     parameter.id = fixture.parameter.id.clone();
     parameter.record_index = fixture.parameter.record_index;
     fixture.parameter = parameter;
@@ -743,23 +916,29 @@ fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceD
     circle_curve.record_index = 32;
     let curves = [line_curve, point_curve, circle_curve];
     fixture.entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
-        start: Point2::new(0.0, 0.0), end: Point2::new(6.0, 0.0),
-    }).unwrap();
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(6.0, 0.0),
+    })
+    .unwrap();
     let point = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#radial-extension-point").unwrap(),
         fixture.entity.sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(6.5, 0.0),
-        }).unwrap(),
-    ).with_native_ref(Some(curves[1].id.clone()));
+        })
+        .unwrap(),
+    )
+    .with_native_ref(Some(curves[1].id.clone()));
     let circle = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#radial-measurement-circle").unwrap(),
         fixture.entity.sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
-        }).unwrap(),
-    ).with_native_ref(Some(curves[2].id.clone()));
+        })
+        .unwrap(),
+    )
+    .with_native_ref(Some(curves[2].id.clone()));
     let entities = [fixture.entity.clone(), point, circle];
     let mut group = native_fallback_group();
     group.state = 0;
@@ -785,8 +964,11 @@ fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceD
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.dimension == dimension && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -796,98 +978,143 @@ fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceD
 
 #[test]
 fn radial_extension_locus_index_refuses_collection_limit() {
-    assert_radial_extension_refusal("f3d radial dimension locus index",
-        ResourceDimension::CollectionItems);
+    assert_radial_extension_refusal(
+        "f3d radial dimension locus index",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn radial_extension_group_refuses_collection_limit() {
-    assert_radial_extension_refusal("f3d radial extension group",
-        ResourceDimension::CollectionItems);
+    assert_radial_extension_refusal(
+        "f3d radial extension group",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn radial_extension_sketch_refuses_retained_limit() {
-    assert_radial_extension_refusal("f3d dimension radial sketch id",
-        ResourceDimension::RetainedBytes);
+    assert_radial_extension_refusal(
+        "f3d dimension radial sketch id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn exact_group_locus_entity_refuses_collection_limit() {
-    assert_exact_group_variant_refusal("linear", "f3d exact group locus entity",
-        ResourceDimension::CollectionItems);
+    assert_exact_group_variant_refusal(
+        "linear",
+        "f3d exact group locus entity",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn exact_group_directional_parameter_refuses_retained_limit() {
-    assert_exact_group_variant_refusal("linear", "f3d exact group directional parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_exact_group_variant_refusal(
+        "linear",
+        "f3d exact group directional parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn exact_group_offset_entity_index_refuses_collection_limit() {
-    assert_exact_group_variant_refusal("offset", "f3d exact group offset entity index",
-        ResourceDimension::CollectionItems);
+    assert_exact_group_variant_refusal(
+        "offset",
+        "f3d exact group offset entity index",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn exact_group_offset_secondary_index_refuses_collection_limit() {
-    assert_exact_group_variant_refusal("offset", "f3d exact group offset secondary index",
-        ResourceDimension::CollectionItems);
+    assert_exact_group_variant_refusal(
+        "offset",
+        "f3d exact group offset secondary index",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn exact_group_angular_index_refuses_collection_limit() {
-    assert_exact_group_variant_refusal("angular", "f3d exact group angular index",
-        ResourceDimension::CollectionItems);
+    assert_exact_group_variant_refusal(
+        "angular",
+        "f3d exact group angular index",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn exact_group_angular_parameter_refuses_retained_limit() {
-    assert_exact_group_variant_refusal("angular", "f3d exact group angular parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_exact_group_variant_refusal(
+        "angular",
+        "f3d exact group angular parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn radial_group_parameter_refuses_retained_limit() {
-    assert_exact_group_variant_refusal("radial-call", "f3d radial group parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_exact_group_variant_refusal(
+        "radial-call",
+        "f3d radial group parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn radial_group_locus_entity_refuses_collection_limit() {
-    assert_exact_group_variant_refusal("radial-call", "f3d radial group locus entity",
-        ResourceDimension::CollectionItems);
+    assert_exact_group_variant_refusal(
+        "radial-call",
+        "f3d radial group locus entity",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn projected_group_parameter_refuses_retained_limit() {
-    assert_exact_group_variant_refusal("linear", "f3d projected group parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_exact_group_variant_refusal(
+        "linear",
+        "f3d projected group parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn group_constraint_parameter_refuses_retained_limit() {
-    assert_exact_group_variant_refusal("linear", "f3d group constraint parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_exact_group_variant_refusal(
+        "linear",
+        "f3d group constraint parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn pair_exact_parameter_refuses_retained_limit() {
-    assert_native_fallback_refusal(false, "f3d pair exact parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_native_fallback_refusal(
+        false,
+        "f3d pair exact parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn annotation_exact_parameter_refuses_retained_limit() {
-    assert_native_auxiliary_refusal(true, "f3d annotation exact parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_native_auxiliary_refusal(
+        true,
+        "f3d annotation exact parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn null_pair_exact_parameter_refuses_retained_limit() {
-    assert_native_auxiliary_refusal(false, "f3d null pair exact parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_native_auxiliary_refusal(
+        false,
+        "f3d null pair exact parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 fn assert_projected_companion_refusal(kind: &str, operation: &'static str) {
@@ -914,8 +1141,11 @@ fn assert_projected_companion_refusal(kind: &str, operation: &'static str) {
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -945,77 +1175,114 @@ fn projected_annotation_companion_refuses_collection_limit() {
 
 #[test]
 fn native_pair_entity_id_refuses_retained_limit() {
-    assert_native_fallback_refusal(false, "f3d native dimension entity id",
-        ResourceDimension::RetainedBytes);
+    assert_native_fallback_refusal(
+        false,
+        "f3d native dimension entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn native_pair_entity_refuses_collection_limit() {
-    assert_native_fallback_refusal(false, "f3d native dimension entity",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        false,
+        "f3d native dimension entity",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn native_pair_operand_reference_refuses_retained_limit() {
-    assert_native_fallback_refusal(false, "f3d dimension native operand reference",
-        ResourceDimension::RetainedBytes);
+    assert_native_fallback_refusal(
+        false,
+        "f3d dimension native operand reference",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn native_pair_operand_refuses_collection_limit() {
-    assert_native_fallback_refusal(false, "f3d native dimension operand",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        false,
+        "f3d native dimension operand",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn native_pair_output_refuses_collection_limit() {
-    assert_native_fallback_refusal(false, "f3d pair dimension constraint",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        false,
+        "f3d pair dimension constraint",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn native_pair_sketch_id_refuses_retained_limit() {
-    assert_native_fallback_refusal(false, "f3d dimension pair sketch id",
-        ResourceDimension::RetainedBytes);
+    assert_native_fallback_refusal(
+        false,
+        "f3d dimension pair sketch id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn native_pair_constraint_reference_refuses_retained_limit() {
-    assert_native_fallback_refusal(false, "f3d dimension pair native reference",
-        ResourceDimension::RetainedBytes);
+    assert_native_fallback_refusal(
+        false,
+        "f3d dimension pair native reference",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn native_group_constraint_reference_refuses_retained_limit() {
-    assert_native_fallback_refusal(true, "f3d dimension group native reference",
-        ResourceDimension::RetainedBytes);
+    assert_native_fallback_refusal(
+        true,
+        "f3d dimension group native reference",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn annotation_constraint_reference_refuses_retained_limit() {
-    assert_native_auxiliary_refusal(true, "f3d dimension annotation native reference",
-        ResourceDimension::RetainedBytes);
+    assert_native_auxiliary_refusal(
+        true,
+        "f3d dimension annotation native reference",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn null_pair_constraint_reference_refuses_retained_limit() {
-    assert_native_auxiliary_refusal(false, "f3d dimension null pair native reference",
-        ResourceDimension::RetainedBytes);
+    assert_native_auxiliary_refusal(
+        false,
+        "f3d dimension null pair native reference",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn exact_null_pair_constraint_reference_refuses_retained_limit() {
     let mut fixture = fixture();
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(21), "1 mm", "Radius Dimension", Some("mm"), "r1", 0.1,
-    )).unwrap();
+        Some(21),
+        "1 mm",
+        "Radius Dimension",
+        Some("mm"),
+        "r1",
+        0.1,
+    ))
+    .unwrap();
     parameter.id = fixture.parameter.id.clone();
     parameter.record_index = fixture.parameter.record_index;
     fixture.parameter = parameter;
     fixture.entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(0.0, 0.0),
         radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
-    }).unwrap();
+    })
+    .unwrap();
     let pair = native_fallback_null_pair();
     let mut inputs = fixture.inputs();
     inputs.null_pairs = std::slice::from_ref(&pair);
@@ -1028,8 +1295,11 @@ fn exact_null_pair_constraint_reference_refuses_retained_limit() {
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1041,15 +1311,22 @@ fn exact_null_pair_constraint_reference_refuses_retained_limit() {
 fn exact_radial_parameter_refuses_retained_limit() {
     let mut fixture = fixture();
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(21), "1 mm", "Radius Dimension", Some("mm"), "r1", 0.1,
-    )).unwrap();
+        Some(21),
+        "1 mm",
+        "Radius Dimension",
+        Some("mm"),
+        "r1",
+        0.1,
+    ))
+    .unwrap();
     parameter.id = fixture.parameter.id.clone();
     parameter.record_index = fixture.parameter.record_index;
     fixture.parameter = parameter;
     fixture.entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(0.0, 0.0),
         radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
-    }).unwrap();
+    })
+    .unwrap();
     let frame = native_fallback_annotation();
     let mut inputs = fixture.inputs();
     inputs.annotation_frames = std::slice::from_ref(&frame);
@@ -1062,8 +1339,11 @@ fn exact_radial_parameter_refuses_retained_limit() {
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1073,74 +1353,110 @@ fn exact_radial_parameter_refuses_retained_limit() {
 
 #[test]
 fn native_group_sketch_id_refuses_retained_limit() {
-    assert_native_fallback_refusal(true, "f3d dimension group sketch id",
-        ResourceDimension::RetainedBytes);
+    assert_native_fallback_refusal(
+        true,
+        "f3d dimension group sketch id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn annotation_sketch_id_refuses_retained_limit() {
-    assert_native_auxiliary_refusal(true, "f3d dimension annotation sketch id",
-        ResourceDimension::RetainedBytes);
+    assert_native_auxiliary_refusal(
+        true,
+        "f3d dimension annotation sketch id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn null_pair_sketch_id_refuses_retained_limit() {
-    assert_native_auxiliary_refusal(false, "f3d dimension null pair sketch id",
-        ResourceDimension::RetainedBytes);
+    assert_native_auxiliary_refusal(
+        false,
+        "f3d dimension null pair sketch id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn native_group_locus_operand_refuses_collection_limit() {
-    assert_native_fallback_refusal(true, "f3d native group locus operand",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        true,
+        "f3d native group locus operand",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn native_group_owner_operand_refuses_collection_limit() {
-    assert_native_fallback_refusal(true, "f3d native group owner operand",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        true,
+        "f3d native group owner operand",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn native_group_return_operand_refuses_collection_limit() {
-    assert_native_fallback_refusal(true, "f3d native group return operand",
-        ResourceDimension::CollectionItems);
+    assert_native_fallback_refusal(
+        true,
+        "f3d native group return operand",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn annotation_native_operand_refuses_collection_limit() {
-    assert_native_auxiliary_refusal(true, "f3d annotation native operand",
-        ResourceDimension::CollectionItems);
+    assert_native_auxiliary_refusal(
+        true,
+        "f3d annotation native operand",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn annotation_native_entity_id_refuses_retained_limit() {
-    assert_native_auxiliary_refusal(true, "f3d annotation native entity id",
-        ResourceDimension::RetainedBytes);
+    assert_native_auxiliary_refusal(
+        true,
+        "f3d annotation native entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn annotation_native_entity_refuses_collection_limit() {
-    assert_native_auxiliary_refusal(true, "f3d annotation native entity",
-        ResourceDimension::CollectionItems);
+    assert_native_auxiliary_refusal(
+        true,
+        "f3d annotation native entity",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn null_pair_native_operand_refuses_collection_limit() {
-    assert_native_auxiliary_refusal(false, "f3d null pair native operand",
-        ResourceDimension::CollectionItems);
+    assert_native_auxiliary_refusal(
+        false,
+        "f3d null pair native operand",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn null_pair_native_entity_id_refuses_retained_limit() {
-    assert_native_auxiliary_refusal(false, "f3d null pair native entity id",
-        ResourceDimension::RetainedBytes);
+    assert_native_auxiliary_refusal(
+        false,
+        "f3d null pair native entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn null_pair_native_entity_refuses_collection_limit() {
-    assert_native_auxiliary_refusal(false, "f3d null pair native entity",
-        ResourceDimension::CollectionItems);
+    assert_native_auxiliary_refusal(
+        false,
+        "f3d null pair native entity",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 fn parameter_companion() -> DesignParameterCompanion {
@@ -1152,7 +1468,8 @@ fn parameter_companion() -> DesignParameterCompanion {
         21,
         std::num::NonZeroU64::new(1).unwrap(),
         42,
-    ).bound(DesignCompanionPayload::new(58, 0, Vec::new()))
+    )
+    .bound(DesignCompanionPayload::new(58, 0, Vec::new()))
 }
 
 fn assert_refusal(operation: &'static str) {
@@ -1162,12 +1479,19 @@ fn assert_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &fixture.inputs(),
-            std::slice::from_ref(&fixture.spatial), 1.0e-6) {
+        match project_dimension_constraints(
+            Some(&ctx),
+            &fixture.inputs(),
+            std::slice::from_ref(&fixture.spatial),
+            1.0e-6,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension == ResourceDimension::CollectionItems =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1182,12 +1506,20 @@ fn assert_spatial_index_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_spatial_dimension_constraints(Some(&ctx), &fixture.inputs(),
-            std::slice::from_ref(&fixture.spatial), &[], 1.0e-6) {
+        match project_spatial_dimension_constraints(
+            Some(&ctx),
+            &fixture.inputs(),
+            std::slice::from_ref(&fixture.spatial),
+            &[],
+            1.0e-6,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension == ResourceDimension::CollectionItems =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1219,13 +1551,21 @@ fn spatial_projected_record_index_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(Some(&ctx), &fixture.inputs(),
-            std::slice::from_ref(&fixture.spatial), std::slice::from_ref(&entity), 1.0e-6);
+        let result = project_spatial_dimension_constraints(
+            Some(&ctx),
+            &fixture.inputs(),
+            std::slice::from_ref(&fixture.spatial),
+            std::slice::from_ref(&entity),
+            1.0e-6,
+        );
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d spatial projected record index"
-                    && failure.dimension == ResourceDimension::CollectionItems => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension == ResourceDimension::CollectionItems =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected spatial projected record index refusal"),
             Err(error) => panic!("expected spatial projected record index refusal: {error}"),
         }
@@ -1254,13 +1594,21 @@ fn spatial_parameter_count_index_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(Some(&ctx), &inputs,
-            std::slice::from_ref(&fixture.spatial), &[], 1.0e-6);
+        let result = project_spatial_dimension_constraints(
+            Some(&ctx),
+            &inputs,
+            std::slice::from_ref(&fixture.spatial),
+            &[],
+            1.0e-6,
+        );
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d spatial parameter count index"
-                    && failure.dimension == ResourceDimension::CollectionItems => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension == ResourceDimension::CollectionItems =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected spatial parameter count index refusal"),
             Err(error) => panic!("expected spatial parameter count index refusal: {error}"),
         }
@@ -1274,11 +1622,22 @@ fn spatial_scope_sketch_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(
-        crate::ids::neutral_spatial_sketch_id(&fixture.placement).as_str().len()
-        + 2 * crate::ids::neutral_sketch_id(&fixture.placement).as_str().len()).unwrap();
+        crate::ids::neutral_spatial_sketch_id(&fixture.placement)
+            .as_str()
+            .len()
+            + 2 * crate::ids::neutral_sketch_id(&fixture.placement)
+                .as_str()
+                .len(),
+    )
+    .unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = project_spatial_dimension_constraints(Some(&ctx), &fixture.inputs(),
-        std::slice::from_ref(&fixture.spatial), &[], 1.0e-6);
+    let result = project_spatial_dimension_constraints(
+        Some(&ctx),
+        &fixture.inputs(),
+        std::slice::from_ref(&fixture.spatial),
+        &[],
+        1.0e-6,
+    );
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
         if failure.operation == "f3d spatial scope sketch id"
             && failure.dimension == ResourceDimension::RetainedBytes));
@@ -1295,13 +1654,21 @@ fn spatial_parameter_count_id_refuses_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(Some(&ctx), &inputs,
-            std::slice::from_ref(&fixture.spatial), &[], 1.0e-6);
+        let result = project_spatial_dimension_constraints(
+            Some(&ctx),
+            &inputs,
+            std::slice::from_ref(&fixture.spatial),
+            &[],
+            1.0e-6,
+        );
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d spatial parameter count id"
-                    && failure.dimension == ResourceDimension::RetainedBytes => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension == ResourceDimension::RetainedBytes =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected spatial parameter count ID refusal"),
             Err(error) => panic!("expected spatial parameter count ID refusal: {error}"),
         }
@@ -1326,13 +1693,21 @@ fn assert_spatial_companion_collection_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(Some(&ctx), &inputs,
-            std::slice::from_ref(&fixture.spatial), std::slice::from_ref(&entity), 1.0e-6);
+        let result = project_spatial_dimension_constraints(
+            Some(&ctx),
+            &inputs,
+            std::slice::from_ref(&fixture.spatial),
+            std::slice::from_ref(&entity),
+            1.0e-6,
+        );
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension == ResourceDimension::CollectionItems =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1377,13 +1752,21 @@ fn assert_spatial_companion_retained_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(Some(&ctx), &inputs,
-            std::slice::from_ref(&fixture.spatial), std::slice::from_ref(&entity), 1.0e-6);
+        let result = project_spatial_dimension_constraints(
+            Some(&ctx),
+            &inputs,
+            std::slice::from_ref(&fixture.spatial),
+            std::slice::from_ref(&entity),
+            1.0e-6,
+        );
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == ResourceDimension::RetainedBytes => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension == ResourceDimension::RetainedBytes =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1416,10 +1799,7 @@ fn spatial_line_length_parameter_id_refuses_retained_limit() {
     assert_spatial_companion_retained_refusal("f3d spatial line length parameter id");
 }
 
-fn assert_missing_spatial_refusal(
-    operation: &'static str,
-    dimension: ResourceDimension,
-) {
+fn assert_missing_spatial_refusal(operation: &'static str, dimension: ResourceDimension) {
     let fixture = fixture();
     let companion = parameter_companion();
     let mut inputs = fixture.inputs();
@@ -1433,12 +1813,20 @@ fn assert_missing_spatial_refusal(
             _ => panic!("unsupported dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(Some(&ctx), &inputs,
-            std::slice::from_ref(&fixture.spatial), &[], 1.0e-6);
+        let result = project_spatial_dimension_constraints(
+            Some(&ctx),
+            &inputs,
+            std::slice::from_ref(&fixture.spatial),
+            &[],
+            1.0e-6,
+        );
         match result {
             Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.operation == operation && failure.dimension == dimension =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1448,38 +1836,50 @@ fn assert_missing_spatial_refusal(
 
 #[test]
 fn missing_spatial_parameter_refuses_collection_limit() {
-    assert_missing_spatial_refusal("f3d missing spatial parameter",
-        ResourceDimension::CollectionItems);
+    assert_missing_spatial_refusal(
+        "f3d missing spatial parameter",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn missing_spatial_constraint_output_refuses_collection_limit() {
-    assert_missing_spatial_refusal("f3d missing spatial constraint output",
-        ResourceDimension::CollectionItems);
+    assert_missing_spatial_refusal(
+        "f3d missing spatial constraint output",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn missing_spatial_sketch_id_refuses_retained_limit() {
-    assert_missing_spatial_refusal("f3d missing spatial sketch id",
-        ResourceDimension::RetainedBytes);
+    assert_missing_spatial_refusal(
+        "f3d missing spatial sketch id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn missing_spatial_operand_native_id_refuses_retained_limit() {
-    assert_missing_spatial_refusal("f3d missing spatial operand native id",
-        ResourceDimension::RetainedBytes);
+    assert_missing_spatial_refusal(
+        "f3d missing spatial operand native id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn missing_spatial_constraint_native_id_refuses_retained_limit() {
-    assert_missing_spatial_refusal("f3d missing spatial constraint native id",
-        ResourceDimension::RetainedBytes);
+    assert_missing_spatial_refusal(
+        "f3d missing spatial constraint native id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn missing_spatial_output_parameter_id_refuses_retained_limit() {
-    assert_missing_spatial_refusal("f3d missing spatial output parameter id",
-        ResourceDimension::RetainedBytes);
+    assert_missing_spatial_refusal(
+        "f3d missing spatial output parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
@@ -1547,8 +1947,11 @@ fn dimension_recipe_companion_index_refuses_collection_limit() {
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1560,12 +1963,15 @@ fn dimension_recipe_companion_index_refuses_collection_limit() {
 fn planar_dimension_output_refuses_collection_limit() {
     let constraint = cadmpeg_ir::sketches::SketchConstraint {
         id: cadmpeg_ir::sketches::SketchConstraintId::mint(
-            "synthetic:test:id#dimension-limit-constraint").unwrap(),
-        sketch: cadmpeg_ir::sketches::SketchId::mint(
-            "synthetic:test:id#dimension-limit-sketch").unwrap(),
+            "synthetic:test:id#dimension-limit-constraint",
+        )
+        .unwrap(),
+        sketch: cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#dimension-limit-sketch")
+            .unwrap(),
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Disabled {},
-        ).unwrap(),
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -1581,12 +1987,13 @@ fn planar_dimension_output_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = retain_planar_dimension_constraints(Some(&ctx), &[], &[],
-        vec![constraint.clone()]).unwrap_err();
+    let error = retain_planar_dimension_constraints(Some(&ctx), &[], &[], vec![constraint.clone()])
+        .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.operation == "f3d planar dimension output"
             && failure.dimension == ResourceDimension::CollectionItems));
-    let output = retain_planar_dimension_constraints(None, &[], &[], vec![constraint.clone()]).unwrap();
+    let output =
+        retain_planar_dimension_constraints(None, &[], &[], vec![constraint.clone()]).unwrap();
     assert_eq!(output, [constraint]);
 }
 
@@ -1614,9 +2021,11 @@ fn companion_pair() -> DesignDimensionLocusPair {
                 role_offset: 50,
             },
         ],
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
         paired_byte_offset: 100,
-    }).unwrap()
+    })
+    .unwrap()
 }
 
 fn assert_companion_refusal(limit: u64, operation: &'static str) {
@@ -1626,9 +2035,7 @@ fn assert_companion_refusal(limit: u64, operation: &'static str) {
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let pairs = [pair];
-    let result = container_only_dimension_companions(
-        Some(&ctx), &pairs, &[], &[], &[], &[],
-    );
+    let result = container_only_dimension_companions(Some(&ctx), &pairs, &[], &[], &[], &[]);
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
         if failure.operation == operation
             && failure.dimension == ResourceDimension::CollectionItems));
@@ -1657,9 +2064,12 @@ fn parameterized_offset_companion_refuses_collection_limit() {
         SketchEntityId::mint("synthetic:test:id#offset-result").unwrap(),
         fixture.entity.sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(0.0, 1.0), end: Point2::new(1.0, 1.0),
-        }).unwrap(),
-    ).with_native_ref(Some(curves[1].id.clone()));
+            start: Point2::new(0.0, 1.0),
+            end: Point2::new(1.0, 1.0),
+        })
+        .unwrap(),
+    )
+    .with_native_ref(Some(curves[1].id.clone()));
     let entities = [fixture.entity.clone(), second];
     let mut group = native_fallback_group();
     group.state = 0x20;
@@ -1680,24 +2090,34 @@ fn parameterized_offset_companion_refuses_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d parameterized offset companion" => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.operation == "f3d parameterized offset companion" =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             result => panic!("expected offset companion refusal: {result:?}"),
         }
     }
     panic!("no offset companion refusal");
 }
 
-fn assert_counted_offset_refusal(operation: &'static str, dimension: ResourceDimension, limit: u64) {
+fn assert_counted_offset_refusal(
+    operation: &'static str,
+    dimension: ResourceDimension,
+    limit: u64,
+) {
     let fixture = fixture();
-    let circle = |name, radius| SketchEntity::new(
-        SketchEntityId::mint(name).unwrap(),
-        fixture.entity.sketch.clone(),
-        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-            center: Point2::new(0.0, 0.0),
-            radius: cadmpeg_ir::scalar::Length::new(radius).unwrap(),
-        }).unwrap(),
-    );
+    let circle = |name, radius| {
+        SketchEntity::new(
+            SketchEntityId::mint(name).unwrap(),
+            fixture.entity.sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: cadmpeg_ir::scalar::Length::new(radius).unwrap(),
+            })
+            .unwrap(),
+        )
+    };
     let source = circle("synthetic:test:id#offset-source", 1.0);
     let result = circle("synthetic:test:id#offset-result", 2.0);
     let entities = std::collections::HashMap::from([(30, &source), (31, &result)]);
@@ -1726,39 +2146,66 @@ fn assert_counted_offset_refusal(operation: &'static str, dimension: ResourceDim
 
 #[test]
 fn counted_offset_source_record_refuses_collection_limit() {
-    assert_counted_offset_refusal("f3d counted offset source record", ResourceDimension::CollectionItems, 0);
+    assert_counted_offset_refusal(
+        "f3d counted offset source record",
+        ResourceDimension::CollectionItems,
+        0,
+    );
 }
 
 #[test]
 fn counted_offset_result_record_refuses_collection_limit() {
-    assert_counted_offset_refusal("f3d counted offset result record", ResourceDimension::CollectionItems, 1);
+    assert_counted_offset_refusal(
+        "f3d counted offset result record",
+        ResourceDimension::CollectionItems,
+        1,
+    );
 }
 
 #[test]
 fn counted_offset_used_source_refuses_collection_limit() {
-    assert_counted_offset_refusal("f3d counted offset used source", ResourceDimension::CollectionItems, 2);
+    assert_counted_offset_refusal(
+        "f3d counted offset used source",
+        ResourceDimension::CollectionItems,
+        2,
+    );
 }
 
 #[test]
 fn counted_offset_used_result_refuses_collection_limit() {
-    assert_counted_offset_refusal("f3d counted offset used result", ResourceDimension::CollectionItems, 3);
+    assert_counted_offset_refusal(
+        "f3d counted offset used result",
+        ResourceDimension::CollectionItems,
+        3,
+    );
 }
 
 #[test]
 fn counted_offset_pair_refuses_collection_limit() {
-    assert_counted_offset_refusal("f3d counted offset pair", ResourceDimension::CollectionItems, 4);
+    assert_counted_offset_refusal(
+        "f3d counted offset pair",
+        ResourceDimension::CollectionItems,
+        4,
+    );
 }
 
 #[test]
 fn counted_offset_source_id_refuses_retained_limit() {
-    assert_counted_offset_refusal("f3d counted offset source id", ResourceDimension::RetainedBytes,
-        "synthetic:test:id#offset-source".len() as u64 - 1);
+    assert_counted_offset_refusal(
+        "f3d counted offset source id",
+        ResourceDimension::RetainedBytes,
+        "synthetic:test:id#offset-source".len() as u64 - 1,
+    );
 }
 
 #[test]
 fn counted_offset_result_id_refuses_retained_limit() {
-    assert_counted_offset_refusal("f3d counted offset result id", ResourceDimension::RetainedBytes,
-        ("synthetic:test:id#offset-source".len() + "synthetic:test:id#offset-result".len()) as u64 - 1);
+    assert_counted_offset_refusal(
+        "f3d counted offset result id",
+        ResourceDimension::RetainedBytes,
+        ("synthetic:test:id#offset-source".len() + "synthetic:test:id#offset-result".len()) as u64
+            - 1,
+    );
 }
 
 mod source_kind_limits;

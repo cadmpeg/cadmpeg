@@ -362,7 +362,8 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            let guid_end = fixed_guid_end(bytes, start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT)?;
+            let guid_end =
+                fixed_guid_end(bytes, start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT)?;
             if guid_end != start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
                 || bytes.get(
                     start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
@@ -405,7 +406,8 @@ fn exact_shifted_cylinder_primitive_prologue(
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            let guid_end = fixed_guid_end(bytes, start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT)?;
+            let guid_end =
+                fixed_guid_end(bytes, start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT)?;
             if guid_end != start + shifted_cylinder_502::ZERO_RUN_3_AFTER_GUID
                 || !valid_sketch_transform(&transform)
                 || !cylinder_transform_preserves_projected_geometry(&transform)
@@ -444,13 +446,13 @@ fn exact_owned_primitive_parameters<'a, const N: usize>(
     let stream = native_stream(&scope.id)?;
     let mut owners = [None; N];
     for owner in parameter_owners.iter().filter(|owner| {
-            owner.scope_record_index() == scope.record_index
-                && native_stream(owner.id()) == Some(stream)
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|value| value == &owner.record_index())
-        }) {
+        owner.scope_record_index() == scope.record_index
+            && native_stream(owner.id()) == Some(stream)
+            && scope
+                .reference_members()
+                .values()
+                .any(|value| value == &owner.record_index())
+    }) {
         let ordinal = usize::try_from(owner.local_ordinal()).ok()?;
         let slot = owners.get_mut(ordinal)?;
         if slot.replace(owner).is_some() {

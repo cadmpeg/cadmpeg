@@ -65,4 +65,3 @@ fn edge_assignment_candidate_refuses_work_limit() {
                 && limit.operation == "f3d edge assignment candidate"
     ));
 }
-

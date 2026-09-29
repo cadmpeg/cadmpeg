@@ -6,12 +6,18 @@ use cadmpeg_core::CodecError;
 fn assert_fixed_fillet_refusal(operation: &'static str, variable: bool, complete: bool) {
     let mut scope_value = serde_json::to_value(fixed_scope()).unwrap();
     if variable {
-        scope_value["fixed_fillet_parameters"]["groups"][0]["radii"] = serde_json::json!([1.0, 2.0, 3.0]);
-        scope_value["fixed_fillet_parameters"]["groups"][0]["radius_record_indexes"] = serde_json::json!([5, 6, 7]);
-        scope_value["fixed_fillet_parameters"]["groups"][0]["radius_offsets"] = serde_json::json!([0, 8, 16]);
-        scope_value["fixed_fillet_parameters"]["groups"][0]["intermediate_parameters"] = serde_json::json!([0.5]);
-        scope_value["fixed_fillet_parameters"]["groups"][0]["intermediate_parameter_record_indexes"] = serde_json::json!([8]);
-        scope_value["fixed_fillet_parameters"]["groups"][0]["intermediate_parameter_offsets"] = serde_json::json!([24]);
+        scope_value["fixed_fillet_parameters"]["groups"][0]["radii"] =
+            serde_json::json!([1.0, 2.0, 3.0]);
+        scope_value["fixed_fillet_parameters"]["groups"][0]["radius_record_indexes"] =
+            serde_json::json!([5, 6, 7]);
+        scope_value["fixed_fillet_parameters"]["groups"][0]["radius_offsets"] =
+            serde_json::json!([0, 8, 16]);
+        scope_value["fixed_fillet_parameters"]["groups"][0]["intermediate_parameters"] =
+            serde_json::json!([0.5]);
+        scope_value["fixed_fillet_parameters"]["groups"][0]
+            ["intermediate_parameter_record_indexes"] = serde_json::json!([8]);
+        scope_value["fixed_fillet_parameters"]["groups"][0]["intermediate_parameter_offsets"] =
+            serde_json::json!([24]);
     }
     let scope: DesignParameterScope = serde_json::from_value(scope_value).unwrap();
     let selection_group = group(2, 10);
@@ -24,11 +30,25 @@ fn assert_fixed_fillet_refusal(operation: &'static str, variable: bool, complete
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let operands = if complete { std::slice::from_ref(&operand) } else { &[] };
-        let identities = if complete { &[][..] } else { std::slice::from_ref(&identity) };
-        match project_fixed_fillet(&scope, std::slice::from_ref(&selection_group), operands, identities, Some(&ctx)) {
+        let operands = if complete {
+            std::slice::from_ref(&operand)
+        } else {
+            &[]
+        };
+        let identities = if complete {
+            &[][..]
+        } else {
+            std::slice::from_ref(&identity)
+        };
+        match project_fixed_fillet(
+            &scope,
+            std::slice::from_ref(&selection_group),
+            operands,
+            identities,
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected fixed Fillet refusal at {operation}: {other:?}"),
         }
     }

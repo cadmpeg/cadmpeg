@@ -12,10 +12,18 @@ use cadmpeg_core::CodecError;
 
 fn assert_treatment_refusal(operation: &'static str, retained: bool, valid_corner: bool) {
     let mut selection_group = group(2, 10);
-    selection_group.try_set_members(vec![
-        crate::records::identity::Located { value: 10, offset: 0 },
-        crate::records::identity::Located { value: 11, offset: 11 },
-    ]).unwrap();
+    selection_group
+        .try_set_members(vec![
+            crate::records::identity::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::identity::Located {
+                value: 11,
+                offset: 11,
+            },
+        ])
+        .unwrap();
     let mut edge = recipe_edge_operand(11, &[], &[]);
     edge.recipe_state_id = Some(7);
     edge.resolved_edge_slot = Some(17);
@@ -28,9 +36,13 @@ fn assert_treatment_refusal(operation: &'static str, retained: bool, valid_corne
         recipe: DesignVertexRecipe::try_new(DesignVertexRecipeDraft {
             record_index: 10,
             byte_offset: 10,
-            class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned())
+                .unwrap(),
             paired_byte_offset: 26,
-            paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             recipe_record_index: 13,
             recipe_record_byte_offset: 42,
             recipe_id: "f3d:test:construction-recipe#10".into(),
@@ -39,12 +51,17 @@ fn assert_treatment_refusal(operation: &'static str, retained: bool, valid_corne
             recipe_references: Vec::new(),
             recipe_program_offset: 4,
             recipe_program: vec![0],
-            resolution: Some(crate::records::feature::work_geometry::DesignVertexResolution::new(
-                7, if valid_corner { 3 } else { 5 },
-            ).unwrap()),
+            resolution: Some(
+                crate::records::feature::work_geometry::DesignVertexResolution::new(
+                    7,
+                    if valid_corner { 3 } else { 5 },
+                )
+                .unwrap(),
+            ),
             next_record_index: 15,
             next_byte_offset: 210,
-        }).unwrap(),
+        })
+        .unwrap(),
     };
     let history = AsmHistory {
         id: "f3d:test:history".into(),
@@ -70,7 +87,9 @@ fn assert_treatment_refusal(operation: &'static str, retained: bool, valid_corne
                 edges: vec![17],
                 vertices: vec![3, 4, 5],
                 edge_vertices: vec![AsmHistoricalEdge {
-                    edge: 17, start_vertex: 3, end_vertex: 4,
+                    edge: 17,
+                    start_vertex: 3,
+                    end_vertex: 4,
                 }],
                 ..AsmHistoricalTopology::default()
             }),
@@ -88,12 +107,19 @@ fn assert_treatment_refusal(operation: &'static str, retained: bool, valid_corne
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match resolved_edge_treatment_group_with_corners(
-            &selection_group, std::slice::from_ref(&selection_group),
-            std::slice::from_ref(&edge), &[], std::slice::from_ref(&corner),
-            std::slice::from_ref(&history), Some(7), &feature_id, None, Some(&ctx),
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            std::slice::from_ref(&edge),
+            &[],
+            std::slice::from_ref(&corner),
+            std::slice::from_ref(&history),
+            Some(7),
+            &feature_id,
+            None,
+            Some(&ctx),
         ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected treatment refusal at {operation}: {other:?}"),
         }
     }

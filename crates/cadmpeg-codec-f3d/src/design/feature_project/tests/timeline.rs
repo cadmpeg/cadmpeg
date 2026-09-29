@@ -40,7 +40,10 @@ fn work_point_history_state_keys_are_history_qualified() {
         scopes_by_state: HashMap::new(),
     };
 
-    assert_ne!(graph.state_key(None, &scope_a, 7).unwrap(), graph.state_key(None, &scope_b, 7).unwrap());
+    assert_ne!(
+        graph.state_key(None, &scope_a, 7).unwrap(),
+        graph.state_key(None, &scope_b, 7).unwrap()
+    );
 }
 
 #[test]
@@ -873,8 +876,9 @@ fn authored_scope_validation_orders_independent_streams_separately() {
     second.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     let scopes = vec![first, second];
 
-    let ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(None, &scopes, &[])
-        .expect("independent stream-local orders");
+    let ordinals =
+        crate::design::feature_project::authored_scope_ordinals_per_stream(None, &scopes, &[])
+            .expect("independent stream-local orders");
     assert_eq!(ordinals.len(), 2);
     assert!(ordinals.values().all(|ordinal| *ordinal == 0));
     assert!(matches!(
@@ -1106,7 +1110,9 @@ fn numerical_seventh_matrix_angle_preserves_shallow_rotations() {
 }
 
 fn feature_dependency_index_fixture() -> cadmpeg_ir::features::Feature {
-    use cadmpeg_ir::features::{Feature, FeatureEvaluation, FeatureId, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
     Feature {
         id: FeatureId::mint("f3d:model:feature#dependency-index").unwrap(),
         ordinal: 0,
@@ -1118,7 +1124,10 @@ fn feature_dependency_index_fixture() -> cadmpeg_ir::features::Feature {
         source_text: None,
         source_content: Default::default(),
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-            FeatureOperation::Native { kind: "IndexTest".into(), parameters: Default::default() },
+            FeatureOperation::Native {
+                kind: "IndexTest".into(),
+                parameters: Default::default(),
+            },
         )),
         native_ref: None,
     }
@@ -1133,9 +1142,12 @@ fn assert_feature_dependency_index_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::ensure_feature_dependencies_precede(Some(&ctx), std::slice::from_ref(&feature)) {
+        match super::super::ensure_feature_dependencies_precede(
+            Some(&ctx),
+            std::slice::from_ref(&feature),
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1172,15 +1184,22 @@ fn authored_ordinal_limit_fixture() -> (Vec<DesignParameterScope>, DesignFeature
         crate::records::entity_header::DesignTimelineFrame::test_items(
             0,
             vec![
-                crate::records::identity::Located { value: 10, offset: 0 },
-                crate::records::identity::Located { value: 11, offset: 0 },
+                crate::records::identity::Located {
+                    value: 10,
+                    offset: 0,
+                },
+                crate::records::identity::Located {
+                    value: 11,
+                    offset: 0,
+                },
             ],
         ),
         crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         std::num::NonZeroU64::new(1).unwrap(),
         0,
         std::num::NonZeroU64::new(1).unwrap(),
-    ).unwrap();
+    )
+    .unwrap();
     (vec![first, second], timeline)
 }
 
@@ -1188,7 +1207,11 @@ fn assert_authored_ordinal_refusal(operation: &'static str, with_timeline: bool,
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let (scopes, timeline) = authored_ordinal_limit_fixture();
-    let timelines = if with_timeline { std::slice::from_ref(&timeline) } else { &[] };
+    let timelines = if with_timeline {
+        std::slice::from_ref(&timeline)
+    } else {
+        &[]
+    };
     for limit in 0..25 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -1196,18 +1219,21 @@ fn assert_authored_ordinal_refusal(operation: &'static str, with_timeline: bool,
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = if per_stream {
             crate::design::feature_project::authored_scope_ordinals_per_stream(
-                Some(&ctx), &scopes, timelines,
+                Some(&ctx),
+                &scopes,
+                timelines,
             )
         } else {
-            crate::design::feature_project::authored_scope_ordinals(
-                Some(&ctx), &scopes, timelines,
-            )
+            crate::design::feature_project::authored_scope_ordinals(Some(&ctx), &scopes, timelines)
         };
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
         }
     }
@@ -1255,17 +1281,21 @@ fn history_graph_limit_fixture() -> Vec<DesignParameterScope> {
         crate::records::feature::scope::DesignFeatureKind::Extrude,
         10,
     );
-    first.try_edit(|draft| draft.history_state_id = Some(7)).unwrap();
+    first
+        .try_edit(|draft| draft.history_state_id = Some(7))
+        .unwrap();
     let mut second = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#11",
         crate::records::feature::scope::DesignFeatureKind::Extrude,
         11,
     );
-    second.try_edit(|draft| {
-        draft.history_state_id = Some(8);
-        draft.previous_history_state_id = Some(7);
-        draft.layout_fixture_tail();
-    }).unwrap();
+    second
+        .try_edit(|draft| {
+            draft.history_state_id = Some(8);
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     vec![first, second]
 }
 
@@ -1277,15 +1307,25 @@ fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        if retained { policy.limits.max_retained_bytes = limit; }
-        else { policy.limits.max_collection_items = limit; }
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match ScopeHistoryGraph::new(Some(&ctx), &scopes, &[], &[], &[], &[]) {
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == (if retained { ResourceDimension::RetainedBytes }
-                        else { ResourceDimension::CollectionItems }) => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension
+                        == (if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1376,23 +1416,44 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let (scopes, timeline) = authored_ordinal_limit_fixture();
-    let unit = if operation == "f3d projected parameter unit" { "custom" } else { "mm" };
+    let unit = if operation == "f3d projected parameter unit" {
+        "custom"
+    } else {
+        "mm"
+    };
     let expression_lookup = operation.starts_with("f3d expression ");
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(40), if expression_lookup { "Width / 2" } else { "1 mm" },
-        "FeatureInput", Some(unit), "InternalValue", 0.1,
-    )).unwrap();
+        Some(40),
+        if expression_lookup {
+            "Width / 2"
+        } else {
+            "1 mm"
+        },
+        "FeatureInput",
+        Some(unit),
+        "InternalValue",
+        0.1,
+    ))
+    .unwrap();
     parameter.id = "f3d:Design/BulkStream.dat:design-parameter#41".to_owned();
     parameter.record_index = 41;
-    parameter.try_set_source(crate::records::parameters::DesignParameterSource::new(
-        parameter.source_kind().to_owned(), Some(40), parameter.family_discriminator(),
-    ).unwrap()).unwrap();
+    parameter
+        .try_set_source(
+            crate::records::parameters::DesignParameterSource::new(
+                parameter.source_kind().to_owned(),
+                Some(40),
+                parameter.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let owner = crate::records::parameters::DesignParameterOwner::try_from(
         crate::records::parameters::DesignParameterOwnerWire {
             id: "f3d:Design/BulkStream.dat:design-parameter-owner#40".to_owned(),
             byte_offset: 0,
             frame_length: 103,
-            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
             record_index: 40,
             scope_record_index: 10,
             local_ordinal: 0,
@@ -1403,14 +1464,25 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
             variant: None,
             companion_record_index: 42,
         },
-    ).unwrap();
+    )
+    .unwrap();
     let document_alias = operation.starts_with("f3d document alias");
-    let owners = if document_alias { &[][..] } else { std::slice::from_ref(&owner) };
+    let owners = if document_alias {
+        &[][..]
+    } else {
+        std::slice::from_ref(&owner)
+    };
     let mut native = vec![parameter];
     if expression_lookup {
         let mut width = parse_design_parameter_record(&parameter_record(
-            None, "2 mm", "User Parameter", Some("mm"), "Width", 0.2,
-        )).unwrap();
+            None,
+            "2 mm",
+            "User Parameter",
+            Some("mm"),
+            "Width",
+            0.2,
+        ))
+        .unwrap();
         width.id = "f3d:Design/BulkStream.dat:design-parameter#42".to_owned();
         width.record_index = 42;
         native.push(width);
@@ -1420,9 +1492,13 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        if materialized { policy.limits.max_materialized_bytes = limit; }
-        else if retained { policy.limits.max_retained_bytes = limit; }
-        else { policy.limits.max_collection_items = limit; }
+        if materialized {
+            policy.limits.max_materialized_bytes = limit;
+        } else if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = project_parameter_design_with_edge_identities(
             Some(&ctx),
@@ -1450,10 +1526,18 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes }
-                        else if retained { ResourceDimension::RetainedBytes }
-                        else { ResourceDimension::CollectionItems }) => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension
+                        == (if materialized {
+                            ResourceDimension::MaterializedBytes
+                        } else if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1627,21 +1711,34 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
     let (scopes, timeline) = authored_ordinal_limit_fixture();
     let parameter = |record_index, expression: &str, name: &str| {
         let mut parameter = parse_design_parameter_record(&parameter_record(
-            None, expression, "User Parameter", Some("mm"), name, 1.0,
-        )).unwrap();
+            None,
+            expression,
+            "User Parameter",
+            Some("mm"),
+            name,
+            1.0,
+        ))
+        .unwrap();
         parameter.id = format!("f3d:Design/BulkStream.dat:design-parameter#{record_index}");
         parameter.record_index = record_index;
         parameter
     };
-    let native = [parameter(40, "1 mm", "Width"), parameter(41, "Width / 2", "Half")];
+    let native = [
+        parameter(40, "1 mm", "Width"),
+        parameter(41, "Width / 2", "Half"),
+    ];
     let materialized = operation == "f3d expression identifier lookup";
     let max_limit = if retained { 4096 } else { 128 };
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        if materialized { policy.limits.max_materialized_bytes = limit; }
-        else if retained { policy.limits.max_retained_bytes = limit; }
-        else { policy.limits.max_collection_items = limit; }
+        if materialized {
+            policy.limits.max_materialized_bytes = limit;
+        } else if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = project_parameter_design_with_edge_identities(
             Some(&ctx),
@@ -1669,10 +1766,18 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes }
-                        else if retained { ResourceDimension::RetainedBytes }
-                        else { ResourceDimension::CollectionItems }) => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension
+                        == (if materialized {
+                            ResourceDimension::MaterializedBytes
+                        } else if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -1709,37 +1814,62 @@ fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let (mut scopes, timeline) = authored_ordinal_limit_fixture();
-    scopes[0].try_edit(|draft| draft.history_state_id = Some(7)).unwrap();
-    scopes[1].try_edit(|draft| {
-        draft.history_state_id = Some(8);
-        draft.previous_history_state_id = Some(7);
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scopes[0]
+        .try_edit(|draft| draft.history_state_id = Some(7))
+        .unwrap();
+    scopes[1]
+        .try_edit(|draft| {
+            draft.history_state_id = Some(8);
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let max_limit = if retained { 2048 } else { 48 };
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        if retained { policy.limits.max_retained_bytes = limit; }
-        else { policy.limits.max_collection_items = limit; }
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = project_parameter_design_with_edge_identities(
             Some(&ctx),
             &crate::design::feature_project::ProjectInputs {
-                native: &[], owners: &[], scopes: &scopes,
+                native: &[],
+                owners: &[],
+                scopes: &scopes,
                 timelines: std::slice::from_ref(&timeline),
-                construction_groups: &[], fillet_radius_groups: &[], edge_operands: &[],
-                edge_identity_operands: &[], edge_treatment_vertex_operands: &[],
-                entity_selection_operands: &[], curve_identities: &[], face_operands: &[],
-                body_recipe_operands: &[], legacy_loft_body_carriers: &[], placements: &[],
-                body_bindings: &[], component_naming_spaces: &[], histories: &[],
+                construction_groups: &[],
+                fillet_radius_groups: &[],
+                edge_operands: &[],
+                edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
+                entity_selection_operands: &[],
+                curve_identities: &[],
+                face_operands: &[],
+                body_recipe_operands: &[],
+                legacy_loft_body_carriers: &[],
+                placements: &[],
+                body_bindings: &[],
+                component_naming_spaces: &[],
+                histories: &[],
             },
         );
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == (if retained { ResourceDimension::RetainedBytes }
-                        else { ResourceDimension::CollectionItems }) => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                    && failure.dimension
+                        == (if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }

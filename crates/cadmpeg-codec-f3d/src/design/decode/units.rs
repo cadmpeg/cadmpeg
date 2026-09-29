@@ -46,7 +46,10 @@ fn ascii_at(bytes: &[u8], at: usize) -> Option<(&str, usize)> {
     let start = at.checked_add(4)?;
     let end = start.checked_add(length)?;
     let raw = bytes.get(start..end)?;
-    if !raw.iter().all(|byte| byte.is_ascii_graphic() || *byte == b' ') {
+    if !raw
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
         return None;
     }
     Some((std::str::from_utf8(raw).ok()?, end))
@@ -116,7 +119,9 @@ fn unit_entry(bytes: &[u8], at: usize) -> Option<(&str, &'static str)> {
         return None;
     }
     let start = position.checked_add(4)?;
-    let end = count.checked_mul(2).and_then(|size| start.checked_add(size))?;
+    let end = count
+        .checked_mul(2)
+        .and_then(|size| start.checked_add(size))?;
     let raw = bytes.get(start..end)?;
     let value = LENGTH_UNIT_NAMES.iter().copied().find(|name| {
         name.len() == count
@@ -172,10 +177,13 @@ fn decode_modeling_length_unit(
                             continue;
                         };
                         if property == MODELING_LENGTH_PROPERTY {
-                            return String::from_utf8(ctx.copy_retained(value.as_bytes(),
-                                "f3d document length unit")?)
-                                .map(Some)
-                                .map_err(|_| CodecError::malformed("validated length unit is not UTF-8"));
+                            return String::from_utf8(
+                                ctx.copy_retained(value.as_bytes(), "f3d document length unit")?,
+                            )
+                            .map(Some)
+                            .map_err(|_| {
+                                CodecError::malformed("validated length unit is not UTF-8")
+                            });
                         }
                     }
                 }
@@ -211,8 +219,8 @@ pub(crate) fn decode_document_length_unit(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{
-        CUSTOM_SYSTEM, ENTRY_NAMESPACE, LENGTH_UNIT_NAMES,
-        SYSTEM_NAMESPACE, UNIT_ENTRY_COUNT, UNIT_SYSTEM_COUNT,
+        CUSTOM_SYSTEM, ENTRY_NAMESPACE, LENGTH_UNIT_NAMES, SYSTEM_NAMESPACE, UNIT_ENTRY_COUNT,
+        UNIT_SYSTEM_COUNT,
     };
     use crate::test_support::{lp_ascii, lp_utf16};
 
@@ -387,14 +395,23 @@ pub(crate) mod tests {
                 && failure.additional == u64::try_from(unit.len()).unwrap()));
     }
     #[test]
-    fn millimeter_unit_refuses_retained_limit() { unit_text_refusal("millimeter"); }
+    fn millimeter_unit_refuses_retained_limit() {
+        unit_text_refusal("millimeter");
+    }
     #[test]
-    fn centimeter_unit_refuses_retained_limit() { unit_text_refusal("centimeter"); }
+    fn centimeter_unit_refuses_retained_limit() {
+        unit_text_refusal("centimeter");
+    }
     #[test]
-    fn meter_unit_refuses_retained_limit() { unit_text_refusal("meter"); }
+    fn meter_unit_refuses_retained_limit() {
+        unit_text_refusal("meter");
+    }
     #[test]
-    fn inch_unit_refuses_retained_limit() { unit_text_refusal("inch"); }
+    fn inch_unit_refuses_retained_limit() {
+        unit_text_refusal("inch");
+    }
     #[test]
-    fn foot_unit_refuses_retained_limit() { unit_text_refusal("foot"); }
-
+    fn foot_unit_refuses_retained_limit() {
+        unit_text_refusal("foot");
+    }
 }

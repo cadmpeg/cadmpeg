@@ -5,13 +5,14 @@
 //! length-prefixes. Callers build IDs through the named functions below.
 
 use crate::records::{
-    feature::{
-        assembly::{DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection},
-        combine::DesignCombineExternalBodyIdentity,
-        scope::DesignParameterScope,
-    },
-    parameters::DesignParameter,
+    feature::combine::DesignCombineExternalBodyIdentity, parameters::DesignParameter,
     sketch_placement::DesignSketchPlacement,
+};
+
+#[cfg(test)]
+use crate::records::feature::{
+    assembly::{DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection},
+    scope::DesignParameterScope,
 };
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
@@ -232,6 +233,7 @@ pub(crate) fn neutral_component_occurrence_id(
 
 /// Neutral occurrence identity for an external component-insert scope whose
 /// target document is not present in the container.
+#[cfg(test)]
 pub(crate) fn neutral_component_insert_occurrence_id(
     scope: &DesignParameterScope,
 ) -> cadmpeg_ir::ids::OccurrenceId {
@@ -252,6 +254,7 @@ pub(crate) fn neutral_component_insert_occurrence_id(
 }
 
 /// Neutral assembly-joint key projected from one Design parameter scope.
+#[cfg(test)]
 pub(crate) fn neutral_assembly_joint_id(
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> cadmpeg_ir::products::JointId {
@@ -276,7 +279,6 @@ pub(crate) fn feature_input_topology_id(
     history_input_state_id(&history_input_prefix(&feature_key, previous_state_id))
 }
 
-
 /// The Design configuration record key for the archive entry `entry_name`.
 pub(crate) fn configuration_entry_id(
     entry_name: &str,
@@ -291,6 +293,7 @@ pub(crate) fn configuration_entry_id(
 
 /// The neutral configuration key for `variant_name` under `entry_name`, with
 /// both names length-prefixed into `#{len}:{key}{len}:{key}` segments.
+#[cfg(test)]
 pub(crate) fn neutral_configuration_id(
     entry_name: &str,
     variant_name: &str,
@@ -310,6 +313,7 @@ pub(crate) fn neutral_configuration_id(
 }
 
 /// The neutral feature key for a parameter `scope`.
+#[cfg(test)]
 pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
     neutral_feature_id_parts(
         native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
@@ -321,6 +325,7 @@ pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::fe
 
 /// The neutral feature key from its `stream`, `kind`, ordinal, and scope record
 /// index, with `stream` and `kind` length-prefixed into `#{len}:{key}` segments.
+#[cfg(test)]
 pub(crate) fn neutral_feature_id_parts(
     stream: &str,
     kind: &str,
@@ -384,6 +389,7 @@ pub(crate) fn neutral_combine_external_body_id(
 }
 
 /// Feature-input-local connector key for one pathless axial assembly selector.
+#[cfg(test)]
 pub(crate) fn neutral_assembly_axial_object_id(
     identity: &DesignAssemblyAxialSelectorIdentity,
 ) -> String {
@@ -429,6 +435,7 @@ pub(crate) fn neutral_assembly_axial_object_id(
 
 /// Feature-input-local connector key for one direct legacy `As-built` face
 /// selection.
+#[cfg(test)]
 pub(crate) fn neutral_assembly_legacy_object_id(
     selection: &DesignAssemblyLegacySelection,
 ) -> String {
@@ -449,6 +456,7 @@ pub(crate) fn neutral_assembly_legacy_object_id(
 }
 
 /// The neutral embedded-asset key for one exact archive entry.
+#[cfg(test)]
 pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId {
     let entry_name = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(entry_name);
     let key = cadmpeg_ir::ids::IdentityKey::from(entry_name.as_str().len())
@@ -517,6 +525,7 @@ fn sketch_placement_key(placement: &DesignSketchPlacement) -> cadmpeg_ir::ids::I
 }
 
 /// The neutral planar-sketch point-entity key under `sketch`.
+#[cfg(test)]
 pub(crate) fn neutral_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
@@ -532,6 +541,7 @@ pub(crate) fn neutral_sketch_point_id(
 }
 
 /// The neutral planar-sketch curve-entity key under `sketch`.
+#[cfg(test)]
 pub(crate) fn neutral_sketch_curve_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     primary_id: u64,
@@ -544,6 +554,7 @@ pub(crate) fn neutral_sketch_curve_id(
 }
 
 /// The neutral planar-sketch text-entity key under `sketch`.
+#[cfg(test)]
 pub(crate) fn neutral_sketch_text_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
@@ -560,6 +571,7 @@ pub(crate) fn neutral_sketch_text_id(
 
 /// The source-local neutral key for a planar sketch record that has no
 /// persistent entity identity.
+#[cfg(test)]
 pub(crate) fn neutral_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     record_index: u32,
@@ -575,6 +587,7 @@ pub(crate) fn neutral_sketch_record_id(
 }
 
 /// The neutral spatial-sketch curve-entity key under `sketch`.
+#[cfg(test)]
 pub(crate) fn neutral_spatial_sketch_curve_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     primary_id: u64,
@@ -587,6 +600,7 @@ pub(crate) fn neutral_spatial_sketch_curve_id(
 }
 
 /// The neutral spatial-sketch point-entity key under `sketch`.
+#[cfg(test)]
 pub(crate) fn neutral_spatial_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
@@ -603,6 +617,7 @@ pub(crate) fn neutral_spatial_sketch_point_id(
 
 /// The source-local neutral key for a spatial-sketch record that has no
 /// persistent entity identity.
+#[cfg(test)]
 pub(crate) fn neutral_spatial_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     record_index: u32,
@@ -618,6 +633,7 @@ pub(crate) fn neutral_spatial_sketch_record_id(
 }
 
 /// The neutral spatial-sketch surface-entity key under `sketch`.
+#[cfg(test)]
 pub(crate) fn neutral_spatial_sketch_surface_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
@@ -634,6 +650,7 @@ pub(crate) fn neutral_spatial_sketch_surface_id(
 
 /// A single-tag sketch-entity key: the escaped owning-sketch key, length-
 /// prefixed, followed by a one-character tag (`p`/`t`/`s`/`x`) and one id.
+#[cfg(test)]
 fn sketch_entity_tagged(
     sketch_key: &str,
     tag: cadmpeg_ir::ids::IdentityKey,
@@ -649,6 +666,7 @@ fn sketch_entity_tagged(
 
 /// A curve sketch-entity key: the escaped owning-sketch key, length-prefixed,
 /// followed by `c`, the primary id, and the colon-joined secondary id.
+#[cfg(test)]
 fn sketch_entity_curve(
     sketch_key: &str,
     primary_id: u64,
@@ -681,6 +699,7 @@ pub(crate) fn neutral_sketch_constraint_id(
 
 /// The neutral dimension-constraint key derived from a `parameter` key and a
 /// dimension `form`, with the parameter key tail and form length-prefixed.
+#[cfg(test)]
 pub(crate) fn neutral_dimension_constraint_id(
     parameter: &cadmpeg_ir::features::ParameterId,
     form: &str,
@@ -809,11 +828,13 @@ native_record_id!(
 );
 native_record_id!(
     /// The native ordered Design feature-timeline record key.
+    #[cfg(test)]
     native_design_feature_timeline_id,
     "design-feature-timeline"
 );
 native_record_id!(
     /// The native Design component naming-space binding key.
+    #[cfg(test)]
     native_design_component_naming_space_id,
     "design-component-naming-space"
 );
@@ -839,21 +860,25 @@ native_record_id!(
 );
 native_record_id!(
     /// The native persistent-reference record key.
+    #[cfg(test)]
     native_persistent_reference_id,
     "persistent-reference"
 );
 native_record_id!(
     /// The native lost-edge-reference record key.
+    #[cfg(test)]
     native_lost_edge_reference_id,
     "lost-edge-reference"
 );
 native_record_id!(
     /// The native design-type record key.
+    #[cfg(test)]
     native_design_type_id,
     "design-type"
 );
 native_record_id!(
     /// The native design-record-header record key.
+    #[cfg(test)]
     native_design_record_header_id,
     "design-record-header"
 );
@@ -869,16 +894,19 @@ native_record_id!(
 );
 native_record_id!(
     /// The native mesh-body record key.
+    #[cfg(test)]
     native_mesh_body_id,
     "mesh-body"
 );
 native_record_id!(
     /// The native Design mesh-feature graph key.
+    #[cfg(test)]
     native_design_mesh_feature_id,
     "design-mesh-feature"
 );
 native_record_id!(
     /// The native design-body-member record key.
+    #[cfg(test)]
     native_design_body_member_id,
     "design-body-member"
 );

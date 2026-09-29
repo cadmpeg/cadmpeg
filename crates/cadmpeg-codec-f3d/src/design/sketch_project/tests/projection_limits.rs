@@ -3,8 +3,8 @@ use crate::design::sketch_project::project_sketch_design;
 use crate::design::sketch_project::project_spatial_sketch_constraints;
 use crate::design::sketch_project::project_spatial_sketch_design;
 use crate::records::sketch_geometry::SketchCurveGeometry;
-use crate::records::sketch_geometry::SketchSurface;
 use crate::records::sketch_geometry::SketchCurveIdentity;
+use crate::records::sketch_geometry::SketchSurface;
 use crate::records::sketch_geometry::SketchText;
 use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::sketch_relations::SketchRelation;
@@ -32,7 +32,8 @@ fn owner_limit_curve(spatial: bool) -> SketchCurveIdentity {
                 Point3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0).unit().unwrap(),
                 Vector3::new(1.0, 0.0, 0.0),
-            ).unwrap()
+            )
+            .unwrap()
         }),
     }
 }
@@ -40,15 +41,19 @@ fn owner_limit_curve(spatial: bool) -> SketchCurveIdentity {
 fn owner_limit_placement() -> DesignSketchPlacement {
     DesignSketchPlacement {
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
-            0, crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
-        ).unwrap(),
+            0,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
         id: "f3d:BulkStream.dat:placement#0".into(),
         scope_record_index: None,
-        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned()).unwrap(),
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
+            .unwrap(),
         visibility: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
     }
 }
 
@@ -112,13 +117,19 @@ fn spline_segment_index_refuses_collection_limit() {
     ));
     assert!(segments.is_empty());
     let mut segments = std::collections::HashMap::new();
-    crate::design::sketch_project::record_spline_segment(None, &mut segments, "Design", 10, points).unwrap();
-    crate::design::sketch_project::record_spline_segment(None, &mut segments, "Design", 10, points).unwrap();
+    crate::design::sketch_project::record_spline_segment(None, &mut segments, "Design", 10, points)
+        .unwrap();
+    crate::design::sketch_project::record_spline_segment(None, &mut segments, "Design", 10, points)
+        .unwrap();
     assert_eq!(segments.get(&("Design", 10)), Some(&Some(points)));
     crate::design::sketch_project::record_spline_segment(
-        None, &mut segments, "Design", 10,
+        None,
+        &mut segments,
+        "Design",
+        10,
         [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(segments.get(&("Design", 10)), Some(&None));
 }
 
@@ -145,7 +156,9 @@ fn spatial_spline_member_index_refuses_collection_limit() {
         SketchRelationReturnMember::from_index(10),
         SketchRelationReturnMember::from_index(10),
     ];
-    assert!(!crate::design::sketch_project::distinct_return_member_indices(None, &duplicates).unwrap());
+    assert!(
+        !crate::design::sketch_project::distinct_return_member_indices(None, &duplicates).unwrap()
+    );
 }
 
 #[test]
@@ -183,27 +196,45 @@ fn spatial_constraint_indices_refuse_collection_limits() {
             cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point {
                 position: Point3::new(0.0, 0.0, 0.0),
             },
-        ).unwrap(),
-    ).with_native_ref(Some(curve.id.clone()));
+        )
+        .unwrap(),
+    )
+    .with_native_ref(Some(curve.id.clone()));
     for (limit, placements, entities, operation) in [
-        (0, std::slice::from_ref(&placement), std::slice::from_ref(&entity),
-            "f3d spatial constraint sketch index"),
-        (0, &[][..], &[][..], "f3d spatial constraint native record index"),
-        (1, &[][..], std::slice::from_ref(&entity),
-            "f3d spatial constraint entity index"),
+        (
+            0,
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&entity),
+            "f3d spatial constraint sketch index",
+        ),
+        (
+            0,
+            &[][..],
+            &[][..],
+            "f3d spatial constraint native record index",
+        ),
+        (
+            1,
+            &[][..],
+            std::slice::from_ref(&entity),
+            "f3d spatial constraint entity index",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            project_spatial_sketch_constraints(
-                Some(&ctx), placements, &[], &[], std::slice::from_ref(&curve), &[], entities,
+        assert!(
+            matches!(
+                project_spatial_sketch_constraints(
+                    Some(&ctx), placements, &[], &[], std::slice::from_ref(&curve), &[], entities,
+                ),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
             ),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ), "operation {operation}");
+            "operation {operation}"
+        );
     }
 }
 
@@ -258,19 +289,30 @@ fn text_frame_owner_indices_refuse_collection_limits() {
     let curve = owner_limit_curve(false);
     let text = owner_limit_text();
     for (curves, texts, operation) in [
-        (std::slice::from_ref(&curve), &[][..], "f3d text frame curve owner"),
-        (&[][..], std::slice::from_ref(&text), "f3d text frame text owner"),
+        (
+            std::slice::from_ref(&curve),
+            &[][..],
+            "f3d text frame curve owner",
+        ),
+        (
+            &[][..],
+            std::slice::from_ref(&text),
+            "f3d text frame text owner",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            crate::design::sketch_project::text_frame_curve_records(Some(&ctx), &[], curves, texts),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ), "operation {operation}");
+        assert!(
+            matches!(
+                crate::design::sketch_project::text_frame_curve_records(Some(&ctx), &[], curves, texts),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ),
+            "operation {operation}"
+        );
     }
 }
 
@@ -284,14 +326,16 @@ fn owner_limit_surface() -> SketchSurface {
         entity_genesis: None,
         persistent_id: std::num::NonZeroU64::new(2).unwrap(),
         geometry: crate::records::sketch_geometry::SketchSurfaceGeometry::from_parts(
-            1, 1,
+            1,
+            1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
     }
 }
 
@@ -328,15 +372,18 @@ fn spatial_surface_lanes_refuse_each_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            project_spatial_sketch_design(
-                Some(&ctx), std::slice::from_ref(&placement), &[], &[],
-                std::slice::from_ref(&surface), &[], EPS_PROJECTION_LIMITS_E6,
+        assert!(
+            matches!(
+                project_spatial_sketch_design(
+                    Some(&ctx), std::slice::from_ref(&placement), &[], &[],
+                    std::slice::from_ref(&surface), &[], EPS_PROJECTION_LIMITS_E6,
+                ),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
             ),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ), "limit {limit}, operation {operation}");
+            "limit {limit}, operation {operation}"
+        );
     }
 }
 
@@ -352,12 +399,20 @@ fn spatial_sketch_id_index_copy_refuses_retained_limit() {
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_spatial_sketch_design(
-            Some(&ctx), std::slice::from_ref(&placement), &[], &[],
-            std::slice::from_ref(&surface), &[], EPS_PROJECTION_LIMITS_E6,
+            Some(&ctx),
+            std::slice::from_ref(&placement),
+            &[],
+            &[],
+            std::slice::from_ref(&surface),
+            &[],
+            EPS_PROJECTION_LIMITS_E6,
         ) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d spatial sketch id index copy" => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.operation == "f3d spatial sketch id index copy" =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected spatial sketch ID copy refusal: {other:?}"),
         }
     }
@@ -378,12 +433,15 @@ fn sketch_nurbs_lanes_refuse_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            crate::design::sketch_project::collect_project_items(Some(&ctx), [1.0_f64], operation),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ), "operation {operation}");
+        assert!(
+            matches!(
+                crate::design::sketch_project::collect_project_items(Some(&ctx), [1.0_f64], operation),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ),
+            "operation {operation}"
+        );
     }
 }
 
@@ -402,22 +460,35 @@ fn text_frame_curve_records_refuse_collection_limit() {
         owner_reference: 42,
         owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("Sketch_42").unwrap()),
         auxiliary_references: crate::records::identity::ReferenceRun::located(vec![
-            crate::records::identity::Located { value: 20, offset: 0 },
+            crate::records::identity::Located {
+                value: 20,
+                offset: 0,
+            },
         ]),
         rectangular_counted_reference_count: None,
-        members: vec![SketchRelationMember::from_index(20), SketchRelationMember::from_index(10)]
-            .try_into().unwrap(),
+        members: vec![
+            SketchRelationMember::from_index(20),
+            SketchRelationMember::from_index(10),
+        ]
+        .try_into()
+        .unwrap(),
         owner_reference_offset: 0,
         definition: crate::records::sketch_relations::SketchRelationDefinition::new(
             0x100_0000_0000,
-            Some(crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
-                text_reference: 20,
-            }),
-        ).unwrap(),
+            Some(
+                crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
+                    text_reference: 20,
+                },
+            ),
+        )
+        .unwrap(),
         entity_genesis: None,
-        return_members: vec![SketchRelationReturnMember::from_index(10)].try_into().unwrap(),
+        return_members: vec![SketchRelationReturnMember::from_index(10)]
+            .try_into()
+            .unwrap(),
         raw_bytes: vec![0; 160],
-    }).unwrap();
+    })
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
@@ -466,12 +537,15 @@ fn projected_sketch_text_copies_refuse_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            crate::design::sketch_project::copy_project_text(Some(&ctx), "input", operation),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation
-        ), "operation {operation}");
+        assert!(
+            matches!(
+                crate::design::sketch_project::copy_project_text(Some(&ctx), "input", operation),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::RetainedBytes
+                        && failure.operation == operation
+            ),
+            "operation {operation}"
+        );
     }
 }
 
@@ -495,12 +569,15 @@ fn projected_sketch_entries_refuse_collection_limit() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut entries = Vec::new();
-        assert!(matches!(
-            crate::design::sketch_project::push_project_item(Some(&ctx), &mut entries, 1, operation),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ), "operation {operation}");
+        assert!(
+            matches!(
+                crate::design::sketch_project::push_project_item(Some(&ctx), &mut entries, 1, operation),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ),
+            "operation {operation}"
+        );
         assert!(entries.is_empty());
     }
 }
@@ -519,7 +596,8 @@ fn spatial_constraint_sketch_membership_refuses_work_limit() {
             cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point {
                 position: Point3::new(0.0, 0.0, 0.0),
             },
-        ).unwrap(),
+        )
+        .unwrap(),
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -587,4 +665,3 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         assert!(members.is_empty());
     }
 }
-

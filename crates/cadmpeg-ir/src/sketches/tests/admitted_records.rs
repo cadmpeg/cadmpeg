@@ -43,15 +43,18 @@ fn polygon_uniqueness_index_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let entities = ["first", "second", "third"].map(|suffix| {
-        crate::sketches::SketchEntityId::mint(format!("test:model:entity#{suffix}")).unwrap()
-    }).into_iter().collect();
+    let entities = ["first", "second", "third"]
+        .map(|suffix| {
+            crate::sketches::SketchEntityId::mint(format!("test:model:entity#{suffix}")).unwrap()
+        })
+        .into_iter()
+        .collect();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = crate::sketches::SketchPolygon::try_new_charged(
-        entities, &ctx, "test polygon uniqueness");
+    let result =
+        crate::sketches::SketchPolygon::try_new_charged(entities, &ctx, "test polygon uniqueness");
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "test polygon uniqueness"));
@@ -67,12 +70,18 @@ fn planar_offset_parameter_setter_preserves_admitted_pairs() {
 
     let source = SketchEntityId::mint("test:model:entity#source").unwrap();
     let result = SketchEntityId::mint("test:model:entity#result").unwrap();
-    let pair = SketchOffsetPair { source, result, source_reversed: false };
-    let mut definition = SketchConstraintDefinition::try_from(
-        SketchConstraintDefinitionInput::Offset {
-            pairs: vec![pair.clone()], distance: length(5.0), parameter: None,
-        },
-    ).unwrap();
+    let pair = SketchOffsetPair {
+        source,
+        result,
+        source_reversed: false,
+    };
+    let mut definition =
+        SketchConstraintDefinition::try_from(SketchConstraintDefinitionInput::Offset {
+            pairs: vec![pair.clone()],
+            distance: length(5.0),
+            parameter: None,
+        })
+        .unwrap();
     let parameter = OffsetParameter {
         id: ParameterId::mint("test:model:parameter#distance").unwrap(),
         negated: true,

@@ -194,7 +194,8 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         &[],
         &[],
         &[history],
-    ).expect("history face binding resource budget");
+    )
+    .expect("history face binding resource budget");
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -408,7 +409,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         std::slice::from_ref(&history),
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
     assert_eq!(operands[0].changed_candidate_faces, [face(7)]);
     assert_eq!(operands[0].resolved_face_slots, [7]);
@@ -476,7 +478,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         std::slice::from_ref(&cylinder_history),
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
 
     let mut stale_active_operand = cylinder_operands[0].clone();
@@ -492,7 +495,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         std::slice::from_ref(&cylinder_history),
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(stale_active_operands[0].resolved_face_slots, [7]);
 
     let mut ambiguous_geometry_history = cylinder_history;
@@ -518,7 +522,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         &[ambiguous_geometry_history],
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert!(ambiguous_geometry_operands[0]
         .resolved_face_slots
         .is_empty());
@@ -537,7 +542,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         &[history],
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());
     assert!(rejected[0].resolved_face_slots.is_empty());
@@ -914,7 +920,8 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         &[],
         &[],
         &[history],
-    ).expect("history face binding resource budget");
+    )
+    .expect("history face binding resource budget");
 
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         face:

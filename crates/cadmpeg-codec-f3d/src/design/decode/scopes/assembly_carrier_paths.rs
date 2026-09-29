@@ -10,8 +10,8 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed_utf16_ascii_eq};
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed_utf16_ascii_eq};
 use crate::layout::assembly_class_363_264_frame_360_child as class_363_child;
 use crate::layout::assembly_class_363_264_frame_360_leading as class_363_leading;
 use crate::layout::assembly_class_363_264_frame_363_carrier as class_363_carrier;
@@ -194,7 +194,10 @@ fn exact_class_307_joint_origin(
         "307",
         class_307_joint_origin::LEN,
     )?;
-    let identity_end = fixed_guid_end(bytes, start.checked_add(class_307_joint_origin::IDENTITY_GUID)?)?;
+    let identity_end = fixed_guid_end(
+        bytes,
+        start.checked_add(class_307_joint_origin::IDENTITY_GUID)?,
+    )?;
     let kind_end = fixed_utf16_ascii_eq(
         bytes,
         start.checked_add(class_307_joint_origin::KIND_CODE_UNIT_COUNT)?,

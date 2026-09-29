@@ -118,7 +118,8 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
             &[selector_with_counts(0, &[], &[17, 18])],
             [&[17][..]],
             None,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(vec![17])
     );
     assert_eq!(
@@ -126,7 +127,8 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
             &[selector_with_counts(0, &[18], &[17, 18])],
             [&[17, 18][..]],
             None,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(vec![18])
     );
     assert_eq!(
@@ -134,7 +136,8 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
             &[selector_with_counts(0, &[18], &[17, 18])],
             [&[17][..]],
             None,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
     let assignment_candidates = [

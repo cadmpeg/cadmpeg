@@ -96,13 +96,16 @@ fn spatial_dimension_matchers_refuse_infinite_measured_distances() {
         Some(f64::INFINITY)
     );
     assert!(
-        crate::design::dimensions::owner_scoped_spatial_parallel_line_set_dimension_definition(None,
+        crate::design::dimensions::owner_scoped_spatial_parallel_line_set_dimension_definition(
+            None,
             &entities,
             &sketch,
             &parameter,
             &parameter_id,
             0.0,
-        ).transpose().unwrap()
+        )
+        .transpose()
+        .unwrap()
         .is_none()
     );
 }
@@ -208,12 +211,15 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
-    assert!(radial_dimension_definition(None,
+    assert!(radial_dimension_definition(
+        None,
         &entity,
         "Diameter Dimension-2",
         0.5,
         diameter_parameter.clone(),
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .is_none());
     let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
@@ -307,10 +313,16 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         end_angle: cadmpeg_ir::scalar::Angle::new(1.0).unwrap(),
     })
     .unwrap();
-    assert!(
-        radial_dimension_definition(None, &entity, "Diameter Dimension", 1.0, diameter_parameter,).transpose().unwrap()
-            .is_some()
-    );
+    assert!(radial_dimension_definition(
+        None,
+        &entity,
+        "Diameter Dimension",
+        1.0,
+        diameter_parameter,
+    )
+    .transpose()
+    .unwrap()
+    .is_some());
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(2.0, 3.0),
         major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
@@ -321,10 +333,16 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         bounds: None,
     })
     .unwrap();
-    assert!(
-        radial_dimension_definition(None, &entity, "Radius Dimension-2", 0.5, radius_parameter,).transpose().unwrap()
-            .is_none()
-    );
+    assert!(radial_dimension_definition(
+        None,
+        &entity,
+        "Radius Dimension-2",
+        0.5,
+        radius_parameter,
+    )
+    .transpose()
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -430,12 +448,15 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
     ));
 
     let other_sloped = line("other-sloped", -std::f64::consts::FRAC_PI_6);
-    assert!(owner_scoped_angular_dimension_definition(None,
+    assert!(owner_scoped_angular_dimension_definition(
+        None,
         &[horizontal, sloped, vertical, other_sloped],
         &sketch,
         &parameter,
         &parameter_id,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -514,36 +535,40 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ((stream, 12), &entities[2]),
         ((stream, 13), &entities[3]),
     ]);
-    let parameter = crate::design::decode::parameters::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &parameter_record(
-        Some(1),
-        "135 deg",
-        "Angular Dimension-2",
-        Some("deg"),
-        "d1",
-        3.0 * std::f64::consts::FRAC_PI_4,
-    ))
-    .unwrap().expect("angular parameter")
+    let parameter = crate::design::decode::parameters::parse_design_parameter(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_record(
+            Some(1),
+            "135 deg",
+            "Angular Dimension-2",
+            Some("deg"),
+            "d1",
+            3.0 * std::f64::consts::FRAC_PI_4,
+        ),
+    )
+    .unwrap()
+    .expect("angular parameter")
     .into_record("Design/BulkStream.dat", 100)
     .expect("located parameter");
     let parameter_id =
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 
     assert!(matches!(
-        preceding_incident_angular_dimension_definition(
-None,
-stream,
-&points,
-&curves,
-&projected,
-&sketch,
-(&parameter, &parameter_id),
-).transpose().unwrap(),
-        Some(SketchConstraintDefinitionInput::Angle {
-            first,
-            second,
-            parameter,
-        }) if first == entities[0].id().clone() && second == entities[1].id().clone() && parameter == parameter_id
-    ));
+            preceding_incident_angular_dimension_definition(
+    None,
+    stream,
+    &points,
+    &curves,
+    &projected,
+    &sketch,
+    (&parameter, &parameter_id),
+    ).transpose().unwrap(),
+            Some(SketchConstraintDefinitionInput::Angle {
+                first,
+                second,
+                parameter,
+            }) if first == entities[0].id().clone() && second == entities[1].id().clone() && parameter == parameter_id
+        ));
 }
 
 #[test]
@@ -591,13 +616,16 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
     ));
 
     let another_upper = point("another-upper", -40.0, -7.875);
-    assert!(unique_point_class_dimension_definition(None,
+    assert!(unique_point_class_dimension_definition(
+        None,
         &[lower, upper, another_upper],
         &sketch,
         &parameter,
         &parameter_id,
         1.0e-6,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -770,14 +798,18 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         },
     ] {
         let geometry = SketchGeometry::try_from(definition).unwrap();
-        assert!(!point_lies_on_sketch_geometry(None,
+        assert!(!point_lies_on_sketch_geometry(
+            None,
             Point2::new(short_length / 2.0, 0.0001),
             &geometry
-        ).expect("resource allocation did not fail"));
-        assert!(point_lies_on_sketch_geometry(None,
+        )
+        .expect("resource allocation did not fail"));
+        assert!(point_lies_on_sketch_geometry(
+            None,
             Point2::new(short_length / 2.0, 0.0),
             &geometry
-        ).expect("resource allocation did not fail"));
+        )
+        .expect("resource allocation did not fail"));
     }
     let ellipse = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(0.0, 0.0),
@@ -789,14 +821,14 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         bounds: None,
     })
     .unwrap();
-    assert!(!point_lies_on_sketch_geometry(None,
-        Point2::new(1e200, 0.0),
-        &ellipse
-    ).expect("resource allocation did not fail"));
-    assert!(point_lies_on_sketch_geometry(None,
-        Point2::new(1.0, 0.0),
-        &ellipse
-    ).expect("resource allocation did not fail"));
+    assert!(
+        !point_lies_on_sketch_geometry(None, Point2::new(1e200, 0.0), &ellipse)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        point_lies_on_sketch_geometry(None, Point2::new(1.0, 0.0), &ellipse)
+            .expect("resource allocation did not fail")
+    );
 }
 
 mod refusal_radial_dimension_definition_at_tolerance;

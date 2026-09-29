@@ -23,7 +23,8 @@ fn exact_hole_construction(
         scope,
         stream_types,
         crate::records::feature::scope::DesignFeatureKind::Hole,
-    ).unwrap()
+    )
+    .unwrap()
 }
 
 #[test]
@@ -55,11 +56,13 @@ fn hole_input_records_refuse_collection_limit() {
 #[test]
 fn hole_carrier_reads_borrowed_as_built_scope() {
     let (bytes, mut scope, _, _) = hole_point_stream();
-    scope.try_edit(|draft| {
-        draft.payload = crate::records::feature::scope::DesignFeatureKind::AsBuilt
-            .try_into()
-            .unwrap();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::AsBuilt
+                .try_into()
+                .unwrap();
+        })
+        .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let types = HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]);
     let ctx = cadmpeg_test_support::service_decode_context();
@@ -70,7 +73,8 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         &scope,
         &types,
         crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(construction.unwrap().point_record_index, 55);
     assert!(exact_hole_construction_with_ctx(
         &ctx,
@@ -79,7 +83,9 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         &scope,
         &types,
         crate::records::feature::scope::DesignFeatureKind::Hole,
-    ).unwrap().is_none());
+    )
+    .unwrap()
+    .is_none());
 }
 
 fn assert_f64_array<const N: usize>(actual: [f64; N], expected: [f64; N]) {
@@ -330,7 +336,8 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             exact_hole_face_selection(
                 &ctx,
@@ -346,7 +353,8 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let selection = exact_hole_face_selection(
         &ctx,
         &bytes,
@@ -354,7 +362,8 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
         &scope,
         &HashMap::from([(100_u64, (HOLE_FACE_SELECTION_TYPE_GUID, 1))]),
     )
-    .expect("direct Hole face selection decode").expect("direct Hole face selection");
+    .expect("direct Hole face selection decode")
+    .expect("direct Hole face selection");
 
     assert_eq!(selection.record_index, 100);
     assert_eq!(selection.class_tag.as_str(), "333");

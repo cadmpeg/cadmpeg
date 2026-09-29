@@ -2,7 +2,37 @@
 //! Copy admitted feature fields under the caller decode resource policy.
 
 use super::{
-    AngularTermination, AxisAngle, BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderPlacement, BinderSource, BinderTarget, BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, BooleanKind, BooleanOp, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement, CombineOperands, CosmeticThreadExtent, CurveProjectionDirection, DatumPlaneReference, DatumPointConstruction, DecalMapping, DistinctMembers, DraftAnchor, DraftPull, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection, FeatureCircularArc, FeatureCoordinateFrame, FeatureDefinition, FeatureEllipticArc, FeatureEquationCurve, FeatureImageBounds, FeatureLineSegment, FeatureOperation, FeaturePolyline, FeatureTreeNodeRole, FeatureUnitPlaneFrame, FilledSurfaceContinuity, FilledSurfaceContinuityState, FlexMode, FuzzyTolerance, GeneratedBodyRef, GeneratedCurveRef, GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef, GeometryImportFormat, GeometryImportPath, HelicalSweepConstruction, HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape, InnerWireTaper, InsertedBodies, LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind, NativeSelections, NoGeneratedSection, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef, PolygonSideCount, PrimitiveSolid, PrimitiveSolidKind, PrincipalPlane, ProfileRef, ReplaceFaceOperands, RevolutionAxis, RevolutionFuseOrder, RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledCurveOrientation, RuledSurfaceCorner, RuledSurfaceMode, ScaleCenter, ScaleFactors, SectionOperands, SelectionMembers, SelectionReference, SewBodySelection, SheetMetalBendPosition, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalHemForm, SheetMetalThicknessSide, ShellJoin, ShellMode, SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SolidSweepOperation, SplitFacePlanes, SplitFaceTool, SurfaceBoundary, SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode, SweepCircularRegion, SweepGuideRail, SweepOrientation, SweepPathExtent, SweepSection, SweepShape, SweepTransformation, SweepTransition, ThickenSide, ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion, UnresolvedFamily, VertexSelection, WrapMode
+    AngularTermination, AxisAngle, BinderConstruction, BinderCopyOnChange, BinderLifecycle,
+    BinderOffset, BinderPlacement, BinderSource, BinderTarget, BodyMember, BodyMembers,
+    BodyRetentionMode, BodySelection, BodyTrimSide, BooleanKind, BooleanOp, CoilConstruction,
+    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement, CombineOperands,
+    CosmeticThreadExtent, CurveProjectionDirection, DatumPlaneReference, DatumPointConstruction,
+    DecalMapping, DistinctMembers, DraftAnchor, DraftPull, EdgeSelection, ExtrudeDirection,
+    ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands,
+    FaceMaker, FaceMotion, FaceSelection, FeatureCircularArc, FeatureCoordinateFrame,
+    FeatureDefinition, FeatureEllipticArc, FeatureEquationCurve, FeatureImageBounds,
+    FeatureLineSegment, FeatureOperation, FeaturePolyline, FeatureTreeNodeRole,
+    FeatureUnitPlaneFrame, FilledSurfaceContinuity, FilledSurfaceContinuityState, FlexMode,
+    FuzzyTolerance, GeneratedBodyRef, GeneratedCurveRef, GeneratedEdgeRef, GeneratedFaceRef,
+    GeneratedSweepSection, GeneratedVertexRef, GeometryImportFormat, GeometryImportPath,
+    HelicalSweepConstruction, HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle,
+    HelixShape, InnerWireTaper, InsertedBodies, LinearTermination, LoftGuidance, LoftPointSection,
+    LoftSection, NativeFeatureKind, NativeSelections, NoGeneratedSection, NonEmptyMembers,
+    PartialRevolveConstruction, PathRef, PlanarProfileRef, PolygonSideCount, PrimitiveSolid,
+    PrimitiveSolidKind, PrincipalPlane, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
+    RevolutionFuseOrder, RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide,
+    RuledCurveOrientation, RuledSurfaceCorner, RuledSurfaceMode, ScaleCenter, ScaleFactors,
+    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
+    SheetMetalBendPosition, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
+    SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+    SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalHemForm, SheetMetalThicknessSide,
+    ShellJoin, ShellMode, SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse,
+    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SolidSweepOperation,
+    SplitFacePlanes, SplitFaceTool, SurfaceBoundary, SurfaceContinuity, SurfaceExtension,
+    SurfaceProjectionMode, SweepCircularRegion, SweepGuideRail, SweepOrientation, SweepPathExtent,
+    SweepSection, SweepShape, SweepTransformation, SweepTransition, ThickenSide,
+    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
+    UnresolvedFamily, VertexSelection, WrapMode,
 };
 
 clone_enum_for_decode!(AngularTermination; {
@@ -646,27 +676,38 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 pub(super) trait CloneForDecode: Sized {
-    fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-        -> Result<Self, CodecError>;
+    fn clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError>;
 }
 
 impl CloneForDecode for String {
-    fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-        -> Result<Self, CodecError> {
+    fn clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         String::from_utf8(ctx.copy_retained(self.as_bytes(), operation)?)
             .map_err(|_| CodecError::malformed("admitted feature text is not UTF-8"))
     }
 }
 
 impl<T: CloneForDecode> CloneForDecode for Vec<T> {
-    fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-        -> Result<Self, CodecError> {
-        let count = u64::try_from(self.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    fn clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let count =
+            u64::try_from(self.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         ctx.charge_collection_items(count, operation)?;
         ctx.charge_work(count, operation)?;
         let mut copied = Vec::new();
-        copied.try_reserve(self.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        copied
+            .try_reserve(self.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         for member in self {
             copied.push(member.clone_for_decode(ctx, operation)?);
         }
@@ -675,50 +716,79 @@ impl<T: CloneForDecode> CloneForDecode for Vec<T> {
 }
 
 impl<T: CloneForDecode> CloneForDecode for Option<T> {
-    fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-        -> Result<Self, CodecError> {
-        self.as_ref().map(|value| value.clone_for_decode(ctx, operation)).transpose()
+    fn clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        self.as_ref()
+            .map(|value| value.clone_for_decode(ctx, operation))
+            .transpose()
     }
 }
 
 impl<T: CloneForDecode> CloneForDecode for Box<T> {
-    fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-        -> Result<Self, CodecError> {
+    fn clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Box::new(self.as_ref().clone_for_decode(ctx, operation)?))
     }
 }
 
 impl<T: CloneForDecode> CloneForDecode for [T; 2] {
-    fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-        -> Result<Self, CodecError> {
-        Ok([self[0].clone_for_decode(ctx, operation)?, self[1].clone_for_decode(ctx, operation)?])
+    fn clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok([
+            self[0].clone_for_decode(ctx, operation)?,
+            self[1].clone_for_decode(ctx, operation)?,
+        ])
     }
 }
 
 impl<T: CloneForDecode> CloneForDecode for [T; 3] {
-    fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-        -> Result<Self, CodecError> {
-        Ok([self[0].clone_for_decode(ctx, operation)?, self[1].clone_for_decode(ctx, operation)?,
-            self[2].clone_for_decode(ctx, operation)?])
+    fn clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok([
+            self[0].clone_for_decode(ctx, operation)?,
+            self[1].clone_for_decode(ctx, operation)?,
+            self[2].clone_for_decode(ctx, operation)?,
+        ])
     }
 }
 
 impl<K: CloneForDecode + Ord, V: CloneForDecode> CloneForDecode for BTreeMap<K, V> {
-    fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-        -> Result<Self, CodecError> {
+    fn clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         let mut copied = BTreeMap::new();
         for (key, value) in self {
             ctx.charge_collection_items(1, operation)?;
             ctx.charge_work(1, operation)?;
-            copied.insert(key.clone_for_decode(ctx, operation)?, value.clone_for_decode(ctx, operation)?);
+            copied.insert(
+                key.clone_for_decode(ctx, operation)?,
+                value.clone_for_decode(ctx, operation)?,
+            );
         }
         Ok(copied)
     }
 }
 
 impl CloneForDecode for cadmpeg_core::text::NonBlankString {
-    fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-        -> Result<Self, CodecError> {
+    fn clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         let text = String::from_utf8(ctx.copy_retained(self.as_str().as_bytes(), operation)?)
             .map_err(|_| CodecError::malformed("admitted feature text is not UTF-8"))?;
         cadmpeg_core::text::NonBlankString::new(text)
@@ -729,10 +799,16 @@ impl CloneForDecode for cadmpeg_core::text::NonBlankString {
 macro_rules! clone_id_for_decode {
     ($type:ty) => {
         impl CloneForDecode for $type {
-            fn clone_for_decode(&self, ctx: &DecodeContext<'_>, operation: &'static str)
-                -> Result<Self, CodecError> {
-                let copied = String::from_utf8(ctx.copy_retained(self.as_str().as_bytes(), operation)?)
-                    .map_err(|_| CodecError::malformed("admitted feature identity is not UTF-8"))?;
+            fn clone_for_decode(
+                &self,
+                ctx: &DecodeContext<'_>,
+                operation: &'static str,
+            ) -> Result<Self, CodecError> {
+                let copied =
+                    String::from_utf8(ctx.copy_retained(self.as_str().as_bytes(), operation)?)
+                        .map_err(|_| {
+                            CodecError::malformed("admitted feature identity is not UTF-8")
+                        })?;
                 Self::try_from(copied).map_err(CodecError::malformed)
             }
         }

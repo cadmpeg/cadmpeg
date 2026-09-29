@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{localized_fillet_scope, localized_fillet_group, localized_fillet_operand_groups, localized_fillet_parameter, localized_fillet_owner};
+use super::{
+    localized_fillet_group, localized_fillet_operand_groups, localized_fillet_owner,
+    localized_fillet_parameter, localized_fillet_scope,
+};
 use crate::design::decode::operands::decode_fillet_radius_groups as decode_fillet_radius_groups_charged;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
@@ -14,7 +17,8 @@ pub(super) fn decode_fillet_radius_groups(
 ) -> Vec<DesignFilletRadiusGroup> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     decode_fillet_radius_groups_charged(&ctx, scopes, groups, owners, parameters).unwrap()
 }
 
@@ -24,13 +28,22 @@ fn variable_law_parameters() -> Vec<DesignParameter> {
         (2, "EndRadius", Some("mm"), 0.3),
         (3, "MidRadius", Some("mm"), 0.4),
         (4, "MidParams", None, 0.5),
-    ].into_iter().map(|(record, kind, unit, value)| {
-        let mut parameter = super::parse_design_parameter_record(
-            &super::parameter_record(Some(record + 100), "value", kind, unit, "d1", value))
-            .unwrap();
+    ]
+    .into_iter()
+    .map(|(record, kind, unit, value)| {
+        let mut parameter = super::parse_design_parameter_record(&super::parameter_record(
+            Some(record + 100),
+            "value",
+            kind,
+            unit,
+            "d1",
+            value,
+        ))
+        .unwrap();
         parameter.record_index = record;
         parameter
-    }).collect()
+    })
+    .collect()
 }
 
 fn assert_variable_law_limit(operation: &'static str) {
@@ -38,7 +51,9 @@ fn assert_variable_law_limit(operation: &'static str) {
     use cadmpeg_core::CodecError;
 
     let parameters = variable_law_parameters();
-    let controls = parameters.iter().enumerate()
+    let controls = parameters
+        .iter()
+        .enumerate()
         .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
         .collect::<Vec<_>>();
     let mut found = false;
@@ -50,7 +65,8 @@ fn assert_variable_law_limit(operation: &'static str) {
         if matches!(crate::design::feature_project::variable_fillet_law(Some(&ctx), &controls),
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems) {
+                    && failure.dimension == ResourceDimension::CollectionItems)
+        {
             found = true;
             break;
         }
@@ -67,12 +83,18 @@ macro_rules! variable_law_limit_test {
     };
 }
 
-variable_law_limit_test!(variable_fillet_middle_radii_refuse_collection_limit,
-    "f3d variable Fillet middle radii");
-variable_law_limit_test!(variable_fillet_middle_parameters_refuse_collection_limit,
-    "f3d variable Fillet middle parameters");
-variable_law_limit_test!(variable_fillet_radius_points_refuse_collection_limit,
-    "f3d variable Fillet radius point");
+variable_law_limit_test!(
+    variable_fillet_middle_radii_refuse_collection_limit,
+    "f3d variable Fillet middle radii"
+);
+variable_law_limit_test!(
+    variable_fillet_middle_parameters_refuse_collection_limit,
+    "f3d variable Fillet middle parameters"
+);
+variable_law_limit_test!(
+    variable_fillet_radius_points_refuse_collection_limit,
+    "f3d variable Fillet radius point"
+);
 
 fn variable_assignment() -> DesignFilletRadiusGroup {
     use crate::records::topology::fillet::{DesignFilletMidpoint, DesignFilletRadiusLaw};
@@ -100,7 +122,9 @@ fn assert_resolved_assignment_limit(operation: &'static str) {
     use cadmpeg_core::CodecError;
 
     let parameters = variable_law_parameters();
-    let controls = parameters.iter().enumerate()
+    let controls = parameters
+        .iter()
+        .enumerate()
         .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
         .collect::<Vec<_>>();
     let assignment = variable_assignment();
@@ -114,7 +138,8 @@ fn assert_resolved_assignment_limit(operation: &'static str) {
             Some(&ctx), &[&assignment], &controls),
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems) {
+                    && failure.dimension == ResourceDimension::CollectionItems)
+        {
             found = true;
             break;
         }
@@ -131,14 +156,22 @@ macro_rules! resolved_assignment_limit_test {
     };
 }
 
-resolved_assignment_limit_test!(fillet_assignment_parameter_index_refuses_collection_limit,
-    "f3d Fillet assignment parameter index");
-resolved_assignment_limit_test!(fillet_assigned_parameter_refuses_collection_limit,
-    "f3d Fillet assigned parameter");
-resolved_assignment_limit_test!(fillet_variable_control_refuses_collection_limit,
-    "f3d Fillet variable control");
-resolved_assignment_limit_test!(fillet_resolved_assignment_refuses_collection_limit,
-    "f3d Fillet resolved assignment");
+resolved_assignment_limit_test!(
+    fillet_assignment_parameter_index_refuses_collection_limit,
+    "f3d Fillet assignment parameter index"
+);
+resolved_assignment_limit_test!(
+    fillet_assigned_parameter_refuses_collection_limit,
+    "f3d Fillet assigned parameter"
+);
+resolved_assignment_limit_test!(
+    fillet_variable_control_refuses_collection_limit,
+    "f3d Fillet variable control"
+);
+resolved_assignment_limit_test!(
+    fillet_resolved_assignment_refuses_collection_limit,
+    "f3d Fillet resolved assignment"
+);
 
 fn assert_projected_fillet_limit(
     operation: &'static str,
@@ -150,7 +183,9 @@ fn assert_projected_fillet_limit(
     let scope = localized_fillet_scope();
     let native_scope = crate::ids::native_stream(&scope.id).unwrap();
     let parameters = variable_law_parameters();
-    let controls = parameters.iter().enumerate()
+    let controls = parameters
+        .iter()
+        .enumerate()
         .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
         .collect::<Vec<_>>();
     let assignment = variable_assignment();
@@ -187,7 +222,8 @@ fn assert_projected_fillet_limit(
         if matches!(crate::design::feature_project::project_fillet_arm(
             Some(&ctx), &inputs, &scope, &controls, native_scope),
             Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension) {
+                if failure.operation == operation && failure.dimension == dimension)
+        {
             found = true;
             break;
         }
@@ -199,21 +235,24 @@ fn assert_projected_fillet_limit(
 fn fillet_scope_assignment_refuses_collection_limit() {
     assert_projected_fillet_limit(
         "f3d Fillet scope assignment",
-        cadmpeg_core::decode::ResourceDimension::CollectionItems);
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn fillet_projected_group_refuses_collection_limit() {
     assert_projected_fillet_limit(
         "f3d Fillet projected group",
-        cadmpeg_core::decode::ResourceDimension::CollectionItems);
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn fillet_fallback_group_id_refuses_retained_limit() {
     assert_projected_fillet_limit(
         "f3d Fillet fallback edge group ID",
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
@@ -254,7 +293,8 @@ fn fillet_single_radius_scope_id_refuses_retained_limit() {
             Some(&ctx), &inputs, &scope, &controls, native_scope),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d Fillet single radius edge scope ID") {
+                    && failure.operation == "f3d Fillet single radius edge scope ID")
+        {
             return;
         }
     }
@@ -277,7 +317,8 @@ fn face_selection_native_fallback_refuses_retained_limit() {
             Some(&ctx), &scope, &group, &[], &[]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d face selection native fallback") {
+                    && failure.operation == "f3d face selection native fallback")
+        {
             return;
         }
     }
@@ -295,7 +336,10 @@ fn fillet_radius_group_collections_and_ids_refuse_limits() {
     let owner = localized_fillet_owner;
     let scenarios = [
         (
-            vec![parameter(10, 11, "Radius", Some("mm"), 0.5), parameter(30, 31, "TangencyWeight", None, 1.0)],
+            vec![
+                parameter(10, 11, "Radius", Some("mm"), 0.5),
+                parameter(30, 31, "TangencyWeight", None, 1.0),
+            ],
             vec![owner(10, 11, 0), owner(30, 31, 1)],
         ),
         (
@@ -303,12 +347,28 @@ fn fillet_radius_group_collections_and_ids_refuse_limits() {
             vec![owner(10, 11, 0)],
         ),
         (
-            vec![parameter(10, 11, "EdgeOffset1", Some("mm"), 0.2), parameter(20, 21, "EdgeOffset2", Some("mm"), 0.3), parameter(30, 31, "TangencyWeight", None, 1.0)],
+            vec![
+                parameter(10, 11, "EdgeOffset1", Some("mm"), 0.2),
+                parameter(20, 21, "EdgeOffset2", Some("mm"), 0.3),
+                parameter(30, 31, "TangencyWeight", None, 1.0),
+            ],
             vec![owner(10, 11, 0), owner(20, 21, 1), owner(30, 31, 2)],
         ),
         (
-            vec![parameter(10, 11, "StartRadius", Some("mm"), 0.2), parameter(20, 21, "EndRadius", Some("mm"), 0.3), parameter(30, 31, "MidRadius", Some("mm"), 0.4), parameter(40, 41, "MidParams", None, 0.5), parameter(50, 51, "TangencyWeight", None, 1.0)],
-            vec![owner(10, 11, 0), owner(20, 21, 1), owner(30, 31, 2), owner(40, 41, 3), owner(50, 51, 4)],
+            vec![
+                parameter(10, 11, "StartRadius", Some("mm"), 0.2),
+                parameter(20, 21, "EndRadius", Some("mm"), 0.3),
+                parameter(30, 31, "MidRadius", Some("mm"), 0.4),
+                parameter(40, 41, "MidParams", None, 0.5),
+                parameter(50, 51, "TangencyWeight", None, 1.0),
+            ],
+            vec![
+                owner(10, 11, 0),
+                owner(20, 21, 1),
+                owner(30, 31, 2),
+                owner(40, 41, 3),
+                owner(50, 51, 4),
+            ],
         ),
     ];
     let mut refused = std::collections::HashSet::new();
@@ -318,7 +378,13 @@ fn fillet_radius_group_collections_and_ids_refuse_limits() {
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match decode_fillet_radius_groups_charged(&ctx, std::slice::from_ref(&scope), &groups[..1], owners, parameters) {
+            match decode_fillet_radius_groups_charged(
+                &ctx,
+                std::slice::from_ref(&scope),
+                &groups[..1],
+                owners,
+                parameters,
+            ) {
                 Err(CodecError::ResourceLimit(failure)) => {
                     assert_eq!(failure.dimension, ResourceDimension::CollectionItems);
                     refused.insert(failure.operation);
@@ -329,14 +395,22 @@ fn fillet_radius_group_collections_and_ids_refuse_limits() {
         }
     }
     for operation in [
-        "f3d Fillet parameter index", "f3d Fillet scope groups",
-        "f3d Fillet owned parameters", "f3d Fillet radius parameters",
-        "f3d Fillet weight parameters", "f3d Fillet chord lengths",
-        "f3d Fillet asymmetric offsets", "f3d Fillet variable parameters",
-        "f3d Fillet middle parameters", "f3d Fillet edge operand indices",
+        "f3d Fillet parameter index",
+        "f3d Fillet scope groups",
+        "f3d Fillet owned parameters",
+        "f3d Fillet radius parameters",
+        "f3d Fillet weight parameters",
+        "f3d Fillet chord lengths",
+        "f3d Fillet asymmetric offsets",
+        "f3d Fillet variable parameters",
+        "f3d Fillet middle parameters",
+        "f3d Fillet edge operand indices",
         "f3d Fillet group output",
     ] {
-        assert!(refused.contains(operation), "no limit refusal at {operation}");
+        assert!(
+            refused.contains(operation),
+            "no limit refusal at {operation}"
+        );
     }
 
     let stream = "f3d:native/BulkStream.dat";

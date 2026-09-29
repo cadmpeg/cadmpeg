@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::design::feature_project::{
+    project_delete_face, project_split, project_split_face, selected_work_planes,
+};
 use crate::ids::feature_input_topology_id;
-use crate::design::feature_project::{project_delete_face, project_split, project_split_face, selected_work_planes};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
@@ -73,14 +75,16 @@ fn split_body_scope() -> DesignParameterScope {
         crate::records::feature::scope::DesignFeatureKind::Split,
         77,
     );
-    scope.try_edit(|draft| {
-        draft.reference_members =
-            crate::records::identity::ReferenceRun::unlocated(vec![100, 101, 102, 103]);
-        draft.layout_fixture_references();
-        draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-        draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![100, 101, 102, 103]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     scope
 }
 
@@ -128,7 +132,8 @@ fn split_body_face_tool() -> crate::records::topology::face::DesignFaceOperand {
             next_record_index: 105,
             next_byte_offset: 1411,
         },
-    ).unwrap()
+    )
+    .unwrap()
 }
 
 fn assert_split_body_refusal(
@@ -183,7 +188,8 @@ fn split_body_face_tool_id_refuses_retained_limit() {
     let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
     let tool = split_body_face_tool();
     let definition = project_split(None, &scope, &groups, std::slice::from_ref(&tool))
-        .unwrap().unwrap();
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
@@ -191,22 +197,28 @@ fn split_body_face_tool_id_refuses_retained_limit() {
         }) if native == &tool.id
     ));
     assert_split_body_refusal(
-        &scope, &groups, std::slice::from_ref(&tool), "f3d SplitBody face tool id",
+        &scope,
+        &groups,
+        std::slice::from_ref(&tool),
+        "f3d SplitBody face tool id",
     );
 }
 
 #[test]
 fn split_body_historical_face_tool_id_refuses_retained_limit() {
     let mut scope = split_body_scope();
-    scope.try_edit(|draft| {
-        draft.previous_history_state_id = Some(7);
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
     let mut tool = split_body_face_tool();
     tool.resolved_face_slots = vec![42];
     let definition = project_split(None, &scope, &groups, std::slice::from_ref(&tool))
-        .unwrap().unwrap();
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
@@ -214,7 +226,9 @@ fn split_body_historical_face_tool_id_refuses_retained_limit() {
         }) if native.as_str() == tool.id
     ));
     assert_split_body_refusal(
-        &scope, &groups, std::slice::from_ref(&tool),
+        &scope,
+        &groups,
+        std::slice::from_ref(&tool),
         "f3d SplitBody historical face tool id",
     );
 }
@@ -228,19 +242,22 @@ fn delete_face_fallback_group_id_refuses_retained_limit() {
         crate::records::feature::scope::DesignFeatureKind::DeleteFace,
         77,
     );
-    scope.try_edit(|draft| {
-        draft.frame_length = 258;
-        draft.kind_offset = draft.byte_offset + 161;
-        draft.reference_members =
-            crate::records::identity::ReferenceRun::unlocated(vec![100, 200]);
-        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-        draft.reference_count_offset = draft.kind_offset - 34;
-        draft.layout_fixture_references();
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 258;
+            draft.kind_offset = draft.byte_offset + 161;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![100, 200]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_count_offset = draft.kind_offset - 34;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
     let definition = project_delete_face(None, &scope, std::slice::from_ref(&selected), &[])
-        .unwrap().unwrap();
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -308,7 +325,8 @@ fn compact_split_face_fixture() -> (DesignParameterScope, [DesignConstructionOpe
 #[test]
 fn class_277_258_compact_split_face_frame_projects() {
     let (mut scope, groups) = compact_split_face_fixture();
-    let definition = project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[]).expect("projection resource budget")
+    let definition = project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[])
+        .expect("projection resource budget")
         .expect("class-277 SplitFace frame");
     assert!(matches!(
         definition,
@@ -324,13 +342,21 @@ fn class_277_258_compact_split_face_frame_projects() {
         crate::records::references::DesignClassTag::try_from("418".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
-    assert!(project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[]).expect("projection resource budget").is_some());
+    assert!(
+        project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[])
+            .expect("projection resource budget")
+            .is_some()
+    );
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
-    assert!(project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[]).expect("projection resource budget").is_none());
+    assert!(
+        project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[])
+            .expect("projection resource budget")
+            .is_none()
+    );
 }
 
 fn assert_split_face_retained_refusal(operation: &'static str) {
@@ -377,37 +403,49 @@ fn selected_plane_fixture() -> (
         crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         601,
     );
-    plane.with_work_plane_transform([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ].try_into().unwrap());
-    let selection = crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
-        crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
-            id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
-            scope_record_index: 77,
-            group_record_index: 100,
-            group_member_ordinal: 0,
-            record_index: 101,
-            byte_offset: 0,
-            class_tag: "372".to_owned().try_into().unwrap(),
-            asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned().try_into().unwrap(),
-            asset_id_offset: 0,
-            context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned().try_into().unwrap(),
-            context_id_offset: 0,
-            identity_record_index: 104,
-            identity_record_offset: 0,
-            primary_identity: 600,
-            primary_identity_offset: 21,
-            secondary: None,
-            historical_edge_candidates: Vec::new(),
-            historical_face_candidates: Vec::new(),
-            resolved_edge_slot: None,
-            next_record_index: 105,
-            next_byte_offset: 29,
-        },
-    ).unwrap();
+    plane.with_work_plane_transform(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+        .try_into()
+        .unwrap(),
+    );
+    let selection =
+        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+                id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
+                scope_record_index: 77,
+                group_record_index: 100,
+                group_member_ordinal: 0,
+                record_index: 101,
+                byte_offset: 0,
+                class_tag: "372".to_owned().try_into().unwrap(),
+                asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                asset_id_offset: 0,
+                context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                context_id_offset: 0,
+                identity_record_index: 104,
+                identity_record_offset: 0,
+                primary_identity: 600,
+                primary_identity_offset: 21,
+                secondary: None,
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: Vec::new(),
+                resolved_edge_slot: None,
+                next_record_index: 105,
+                next_byte_offset: 29,
+            },
+        )
+        .unwrap();
     (scope, groups[0].clone(), selection, plane)
 }
 
@@ -415,8 +453,15 @@ fn assert_selected_plane_limit(operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let (scope, group, selection, plane) = selected_plane_fixture();
-    let selected = selected_work_planes(None, &scope, &group,
-        std::slice::from_ref(&selection), std::slice::from_ref(&plane)).unwrap().unwrap();
+    let selected = selected_work_planes(
+        None,
+        &scope,
+        &group,
+        std::slice::from_ref(&selection),
+        std::slice::from_ref(&plane),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].record_index, plane.record_index);
     for limit in 0..4 {
@@ -523,8 +568,17 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         .unwrap(),
     ];
 
-    let definition = project_split_face(None, &scope, &[scope.clone()], &groups, &selections, &[], &[]).expect("projection resource budget")
-        .expect("class-277 direct edge path");
+    let definition = project_split_face(
+        None,
+        &scope,
+        &[scope.clone()],
+        &groups,
+        &selections,
+        &[],
+        &[],
+    )
+    .expect("projection resource budget")
+    .expect("class-277 direct edge path");
     let FeatureDefinition::Operation(FeatureOperation::SplitFace {
         tool:
             cadmpeg_ir::features::SplitFaceTool::Path(cadmpeg_ir::features::PathRef::HistoricalEdges {
@@ -560,16 +614,24 @@ fn historical_split_face_path_fixture() -> (
     );
     scope.class_tag = "277".to_owned().try_into().unwrap();
     scope.paired_class_tag = "258".to_owned().try_into().unwrap();
-    scope.try_edit(|draft| {
-        draft.frame_length = 407;
-        draft.previous_history_state_id = Some(7);
-        draft.reference_members =
-            crate::records::identity::ReferenceRun::unlocated((100..112).collect());
-        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-        draft.layout_fixture_references();
-        draft.layout_fixture_tail();
-    }).unwrap();
-    let group = group(scope_record_index, 0, 100, vec![101], DesignOperandRole::ROLE_0X21);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 407;
+            draft.previous_history_state_id = Some(7);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated((100..112).collect());
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = group(
+        scope_record_index,
+        0,
+        100,
+        vec![101],
+        DesignOperandRole::ROLE_0X21,
+    );
     let selection =
         crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
             crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
@@ -580,9 +642,15 @@ fn historical_split_face_path_fixture() -> (
                 record_index: 101,
                 byte_offset: 0,
                 class_tag: "277".to_owned().try_into().unwrap(),
-                asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned().try_into().unwrap(),
+                asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
                 asset_id_offset: 0,
-                context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned().try_into().unwrap(),
+                context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
                 context_id_offset: 0,
                 identity_record_index: 104,
                 identity_record_offset: 0,
@@ -595,7 +663,8 @@ fn historical_split_face_path_fixture() -> (
                 next_record_index: 103,
                 next_byte_offset: 29,
             },
-        ).unwrap();
+        )
+        .unwrap();
     (scope, group, selection)
 }
 
@@ -609,28 +678,40 @@ fn assert_historical_split_face_path_refusal(
     let (scope, group, selection) = historical_split_face_path_fixture();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    if let Some(limit) = collection_limit { policy.limits.max_collection_items = limit; }
+    if let Some(limit) = collection_limit {
+        policy.limits.max_collection_items = limit;
+    }
     if let Some(limit) = retained_limit {
         let feature = crate::ids::neutral_feature_id(&scope);
         let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
         let state_bytes = if operation == "f3d SplitFace path group id" {
-            crate::ids::feature_input_topology_id(&feature, 7).as_str().len()
-        } else { 0 };
-        policy.limits.max_retained_bytes = limit + u64::try_from(
-            feature.as_str().len() + prefix.as_str().len() + state_bytes).unwrap();
+            crate::ids::feature_input_topology_id(&feature, 7)
+                .as_str()
+                .len()
+        } else {
+            0
+        };
+        policy.limits.max_retained_bytes = limit
+            + u64::try_from(feature.as_str().len() + prefix.as_str().len() + state_bytes).unwrap();
     }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::super::resolved_split_face_path(
-        Some(&ctx), &scope, &group, std::slice::from_ref(&selection), &[],
+        Some(&ctx),
+        &scope,
+        &group,
+        std::slice::from_ref(&selection),
+        &[],
     );
     let dimension = if collection_limit.is_some() {
         ResourceDimension::CollectionItems
     } else {
         ResourceDimension::RetainedBytes
     };
-    assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+    assert!(
+        matches!(result, Err(CodecError::ResourceLimit(ref failure))
         if failure.operation == operation && failure.dimension == dimension),
-        "expected {operation} refusal, got {result:?}");
+        "expected {operation} refusal, got {result:?}"
+    );
 }
 
 #[test]
@@ -650,7 +731,9 @@ fn split_face_historical_edge_id_refuses_retained_limit() {
     let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
     let edge = crate::ids::history_input_edge_id(&prefix, 42);
     assert_historical_split_face_path_refusal(
-        "f3d SplitFace historical edge id", None, Some(u64::try_from(edge.as_str().len() - 1).unwrap()),
+        "f3d SplitFace historical edge id",
+        None,
+        Some(u64::try_from(edge.as_str().len() - 1).unwrap()),
     );
 }
 
@@ -662,15 +745,17 @@ fn split_face_path_group_id_refuses_retained_limit() {
     let edge = crate::ids::history_input_edge_id(&prefix, 42);
     let total = edge.as_str().len() + group.id.len() - 1;
     assert_historical_split_face_path_refusal(
-        "f3d SplitFace path group id", None, Some(u64::try_from(total).unwrap()),
+        "f3d SplitFace path group id",
+        None,
+        Some(u64::try_from(total).unwrap()),
     );
 }
 
 #[test]
 fn draft_historical_face_group_id_refuses_retained_limit() {
-    use crate::records::topology::fillet::HistoricalBinding;
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
     use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
+    use crate::records::topology::fillet::HistoricalBinding;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -689,16 +774,30 @@ fn draft_historical_face_group_id_refuses_retained_limit() {
     let feature = crate::ids::neutral_feature_id(&scope);
     let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
     let state = crate::ids::feature_input_topology_id(&feature, 7);
-    let face = crate::ids::history_input_face_id(&prefix, selection.historical_face_candidates[0].face_slot);
-    policy.limits.max_retained_bytes = u64::try_from(group.id.len() - 1
-        + feature.as_str().len() + prefix.as_str().len()
-        + state.as_str().len() + face.as_str().len()).unwrap();
+    let face = crate::ids::history_input_face_id(
+        &prefix,
+        selection.historical_face_candidates[0].face_slot,
+    );
+    policy.limits.max_retained_bytes = u64::try_from(
+        group.id.len() - 1
+            + feature.as_str().len()
+            + prefix.as_str().len()
+            + state.as_str().len()
+            + face.as_str().len(),
+    )
+    .unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::super::selected_historical_face_selection(
-        Some(&ctx), &scope, &group, std::slice::from_ref(&selection), &[],
+        Some(&ctx),
+        &scope,
+        &group,
+        std::slice::from_ref(&selection),
+        &[],
     );
-    assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+    assert!(
+        matches!(result, Err(CodecError::ResourceLimit(ref failure))
         if failure.operation == "f3d Draft historical face group id"
             && failure.dimension == ResourceDimension::RetainedBytes),
-        "expected Draft historical face group ID refusal, got {result:?}");
+        "expected Draft historical face group ID refusal, got {result:?}"
+    );
 }

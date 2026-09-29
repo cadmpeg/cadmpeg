@@ -9,9 +9,9 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{take_reference, Reference};
+use crate::container::ContainerScan;
 use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged};
-use crate::container::ContainerScan;
 use crate::ids::native_stream;
 use crate::records::{
     entity_header::{DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION},
@@ -69,14 +69,14 @@ fn paired_bulk_entry_name<'a>(
     {
         return Ok(&entry.name);
     }
-    let length = "entry ".len()
+    let length = "entry "
+        .len()
         .checked_add(prefix.len())
         .and_then(|length| length.checked_add("BulkStream.dat not found".len()))
         .ok_or_else(|| ctx.refuse_codec_limit("f3d missing design bulk name length", 0, 1))?;
     ctx.charge_retained(
-        u64::try_from(length).map_err(|_| {
-            ctx.refuse_codec_limit("f3d missing design bulk name length", 0, 1)
-        })?,
+        u64::try_from(length)
+            .map_err(|_| ctx.refuse_codec_limit("f3d missing design bulk name length", 0, 1))?,
         "f3d missing Design BulkStream error",
     )?;
     let mut message = String::new();
@@ -103,9 +103,8 @@ pub(crate) fn decode_types(
         let meta = scan.parsed_metastream(&entry.entry.name)?;
         for design_type in &meta.types {
             ctx.charge_collection_items(1, "f3d design type table")?;
-            out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d design type table allocation", 0, 1)
-            })?;
+            out.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("f3d design type table allocation", 0, 1))?;
             out.push(copy_design_type(ctx, design_type, &entry.entry.name)?);
         }
     }
@@ -133,16 +132,16 @@ fn copy_design_type(
         ReferenceRun::located(copied)
     } else {
         let mut copied = Vec::new();
-        copied.try_reserve(count).map_err(|_| {
-            ctx.refuse_codec_limit("f3d design type entities allocation", 0, 1)
-        })?;
+        copied
+            .try_reserve(count)
+            .map_err(|_| ctx.refuse_codec_limit("f3d design type entities allocation", 0, 1))?;
         copied.extend(design_type.entities.values().copied());
         ReferenceRun::unlocated(copied)
     };
-    let module = String::from_utf8(ctx.copy_retained(
-        design_type.module.as_bytes(),
-        "f3d design type module",
-    )?).map_err(|_| CodecError::Malformed("F3D Design module text is invalid UTF-8".into()))?;
+    let module = String::from_utf8(
+        ctx.copy_retained(design_type.module.as_bytes(), "f3d design type module")?,
+    )
+    .map_err(|_| CodecError::Malformed("F3D Design module text is invalid UTF-8".into()))?;
     let id = design_record_id_charged(
         ctx,
         stream,
@@ -175,19 +174,21 @@ fn insert_component_naming_space(
 ) -> Result<(), CodecError> {
     if let Some(existing) = by_component.get(&component_record_index) {
         if existing.context_uuid != context_uuid {
-            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
+            return Err(crate::design::text::malformed_design(
+                Some(ctx),
+                format_args!(
                 "Design component {component_record_index} has conflicting context UUID bindings"
-            )));
+            ),
+            ));
         }
         return Ok(());
     }
     ctx.charge_collection_items(1, "f3d component naming spaces by entity")?;
-    by_component.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit("f3d component naming spaces map allocation", 0, 1)
-    })?;
-    let byte_offset = u64::try_from(marker).map_err(|_| {
-        ctx.refuse_codec_limit("f3d component naming marker offset", 0, 1)
-    })?;
+    by_component
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("f3d component naming spaces map allocation", 0, 1))?;
+    let byte_offset = u64::try_from(marker)
+        .map_err(|_| ctx.refuse_codec_limit("f3d component naming marker offset", 0, 1))?;
     let id = design_record_id_charged(
         ctx,
         bulk_name,
@@ -196,16 +197,18 @@ fn insert_component_naming_space(
         "f3d component naming space id suffix",
         "f3d component naming space id allocation",
     )?;
-    let context_uuid_offset = u64::try_from(context_uuid_offset).map_err(|_| {
-        ctx.refuse_codec_limit("f3d component naming UUID offset", 0, 1)
-    })?;
-    by_component.insert(component_record_index, DesignComponentNamingSpace {
-        id,
-        byte_offset,
+    let context_uuid_offset = u64::try_from(context_uuid_offset)
+        .map_err(|_| ctx.refuse_codec_limit("f3d component naming UUID offset", 0, 1))?;
+    by_component.insert(
         component_record_index,
-        context_uuid,
-        context_uuid_offset,
-    });
+        DesignComponentNamingSpace {
+            id,
+            byte_offset,
+            component_record_index,
+            context_uuid,
+            context_uuid_offset,
+        },
+    );
     Ok(())
 }
 
@@ -223,15 +226,15 @@ pub(crate) fn decode_component_naming_spaces(
         let meta = scan.parsed_metastream(&meta_entry.entry.name)?;
         let mut component_entities = HashSet::new();
         for design_type in meta.types.iter().filter(|design_type| {
-                design_type.module == COMPONENT_MODULE
-                    && design_type
-                        .base_type_guid
-                        .value()
-                        .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                        .is_some_and(|base| {
-                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
-                        })
-            }) {
+            design_type.module == COMPONENT_MODULE
+                && design_type
+                    .base_type_guid
+                    .value()
+                    .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+                    .is_some_and(|base| {
+                        base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                    })
+        }) {
             for &entity_id in design_type.entities.values() {
                 if component_entities.contains(&entity_id) {
                     continue;
@@ -265,7 +268,9 @@ pub(crate) fn decode_component_naming_spaces(
                 if !component_entities.contains(&component_record_index) {
                     continue;
                 }
-                let Some((context_uuid, _)) = lp_utf16_bounded_charged(ctx, bytes, uuid_offset, 36..=36)? else {
+                let Some((context_uuid, _)) =
+                    lp_utf16_bounded_charged(ctx, bytes, uuid_offset, 36..=36)?
+                else {
                     continue;
                 };
                 let Ok(context_uuid) =
@@ -312,7 +317,9 @@ pub(crate) fn decode_component_naming_spaces(
             }) {
                 continue;
             }
-            let Some((context_uuid, _)) = lp_utf16_bounded_charged(ctx, bytes, uuid_offset, 36..=36)? else {
+            let Some((context_uuid, _)) =
+                lp_utf16_bounded_charged(ctx, bytes, uuid_offset, 36..=36)?
+            else {
                 continue;
             };
             let Ok(context_uuid) =
@@ -335,9 +342,10 @@ pub(crate) fn decode_component_naming_spaces(
             .filter(|entity| !by_component.contains_key(entity))
             .min()
         {
-            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
-                "Design component {missing} has no context UUID binding"
-            )));
+            return Err(crate::design::text::malformed_design(
+                Some(ctx),
+                format_args!("Design component {missing} has no context UUID binding"),
+            ));
         }
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(by_component.len()),
@@ -441,9 +449,9 @@ pub(super) fn design_primary_frames<'a>(
         "f3d design primary frames",
     )?;
     let mut frames = Vec::new();
-    frames.try_reserve(indexed.len()).map_err(|_| {
-        ctx.refuse_codec_limit("f3d design primary frames allocation", 0, 1)
-    })?;
+    frames
+        .try_reserve(indexed.len())
+        .map_err(|_| ctx.refuse_codec_limit("f3d design primary frames allocation", 0, 1))?;
     for frame in indexed {
         let entity_id = frame.entity_id;
         let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.end, entity_id)
@@ -516,9 +524,12 @@ pub(super) fn typed_primary_frames<'a>(
         }
         for &entity_id in design_type.entities.values() {
             if typed_entities.contains(&entity_id) {
-                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
-                    "F3D Design {record_kind} entity {entity_id} is registered more than once"
-                )));
+                return Err(crate::design::text::malformed_design(
+                    Some(ctx),
+                    format_args!(
+                        "F3D Design {record_kind} entity {entity_id} is registered more than once"
+                    ),
+                ));
             }
             ctx.charge_collection_items(1, "f3d typed primary entities")?;
             typed_entities.try_reserve(1).map_err(|_| {
@@ -547,9 +558,9 @@ pub(super) fn typed_primary_frames<'a>(
             resolved_entities.insert(primary_frame.entity_id);
         }
         ctx.charge_collection_items(1, "f3d typed primary frames")?;
-        frames.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d typed primary frames allocation", 0, 1)
-        })?;
+        frames
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("f3d typed primary frames allocation", 0, 1))?;
         frames.push(TypedPrimaryFrame {
             entity_id: primary_frame.entity_id,
             start: primary_frame.start,
@@ -574,9 +585,8 @@ pub(super) fn stream_types_by_entity<'a>(
 ) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
     let mut by_entity = HashMap::new();
     for design_type in types.iter().filter(|design_type| {
-        native_stream(&design_type.id).is_some_and(|scope| {
-            meta_scope_matches_bulk(scope, bulk_entry_name)
-        })
+        native_stream(&design_type.id)
+            .is_some_and(|scope| meta_scope_matches_bulk(scope, bulk_entry_name))
     }) {
         for &entity_id in design_type.entities.values() {
             if !by_entity.contains_key(&entity_id) {
@@ -585,7 +595,10 @@ pub(super) fn stream_types_by_entity<'a>(
                     ctx.refuse_codec_limit("f3d stream entity types allocation", 0, 1)
                 })?;
             }
-            by_entity.insert(entity_id, (design_type.type_guid.as_str(), design_type.version));
+            by_entity.insert(
+                entity_id,
+                (design_type.type_guid.as_str(), design_type.version),
+            );
         }
     }
     Ok(by_entity)
@@ -601,19 +614,21 @@ pub(super) fn stream_types_by_class_tag<'a>(
     for (ordinal, design_type) in types
         .iter()
         .filter(|design_type| {
-            native_stream(&design_type.id).is_some_and(|scope| {
-                meta_scope_matches_bulk(scope, bulk_entry_name)
-            })
+            native_stream(&design_type.id)
+                .is_some_and(|scope| meta_scope_matches_bulk(scope, bulk_entry_name))
         })
         .enumerate()
     {
-        let Some(class_tag) = u32::try_from(ordinal).ok().and_then(|ordinal| ordinal.checked_add(256)) else {
+        let Some(class_tag) = u32::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_add(256))
+        else {
             continue;
         };
         ctx.charge_collection_items(1, "f3d stream types by class tag")?;
-        by_class_tag.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d stream class types allocation", 0, 1)
-        })?;
+        by_class_tag
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("f3d stream class types allocation", 0, 1))?;
         by_class_tag.insert(class_tag, design_type);
     }
     Ok(by_class_tag)
@@ -688,7 +703,8 @@ fn parse_feature_timeline_record(
         count,
     )) = (|| {
         let (start, end) = (frame.start, frame.end);
-        let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        let (class_tag, after_tag) =
+            lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
         if class_tag != expected_class_tag
             || View::u64_le_at(bytes, after_tag)? != expected_entity_id
         {
@@ -738,9 +754,9 @@ fn parse_feature_timeline_record(
         .ok_or_else(|| ctx.refuse_codec_limit("F3D timeline sort work", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, "validate F3D timeline item uniqueness")?;
     let mut items = Vec::new();
-    items.try_reserve(count).map_err(|_| {
-        ctx.refuse_codec_limit("F3D timeline item slots allocation", 0, 1)
-    })?;
+    items
+        .try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit("F3D timeline item slots allocation", 0, 1))?;
     for _ in 0..count {
         let Some(target_offset) = at.checked_add(1) else {
             return Ok(None);
@@ -790,8 +806,7 @@ fn parse_feature_timeline_record(
     .ok() else {
         return Ok(None);
     };
-    let Some(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag).ok()
-    else {
+    let Some(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag).ok() else {
         return Ok(None);
     };
     let Some(record_index) = std::num::NonZeroU64::new(expected_entity_id) else {

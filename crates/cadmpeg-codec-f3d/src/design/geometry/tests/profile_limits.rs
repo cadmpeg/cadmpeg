@@ -16,8 +16,14 @@ fn sketch_indexed_vectors_refuse_outer_and_inner_limits() {
     use cadmpeg_core::CodecError;
 
     for (index_operation, value_operation) in [
-        ("f3d sketch endpoint cell", "f3d sketch endpoint cell member"),
-        ("f3d sketch edge adjacency", "f3d sketch edge adjacency member"),
+        (
+            "f3d sketch endpoint cell",
+            "f3d sketch endpoint cell member",
+        ),
+        (
+            "f3d sketch edge adjacency",
+            "f3d sketch edge adjacency member",
+        ),
     ] {
         for (limit, operation) in [(0, index_operation), (1, value_operation)] {
             let arena = DecodeArena::new();
@@ -25,13 +31,16 @@ fn sketch_indexed_vectors_refuse_outer_and_inner_limits() {
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
-            assert!(matches!(
-                crate::design::geometry::push_geometry_index(Some(&ctx), &mut index, 1, 2,
-                    index_operation, value_operation),
-                Err(CodecError::ResourceLimit(failure))
-                    if failure.dimension == ResourceDimension::CollectionItems
-                        && failure.operation == operation
-            ), "operation {operation}");
+            assert!(
+                matches!(
+                    crate::design::geometry::push_geometry_index(Some(&ctx), &mut index, 1, 2,
+                        index_operation, value_operation),
+                    Err(CodecError::ResourceLimit(failure))
+                        if failure.dimension == ResourceDimension::CollectionItems
+                            && failure.operation == operation
+                ),
+                "operation {operation}"
+            );
         }
     }
 }
@@ -61,12 +70,15 @@ fn closed_sketch_profile_collections_refuse_matching_limits() {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut items = Vec::new();
-        assert!(matches!(
-            crate::design::geometry::push_geometry_item(Some(&ctx), &mut items, 1, operation),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ), "operation {operation}");
+        assert!(
+            matches!(
+                crate::design::geometry::push_geometry_item(Some(&ctx), &mut items, 1, operation),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ),
+            "operation {operation}"
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -95,13 +107,16 @@ fn closed_sketch_profile_id_copies_refuse_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            crate::design::geometry::copy_geometry_id::<SketchEntityId>(Some(&ctx),
-                "synthetic:test:id#edge", operation),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation
-        ), "operation {operation}");
+        assert!(
+            matches!(
+                crate::design::geometry::copy_geometry_id::<SketchEntityId>(Some(&ctx),
+                    "synthetic:test:id#edge", operation),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::RetainedBytes
+                        && failure.operation == operation
+            ),
+            "operation {operation}"
+        );
     }
 }
 
@@ -127,12 +142,18 @@ macro_rules! geometry_collection_refusal_test {
     };
 }
 
-geometry_collection_refusal_test!(branched_profile_start_refuses_limit,
-    "f3d branched profile start half-edge");
-geometry_collection_refusal_test!(branched_profile_member_refuses_limit,
-    "f3d branched profile member");
-geometry_collection_refusal_test!(branched_profile_output_refuses_limit,
-    "f3d branched profile output");
+geometry_collection_refusal_test!(
+    branched_profile_start_refuses_limit,
+    "f3d branched profile start half-edge"
+);
+geometry_collection_refusal_test!(
+    branched_profile_member_refuses_limit,
+    "f3d branched profile member"
+);
+geometry_collection_refusal_test!(
+    branched_profile_output_refuses_limit,
+    "f3d branched profile output"
+);
 
 #[test]
 fn branched_profile_component_refuses_limit() {
@@ -223,16 +244,26 @@ fn branched_profile_entity_id_refuses_limit() {
     ));
 }
 
-geometry_collection_refusal_test!(tangent_profile_cycle_edge_refuses_limit,
-    "f3d tangent profile cycle edge");
-geometry_collection_refusal_test!(tangent_profile_cycle_refuses_limit,
-    "f3d tangent profile cycle");
-geometry_collection_refusal_test!(tangent_profile_cycle_point_refuses_limit,
-    "f3d tangent profile cycle point");
-geometry_collection_refusal_test!(tangent_profile_member_refuses_limit,
-    "f3d tangent profile member");
-geometry_collection_refusal_test!(tangent_profile_output_point_refuses_limit,
-    "f3d tangent profile output point");
+geometry_collection_refusal_test!(
+    tangent_profile_cycle_edge_refuses_limit,
+    "f3d tangent profile cycle edge"
+);
+geometry_collection_refusal_test!(
+    tangent_profile_cycle_refuses_limit,
+    "f3d tangent profile cycle"
+);
+geometry_collection_refusal_test!(
+    tangent_profile_cycle_point_refuses_limit,
+    "f3d tangent profile cycle point"
+);
+geometry_collection_refusal_test!(
+    tangent_profile_member_refuses_limit,
+    "f3d tangent profile member"
+);
+geometry_collection_refusal_test!(
+    tangent_profile_output_point_refuses_limit,
+    "f3d tangent profile output point"
+);
 
 #[test]
 fn tangent_profile_used_edge_refuses_limit() {
@@ -267,12 +298,21 @@ fn single_line_profile() -> (Vec<SketchEntity>, Vec<SketchEntityUse>) {
     let sketch = SketchId::mint("synthetic:test:id#profile-limits").unwrap();
     let id = SketchEntityId::mint("synthetic:test:id#profile-edge").unwrap();
     let entity = SketchEntity::new(
-        id.clone(), sketch,
+        id.clone(),
+        sketch,
         SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(0.0, 0.0), end: Point2::new(1.0, 0.0),
-        }).unwrap(),
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        })
+        .unwrap(),
     );
-    (vec![entity], vec![SketchEntityUse { entity: id, reversed: false }])
+    (
+        vec![entity],
+        vec![SketchEntityUse {
+            entity: id,
+            reversed: false,
+        }],
+    )
 }
 
 const PROFILE_LIMIT_TEST_TOLERANCE: f64 = 1.0e-6;
@@ -322,8 +362,10 @@ fn certified_profile_tubes_refuse_collection_limit() {
 
 fn split_limit_line() -> SketchGeometry {
     SketchGeometry::try_from(SketchGeometryDefinition::Line {
-        start: Point2::new(0.0, 0.0), end: Point2::new(2.0, 0.0),
-    }).unwrap()
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(2.0, 0.0),
+    })
+    .unwrap()
 }
 
 #[test]
@@ -378,9 +420,10 @@ fn certified_loop_containment_uses_existing_tube_vertices() {
         Point2::new(2.0, 0.0),
         Point2::new(0.0, 2.0),
     ];
-    let loop_ = crate::design::geometry::CertifiedProfileLoop::from_vertices(&vertices, None).unwrap().unwrap();
+    let loop_ = crate::design::geometry::CertifiedProfileLoop::from_vertices(&vertices, None)
+        .unwrap()
+        .unwrap();
     assert!(loop_.contains_point(Point2::new(0.25, 0.25)));
     assert!(!loop_.contains_point(Point2::new(1.5, 1.5)));
     assert!(!loop_.contains_point(Point2::new(0.0, 0.0)));
 }
-

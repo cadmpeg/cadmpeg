@@ -1542,7 +1542,8 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         ];
 
     let roots = crate::design::face_resolve::extrude_profile_group_roots(None, &scope, &groups)
-        .unwrap().expect("valid profile hierarchy");
+        .unwrap()
+        .expect("valid profile hierarchy");
     assert_eq!(
         roots
             .iter()
@@ -1569,9 +1570,13 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         }])
         .collect();
     repeated_child[0].try_set_members(repeated_members).unwrap();
-    assert!(
-        crate::design::face_resolve::extrude_profile_group_roots(None, &scope, &repeated_child).unwrap().is_none()
-    );
+    assert!(crate::design::face_resolve::extrude_profile_group_roots(
+        None,
+        &scope,
+        &repeated_child
+    )
+    .unwrap()
+    .is_none());
 
     let previous_topology = AsmHistoricalTopology {
         faces: vec![10, 11, 20],
@@ -1649,7 +1654,8 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         &groups,
         &histories,
         &scope_histories,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(operands[0].resolved_face_slots, [10]);
     assert_eq!(operands[1].resolved_face_slots, [11]);
     let profile = crate::design::face_resolve::resolved_extrude_profile_face_group(

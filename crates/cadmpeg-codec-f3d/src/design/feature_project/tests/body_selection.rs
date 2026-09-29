@@ -23,7 +23,8 @@ fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
         blob_name: "BREP.body".to_owned(),
         blob_name_offset: 30,
         body: Some(cadmpeg_ir::ids::BodyId::try_from("f3d:model:body#1").unwrap()),
-    }).unwrap();
+    })
+    .unwrap();
     (scope, binding)
 }
 
@@ -33,16 +34,31 @@ fn assert_selection_refusal(operation: &'static str, retained: bool) {
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        if retained { policy.limits.max_retained_bytes = limit; }
-        else { policy.limits.max_collection_items = limit; }
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = design_body_selection(Some(&ctx), &scope, [20].into_iter(),
-            std::slice::from_ref(&binding));
+        let result = design_body_selection(
+            Some(&ctx),
+            &scope,
+            [20].into_iter(),
+            std::slice::from_ref(&binding),
+        );
         match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
-                && failure.dimension == (if retained { ResourceDimension::RetainedBytes }
-                    else { ResourceDimension::CollectionItems }) => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension
+                        == (if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -86,26 +102,42 @@ fn project_copied_body(
     let timeline = crate::records::entity_header::DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
         crate::records::entity_header::DesignTimelineFrame::test_items(
-            0, vec![crate::records::identity::Located { value: 10, offset: 0 }],
+            0,
+            vec![crate::records::identity::Located {
+                value: 10,
+                offset: 0,
+            }],
         ),
         crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         std::num::NonZeroU64::new(1).unwrap(),
         0,
         std::num::NonZeroU64::new(1).unwrap(),
-    ).unwrap();
+    )
+    .unwrap();
     crate::design::feature_project::project_parameter_design_with_edge_identities(
         ctx,
         &crate::design::feature_project::ProjectInputs {
-            native: &[], owners: &[], scopes: std::slice::from_ref(scope),
-            timelines: std::slice::from_ref(&timeline), construction_groups: &[],
-            fillet_radius_groups: &[], edge_operands: &[], edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[], entity_selection_operands: &[],
-            curve_identities: &[], face_operands: &[], body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[], placements: &[],
+            native: &[],
+            owners: &[],
+            scopes: std::slice::from_ref(scope),
+            timelines: std::slice::from_ref(&timeline),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
+            placements: &[],
             body_bindings: std::slice::from_ref(binding),
-            component_naming_spaces: &[], histories: &[],
+            component_naming_spaces: &[],
+            histories: &[],
         },
-    ).map(|(features, _)| features)
+    )
+    .map(|(features, _)| features)
 }
 
 fn copied_body_fixture() -> (DesignParameterScope, DesignBodyBinding) {
@@ -120,15 +152,31 @@ fn copied_body_fixture() -> (DesignParameterScope, DesignBodyBinding) {
     if let crate::records::feature::scope::DesignScopePayloadMut::CopyPasteBodies(slot) =
         scope.payload_mut()
     {
-        *slot = Some(DesignCopyPasteBodiesOperation::try_new(
-            vec![DesignCopiedBody {
-                operand: crate::records::identity::Located { value: 502, offset: 26 },
-                source: crate::records::identity::Located { value: 10, offset: 25 },
-                copied: crate::records::identity::Located { value: 20, offset: 40 },
-            }],
-            501, crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
-            0, 503, crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(), 0,
-        ).unwrap());
+        *slot = Some(
+            DesignCopyPasteBodiesOperation::try_new(
+                vec![DesignCopiedBody {
+                    operand: crate::records::identity::Located {
+                        value: 502,
+                        offset: 26,
+                    },
+                    source: crate::records::identity::Located {
+                        value: 10,
+                        offset: 25,
+                    },
+                    copied: crate::records::identity::Located {
+                        value: 20,
+                        offset: 40,
+                    },
+                }],
+                501,
+                crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                0,
+                503,
+                crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                0,
+            )
+            .unwrap(),
+        );
     }
     (scope, binding)
 }
@@ -139,14 +187,25 @@ fn assert_copied_body_output_refusal(operation: &'static str, retained: bool) {
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        if retained { policy.limits.max_retained_bytes = limit; }
-        else { policy.limits.max_collection_items = limit; }
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match project_copied_body(Some(&ctx), &scope, &binding) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
-                && failure.dimension == (if retained { ResourceDimension::RetainedBytes }
-                    else { ResourceDimension::CollectionItems }) => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension
+                        == (if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -169,5 +228,8 @@ fn copied_body_output_preserves_resolved_body() {
     let (scope, binding) = copied_body_fixture();
     let features = project_copied_body(None, &scope, &binding).unwrap();
     assert_eq!(features.len(), 1);
-    assert_eq!(features[0].evaluation.outputs().as_slice(), [binding.body.as_ref().unwrap().clone()]);
+    assert_eq!(
+        features[0].evaluation.outputs().as_slice(),
+        [binding.body.as_ref().unwrap().clone()]
+    );
 }

@@ -39,9 +39,9 @@ pub(super) fn surface_patch_boundaries(
         boundary.scope_reference_ordinal = ordinal;
         boundary.record_index = *record_index;
         ctx.charge_collection_items(1, "f3d SurfacePatch boundaries")?;
-        boundaries.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d SurfacePatch boundaries allocation", 0, 1)
-        })?;
+        boundaries
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("f3d SurfacePatch boundaries allocation", 0, 1))?;
         boundaries.push(boundary);
     }
     Ok(boundaries)

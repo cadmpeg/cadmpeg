@@ -19,7 +19,8 @@ fn charged_native_selections_refuse_uniqueness_index_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = crate::features::NativeSelections::try_from_charged(
-        vec!["first".into(), "second".into()], &ctx,
+        vec!["first".into(), "second".into()],
+        &ctx,
         "test native selection uniqueness",
     );
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))

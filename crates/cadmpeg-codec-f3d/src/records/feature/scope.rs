@@ -2182,6 +2182,8 @@ impl DesignParameterScope {
         })
     }
 
+    #[cfg(test)]
+
     pub(crate) fn into_draft(self) -> DesignParameterScopeDraft {
         DesignParameterScopeDraft {
             id: self.id,
@@ -2203,6 +2205,8 @@ impl DesignParameterScope {
             paired_byte_offset: self.paired_byte_offset,
         }
     }
+
+    #[cfg(test)]
 
     pub(crate) fn try_edit(
         &mut self,

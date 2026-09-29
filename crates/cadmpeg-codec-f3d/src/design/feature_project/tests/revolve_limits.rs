@@ -2,8 +2,6 @@
 
 #[test]
 fn revolve_native_profile_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use crate::records::feature::path_features::{
         DesignPathFeatureConstruction, DesignRevolveConstruction,
     };
@@ -11,18 +9,24 @@ fn revolve_native_profile_id_refuses_retained_limit() {
     use crate::records::topology::construction::DesignConstructionOperandGroup;
     use crate::records::topology::edge_identity::DesignEdgeOperand;
     use crate::records::topology::extrude_selection::DesignOperandRole;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#12", DesignFeatureKind::Revolve, 12);
-    scope.try_edit(|draft| {
-        draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
-            operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
-            operation_offset: 0,
-            angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
-            angle_record_index: 300,
-            angle_offset: 0,
-            opposite_angle: None,
-        }).into();
-    }).unwrap();
+    let mut scope =
+        DesignParameterScope::empty("f3d:test:scope#12", DesignFeatureKind::Revolve, 12);
+    scope
+        .try_edit(|draft| {
+            draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
+                operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
+                operation_offset: 0,
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                angle_record_index: 300,
+                angle_offset: 0,
+                opposite_angle: None,
+            })
+            .into();
+        })
+        .unwrap();
     let group = |record_index, ordinal, member, role: DesignOperandRole| {
         serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
             "id": format!("f3d:test:group#{record_index}"),
@@ -45,7 +49,8 @@ fn revolve_native_profile_id_refuses_retained_limit() {
             "role_offset": 1054,
             "paired_class_tag": "259",
             "paired_byte_offset": 1125
-        })).unwrap()
+        }))
+        .unwrap()
     };
     let groups = [
         group(100, 0, 200, DesignOperandRole::PROFILE),
@@ -72,16 +77,28 @@ fn revolve_native_profile_id_refuses_retained_limit() {
         "resolved_axis_direction": [0.0, 0.0, 1.0],
         "next_record_index": 205,
         "next_byte_offset": 160
-    })).unwrap();
-    let project = |ctx| super::super::project_fixed_revolve_with_entities(
-        ctx, &scope, &groups, std::slice::from_ref(&axis), &[], &[], &[], &[],
-    );
+    }))
+    .unwrap();
+    let project = |ctx| {
+        super::super::project_fixed_revolve_with_entities(
+            ctx,
+            &scope,
+            &groups,
+            std::slice::from_ref(&axis),
+            &[],
+            &[],
+            &[],
+            &[],
+        )
+    };
     assert!(project(None).unwrap().is_some());
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(project(Some(&ctx)), Err(CodecError::ResourceLimit(failure))
+    assert!(
+        matches!(project(Some(&ctx)), Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::RetainedBytes
-            && failure.operation == "f3d Revolve native profile id"));
+            && failure.operation == "f3d Revolve native profile id")
+    );
 }

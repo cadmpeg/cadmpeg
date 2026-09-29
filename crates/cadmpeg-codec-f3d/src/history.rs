@@ -1479,10 +1479,7 @@ pub(crate) fn bind_feature_body_selections(
             };
             let prefix = feature_input_prefix(&feature.id, previous_state_id);
             *bodies = BodySelection::historical(
-                crate::ids::feature_input_topology_id(
-                    &feature.id,
-                    previous_state_id,
-                ),
+                crate::ids::feature_input_topology_id(&feature.id, previous_state_id),
                 vec![crate::ids::history_input_body_id(&prefix, body)],
                 group_id.clone(),
             )
@@ -2564,8 +2561,7 @@ fn bind_entity_face_groups(
             }
         }
     }
-    let state_id =
-        crate::ids::feature_input_topology_id(feature_id, previous_state_id);
+    let state_id = crate::ids::feature_input_topology_id(feature_id, previous_state_id);
     let mut topologies = input_topologies
         .iter_mut()
         .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
@@ -2629,8 +2625,7 @@ fn bind_hole_face_selection(
     let Some(source) = historical_brep_source(&candidate.history_id) else {
         return;
     };
-    let state_id =
-        crate::ids::feature_input_topology_id(feature_id, previous_state_id);
+    let state_id = crate::ids::feature_input_topology_id(feature_id, previous_state_id);
     let mut topologies = input_topologies
         .iter_mut()
         .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
@@ -2844,10 +2839,7 @@ pub(crate) fn project_feature_input_topologies(
             let topology = state.topology()?;
             let prefix = feature_input_prefix(&feature.id, previous_state_id);
             Some(FeatureInputTopology {
-                id: crate::ids::feature_input_topology_id(
-                    &feature.id,
-                    previous_state_id,
-                ),
+                id: crate::ids::feature_input_topology_id(&feature.id, previous_state_id),
                 input_of: feature.id.clone(),
                 bodies: (topology
                     .bodies
@@ -4065,7 +4057,8 @@ pub(crate) fn bind_face_operand_history_candidates(
             if groups.next().is_some() {
                 return Ok(None);
             }
-            let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) else {
+            let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str())
+            else {
                 return Ok(None);
             };
             crate::design::face_resolve::legacy_face_recipe_reference_candidates(
@@ -4149,17 +4142,27 @@ pub(crate) fn bind_face_operand_history_candidates(
                 } else if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                 {
-                    crate::design::face_resolve::resolve_surface_delete_face_history_set(ctx, operand)?
-                        .unwrap_or_default()
+                    crate::design::face_resolve::resolve_surface_delete_face_history_set(
+                        ctx, operand,
+                    )?
+                    .unwrap_or_default()
                 } else if preserves_stable_face_set {
-                    if let Some(stable) = crate::design::face_resolve::resolve_stable_bounded_face_history_set(ctx, operand)? {
+                    if let Some(stable) =
+                        crate::design::face_resolve::resolve_stable_bounded_face_history_set(
+                            ctx, operand,
+                        )?
+                    {
                         stable
                     } else {
-                        crate::design::face_resolve::resolve_bounded_face_history_candidates(ctx, operand)?
-                            .unwrap_or_default()
+                        crate::design::face_resolve::resolve_bounded_face_history_candidates(
+                            ctx, operand,
+                        )?
+                        .unwrap_or_default()
                     }
                 } else if let Some(bounded) =
-                    crate::design::face_resolve::resolve_bounded_face_history_candidates(ctx, operand)?
+                    crate::design::face_resolve::resolve_bounded_face_history_candidates(
+                        ctx, operand,
+                    )?
                 {
                     bounded
                 } else {
@@ -5189,7 +5192,8 @@ fn bind_profile_face_group_cardinality(
                 group,
                 operand_groups,
                 operands,
-            )? else {
+            )?
+            else {
                 continue;
             };
             if group.members().len() != indices.len()
@@ -7809,7 +7813,9 @@ fn historical_mirror_face_operand_plane(
                 .filter_map(|face| stable_ref(face.as_str()))
                 .collect::<Vec<_>>()
         } else {
-            operand.preceding_candidate_faces.iter()
+            operand
+                .preceding_candidate_faces
+                .iter()
                 .filter_map(|face| stable_ref(face.as_str()))
                 .collect::<Vec<_>>()
         }

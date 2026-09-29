@@ -5,8 +5,8 @@ use crate::design::decode::operands::parse_construction_operand_path;
 use crate::design::decode::operands::parse_construction_operand_transform;
 use crate::design::decode::operands::parse_construction_tracking_path;
 use crate::design::decode::operands::parse_loft_legacy_body_carrier;
-use crate::design::decode::operands::push_loft_legacy_body_carrier;
 use crate::design::decode::operands::push_construction_operand_record;
+use crate::design::decode::operands::push_loft_legacy_body_carrier;
 
 #[test]
 fn construction_operand_typed_runs_refuse_collection_limit() {
@@ -62,14 +62,18 @@ fn legacy_loft_body_carrier_output_refuses_collection_and_id_limits() {
         crate::records::feature::scope::DesignFeatureKind::Loft,
         12,
     );
-    scope.try_edit(|draft| {
-        draft.payload = crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(
-            crate::records::feature::path_features::DesignLoftConstruction {
-                operation: crate::records::feature::extrude::DesignExtrudeOperation::Cut,
-                operation_offset: 0,
-            },
-        ).into();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.payload =
+                crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(
+                    crate::records::feature::path_features::DesignLoftConstruction {
+                        operation: crate::records::feature::extrude::DesignExtrudeOperation::Cut,
+                        operation_offset: 0,
+                    },
+                )
+                .into();
+        })
+        .unwrap();
     let header = crate::records::decal::DesignRecordHeader {
         id: "header-322".into(),
         record_index: 100,
@@ -81,8 +85,18 @@ fn legacy_loft_body_carrier_output_refuses_collection_and_id_limits() {
     let stream = "Design/BulkStream.dat";
     let native_scope_len = u64::try_from(crate::ids::native_scope(stream).len()).unwrap();
     for (collection_limit, retained_limit, dimension, operation) in [
-        (0, u64::MAX, ResourceDimension::CollectionItems, "f3d legacy Loft body carrier output"),
-        (1, native_scope_len, ResourceDimension::RetainedBytes, "f3d legacy Loft body carrier ID"),
+        (
+            0,
+            u64::MAX,
+            ResourceDimension::CollectionItems,
+            "f3d legacy Loft body carrier output",
+        ),
+        (
+            1,
+            native_scope_len,
+            ResourceDimension::RetainedBytes,
+            "f3d legacy Loft body carrier ID",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();

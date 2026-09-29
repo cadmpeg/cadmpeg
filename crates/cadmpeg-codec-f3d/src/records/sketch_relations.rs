@@ -736,12 +736,14 @@ impl SketchRelation {
 
     /// Constraint kinds selected by `state`.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
         constraint_kinds_from_state(self.definition.state()).0
     }
 
     /// Bits in `state` outside the defined constraint mask.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn unknown_constraint_bits(&self) -> u64 {
         constraint_kinds_from_state(self.definition.state()).1
     }

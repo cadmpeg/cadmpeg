@@ -13,7 +13,8 @@ fn face_source_reference_headers_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&service, &[]).unwrap();
+    let records =
+        crate::design::decode::sketch::IndexedRecordOffsets::build(&service, &[]).unwrap();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
@@ -34,9 +35,11 @@ fn face_source_output_refuses_collection_limit() {
         carrier_reference_ordinal: 0,
         carrier_record_index: 7,
         carrier_span: crate::records::identity::NonEmptyByteSpan::new(0, 11).unwrap(),
-        carrier_class_tag: crate::records::references::DesignClassTag::try_from("398".to_owned()).unwrap(),
+        carrier_class_tag: crate::records::references::DesignClassTag::try_from("398".to_owned())
+            .unwrap(),
         paired_record_index: 7,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("462".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("462".to_owned())
+            .unwrap(),
         source_members: Vec::new(),
     };
     let arena = DecodeArena::new();

@@ -200,11 +200,14 @@ pub(super) fn exact_work_plane_frame(
             else {
                 continue;
             };
-            if candidate.replace(ScopePlacementFrame {
-                transform,
-                transform_offset: matrix_at as u64,
-                reference,
-            }).is_some() {
+            if candidate
+                .replace(ScopePlacementFrame {
+                    transform,
+                    transform_offset: matrix_at as u64,
+                    reference,
+                })
+                .is_some()
+            {
                 return None;
             }
         }
@@ -350,7 +353,8 @@ fn exact_direct_work_axis_construction(
     else {
         return None;
     };
-    let carrier_primary_class = exact_indexed_header_at(bytes, carrier_start, *carrier_record_index)?;
+    let carrier_primary_class =
+        exact_indexed_header_at(bytes, carrier_start, *carrier_record_index)?;
     let carrier_paired_class_tag =
         exact_indexed_header_at(bytes, carrier_paired, *carrier_record_index)?;
     if carrier_paired.checked_sub(carrier_start)? != carrier_length
@@ -365,7 +369,8 @@ fn exact_direct_work_axis_construction(
     else {
         return None;
     };
-    let support_primary_class = exact_indexed_header_at(bytes, support_start, *support_record_index)?;
+    let support_primary_class =
+        exact_indexed_header_at(bytes, support_start, *support_record_index)?;
     let support_paired_class_tag =
         exact_indexed_header_at(bytes, support_paired, *support_record_index)?;
     if support_paired.checked_sub(support_start)? != 293
@@ -399,10 +404,8 @@ fn exact_direct_work_axis_construction(
         origin,
         displacement,
         origin_offset: u64::try_from(carrier_start.checked_add(axis_values_offset)?).ok()?,
-        displacement_offset: u64::try_from(
-            carrier_start.checked_add(axis_values_offset + 3 * 8)?,
-        )
-        .ok()?,
+        displacement_offset: u64::try_from(carrier_start.checked_add(axis_values_offset + 3 * 8)?)
+            .ok()?,
         source: Some(DesignWorkAxisSource::DirectCarrier {
             carrier_record_index: *carrier_record_index,
             support_record_index: *support_record_index,
@@ -441,11 +444,14 @@ pub(super) fn exact_joint_origin_frame(
                 if let Ok(transform) =
                     crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
                 {
-                    if candidate.replace(ScopePlacementFrame {
-                        transform,
-                        transform_offset: (start + joint_origin_class_337_266::MATRIX) as u64,
-                        reference: None,
-                    }).is_some() {
+                    if candidate
+                        .replace(ScopePlacementFrame {
+                            transform,
+                            transform_offset: (start + joint_origin_class_337_266::MATRIX) as u64,
+                            reference: None,
+                        })
+                        .is_some()
+                    {
                         return None;
                     }
                 }
@@ -465,11 +471,14 @@ pub(super) fn exact_joint_origin_frame(
                 if let Ok(transform) =
                     crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
                 {
-                    if candidate.replace(ScopePlacementFrame {
-                        transform,
-                        transform_offset: (start + 49) as u64,
-                        reference: None,
-                    }).is_some() {
+                    if candidate
+                        .replace(ScopePlacementFrame {
+                            transform,
+                            transform_offset: (start + 49) as u64,
+                            reference: None,
+                        })
+                        .is_some()
+                    {
                         return None;
                     }
                 }
@@ -492,11 +501,14 @@ pub(super) fn exact_joint_origin_frame(
             else {
                 continue;
             };
-            if candidate.replace(ScopePlacementFrame {
-                transform,
-                transform_offset: (start + 60) as u64,
-                reference: Some((reference, (start + 46) as u64)),
-            }).is_some() {
+            if candidate
+                .replace(ScopePlacementFrame {
+                    transform,
+                    transform_offset: (start + 60) as u64,
+                    reference: Some((reference, (start + 46) as u64)),
+                })
+                .is_some()
+            {
                 return None;
             }
         }

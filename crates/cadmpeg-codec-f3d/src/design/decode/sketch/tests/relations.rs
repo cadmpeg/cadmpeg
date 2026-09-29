@@ -126,7 +126,8 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         0x100_0000_0000,
         &[2403, 2404],
     );
-    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
     assert_eq!(
         parsed
             .members
@@ -305,7 +306,8 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         &[291, 327, 330, 280],
     );
     let mut parsed =
-        tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern).unwrap();
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+            .unwrap();
     assert_eq!(
         parsed
             .members
@@ -368,7 +370,8 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         &[353, 352, 442, 445],
     );
     let mut parsed =
-        tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+            .unwrap();
     assert_eq!(
         parsed
             .members
@@ -436,9 +439,13 @@ fn genesis_entity_header_variant_resolves_suffix_and_id() {
     assert_eq!(entity_id.as_str(), "0_201");
     assert!(!optional_slot_present);
     assert_eq!(end, bytes.len());
-    assert!(parse_settled_entity_header(&cadmpeg_test_support::service_decode_context(), &bytes, 0)
-        .unwrap()
-        .is_none());
+    assert!(parse_settled_entity_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]

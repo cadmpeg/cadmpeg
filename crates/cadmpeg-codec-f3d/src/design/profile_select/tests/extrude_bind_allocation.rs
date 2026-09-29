@@ -1,42 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use super::super::{bind_extrude_profile_selections, SketchCurveSelectionResolution};
+use super::*;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-    Feature, FeatureDefinition, FeatureId, FeatureOperation, LinearTermination,
-    PlanarProfileRef, ProfileRef,
+    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
+    FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, PlanarProfileRef,
+    ProfileRef,
 };
 use cadmpeg_ir::sketches::SpatialSketchId;
 use std::collections::BTreeMap;
 
 fn binder_scope() -> DesignParameterScope {
-    DesignParameterScope::try_new(
-        crate::records::feature::scope::DesignParameterScopeDraft {
-            id: "f3d:Design/BulkStream.dat:scope#7".into(),
-            byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
-            record_index: 7,
-            frame_length: 200,
-            kind_offset: 43,
-            payload: crate::records::feature::scope::DesignScopePayload::Face,
-            feature_ordinal: std::num::NonZeroU32::MIN,
-            feature_ordinal_offset: 128,
-            history_state_id: None,
-            previous_history_state_id: None,
-            previous_history_state_id_offset: None,
-            reference_count_offset: 20,
-            reference_members: crate::records::identity::ReferenceRun::from_columns(
-                vec![9], vec![25], "reference_members",
-            ).unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
-            paired_byte_offset: 200,
-        },
-    ).unwrap()
+    DesignParameterScope::try_new(crate::records::feature::scope::DesignParameterScopeDraft {
+        id: "f3d:Design/BulkStream.dat:scope#7".into(),
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        record_index: 7,
+        frame_length: 200,
+        kind_offset: 43,
+        payload: crate::records::feature::scope::DesignScopePayload::Face,
+        feature_ordinal: std::num::NonZeroU32::MIN,
+        feature_ordinal_offset: 128,
+        history_state_id: None,
+        previous_history_state_id: None,
+        previous_history_state_id_offset: None,
+        reference_count_offset: 20,
+        reference_members: crate::records::identity::ReferenceRun::from_columns(
+            vec![9],
+            vec![25],
+            "reference_members",
+        )
+        .unwrap(),
+        unclosed_construction_operand_groups: Vec::new(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
+            .unwrap(),
+        paired_byte_offset: 200,
+    })
+    .unwrap()
 }
 
 fn binder_group() -> DesignExtrudeSelectionGroup {
@@ -59,7 +62,8 @@ fn binder_group() -> DesignExtrudeSelectionGroup {
             paired_class_tag: "277".to_owned(),
             paired_byte_offset: 100,
         },
-    ).unwrap()
+    )
+    .unwrap()
 }
 
 fn binder_feature(scope: &DesignParameterScope, profile: ProfileRef) -> Feature {
@@ -78,10 +82,12 @@ fn binder_feature(scope: &DesignParameterScope, profile: ProfileRef) -> Feature 
                 profile,
                 direction: ExtrudeDirection::default(),
                 start: ExtrudeStart::default(),
-                extent: ExtrudeExtent::OneSided { side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll {},
-                    draft: None,
-                } },
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::ThroughAll {},
+                        draft: None,
+                    },
+                },
                 op: BooleanOp::NewBody,
                 solid: None,
                 face_maker: None,
@@ -114,35 +120,37 @@ fn binder_spatial_member() -> DesignExtrudeSelectionMember {
             group_member_ordinal: 0,
             record_index: 10,
             byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("278".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("278".to_owned())
+                .unwrap(),
             local_id: 200,
             local_id_offset: 21,
             asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            ).unwrap(),
+            )
+            .unwrap(),
             asset_id_offset: 33,
             context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            ).unwrap(),
+            )
+            .unwrap(),
             context_id_offset: 109,
             tail_slot_present: false,
             tail_slot_offset: 0,
             resolved_geometry: Some(SketchRelationOperand::Curve {
-                record_index: 20, primary_id: 200, secondary_id: 0,
+                record_index: 20,
+                primary_id: 200,
+                secondary_id: 0,
             }),
             operand_identity_ids: Vec::new(),
             historical: None,
             next_record_index: 11,
             next_byte_offset: 190,
         },
-    ).unwrap()
+    )
+    .unwrap()
 }
 
-fn assert_extrude_binder_refusal(
-    operation: &'static str,
-    mode: u8,
-    retained: bool,
-) {
+fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bool) {
     let scope = binder_scope();
     let group = binder_group();
     let sketch_id = SketchId::mint("f3d:model:sketch#1").unwrap();
@@ -152,21 +160,35 @@ fn assert_extrude_binder_refusal(
         ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id.clone()))
     };
     let sketch = binder_sketch(sketch_id);
-    let sketches = if mode == 1 { std::slice::from_ref(&sketch) } else { &[] };
+    let sketches = if mode == 1 {
+        std::slice::from_ref(&sketch)
+    } else {
+        &[]
+    };
     let spatial_id = SpatialSketchId::mint("f3d:model:spatial-sketch#1").unwrap();
     let spatial_sketch = SpatialSketch {
         id: spatial_id.clone(),
         name: None,
         configuration: None,
         visible: None,
-        profiles: if mode == 4 { vec![spatial_profile(&spatial_id, &[200])] } else { Vec::new() },
+        profiles: if mode == 4 {
+            vec![spatial_profile(&spatial_id, &[200])]
+        } else {
+            Vec::new()
+        },
         native_ref: None,
     };
     let spatial_sketches = if mode == 2 || mode == 4 {
         std::slice::from_ref(&spatial_sketch)
-    } else { &[] };
+    } else {
+        &[]
+    };
     let member = binder_spatial_member();
-    let members = if mode == 4 { std::slice::from_ref(&member) } else { &[] };
+    let members = if mode == 4 {
+        std::slice::from_ref(&member)
+    } else {
+        &[]
+    };
     let arrangement_budget = WorkBudget::new(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK);
     let scope_histories = HashMap::new();
     for limit in 0..128 {
@@ -180,23 +202,38 @@ fn assert_extrude_binder_refusal(
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut feature = binder_feature(&scope, profile.clone());
         let curve_resolution = SketchCurveSelectionResolution {
-            scopes: &[], groups: &[], operands: &[], placements: &[],
-            curve_identities: &[], sketches, sketch_entities: &[],
-            spatial_sketches, spatial_sketch_entities: &[],
+            scopes: &[],
+            groups: &[],
+            operands: &[],
+            placements: &[],
+            curve_identities: &[],
+            sketches,
+            sketch_entities: &[],
+            spatial_sketches,
+            spatial_sketch_entities: &[],
         };
         let resolution = ExtrudeProfileResolution {
-            entities: &[], spatial_sketches, spatial_entities: &[],
-            histories: &[], scope_histories: &scope_histories,
-            linear_tolerance: 0.000001, angular_tolerance: 0.000000001,
-            arrangement_budget: &arrangement_budget, ctx: Some(&ctx),
+            entities: &[],
+            spatial_sketches,
+            spatial_entities: &[],
+            histories: &[],
+            scope_histories: &scope_histories,
+            linear_tolerance: 0.000001,
+            angular_tolerance: 0.000000001,
+            arrangement_budget: &arrangement_budget,
+            ctx: Some(&ctx),
         };
         match bind_extrude_profile_selections(
-            std::slice::from_mut(&mut feature), std::slice::from_ref(&scope),
-            std::slice::from_ref(&group), members, sketches,
-            &curve_resolution, resolution,
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&group),
+            members,
+            sketches,
+            &curve_resolution,
+            resolution,
         ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected extrude binder refusal at {operation}: {other:?}"),
         }
     }

@@ -2,7 +2,8 @@
 //! Copy admitted feature fields under the caller decode resource policy.
 
 use super::{
-    HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, HoleShape, HoleSpecification, HoleThreadDepth, ThreadHand
+    HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, HoleShape,
+    HoleSpecification, HoleThreadDepth, ThreadHand,
 };
 
 clone_copy_for_decode!(HoleBottom);

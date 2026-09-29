@@ -45,11 +45,13 @@ fn body_recipe_limit_fixture() -> (
                 .unwrap(),
             asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            ).unwrap(),
+            )
+            .unwrap(),
             asset_id_offset: 56,
             context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            ).unwrap(),
+            )
+            .unwrap(),
             context_id_offset: 132,
             selector_tail: None,
             references: vec![DesignBodyRecipeReference {
@@ -71,7 +73,8 @@ fn body_recipe_limit_fixture() -> (
             next_record_index: 204,
             next_byte_offset: 256,
         },
-    ).unwrap();
+    )
+    .unwrap();
     (scope, group, operand)
 }
 
@@ -81,8 +84,13 @@ fn assert_body_recipe_collection_limit(operation: &'static str) {
 
     let (scope, group, operand) = body_recipe_limit_fixture();
     let operands = [operand];
-    assert!(matches!(crate::design::face_resolve::resolved_body_recipe_selection(
-        None, &scope, &group, &operands).unwrap(), Some(FaceSelection::Historical { .. })));
+    assert!(matches!(
+        crate::design::face_resolve::resolved_body_recipe_selection(
+            None, &scope, &group, &operands
+        )
+        .unwrap(),
+        Some(FaceSelection::Historical { .. })
+    ));
     for limit in 0..12 {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
@@ -91,7 +99,8 @@ fn assert_body_recipe_collection_limit(operation: &'static str) {
         if matches!(crate::design::face_resolve::resolved_body_recipe_selection(
             Some(&ctx), &scope, &group, &operands), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation) {
+                    && failure.operation == operation)
+        {
             return;
         }
     }
@@ -299,18 +308,27 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         &[target_group.clone(), replacement_group.clone()],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
-    ).unwrap();
+    )
+    .unwrap();
     assert!(matches!(
         reversed,
-        Some(FeatureDefinition::Operation(FeatureOperation::ReplaceFace { .. }))
+        Some(FeatureDefinition::Operation(
+            FeatureOperation::ReplaceFace { .. }
+        ))
     ));
     assert!(project_replace_face(
         None,
         &scope,
-        &[replacement_group.clone(), target_group.clone(), target_group.clone()],
+        &[
+            replacement_group.clone(),
+            target_group.clone(),
+            target_group.clone()
+        ],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
-    ).unwrap().is_none());
+    )
+    .unwrap()
+    .is_none());
 
     let mut invalid_scope = scope;
     invalid_scope
@@ -327,7 +345,8 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
     )
-    .unwrap().is_none());
+    .unwrap()
+    .is_none());
 }
 
 fn surface_trim_fixture() -> (
@@ -410,7 +429,8 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         &[target_group.clone(), tool_group.clone()],
         std::slice::from_ref(&body),
     )
-    .unwrap().expect("typed SurfaceTrim");
+    .unwrap()
+    .expect("typed SurfaceTrim");
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -536,7 +556,8 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&operation),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert!(matches!(
         feature.evaluation.definition(),
@@ -623,22 +644,33 @@ fn surface_trim_selected_cells_refuse_collection_limit() {
             trailing_value_offset: 0,
             trailing_zero_offset: 0,
         },
-    ).unwrap();
+    )
+    .unwrap();
     let mut unchanged = [feature.clone()];
-    bind_surface_trim_cell_selections(None, &mut unchanged,
-        std::slice::from_ref(&scope), std::slice::from_ref(&operation)).unwrap();
-    assert!(matches!(unchanged[0].evaluation.definition(),
+    bind_surface_trim_cell_selections(
+        None,
+        &mut unchanged,
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&operation),
+    )
+    .unwrap();
+    assert!(matches!(
+        unchanged[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-            keep: cadmpeg_ir::features::TrimRegion::Cells(_), ..
-        })));
+            keep: cadmpeg_ir::features::TrimRegion::Cells(_),
+            ..
+        })
+    ));
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut refused = [feature];
-    assert!(matches!(bind_surface_trim_cell_selections(Some(&ctx), &mut refused,
+    assert!(
+        matches!(bind_surface_trim_cell_selections(Some(&ctx), &mut refused,
         std::slice::from_ref(&scope), std::slice::from_ref(&operation)),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d SurfaceTrim selected cell"));
+                && failure.operation == "f3d SurfaceTrim selected cell")
+    );
 }

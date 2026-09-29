@@ -40,7 +40,9 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
     );
 
     assert_eq!(
-        design_projection_gaps(None, &ir, &native).unwrap().unresolved_body_bindings,
+        design_projection_gaps(None, &ir, &native)
+            .unwrap()
+            .unresolved_body_bindings,
         1
     );
 }
@@ -79,7 +81,9 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
     }
 
     assert_eq!(
-        design_projection_gaps(None, &ir, &F3dNative::default()).unwrap().face_selections,
+        design_projection_gaps(None, &ir, &F3dNative::default())
+            .unwrap()
+            .face_selections,
         2
     );
 }
@@ -494,7 +498,9 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             .unwrap();
     });
     assert_eq!(
-        design_projection_gaps(None, &ir, &native).unwrap().unrepaired_lost_edge_references,
+        design_projection_gaps(None, &ir, &native)
+            .unwrap()
+            .unrepaired_lost_edge_references,
         0
     );
 
@@ -552,7 +558,9 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .expect("Design parameter"),
     );
     assert_eq!(
-        design_projection_gaps(None, &ir, &native).unwrap().unprojected_parameters,
+        design_projection_gaps(None, &ir, &native)
+            .unwrap()
+            .unprojected_parameters,
         0
     );
 }
@@ -887,13 +895,20 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     .try_into()
     .expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-    assert!(container_only_dimension_parameters(None, &native).unwrap().is_empty());
+    assert!(container_only_dimension_parameters(None, &native)
+        .unwrap()
+        .is_empty());
     let mut pairs = native.design_dimension_locus_pairs.to_vec();
     pairs[0].companion_record_index = 30;
     pairs[0].governing_companion_record_index = 99;
     native.design_dimension_locus_pairs = pairs.try_into().expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-    assert_eq!(container_only_dimension_parameters(None, &native).unwrap().len(), 1);
+    assert_eq!(
+        container_only_dimension_parameters(None, &native)
+            .unwrap()
+            .len(),
+        1
+    );
 
     native.design_dimension_locus_pairs = Default::default();
     native.design_dimension_null_locus_pairs = vec![DesignDimensionLocusPair::try_new(
@@ -951,7 +966,8 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
             crate::records::parameters::DesignParameterDraft {
                 id: format!("{stream}:design-parameter#28"),
                 byte_offset: 0,
-                class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
                 record_index: 28,
                 source_ordinal: 0,
                 source: crate::records::parameters::DesignParameterSource::new(
@@ -961,7 +977,8 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                         offset: 22,
                     }),
-                ).unwrap(),
+                )
+                .unwrap(),
                 expression: "1 mm".into(),
                 expression_offset: 40,
                 source_kind_offset: 60,
@@ -974,14 +991,16 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
                 evaluated_value: 0.1,
                 evaluated_value_offset: 110,
             },
-        ).unwrap(),
+        )
+        .unwrap(),
     );
     native.design_parameter_owners.push(
         DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
             id: format!("{stream}:design-parameter-owner#29"),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
             record_index: 29,
             scope_record_index: 10,
             local_ordinal: 0,
@@ -991,7 +1010,8 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
             owned_ordinal: 0,
             variant: Some(0),
             companion_record_index: 30,
-        }).unwrap(),
+        })
+        .unwrap(),
     );
     native.design_dimension_null_locus_pairs = vec![DesignDimensionLocusPair::try_new(
         crate::records::dimensions::DesignDimensionLocusPairDraft {
@@ -999,7 +1019,8 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
             companion_record_index: 30,
             governing_companion_record_index: 99,
             byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned())
+                .unwrap(),
             record_index: 31,
             frame_length: 100,
             opaque_index: None,
@@ -1017,19 +1038,32 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
                     role_offset: 50,
                 },
             ],
-            paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 100,
         },
-    ).unwrap()].try_into().unwrap();
+    )
+    .unwrap()]
+    .try_into()
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(container_only_dimension_parameters(Some(&ctx), &native),
+    assert!(
+        matches!(container_only_dimension_parameters(Some(&ctx), &native),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d container-only dimension parameter"
-                && failure.dimension == ResourceDimension::CollectionItems));
-    assert_eq!(container_only_dimension_parameters(None, &native).unwrap().len(), 1);
+                && failure.dimension == ResourceDimension::CollectionItems)
+    );
+    assert_eq!(
+        container_only_dimension_parameters(None, &native)
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]

@@ -42,14 +42,11 @@ pub(super) fn exact_draft_operation_with_owners(
                     scalar.value_offset,
                 ));
             }
-            let mut owners = parameter_owners
-                .iter()
-                .filter(|owner| {
-                    owner.record_index() == *record_index
-                        && owner.scope_record_index() == scope.record_index
-                        && scope_stream
-                            .is_none_or(|stream| native_stream(owner.id()) == Some(stream))
-                });
+            let mut owners = parameter_owners.iter().filter(|owner| {
+                owner.record_index() == *record_index
+                    && owner.scope_record_index() == scope.record_index
+                    && scope_stream.is_none_or(|stream| native_stream(owner.id()) == Some(stream))
+            });
             let owner = owners.next()?;
             if owners.next().is_some() {
                 return None;
@@ -61,7 +58,8 @@ pub(super) fn exact_draft_operation_with_owners(
                 owner.evaluated_value_offset(),
             ))
         });
-    let (Some(mut first), Some(mut second), None) = (lanes.next(), lanes.next(), lanes.next()) else {
+    let (Some(mut first), Some(mut second), None) = (lanes.next(), lanes.next(), lanes.next())
+    else {
         return None;
     };
     if first.1 > second.1 {
@@ -93,8 +91,7 @@ pub(super) fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
         units
             .chunks_exact(2)
             .all(|unit| {
-                unit[1] == 0
-                    && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
+                unit[1] == 0 && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
             })
             .then_some(end)
     };

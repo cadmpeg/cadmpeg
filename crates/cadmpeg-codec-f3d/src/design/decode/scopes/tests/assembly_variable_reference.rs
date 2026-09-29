@@ -58,13 +58,16 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         })
         .collect::<Vec<_>>();
     let mut bytes = assembly_operand_frame_fixture(scope_record_index);
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &owners,
-    ).unwrap())
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("variable-reference assembly alignment");
     assert_eq!(alignment.angle(), 8.0);
     assert_eq!(alignment.offset(), [9.0, 10.0, 11.0]);
@@ -158,13 +161,16 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(b"396");
     bytes.extend_from_slice(&71_u32.to_le_bytes());
-    let paths = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &owners,
-    ).unwrap())
+    let paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("variable-reference compact operand paths");
     assert_eq!(
@@ -178,12 +184,15 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     let mut wrong_generation = scope.clone();
     wrong_generation.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &wrong_generation,
-        &owners,
-    ).unwrap())
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &wrong_generation,
+            &owners,
+        )
+        .unwrap())
+        .is_none()
+    );
 }

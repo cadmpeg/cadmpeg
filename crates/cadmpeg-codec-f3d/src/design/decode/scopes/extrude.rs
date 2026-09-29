@@ -987,7 +987,9 @@ fn exact_current_extrude_prologue(
                 && matches!(bytes.get(operation_offset.saturating_add(14)), Some(0..=2))
         });
         let (operation_offset, operation_marker_offset) = candidates.next()?;
-        if candidates.next().is_some() { return None; }
+        if candidates.next().is_some() {
+            return None;
+        }
         let padding_end = operation_marker_offset.unwrap_or(operation_offset);
         let trailing_zero_count = u8::try_from(padding_end.checked_sub(prefix_tail)?).ok()?;
         Some((
@@ -1495,9 +1497,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     } else {
         second_side_extent_offset.checked_add(1)?
     };
-    if guid_end != expected_guid_end
-        || bytes.get(guid_end..reference_count_at)? != [0; 3]
-    {
+    if guid_end != expected_guid_end || bytes.get(guid_end..reference_count_at)? != [0; 3] {
         return None;
     }
     Some(DesignExtrudePrologue::ShiftedReferenceAware {
@@ -1819,9 +1819,7 @@ fn exact_class_338_two_sided_distance_extrude_prologue(
     }
     let guid_end = fixed_guid_end(bytes, start.checked_add(class_338_legacy::GUID)?)?;
     let expected_guid_end = start.checked_add(279)?;
-    if guid_end != expected_guid_end
-        || bytes.get(guid_end..reference_count_at)? != [0; 3]
-    {
+    if guid_end != expected_guid_end || bytes.get(guid_end..reference_count_at)? != [0; 3] {
         return None;
     }
     Some(DesignExtrudePrologue::LegacyShifted {

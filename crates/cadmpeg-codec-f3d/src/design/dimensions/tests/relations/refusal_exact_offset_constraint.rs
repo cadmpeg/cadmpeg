@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{exact_offset_constraint, SketchRelation, SketchRelationOperand, Point2, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, HashMap};
+use super::{
+    exact_offset_constraint, HashMap, Point2, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchRelation, SketchRelationOperand,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let entity = |id: &str, geometry: SketchGeometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
@@ -112,30 +114,49 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         (("native", 4), &result_vertical),
     ]);
 
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| exact_offset_constraint(Some(ctx), &relation, "native", &projected).transpose().map(|_| ()));
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        exact_offset_constraint(Some(ctx), &relation, "native", &projected)
+            .transpose()
+            .map(|_| ())
+    });
 }
 
 #[test]
 fn relation_offset_used_source_refuses_collection_limit() {
-    fixture("f3d relation offset used source", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d relation offset used source",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn relation_offset_used_result_refuses_collection_limit() {
-    fixture("f3d relation offset used result", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d relation offset used result",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn relation_offset_source_id_refuses_retained_limit() {
-    fixture("f3d relation offset source id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d relation offset source id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn relation_offset_result_id_refuses_retained_limit() {
-    fixture("f3d relation offset result id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d relation offset result id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn relation_offset_pair_refuses_collection_limit() {
-    fixture("f3d relation offset pair", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d relation offset pair",
+        ResourceDimension::CollectionItems,
+    );
 }

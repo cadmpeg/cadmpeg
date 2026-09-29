@@ -6,20 +6,25 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let headers =
-        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
-            &bytes, &records,
-        ).unwrap()
+        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &records,
+        )
+        .unwrap()
         .into_iter()
         .filter(|header| header.record_index == 1_400)
         .collect::<Vec<_>>();
     assert_eq!(headers.len(), 1);
-    let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+    let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
         headers[0].record_index,
         &headers[0].class_tag,
         headers[0].byte_offset,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("scope");
     assert_eq!(
         scope.kind(),
@@ -37,7 +42,9 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     let operation =
         crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
             &cadmpeg_test_support::service_decode_context(),
-            &bytes, &records, &scope,
+            &bytes,
+            &records,
+            &scope,
         )
         .unwrap()
         .expect("CopyPasteBodies operation");
@@ -68,20 +75,24 @@ fn copy_paste_bodies_refuses_operand_and_body_limits() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
-    ).unwrap()
+    )
+    .unwrap()
     .into_iter()
     .find(|header| header.record_index == 1_400)
     .unwrap();
-    let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+    let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    ).unwrap()
+    )
+    .unwrap()
     .unwrap();
     for (cap, operation) in [
         (0, "f3d CopyPasteBodies operands"),
@@ -91,9 +102,10 @@ fn copy_paste_bodies_refuses_operand_and_body_limits() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
-            &ctx, &bytes, &records, &scope,
-        );
+        let result =
+            crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
+                &ctx, &bytes, &records, &scope,
+            );
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))
@@ -110,10 +122,12 @@ fn design_scope_reference_vectors_refuse_each_limit() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
-    ).unwrap()
+    )
+    .unwrap()
     .into_iter()
     .find(|header| header.record_index == 1_400)
     .unwrap();
@@ -162,18 +176,35 @@ fn design_scope_kind_scan_refuses_temporary_and_retained_limits() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
-    ).unwrap()
+    )
+    .unwrap()
     .into_iter()
     .find(|header| header.record_index == 1_400)
     .unwrap();
     let kind_len = "CopyPasteBodies".len() as u64;
     for (materialized_cap, retained_cap, dimension, operation) in [
-        (Some(0), None, ResourceDimension::MaterializedBytes, "f3d Design temporary UTF-16 text"),
-        (None, Some(0), ResourceDimension::RetainedBytes, "f3d Design UTF-16 text"),
-        (None, Some(kind_len), ResourceDimension::RetainedBytes, "f3d Design scope kind storage"),
+        (
+            Some(0),
+            None,
+            ResourceDimension::MaterializedBytes,
+            "f3d Design temporary UTF-16 text",
+        ),
+        (
+            None,
+            Some(0),
+            ResourceDimension::RetainedBytes,
+            "f3d Design UTF-16 text",
+        ),
+        (
+            None,
+            Some(kind_len),
+            ResourceDimension::RetainedBytes,
+            "f3d Design scope kind storage",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -236,19 +267,36 @@ fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let archive =
-        crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&[]);
+        crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(
+            &[],
+        );
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let decode = |policy: &DecodePolicy| {
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
             crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
-                &ctx, scan, &[], &[], &[], &[], &[], &[],
+                &ctx,
+                scan,
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
             )
         };
         assert!(!decode(&DecodePolicy::default()).unwrap().is_empty());
         for (dimension, operation, cap_max) in [
-            (ResourceDimension::CollectionItems, "f3d Design parameter scopes", 400),
-            (ResourceDimension::RetainedBytes, "f3d Design parameter scope ID", 1000),
+            (
+                ResourceDimension::CollectionItems,
+                "f3d Design parameter scopes",
+                400,
+            ),
+            (
+                ResourceDimension::RetainedBytes,
+                "f3d Design parameter scope ID",
+                1000,
+            ),
         ] {
             let refuses = |cap| {
                 let mut policy = DecodePolicy::default();
@@ -265,7 +313,10 @@ fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
             };
             let refused_cap = (0..=cap_max).filter(|&cap| refuses(cap)).last();
             let cap = refused_cap.expect("the allocation must refuse at the matching limit");
-            assert!(!refuses(cap + 1), "{operation} must be admitted above its boundary");
+            assert!(
+                !refuses(cap + 1),
+                "{operation} must be admitted above its boundary"
+            );
         }
     });
 }

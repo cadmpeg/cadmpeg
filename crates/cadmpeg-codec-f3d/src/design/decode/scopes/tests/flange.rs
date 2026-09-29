@@ -1097,10 +1097,20 @@ fn legacy_class286_extended_two_sided_per_edge_flange_frame() -> EdgeFlangeFrame
 #[test]
 fn legacy_edge_flange_result_table_rejects_each_duplicate_without_heap_growth() {
     use crate::layout::edge_flange_class325_334_two_sided_per_edge_fixed_operation as layout;
-    let references = [201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234, 237, 240, 243, 246];
+    let references = [
+        201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234, 237, 240, 243, 246,
+    ];
     let frame = legacy_class325_two_sided_per_edge_flange_frame();
-    let decode = |bytes: &[u8]| crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
-        bytes, 0, frame.paired_at, "325", "258", &references);
+    let decode = |bytes: &[u8]| {
+        crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            bytes,
+            0,
+            frame.paired_at,
+            "325",
+            "258",
+            &references,
+        )
+    };
     assert!(decode(&frame.bytes).is_some());
     for ordinal in 1..5 {
         let mut bytes = frame.bytes.clone();

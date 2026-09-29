@@ -7,9 +7,9 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::fmt::Write;
 
-use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset};
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
@@ -51,9 +51,9 @@ fn push_decoded_occurrence(
     occurrence: DesignComponentOccurrence,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "f3d decoded component occurrence")?;
-    occurrences.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit("f3d decoded component occurrence allocation", 0, 1)
-    })?;
+    occurrences
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("f3d decoded component occurrence allocation", 0, 1))?;
     occurrences.push(occurrence);
     Ok(())
 }
@@ -67,93 +67,99 @@ fn exact_component_occurrence(
     stream: &str,
 ) -> Result<Option<DesignComponentOccurrence>, CodecError> {
     let parsed = (|| {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    if after_tag != start.checked_add(7)? {
-        return None;
-    }
-    let record_index = View::u32_le_at(bytes, after_tag)?;
-    let end = next_indexed_record_offset(bytes, start.checked_add(1)?)?;
-    let frame_length = end.checked_sub(start)?;
-    if !matches!(frame_length, BASE_FRAME_LENGTH | PLACED_FRAME_LENGTH)
-        || bytes.get(start + 11..start + 19)? != [0; 8]
-        || bytes.get(start + 19) != Some(&1)
-        || View::u32_le_at(bytes, start + 20)? != 1
-        || bytes.get(start + 24) != Some(&1)
-        || bytes.get(start + 196) != Some(&0)
-        || bytes.get(start + 197) != Some(&1)
-    {
-        return None;
-    }
-    let component_record_index = View::u64_le_at(bytes, start + 25)?;
-    if View::u64_le_at(bytes, start + 198)? != component_record_index {
-        return None;
-    }
-    let occurrence_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, start + 40)?)?;
-    if View::u32_le_at(bytes, start + 44) != Some(36)
-        || bytes.get(start + 48..start + 120).is_none()
-        || View::u32_le_at(bytes, start + 120) != Some(36)
-        || bytes.get(start + 124..start + 196).is_none()
-    {
-        return None;
-    }
-    let placement = match frame_length {
-        BASE_FRAME_LENGTH => {
-            if occurrence_ordinal.get() != 1
-                || bytes.get(start + 206..start + 218)? != [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                || bytes.get(start + 218) != Some(&1)
-                || bytes.get(start + 227..start + 229)? != [0; 2]
-            {
-                return None;
-            }
-            crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base
+        let (class_tag, after_tag) =
+            lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        if after_tag != start.checked_add(7)? {
+            return None;
         }
-        PLACED_FRAME_LENGTH => {
-            if (class_tag == "256" && occurrence_ordinal.get() < 2)
-                || bytes.get(start + 206..start + 209)? != [0; 3]
-                || bytes.get(start + 337..start + 346)? != [0; 9]
-                || bytes.get(start + 346) != Some(&1)
-                || bytes.get(start + 355..start + 357)? != [0; 2]
-            {
-                return None;
+        let record_index = View::u32_le_at(bytes, after_tag)?;
+        let end = next_indexed_record_offset(bytes, start.checked_add(1)?)?;
+        let frame_length = end.checked_sub(start)?;
+        if !matches!(frame_length, BASE_FRAME_LENGTH | PLACED_FRAME_LENGTH)
+            || bytes.get(start + 11..start + 19)? != [0; 8]
+            || bytes.get(start + 19) != Some(&1)
+            || View::u32_le_at(bytes, start + 20)? != 1
+            || bytes.get(start + 24) != Some(&1)
+            || bytes.get(start + 196) != Some(&0)
+            || bytes.get(start + 197) != Some(&1)
+        {
+            return None;
+        }
+        let component_record_index = View::u64_le_at(bytes, start + 25)?;
+        if View::u64_le_at(bytes, start + 198)? != component_record_index {
+            return None;
+        }
+        let occurrence_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, start + 40)?)?;
+        if View::u32_le_at(bytes, start + 44) != Some(36)
+            || bytes.get(start + 48..start + 120).is_none()
+            || View::u32_le_at(bytes, start + 120) != Some(36)
+            || bytes.get(start + 124..start + 196).is_none()
+        {
+            return None;
+        }
+        let placement = match frame_length {
+            BASE_FRAME_LENGTH => {
+                if occurrence_ordinal.get() != 1
+                    || bytes.get(start + 206..start + 218)? != [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                    || bytes.get(start + 218) != Some(&1)
+                    || bytes.get(start + 227..start + 229)? != [0; 2]
+                {
+                    return None;
+                }
+                crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base
             }
-            let transform = super::scopes::shared_frames::rigid_transform_at(bytes, start + 209)?;
-            crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
+            PLACED_FRAME_LENGTH => {
+                if (class_tag == "256" && occurrence_ordinal.get() < 2)
+                    || bytes.get(start + 206..start + 209)? != [0; 3]
+                    || bytes.get(start + 337..start + 346)? != [0; 9]
+                    || bytes.get(start + 346) != Some(&1)
+                    || bytes.get(start + 355..start + 357)? != [0; 2]
+                {
+                    return None;
+                }
+                let transform =
+                    super::scopes::shared_frames::rigid_transform_at(bytes, start + 209)?;
+                crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: occurrence_ordinal,
                 transform,
             }
-        }
-        _ => return None,
-    };
-    let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
-    let byte_offset = u64::try_from(start).ok()?;
-    Some((
-        class_tag,
-        record_index,
-        byte_offset,
-        component_record_index,
-        placement,
-    ))
+            }
+            _ => return None,
+        };
+        let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
+        let byte_offset = u64::try_from(start).ok()?;
+        Some((
+            class_tag,
+            record_index,
+            byte_offset,
+            component_record_index,
+            placement,
+        ))
     })();
-    let Some((class_tag, record_index, byte_offset, component_record_index, placement)) = parsed else {
+    let Some((class_tag, record_index, byte_offset, component_record_index, placement)) = parsed
+    else {
         return Ok(None);
     };
     let Some((component_guid, after_component)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 44, 36..=36)? else {
+        lp_utf16_bounded_charged(ctx, bytes, start + 44, 36..=36)?
+    else {
         return Ok(None);
     };
     let Some((occurrence_guid, after_occurrence)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 120, 36..=36)? else {
+        lp_utf16_bounded_charged(ctx, bytes, start + 120, 36..=36)?
+    else {
         return Ok(None);
     };
     if after_component != start + 120 || after_occurrence != start + 196 {
         return Ok(None);
     }
-    let Ok(component_guid) =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(component_guid) else {
+    let Ok(component_guid) = crate::records::mesh::DesignRelaxedGuidText::try_from(component_guid)
+    else {
         return Ok(None);
     };
     let Ok(occurrence_guid) =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid) else {
+        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid)
+    else {
         return Ok(None);
     };
     let mut digits = 1usize;
@@ -174,14 +180,12 @@ fn exact_component_occurrence(
         "f3d component occurrence id",
     )?;
     let mut id = String::new();
-    id.try_reserve_exact(id_bytes).map_err(|_| {
-        ctx.refuse_codec_limit("f3d component occurrence id allocation", 0, 1)
-    })?;
+    id.try_reserve_exact(id_bytes)
+        .map_err(|_| ctx.refuse_codec_limit("f3d component occurrence id allocation", 0, 1))?;
     id.push_str(stream);
     id.push_str(SUFFIX);
-    write!(&mut id, "{start}").map_err(|_| {
-        ctx.refuse_codec_limit("f3d component occurrence id formatting", 0, 1)
-    })?;
+    write!(&mut id, "{start}")
+        .map_err(|_| ctx.refuse_codec_limit("f3d component occurrence id formatting", 0, 1))?;
     Ok(DesignComponentOccurrence::try_new(
         crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
             id,
@@ -234,8 +238,8 @@ mod tests {
     #[test]
     fn fixed_component_occurrence_frames_distinguish_seed_and_generated_placements() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
-            .unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
         let mut seed = common(229, 1);
         seed[208] = 1;
         seed[218] = 1;
@@ -260,9 +264,10 @@ mod tests {
         }
         generated[346] = 1;
         indexed_header(&mut generated, *b"325", 21);
-        let generated = exact_component_occurrence(&ctx, &generated, 0, "f3d:Design/BulkStream.dat")
-            .unwrap()
-            .expect("generated occurrence");
+        let generated =
+            exact_component_occurrence(&ctx, &generated, 0, "f3d:Design/BulkStream.dat")
+                .unwrap()
+                .expect("generated occurrence");
         assert_eq!(generated.occurrence_ordinal(), 2);
         assert_eq!(
             generated.transform().map(|frame| frame.value),
@@ -308,9 +313,10 @@ mod tests {
         }
         dynamic_tag[346] = 1;
         indexed_header(&mut dynamic_tag, *b"325", 21);
-        let dynamic_tag = exact_component_occurrence(&ctx, &dynamic_tag, 0, "f3d:Design/BulkStream.dat")
-            .unwrap()
-            .expect("dynamic-tag placed occurrence");
+        let dynamic_tag =
+            exact_component_occurrence(&ctx, &dynamic_tag, 0, "f3d:Design/BulkStream.dat")
+                .unwrap()
+                .expect("dynamic-tag placed occurrence");
         assert_eq!(dynamic_tag.class_tag.as_str(), "336");
         assert_eq!(dynamic_tag.occurrence_ordinal(), 1);
         assert_eq!(
@@ -325,9 +331,11 @@ mod tests {
         }
         placed_seed[346] = 1;
         indexed_header(&mut placed_seed, *b"325", 21);
-        assert!(exact_component_occurrence(&ctx, &placed_seed, 0, "f3d:Design/BulkStream.dat")
-            .unwrap()
-            .is_none());
+        assert!(
+            exact_component_occurrence(&ctx, &placed_seed, 0, "f3d:Design/BulkStream.dat")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -344,9 +352,11 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = exact_component_occurrence(&ctx, &seed, 0, stream)
             .expect_err("one native occurrence ID exceeds the retained-byte limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d component occurrence id"));
+                && limit.operation == "f3d component occurrence id")
+        );
     }
 
     #[test]
@@ -361,10 +371,13 @@ mod tests {
             policy.limits.max_retained_bytes = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let error = exact_component_occurrence(&ctx, &seed, 0, "f3d:synthetic")
-                .err().unwrap();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+                .err()
+                .unwrap();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "f3d Design UTF-16 text"));
+                    && refusal.operation == "f3d Design UTF-16 text")
+            );
         }
     }
 
@@ -375,8 +388,8 @@ mod tests {
         seed[218] = 1;
         indexed_header(&mut seed, *b"333", 21);
         let arena = DecodeArena::new();
-        let (parse_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
-            .unwrap();
+        let (parse_ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
         let occurrence = exact_component_occurrence(&parse_ctx, &seed, 0, "f3d:synthetic")
             .unwrap()
             .expect("valid fixed component occurrence");
@@ -385,8 +398,10 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::push_decoded_occurrence(&ctx, &mut Vec::new(), occurrence)
             .expect_err("one decoded occurrence needs one collection item");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d decoded component occurrence"));
+                && limit.operation == "f3d decoded component occurrence")
+        );
     }
 }

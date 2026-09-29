@@ -5,7 +5,9 @@ use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_face_operand;
 use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::sketch::{cached_owned_record_offsets, copy_scoped_stream, IndexedRecordOffsets};
+use crate::design::decode::sketch::{
+    cached_owned_record_offsets, copy_scoped_stream, IndexedRecordOffsets,
+};
 use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -275,21 +277,27 @@ pub(crate) fn bind_mirror_constructions(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope_record_index = scopes[index].record_index;
-        let seed_groups = unique_match(groups.iter().filter(|group| {
-                native_stream(&group.id) == Some(stream.as_str())
-                    && group.scope_record_index == scope_record_index
-            }).filter(|group| {
-                matches!(
-                    group.role(),
-                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-                )
-            }));
+        let seed_groups = unique_match(
+            groups
+                .iter()
+                .filter(|group| {
+                    native_stream(&group.id) == Some(stream.as_str())
+                        && group.scope_record_index == scope_record_index
+                })
+                .filter(|group| {
+                    matches!(
+                        group.role(),
+                        DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+                    )
+                }),
+        );
         let plane_groups = unique_match(groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream.as_str())
                 && group.scope_record_index == scope_record_index
                 && group.role() == DesignOperandRole::ROLE_0X5
         }));
-        let (UniqueMatch::One(seed_group), UniqueMatch::One(plane_group)) = (seed_groups, plane_groups)
+        let (UniqueMatch::One(seed_group), UniqueMatch::One(plane_group)) =
+            (seed_groups, plane_groups)
         else {
             continue;
         };
@@ -319,7 +327,8 @@ pub(crate) fn bind_mirror_constructions(
             },
         );
         let face_recipe = {
-            let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
+            let records =
+                cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
             parse_face_operand(
                 ctx,
                 bytes,
@@ -350,7 +359,8 @@ pub(crate) fn bind_mirror_constructions(
                 0,
                 plane_header,
             )
-            .transpose()?.is_some()
+            .transpose()?
+            .is_some()
                 || face_recipe
             {
                 (None, Some(*plane_member))
@@ -359,17 +369,19 @@ pub(crate) fn bind_mirror_constructions(
             };
         let seed_feature = match seed_group.members() {
             _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
-            [crate::records::identity::Located { value: member, .. }] => match headers_by_record
-                .get(&(stream.as_str(), *member))
-            {
-                Some(header) => compact_feature_reference(ctx, bytes, header)?.filter(|(record_index, _)| {
-                    scopes.iter().any(|scope| {
-                        native_stream(&scope.id) == Some(stream.as_str())
-                            && scope.record_index == *record_index
-                    })
-                }),
-                None => None,
-            },
+            [crate::records::identity::Located { value: member, .. }] => {
+                match headers_by_record.get(&(stream.as_str(), *member)) {
+                    Some(header) => compact_feature_reference(ctx, bytes, header)?.filter(
+                        |(record_index, _)| {
+                            scopes.iter().any(|scope| {
+                                native_stream(&scope.id) == Some(stream.as_str())
+                                    && scope.record_index == *record_index
+                            })
+                        },
+                    ),
+                    None => None,
+                }
+            }
             _ => None,
         };
         ctx.charge_work(
@@ -387,19 +399,23 @@ pub(crate) fn bind_mirror_constructions(
         }));
         let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
         let inline_tolerance = exact_legacy_mirror_scope_tolerance(bytes, &scopes[index]);
-        let tolerance = unique_match(owners
-            .iter()
-            .filter(|owner| {
-                native_stream(owner.id()) == Some(stream.as_str())
-                    && owner.scope_record_index() == scope_record_index
-            })
-            .filter(|owner| owner.local_ordinal() == 1)
-            .filter_map(|owner| {
-                Some((owner, PositiveReal::try_from(owner.evaluated_value()).ok()?))
-            }));
+        let tolerance = unique_match(
+            owners
+                .iter()
+                .filter(|owner| {
+                    native_stream(owner.id()) == Some(stream.as_str())
+                        && owner.scope_record_index() == scope_record_index
+                })
+                .filter(|owner| owner.local_ordinal() == 1)
+                .filter_map(|owner| {
+                    Some((owner, PositiveReal::try_from(owner.evaluated_value()).ok()?))
+                }),
+        );
         let (count, tolerance_source) = (
             match (count, inline_count) {
-                (UniqueMatch::One(count), None) => Some((count.record_index(), count.evaluated_value_offset())),
+                (UniqueMatch::One(count), None) => {
+                    Some((count.record_index(), count.evaluated_value_offset()))
+                }
                 (UniqueMatch::Zero, Some(count)) => Some(count),
                 _ => None,
             },
@@ -478,10 +494,14 @@ fn compact_feature_reference(
     {
         return Ok(None);
     }
-    let Some((asset_id, after_asset_id)) = lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256)? else {
+    let Some((asset_id, after_asset_id)) =
+        lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256)?
+    else {
         return Ok(None);
     };
-    let Some((context_id, after_context_id)) = lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256)? else {
+    let Some((context_id, after_context_id)) =
+        lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256)?
+    else {
         return Ok(None);
     };
     if !crate::bytes::is_guid_relaxed(&asset_id)

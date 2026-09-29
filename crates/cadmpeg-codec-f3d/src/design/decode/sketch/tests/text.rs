@@ -31,7 +31,9 @@ fn decode_sketch_curve_identities_from_stream(
     stream: &str,
 ) -> Result<Vec<crate::records::sketch_geometry::SketchCurveIdentity>, cadmpeg_core::CodecError> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(ctx, bytes, meta, stream)
+        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+            ctx, bytes, meta, stream,
+        )
     })
 }
 
@@ -130,10 +132,10 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
 
 #[test]
 fn sketch_text_output_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::metastream::{MetaStream, RecordIndexEntry};
     use crate::records::entity_header::{BaseTypeGuid, SegmentType};
     use crate::records::identity::{Located, ReferenceRun};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let bytes = indexed_sketch_text_record(1);
     let types = (0..32)
@@ -154,7 +156,10 @@ fn sketch_text_output_refuses_collection_limit() {
             version_offset: 0,
             module: "Geometry".into(),
             entities: ReferenceRun::located(if ordinal == 31 {
-                vec![Located { value: 304, offset: 0 }]
+                vec![Located {
+                    value: 304,
+                    offset: 0,
+                }]
             } else {
                 Vec::new()
             }),
@@ -172,9 +177,14 @@ fn sketch_text_output_refuses_collection_limit() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     assert_eq!(
-        crate::design::decode::sketch::decode_sketch_texts_from_stream(&ctx, &bytes, &meta, "Design/BulkStream.dat")
-            .unwrap()
-            .len(),
+        crate::design::decode::sketch::decode_sketch_texts_from_stream(
+            &ctx,
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat"
+        )
+        .unwrap()
+        .len(),
         1
     );
 
@@ -224,11 +234,8 @@ fn sketch_text_identifier_refuses_retained_limit() {
     let bytes = indexed_sketch_text_record(1);
     let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
     let text_len = "Arial".len() + "B6 Probe 47".len();
-    let error = sketch_text_with_retained_limit(
-        &bytes,
-        3,
-        u64::try_from(text_len + id_len - 1).unwrap(),
-    );
+    let error =
+        sketch_text_with_retained_limit(&bytes, 3, u64::try_from(text_len + id_len - 1).unwrap());
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -295,7 +302,14 @@ fn indexed_sketch_text_content_refuses_retained_limit() {
     assert_sketch_text_utf16_refusal(&bytes, 3, maximum);
 }
 
-fn indexed_sketch_fixture() -> (Vec<u8>, crate::metastream::MetaStream, usize, usize, usize, usize) {
+fn indexed_sketch_fixture() -> (
+    Vec<u8>,
+    crate::metastream::MetaStream,
+    usize,
+    usize,
+    usize,
+    usize,
+) {
     use crate::metastream::{MetaStream, RecordIndexEntry};
     use crate::records::entity_header::SegmentType;
 
@@ -498,7 +512,14 @@ fn indexed_sketch_fixture() -> (Vec<u8>, crate::metastream::MetaStream, usize, u
         }],
     };
 
-    (bytes, meta, live_point_at, live_curve_at, live_text_at, nested_at)
+    (
+        bytes,
+        meta,
+        live_point_at,
+        live_curve_at,
+        live_text_at,
+        nested_at,
+    )
 }
 
 #[test]
@@ -506,13 +527,10 @@ fn sketch_records_use_the_primary_index_live_copy() {
     use crate::records::sketch_geometry::SketchCurveGeometry;
     use cadmpeg_ir::math::{Point2, Point3};
 
-    let (bytes, mut meta, live_point_at, live_curve_at, live_text_at, nested_at) = indexed_sketch_fixture();
-    let points = decode_sketch_points_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect("indexed sketch points");
+    let (bytes, mut meta, live_point_at, live_curve_at, live_text_at, nested_at) =
+        indexed_sketch_fixture();
+    let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+        .expect("indexed sketch points");
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].byte_offset, live_point_at as u64);
     assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
@@ -521,13 +539,9 @@ fn sketch_records_use_the_primary_index_live_copy() {
         .try_into()
         .expect("type GUID");
     assert!(
-        decode_sketch_points_from_stream(
-            &bytes,
-            &meta,
-            "Design/BulkStream.dat",
-        )
-        .expect("structurally point-shaped foreign type")
-        .is_empty()
+        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat",)
+            .expect("structurally point-shaped foreign type")
+            .is_empty()
     );
     meta.types[1].type_guid = crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE
         .0
@@ -537,20 +551,12 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut malformed_point = bytes.clone();
     malformed_point[live_point_at + 70] = 0;
     assert!(matches!(
-        decode_sketch_points_from_stream(
-            &malformed_point,
-            &meta,
-            "Design/BulkStream.dat",
-        ),
+        decode_sketch_points_from_stream(&malformed_point, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
-    let curves = decode_sketch_curve_identities_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect("indexed sketch curves");
+    let curves = decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+        .expect("indexed sketch curves");
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].byte_offset, live_curve_at as u64);
     assert!(matches!(
@@ -558,12 +564,8 @@ fn sketch_records_use_the_primary_index_live_copy() {
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
     ));
 
-    let texts = decode_sketch_texts_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect("indexed sketch texts");
+    let texts = decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+        .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
     assert_eq!(texts[0].byte_offset, live_text_at as u64);
     assert_eq!(texts[0].text, "live text");
@@ -572,22 +574,14 @@ fn sketch_records_use_the_primary_index_live_copy() {
     mismatched_primary[live_point_at + 7..live_point_at + 11]
         .copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        decode_sketch_points_from_stream(
-            &mismatched_primary,
-            &meta,
-            "Design/BulkStream.dat",
-        ),
+        decode_sketch_points_from_stream(&mismatched_primary, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
     let mut mismatched_secondary = bytes;
     mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        decode_sketch_points_from_stream(
-            &mismatched_secondary,
-            &meta,
-            "Design/BulkStream.dat",
-        ),
+        decode_sketch_points_from_stream(&mismatched_secondary, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -613,9 +607,11 @@ fn sketch_point_indices_and_output_refuse_collection_limits() {
             "Design/BulkStream.dat",
         )
         .expect_err("collection limit must refuse point decode");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation));
+                && failure.operation == operation)
+        );
     }
 }
 
@@ -635,9 +631,11 @@ fn sketch_curve_output_refuses_collection_limit() {
         "Design/BulkStream.dat",
     )
     .expect_err("collection limit must refuse curve decode");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d sketch curve output"));
+            && failure.operation == "f3d sketch curve output")
+    );
 }
 
 #[test]
@@ -647,7 +645,8 @@ fn sketch_point_and_curve_ids_refuse_retained_limit() {
     let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = crate::ids::native_scope("Design/BulkStream.dat").len() as u64;
+    policy.limits.max_retained_bytes =
+        crate::ids::native_scope("Design/BulkStream.dat").len() as u64;
     for (decode_point, operation) in [
         (true, "f3d sketch point ID"),
         (false, "f3d sketch curve ID"),
@@ -655,17 +654,27 @@ fn sketch_point_and_curve_ids_refuse_retained_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = if decode_point {
             crate::design::decode::sketch::decode_sketch_points_from_stream(
-                &ctx, &bytes, &meta, "Design/BulkStream.dat",
-            ).err()
+                &ctx,
+                &bytes,
+                &meta,
+                "Design/BulkStream.dat",
+            )
+            .err()
         } else {
             crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-                &ctx, &bytes, &meta, "Design/BulkStream.dat",
-            ).err()
+                &ctx,
+                &bytes,
+                &meta,
+                "Design/BulkStream.dat",
+            )
+            .err()
         }
         .expect("retained limit must refuse sketch record ID");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == operation));
+                && failure.operation == operation)
+        );
     }
 }
 

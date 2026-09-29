@@ -1288,20 +1288,30 @@ impl SpatialSketchProfile {
             return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
         }
         if boundary.is_empty() {
-            return Ok(Err("spatial profile boundary must be nonempty and contain distinct entities"));
+            return Ok(Err(
+                "spatial profile boundary must be nonempty and contain distinct entities",
+            ));
         }
-        let count = u64::try_from(boundary.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        let count =
+            u64::try_from(boundary.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         ctx.charge_collection_items(count, operation)?;
         let mut unique = std::collections::HashSet::new();
-        unique.try_reserve(boundary.len())
+        unique
+            .try_reserve(boundary.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         for use_ in &boundary {
             if !unique.insert(&use_.entity) {
-                return Ok(Err("spatial profile boundary must be nonempty and contain distinct entities"));
+                return Ok(Err(
+                    "spatial profile boundary must be nonempty and contain distinct entities",
+                ));
             }
         }
-        Ok(Ok(Self { origin, normal, u_axis, boundary }))
+        Ok(Ok(Self {
+            origin,
+            normal,
+            u_axis,
+            boundary,
+        }))
     }
 
     /// Build a profile from an admitted origin and unit axes. The argument
@@ -3016,17 +3026,22 @@ impl SketchPolygon {
         operation: &'static str,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
         if entities.len() < 3 {
-            return Ok(Err("entities requires at least three distinct polygon members"));
+            return Ok(Err(
+                "entities requires at least three distinct polygon members",
+            ));
         }
-        let count = u64::try_from(entities.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        let count =
+            u64::try_from(entities.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         ctx.charge_collection_items(count, operation)?;
         let mut unique = std::collections::HashSet::new();
-        unique.try_reserve(entities.len())
+        unique
+            .try_reserve(entities.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         for entity in &entities {
             if !unique.insert(entity) {
-                return Ok(Err("entities requires at least three distinct polygon members"));
+                return Ok(Err(
+                    "entities requires at least three distinct polygon members",
+                ));
             }
         }
         Ok(Ok(Self { entities }))

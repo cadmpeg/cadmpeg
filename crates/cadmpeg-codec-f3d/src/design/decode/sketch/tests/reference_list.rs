@@ -28,9 +28,11 @@ fn sketch_header_reference_run_refuses_collection_limit() {
     let error = decode_reference_list(&ctx, &bytes, 0)
         .err()
         .expect("collection limit must refuse counted references");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d sketch header references"));
+            && failure.operation == "f3d sketch header references")
+    );
 }
 
 #[test]
@@ -43,7 +45,19 @@ fn sketch_header_reference_run_preserves_count_and_offsets() {
         .expect("reference run admission")
         .expect("two references");
     assert_eq!(list.record_reference.value, Some(31));
-    assert_eq!(list.references.iter().map(|row| row.value).collect::<Vec<_>>(), [41, 42]);
-    assert_eq!(list.references.iter().map(|row| row.offset).collect::<Vec<_>>(), [14, 25]);
+    assert_eq!(
+        list.references
+            .iter()
+            .map(|row| row.value)
+            .collect::<Vec<_>>(),
+        [41, 42]
+    );
+    assert_eq!(
+        list.references
+            .iter()
+            .map(|row| row.offset)
+            .collect::<Vec<_>>(),
+        [14, 25]
+    );
     assert_eq!(list.end, 35);
 }

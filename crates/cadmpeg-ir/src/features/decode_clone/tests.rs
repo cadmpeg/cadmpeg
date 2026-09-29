@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind, NonEmptyMembers};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use crate::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind, NonEmptyMembers};
 
 const OPERATION: &str = "test feature definition copy";
 
@@ -25,7 +25,8 @@ fn feature_definition_copy_refuses_nested_collection_before_allocation() {
     let member = FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
         tools: crate::features::BodySelection::Unresolved,
         cells: NonEmptyMembers::one(crate::features::BodySelection::NativeSet(
-            vec!["one".to_owned(), "two".to_owned()].try_into().unwrap())),
+            vec!["one".to_owned(), "two".to_owned()].try_into().unwrap(),
+        )),
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -57,9 +58,10 @@ fn feature_definition_copy_preserves_nested_fields_and_wire_bytes() {
         FeatureDefinition::PostProcess {
             operation: FeatureOperation::Native {
                 kind: NativeFeatureKind::Other("source雪%".to_owned()),
-                parameters: std::collections::BTreeMap::from([
-                    (cadmpeg_core::text::NonBlankString::new("distance".to_owned()).unwrap(), "x + 雪".to_owned()),
-                ]),
+                parameters: std::collections::BTreeMap::from([(
+                    cadmpeg_core::text::NonBlankString::new("distance".to_owned()).unwrap(),
+                    "x + 雪".to_owned(),
+                )]),
             },
             refine: true,
             fuzzy_tolerance: crate::features::FuzzyTolerance::Automatic,
@@ -67,7 +69,8 @@ fn feature_definition_copy_preserves_nested_fields_and_wire_bytes() {
         FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
             tools: crate::features::BodySelection::Native("tool".to_owned()),
             cells: NonEmptyMembers::one(crate::features::BodySelection::NativeSet(
-                vec!["one".to_owned(), "two".to_owned()].try_into().unwrap())),
+                vec!["one".to_owned(), "two".to_owned()].try_into().unwrap(),
+            )),
         }),
     ];
     for definition in definitions {
@@ -76,7 +79,10 @@ fn feature_definition_copy_preserves_nested_fields_and_wire_bytes() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let copied = definition.clone_for_decode(&ctx, OPERATION).unwrap();
         assert_eq!(copied, definition);
-        assert_eq!(serde_json::to_vec(&copied).unwrap(), serde_json::to_vec(&definition).unwrap());
+        assert_eq!(
+            serde_json::to_vec(&copied).unwrap(),
+            serde_json::to_vec(&definition).unwrap()
+        );
     }
 }
 
@@ -99,9 +105,10 @@ fn feature_definition_copy_refuses_retained_parameter_key_before_allocation() {
     let key = "distance";
     let definition = FeatureDefinition::Operation(FeatureOperation::Native {
         kind: NativeFeatureKind::Fillet,
-        parameters: std::collections::BTreeMap::from([
-            (cadmpeg_core::text::NonBlankString::new(key.to_owned()).unwrap(), "value".to_owned()),
-        ]),
+        parameters: std::collections::BTreeMap::from([(
+            cadmpeg_core::text::NonBlankString::new(key.to_owned()).unwrap(),
+            "value".to_owned(),
+        )]),
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -116,9 +123,10 @@ fn feature_definition_copy_refuses_retained_parameter_key_before_allocation() {
 fn feature_definition_copy_refuses_parameter_map_work() {
     let definition = FeatureDefinition::Operation(FeatureOperation::Native {
         kind: NativeFeatureKind::Fillet,
-        parameters: std::collections::BTreeMap::from([
-            (cadmpeg_core::text::NonBlankString::new("distance".to_owned()).unwrap(), "value".to_owned()),
-        ]),
+        parameters: std::collections::BTreeMap::from([(
+            cadmpeg_core::text::NonBlankString::new("distance".to_owned()).unwrap(),
+            "value".to_owned(),
+        )]),
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();

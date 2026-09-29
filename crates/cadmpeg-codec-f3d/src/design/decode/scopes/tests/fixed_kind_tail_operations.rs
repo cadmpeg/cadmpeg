@@ -215,7 +215,14 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     let scale_records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert_eq!(
-        exact_scale_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &scale_records, &scale_scope, &HashMap::new()).unwrap(),
+        exact_scale_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scale_records,
+            &scale_scope,
+            &HashMap::new()
+        )
+        .unwrap(),
         Some(DesignScaleOperation {
             body_group_record_index: 102,
             center_record_index: 105,
@@ -470,7 +477,11 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope),
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &thicken_scope
+        ),
         None
     );
     let compact_thicken_at = bytes.len();
@@ -672,8 +683,11 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     {
-        let construction =
-            exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &shell_scope);
+        let construction = exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &shell_scope,
+        );
         match (shell_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -912,7 +926,11 @@ pub(super) fn fixed_kind_tail_operations(
     ));
     bytes[compact_thicken_at + 46] = 0;
     assert_eq!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope),
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &thicken_scope
+        ),
         None
     );
 
@@ -1142,9 +1160,12 @@ pub(super) fn fixed_kind_tail_operations(
     if let Some(probe) = boundary_probe {
         probe(&bytes, &extend_scope);
     }
-    let operation =
-        tested_surface_extend_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope)
-            .expect("exact SurfaceExtend construction");
+    let operation = tested_surface_extend_operation(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &extend_scope,
+    )
+    .expect("exact SurfaceExtend construction");
     assert_eq!(
         operation,
         DesignSurfaceExtendOperation {
@@ -1204,9 +1225,12 @@ pub(super) fn fixed_kind_tail_operations(
     {
         *slot = None;
     }
-    let operation =
-        tested_surface_offset_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope)
-            .expect("exact SurfaceOffset construction");
+    let operation = tested_surface_offset_operation(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &extend_scope,
+    )
+    .expect("exact SurfaceOffset construction");
     assert_eq!(
         operation,
         DesignSurfaceOffsetOperation {
@@ -1321,7 +1345,11 @@ pub(super) fn fixed_kind_tail_operations(
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]
         .copy_from_slice(&u32::MAX.to_le_bytes());
     assert_eq!(
-        tested_surface_offset_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope,),
+        tested_surface_offset_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &extend_scope,
+        ),
         None
     );
 

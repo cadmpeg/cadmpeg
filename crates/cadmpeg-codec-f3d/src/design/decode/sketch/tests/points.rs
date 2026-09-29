@@ -214,7 +214,8 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
             assert_eq!(
                 crate::design::test_support::with_test_decode_context(|ctx| {
                     decode_sketch_point_companion(ctx, &payload, POINT, record_form.clone(), &types)
-                }).expect("point companion admission"),
+                })
+                .expect("point companion admission"),
                 Some((
                     record_form
                         .clone()
@@ -246,12 +247,8 @@ fn sketch_point_incident_curves_refuse_collection_limit() {
     push_reference(&mut payload, 72, None);
     payload.push(0);
     push_reference(&mut payload, POINT, None);
-    let record_form = SketchPointRecordForm::version11(
-        500,
-        SketchPointClosure::Selector0State0,
-        None,
-        0.0,
-    );
+    let record_form =
+        SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
@@ -259,7 +256,9 @@ fn sketch_point_incident_curves_refuse_collection_limit() {
     let error = decode_sketch_point_companion(&ctx, &payload, POINT, record_form, &types)
         .err()
         .expect("collection limit must refuse incident curves");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d sketch point incident curves"));
+            && failure.operation == "f3d sketch point incident curves")
+    );
 }

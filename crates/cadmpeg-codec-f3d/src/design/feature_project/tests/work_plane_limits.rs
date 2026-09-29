@@ -16,8 +16,10 @@ fn work_plane_vertex_recipe_id_refuses_retained_limit() {
                 class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned())
                     .unwrap(),
                 paired_byte_offset: u64::from(record_index) + 16,
-                paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "261".to_owned(),
+                )
+                .unwrap(),
                 recipe_record_index: record_index + 3,
                 recipe_record_byte_offset: u64::from(record_index) + 32,
                 recipe_id: format!("f3d:test:recipe#{record_index}"),
@@ -33,30 +35,45 @@ fn work_plane_vertex_recipe_id_refuses_retained_limit() {
                 next_record_index: record_index + 5,
                 next_byte_offset: u64::from(record_index) + 200,
             },
-        ).unwrap()
+        )
+        .unwrap()
     };
-    let mut plane = DesignParameterScope::empty("f3d:test:scope#20", DesignFeatureKind::WorkPlane, 20);
+    let mut plane =
+        DesignParameterScope::empty("f3d:test:scope#20", DesignFeatureKind::WorkPlane, 20);
     plane.with_work_plane_transform(
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
     );
     if let Some(frame) = plane.work_plane_frame_mut() {
         frame.work_plane_construction = Some(
-            DesignWorkPlaneConstruction::try_new(21, Box::new([
-                recipe(22, 43), recipe(27, 64), recipe(32, 84),
-            ])).unwrap(),
+            DesignWorkPlaneConstruction::try_new(
+                21,
+                Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
+            )
+            .unwrap(),
         );
     }
     let transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.into();
-    assert!(matches!(super::super::project_work_plane(None, &plane, transform).unwrap(),
-        FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { .. })));
+    assert!(matches!(
+        super::super::project_work_plane(None, &plane, transform).unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { .. })
+    ));
     let mut policy = DecodePolicy::default();
     let feature = crate::ids::neutral_feature_id(&plane);
-    let prefix = crate::ids::history_input_prefix(&feature.key(), plane.work_plane_construction().unwrap().inputs()[0].resolution.unwrap().state_id);
-    policy.limits.max_retained_bytes = u64::try_from(feature.as_str().len() + prefix.as_str().len()).unwrap();
+    let prefix = crate::ids::history_input_prefix(
+        &feature.key(),
+        plane.work_plane_construction().unwrap().inputs()[0]
+            .resolution
+            .unwrap()
+            .state_id,
+    );
+    policy.limits.max_retained_bytes =
+        u64::try_from(feature.as_str().len() + prefix.as_str().len()).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(super::super::project_work_plane(Some(&ctx), &plane, transform),
+    assert!(
+        matches!(super::super::project_work_plane(Some(&ctx), &plane, transform),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d WorkPlane vertex recipe id"));
+                && failure.operation == "f3d WorkPlane vertex recipe id")
+    );
 }

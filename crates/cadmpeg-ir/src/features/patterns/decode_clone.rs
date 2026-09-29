@@ -2,7 +2,8 @@
 //! Copy admitted feature fields under the caller decode resource policy.
 
 use super::{
-    CompositePattern, LinearPatternDirection, NoNestedComposite, PatternForm, PatternKind, PatternScaleCenter, PatternSeed, PatternStage, PatternTransform
+    CompositePattern, LinearPatternDirection, NoNestedComposite, PatternForm, PatternKind,
+    PatternScaleCenter, PatternSeed, PatternStage, PatternTransform,
 };
 
 clone_record_for_decode!(CompositePattern; (field0));

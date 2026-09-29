@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, SketchCurveIdentity, ParameterId, Point2, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, HashMap};
+use super::{
+    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, HashMap, ParameterId, Point2,
+    SketchCurveIdentity, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 const EPS_REFUSAL_LINEAR: f64 = 1.0e-6;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let stream = "f3d:Design/BulkStream.dat";
     let sketch = SketchId::mint("generated:test:sketch#offset").unwrap();
     let source_curve_id = format!("{stream}:sketch-curve#10");
@@ -122,33 +125,49 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         ParameterId::mint("generated:test:parameter#offset").expect("identity grammar");
     let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
 
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| crate::design::dimensions::annotation_offset_dimension_definition(
-Some(ctx),
-&frame,
-(&parameter, &parameter_id),
-stream,
-&[source_curve.clone(), result_curve.clone()],
-&projected,
-EPS_REFUSAL_LINEAR,
-).transpose().map(|_| ()));
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        crate::design::dimensions::annotation_offset_dimension_definition(
+            Some(ctx),
+            &frame,
+            (&parameter, &parameter_id),
+            stream,
+            &[source_curve.clone(), result_curve.clone()],
+            &projected,
+            EPS_REFUSAL_LINEAR,
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn annotation_offset_index_refuses_collection_limit() {
-    fixture("f3d annotation offset index", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d annotation offset index",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn annotation_offset_source_id_refuses_retained_limit() {
-    fixture("f3d annotation offset source id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d annotation offset source id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn annotation_offset_result_id_refuses_retained_limit() {
-    fixture("f3d annotation offset result id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d annotation offset result id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn annotation_offset_parameter_id_refuses_retained_limit() {
-    fixture("f3d annotation offset parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d annotation offset parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }

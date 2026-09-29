@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
-use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view};
 use crate::container::ContainerScan;
 use crate::design::decode::image::{copy_asset_id_charged, embedded_image_asset};
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::text::lp_utf16_bounded_charged;
+use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view};
 use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
@@ -21,10 +21,10 @@ use crate::records::{
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
-use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::features::{
     DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureOperation,
 };
+use cadmpeg_ir::ids::FaceId;
 
 const DECAL_TARGET_ROLE: crate::records::topology::extrude_selection::DesignOperandRole =
     crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A;
@@ -85,18 +85,22 @@ pub(crate) fn project_decal_images(
             continue;
         };
         let mut faces = Vec::new();
-        for face in operand.references().iter().flat_map(|reference| reference.candidate_faces.iter()) {
-            let copied = String::from_utf8(ctx.copy_retained(
-                face.as_str().as_bytes(),
-                "f3d Decal face identifier",
-            )?)
+        for face in operand
+            .references()
+            .iter()
+            .flat_map(|reference| reference.candidate_faces.iter())
+        {
+            let copied = String::from_utf8(
+                ctx.copy_retained(face.as_str().as_bytes(), "f3d Decal face identifier")?,
+            )
             .map_err(|_| CodecError::malformed("F3D Decal face identifier must be UTF-8"))?;
-            let copied = FaceId::mint(copied)
-                .map_err(|error| crate::design::text::malformed_design(Some(ctx), format_args!("{error}")))?;
-            ctx.charge_collection_items(1, "f3d Decal faces")?;
-            faces.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d Decal faces allocation", 0, 1)
+            let copied = FaceId::mint(copied).map_err(|error| {
+                crate::design::text::malformed_design(Some(ctx), format_args!("{error}"))
             })?;
+            ctx.charge_collection_items(1, "f3d Decal faces")?;
+            faces
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("f3d Decal faces allocation", 0, 1))?;
             faces.push(copied);
         }
         crate::design::sort::sort_by(Some(ctx), &mut faces[..], |a, b| a.as_str().cmp(b.as_str()))?;
@@ -108,17 +112,13 @@ pub(crate) fn project_decal_images(
             continue;
         };
         let feature_id = crate::design::identity::neutral_feature_id(Some(ctx), scope)?;
-        let Some(feature) = features
-            .iter_mut()
-            .find(|feature| feature.id == feature_id)
-        else {
+        let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
         let asset_id = copy_asset_id_charged(ctx, &asset.id)?;
-        let native_id = String::from_utf8(ctx.copy_retained(
-            operand.id.as_bytes(),
-            "f3d Decal native operand identifier",
-        )?)
+        let native_id = String::from_utf8(
+            ctx.copy_retained(operand.id.as_bytes(), "f3d Decal native operand identifier")?,
+        )
         .map_err(|_| CodecError::malformed("F3D Decal operand identifier must be UTF-8"))?;
         feature
             .evaluation
@@ -132,9 +132,9 @@ pub(crate) fn project_decal_images(
                 opacity: None,
             }));
         ctx.charge_collection_items(1, "f3d Decal assets")?;
-        assets.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d Decal assets allocation", 0, 1)
-        })?;
+        assets
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("f3d Decal assets allocation", 0, 1))?;
         assets.push(asset);
     }
     crate::design::sort::sort_by(Some(ctx), &mut assets[..], |a, b| a.id.cmp(&b.id))?;
@@ -151,13 +151,7 @@ fn parse_decal_image(
     let Ok(scope_at) = usize::try_from(scope.byte_offset()) else {
         return Ok(None);
     };
-    parse_decal_image_frame(
-        ctx,
-        bytes,
-        stream,
-        scope.record_index,
-        scope_at,
-    )
+    parse_decal_image_frame(ctx, bytes, stream, scope.record_index, scope_at)
 }
 
 fn parse_decal_image_frame(
@@ -168,56 +162,60 @@ fn parse_decal_image_frame(
     scope_at: usize,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
     let parsed = (|| {
-    if bytes.get(scope_at + decal_scope::ZERO_RUN_10..scope_at + decal_scope::ASSET_REFERENCE)?
-        != [0; 10]
-    {
-        return None;
-    }
-    let asset_reference_at = scope_at + decal_scope::ASSET_REFERENCE;
-    let asset_record_index = marked_reference(bytes, asset_reference_at)?;
-    if bytes.get(
-        scope_at + decal_scope::ASSET_REFERENCE_ZERO_RUN..scope_at + decal_scope::MAPPING_MODE,
-    )? != [0; 6]
-    {
-        return None;
-    }
-    let mapping_mode_at = scope_at + decal_scope::MAPPING_MODE;
-    let mapping_mode = *bytes.get(mapping_mode_at)?;
-    let target_group_reference_at = scope_at + decal_scope::TARGET_GROUP_REFERENCE;
-    let target_group_record_index = marked_reference(bytes, target_group_reference_at)?;
-    if bytes.get(scope_at + decal_scope::TARGET_REFERENCE_ZERO_RUN..scope_at + decal_scope::LEN)?
-        != [0; 6]
-    {
-        return None;
-    }
-
-    let mut position = 0;
-    let mut asset_record = None;
-    while let Some(asset_at) = next_indexed_record_offset(bytes, position) {
-        position = asset_at.checked_add(1)?;
-        if View::u32_le_at(bytes, asset_at + 7) != Some(asset_record_index) {
-            continue;
-        }
-        let candidate = match parse_decal_asset_record(ctx, bytes, asset_at, asset_record_index) {
-            Ok(Some(candidate)) => candidate,
-            Ok(None) => continue,
-            Err(error) => return Some(Err(error)),
-        };
-        if asset_record.replace(candidate).is_some() {
+        if bytes
+            .get(scope_at + decal_scope::ZERO_RUN_10..scope_at + decal_scope::ASSET_REFERENCE)?
+            != [0; 10]
+        {
             return None;
         }
-    }
-    DesignDecalImage::new(
-        ids::native_design_decal_image_id(stream, scope_at),
-        crate::records::identity::Located {
-            value: scope_record_index,
-            offset: u64::try_from(scope_at).ok()?,
-        },
-        crate::records::decal::DesignDecalMappingMode::from_code(mapping_mode),
-        target_group_record_index,
-        asset_record?,
-    )
-    .ok().map(Ok)
+        let asset_reference_at = scope_at + decal_scope::ASSET_REFERENCE;
+        let asset_record_index = marked_reference(bytes, asset_reference_at)?;
+        if bytes.get(
+            scope_at + decal_scope::ASSET_REFERENCE_ZERO_RUN..scope_at + decal_scope::MAPPING_MODE,
+        )? != [0; 6]
+        {
+            return None;
+        }
+        let mapping_mode_at = scope_at + decal_scope::MAPPING_MODE;
+        let mapping_mode = *bytes.get(mapping_mode_at)?;
+        let target_group_reference_at = scope_at + decal_scope::TARGET_GROUP_REFERENCE;
+        let target_group_record_index = marked_reference(bytes, target_group_reference_at)?;
+        if bytes
+            .get(scope_at + decal_scope::TARGET_REFERENCE_ZERO_RUN..scope_at + decal_scope::LEN)?
+            != [0; 6]
+        {
+            return None;
+        }
+
+        let mut position = 0;
+        let mut asset_record = None;
+        while let Some(asset_at) = next_indexed_record_offset(bytes, position) {
+            position = asset_at.checked_add(1)?;
+            if View::u32_le_at(bytes, asset_at + 7) != Some(asset_record_index) {
+                continue;
+            }
+            let candidate = match parse_decal_asset_record(ctx, bytes, asset_at, asset_record_index)
+            {
+                Ok(Some(candidate)) => candidate,
+                Ok(None) => continue,
+                Err(error) => return Some(Err(error)),
+            };
+            if asset_record.replace(candidate).is_some() {
+                return None;
+            }
+        }
+        DesignDecalImage::new(
+            ids::native_design_decal_image_id(stream, scope_at),
+            crate::records::identity::Located {
+                value: scope_record_index,
+                offset: u64::try_from(scope_at).ok()?,
+            },
+            crate::records::decal::DesignDecalMappingMode::from_code(mapping_mode),
+            target_group_record_index,
+            asset_record?,
+        )
+        .ok()
+        .map(Ok)
     })();
     parsed.transpose()
 }
@@ -229,62 +227,68 @@ fn parse_decal_asset_record(
     asset_record_index: u32,
 ) -> Result<Option<DesignDecalAsset>, CodecError> {
     let parsed = (|| {
-    let (asset_class_tag, after_asset_tag) =
-        lp_ascii_filtered_view(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
-    if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
-        || bytes.get(
-            asset_at + decal_asset::ZERO_RUN_8
-                ..asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE,
-        )? != [0; 8]
-    {
-        return None;
-    }
-    let asset_entity_reference_at = asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE;
-    let asset_entity_suffix = marked_reference(bytes, asset_entity_reference_at)?;
-    if bytes.get(asset_at + decal_asset::ZERO_RUN_6..asset_at + decal_asset::LEN)? != [0; 6] {
-        return None;
-    }
-    let name_at = next_indexed_record_offset(bytes, asset_at + decal_asset::ZERO_RUN_8)?;
-    if name_at != asset_at + decal_asset::LEN {
-        return None;
-    }
-    let (name_class_tag, after_name_tag) =
-        lp_ascii_filtered_view(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
-    let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
-    if bytes
-        .get(name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT)?
-        != [0; 10]
-    {
-        return None;
-    }
-    let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(
-        ctx, bytes, name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT, 1..=1024,
-    ) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let next_at = next_indexed_record_offset(bytes, name_at + decal_name::ZERO_RUN_10)?;
-    if after_asset_name != next_at {
-        return None;
-    }
-    let asset_class_tag = match copy_ascii_retained(ctx, asset_class_tag, "f3d Decal asset class tag") {
-        Ok(value) => value,
-        Err(error) => return Some(Err(error)),
-    };
-    let name_class_tag = match copy_ascii_retained(ctx, name_class_tag, "f3d Decal name class tag") {
-        Ok(value) => value,
-        Err(error) => return Some(Err(error)),
-    };
+        let (asset_class_tag, after_asset_tag) =
+            lp_ascii_filtered_view(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
+        if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
+            || bytes.get(
+                asset_at + decal_asset::ZERO_RUN_8
+                    ..asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE,
+            )? != [0; 8]
+        {
+            return None;
+        }
+        let asset_entity_reference_at = asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE;
+        let asset_entity_suffix = marked_reference(bytes, asset_entity_reference_at)?;
+        if bytes.get(asset_at + decal_asset::ZERO_RUN_6..asset_at + decal_asset::LEN)? != [0; 6] {
+            return None;
+        }
+        let name_at = next_indexed_record_offset(bytes, asset_at + decal_asset::ZERO_RUN_8)?;
+        if name_at != asset_at + decal_asset::LEN {
+            return None;
+        }
+        let (name_class_tag, after_name_tag) =
+            lp_ascii_filtered_view(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
+        let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
+        if bytes.get(
+            name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
+        )? != [0; 10]
+        {
+            return None;
+        }
+        let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(
+            ctx,
+            bytes,
+            name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
+            1..=1024,
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let next_at = next_indexed_record_offset(bytes, name_at + decal_name::ZERO_RUN_10)?;
+        if after_asset_name != next_at {
+            return None;
+        }
+        let asset_class_tag =
+            match copy_ascii_retained(ctx, asset_class_tag, "f3d Decal asset class tag") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+        let name_class_tag =
+            match copy_ascii_retained(ctx, name_class_tag, "f3d Decal name class tag") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
 
-    DesignDecalAsset::new(
-        [asset_class_tag, name_class_tag],
-        [asset_record_index, name_record_index],
-        u64::try_from(asset_at).ok()?,
-        asset_entity_suffix,
-        asset_name,
-    )
-    .ok().map(Ok)
+        DesignDecalAsset::new(
+            [asset_class_tag, name_class_tag],
+            [asset_record_index, name_record_index],
+            u64::try_from(asset_at).ok()?,
+            asset_entity_suffix,
+            asset_name,
+        )
+        .ok()
+        .map(Ok)
     })();
     parsed.transpose()
 }
@@ -336,9 +340,11 @@ mod tests {
         let error = parse_decal_image_frame(&ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
             .err()
             .unwrap();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == operation));
+                && refusal.operation == operation)
+        );
     }
 
     #[test]
@@ -354,9 +360,15 @@ mod tests {
     #[test]
     fn decal_frame_decodes_image_mode_and_target() {
         let (bytes, scope_at) = fixture();
-        let image = parse_decal_image_frame(&cadmpeg_test_support::service_decode_context(), &bytes, "Design/BulkStream.dat", 23, scope_at)
-            .unwrap()
-            .expect("complete synthetic Decal frame");
+        let image = parse_decal_image_frame(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            "Design/BulkStream.dat",
+            23,
+            scope_at,
+        )
+        .unwrap()
+        .expect("complete synthetic Decal frame");
         assert_eq!(image.asset.record_index(), 17);
         assert_eq!(image.asset.entity_suffix(), 50);
         assert_eq!(image.asset.name(), "mark.png");
@@ -376,7 +388,15 @@ mod tests {
     fn decal_frame_rejects_an_unframed_name() {
         let (mut bytes, scope_at) = fixture();
         bytes[scope_at..scope_at + 4].fill(0);
-        assert!(parse_decal_image_frame(&cadmpeg_test_support::service_decode_context(), &bytes, "Design/BulkStream.dat", 23, scope_at).unwrap().is_none());
+        assert!(parse_decal_image_frame(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            "Design/BulkStream.dat",
+            23,
+            scope_at
+        )
+        .unwrap()
+        .is_none());
     }
 
     #[test]
@@ -387,10 +407,13 @@ mod tests {
         policy.limits.max_retained_bytes = 7;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = parse_decal_image_frame(&ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
-            .err().unwrap();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            .err()
+            .unwrap();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "f3d Design UTF-16 text"));
+                && refusal.operation == "f3d Design UTF-16 text")
+        );
     }
 
     #[test]
@@ -465,21 +488,30 @@ mod tests {
                 },
                 record_index: 100,
                 byte_offset: 1000,
-                class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap(),
-                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from("AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned())
+                    .unwrap(),
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".to_owned(),
+                )
+                .unwrap(),
                 asset_id_offset: 1056,
-                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from("11111111-2222-4333-8444-555555555555".to_owned()).unwrap(),
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "11111111-2222-4333-8444-555555555555".to_owned(),
+                )
+                .unwrap(),
                 context_id_offset: 1090,
                 selector_tail: None,
-                references: vec![crate::records::topology::body_recipe::DesignBodyRecipeReference {
-                    design_reference: 1,
-                    design_reference_offset: 1025,
-                    form: 1,
-                    form_offset: 1033,
-                    candidate_faces: vec![face.clone()],
-                    preceding_candidate_faces: Vec::new(),
-                    preceding_body_slots: Vec::new(),
-                }],
+                references: vec![
+                    crate::records::topology::body_recipe::DesignBodyRecipeReference {
+                        design_reference: 1,
+                        design_reference_offset: 1025,
+                        form: 1,
+                        form_offset: 1033,
+                        candidate_faces: vec![face.clone()],
+                        preceding_candidate_faces: Vec::new(),
+                        preceding_body_slots: Vec::new(),
+                    },
+                ],
                 nested_record_index: 103,
                 nested_record_index_offset: 1038,
                 recipe_id: "f3d:Design/BulkStream.dat:recipe#1".into(),
@@ -490,7 +522,8 @@ mod tests {
                 next_record_index: 104,
                 next_byte_offset: 1200,
             },
-        ).unwrap();
+        )
+        .unwrap();
         let feature = || Feature {
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,
@@ -502,7 +535,9 @@ mod tests {
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-                FeatureOperation::Sketch { sketch: SketchFeatureBinding::Unresolved },
+                FeatureOperation::Sketch {
+                    sketch: SketchFeatureBinding::Unresolved,
+                },
             )),
             native_ref: Some(scope.id.clone()),
         };
@@ -514,17 +549,43 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let asset_id_len = crate::ids::neutral_asset_id(ENTRY).as_str().len();
-            let after_embedded = face.as_str().len() + 3 + "mark.png".len()
-                + crate::ids::native_scope(ENTRY).len() + asset_id_len;
+            let after_embedded = face.as_str().len()
+                + 3
+                + "mark.png".len()
+                + crate::ids::native_scope(ENTRY).len()
+                + asset_id_len
+                + crate::ids::neutral_feature_id(&scope).as_str().len();
             for (retained, items, dimension, operation) in [
-                (u64::MAX, 0, ResourceDimension::CollectionItems, "f3d Decal faces"),
-                (u64::MAX, 1, ResourceDimension::CollectionItems, "f3d Decal assets"),
-                (u64::try_from(face.as_str().len() - 1).unwrap(), u64::MAX,
-                    ResourceDimension::RetainedBytes, "f3d Decal face identifier"),
-                (u64::try_from(after_embedded + asset_id_len - 1).unwrap(), u64::MAX,
-                    ResourceDimension::RetainedBytes, "f3d image feature asset identifier"),
-                (u64::try_from(after_embedded + asset_id_len + operand.id.len() - 1).unwrap(), u64::MAX,
-                    ResourceDimension::RetainedBytes, "f3d Decal native operand identifier"),
+                (
+                    u64::MAX,
+                    0,
+                    ResourceDimension::CollectionItems,
+                    "f3d Decal faces",
+                ),
+                (
+                    u64::MAX,
+                    1,
+                    ResourceDimension::CollectionItems,
+                    "f3d Decal assets",
+                ),
+                (
+                    u64::try_from(face.as_str().len() - 1).unwrap(),
+                    u64::MAX,
+                    ResourceDimension::RetainedBytes,
+                    "f3d Decal face identifier",
+                ),
+                (
+                    u64::try_from(after_embedded + asset_id_len - 1).unwrap(),
+                    u64::MAX,
+                    ResourceDimension::RetainedBytes,
+                    "f3d image feature asset identifier",
+                ),
+                (
+                    u64::try_from(after_embedded + asset_id_len + operand.id.len() - 1).unwrap(),
+                    u64::MAX,
+                    ResourceDimension::RetainedBytes,
+                    "f3d Decal native operand identifier",
+                ),
             ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
@@ -532,19 +593,32 @@ mod tests {
                 policy.limits.max_collection_items = items;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let result = super::project_decal_images(
-                    &ctx, scan, std::slice::from_ref(&scope), std::slice::from_ref(&image),
-                    std::slice::from_ref(&group), std::slice::from_ref(&operand), &mut [feature()],
+                    &ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&image),
+                    std::slice::from_ref(&group),
+                    std::slice::from_ref(&operand),
+                    &mut [feature()],
                 );
-                assert!(matches!(result,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                        if failure.dimension == dimension && failure.operation == operation
-                ), "operation {operation}: {result:?}");
+                assert!(
+                    matches!(result,
+                        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                            if failure.dimension == dimension && failure.operation == operation
+                    ),
+                    "operation {operation}: {result:?}"
+                );
             }
             let assets = super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(), scan,
-                std::slice::from_ref(&scope), std::slice::from_ref(&image),
-                std::slice::from_ref(&group), std::slice::from_ref(&operand), &mut [feature()],
-            ).unwrap();
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&image),
+                std::slice::from_ref(&group),
+                std::slice::from_ref(&operand),
+                &mut [feature()],
+            )
+            .unwrap();
             assert_eq!(assets.len(), 1);
             assert_eq!(assets[0].id, crate::ids::neutral_asset_id(ENTRY));
         });

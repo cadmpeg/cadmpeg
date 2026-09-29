@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{parse_design_parameter_record, parameter_record, Point2, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    parameter_record, parse_design_parameter_record, Point2, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 const EPS_REFUSAL_LINEAR: f64 = 1.0e-6;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("generated:test:sketch#presentation").unwrap();
     let entity = |record_index: u32, geometry: SketchGeometry| {
         SketchEntity::new(
@@ -101,38 +103,95 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         role: 0,
         role_offset: 0,
     };
-    let (source_kind, value, records) = if matches!(operation, "f3d presentation first id" | "f3d presentation second id") { ("Angular Dimension-2", std::f64::consts::FRAC_PI_2, vec![306, 400]) } else { ("Linear Dimension-2", 3.556, vec![306]) };
-    let horizontal = entity(400, SketchGeometry::try_from(SketchGeometryDefinition::Line { start: Point2::new(0.0, 0.0), end: Point2::new(1.0, 0.0) }).unwrap());
+    let (source_kind, value, records) = if matches!(
+        operation,
+        "f3d presentation first id" | "f3d presentation second id"
+    ) {
+        (
+            "Angular Dimension-2",
+            std::f64::consts::FRAC_PI_2,
+            vec![306, 400],
+        )
+    } else {
+        ("Linear Dimension-2", 3.556, vec![306])
+    };
+    let horizontal = entity(
+        400,
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        })
+        .unwrap(),
+    );
     let mut projected = projected;
     projected.insert(("stream", 400), &horizontal);
-    let parameter = parse_design_parameter_record(&parameter_record(Some(44), "3.556", source_kind, Some(if source_kind.starts_with("Angular") { "rad" } else { "cm" }), "d4", value)).unwrap();
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(44),
+        "3.556",
+        source_kind,
+        Some(if source_kind.starts_with("Angular") {
+            "rad"
+        } else {
+            "cm"
+        }),
+        "d4",
+        value,
+    ))
+    .unwrap();
     let frame = frame(records.into_iter().map(operand).collect());
-    let parameter_id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4").unwrap();
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| crate::design::dimensions::presentation_dimension_definition(Some(ctx), "stream", &frame, &projected, &parameter, &parameter_id, EPS_REFUSAL_LINEAR).transpose().map(|_| ()));
-
+    let parameter_id =
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4").unwrap();
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        crate::design::dimensions::presentation_dimension_definition(
+            Some(ctx),
+            "stream",
+            &frame,
+            &projected,
+            &parameter,
+            &parameter_id,
+            EPS_REFUSAL_LINEAR,
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn presentation_dimension_entity_refuses_collection_limit() {
-    fixture("f3d presentation dimension entity", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d presentation dimension entity",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn presentation_parameter_id_refuses_retained_limit() {
-    fixture("f3d presentation parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d presentation parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn presentation_entity_id_refuses_retained_limit() {
-    fixture("f3d presentation entity id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d presentation entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn presentation_first_id_refuses_retained_limit() {
-    fixture("f3d presentation first id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d presentation first id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn presentation_second_id_refuses_retained_limit() {
-    fixture("f3d presentation second id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d presentation second id",
+        ResourceDimension::RetainedBytes,
+    );
 }

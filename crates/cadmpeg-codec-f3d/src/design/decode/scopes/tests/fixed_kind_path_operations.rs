@@ -1007,7 +1007,8 @@ pub(super) fn fixed_kind_path_operations(
             &[scope.clone()],
             &[],
             100,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some((58, 58))
     );
     scope
@@ -1030,7 +1031,8 @@ pub(super) fn fixed_kind_path_operations(
             &[scope.clone()],
             &[],
             100,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some((58, 80))
     );
     scope
@@ -1059,19 +1061,31 @@ pub(super) fn fixed_kind_path_operations(
             &[scope.clone()],
             &[foreign_header],
             100,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some((58, 70))
     );
 
-    let mut parameter = crate::design::decode::parameters::parse_design_parameter(&cadmpeg_test_support::service_decode_context(),
+    let mut parameter = crate::design::decode::parameters::parse_design_parameter(
+        &cadmpeg_test_support::service_decode_context(),
         &parameter_record(None, "1", "User Parameter", None, "p", 1.0),
     )
-    .unwrap().expect("generated parameter")
+    .unwrap()
+    .expect("generated parameter")
     .into_record("Design/BulkStream.dat", 65)
     .expect("located parameter");
     parameter.id = "f3d:native:design-parameter#65".into();
     assert_eq!(
-        companion_owned_interval(&cadmpeg_test_support::service_decode_context(), &companion, std::iter::once(&parameter), &[], &[], &[], 100,).unwrap(),
+        companion_owned_interval(
+            &cadmpeg_test_support::service_decode_context(),
+            &companion,
+            std::iter::once(&parameter),
+            &[],
+            &[],
+            &[],
+            100,
+        )
+        .unwrap(),
         Some((58, 65))
     );
     let recipe = ConstructionRecipe {
@@ -1097,7 +1111,8 @@ pub(super) fn fixed_kind_path_operations(
             recipes: std::slice::from_ref(&recipe),
             stream_lengths: &HashMap::from([("f3d:native".into(), 100)]),
         },
-    ).unwrap();
+    )
+    .unwrap();
     let payload = bound[0].payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 58);
     assert_eq!(payload.byte_length(), 7);
@@ -1141,7 +1156,8 @@ pub(super) fn fixed_kind_path_operations(
             recipes: &[],
             stream_lengths: &HashMap::from([("f3d:native".into(), 100)]),
         },
-    ).unwrap();
+    )
+    .unwrap();
     let payload = bound[0].payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 58);
     assert_eq!(payload.byte_length(), 12);

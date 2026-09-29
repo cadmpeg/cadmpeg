@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{preceding_incident_angular_dimension_definition, parameter_record, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, ParameterId, Point2, Point3, Vector3, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, HashMap};
+use super::{
+    parameter_record, preceding_incident_angular_dimension_definition, HashMap, ParameterId,
+    Point2, Point3, SketchCurveGeometry, SketchCurveIdentity, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchPoint, Vector3,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let stream = "f3d:A";
     let sketch = SketchId::mint("f3d:model:sketch#angular-incidence").unwrap();
     let curve = |record_index, byte_offset, angle: f64| SketchCurveIdentity {
@@ -77,42 +80,59 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         ((stream, 12), &entities[2]),
         ((stream, 13), &entities[3]),
     ]);
-    let parameter = crate::design::decode::parameters::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &parameter_record(
-        Some(1),
-        "135 deg",
-        "Angular Dimension-2",
-        Some("deg"),
-        "d1",
-        3.0 * std::f64::consts::FRAC_PI_4,
-    ))
-    .unwrap().expect("angular parameter")
+    let parameter = crate::design::decode::parameters::parse_design_parameter(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_record(
+            Some(1),
+            "135 deg",
+            "Angular Dimension-2",
+            Some("deg"),
+            "d1",
+            3.0 * std::f64::consts::FRAC_PI_4,
+        ),
+    )
+    .unwrap()
+    .expect("angular parameter")
     .into_record("Design/BulkStream.dat", 100)
     .expect("located parameter");
     let parameter_id =
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| preceding_incident_angular_dimension_definition(
-Some(ctx),
-stream,
-&points,
-&curves,
-&projected,
-&sketch,
-(&parameter, &parameter_id),
-).transpose().map(|_| ()));
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        preceding_incident_angular_dimension_definition(
+            Some(ctx),
+            stream,
+            &points,
+            &curves,
+            &projected,
+            &sketch,
+            (&parameter, &parameter_id),
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn preceding_incident_angular_first_id_refuses_retained_limit() {
-    fixture("f3d preceding incident angular first id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d preceding incident angular first id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn preceding_incident_angular_second_id_refuses_retained_limit() {
-    fixture("f3d preceding incident angular second id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d preceding incident angular second id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn preceding_incident_angular_parameter_id_refuses_retained_limit() {
-    fixture("f3d preceding incident angular parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d preceding incident angular parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }

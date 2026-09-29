@@ -43,7 +43,8 @@ use cadmpeg_ir::sketches::SketchId;
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"308");
@@ -95,7 +96,9 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         &header,
         std::slice::from_ref(&entity),
     )
-    .transpose().unwrap().expect("sketch-profile operand");
+    .transpose()
+    .unwrap()
+    .expect("sketch-profile operand");
     assert_eq!(profile.scope_reference_ordinal, 4);
     assert_eq!(profile.entity_id.suffix(), 172);
     assert_eq!(profile.entity_id.as_str(), "0_172");
@@ -133,7 +136,9 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         &compact_header,
         std::slice::from_ref(&entity),
     )
-    .transpose().unwrap().expect("compact sketch-profile operand");
+    .transpose()
+    .unwrap()
+    .expect("compact sketch-profile operand");
     assert_eq!(compact.scope_reference_ordinal, 2);
     assert_eq!(compact.paired_byte_offset(), compact_paired_at as u64);
 
@@ -163,7 +168,9 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         &compact_header,
         std::slice::from_ref(&entity),
     )
-    .transpose().unwrap().expect("omitted-ordinal sketch-profile operand");
+    .transpose()
+    .unwrap()
+    .expect("omitted-ordinal sketch-profile operand");
     assert_eq!(omitted.paired_byte_offset(), omitted_paired_at as u64);
 }
 
@@ -206,7 +213,8 @@ fn sketch_profile_text_copies_refuse_retained_limits() {
                 references: Vec::new(),
             }),
             crate::records::identity::ReferenceRun::unlocated(Vec::new()),
-        ).unwrap(),
+        )
+        .unwrap(),
     };
     for (retained_limit, operation) in [
         (35, "f3d Design UTF-16 text"),
@@ -230,9 +238,16 @@ fn sketch_profile_text_copies_refuse_retained_limits() {
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let profile = parse_sketch_profile(
-        &ctx, &bytes, "f3d:Design/BulkStream.dat", 4,
-        &header, std::slice::from_ref(&entity),
-    ).transpose().unwrap().expect("profile with leading-zero suffix");
+        &ctx,
+        &bytes,
+        "f3d:Design/BulkStream.dat",
+        4,
+        &header,
+        std::slice::from_ref(&entity),
+    )
+    .transpose()
+    .unwrap()
+    .expect("profile with leading-zero suffix");
     assert_eq!(profile.entity_id.suffix(), 172);
 }
 
@@ -240,7 +255,8 @@ fn sketch_profile_text_copies_refuse_retained_limits() {
 fn generated_base_flange_profile_frame_resolves() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (bytes, _) = crate::test_support::streams_test::generated_design_base_flange_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let profile_offset = records
@@ -277,7 +293,9 @@ fn generated_base_flange_profile_frame_resolves() {
         &header,
         std::slice::from_ref(&entity),
     )
-    .transpose().unwrap().expect("generated BaseFlange profile operand");
+    .transpose()
+    .unwrap()
+    .expect("generated BaseFlange profile operand");
     assert_eq!(profile.entity_id.as_str(), "Sketch_800");
     assert_eq!(profile.entity_id.suffix(), 800);
 }
@@ -288,8 +306,13 @@ fn lost_edge_stream_and_run_copies_refuse_limits() {
     use cadmpeg_core::CodecError;
     let edge = LostEdgeReference::new(
         "f3d:Design/BulkStream.dat:lost-edge-reference#152".into(),
-        152, "419".into(), 299, "326".into(), 300,
-    ).unwrap();
+        152,
+        "419".into(),
+        299,
+        "326".into(),
+        300,
+    )
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
@@ -328,7 +351,8 @@ fn lost_edge_stream_and_run_copies_refuse_limits() {
 fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
@@ -404,8 +428,11 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
         limited_policy.limits.max_collection_items = limit;
         let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &limited_arena, &limited_policy,
-        ).unwrap();
+            &[],
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
         assert!(matches!(
             parse_construction_operand_identity(&limited_ctx, &bytes, &group, &wrapper_header),
             Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
@@ -415,7 +442,8 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     }
 
     let identity = parse_construction_operand_identity(&ctx, &bytes, &group, &wrapper_header)
-        .expect("identity chain").unwrap();
+        .expect("identity chain")
+        .unwrap();
     assert_eq!(
         identity
             .wrappers()
@@ -447,8 +475,10 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     expanded_bytes.extend_from_slice(&900u32.to_le_bytes());
     expanded_bytes.extend_from_slice(&[0; 6]);
     indexed_header(&mut expanded_bytes, *b"301", 900);
-    let expanded = parse_construction_operand_identity(&ctx, &expanded_bytes, &group, &wrapper_header)
-        .expect("identity chain with expanded tail reference").unwrap();
+    let expanded =
+        parse_construction_operand_identity(&ctx, &expanded_bytes, &group, &wrapper_header)
+            .expect("identity chain with expanded tail reference")
+            .unwrap();
     let persistent = expanded
         .persistent_identity()
         .expect("expanded persistent identity leaf");
@@ -505,7 +535,8 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
 fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
@@ -588,8 +619,11 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
         limited_policy.limits.max_retained_bytes = limit;
         let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &limited_arena, &limited_policy,
-        ).unwrap();
+            &[],
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
         assert!(matches!(
             parse_entity_selection_operand(&limited_ctx, &bytes, &group, 0, &record),
             Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
@@ -598,7 +632,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         ));
     }
     let operand = parse_entity_selection_operand(&ctx, &bytes, &group, 0, &record)
-        .expect("nested entity-selection frame").unwrap();
+        .expect("nested entity-selection frame")
+        .unwrap();
     assert_eq!(operand.primary_identity, 1331);
     assert_eq!(
         operand
@@ -619,7 +654,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let compact_next_at = compact.len();
     indexed_header(&mut compact, *b"311", 109);
     let compact_operand = parse_entity_selection_operand(&ctx, &compact, &group, 0, &record)
-        .expect("compact nested entity-selection frame").unwrap();
+        .expect("compact nested entity-selection frame")
+        .unwrap();
     assert_eq!(compact_operand.primary_identity, 1331);
     assert_eq!(
         compact_operand
@@ -643,7 +679,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let curve_next_at = curve_identity.len();
     indexed_header(&mut curve_identity, *b"311", 104);
     let curve_operand = parse_entity_selection_operand(&ctx, &curve_identity, &group, 0, &record)
-        .expect("expanded Sketch-curve entity-selection frame").unwrap();
+        .expect("expanded Sketch-curve entity-selection frame")
+        .unwrap();
     assert_eq!(curve_operand.primary_identity, 1331);
     assert_eq!(
         curve_operand
@@ -683,9 +720,15 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         class_tag: crate::records::references::DesignClassTag::try_from("338".to_owned()).unwrap(),
         ..record
     };
-    let class_338_operand =
-        parse_entity_selection_operand(&ctx, &class_338_curve_identity, &group, 0, &class_338_record)
-            .expect("class-338 Sketch-curve entity-selection frame").unwrap();
+    let class_338_operand = parse_entity_selection_operand(
+        &ctx,
+        &class_338_curve_identity,
+        &group,
+        0,
+        &class_338_record,
+    )
+    .expect("class-338 Sketch-curve entity-selection frame")
+    .unwrap();
     assert_eq!(class_338_operand.primary_identity, 949);
     assert_eq!(
         class_338_operand
@@ -718,7 +761,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let mut invalid_class_338 = class_338_curve_identity.clone();
     invalid_class_338[identity_at + 20] = 0;
     assert!(
-        parse_entity_selection_operand(&ctx, &invalid_class_338, &group, 0, &class_338_record).is_none()
+        parse_entity_selection_operand(&ctx, &invalid_class_338, &group, 0, &class_338_record)
+            .is_none()
     );
 
     let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -739,7 +783,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             crate::design::decode::operands::decode_entity_selection_operands(
                 &ctx, scan, std::slice::from_ref(&group), std::slice::from_ref(&header),
@@ -751,9 +796,11 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         let id_len = crate::ids::native_scope(stream_name).len()
-            + ":design-entity-selection-operand#".len() + 1;
+            + ":design-entity-selection-operand#".len()
+            + 1;
         policy.limits.max_retained_bytes = u64::try_from(72 + id_len - 1).unwrap();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             crate::design::decode::operands::decode_entity_selection_operands(
                 &ctx, scan, std::slice::from_ref(&group), std::slice::from_ref(&header),
@@ -769,7 +816,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
 fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let scope = DesignParameterScope::try_new(
         crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
@@ -839,7 +887,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     indexed_header(&mut group_bytes, *b"259", 100);
 
     let mut group = parse_extrude_selection_group(&ctx, &group_bytes, &scope, 0, &record)
-        .transpose().unwrap()
+        .transpose()
+        .unwrap()
         .expect("counted Extrude selection group");
     assert_eq!(
         group
@@ -875,8 +924,11 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
         limited_policy.limits.max_retained_bytes = retained_limit;
         let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &limited_arena, &limited_policy,
-        ).unwrap();
+            &[],
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
         assert!(matches!(
             parse_extrude_selection_member(&limited_ctx, &member_bytes, &group, 0, &member_record),
             Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
@@ -886,7 +938,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     }
 
     let mut member = parse_extrude_selection_member(&ctx, &member_bytes, &group, 0, &member_record)
-        .expect("fixed Extrude selection member").unwrap();
+        .expect("fixed Extrude selection member")
+        .unwrap();
     assert_eq!(member.local_id, 586);
     assert_eq!(member.next_byte_offset(), 190);
     assert_eq!(member.next_record_index, 201);
@@ -894,14 +947,17 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     assert_eq!(member.tail_slot_offset, 185);
 
     member_bytes[185] = 1;
-    let member_with_slot = parse_extrude_selection_member(&ctx, &member_bytes, &group, 0, &member_record)
-        .expect("Extrude selection member with present tail slot").unwrap();
+    let member_with_slot =
+        parse_extrude_selection_member(&ctx, &member_bytes, &group, 0, &member_record)
+            .expect("Extrude selection member with present tail slot")
+            .unwrap();
     assert!(member_with_slot.tail_slot_present);
     assert_eq!(member_with_slot.tail_slot_offset, 185);
 
     let terminal_member =
         parse_extrude_selection_member(&ctx, &member_bytes[..190], &group, 0, &member_record)
-            .expect("terminal fixed Extrude selection member").unwrap();
+            .expect("terminal fixed Extrude selection member")
+            .unwrap();
     assert_eq!(terminal_member.next_byte_offset(), 190);
     assert_eq!(terminal_member.next_record_index, 0);
 
@@ -922,7 +978,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     );
     let edge_identity =
         crate::design::decode::operands::parse_edge_identity_member(&ctx, &edge_identity_bytes, 0)
-            .expect("fixed edge-treatment selection identity").unwrap();
+            .expect("fixed edge-treatment selection identity")
+            .unwrap();
     assert_eq!(edge_identity.local_id, 5890);
     assert!(!edge_identity.layout.is_compact());
     assert_eq!(edge_identity.layout.local_id_offset(), 24);
@@ -932,7 +989,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     edge_identity_bytes.remove(22);
     let compact_edge_identity =
         crate::design::decode::operands::parse_edge_identity_member(&ctx, &edge_identity_bytes, 0)
-            .expect("compact fixed edge-treatment selection identity").unwrap();
+            .expect("compact fixed edge-treatment selection identity")
+            .unwrap();
     assert!(compact_edge_identity.layout.is_compact());
     assert_eq!(compact_edge_identity.local_id, 5890);
     assert_eq!(compact_edge_identity.layout.local_id_offset(), 23);
@@ -942,7 +1000,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     edge_identity_bytes.remove(21);
     let shortest_edge_identity =
         crate::design::decode::operands::parse_edge_identity_member(&ctx, &edge_identity_bytes, 0)
-            .expect("short compact edge-treatment selection identity").unwrap();
+            .expect("short compact edge-treatment selection identity")
+            .unwrap();
     assert!(shortest_edge_identity.layout.is_compact());
     assert_eq!(shortest_edge_identity.local_id, 5890);
     assert_eq!(shortest_edge_identity.layout.local_id_offset(), 22);
@@ -1013,8 +1072,11 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
         limited_policy.limits.max_collection_items = limit;
         let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &limited_arena, &limited_policy,
-        ).unwrap();
+            &[],
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
         assert!(matches!(
             bind_extrude_selection_identities(&limited_ctx, std::slice::from_mut(&mut member), std::slice::from_ref(&identity)),
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))
@@ -1025,9 +1087,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let limited_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
     limited_policy.limits.max_retained_bytes = u64::try_from(identity.id.len() - 1).unwrap();
-    let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &limited_arena, &limited_policy,
-    ).unwrap();
+    let (limited_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
+            .unwrap();
     assert!(matches!(
         bind_extrude_selection_identities(&limited_ctx, std::slice::from_mut(&mut member), std::slice::from_ref(&identity)),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
@@ -1038,7 +1100,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         &ctx,
         std::slice::from_mut(&mut member),
         std::slice::from_ref(&identity),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(member.operand_identity_ids, [identity.id]);
     let mut owning_scope = scope;
     if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
@@ -1080,9 +1143,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let limited_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
     limited_policy.limits.max_collection_items = 0;
-    let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &limited_arena, &limited_policy,
-    ).unwrap();
+    let (limited_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
+            .unwrap();
     assert!(matches!(
         bind_extrude_selection_geometry(
             &limited_ctx,
@@ -1115,7 +1178,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         std::slice::from_ref(&owning_scope),
         &[],
         &[curve],
-    ).unwrap();
+    )
+    .unwrap();
     assert!(matches!(
         member.resolved_geometry,
         Some(SketchRelationOperand::Curve {
@@ -1327,7 +1391,8 @@ fn edge_identity_text_refuses_retained_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             crate::design::decode::operands::parse_edge_identity_member(&ctx, &bytes, 0),
             Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
@@ -1410,12 +1475,24 @@ fn extrude_selection_group_output_refuses_collection_and_id_limits() {
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let group = parse_extrude_selection_group(&ctx, &bytes, &scope, 0, &record)
-        .transpose().unwrap().expect("counted Extrude selection group");
+        .transpose()
+        .unwrap()
+        .expect("counted Extrude selection group");
     let stream = "Design/BulkStream.dat";
     let native_scope_len = u64::try_from(crate::ids::native_scope(stream).len()).unwrap();
     for (collection_limit, retained_limit, dimension, operation) in [
-        (0, u64::MAX, ResourceDimension::CollectionItems, "f3d extrude selection group output"),
-        (1, native_scope_len, ResourceDimension::RetainedBytes, "f3d extrude selection group ID"),
+        (
+            0,
+            u64::MAX,
+            ResourceDimension::CollectionItems,
+            "f3d extrude selection group output",
+        ),
+        (
+            1,
+            native_scope_len,
+            ResourceDimension::RetainedBytes,
+            "f3d extrude selection group ID",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -1498,10 +1575,13 @@ fn sketch_profile_regions_and_members_refuse_collection_limits() {
 fn sketch_profile_region_selection_preserves_region_and_curve_order() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (bytes, selection_at, _, _) = region_selection_frame();
-    let selection =
-        parse_sketch_profile_region_selection(&ctx, &bytes, 100, 0).transpose().unwrap().expect("profile-region selection");
+    let selection = parse_sketch_profile_region_selection(&ctx, &bytes, 100, 0)
+        .transpose()
+        .unwrap()
+        .expect("profile-region selection");
     assert_eq!(selection.record_index, 103);
     assert_eq!(selection.byte_offset, selection_at as u64);
     assert_eq!(selection.class_tag.as_str(), "327");
@@ -1526,13 +1606,16 @@ fn sketch_profile_region_selection_preserves_region_and_curve_order() {
 fn sketch_profile_region_selection_requires_every_delimiter() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (bytes, _, second_region_marker, terminator) = region_selection_frame();
     for offset in [second_region_marker, terminator] {
         let mut changed = bytes.clone();
         changed[offset] = 2;
         assert_eq!(
-            parse_sketch_profile_region_selection(&ctx, &changed, 100, 0).transpose().unwrap(),
+            parse_sketch_profile_region_selection(&ctx, &changed, 100, 0)
+                .transpose()
+                .unwrap(),
             None
         );
     }
@@ -1542,13 +1625,16 @@ fn sketch_profile_region_selection_requires_every_delimiter() {
 fn sketch_profile_region_selection_derives_companion_after_header_shaped_member() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (mut bytes, selection_at, _, _) = region_selection_frame();
     let curve_primary_id_offset = selection_at + 48;
     bytes[curve_primary_id_offset..curve_primary_id_offset + 4].copy_from_slice(b"123X");
 
-    let selection =
-        parse_sketch_profile_region_selection(&ctx, &bytes, 100, 0).transpose().unwrap().expect("profile-region selection");
+    let selection = parse_sketch_profile_region_selection(&ctx, &bytes, 100, 0)
+        .transpose()
+        .unwrap()
+        .expect("profile-region selection");
 
     assert_eq!(
         u64::from(selection.regions[0].members[0].curve_primary_id.get()),

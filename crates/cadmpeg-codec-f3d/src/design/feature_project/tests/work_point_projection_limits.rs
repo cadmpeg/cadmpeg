@@ -53,7 +53,8 @@ fn vertex_construction(historical: bool) -> DesignWorkPointConstruction {
         resolution: historical.then(|| DesignVertexResolution::new(4, 43).unwrap()),
         next_record_index: 27,
         next_byte_offset: 200,
-    }).unwrap();
+    })
+    .unwrap();
     construction(DesignWorkPointRuleForm::Vertex {
         input: input(22, DesignWorkPointInputCarrier::VertexRecipe { recipe }),
     })
@@ -65,9 +66,15 @@ fn plane_construction() -> DesignWorkPointConstruction {
             record_index,
             DesignWorkPointPlaneSelectionDraft {
                 class_tag: "267".to_owned().try_into().unwrap(),
-                asset_id: "00000000-0000-0000-0000-000000000001".to_owned().try_into().unwrap(),
+                asset_id: "00000000-0000-0000-0000-000000000001"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
                 asset_id_offset: 1,
-                context_id: "00000000-0000-0000-0000-000000000002".to_owned().try_into().unwrap(),
+                context_id: "00000000-0000-0000-0000-000000000002"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
                 context_id_offset: 2,
                 identity_record_index: record_index + 3,
                 identity_record_offset: 3,
@@ -77,8 +84,12 @@ fn plane_construction() -> DesignWorkPointConstruction {
                 next_record_index: record_index + 4,
                 next_byte_offset: 32,
             },
-        ).unwrap();
-        input(record_index, DesignWorkPointInputCarrier::WorkPlane { selection })
+        )
+        .unwrap();
+        input(
+            record_index,
+            DesignWorkPointInputCarrier::WorkPlane { selection },
+        )
     };
     construction(DesignWorkPointRuleForm::ThreePlaneIntersection {
         inputs: [plane(42, 10), plane(46, 20), plane(50, 30)],
@@ -105,7 +116,8 @@ fn edge_operand(historical: bool) -> DesignEdgeOperand {
         "recipe_program": [],
         "next_record_index": 46,
         "next_byte_offset": 160
-    })).unwrap();
+    }))
+    .unwrap();
     if historical {
         operand.recipe_state_id = Some(4);
         operand.resolved_edge_slot = Some(7);
@@ -123,14 +135,17 @@ fn assert_retained_refusal(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     let preceding = match operation {
-        "f3d WorkPoint historical edge operand id" | "f3d WorkPoint historical vertex recipe id" => {
+        "f3d WorkPoint historical edge operand id"
+        | "f3d WorkPoint historical vertex recipe id" => {
             let feature = crate::ids::neutral_feature_id(&scope());
             let prefix = crate::ids::history_input_prefix(&feature.key(), 4);
             let state = crate::ids::feature_input_topology_id(&feature, 4);
             let entity_len = if operation == "f3d WorkPoint historical edge operand id" {
                 crate::ids::history_input_edge_id(&prefix, 7).as_str().len()
             } else {
-                crate::ids::history_input_vertex_id(&prefix, 43).as_str().len()
+                crate::ids::history_input_vertex_id(&prefix, 43)
+                    .as_str()
+                    .len()
             };
             feature.as_str().len() + prefix.as_str().len() + state.as_str().len() + entity_len
         }
@@ -139,27 +154,44 @@ fn assert_retained_refusal(
     policy.limits.max_retained_bytes = u64::try_from(preceding + required_bytes - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::super::project_work_point_construction(
-        Some(&ctx), &scope(), construction, &[], edge_operands, scope_ids,
+        Some(&ctx),
+        &scope(),
+        construction,
+        &[],
+        edge_operands,
+        scope_ids,
     );
-    assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+    assert!(
+        matches!(result, Err(CodecError::ResourceLimit(ref failure))
         if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes),
-        "expected {operation} refusal, got {result:?}");
+        "expected {operation} refusal, got {result:?}"
+    );
 }
 
 #[test]
 fn work_point_native_vertex_recipe_id_refuses_retained_limit() {
     let construction = vertex_construction(false);
     let len = "f3d:native/BulkStream.dat:construction-recipe#vertex".len();
-    assert_retained_refusal(&construction, &[], &HashMap::new(),
-        "f3d WorkPoint native vertex recipe id", len);
+    assert_retained_refusal(
+        &construction,
+        &[],
+        &HashMap::new(),
+        "f3d WorkPoint native vertex recipe id",
+        len,
+    );
 }
 
 #[test]
 fn work_point_historical_vertex_recipe_id_refuses_retained_limit() {
     let construction = vertex_construction(true);
     let len = "f3d:native/BulkStream.dat:construction-recipe#vertex".len();
-    assert_retained_refusal(&construction, &[], &HashMap::new(),
-        "f3d WorkPoint historical vertex recipe id", len);
+    assert_retained_refusal(
+        &construction,
+        &[],
+        &HashMap::new(),
+        "f3d WorkPoint historical vertex recipe id",
+        len,
+    );
 }
 
 #[test]
@@ -167,30 +199,51 @@ fn work_point_plane_feature_id_refuses_retained_limit() {
     let construction = plane_construction();
     let id = FeatureId::mint("synthetic:test:id#f3d:work-plane:10").unwrap();
     let scope_ids = HashMap::from([(("f3d:native/BulkStream.dat", 10), id.clone())]);
-    assert_retained_refusal(&construction, &[], &scope_ids,
-        "f3d WorkPoint plane feature id", id.as_str().len());
+    assert_retained_refusal(
+        &construction,
+        &[],
+        &scope_ids,
+        "f3d WorkPoint plane feature id",
+        id.as_str().len(),
+    );
 }
 
 #[test]
 fn work_point_native_edge_operand_id_refuses_retained_limit() {
     let operand = edge_operand(false);
     let construction = construction(DesignWorkPointRuleForm::CircleCenter {
-        input: input(42, DesignWorkPointInputCarrier::EdgeRecipe {
-            operand_id: operand.id.clone(),
-        }),
+        input: input(
+            42,
+            DesignWorkPointInputCarrier::EdgeRecipe {
+                operand_id: operand.id.clone(),
+            },
+        ),
     });
-    assert_retained_refusal(&construction, std::slice::from_ref(&operand), &HashMap::new(),
-        "f3d WorkPoint native edge operand id", operand.id.len());
+    assert_retained_refusal(
+        &construction,
+        std::slice::from_ref(&operand),
+        &HashMap::new(),
+        "f3d WorkPoint native edge operand id",
+        operand.id.len(),
+    );
 }
 
 #[test]
 fn work_point_historical_edge_operand_id_refuses_retained_limit() {
     let operand = edge_operand(true);
     let construction = construction(DesignWorkPointRuleForm::CircleCenter {
-        input: input(42, DesignWorkPointInputCarrier::EdgeRecipe {
-            operand_id: operand.id.clone(),
-        }),
+        input: input(
+            42,
+            DesignWorkPointInputCarrier::EdgeRecipe {
+                operand_id: operand.id.clone(),
+            },
+        ),
     });
-    assert_retained_refusal(&construction, std::slice::from_ref(&operand), &HashMap::new(),
-        "f3d WorkPoint historical edge operand id", operand.id.len());
+    assert_retained_refusal(
+        &construction,
+        std::slice::from_ref(&operand),
+        &HashMap::new(),
+        "f3d WorkPoint historical edge operand id",
+        operand.id.len(),
+    );
 }

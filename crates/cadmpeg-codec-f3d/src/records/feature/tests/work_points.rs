@@ -13,7 +13,8 @@ fn work_point_rule_moves_resolved_input_without_cloning_carrier() {
         Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
             operand_id: "f3d:Design/BulkStream.dat:edge#7".to_owned(),
         })),
-    ).unwrap();
+    )
+    .unwrap();
     WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
     let rule = DesignWorkPointRule::from_serialized(5, vec![input]).unwrap();
     assert!(matches!(

@@ -43,9 +43,11 @@ fn external_reference_text_fields_refuse_retained_limits() {
         policy.limits.max_retained_bytes = limit as u64;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = take_external_reference_identity(&ctx, &bytes, &mut 0);
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d Design UTF-16 text"));
+                && failure.operation == "f3d Design UTF-16 text")
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -128,26 +130,33 @@ fn combine_selector_identity_text_refuses_retained_limits() {
     lp_utf16(&mut bytes, "55555555-5555-4555-8555-555555555555");
     indexed_header(&mut bytes, *b"261", 94);
     let mut scope = DesignParameterScope::empty(
-        "scope", crate::records::feature::scope::DesignFeatureKind::Combine, scope_index,
+        "scope",
+        crate::records::feature::scope::DesignFeatureKind::Combine,
+        scope_index,
     );
-    scope.try_edit(|draft| {
-        draft.byte_offset = 0;
-        draft.reference_count_offset = draft.byte_offset + 9;
-        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-        draft.layout_fixture_references();
-        draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-        draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = 0;
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     scope.class_tag = "329".to_owned().try_into().unwrap();
     scope.paired_class_tag = "261".to_owned().try_into().unwrap();
-    scope.try_edit(|draft| {
-        draft.frame_length = 363;
-        draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
-        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-        draft.layout_fixture_references();
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 363;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     for limit in [35_u64, 71_u64] {
         let arena = DecodeArena::new();
@@ -155,9 +164,11 @@ fn combine_selector_identity_text_refuses_retained_limits() {
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = exact_combine_operation(&ctx, &bytes, &records, &scope);
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d Design UTF-16 text"));
+                && failure.operation == "f3d Design UTF-16 text")
+        );
     }
 }
 
@@ -337,17 +348,24 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         class_tag: crate::records::references::DesignClassTag::try_from("382".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let mut scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+    let mut scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("Combine scope");
-    let operation = exact_combine_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-        .unwrap()
-        .expect("Combine construction");
+    let operation = exact_combine_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .unwrap()
+    .expect("Combine construction");
     assert_eq!(
         operation,
         DesignCombineOperation {
@@ -574,9 +592,14 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let operation = exact_combine_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &scope)
-        .unwrap()
-        .expect("extended-reference Combine construction");
+    let operation = exact_combine_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        &scope,
+    )
+    .unwrap()
+    .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
     assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
     assert_eq!(operation.operation_offset, 31);
@@ -619,7 +642,14 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_combine_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &malformed_scope).unwrap().is_none());
+    assert!(exact_combine_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        &malformed_scope
+    )
+    .unwrap()
+    .is_none());
     let mut malformed_reference = bytes.clone();
     malformed_reference[35] = 0;
     assert!(exact_combine_operation(

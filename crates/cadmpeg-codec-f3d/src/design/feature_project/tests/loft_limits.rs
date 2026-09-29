@@ -11,17 +11,21 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, LoftSection};
 
-fn loft_input(roles: [DesignOperandRole; 2]) -> (
+fn loft_input(
+    roles: [DesignOperandRole; 2],
+) -> (
     crate::records::feature::scope::DesignParameterScope,
     [crate::records::topology::construction::DesignConstructionOperandGroup; 2],
 ) {
     let mut scope = scope();
-    scope.try_edit(|draft| {
-        draft.payload = DesignScopePayload::Loft(Some(DesignLoftConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 128,
-        }));
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.payload = DesignScopePayload::Loft(Some(DesignLoftConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 128,
+            }));
+        })
+        .unwrap();
     let mut first = profile_group(100, 0);
     first.operand_role = DesignConstructionOperandRole::Other(roles[0]);
     let mut second = profile_group(101, 1);
@@ -38,8 +42,12 @@ fn project(
 }
 
 fn assert_loft_limit(operation: &'static str, dimension: ResourceDimension) {
-    assert_loft_limit_with_roles(operation, dimension,
-        [DesignOperandRole::PROFILE, DesignOperandRole::PROFILE], false);
+    assert_loft_limit_with_roles(
+        operation,
+        dimension,
+        [DesignOperandRole::PROFILE, DesignOperandRole::PROFILE],
+        false,
+    );
 }
 
 fn assert_loft_limit_with_roles(
@@ -91,7 +99,10 @@ fn loft_profile_group_refuses_collection_limit() {
 
 #[test]
 fn loft_profile_id_refuses_retained_limit() {
-    assert_loft_limit("f3d Loft profile group id", ResourceDimension::RetainedBytes);
+    assert_loft_limit(
+        "f3d Loft profile group id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
@@ -101,12 +112,20 @@ fn loft_section_refuses_collection_limit() {
 
 #[test]
 fn loft_point_section_id_refuses_retained_limit() {
-    assert_loft_limit_with_roles("f3d Loft section group id", ResourceDimension::RetainedBytes,
-        [DesignOperandRole::ROLE_0X43, DesignOperandRole::ROLE_0X5], true);
+    assert_loft_limit_with_roles(
+        "f3d Loft section group id",
+        ResourceDimension::RetainedBytes,
+        [DesignOperandRole::ROLE_0X43, DesignOperandRole::ROLE_0X5],
+        true,
+    );
 }
 
 #[test]
 fn loft_native_section_id_refuses_retained_limit() {
-    assert_loft_limit_with_roles("f3d Loft section group id", ResourceDimension::RetainedBytes,
-        [DesignOperandRole::ROLE_0X5, DesignOperandRole::ROLE_0X5], false);
+    assert_loft_limit_with_roles(
+        "f3d Loft section group id",
+        ResourceDimension::RetainedBytes,
+        [DesignOperandRole::ROLE_0X5, DesignOperandRole::ROLE_0X5],
+        false,
+    );
 }

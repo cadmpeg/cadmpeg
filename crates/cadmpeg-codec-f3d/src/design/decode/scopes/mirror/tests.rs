@@ -48,11 +48,24 @@ fn compact_reference_fixture() -> (Vec<u8>, DesignRecordHeader, usize, u32) {
 fn compact_mirror_reference_uses_the_identity_record_lane() {
     let (mut bytes, header, identity, reference) = compact_reference_fixture();
     assert_eq!(
-        compact_feature_reference(&cadmpeg_test_support::service_decode_context(), &bytes, &header).unwrap(),
+        compact_feature_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &header
+        )
+        .unwrap(),
         Some((reference, (identity + 21) as u64))
     );
     bytes[identity + 20] = 1;
-    assert_eq!(compact_feature_reference(&cadmpeg_test_support::service_decode_context(), &bytes, &header).unwrap(), None);
+    assert_eq!(
+        compact_feature_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &header
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -74,7 +87,12 @@ fn compact_mirror_reference_refuses_guid_text_limits() {
         ));
     }
     assert_eq!(
-        compact_feature_reference(&cadmpeg_test_support::service_decode_context(), &bytes, &header).unwrap(),
+        compact_feature_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &header
+        )
+        .unwrap(),
         Some((reference, (identity + 21) as u64))
     );
 }
@@ -336,8 +354,7 @@ fn mirror_header_index_refuses_collection_limit() {
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record-header#1".into(),
         record_index: 1,
-        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
-            .unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -379,7 +396,16 @@ fn mirror_header_index_refuses_collection_limit() {
 
 #[test]
 fn mirror_unique_match_preserves_zero_one_and_many() {
-    assert!(matches!(super::unique_match(std::iter::empty::<u32>()), super::UniqueMatch::Zero));
-    assert!(matches!(super::unique_match([7].into_iter()), super::UniqueMatch::One(7)));
-    assert!(matches!(super::unique_match([7, 8].into_iter()), super::UniqueMatch::Many));
+    assert!(matches!(
+        super::unique_match(std::iter::empty::<u32>()),
+        super::UniqueMatch::Zero
+    ));
+    assert!(matches!(
+        super::unique_match([7].into_iter()),
+        super::UniqueMatch::One(7)
+    ));
+    assert!(matches!(
+        super::unique_match([7, 8].into_iter()),
+        super::UniqueMatch::Many
+    ));
 }

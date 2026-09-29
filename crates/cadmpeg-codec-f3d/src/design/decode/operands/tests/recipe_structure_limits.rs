@@ -2,8 +2,8 @@
 use super::super::{
     edge_recipe_entries_with_context, edge_recipe_local_topology_references_with_context,
     edge_recipe_structure_with_context, face_recipe_nodes_with_context,
-    face_recipe_structure_with_context, FaceRecipeProgramKind,
-    surface_patch_recipe_structure_with_context,
+    face_recipe_structure_with_context, surface_patch_recipe_structure_with_context,
+    FaceRecipeProgramKind,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -32,11 +32,14 @@ fn edge_recipe_structure_refuses_each_collection_growth() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = edge_recipe_structure_with_context(Some(&ctx), &EDGE_RECIPE);
-        assert!(matches!(result,
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ), "limit {limit}, operation {operation}");
+        assert!(
+            matches!(result,
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ),
+            "limit {limit}, operation {operation}"
+        );
     }
 }
 
@@ -100,8 +103,8 @@ fn edge_recipe_entries_refuse_collection_limit() {
 #[test]
 fn face_recipe_structure_refuses_collection_limit() {
     let program = [
-        0, -1, 1, -1, 2, -1, 3, 0, -1, 0, -1, 0, -1, 0, 1, 1, 4, 1, -2, 1, 4, 4, 4, -1,
-        3, 0, -1, 0, -1, 0, -1, 0, 1, 1, 4, 1, 1, 1, 4, 4, 4, -1,
+        0, -1, 1, -1, 2, -1, 3, 0, -1, 0, -1, 0, -1, 0, 1, 1, 4, 1, -2, 1, 4, 4, 4, -1, 3, 0, -1,
+        0, -1, 0, -1, 0, 1, 1, 4, 1, 1, 1, 4, 4, 4, -1,
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -118,9 +121,8 @@ fn face_recipe_structure_refuses_collection_limit() {
 #[test]
 fn surface_patch_recipe_entries_refuse_collection_limit() {
     let program = [
-        0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1,
-        0, 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1,
-        0, -1,
+        0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0, 2, 1,
+        1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0, -1,
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -146,21 +148,29 @@ fn face_recipe_nodes_refuse_each_collection_growth() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            face_recipe_nodes_with_context(
-                &ctx, &program, 0, FaceRecipeProgramKind::Counted { header_value: 4 },
+        assert!(
+            matches!(
+                face_recipe_nodes_with_context(
+                    &ctx, &program, 0, FaceRecipeProgramKind::Counted { header_value: 4 },
+                ),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
             ),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ), "limit {limit}, operation {operation}");
+            "limit {limit}, operation {operation}"
+        );
     }
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let nodes = face_recipe_nodes_with_context(
-        &ctx, &program, 0, FaceRecipeProgramKind::Counted { header_value: 4 },
-    ).unwrap().unwrap();
+        &ctx,
+        &program,
+        0,
+        FaceRecipeProgramKind::Counted { header_value: 4 },
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(nodes.len(), 1);
     assert_eq!(nodes[0].program, [-1, -1, 2, 7]);
     assert_eq!(nodes[0].byte_offset, 12);

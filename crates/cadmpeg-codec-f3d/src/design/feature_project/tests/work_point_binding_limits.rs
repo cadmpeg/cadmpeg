@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::feature_project::bind_work_point_sketch_point_constructions;
 use crate::layout::work_point_sketch_point_identity as layout;
-use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+};
 use crate::records::feature::work_geometry::{
     DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
     DesignWorkPointRule, DesignWorkPointRuleForm, DesignWorkPointSketchPointSelection,
@@ -9,7 +11,9 @@ use crate::records::feature::work_geometry::{
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -18,17 +22,29 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::BTreeMap;
 
-fn fixture() -> (DesignParameterScope, Feature, SketchEntity, SpatialSketchEntity) {
+fn fixture() -> (
+    DesignParameterScope,
+    Feature,
+    SketchEntity,
+    SpatialSketchEntity,
+) {
     let point_native_id = "f3d:Design/BulkStream.dat:sketch-point#7";
     let record_index = 42;
     let identity_offset = 100;
     let selection = DesignWorkPointSketchPointSelection::try_new(
         record_index,
         DesignWorkPointSketchPointSelectionDraft {
-            class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
-            asset_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned().try_into().unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
+                .unwrap(),
+            asset_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+                .to_owned()
+                .try_into()
+                .unwrap(),
             asset_id_offset: 10,
-            context_id: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".to_owned().try_into().unwrap(),
+            context_id: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"
+                .to_owned()
+                .try_into()
+                .unwrap(),
             context_id_offset: 50,
             identity_record_index: record_index + 3,
             identity_record_offset: identity_offset,
@@ -40,9 +56,16 @@ fn fixture() -> (DesignParameterScope, Feature, SketchEntity, SpatialSketchEntit
             next_record_index: record_index + 4,
             next_byte_offset: identity_offset + layout::LEN as u64,
         },
-    ).unwrap();
-    let input = DesignWorkPointInput::try_new(record_index, 0,
-        Some(Box::new(DesignWorkPointInputCarrier::SketchPoint { selection }))).unwrap();
+    )
+    .unwrap();
+    let input = DesignWorkPointInput::try_new(
+        record_index,
+        0,
+        Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
+            selection,
+        })),
+    )
+    .unwrap();
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
         DesignFeatureKind::WorkPoint,
@@ -70,7 +93,8 @@ fn fixture() -> (DesignParameterScope, Feature, SketchEntity, SpatialSketchEntit
         source_content: Default::default(),
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::DatumPoint {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                    .unwrap(),
                 construction: None,
             },
         )),
@@ -81,7 +105,8 @@ fn fixture() -> (DesignParameterScope, Feature, SketchEntity, SpatialSketchEntit
         SketchId::mint("synthetic:test:id#f3d:sketch:planar").unwrap(),
         SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        }).unwrap(),
+        })
+        .unwrap(),
     );
     planar.native_ref = Some(point_native_id.to_owned());
     let mut spatial = SpatialSketchEntity::new(
@@ -89,7 +114,8 @@ fn fixture() -> (DesignParameterScope, Feature, SketchEntity, SpatialSketchEntit
         SpatialSketchId::mint("synthetic:test:id#f3d:sketch:spatial").unwrap(),
         SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
             position: Point3::new(1.0, 2.0, 3.0),
-        }).unwrap(),
+        })
+        .unwrap(),
     );
     spatial.native_ref = Some(point_native_id.to_owned());
     (scope, feature, planar, spatial)
@@ -104,14 +130,29 @@ fn assert_refusal(operation: &'static str, spatial: bool) {
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut features = [feature.clone()];
-        let result = bind_work_point_sketch_point_constructions(Some(&ctx), &mut features,
+        let result = bind_work_point_sketch_point_constructions(
+            Some(&ctx),
+            &mut features,
             std::slice::from_ref(&scope),
-            if spatial { &[] } else { std::slice::from_ref(&planar) },
-            if spatial { std::slice::from_ref(&spatial_entity) } else { &[] });
+            if spatial {
+                &[]
+            } else {
+                std::slice::from_ref(&planar)
+            },
+            if spatial {
+                std::slice::from_ref(&spatial_entity)
+            } else {
+                &[]
+            },
+        );
         match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
-                && failure.dimension == ResourceDimension::RetainedBytes => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension == ResourceDimension::RetainedBytes =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -149,8 +190,14 @@ fn work_point_sketch_binding_preserves_planar_and_spatial_selections() {
     use cadmpeg_ir::features::{DatumPointConstruction, SketchPointSelection};
     let (scope, feature, planar, spatial) = fixture();
     let mut planar_features = [feature.clone()];
-    bind_work_point_sketch_point_constructions(None, &mut planar_features,
-        std::slice::from_ref(&scope), std::slice::from_ref(&planar), &[]).unwrap();
+    bind_work_point_sketch_point_constructions(
+        None,
+        &mut planar_features,
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&planar),
+        &[],
+    )
+    .unwrap();
     assert!(matches!(planar_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             construction: Some(construction), ..
@@ -159,8 +206,14 @@ fn work_point_sketch_binding_preserves_planar_and_spatial_selections() {
         } if sketch == &planar.sketch && point == planar.id()
             && native == "f3d:Design/BulkStream.dat:design-record#42")));
     let mut spatial_features = [feature];
-    bind_work_point_sketch_point_constructions(None, &mut spatial_features,
-        std::slice::from_ref(&scope), &[], std::slice::from_ref(&spatial)).unwrap();
+    bind_work_point_sketch_point_constructions(
+        None,
+        &mut spatial_features,
+        std::slice::from_ref(&scope),
+        &[],
+        std::slice::from_ref(&spatial),
+    )
+    .unwrap();
     assert!(matches!(spatial_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             construction: Some(construction), ..

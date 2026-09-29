@@ -374,14 +374,16 @@ fn pipe_reference_limit_fixture() -> (DesignParameterScope, DesignConstructionOp
         crate::records::feature::scope::DesignFeatureKind::Pipe,
         1,
     );
-    scope.try_edit(|draft| {
-        draft.reference_members =
-            crate::records::identity::ReferenceRun::unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
-        draft.layout_fixture_references();
-        draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-        draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let group = DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
         id: "f3d:test:pipe-group#20".into(),
         scope_record_index: 1,
@@ -389,7 +391,10 @@ fn pipe_reference_limit_fixture() -> (DesignParameterScope, DesignConstructionOp
         record_index: 20,
         byte_offset: 0,
         class_tag: "312".to_owned().try_into().unwrap(),
-        members: vec![crate::records::identity::Located { value: 21, offset: 0 }],
+        members: vec![crate::records::identity::Located {
+            value: 21,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame::try_from(
             DesignConstructionOperandGroupFrameDraft {
@@ -406,12 +411,14 @@ fn pipe_reference_limit_fixture() -> (DesignParameterScope, DesignConstructionOp
                 opaque_scalar_offset: 22,
                 variant: false,
             },
-        ).unwrap(),
+        )
+        .unwrap(),
         operand_role: DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5),
         role_offset: 0,
         paired_class_tag: "258".to_owned().try_into().unwrap(),
         paired_byte_offset: 0,
-    }).unwrap();
+    })
+    .unwrap();
     (scope, group)
 }
 

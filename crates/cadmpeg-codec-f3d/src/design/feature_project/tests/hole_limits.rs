@@ -10,16 +10,34 @@ use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
 fn hole_parameters() -> [crate::records::parameters::DesignParameter; 3] {
     let mut tip = parse_design_parameter_record(&parameter_record(
-        Some(114), "180 deg", "TipAngle", Some("mm"), "d6", std::f64::consts::PI,
-    )).unwrap();
+        Some(114),
+        "180 deg",
+        "TipAngle",
+        Some("mm"),
+        "d6",
+        std::f64::consts::PI,
+    ))
+    .unwrap();
     tip.try_set_unit_value("deg".to_owned()).unwrap();
     [
         parse_design_parameter_record(&parameter_record(
-            Some(94), "10 mm", "HoleDepth", Some("mm"), "d4", 1.0,
-        )).unwrap(),
+            Some(94),
+            "10 mm",
+            "HoleDepth",
+            Some("mm"),
+            "d4",
+            1.0,
+        ))
+        .unwrap(),
         parse_design_parameter_record(&parameter_record(
-            Some(104), "4 mm", "HoleDiameter", Some("mm"), "d5", 0.4,
-        )).unwrap(),
+            Some(104),
+            "4 mm",
+            "HoleDiameter",
+            Some("mm"),
+            "d5",
+            0.4,
+        ))
+        .unwrap(),
         tip,
     ]
 }
@@ -27,10 +45,16 @@ fn hole_parameters() -> [crate::records::parameters::DesignParameter; 3] {
 #[test]
 fn hole_fallback_face_id_refuses_retained_limit() {
     let scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:scope#32", DesignFeatureKind::Hole, 32,
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
     );
     let parameters = hole_parameters();
-    let indexed = [(0, &parameters[0]), (1, &parameters[1]), (2, &parameters[2])];
+    let indexed = [
+        (0, &parameters[0]),
+        (1, &parameters[1]),
+        (2, &parameters[2]),
+    ];
     let definition = project_hole(None, &scope, &indexed, &[]).unwrap().unwrap();
     assert!(matches!(
         definition,

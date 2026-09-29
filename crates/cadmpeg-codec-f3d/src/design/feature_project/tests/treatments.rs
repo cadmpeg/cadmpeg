@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-use fillet_limits::decode_fillet_radius_groups;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::feature_project::project_parameter_design;
 use crate::design::test_support::parameter_owner_frame;
 use crate::design::test_support::parameter_record;
-use crate::records::feature::scope::DesignParameterScope;
-use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::entity_header::DesignFeatureTimeline;
 use crate::records::entity_header::DesignTimelineFrame;
 use crate::records::feature::fixed_parameters::DesignFixedFilletGroup;
@@ -14,6 +11,7 @@ use crate::records::feature::fixed_parameters::DesignFixedFilletLaw;
 use crate::records::feature::fixed_parameters::DesignFixedFilletParameters;
 use crate::records::feature::fixed_parameters::DesignFixedFilletScalar;
 use crate::records::feature::scope::DesignFeatureKind;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::scope::DesignParameterScopeDraft;
 use crate::records::feature::scope::DesignScopePayload;
 use crate::records::feature::scope::DesignScopePayloadMut;
@@ -26,6 +24,7 @@ use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::records::references::DesignClassTag;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::construction::DesignConstructionOperandGroupDraft;
 use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
 use crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft;
@@ -40,6 +39,7 @@ use crate::records::topology::fillet::DesignFilletRadiusLaw;
 use crate::records::topology::fillet::HistoricalBinding;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
+use fillet_limits::decode_fillet_radius_groups;
 
 #[test]
 fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
@@ -229,10 +229,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     let feature = crate::ids::neutral_feature_id(&scope);
     let feature_key = feature.key();
     let prefix = crate::ids::history_input_prefix(&feature_key, 7);
-    assert_eq!(
-        state,
-        &crate::ids::feature_input_topology_id(&feature, 7)
-    );
+    assert_eq!(state, &crate::ids::feature_input_topology_id(&feature, 7));
     assert_eq!(
         faces.as_slice(),
         &[crate::ids::history_input_face_id(&prefix, 158)]
@@ -289,14 +286,18 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     let radius = parameter(3, "MidRadius", Some("mm"), 0.4);
     let position = parameter(4, "MidParams", None, 0.25);
     let weight = parameter(5, "TangencyWeight", None, 0.75);
-    let (points, tangency_weight) = crate::design::feature_project::variable_fillet_law(None, &[
-        (0, &start),
-        (1, &end),
-        (2, &radius),
-        (3, &position),
-        (4, &weight),
-    ])
-    .unwrap().expect("complete variable Fillet law");
+    let (points, tangency_weight) = crate::design::feature_project::variable_fillet_law(
+        None,
+        &[
+            (0, &start),
+            (1, &end),
+            (2, &radius),
+            (3, &position),
+            (4, &weight),
+        ],
+    )
+    .unwrap()
+    .expect("complete variable Fillet law");
     assert_eq!(
         points
             .as_slice()
@@ -345,7 +346,8 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
     let end = parameter(2, "EndRadius", Some("mm"), 0.4);
     let (points, tangency_weight) =
         crate::design::feature_project::variable_fillet_law(None, &[(0, &start), (1, &end)])
-            .unwrap().expect("variable Fillet law without an explicit weight");
+            .unwrap()
+            .expect("variable Fillet law without an explicit weight");
     assert_eq!(
         points
             .as_slice()
@@ -385,13 +387,12 @@ fn variable_fillet_law_rejects_duplicate_tangency_weights() {
     let end = parameter(2, "EndRadius", Some("mm"), 0.4);
     let weight_one = parameter(3, "TangencyWeight", None, 0.5);
     let weight_two = parameter(4, "TangencyWeight", None, 0.75);
-    assert!(crate::design::feature_project::variable_fillet_law(None, &[
-        (0, &start),
-        (1, &end),
-        (2, &weight_one),
-        (3, &weight_two),
-    ])
-    .unwrap().is_none());
+    assert!(crate::design::feature_project::variable_fillet_law(
+        None,
+        &[(0, &start), (1, &end), (2, &weight_one), (3, &weight_two),]
+    )
+    .unwrap()
+    .is_none());
 }
 
 fn localized_fillet_scope() -> DesignParameterScope {
@@ -1362,7 +1363,9 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
     let end = parameter("EndRadius", 1.0);
     assert!(crate::design::feature_project::design_length(&start).is_none());
     assert!(
-        crate::design::feature_project::variable_fillet_law(None, &[(0, &start), (1, &end)]).unwrap().is_none()
+        crate::design::feature_project::variable_fillet_law(None, &[(0, &start), (1, &end)])
+            .unwrap()
+            .is_none()
     );
 }
 

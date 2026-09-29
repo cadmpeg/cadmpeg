@@ -7,9 +7,9 @@ use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use super::work_geometry::ScopePlacementFrame;
-use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
 use crate::layout::assembly_axial_role_prefix as axial_role;
 use crate::layout::assembly_axial_selector_prefix as axial_selector;
@@ -104,9 +104,10 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
         }
     }
     let mut resolved_origins = HashMap::new();
-    for scope in scopes.iter().filter(|scope| {
-        scope.kind() == scope::DesignFeatureKind::JointOrigin
-    }) {
+    for scope in scopes
+        .iter()
+        .filter(|scope| scope.kind() == scope::DesignFeatureKind::JointOrigin)
+    {
         let Some(transform) = scope.joint_origin_transform() else {
             continue;
         };
@@ -173,9 +174,9 @@ pub(super) fn bind_axial_assembly_operand_targets(
             continue;
         };
         ctx.charge_collection_items(1, "f3d axial assembly bindings")?;
-        bindings.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d axial assembly bindings allocation", 0, 1)
-        })?;
+        bindings
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("f3d axial assembly bindings allocation", 0, 1))?;
         bindings.push((
             ordinal,
             assembly::DesignAssemblyAlignmentForm::qualified(
@@ -293,8 +294,15 @@ fn exact_assembly_axial_component_operand(
         return Ok(None);
     };
     let mut candidate = None;
-    for start in records.offsets(frame.reference_record_index).iter().copied().filter(|start| *start >= search_start) {
-        if let Some(next) = exact_assembly_axial_component_operand_at(ctx, bytes, records, scope, frame, start)? {
+    for start in records
+        .offsets(frame.reference_record_index)
+        .iter()
+        .copied()
+        .filter(|start| *start >= search_start)
+    {
+        if let Some(next) =
+            exact_assembly_axial_component_operand_at(ctx, bytes, records, scope, frame, start)?
+        {
             if candidate.is_some() {
                 return Ok(None);
             }
@@ -313,104 +321,106 @@ fn exact_assembly_axial_component_operand_at(
     start: usize,
 ) -> Result<Option<AxialComponentOperand>, CodecError> {
     (|| {
-    let construction_class_tag =
-        exact_indexed_header_at(bytes, start, frame.reference_record_index)?;
-    let paired_at = start.checked_add(axial_carrier::PAIRED_INDEXED_HEADER)?;
-    let construction_paired_class_tag =
-        exact_indexed_header_at(bytes, paired_at, frame.reference_record_index)?;
-    let construction_transform_at = start.checked_add(axial_carrier::OPERAND_TRANSFORM)?;
-    if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
-        return None;
-    }
-    let (first_axis_record_index, first_axis_record_index_offset) =
-        exact_same_segment_record_reference(
+        let construction_class_tag =
+            exact_indexed_header_at(bytes, start, frame.reference_record_index)?;
+        let paired_at = start.checked_add(axial_carrier::PAIRED_INDEXED_HEADER)?;
+        let construction_paired_class_tag =
+            exact_indexed_header_at(bytes, paired_at, frame.reference_record_index)?;
+        let construction_transform_at = start.checked_add(axial_carrier::OPERAND_TRANSFORM)?;
+        if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
+            return None;
+        }
+        let (first_axis_record_index, first_axis_record_index_offset) =
+            exact_same_segment_record_reference(
+                bytes,
+                start.checked_add(axial_carrier::FIRST_AXIS_RECORD_REFERENCE)?,
+            )?;
+        let (second_axis_record_index, second_axis_record_index_offset) =
+            exact_same_segment_record_reference(
+                bytes,
+                start.checked_add(axial_carrier::SECOND_AXIS_RECORD_REFERENCE)?,
+            )?;
+        if first_axis_record_index == second_axis_record_index {
+            return None;
+        }
+        let first_selector_record_index = first_axis_record_index.checked_add(3)?;
+        let second_selector_record_index = second_axis_record_index.checked_add(3)?;
+        for pair in [
+            [first_axis_record_index, first_selector_record_index],
+            [second_axis_record_index, second_selector_record_index],
+        ] {
+            if scope
+                .reference_members()
+                .values()
+                .zip(scope.reference_members().values().skip(1))
+                .filter(|(first, second)| [**first, **second] == pair)
+                .count()
+                != 1
+                || pair.iter().any(|record_index| {
+                    scope
+                        .reference_members()
+                        .values()
+                        .filter(|member| *member == record_index)
+                        .count()
+                        != 1
+                })
+            {
+                return None;
+            }
+        }
+        let search_start = usize::try_from(scope.paired_byte_offset()).ok()?;
+        let first_axis = exact_paired_indexed_record_between(
             bytes,
-            start.checked_add(axial_carrier::FIRST_AXIS_RECORD_REFERENCE)?,
+            records,
+            first_axis_record_index,
+            search_start,
+            start,
         )?;
-    let (second_axis_record_index, second_axis_record_index_offset) =
-        exact_same_segment_record_reference(
+        let second_axis = exact_paired_indexed_record_between(
             bytes,
-            start.checked_add(axial_carrier::SECOND_AXIS_RECORD_REFERENCE)?,
+            records,
+            second_axis_record_index,
+            search_start,
+            start,
         )?;
-    if first_axis_record_index == second_axis_record_index {
-        return None;
-    }
-    let first_selector_record_index = first_axis_record_index.checked_add(3)?;
-    let second_selector_record_index = second_axis_record_index.checked_add(3)?;
-    for pair in [
-        [first_axis_record_index, first_selector_record_index],
-        [second_axis_record_index, second_selector_record_index],
-    ] {
-        if scope
-            .reference_members()
-            .values()
-            .zip(scope.reference_members().values().skip(1))
-            .filter(|(first, second)| [**first, **second] == pair)
-            .count()
-            != 1
-            || pair.iter().any(|record_index| {
-                scope
-                    .reference_members()
-                    .values()
-                    .filter(|member| *member == record_index)
-                    .count()
-                    != 1
-            })
+        if first_axis.byte_offset >= second_axis.byte_offset {
+            return None;
+        }
+        let second_axis_at = second_axis.byte_offset;
+        let first =
+            match exact_assembly_axial_selector(ctx, bytes, records, first_axis, second_axis_at) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let second = match exact_assembly_axial_selector(ctx, bytes, records, second_axis, start) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if !first.selects_same_object(&second)
+            || !first
+                .occurrence_role
+                .as_str()
+                .eq_ignore_ascii_case(second.occurrence_role.as_str())
         {
             return None;
         }
-    }
-    let search_start = usize::try_from(scope.paired_byte_offset()).ok()?;
-    let first_axis = exact_paired_indexed_record_between(
-        bytes,
-        records,
-        first_axis_record_index,
-        search_start,
-        start,
-    )?;
-    let second_axis = exact_paired_indexed_record_between(
-        bytes,
-        records,
-        second_axis_record_index,
-        search_start,
-        start,
-    )?;
-    if first_axis.byte_offset >= second_axis.byte_offset {
-        return None;
-    }
-    let second_axis_at = second_axis.byte_offset;
-    let first = match exact_assembly_axial_selector(ctx, bytes, records, first_axis, second_axis_at) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let second = match exact_assembly_axial_selector(ctx, bytes, records, second_axis, start) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    if !first.selects_same_object(&second)
-        || !first
-            .occurrence_role
-            .as_str()
-            .eq_ignore_ascii_case(second.occurrence_role.as_str())
-    {
-        return None;
-    }
-    Some(Ok(AxialComponentOperand {
-        construction_record_index: frame.reference_record_index,
-        construction_class_tag,
-        construction_byte_offset: u64::try_from(start).ok()?,
-        construction_transform_offset: u64::try_from(construction_transform_at).ok()?,
-        axis_record_index_offsets: [
-            first_axis_record_index_offset,
-            second_axis_record_index_offset,
-        ],
-        construction_paired_class_tag,
-        construction_paired_byte_offset: u64::try_from(paired_at).ok()?,
-        selectors: Box::new([first, second]),
-    }))
-    })().transpose()
+        Some(Ok(AxialComponentOperand {
+            construction_record_index: frame.reference_record_index,
+            construction_class_tag,
+            construction_byte_offset: u64::try_from(start).ok()?,
+            construction_transform_offset: u64::try_from(construction_transform_at).ok()?,
+            axis_record_index_offsets: [
+                first_axis_record_index_offset,
+                second_axis_record_index_offset,
+            ],
+            construction_paired_class_tag,
+            construction_paired_byte_offset: u64::try_from(paired_at).ok()?,
+            selectors: Box::new([first, second]),
+        }))
+    })()
+    .transpose()
 }
 
 fn exact_assembly_axial_selector(
@@ -421,134 +431,136 @@ fn exact_assembly_axial_selector(
     limit: usize,
 ) -> Result<Option<DesignAssemblyAxialSelectorIdentity>, CodecError> {
     (|| {
-    let axis_record_index = axis.record_index;
-    let selector_record_index = axis_record_index.checked_add(3)?;
-    let mut selector_offsets = records
-        .offsets(selector_record_index)
-        .iter()
-        .copied()
-        .filter(|offset| *offset > axis.paired_byte_offset && *offset < limit);
-    let (Some(selector_at), Some(selector_paired_at), None) = (
-        selector_offsets.next(),
-        selector_offsets.next(),
-        selector_offsets.next(),
-    ) else {
-        return None;
-    };
-    let selector_class_tag = exact_indexed_header_at(bytes, selector_at, selector_record_index)?;
-    let selector_paired_class_tag =
-        exact_indexed_header_at(bytes, selector_paired_at, selector_record_index)?;
-    if bytes.get(
-        selector_at.checked_add(axial_selector::ZERO_RUN_11)?
-            ..selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?,
-    )? != [0; 11]
-    {
-        return None;
-    }
-    let mut cursor = selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?;
-    let nested_record_index_offset = cursor.checked_add(1)?;
-    let (nested_record_index, _) = exact_same_segment_record_reference(bytes, cursor)?;
-    cursor = cursor.checked_add(11)?;
-    if nested_record_index != selector_record_index.checked_add(3)?
-        || View::u32_le_at(bytes, cursor)? != 1
-    {
-        return None;
-    }
-    cursor = cursor.checked_add(4)?;
-    let selector_asset_at = cursor;
-    let (selector_asset_id, after_selector_asset_id) =
-        fixed_relaxed_guid_text(bytes, selector_asset_at)?;
-    let selector_context_at = after_selector_asset_id;
-    let (selector_context_id, after_selector_context_id) =
-        fixed_relaxed_guid_text(bytes, selector_context_at)?;
-    if View::u32_le_at(bytes, after_selector_context_id)? != 2
-        || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
-        || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
-    {
-        return None;
-    }
-    cursor = after_selector_context_id.checked_add(12)?;
-    let occurrence_reference_offset = cursor.checked_add(1)?;
-    let occurrence = take_reference(bytes, &mut cursor)?;
-    let (occurrence_reference, _) = occurrence.local()?;
-    if View::u32_le_at(bytes, cursor)? != 1 {
-        return None;
-    }
-    cursor = cursor.checked_add(4)?;
-    let external = match take_external_reference_identity(ctx, bytes, &mut cursor) {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    if !external
-        .asset_id
-        .as_str()
-        .eq_ignore_ascii_case(selector_asset_id.as_str())
-        || cursor > selector_paired_at
-    {
-        return None;
-    }
+        let axis_record_index = axis.record_index;
+        let selector_record_index = axis_record_index.checked_add(3)?;
+        let mut selector_offsets = records
+            .offsets(selector_record_index)
+            .iter()
+            .copied()
+            .filter(|offset| *offset > axis.paired_byte_offset && *offset < limit);
+        let (Some(selector_at), Some(selector_paired_at), None) = (
+            selector_offsets.next(),
+            selector_offsets.next(),
+            selector_offsets.next(),
+        ) else {
+            return None;
+        };
+        let selector_class_tag =
+            exact_indexed_header_at(bytes, selector_at, selector_record_index)?;
+        let selector_paired_class_tag =
+            exact_indexed_header_at(bytes, selector_paired_at, selector_record_index)?;
+        if bytes.get(
+            selector_at.checked_add(axial_selector::ZERO_RUN_11)?
+                ..selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?,
+        )? != [0; 11]
+        {
+            return None;
+        }
+        let mut cursor = selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?;
+        let nested_record_index_offset = cursor.checked_add(1)?;
+        let (nested_record_index, _) = exact_same_segment_record_reference(bytes, cursor)?;
+        cursor = cursor.checked_add(11)?;
+        if nested_record_index != selector_record_index.checked_add(3)?
+            || View::u32_le_at(bytes, cursor)? != 1
+        {
+            return None;
+        }
+        cursor = cursor.checked_add(4)?;
+        let selector_asset_at = cursor;
+        let (selector_asset_id, after_selector_asset_id) =
+            fixed_relaxed_guid_text(bytes, selector_asset_at)?;
+        let selector_context_at = after_selector_asset_id;
+        let (selector_context_id, after_selector_context_id) =
+            fixed_relaxed_guid_text(bytes, selector_context_at)?;
+        if View::u32_le_at(bytes, after_selector_context_id)? != 2
+            || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
+            || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
+        {
+            return None;
+        }
+        cursor = after_selector_context_id.checked_add(12)?;
+        let occurrence_reference_offset = cursor.checked_add(1)?;
+        let occurrence = take_reference(bytes, &mut cursor)?;
+        let (occurrence_reference, _) = occurrence.local()?;
+        if View::u32_le_at(bytes, cursor)? != 1 {
+            return None;
+        }
+        cursor = cursor.checked_add(4)?;
+        let external = match take_external_reference_identity(ctx, bytes, &mut cursor) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if !external
+            .asset_id
+            .as_str()
+            .eq_ignore_ascii_case(selector_asset_id.as_str())
+            || cursor > selector_paired_at
+        {
+            return None;
+        }
 
-    let role_record_index = selector_record_index.checked_add(5)?;
-    let mut role_offsets = records
-        .offsets(role_record_index)
-        .iter()
-        .copied()
-        .filter(|offset| *offset > selector_paired_at && *offset < limit);
-    let (Some(role_at), None) = (role_offsets.next(), role_offsets.next()) else {
-        return None;
-    };
-    let role_class_tag = exact_indexed_header_at(bytes, role_at, role_record_index)?;
-    if bytes.get(
-        role_at.checked_add(axial_role::ZERO_RUN_10)?
-            ..role_at.checked_add(axial_role::CONSTANT_ONE)?,
-    )? != [0; 10]
-        || View::u32_le_at(bytes, role_at.checked_add(axial_role::CONSTANT_ONE)?)? != 1
-    {
-        return None;
-    }
-    let occurrence_role_at = role_at.checked_add(axial_role::ROLE_CODE_UNIT_COUNT)?;
-    let (occurrence_role, after_occurrence_role) =
-        fixed_relaxed_guid_text(bytes, occurrence_role_at)?;
-    if after_occurrence_role > limit {
-        return None;
-    }
+        let role_record_index = selector_record_index.checked_add(5)?;
+        let mut role_offsets = records
+            .offsets(role_record_index)
+            .iter()
+            .copied()
+            .filter(|offset| *offset > selector_paired_at && *offset < limit);
+        let (Some(role_at), None) = (role_offsets.next(), role_offsets.next()) else {
+            return None;
+        };
+        let role_class_tag = exact_indexed_header_at(bytes, role_at, role_record_index)?;
+        if bytes.get(
+            role_at.checked_add(axial_role::ZERO_RUN_10)?
+                ..role_at.checked_add(axial_role::CONSTANT_ONE)?,
+        )? != [0; 10]
+            || View::u32_le_at(bytes, role_at.checked_add(axial_role::CONSTANT_ONE)?)? != 1
+        {
+            return None;
+        }
+        let occurrence_role_at = role_at.checked_add(axial_role::ROLE_CODE_UNIT_COUNT)?;
+        let (occurrence_role, after_occurrence_role) =
+            fixed_relaxed_guid_text(bytes, occurrence_role_at)?;
+        if after_occurrence_role > limit {
+            return None;
+        }
 
-    Some(Ok(DesignAssemblyAxialSelectorIdentity {
-        axis_record_index,
-        axis_class_tag: axis.class_tag.try_into().ok()?,
-        axis_byte_offset: u64::try_from(axis.byte_offset).ok()?,
-        axis_paired_class_tag: axis.paired_class_tag.try_into().ok()?,
-        axis_paired_byte_offset: u64::try_from(axis.paired_byte_offset).ok()?,
-        selector_record_index,
-        selector_class_tag: selector_class_tag.try_into().ok()?,
-        selector_byte_offset: u64::try_from(selector_at).ok()?,
-        selector_paired_class_tag: selector_paired_class_tag.try_into().ok()?,
-        selector_paired_byte_offset: u64::try_from(selector_paired_at).ok()?,
-        nested_record_index,
-        nested_record_index_offset: u64::try_from(nested_record_index_offset).ok()?,
-        selector_asset_id,
-        selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?).ok()?,
-        selector_context_id,
-        selector_context_id_offset: u64::try_from(selector_context_at.checked_add(4)?).ok()?,
-        occurrence_reference,
-        occurrence_reference_offset: u64::try_from(occurrence_reference_offset).ok()?,
-        external_object_reference: external.target,
-        external_object_reference_offset: external.target_offset,
-        external_segment: external.segment,
-        external_segment_offset: external.segment_offset,
-        external_asset_id: external.asset_id,
-        external_asset_id_offset: external.asset_id_offset,
-        external_link_name: external.link_name,
-        external_link_name_offset: external.link_name_offset,
-        external_version: external.version,
-        role_record_index,
-        role_class_tag: role_class_tag.try_into().ok()?,
-        role_byte_offset: u64::try_from(role_at).ok()?,
-        occurrence_role,
-        occurrence_role_offset: u64::try_from(occurrence_role_at.checked_add(4)?).ok()?,
-    }))
-    })().transpose()
+        Some(Ok(DesignAssemblyAxialSelectorIdentity {
+            axis_record_index,
+            axis_class_tag: axis.class_tag.try_into().ok()?,
+            axis_byte_offset: u64::try_from(axis.byte_offset).ok()?,
+            axis_paired_class_tag: axis.paired_class_tag.try_into().ok()?,
+            axis_paired_byte_offset: u64::try_from(axis.paired_byte_offset).ok()?,
+            selector_record_index,
+            selector_class_tag: selector_class_tag.try_into().ok()?,
+            selector_byte_offset: u64::try_from(selector_at).ok()?,
+            selector_paired_class_tag: selector_paired_class_tag.try_into().ok()?,
+            selector_paired_byte_offset: u64::try_from(selector_paired_at).ok()?,
+            nested_record_index,
+            nested_record_index_offset: u64::try_from(nested_record_index_offset).ok()?,
+            selector_asset_id,
+            selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?).ok()?,
+            selector_context_id,
+            selector_context_id_offset: u64::try_from(selector_context_at.checked_add(4)?).ok()?,
+            occurrence_reference,
+            occurrence_reference_offset: u64::try_from(occurrence_reference_offset).ok()?,
+            external_object_reference: external.target,
+            external_object_reference_offset: external.target_offset,
+            external_segment: external.segment,
+            external_segment_offset: external.segment_offset,
+            external_asset_id: external.asset_id,
+            external_asset_id_offset: external.asset_id_offset,
+            external_link_name: external.link_name,
+            external_link_name_offset: external.link_name_offset,
+            external_version: external.version,
+            role_record_index,
+            role_class_tag: role_class_tag.try_into().ok()?,
+            role_byte_offset: u64::try_from(role_at).ok()?,
+            occurrence_role,
+            occurrence_role_offset: u64::try_from(occurrence_role_at.checked_add(4)?).ok()?,
+        }))
+    })()
+    .transpose()
 }
 
 fn exact_paired_indexed_record_between(

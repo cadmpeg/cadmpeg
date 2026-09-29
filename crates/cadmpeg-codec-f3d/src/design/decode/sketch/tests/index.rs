@@ -223,10 +223,19 @@ fn record_header_stream_charges_emitted_index_output_and_id() {
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let mut out = Vec::new();
     decode_headers_for_indices_from_stream(
-        &ctx, "BulkStream.dat", &scope, &bytes, &wanted, &mut out
-    ).unwrap();
+        &ctx,
+        "BulkStream.dat",
+        &scope,
+        &bytes,
+        &wanted,
+        &mut out,
+    )
+    .unwrap();
     assert_eq!(out.len(), 1);
-    assert_eq!(out[0].id, crate::ids::native_design_record_header_id("BulkStream.dat", 0));
+    assert_eq!(
+        out[0].id,
+        crate::ids::native_design_record_header_id("BulkStream.dat", 0)
+    );
 }
 
 #[test]
@@ -323,7 +332,12 @@ fn entity_header_output_refuses_collection_limit() {
         entity_id: DesignEntityId::from_parts("Sketch", 7),
         class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
         optional_slot_present: false,
-        registration: DesignEntityRegistration::new(None, None, ReferenceRun::unlocated(Vec::new())).unwrap(),
+        registration: DesignEntityRegistration::new(
+            None,
+            None,
+            ReferenceRun::unlocated(Vec::new()),
+        )
+        .unwrap(),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();

@@ -39,7 +39,9 @@ fn path_bytes() -> Vec<u8> {
 fn context<'a>(arena: &'a DecodeArena, collection_limit: u64) -> DecodeContext<'a> {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = collection_limit;
-    DecodeContext::from_root_bytes(&[], arena, &policy).unwrap().0
+    DecodeContext::from_root_bytes(&[], arena, &policy)
+        .unwrap()
+        .0
 }
 
 #[test]
@@ -47,11 +49,13 @@ fn assembly_path_occurrences_refuse_collection_limit() {
     let bytes = path_bytes();
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let error = exact_assembly_operand_path(&ctx, &bytes, 0, 65, bytes.len(), path_link())
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    let error =
+        exact_assembly_operand_path(&ctx, &bytes, 0, 65, bytes.len(), path_link()).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d assembly path occurrences"));
+            && failure.operation == "f3d assembly path occurrences")
+    );
 
     let arena = DecodeArena::new();
     let ctx = context(&arena, 1);
@@ -105,11 +109,12 @@ fn assembly_path_spans_refuse_collection_limit() {
     let bytes = envelope_bytes(scope.record_index);
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let error = exact_assembly_operand_path_envelope(&ctx, &bytes, &scope, 64, 0, 0)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    let error = exact_assembly_operand_path_envelope(&ctx, &bytes, &scope, 64, 0, 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d assembly path spans"));
+            && failure.operation == "f3d assembly path spans")
+    );
 
     let arena = DecodeArena::new();
     let ctx = context(&arena, 2);

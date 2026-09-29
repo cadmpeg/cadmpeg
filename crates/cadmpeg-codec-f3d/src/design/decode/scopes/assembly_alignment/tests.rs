@@ -35,15 +35,20 @@ fn assembly_alignment_lanes_refuse_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = exact_assembly_alignment(&ctx, &[], &records, &scope, std::slice::from_ref(&owner)).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    let error = exact_assembly_alignment(&ctx, &[], &records, &scope, std::slice::from_ref(&owner))
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d assembly alignment lanes"));
+            && failure.operation == "f3d assembly alignment lanes")
+    );
 
     let arena = DecodeArena::new();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(exact_assembly_alignment(&ctx, &[], &records, &scope, &[owner])
-        .unwrap()
-        .is_none());
+    assert!(
+        exact_assembly_alignment(&ctx, &[], &records, &scope, &[owner])
+            .unwrap()
+            .is_none()
+    );
 }

@@ -13,10 +13,18 @@ fn assert_main_group_refusal_with_limit(
     first.resolved_edge_slot = Some(17);
     let mut operands = vec![first];
     if surface_patch {
-        group.try_set_members(vec![
-            crate::records::identity::Located { value: 10, offset: 0 },
-            crate::records::identity::Located { value: 11, offset: 11 },
-        ]).unwrap();
+        group
+            .try_set_members(vec![
+                crate::records::identity::Located {
+                    value: 10,
+                    offset: 0,
+                },
+                crate::records::identity::Located {
+                    value: 11,
+                    offset: 11,
+                },
+            ])
+            .unwrap();
         operands[0].surface_patch_recipe_structure = Some(
             crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure {
                 clauses: std::array::from_fn(|_| {
@@ -34,8 +42,8 @@ fn assert_main_group_refusal_with_limit(
         second.surface_patch_recipe_structure = operands[0].surface_patch_recipe_structure.clone();
         operands.push(second);
     }
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#main-edge-group")
-        .unwrap();
+    let feature_id =
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#main-edge-group").unwrap();
     for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -45,10 +53,17 @@ fn assert_main_group_refusal_with_limit(
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group), &operands,
-            &[], Some(7), &feature_id, Some(&ctx)) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            &operands,
+            &[],
+            Some(7),
+            &feature_id,
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
         }
     }
@@ -87,7 +102,10 @@ fn generic_surface_patch_historical_edge_refuses_collection_limit() {
 #[test]
 fn generic_surface_patch_historical_group_id_refuses_retained_limit() {
     assert_main_group_refusal_with_limit(
-        "f3d generic surface patch historical group id", true, true);
+        "f3d generic surface patch historical group id",
+        true,
+        true,
+    );
 }
 
 #[test]
@@ -113,25 +131,38 @@ fn resolved_edge_group_historical_edge_refuses_collection_limit() {
 #[test]
 fn resolved_edge_group_historical_group_id_refuses_retained_limit() {
     assert_main_group_refusal_with_limit(
-        "f3d resolved edge group historical group id", false, true);
+        "f3d resolved edge group historical group id",
+        false,
+        true,
+    );
 }
 
 #[test]
 fn edge_group_matched_identity_refuses_collection_limit() {
     let group = group(2, 10);
     let operand = identity(10, &[]);
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#identity-index")
-        .unwrap();
+    let feature_id =
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#identity-index").unwrap();
     for limit in 0..128 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group), &[],
-            std::slice::from_ref(&operand), Some(7), &feature_id, Some(&ctx)) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&operand),
+            Some(7),
+            &feature_id,
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d edge group matched identity" => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.operation == "f3d edge group matched identity" =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected matched identity refusal: {other:?}"),
         }
     }
@@ -141,18 +172,27 @@ fn edge_group_matched_identity_refuses_collection_limit() {
 fn assert_identity_transition_refusal(operation: &'static str) {
     let group = group(2, 10);
     let operand = identity(10, &[(17, 3.0), (18, 5.0)]);
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#transition-index")
-        .unwrap();
+    let feature_id =
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#transition-index").unwrap();
     for limit in 0..128 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_treatment_group_with_corners(&group,
-            std::slice::from_ref(&group), &[], std::slice::from_ref(&operand), &[], &[],
-            Some(7), &feature_id, None, Some(&ctx)) {
+        match resolved_edge_treatment_group_with_corners(
+            &group,
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&operand),
+            &[],
+            &[],
+            Some(7),
+            &feature_id,
+            None,
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
         }
     }
@@ -178,18 +218,24 @@ fn assert_combined_edge_refusal(operation: &'static str) {
     let group = group(2, 10);
     let recipe = recipe_edge_operand(10, &[], &[]);
     let identity = identity(10, &[]);
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combined-edge")
-        .unwrap();
+    let feature_id =
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combined-edge").unwrap();
     for limit in 0..128 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group),
-            std::slice::from_ref(&recipe), std::slice::from_ref(&identity),
-            Some(7), &feature_id, Some(&ctx)) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&recipe),
+            std::slice::from_ref(&identity),
+            Some(7),
+            &feature_id,
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
         }
     }
@@ -210,8 +256,8 @@ fn assert_complete_identity_refusal(operation: &'static str, retained: bool) {
     let group = group(2, 10);
     let mut operand = identity(10, &[]);
     operand.resolved_edge_slot = Some(17);
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#complete-identity")
-        .unwrap();
+    let feature_id =
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#complete-identity").unwrap();
     for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -221,10 +267,17 @@ fn assert_complete_identity_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group), &[],
-            std::slice::from_ref(&operand), Some(7), &feature_id, Some(&ctx)) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&operand),
+            Some(7),
+            &feature_id,
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
         }
     }
@@ -268,8 +321,8 @@ fn assert_identity_historical_refusal(
         operand = DesignEdgeIdentityOperand::try_new(draft).unwrap();
     }
     let radius = matches!(route, IdentityHistoricalRoute::Radius).then_some(3.0);
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#identity-history")
-        .unwrap();
+    let feature_id =
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#identity-history").unwrap();
     for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -279,11 +332,20 @@ fn assert_identity_historical_refusal(
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_treatment_group_with_corners(&group,
-            std::slice::from_ref(&group), &[], std::slice::from_ref(&operand), &[], &[],
-            Some(7), &feature_id, radius, Some(&ctx)) {
+        match resolved_edge_treatment_group_with_corners(
+            &group,
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&operand),
+            &[],
+            &[],
+            Some(7),
+            &feature_id,
+            radius,
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
         }
     }
@@ -292,46 +354,72 @@ fn assert_identity_historical_refusal(
 
 #[test]
 fn radius_identity_historical_edge_refuses_collection_limit() {
-    assert_identity_historical_refusal(IdentityHistoricalRoute::Radius,
-        "f3d radius identity historical edge", false);
+    assert_identity_historical_refusal(
+        IdentityHistoricalRoute::Radius,
+        "f3d radius identity historical edge",
+        false,
+    );
 }
 
 #[test]
 fn radius_identity_historical_group_id_refuses_retained_limit() {
-    assert_identity_historical_refusal(IdentityHistoricalRoute::Radius,
-        "f3d radius identity historical group id", true);
+    assert_identity_historical_refusal(
+        IdentityHistoricalRoute::Radius,
+        "f3d radius identity historical group id",
+        true,
+    );
 }
 
 #[test]
 fn group_identity_historical_edge_refuses_collection_limit() {
-    assert_identity_historical_refusal(IdentityHistoricalRoute::Group,
-        "f3d group identity historical edge", false);
+    assert_identity_historical_refusal(
+        IdentityHistoricalRoute::Group,
+        "f3d group identity historical edge",
+        false,
+    );
 }
 
 #[test]
 fn group_identity_historical_group_id_refuses_retained_limit() {
-    assert_identity_historical_refusal(IdentityHistoricalRoute::Group,
-        "f3d group identity historical group id", true);
+    assert_identity_historical_refusal(
+        IdentityHistoricalRoute::Group,
+        "f3d group identity historical group id",
+        true,
+    );
 }
 
 #[test]
 fn single_identity_historical_edge_refuses_collection_limit() {
-    assert_identity_historical_refusal(IdentityHistoricalRoute::Single,
-        "f3d single identity historical edge", false);
+    assert_identity_historical_refusal(
+        IdentityHistoricalRoute::Single,
+        "f3d single identity historical edge",
+        false,
+    );
 }
 
 #[test]
 fn single_identity_historical_group_id_refuses_retained_limit() {
-    assert_identity_historical_refusal(IdentityHistoricalRoute::Single,
-        "f3d single identity historical group id", true);
+    assert_identity_historical_refusal(
+        IdentityHistoricalRoute::Single,
+        "f3d single identity historical group id",
+        true,
+    );
 }
 
 fn assert_combined_historical_refusal(operation: &'static str, retained: bool) {
     let mut group = group(2, 10);
-    group.try_set_members(vec![
-        crate::records::identity::Located { value: 10, offset: 0 },
-        crate::records::identity::Located { value: 11, offset: 11 },
-    ]).unwrap();
+    group
+        .try_set_members(vec![
+            crate::records::identity::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::identity::Located {
+                value: 11,
+                offset: 11,
+            },
+        ])
+        .unwrap();
     let mut first_recipe = recipe_edge_operand(10, &[], &[]);
     first_recipe.resolved_edge_slot = Some(17);
     let mut second_recipe = recipe_edge_operand(11, &[18], &[]);
@@ -341,8 +429,8 @@ fn assert_combined_historical_refusal(operation: &'static str, retained: bool) {
     second_identity.resolved_edge_slot = Some(18);
     let recipes = [first_recipe, second_recipe];
     let identities = [first_identity, second_identity];
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combined-history")
-        .unwrap();
+    let feature_id =
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combined-history").unwrap();
     for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -352,10 +440,17 @@ fn assert_combined_historical_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group),
-            &recipes, &identities, Some(7), &feature_id, Some(&ctx)) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            &recipes,
+            &identities,
+            Some(7),
+            &feature_id,
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
         }
     }
@@ -383,19 +478,28 @@ fn assert_native_group_refusal(standard_recipe: bool) {
             },
         );
     }
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#native-group")
-        .unwrap();
+    let feature_id =
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#native-group").unwrap();
     for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group),
-            std::slice::from_ref(&operand), &[], standard_recipe.then_some(7),
-            &feature_id, Some(&ctx)) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&operand),
+            &[],
+            standard_recipe.then_some(7),
+            &feature_id,
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d native edge group id" => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.operation == "f3d native edge group id" =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected native edge group ID refusal: {other:?}"),
         }
     }
@@ -420,10 +524,16 @@ fn edge_assignment_reference_candidate_refuses_collection_limit() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match crate::design::edge_resolve::edge_group_assignment_candidates(
-            &[], [&[17, 18][..], &[18, 19][..]], Some(&ctx)) {
+            &[],
+            [&[17, 18][..], &[18, 19][..]],
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d edge assignment reference candidate" => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.operation == "f3d edge assignment reference candidate" =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected assignment reference refusal: {other:?}"),
         }
     }
@@ -432,22 +542,30 @@ fn edge_assignment_reference_candidate_refuses_collection_limit() {
 
 #[test]
 fn corroborated_edge_candidate_refuses_collection_limit() {
-    let selectors = [crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
-        selector: 0,
-        clauses: Vec::new(),
-        incidence_matching_edge_slots: vec![17, 18],
-        boundary_count_matching_edge_slots: Vec::new(),
-    }];
+    let selectors = [
+        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
+            selector: 0,
+            clauses: Vec::new(),
+            incidence_matching_edge_slots: vec![17, 18],
+            boundary_count_matching_edge_slots: Vec::new(),
+        },
+    ];
     for limit in 0..16 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match crate::design::edge_resolve::edge_assignment_candidates(
-            &selectors, [&[17, 18][..]], Some(&ctx)) {
+            &selectors,
+            [&[17, 18][..]],
+            Some(&ctx),
+        ) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d corroborated edge candidate" => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+                if failure.operation == "f3d corroborated edge candidate" =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected corroborated edge refusal: {other:?}"),
         }
     }

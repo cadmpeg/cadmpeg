@@ -295,7 +295,9 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
         ir.model.features[0].evaluation.definition()
     ));
     assert_eq!(
-        design_projection_gaps(None, &ir, &F3dNative::default()).unwrap().incomplete_features,
+        design_projection_gaps(None, &ir, &F3dNative::default())
+            .unwrap()
+            .incomplete_features,
         0
     );
 }

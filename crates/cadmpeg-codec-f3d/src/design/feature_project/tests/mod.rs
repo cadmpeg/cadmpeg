@@ -10,14 +10,13 @@ mod body_selection;
 mod boundary_fill_limits;
 mod coil;
 mod combine_limits;
-mod dispatcher;
 mod direct_face_limits;
+mod dispatcher;
 mod extrude;
 mod extrude_limits;
-mod loft_limits;
-mod sweep_limits;
 mod form;
 mod hole_limits;
+mod loft_limits;
 mod mirror;
 mod native_scope_definition_limits;
 mod parameter_cycles;
@@ -26,45 +25,67 @@ mod pattern;
 mod pipe;
 mod replace_face;
 mod revolve_limits;
+mod scope_properties_limits;
 mod sheet_metal;
 mod simple_native_limits;
-mod scope_properties_limits;
-mod spatial_profiles;
 mod sketch_binding_limits;
+mod spatial_profiles;
 mod split;
 mod surface;
+mod sweep_limits;
 mod timeline;
 mod treatments;
+mod work_plane_limits;
 mod work_point_binding_limits;
 mod work_point_projection_limits;
-mod work_plane_limits;
 
 fn project_single_scope_with_context(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: &crate::records::feature::scope::DesignParameterScope,
-) -> Result<(Vec<cadmpeg_ir::features::Feature>, Vec<cadmpeg_ir::features::DesignParameter>), cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::features::Feature>,
+        Vec<cadmpeg_ir::features::DesignParameter>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
     let timeline = crate::records::entity_header::DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
         crate::records::entity_header::DesignTimelineFrame::test_items(
-            0, vec![crate::records::identity::Located {
-                value: u64::from(scope.record_index), offset: 0,
+            0,
+            vec![crate::records::identity::Located {
+                value: u64::from(scope.record_index),
+                offset: 0,
             }],
         ),
         "256".to_owned().try_into().unwrap(),
         std::num::NonZeroU64::new(1).unwrap(),
         0,
         std::num::NonZeroU64::new(1).unwrap(),
-    ).unwrap();
+    )
+    .unwrap();
     crate::design::feature_project::project_parameter_design_with_edge_identities(
-        Some(ctx), &crate::design::feature_project::ProjectInputs {
-            native: &[], owners: &[], scopes: std::slice::from_ref(scope),
-            timelines: std::slice::from_ref(&timeline), construction_groups: &[],
-            fillet_radius_groups: &[], edge_operands: &[], edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[], entity_selection_operands: &[],
-            curve_identities: &[], face_operands: &[], body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[], placements: &[], body_bindings: &[],
-            component_naming_spaces: &[], histories: &[],
+        Some(ctx),
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: std::slice::from_ref(scope),
+            timelines: std::slice::from_ref(&timeline),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
+            placements: &[],
+            body_bindings: &[],
+            component_naming_spaces: &[],
+            histories: &[],
         },
     )
 }
