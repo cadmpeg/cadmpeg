@@ -803,7 +803,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 5;
+        policy.limits.max_collection_items = 7;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = browser_node_records_with_context(&ctx, &bytes, &meta)
             .err()
@@ -989,7 +989,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 23;
+        policy.limits.max_collection_items = 31;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = body_presentations_with_context(&ctx, &bytes, &meta)
             .err()

@@ -29,7 +29,7 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
             "f3d sketch relation output",
         ),
         (
-            Some(1),
+            Some(3),
             None,
             true,
             ResourceDimension::CollectionItems,

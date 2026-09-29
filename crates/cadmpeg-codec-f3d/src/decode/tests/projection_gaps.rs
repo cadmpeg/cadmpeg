@@ -1230,7 +1230,7 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(container_only_dimension_parameters(&ctx, &native),
         Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d container-only dimension parameter"
+            if failure.operation == "collect F3D container-only dimension parameters"
                 && failure.dimension == ResourceDimension::CollectionItems));
     let default_policy = DecodePolicy::default();
     let (default_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &default_policy).unwrap();

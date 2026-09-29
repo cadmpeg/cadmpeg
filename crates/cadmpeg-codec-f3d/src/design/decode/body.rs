@@ -1842,19 +1842,19 @@ mod tests {
         let metadata = snapshot_body_map_metadata();
         for (items, retained, dimension, operation) in [
             (
-                0,
+                2,
                 u64::MAX,
                 ResourceDimension::CollectionItems,
                 "f3d snapshot body-map primary index",
             ),
             (
-                1,
+                3,
                 u64::MAX,
                 ResourceDimension::CollectionItems,
                 "f3d snapshot body-map pairs",
             ),
             (
-                2,
+                4,
                 u64::MAX,
                 ResourceDimension::CollectionItems,
                 "f3d snapshot body-map records",
@@ -2022,31 +2022,31 @@ mod tests {
         let metadata = body_map_metadata();
         for (items, retained, dimension, operation) in [
             (
-                0,
+                2,
                 u64::MAX,
                 ResourceDimension::CollectionItems,
                 "f3d body-map primary index",
             ),
             (
-                1,
+                3,
                 u64::MAX,
                 ResourceDimension::CollectionItems,
                 "f3d body-map typed entities",
             ),
             (
-                2,
+                4,
                 u64::MAX,
                 ResourceDimension::CollectionItems,
                 "f3d body-map pairs",
             ),
             (
-                3,
+                5,
                 u64::MAX,
                 ResourceDimension::CollectionItems,
                 "f3d body-map records",
             ),
             (
-                4,
+                6,
                 u64::MAX,
                 ResourceDimension::CollectionItems,
                 "f3d flattened body-map pairs",
@@ -2240,7 +2240,7 @@ mod tests {
             let suffix_len =
                 format!(":design-body-binding#{}", bindings[0].asm_body_key_offset()).len() as u64;
             {
-                let (items, operation) = (30, "f3d body visibility entries");
+                let (items, operation) = (46, "f3d body visibility entries");
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
                 policy.limits.max_collection_items = items;
@@ -2257,9 +2257,9 @@ mod tests {
                 );
             }
             for (items, operation) in [
-                (7, "f3d body-map carrier counts"),
-                (8, "f3d selected body-map names"),
-                (9, "f3d archive BREP counts"),
+                (15, "f3d body-map carrier counts"),
+                (16, "f3d selected body-map names"),
+                (17, "f3d archive BREP counts"),
             ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
@@ -2297,8 +2297,8 @@ mod tests {
                 );
             }
             for (items, operation) in [
-                (5, "f3d source BREP body keys"),
-                (6, "f3d decoded body bindings"),
+                (9, "f3d source BREP body keys"),
+                (10, "f3d decoded body bindings"),
             ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
@@ -2532,9 +2532,9 @@ mod tests {
             secondary_records: Vec::new(),
         };
         for (items, operation) in [
-            (15, "f3d browser visibility entities"),
-            (16, "f3d browser visibility candidates"),
-            (17, "f3d selected browser visibility"),
+            (21, "f3d browser visibility entities"),
+            (22, "f3d browser visibility candidates"),
+            (23, "f3d selected browser visibility"),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();

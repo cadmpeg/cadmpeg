@@ -91,8 +91,8 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
     let archive = zip.finish().unwrap().into_inner();
     let arena = DecodeArena::new();
     for (allowance, operation) in [
-        (0, "f3d design type table"),
-        (1, "f3d design type registered entities"),
+        (3, "f3d design type table"),
+        (4, "f3d design type registered entities"),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = allowance;
@@ -109,11 +109,16 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
     let module_len = "Component".len() as u64;
     let prefix_len = crate::ids::native_scope(meta_name).len() as u64;
     let suffix_len = ":design-type#0".len() as u64;
+    // Bytes the MetaStream parse and cache retain before the type copies.
+    let parsed_len = 198;
     for (allowance, operation) in [
-        (module_len - 1, "f3d design type module"),
-        (module_len + prefix_len - 1, "f3d native stream key"),
+        (parsed_len + module_len - 1, "f3d design type module"),
         (
-            module_len + prefix_len + suffix_len - 1,
+            parsed_len + module_len + prefix_len - 1,
+            "f3d native stream key",
+        ),
+        (
+            parsed_len + module_len + prefix_len + suffix_len - 1,
             "f3d design type id suffix",
         ),
     ] {
@@ -449,9 +454,9 @@ fn timeline_collection_growth_refuses_at_map_child_and_output() {
     let archive = zip.finish().unwrap().into_inner();
     let arena = DecodeArena::new();
     for (allowance, operation) in [
-        (0, "index F3D timeline entity"),
-        (1, "index F3D timeline type GUID"),
-        (4, "retain F3D feature timeline"),
+        (5, "index F3D timeline entity"),
+        (6, "index F3D timeline type GUID"),
+        (9, "retain F3D feature timeline"),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = allowance;
@@ -616,9 +621,9 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
     let archive = zip.finish().unwrap().into_inner();
     let arena = DecodeArena::new();
     for (allowance, operation) in [
-        (0, "f3d component naming registered entities"),
-        (1, "f3d component naming spaces by entity"),
-        (2, "f3d component naming spaces output"),
+        (3, "f3d component naming registered entities"),
+        (4, "f3d component naming spaces by entity"),
+        (5, "f3d component naming spaces output"),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = allowance;
@@ -636,13 +641,15 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
     }
     let prefix_len = crate::ids::native_scope(bulk_name).len() as u64;
     let suffix_len = ":design-component-naming-space#2".len() as u64;
+    // Bytes the MetaStream parse and cache retain before the UUID text.
+    let parsed_len = 198;
     for (allowance, operation) in [
         (
-            context_uuid.len() as u64 + prefix_len - 1,
+            parsed_len + context_uuid.len() as u64 + prefix_len - 1,
             "f3d native stream key",
         ),
         (
-            context_uuid.len() as u64 + prefix_len + suffix_len - 1,
+            parsed_len + context_uuid.len() as u64 + prefix_len + suffix_len - 1,
             "f3d component naming space id suffix",
         ),
     ] {
@@ -710,7 +717,8 @@ fn component_naming_uuid_refuses_retained_limit_in_both_reference_forms() {
         let archive = zip.finish().unwrap().into_inner();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(UUID.len() - 1).unwrap();
+        // 198 bytes are retained by the MetaStream parse and cache first.
+        policy.limits.max_retained_bytes = u64::try_from(UUID.len() - 1).unwrap() + 198;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = with_scan(&archive, |scan| {
             super::decode_component_naming_spaces(&ctx, scan)

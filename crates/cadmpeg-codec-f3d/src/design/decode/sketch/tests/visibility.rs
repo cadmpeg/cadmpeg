@@ -154,7 +154,7 @@ fn sketch_visibility_output_refuses_collection_limit() {
     let (bytes, metadata) = visibility_stream();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 5;
+    policy.limits.max_collection_items = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
         &ctx, &bytes, &metadata,
