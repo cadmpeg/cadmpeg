@@ -475,7 +475,6 @@ macro_rules! declare_model {
                 rewrite: &mut R,
             ) -> Result<(), R::Error> {
                 $(
-                    self.$field.reserve(other.$field.len());
                     for entity in other.$field {
                         self.$field.push(rewrite.rewrite(entity)?);
                     }

@@ -726,7 +726,7 @@ fn pcurve_parameter_ranges(
     pcurve_range: Option<[f64; 2]>,
     edge_range: Option<[f64; 2]>,
 ) -> Option<Vec<[f64; 2]>> {
-    let mut ranges = Vec::with_capacity(4);
+    let mut ranges = Vec::new();
     if let Some(range) = pcurve_range.or(pcurve
         .parameter_range()
         .map(crate::units::FiniteVector::get))

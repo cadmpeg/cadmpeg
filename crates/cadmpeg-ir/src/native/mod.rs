@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-format namespaces retained outside the format-neutral model.
-#![deny(clippy::disallowed_methods)]
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
