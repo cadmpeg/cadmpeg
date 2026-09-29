@@ -16,15 +16,7 @@ pub(super) fn decode_positional_cylinder_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
-    let candidates = positional_cylinder_frame_candidates(body, cache);
-    unique_positional_cylinder_frame(&candidates)
-}
-
-fn positional_cylinder_frame_candidates(
-    body: &[u8],
-    cache: &scalar::ScalarCache,
-) -> Vec<PositionalCylinderFrame> {
-    [
+    let candidates = [
         decode_compact_y_axis_cylinder_frame(body, cache),
         decode_complete_directrix_interval_cylinder_frame(body, cache),
         decode_selector_corner_interval_cylinder_frame(body, cache),
@@ -46,10 +38,8 @@ fn positional_cylinder_frame_candidates(
         decode_axial_radial_cylinder_frame(body, cache),
         decode_compact_axis_aligned_cylinder_frame(body, cache),
         decode_directrix_lane_axis_aligned_cylinder_frame(body, cache),
-    ]
-    .into_iter()
-    .flatten()
-    .collect()
+    ];
+    unique_positional_cylinder_frame(candidates.into_iter().flatten())
 }
 
 pub(super) fn decode_selector_corner_interval_cylinder_frame(
@@ -103,17 +93,15 @@ pub(super) fn decode_selector_corner_interval_cylinder_frame(
     (parameter_span > EPS_CYLINDER_GEOMETRY_MIN * scale).then_some(())?;
     let close =
         |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
-    let axial_axes = (0..3)
-        .filter(|axis| spans[*axis].is_some_and(|span| close(span.abs(), parameter_span)))
-        .collect::<Vec<_>>();
-    let [axis_index] = axial_axes.as_slice() else {
-        return None;
+    let axis_index = crate::decode::uniqueness::exactly_one(
+        (0..3).filter(|axis| spans[*axis].is_some_and(|span| close(span.abs(), parameter_span))),
+    )?;
+    let [first_radial, second_radial] = match axis_index {
+        0 => [1, 2],
+        1 => [0, 2],
+        2 => [0, 1],
+        _ => return None,
     };
-    let [first_radial, second_radial]: [usize; 2] = (0..3)
-        .filter(|axis| axis != axis_index)
-        .collect::<Vec<_>>()
-        .try_into()
-        .ok()?;
     match (spans[first_radial], spans[second_radial]) {
         (Some(first), Some(second)) => close(first.abs(), second.abs()).then_some(())?,
         (Some(known), None) => spans[second_radial] = Some(known),
@@ -133,24 +121,20 @@ pub(super) fn decode_selector_corner_interval_cylinder_frame(
     let radius = f64::midpoint(spans[first_radial]?.abs(), spans[second_radial]?.abs());
     (radius > EPS_CYLINDER_GEOMETRY_MIN * scale).then_some(())?;
 
-    let axial_candidates = [
+    let (first_axial, second_axial, axis_sign) = crate::decode::uniqueness::exactly_one([
         (
-            corners[0][*axis_index] - first_parameter,
-            corners[1][*axis_index] - second_parameter,
+            corners[0][axis_index] - first_parameter,
+            corners[1][axis_index] - second_parameter,
             1.0,
         ),
         (
-            corners[0][*axis_index] + first_parameter,
-            corners[1][*axis_index] + second_parameter,
+            corners[0][axis_index] + first_parameter,
+            corners[1][axis_index] + second_parameter,
             -1.0,
         ),
     ]
     .into_iter()
-    .filter(|(first, second, _)| close(*first, *second))
-    .collect::<Vec<_>>();
-    let [(first_axial, second_axial, axis_sign)] = axial_candidates.as_slice() else {
-        return None;
-    };
+    .filter(|(first, second, _)| close(*first, *second)))?;
     let transverse_maxima = match [first_selector, second_selector] {
         [0x12, 0x11] => [true, true],
         [0x11, 0x14] => [true, false],
@@ -159,7 +143,7 @@ pub(super) fn decode_selector_corner_interval_cylinder_frame(
         _ => return None,
     };
     let mut origin = [0.0; 3];
-    origin[*axis_index] = f64::midpoint(*first_axial, *second_axial);
+    origin[axis_index] = f64::midpoint(first_axial, second_axial);
     for (radial_axis, take_maximum) in [first_radial, second_radial]
         .into_iter()
         .zip(transverse_maxima)
@@ -171,7 +155,7 @@ pub(super) fn decode_selector_corner_interval_cylinder_frame(
         };
     }
     let mut axis = [0.0; 3];
-    axis[*axis_index] = *axis_sign;
+    axis[axis_index] = axis_sign;
     let mut ref_direction = [0.0; 3];
     ref_direction[first_radial] = 1.0;
     PositionalCylinderFrame::new(origin, axis, ref_direction, radius, Some(parameter_span))
@@ -180,7 +164,7 @@ pub(super) fn decode_selector_corner_interval_cylinder_frame(
 pub(super) fn decode_type24_axial_interval_corner_candidates(
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<Vec<PositionalCylinderFrame>> {
+) -> Option<[PositionalCylinderFrame; 4]> {
     let start = type24_round_edge_shell_end(body, cache)?;
     let (first_parameter, mut cursor) = scalar::decode_round_edge_coordinate(body, start, cache)?;
     cursor = type24_round_edge_separator_end(body, cursor, cache)?;
@@ -220,45 +204,38 @@ pub(super) fn decode_type24_axial_interval_corner_candidates(
     (parameter_span > EPS_CYLINDER_GEOMETRY_MIN * scale).then_some(())?;
     let close =
         |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
-    let axial_axes = (0..3)
-        .filter(|axis| close(spans[*axis].abs(), parameter_span))
-        .collect::<Vec<_>>();
-    let [axis_index] = axial_axes.as_slice() else {
-        return None;
+    let axis_index = crate::decode::uniqueness::exactly_one(
+        (0..3).filter(|axis| close(spans[*axis].abs(), parameter_span)),
+    )?;
+    let radial_axes = match axis_index {
+        0 => [1, 2],
+        1 => [0, 2],
+        2 => [0, 1],
+        _ => return None,
     };
-    let radial_axes: [usize; 2] = (0..3)
-        .filter(|axis| axis != axis_index)
-        .collect::<Vec<_>>()
-        .try_into()
-        .ok()?;
     let [first_radial, second_radial] = radial_axes;
     close(spans[first_radial].abs(), spans[second_radial].abs()).then_some(())?;
     let radius = f64::midpoint(spans[first_radial].abs(), spans[second_radial].abs());
     (radius > EPS_CYLINDER_GEOMETRY_MIN * scale).then_some(())?;
 
-    let axial_candidates = [
+    let (first_axial, second_axial, axis_sign) = crate::decode::uniqueness::exactly_one([
         (
-            corners[0][*axis_index] - first_parameter,
-            corners[1][*axis_index] - second_parameter,
+            corners[0][axis_index] - first_parameter,
+            corners[1][axis_index] - second_parameter,
             1.0,
         ),
         (
-            corners[0][*axis_index] + first_parameter,
-            corners[1][*axis_index] + second_parameter,
+            corners[0][axis_index] + first_parameter,
+            corners[1][axis_index] + second_parameter,
             -1.0,
         ),
     ]
     .into_iter()
-    .filter(|(first, second, _)| close(*first, *second))
-    .collect::<Vec<_>>();
-    let [(first_axial, second_axial, axis_sign)] = axial_candidates.as_slice() else {
-        return None;
-    };
+    .filter(|(first, second, _)| close(*first, *second)))?;
 
-    let mut frames = Vec::new();
-    for radial_maxima in [[true, true], [true, false], [false, false], [false, true]] {
+    let frame = |radial_maxima: [bool; 2]| {
         let mut origin = [0.0; 3];
-        origin[*axis_index] = f64::midpoint(*first_axial, *second_axial);
+        origin[axis_index] = f64::midpoint(first_axial, second_axial);
         for (radial_axis, take_maximum) in radial_axes.into_iter().zip(radial_maxima) {
             origin[radial_axis] = if take_maximum {
                 corners[0][radial_axis].max(corners[1][radial_axis])
@@ -267,18 +244,23 @@ pub(super) fn decode_type24_axial_interval_corner_candidates(
             };
         }
         let mut axis = [0.0; 3];
-        axis[*axis_index] = *axis_sign;
+        axis[axis_index] = axis_sign;
         let mut ref_direction = [0.0; 3];
         ref_direction[first_radial] = 1.0;
-        frames.push(PositionalCylinderFrame::new(
+        PositionalCylinderFrame::new(
             origin,
             axis,
             ref_direction,
             radius,
             Some(parameter_span),
-        )?);
-    }
-    Some(frames)
+        )
+    };
+    Some([
+        frame([true, true])?,
+        frame([true, false])?,
+        frame([false, false])?,
+        frame([false, true])?,
+    ])
 }
 
 pub(super) fn decode_complete_directrix_interval_cylinder_frame(
@@ -330,12 +312,12 @@ pub(super) fn decode_complete_directrix_interval_cylinder_frame(
 }
 
 pub(super) fn unique_positional_cylinder_frame(
-    candidates: &[PositionalCylinderFrame],
+    candidates: impl IntoIterator<Item = PositionalCylinderFrame>,
 ) -> Option<PositionalCylinderFrame> {
-    let first = candidates.first().copied()?;
+    let mut candidates = candidates.into_iter();
+    let first = candidates.next()?;
     candidates
-        .iter()
-        .all(|candidate| positional_cylinder_frames_agree(first, *candidate))
+        .all(|candidate| positional_cylinder_frames_agree(first, candidate))
         .then_some(first)
 }
 
@@ -566,18 +548,22 @@ fn decode_compact_y_axis_cylinder_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
-    let decode_values = |start: usize, count: usize| {
+    fn decode_values<const N: usize>(
+        body: &[u8],
+        cache: &scalar::ScalarCache,
+        start: usize,
+    ) -> Option<([f64; N], usize)> {
         let mut cursor = start;
-        let mut values = Vec::with_capacity(count);
-        for _ in 0..count {
+        let mut values = [0.0; N];
+        for slot in &mut values {
             let (value, next) =
                 scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
             value.is_finite().then_some(())?;
-            values.push(value);
+            *slot = value;
             cursor = next;
         }
         Some((values, cursor))
-    };
+    }
     let (
         axial_start,
         axial_end,
@@ -589,43 +575,35 @@ fn decode_compact_y_axis_cylinder_frame(
         repeated_end,
     ) = match body.first()? {
         0x14 => {
-            let (values, end) = decode_values(1, 9)?;
+            let (values, end) = decode_values::<9>(body, cache, 1)?;
             (end == body.len()).then_some(())?;
-            let [axial_start, _, axial_end, transverse_center, repeated_start, radial_low, transverse_edge, repeated_end, radial_high] =
-                values.as_slice()
-            else {
-                return None;
-            };
+            let [axial_start, _, axial_end, transverse_center, repeated_start, radial_low, transverse_edge, repeated_end, radial_high] = values;
             (
-                *axial_start,
-                *axial_end,
-                *transverse_center,
-                *transverse_edge,
-                *radial_low,
-                *radial_high,
-                *repeated_start,
-                *repeated_end,
+                axial_start,
+                axial_end,
+                transverse_center,
+                transverse_edge,
+                radial_low,
+                radial_high,
+                repeated_start,
+                repeated_end,
             )
         }
         0x12 => {
-            let (leading, marker) = decode_values(1, 1)?;
+            let (leading, marker) = decode_values::<1>(body, cache, 1)?;
             (body.get(marker) == Some(&0x14)).then_some(())?;
-            let (trailing, end) = decode_values(marker + 1, 7)?;
+            let (trailing, end) = decode_values::<7>(body, cache, marker + 1)?;
             (end == body.len()).then_some(())?;
-            let [axial_end, transverse_edge, repeated_start, radial_low, transverse_center, repeated_end, radial_high] =
-                trailing.as_slice()
-            else {
-                return None;
-            };
+            let [axial_end, transverse_edge, repeated_start, radial_low, transverse_center, repeated_end, radial_high] = trailing;
             (
                 leading[0],
-                *axial_end,
-                *transverse_center,
-                *transverse_edge,
-                *radial_low,
-                *radial_high,
-                *repeated_start,
-                *repeated_end,
+                axial_end,
+                transverse_center,
+                transverse_edge,
+                radial_low,
+                radial_high,
+                repeated_start,
+                repeated_end,
             )
         }
         _ => return None,
@@ -866,18 +844,14 @@ fn decode_local_system_cylinder_frame(
         cursor = next;
     }
     let (radius_start, radius) = unique_terminal_positive_scalar(body, cursor)?;
-    let frames = (cursor..radius_start)
+    let slots = crate::decode::uniqueness::exactly_one((cursor..radius_start)
         .filter_map(|start| {
             scalar::decode_positional_plane_local_system_slots(
                 body.get(start..radius_start)?,
                 cache,
             )
             .map(cadmpeg_ir::units::FiniteVector::get)
-        })
-        .collect::<Vec<_>>();
-    let [slots] = frames.as_slice() else {
-        return None;
-    };
+        }))?;
     let length = envelope[0];
     let scale = envelope
         .iter()
@@ -886,23 +860,20 @@ fn decode_local_system_cylinder_frame(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let close = |first: f64, second: f64| (first - second).abs() <= EPS_SURFACE_AGREEMENT * scale;
-    let axis_indices = (0..2)
-        .filter(|index| close((envelope[1 + index] - envelope[4 + index]).abs(), length))
-        .collect::<Vec<_>>();
-    let [axis_index] = axis_indices.as_slice() else {
-        return None;
-    };
+    let axis_index = crate::decode::uniqueness::exactly_one(
+        (0..2).filter(|index| close((envelope[1 + index] - envelope[4 + index]).abs(), length)),
+    )?;
     let radial_index = 1 - axis_index;
     close(
         (envelope[1 + radial_index] - envelope[4 + radial_index]).abs(),
         2.0 * radius,
     )
     .then_some(())?;
-    let [support, .., origin] = local_system_lanes(*slots);
+    let [support, .., origin] = local_system_lanes(slots);
     let first_axial = envelope[1 + axis_index];
     let second_axial = envelope[4 + axis_index];
-    let origin_at_first = close(origin[*axis_index], first_axial);
-    let origin_at_second = close(origin[*axis_index], second_axial);
+    let origin_at_first = close(origin[axis_index], first_axial);
+    let origin_at_second = close(origin[axis_index], second_axial);
     (origin_at_first ^ origin_at_second).then_some(())?;
     let sign = if origin_at_first {
         (second_axial - first_axial).signum()
@@ -910,14 +881,14 @@ fn decode_local_system_cylinder_frame(
         (first_axial - second_axial).signum()
     };
     let mut axis = [0.0; 3];
-    axis[*axis_index] = sign;
+    axis[axis_index] = sign;
     let magnitude = support
         .iter()
         .map(|value| value * value)
         .sum::<f64>()
         .sqrt();
     (magnitude.is_finite() && magnitude > 0.0).then_some(())?;
-    (support[*axis_index].abs() <= EPS_SURFACE_AGREEMENT * magnitude).then_some(())?;
+    (support[axis_index].abs() <= EPS_SURFACE_AGREEMENT * magnitude).then_some(())?;
     let ref_direction = support.map(|value| sign * value / magnitude);
     PositionalCylinderFrame::new(origin, axis, ref_direction, radius, Some(length))
 }
@@ -946,7 +917,7 @@ fn decode_zero_support_cylinder_frame(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let close = |first: f64, second: f64| (first - second).abs() <= EPS_SURFACE_AGREEMENT * scale;
-    let axes = (0..2)
+    let (axis_index, radial_index) = crate::decode::uniqueness::exactly_one((0..2)
         .filter_map(|axis_index| {
             let radial_index = 1 - axis_index;
             (close(
@@ -960,15 +931,11 @@ fn decode_zero_support_cylinder_frame(
                 f64::midpoint(envelope[1 + radial_index], envelope[4 + radial_index]),
             ))
             .then_some((axis_index, radial_index))
-        })
-        .collect::<Vec<_>>();
-    let [(axis_index, radial_index)] = axes.as_slice() else {
-        return None;
-    };
+        }))?;
     let first_axial = envelope[1 + axis_index];
     let second_axial = envelope[4 + axis_index];
-    let origin_at_first = close(origin[*axis_index], first_axial);
-    let origin_at_second = close(origin[*axis_index], second_axial);
+    let origin_at_first = close(origin[axis_index], first_axial);
+    let origin_at_second = close(origin[axis_index], second_axial);
     (origin_at_first ^ origin_at_second).then_some(())?;
     let other_axial = if origin_at_first {
         second_axial
@@ -976,9 +943,9 @@ fn decode_zero_support_cylinder_frame(
         first_axial
     };
     let mut axis = [0.0; 3];
-    axis[*axis_index] = (other_axial - origin[*axis_index]).signum();
+    axis[axis_index] = (other_axial - origin[axis_index]).signum();
     let mut ref_direction = [0.0; 3];
-    ref_direction[*radial_index] = (envelope[4 + radial_index] - origin[*radial_index]).signum();
+    ref_direction[radial_index] = (envelope[4 + radial_index] - origin[radial_index]).signum();
     PositionalCylinderFrame::new(origin, axis, ref_direction, radius, Some(length))
 }
 
@@ -1013,23 +980,23 @@ fn decode_signed_zero_support_cylinder_frame(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
-    let candidates = (0..3)
+    let (axis_index, diameter_index, radius_index) = crate::decode::uniqueness::exactly_one((0..3)
         .filter_map(|axis_index| {
-            let radial = (0..3)
-                .filter(|index| *index != axis_index)
-                .collect::<Vec<_>>();
-            let [first_radial, second_radial] = radial.as_slice() else {
-                return None;
+            let [first_radial, second_radial] = match axis_index {
+                0 => [1, 2],
+                1 => [0, 2],
+                2 => [0, 1],
+                _ => return None,
             };
             let (diameter_index, radius_index) = match (
-                close(spans[*first_radial], 2.0 * radius),
-                close(spans[*second_radial], radius),
+                close(spans[first_radial], 2.0 * radius),
+                close(spans[second_radial], radius),
             ) {
-                (true, true) => (*first_radial, *second_radial),
-                _ if close(spans[*second_radial], 2.0 * radius)
-                    && close(spans[*first_radial], radius) =>
+                (true, true) => (first_radial, second_radial),
+                _ if close(spans[second_radial], 2.0 * radius)
+                    && close(spans[first_radial], radius) =>
                 {
-                    (*second_radial, *first_radial)
+                    (second_radial, first_radial)
                 }
                 _ => return None,
             };
@@ -1038,35 +1005,31 @@ fn decode_signed_zero_support_cylinder_frame(
                 diameter_index,
                 radius_index,
             ))
-        })
-        .collect::<Vec<_>>();
-    let [(axis_index, diameter_index, radius_index)] = candidates.as_slice() else {
-        return None;
-    };
+        }))?;
     close(
-        origin[*diameter_index],
-        f64::midpoint(first[*diameter_index], second[*diameter_index]),
+        origin[diameter_index],
+        f64::midpoint(first[diameter_index], second[diameter_index]),
     )
     .then_some(())?;
-    let radius_origin_at_first = close(origin[*radius_index], first[*radius_index]);
-    let radius_origin_at_second = close(origin[*radius_index], second[*radius_index]);
+    let radius_origin_at_first = close(origin[radius_index], first[radius_index]);
+    let radius_origin_at_second = close(origin[radius_index], second[radius_index]);
     (radius_origin_at_first ^ radius_origin_at_second).then_some(())?;
-    let axis_origin_at_first = close(origin[*axis_index], first[*axis_index]);
-    let axis_origin_at_second = close(origin[*axis_index], second[*axis_index]);
+    let axis_origin_at_first = close(origin[axis_index], first[axis_index]);
+    let axis_origin_at_second = close(origin[axis_index], second[axis_index]);
     (axis_origin_at_first ^ axis_origin_at_second).then_some(())?;
 
     let other_axis = if axis_origin_at_first {
-        second[*axis_index]
+        second[axis_index]
     } else {
-        first[*axis_index]
+        first[axis_index]
     };
     let mut axis = [0.0; 3];
-    axis[*axis_index] = (other_axis - origin[*axis_index]).signum();
+    axis[axis_index] = (other_axis - origin[axis_index]).signum();
     let mut ref_direction = [0.0; 3];
-    ref_direction[*diameter_index] = if signed_length.is_sign_negative() {
-        -(second[*diameter_index] - first[*diameter_index]).signum()
+    ref_direction[diameter_index] = if signed_length.is_sign_negative() {
+        -(second[diameter_index] - first[diameter_index]).signum()
     } else {
-        (second[*diameter_index] - first[*diameter_index]).signum()
+        (second[diameter_index] - first[diameter_index]).signum()
     };
     PositionalCylinderFrame::new(
         origin,
@@ -1271,31 +1234,27 @@ fn decode_precise_center_edge_cylinder_frame(
     let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
     let close =
         |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
-    let candidates = [(0, 1, 2), (0, 2, 1), (1, 2, 0)]
+    let (first_radial, second_radial, axis_index) = crate::decode::uniqueness::exactly_one([(0, 1, 2), (0, 2, 1), (1, 2, 0)]
         .into_iter()
         .filter_map(|(first_radial, second_radial, axis_index)| {
             (close(spans[first_radial], spans[second_radial])
                 && spans[first_radial] > EPS_CYLINDER_GEOMETRY_MIN * scale
                 && spans[axis_index] > spans[first_radial])
                 .then_some((first_radial, second_radial, axis_index))
-        })
-        .collect::<Vec<_>>();
-    let [(first_radial, second_radial, axis_index)] = candidates.as_slice() else {
-        return None;
-    };
-    let radius = spans[*first_radial];
-    let origin_axial = second[*axis_index] + signed_length;
-    let lower = origin_axial.min(second[*axis_index]);
-    let upper = origin_axial.max(second[*axis_index]);
-    (first[*axis_index] >= lower - EPS_CYLINDER_GEOMETRY_RELATIVE * scale
-        && first[*axis_index] <= upper + EPS_CYLINDER_GEOMETRY_RELATIVE * scale)
+        }))?;
+    let radius = spans[first_radial];
+    let origin_axial = second[axis_index] + signed_length;
+    let lower = origin_axial.min(second[axis_index]);
+    let upper = origin_axial.max(second[axis_index]);
+    (first[axis_index] >= lower - EPS_CYLINDER_GEOMETRY_RELATIVE * scale
+        && first[axis_index] <= upper + EPS_CYLINDER_GEOMETRY_RELATIVE * scale)
         .then_some(())?;
 
     let mut origin = first;
-    origin[*axis_index] = origin_axial;
+    origin[axis_index] = origin_axial;
     let mut axis = [0.0; 3];
-    axis[*axis_index] = -signed_length.signum();
-    let reference_index = (*first_radial).max(*second_radial);
+    axis[axis_index] = -signed_length.signum();
+    let reference_index = first_radial.max(second_radial);
     let mut ref_direction = [0.0; 3];
     ref_direction[reference_index] = (second[reference_index] - first[reference_index]).signum();
     PositionalCylinderFrame::new(
@@ -1374,7 +1333,7 @@ pub(super) fn decode_local_system_suffix_cylinder_frame(
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
     let (radius_start, radius) = unique_terminal_positive_scalar(body, 1)?;
-    let frames = (0..radius_start)
+    let slots = crate::decode::uniqueness::exactly_one((0..radius_start)
         .filter_map(|start| {
             scalar::decode_positional_cylinder_local_system_slots(
                 body.get(start..radius_start)?,
@@ -1397,49 +1356,46 @@ pub(super) fn decode_local_system_suffix_cylinder_frame(
                     .sum::<f64>()
                     .abs()
                     <= EPS_SUPPORT_ORTHOGONALITY * scale
-        })
-        .collect::<Vec<_>>();
-    let [slots] = frames.as_slice() else {
-        return None;
-    };
-    cylinder_frame_from_local_system(slots, radius)
+        }))?;
+    cylinder_frame_from_local_system(&slots, radius)
 }
 
 pub(super) fn decode_compound_local_system_cylinder_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
-    let radius_frames = (1..body.len())
-        .filter_map(|radius_start| {
-            let (radius, radius_end) =
-                scalar::decode_tabulated_cylinder_first_coordinate(body, radius_start, cache)
-                    .or_else(|| scalar::decode(body, radius_start))?;
-            (radius.is_finite()
-                && radius > 0.0
-                && body.get(radius_end) == Some(&psb::token::COMPOUND_CLOSE))
-            .then_some((radius_start, radius))
-        })
-        .collect::<Vec<_>>();
-    let candidates = (1..body.len())
-        .filter(|start| body[start - 1] == psb::token::COMPOUND_CLOSE)
-        .flat_map(|start| {
-            radius_frames
-                .iter()
-                .filter(move |(radius_start, _)| *radius_start > start)
-                .filter_map(move |(radius_start, radius)| {
-                    let slots = scalar::decode_positional_cylinder_local_system_slots(
-                        body.get(start..*radius_start)?,
-                        cache,
-                    )?
-                    .get();
-                    Some((slots, *radius))
-                })
-        })
-        .collect::<Vec<_>>();
-    let [(slots, radius)] = candidates.as_slice() else {
-        return None;
-    };
-    cylinder_frame_from_local_system(slots, *radius)
+    let mut candidate = None;
+    for radius_start in 1..body.len() {
+        let Some((radius, radius_end)) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, radius_start, cache)
+                .or_else(|| scalar::decode(body, radius_start))
+        else {
+            continue;
+        };
+        if !radius.is_finite()
+            || radius <= 0.0
+            || body.get(radius_end) != Some(&psb::token::COMPOUND_CLOSE)
+        {
+            continue;
+        }
+        for start in 1..radius_start {
+            if body[start - 1] != psb::token::COMPOUND_CLOSE {
+                continue;
+            }
+            let Some(slots) = body
+                .get(start..radius_start)
+                .and_then(|bytes| scalar::decode_positional_cylinder_local_system_slots(bytes, cache))
+            else {
+                continue;
+            };
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some((slots.get(), radius));
+        }
+    }
+    let (slots, radius) = candidate?;
+    cylinder_frame_from_local_system(&slots, radius)
 }
 
 fn cylinder_frame_from_local_system(
@@ -1479,30 +1435,21 @@ fn decode_zero_support_cylinder_origin_radius(
     cache: &scalar::ScalarCache,
 ) -> Option<([f64; 3], f64)> {
     let (radius_start, radius) = unique_terminal_positive_scalar(body, start)?;
-    let origins = (start + zero_support.len()..radius_start)
+    let origin = crate::decode::uniqueness::exactly_one((start + zero_support.len()..radius_start)
         .filter_map(|origin_start| {
             (body.get(origin_start - zero_support.len()..origin_start) == Some(zero_support)).then(
                 || decode_positional_cylinder_origin(body, origin_start, radius_start, cache),
             )?
-        })
-        .collect::<Vec<_>>();
-    let [origin] = origins.as_slice() else {
-        return None;
-    };
-    Some((*origin, radius))
+        }))?;
+    Some((origin, radius))
 }
 
 pub(super) fn unique_terminal_positive_scalar(body: &[u8], start: usize) -> Option<(usize, f64)> {
-    let candidates = (start..body.len())
+    crate::decode::uniqueness::exactly_one((start..body.len())
         .filter_map(|offset| {
             let (value, end) = scalar::decode(body, offset)?;
             (end == body.len() && value.is_finite() && value > 0.0).then_some((offset, value))
-        })
-        .collect::<Vec<_>>();
-    let [(offset, value)] = candidates.as_slice() else {
-        return None;
-    };
-    Some((*offset, *value))
+        }))
 }
 
 fn decode_positional_cylinder_origin(

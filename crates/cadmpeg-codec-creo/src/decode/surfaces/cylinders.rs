@@ -1048,7 +1048,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         {
             record.type24_axial_interval_corner_candidates()
         } else {
-            Vec::new()
+            None
         };
         let round_edge_envelope = (feature_class == Some(SchemaClass::Round)
             && !selector_corner_interval)
@@ -1077,11 +1077,13 @@ pub(in super::super) fn transfer_positional_cylinders(
         } else {
             None
         };
-        if !axial_interval_corner_candidates.is_empty() {
+        if axial_interval_corner_candidates.is_some() {
             summary.axial_interval_corner_envelopes += 1;
         }
         let axial_interval_corner_frame = support_planes.and_then(|planes| {
-            unique_tangent_axial_interval_corner_frame(&axial_interval_corner_candidates, planes)
+            axial_interval_corner_candidates.as_ref().and_then(|candidates| {
+                unique_tangent_axial_interval_corner_frame(candidates, planes)
+            })
         });
         if axial_interval_corner_frame.is_some() {
             summary.axial_interval_corner_solved_carriers += 1;
