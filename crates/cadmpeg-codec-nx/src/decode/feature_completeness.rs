@@ -145,6 +145,50 @@ pub(crate) fn active_configuration_state_is_incomplete(
         })
 }
 
+pub(crate) fn active_configuration_state_is_incomplete_for_decode(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let suppressed_features = configuration.suppressed_features().collect::<BTreeSet<_>>();
+    if ir.model.features.iter().any(|feature| {
+        feature.suppressed.is_none_or(|suppressed| suppressed_features.contains(&feature.id) != suppressed)
+    }) {
+        return Ok(true);
+    }
+    let Some(bodies) = configuration.bodies.as_deref() else { return Ok(true) };
+    let mut required_features = if ir.model.features.is_empty() {
+        BTreeMap::new()
+    } else {
+        let Ok(active_features) = crate::native::history::active_feature_closure_for_decode(ctx, ir, bodies)? else {
+            return Ok(true);
+        };
+        active_features
+    };
+    required_features.extend(ir.model.features.iter().enumerate()
+        .filter(|(_, feature)| feature.suppressed == Some(true))
+        .map(|(index, feature)| (feature.id.clone(), index)));
+    if configuration.feature_states.len() != required_features.len() {
+        return Ok(true);
+    }
+    if required_features.iter().any(|(id, &index)| {
+        let feature = &ir.model.features[index];
+        let Some(state) = configuration.feature_states.get(id) else { return true };
+        Some(state.evaluation.is_suppressed()) != feature.suppressed
+            || state.dependencies != feature.dependencies
+            || state.evaluation.outputs() != feature.evaluation.outputs().as_slice()
+            || &state.definition != feature.evaluation.definition()
+    }) {
+        return Ok(true);
+    }
+    Ok(configuration.parameter_values.len() != ir.model.parameters.len()
+        || ir.model.parameters.iter().any(|parameter| {
+            parameter.value.as_ref().is_none_or(|value| {
+                configuration.parameter_values.get(&parameter.id) != Some(value)
+            })
+        }))
+}
+
 /// Whether an admitted frame misses the NX datum contract: perpendicular
 /// axes within a bound scaled by their lengths, and a handedness within the
 /// frame tolerance of one on both sides. The axes are unit directions, so

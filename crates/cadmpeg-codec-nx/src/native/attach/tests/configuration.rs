@@ -741,7 +741,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     ir.model.configurations = vec![configuration(true, Some((vec![body]).try_into().unwrap()))];
     let mut annotations = AnnotationBuilder::new();
 
-    attach_active_configuration_feature_states(&mut ir, &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_active_configuration_feature_states(ctx, &mut ir, &mut annotations))
         .expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
@@ -812,7 +812,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     ];
     let mut annotations = AnnotationBuilder::new();
 
-    attach_current_feature_states(&mut ir, &mut annotations).expect("valid exactness fields");
+    crate::test_support::with_decode_context(|ctx| attach_current_feature_states(ctx, &mut ir, &mut annotations)).expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));
@@ -896,7 +896,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ),
     )];
     let mut annotations = AnnotationBuilder::new();
-    attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_active_configuration_feature_states(ctx, &mut missing_dependency, &mut annotations))
         .expect("valid exactness fields");
     assert_eq!(missing_dependency.model.features[0].suppressed, None);
     assert!(missing_dependency.model.configurations[0]
@@ -908,7 +908,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     unresolved_bodies.model.features[0].dependencies.clear();
     unresolved_bodies.model.configurations =
         vec![configuration("synthetic:test:id#active", true, None)];
-    attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_active_configuration_feature_states(ctx, &mut unresolved_bodies, &mut annotations))
         .expect("valid exactness fields");
     assert_eq!(unresolved_bodies.model.features[0].suppressed, None);
     assert!(unresolved_bodies.model.configurations[0]
@@ -928,7 +928,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
                 .unwrap(),
         ),
     )];
-    attach_active_configuration_feature_states(&mut contradicted, &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_active_configuration_feature_states(ctx, &mut contradicted, &mut annotations))
         .expect("valid exactness fields");
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
     assert!(contradicted.model.configurations[0]
@@ -958,7 +958,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
             ),
         ),
     ];
-    attach_active_configuration_feature_states(&mut ambiguous, &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_active_configuration_feature_states(ctx, &mut ambiguous, &mut annotations))
         .expect("valid exactness fields");
     assert_eq!(ambiguous.model.features[0].suppressed, None);
     assert!(ambiguous
