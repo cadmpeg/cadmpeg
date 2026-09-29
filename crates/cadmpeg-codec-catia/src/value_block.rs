@@ -60,8 +60,8 @@ impl TryFrom<ValueBlockWire> for ValueBlock {
 }
 
 /// One through eight inline bytes with a derived length code.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "InlineBytesWire", into = "InlineBytesWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "InlineBytesWire")]
 pub(crate) struct InlineBytes(Vec<u8>);
 
 impl InlineBytes {
@@ -92,6 +92,27 @@ struct InlineBytesWire {
     bytes: Vec<u8>,
 }
 
+#[derive(Serialize)]
+struct InlineBytesWireRef<'a> {
+    code: u8,
+    #[serde(with = "cadmpeg_ir::bytes")]
+    bytes: &'a [u8],
+}
+
+impl Serialize for InlineBytes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        InlineBytesWireRef {
+            code: self.code(),
+            bytes: &self.0,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<InlineBytes> for InlineBytesWire {
     fn from(value: InlineBytes) -> Self {
         Self {
