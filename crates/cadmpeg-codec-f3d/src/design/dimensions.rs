@@ -361,26 +361,29 @@ fn project_all_dimension_constraints(
         matches.next().is_none().then_some(frame)
     };
     let sketch_for_geometry = |scope: &str, indices: &[u32]| {
-        let projected_sketches = indices
+        let projected_sketch = indices
             .iter()
             .filter_map(|record_index| projected.get(&(scope, *record_index)))
-            .map(|entity| entity.sketch.clone())
-            .collect::<HashSet<_>>();
-        if projected_sketches.len() == 1
-            && indices
-                .iter()
-                .all(|record_index| projected.contains_key(&(scope, *record_index)))
-        {
-            return projected_sketches.into_iter().next();
+            .map(|entity| &entity.sketch)
+            .next();
+        if let Some(sketch) = projected_sketch.filter(|sketch| {
+            indices.iter().all(|record_index| {
+                projected.get(&(scope, *record_index))
+                    .is_some_and(|entity| &entity.sketch == *sketch)
+            })
+        }) {
+            return Some(sketch.clone());
         }
-        let mut owners = indices
+        let owner = indices
             .iter()
             .filter_map(|record_index| native_geometry.get(&(scope, *record_index))?.1)
-            .collect::<HashSet<_>>();
-        (owners.len() == 1)
-            .then(|| owners.drain().next())
+            .next()?;
+        indices
+            .iter()
+            .filter_map(|record_index| native_geometry.get(&(scope, *record_index))?.1)
+            .all(|candidate| candidate == owner)
+            .then(|| sketches.get(&(scope, owner)).cloned())
             .flatten()
-            .and_then(|owner| sketches.get(&(scope, owner)).cloned())
     };
     let native_operand = |scope: &str,
                           field: cadmpeg_core::text::NonBlankString,
