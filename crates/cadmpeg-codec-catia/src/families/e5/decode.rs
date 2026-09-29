@@ -1377,15 +1377,15 @@ fn plan_e5_boundary<'a>(
                     return Ok(None);
                 }
                 let oriented_pcurve = if reversed {
+                    let (record, _reservation) = crate::resource::format_scoped(ctx,
+                        format_args!("e5 boundary pcurve of loop record {} member {member_index}",
+                            loop_.record_id), "catia_e5_reverse_pcurve_label")?;
                     let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
                         ctx,
                         &geometry,
                         range,
                         refusal,
-                        &format!(
-                            "e5 boundary pcurve of loop record {} member {member_index}",
-                            loop_.record_id
-                        ),
+                        &record,
                     )? else {
                         return Ok(None);
                     };
@@ -1405,15 +1405,15 @@ fn plan_e5_boundary<'a>(
                     refusal,
                 )? {
                     if reversed {
+                        let (record, _reservation) = crate::resource::format_scoped(ctx,
+                            format_args!("e5 boundary curve of loop record {} member {member_index}",
+                                loop_.record_id), "catia_e5_reverse_curve_label")?;
                         let Some(reversed_curve) = crate::nurbs::reverse_curve_geometry(
                             ctx,
                             &curve,
                             curve_range,
                             refusal,
-                            &format!(
-                                "e5 boundary curve of loop record {} member {member_index}",
-                                loop_.record_id
-                            ),
+                            &record,
                         )? else {
                             return Ok(None);
                         };
@@ -1537,24 +1537,30 @@ fn plan_e5_boundary<'a>(
                 continue;
             };
             if reversed {
+                let (record, _reservation) = crate::resource::format_scoped(ctx,
+                    format_args!("e5 boundary curve of edge {edge_ref} pcurve {pcurve_ref}"),
+                    "catia_e5_intersection_reverse_curve_label")?;
                 let Some(reversed_curve) = crate::nurbs::reverse_curve_geometry(
                     ctx,
                     &curve,
                     curve_range,
                     refusal,
-                    &format!("e5 boundary curve of edge {edge_ref} pcurve {pcurve_ref}"),
+                    &record,
                 )? else {
                     continue;
                 };
                 (curve, curve_range) = reversed_curve;
             }
             let pcurve = if reversed {
+                let (record, _reservation) = crate::resource::format_scoped(ctx,
+                    format_args!("e5 boundary pcurve of edge {edge_ref} pcurve {pcurve_ref}"),
+                    "catia_e5_intersection_reverse_pcurve_label")?;
                 let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
                     ctx,
                     &geometry,
                     range,
                     refusal,
-                    &format!("e5 boundary pcurve of edge {edge_ref} pcurve {pcurve_ref}"),
+                    &record,
                 )? else {
                     continue;
                 };

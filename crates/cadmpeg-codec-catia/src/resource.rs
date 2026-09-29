@@ -493,6 +493,38 @@ pub(crate) fn format_retained(
     args: std::fmt::Arguments<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
+    let length = formatted_length(ctx, args, operation)?;
+    let bytes =
+        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut text = String::new();
+    text.try_reserve(length)
+        .map_err(|_| allocation_failed(0, text.capacity(), length, operation))?;
+    std::fmt::write(&mut text, args).map_err(CodecError::malformed)?;
+    Ok(text)
+}
+
+pub(crate) fn format_scoped<'a>(
+    ctx: &'a DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<(String, ScopedReservation<'a>), CodecError> {
+    let length = formatted_length(ctx, args, operation)?;
+    let bytes =
+        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let reservation = ctx.reserve_scoped(bytes, operation)?;
+    let mut text = String::new();
+    text.try_reserve(length)
+        .map_err(|_| allocation_failed(0, text.capacity(), length, operation))?;
+    std::fmt::write(&mut text, args).map_err(CodecError::malformed)?;
+    Ok((text, reservation))
+}
+
+fn formatted_length(
+    ctx: &DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<usize, CodecError> {
     struct ByteCount(Option<usize>);
     impl Write for ByteCount {
         fn write_str(&mut self, value: &str) -> std::fmt::Result {
@@ -511,14 +543,24 @@ pub(crate) fn format_retained(
     let Some(length) = count.0 else {
         return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
     };
-    let bytes =
-        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut text = String::new();
-    text.try_reserve(length)
-        .map_err(|_| allocation_failed(0, text.capacity(), length, operation))?;
-    std::fmt::write(&mut text, args).map_err(CodecError::malformed)?;
-    Ok(text)
+    Ok(length)
+}
+
+#[cfg(test)]
+mod scoped_format_tests {
+    #[test]
+    fn scoped_format_refuses_before_temporary_string_growth() {
+        let refused = crate::test_support::with_materialized_limit(0, |ctx|
+            super::format_scoped(ctx, format_args!("edge {}", 42), "catia_test_scoped_format")
+                .map(|(text, _reservation)| text));
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_test_scoped_format"));
+        let text = crate::test_support::with_service_context(|ctx|
+            super::format_scoped(ctx, format_args!("edge {}", 42), "catia_test_scoped_format")
+                .map(|(text, _reservation)| text))
+            .expect("service budget admits temporary text");
+        assert_eq!(text, "edge 42");
+    }
 }
 
 pub(crate) fn extend_retained_bytes(
