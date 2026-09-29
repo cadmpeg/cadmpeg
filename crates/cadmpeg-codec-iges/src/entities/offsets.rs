@@ -122,7 +122,7 @@ fn coordinate(point: Point3, index: u8) -> Option<f64> {
 
 fn greville(knots: &[f64], degree: usize, control: usize) -> Option<f64> {
     let values = knots.get(control + 1..=control + degree)?;
-    Some(values.iter().sum::<f64>() / degree as f64)
+    Some(values.iter().sum::<f64>() / cadmpeg_core::convert::f64_from_index(degree)?)
 }
 
 fn omitted_or_integer_zero(record: &ParameterRecord, index: usize) -> bool {
@@ -960,7 +960,7 @@ pub(super) fn project(
                 };
                 let function_range = independent_range
                     .map(|value| function_parameter_offset + function_parameter_scale * value);
-                let degree = function_nurbs.degree() as usize;
+                let degree = cadmpeg_core::decode::index_from_u32(function_nurbs.degree());
                 let Some(domain_start) = function_nurbs.knots().get(degree).copied() else {
                     super::push_optional_entity_loss(
                         ctx,

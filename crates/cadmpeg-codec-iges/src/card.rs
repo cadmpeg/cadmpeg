@@ -297,7 +297,7 @@ impl FramingRecoveries {
             )?;
             let code = IgesLossCode::CardFramingRecovered;
             ctx.charge_retained(
-                4 + code.code().len() as u64,
+                4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
                 "iges framing recovery loss kind",
             )?;
             ctx.charge_retained(4, "iges framing recovery loss source format")?;

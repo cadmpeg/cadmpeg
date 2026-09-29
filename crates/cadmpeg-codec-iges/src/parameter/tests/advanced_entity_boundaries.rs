@@ -1019,7 +1019,7 @@ fn type402_form21_entity_table_boundary_follows_geometry_blocks() {
             let start = 6 + offset * 5;
             values[start] = sequence.into();
             values[start + 1] = 0.into();
-            values[start + 2] = TokenValue::real(offset as f64);
+            values[start + 2] = TokenValue::real(cadmpeg_core::convert::f64_from_index(offset).expect("test offset is exact"));
             values[start + 3] = TokenValue::real(1.0);
             values[start + 4] = TokenValue::real(2.0);
         }

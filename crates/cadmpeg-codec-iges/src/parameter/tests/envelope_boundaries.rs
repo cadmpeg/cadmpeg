@@ -284,7 +284,7 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
         .collect::<Vec<_>>();
     for index in (1..token_count.saturating_sub(2)).step_by(2) {
         tokens[index].value = TokenValue::Integer(0);
-        tokens[index + 1].value = TokenValue::Integer((token_count - index - 3) as i64);
+        tokens[index + 1].value = TokenValue::Integer(i64::try_from(token_count - index - 3).expect("test token count fits i64"));
     }
     let record = ParameterRecord {
         directory_sequence: 1,

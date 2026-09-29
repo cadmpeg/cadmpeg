@@ -21,7 +21,7 @@ fn integer_record(values: &[i64], parameter_end: usize) -> ParameterRecord {
 }
 
 fn counted_record(declared: usize, item_tokens: usize) -> ParameterRecord {
-    let mut values = vec![0, declared as i64];
+    let mut values = vec![0, i64::try_from(declared).expect("test declared count fits i64")];
     values.extend(std::iter::repeat_n(0, item_tokens));
     let parameter_end = values.len();
     integer_record(&values, parameter_end)
@@ -32,7 +32,7 @@ fn counted_record_with_suffix(
     item_tokens: usize,
     suffix_tokens: usize,
 ) -> (ParameterRecord, usize) {
-    let mut values = vec![0, declared as i64];
+    let mut values = vec![0, i64::try_from(declared).expect("test declared count fits i64")];
     values.extend(std::iter::repeat_n(0, item_tokens));
     let list_end = values.len();
     values.extend(std::iter::repeat_n(0, suffix_tokens));

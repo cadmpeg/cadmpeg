@@ -550,12 +550,12 @@ fn euclidean_control_points(
 ) -> Result<Option<EuclideanControlNet>, CodecError> {
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(
-            homogeneous.len() as u64,
+            cadmpeg_core::decode::u64_from_index(homogeneous.len()),
             "iges composite Euclidean control points",
         )?;
         if rational {
             ctx.charge_collection_items(
-                homogeneous.len() as u64,
+                cadmpeg_core::decode::u64_from_index(homogeneous.len()),
                 "iges composite Euclidean weights",
             )?;
         }
@@ -609,7 +609,7 @@ fn elevate_bezier_homogeneous(
     }
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(
-            control_points.len() as u64,
+            cadmpeg_core::decode::u64_from_index(control_points.len()),
             "iges composite Bezier source copy",
         )?;
     }
@@ -625,12 +625,18 @@ fn elevate_bezier_homogeneous(
             return Ok(None);
         };
         if let Some(ctx) = ctx {
-            ctx.charge_collection_items(next_count as u64, "iges composite Bezier elevated net")?;
+            ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(next_count), "iges composite Bezier elevated net")?;
         }
         let mut next = reserve_admitted_vec(next_count, "iges composite Bezier elevated net")?;
         next.push(elevated[0]);
         for index in 1..=degree {
-            let alpha = index as f64 / next_degree as f64;
+            let Some(index_real) = cadmpeg_core::convert::f64_from_index(index) else {
+                return Ok(None);
+            };
+            let Some(degree_real) = cadmpeg_core::convert::f64_from_index(next_degree) else {
+                return Ok(None);
+            };
+            let alpha = index_real / degree_real;
             let previous = elevated[index - 1];
             let current = elevated[index];
             let point = [
@@ -1463,7 +1469,10 @@ fn elevate_nurbs_to_degree(
         reserve_optional_vec_growth(ctx, &mut pieces, 1, "iges composite elevated span")
             .map_err(DegreeElevationError::Allocation)?;
         let piece = NurbsCurve::from_checked_lanes(
-            target_degree as u32,
+            u32::try_from(target_degree).map_err(|_| DegreeElevationError::TargetDegree {
+                degree: stated_target,
+                bound: MAX_COMPOSITE_DEGREE,
+            })?,
             piece_knots,
             control_points,
             weights,
@@ -1543,7 +1552,7 @@ fn concatenate_nurbs<T>(
             });
         }
     }
-    let degree_usize = degree as usize;
+    let degree_usize = cadmpeg_core::decode::index_from_u32(degree);
     // Every refusal below names its own cause; the `Ok(None)` that survives is
     // the endpoint join, and only the endpoint join.
     let prepare_child = |(curve, interval, child): (NurbsCurve, [f64; 2], T),
@@ -1804,12 +1813,12 @@ fn bounded_nurbs_for_id(
             policy.min(MAX_COMPOSITE_DEPTH)
         });
     if depth >= depth_limit {
-        let requested = depth.saturating_add(1) as u64;
+        let requested = cadmpeg_core::decode::u64_from_index(depth.saturating_add(1));
         return Err(CompositeCurveError::Budget(match ctx {
             Some(ctx) => {
-                ctx.refuse_codec_limit("iges_composite_depth", depth_limit as u64, requested)
+                ctx.refuse_codec_limit("iges_composite_depth", cadmpeg_core::decode::u64_from_index(depth_limit), requested)
             }
-            None => refuse_local_limit("iges_composite_depth", depth_limit as u64, requested),
+            None => refuse_local_limit("iges_composite_depth", cadmpeg_core::decode::u64_from_index(depth_limit), requested),
         }));
     }
     let curve = match index {
@@ -2542,11 +2551,11 @@ fn project_with_type_130_policy(
         };
         if let Some(observed) = u64::try_from(raw_child_count)
             .ok()
-            .filter(|count| *count > MAX_COMPOSITE_CHILDREN as u64)
+            .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_COMPOSITE_CHILDREN))
         {
             return Err(refuse_local_limit(
                 "iges_composite_children",
-                MAX_COMPOSITE_CHILDREN as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_COMPOSITE_CHILDREN),
                 observed,
             ));
         }

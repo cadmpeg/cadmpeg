@@ -626,7 +626,7 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
         for (pole, expected) in a
             .controls
             .iter()
-            .zip([0.5 * index as f64, 0.5 * (index + 1) as f64])
+            .zip([0.5 * cadmpeg_core::convert::f64_from_index(index).expect("test index is exact"), 0.5 * cadmpeg_core::convert::f64_from_index(index + 1).expect("test next index is exact")])
         {
             assert!((pole[0] / pole[3] - expected).abs() < 16. * f64::EPSILON);
         }

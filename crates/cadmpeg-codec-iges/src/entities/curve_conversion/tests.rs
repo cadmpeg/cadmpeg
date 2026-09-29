@@ -60,7 +60,7 @@ fn an_exact_quarter_turn_multiple_is_stable_under_last_place_noise() {
         for bits in [sweep.to_bits() - 1, sweep.to_bits(), sweep.to_bits() + 1] {
             assert_eq!(
                 quarter_turn_spans(f64::from_bits(bits)),
-                expected,
+                Some(expected),
                 "{quarters} quarter turn(s) at bits {bits:#x}"
             );
         }
@@ -75,7 +75,7 @@ fn a_partial_quarter_turn_rounds_up() {
         let sweep = std::f64::consts::FRAC_PI_2 * quarters;
         assert_eq!(
             quarter_turn_spans(sweep),
-            expected,
+            Some(expected),
             "{quarters} quarter turns"
         );
     }
@@ -85,7 +85,13 @@ fn a_partial_quarter_turn_rounds_up() {
 /// produce a curve with no control points.
 #[test]
 fn a_vanishing_sweep_still_yields_one_span() {
-    assert_eq!(quarter_turn_spans(f64::MIN_POSITIVE), 1);
+    assert_eq!(quarter_turn_spans(f64::MIN_POSITIVE), Some(1));
+}
+
+#[test]
+fn nonfinite_sweep_has_no_span_count() {
+    assert_eq!(quarter_turn_spans(f64::NAN), None);
+    assert_eq!(quarter_turn_spans(f64::INFINITY), None);
 }
 
 #[test]

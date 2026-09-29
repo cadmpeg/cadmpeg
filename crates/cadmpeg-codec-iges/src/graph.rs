@@ -823,7 +823,7 @@ pub(crate) fn losses(
                 let sequence = record.line_range.start.checked_add(card)?;
                 let offset = parameter_lines
                     .get(&sequence)?
-                    .checked_add((span % 64) as u64)?;
+                    .checked_add(cadmpeg_core::decode::u64_from_index(span % 64))?;
                 Some((offset, index))
             });
             let location = if let Some((offset, index)) = parameter_location {
@@ -857,7 +857,7 @@ pub(crate) fn losses(
                 "iges graph loss message",
             )?;
             let code = IgesLossCode::PointerUnresolved;
-            ctx.charge_retained(4 + code.code().len() as u64, "iges graph loss kind")?;
+            ctx.charge_retained(4 + cadmpeg_core::decode::u64_from_index(code.code().len()), "iges graph loss kind")?;
             let mut note = code.note(message);
             if let Some((offset, tag)) = location {
                 let format =

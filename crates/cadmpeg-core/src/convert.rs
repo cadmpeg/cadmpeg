@@ -8,74 +8,122 @@ const MAX_EXACT_SIGNED_F64_INTEGER: i64 = 9_007_199_254_740_992;
 /// Converts an index when its integer value is exactly representable in `f64`.
 #[expect(clippy::as_conversions, clippy::cast_precision_loss, reason = "the bound admits only exactly representable integers")]
 pub fn f64_from_index(value: usize) -> Option<f64> {
-    (u64::try_from(value).ok()? <= MAX_EXACT_F64_INTEGER).then_some(value as f64)
+    if u64::try_from(value).ok()? <= MAX_EXACT_F64_INTEGER {
+        Some(value as f64)
+    } else {
+        None
+    }
 }
 
 /// Converts an unsigned integer when its value is exactly representable in `f64`.
 #[expect(clippy::as_conversions, clippy::cast_precision_loss, reason = "the bound admits only exactly representable integers")]
 pub fn f64_from_u64(value: u64) -> Option<f64> {
-    (value <= MAX_EXACT_F64_INTEGER).then_some(value as f64)
+    if value <= MAX_EXACT_F64_INTEGER {
+        Some(value as f64)
+    } else {
+        None
+    }
 }
 
 /// Converts a signed integer when its value is exactly representable in `f64`.
 #[expect(clippy::as_conversions, clippy::cast_precision_loss, reason = "both bounds admit only exactly representable integers")]
 pub fn f64_from_i64(value: i64) -> Option<f64> {
-    (MIN_EXACT_F64_INTEGER..=MAX_EXACT_SIGNED_F64_INTEGER)
-        .contains(&value)
-        .then_some(value as f64)
+    if (MIN_EXACT_F64_INTEGER..=MAX_EXACT_SIGNED_F64_INTEGER).contains(&value) {
+        Some(value as f64)
+    } else {
+        None
+    }
 }
 
 /// Rounds a finite `f64` to the nearest representable `f32`.
 #[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "finite magnitude is bounded by the target range before rounding")]
 pub fn f32_from_f64(value: f64) -> Option<f32> {
-    (value.is_finite() && value.abs() <= f64::from(f32::MAX)).then_some(value as f32)
+    if value.is_finite() && value.abs() <= f64::from(f32::MAX) {
+        Some(value as f32)
+    } else {
+        None
+    }
 }
 
 /// Truncates a finite `f64` to an `i32` when the result fits.
 #[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "the truncated value is checked against both target bounds")]
 pub fn truncate_f64_to_i32(value: f64) -> Option<i32> {
     let value = value.trunc();
-    (value.is_finite() && value >= f64::from(i32::MIN) && value < 2_147_483_648.0)
-        .then_some(value as i32)
+    if value.is_finite() && value >= f64::from(i32::MIN) && value < 2_147_483_648.0 {
+        Some(value as i32)
+    } else {
+        None
+    }
 }
 
 /// Truncates a finite `f64` to an `i64` when the result fits.
 #[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "the truncated value is checked against the half-open target range")]
 pub fn truncate_f64_to_i64(value: f64) -> Option<i64> {
     let value = value.trunc();
-    (value.is_finite()
+    if value.is_finite()
         && value >= -9_223_372_036_854_775_808.0
-        && value < 9_223_372_036_854_775_808.0)
-        .then_some(value as i64)
+        && value < 9_223_372_036_854_775_808.0 {
+        Some(value as i64)
+    } else {
+        None
+    }
+}
+
+/// Truncates a finite `f64` to an `i128` when the result fits.
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "the truncated value is checked against the half-open target range")]
+pub fn truncate_f64_to_i128(value: f64) -> Option<i128> {
+    let value = value.trunc();
+    if value.is_finite()
+        && value >= -170_141_183_460_469_231_731_687_303_715_884_105_728.0
+        && value < 170_141_183_460_469_231_731_687_303_715_884_105_728.0 {
+        Some(value as i128)
+    } else {
+        None
+    }
 }
 
 /// Truncates a finite `f64` to a `u8` when the result fits.
 #[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "the truncated value is nonnegative and below the target upper bound")]
 pub fn truncate_f64_to_u8(value: f64) -> Option<u8> {
     let value = value.trunc();
-    (value.is_finite() && value >= 0.0 && value < 256.0).then_some(value as u8)
+    if value.is_finite() && value >= 0.0 && value < 256.0 {
+        Some(value as u8)
+    } else {
+        None
+    }
 }
 
 /// Truncates a finite `f64` to a `u16` when the result fits.
 #[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "the truncated value is nonnegative and below the target upper bound")]
 pub fn truncate_f64_to_u16(value: f64) -> Option<u16> {
     let value = value.trunc();
-    (value.is_finite() && value >= 0.0 && value < 65_536.0).then_some(value as u16)
+    if value.is_finite() && value >= 0.0 && value < 65_536.0 {
+        Some(value as u16)
+    } else {
+        None
+    }
 }
 
 /// Truncates a finite `f64` to a `u32` when the result fits.
 #[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "the truncated value is nonnegative and below the target upper bound")]
 pub fn truncate_f64_to_u32(value: f64) -> Option<u32> {
     let value = value.trunc();
-    (value.is_finite() && value >= 0.0 && value < 4_294_967_296.0).then_some(value as u32)
+    if value.is_finite() && value >= 0.0 && value < 4_294_967_296.0 {
+        Some(value as u32)
+    } else {
+        None
+    }
 }
 
 /// Truncates a finite `f64` to a `u64` when the result fits.
 #[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "the truncated value is nonnegative and below the target upper bound")]
 pub fn truncate_f64_to_u64(value: f64) -> Option<u64> {
     let value = value.trunc();
-    (value.is_finite() && value >= 0.0 && value < 18_446_744_073_709_551_616.0)
-        .then_some(value as u64)
+    if value.is_finite() && value >= 0.0 && value < 18_446_744_073_709_551_616.0 {
+        Some(value as u64)
+    } else {
+        None
+    }
 }
 
 /// Truncates a finite `f64` to a `usize` when the result fits.
@@ -87,7 +135,11 @@ pub fn truncate_f64_to_usize(value: f64) -> Option<usize> {
     } else {
         4_294_967_296.0
     };
-    (value.is_finite() && value >= 0.0 && value < upper).then_some(value as usize)
+    if value.is_finite() && value >= 0.0 && value < upper {
+        Some(value as usize)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -146,6 +198,16 @@ mod tests {
         assert_eq!(truncate_f64_to_i64(9_223_372_036_854_775_808.0), None);
         assert_eq!(truncate_f64_to_i64(f64::NAN), None);
         assert_eq!(truncate_f64_to_i64(f64::NEG_INFINITY), None);
+    }
+
+    #[test]
+    fn truncate_f64_to_i128_checks_bounds_and_finiteness() {
+        let upper = 170_141_183_460_469_231_731_687_303_715_884_105_728.0;
+        assert_eq!(truncate_f64_to_i128(-upper), Some(i128::MIN));
+        assert_eq!(truncate_f64_to_i128(upper), None);
+        assert_eq!(truncate_f64_to_i128(f64::from_bits(upper.to_bits() - 1)), Some(i128::MAX - (1_i128 << 74) + 1));
+        assert_eq!(truncate_f64_to_i128(f64::NAN), None);
+        assert_eq!(truncate_f64_to_i128(f64::INFINITY), None);
     }
 
     #[test]

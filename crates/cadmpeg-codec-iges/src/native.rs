@@ -2439,7 +2439,7 @@ pub(crate) fn store(
     limits: ProductOccurrenceLimits,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeStoreResult, CodecError> {
-    charge_native_entities(ctx, scan.lines.len() as u64)?;
+    charge_native_entities(ctx, cadmpeg_core::decode::u64_from_index(scan.lines.len()))?;
     let NativeInputIndexes {
         quarantined_directory_records,
         quarantined_parameter_records,
@@ -2652,7 +2652,7 @@ pub(crate) fn store(
             ambiguity,
         });
     }
-    charge_native_entities(ctx, directory.len() as u64)?;
+    charge_native_entities(ctx, cadmpeg_core::decode::u64_from_index(directory.len()))?;
     let mut entities =
         collect_result_vec(ctx, directory.len(), "iges native entity slots", |index| {
             let entry = &directory[index];
@@ -7270,7 +7270,7 @@ pub(crate) fn store(
         quarantined_parameter_records.len(),
     ]
     .into_iter()
-    .fold(0_u64, |total, count| total.saturating_add(count as u64));
+    .fold(0_u64, |total, count| total.saturating_add(cadmpeg_core::decode::u64_from_index(count)));
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     let namespace = ir.native.namespace_mut("iges");
     namespace.set_arena_from(ctx, "cards", cards)?;

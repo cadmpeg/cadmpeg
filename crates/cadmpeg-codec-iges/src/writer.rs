@@ -6278,14 +6278,15 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[FiniteReal; 3], CodecEr
     if let [Some(a), Some(c), Some(f)] = ordinary {
         return Ok([a, c, f]);
     }
-    let split = |radius: f64| {
-        let exponent = radius.log2().floor() as i32;
+    let split = |radius: f64| -> Result<(f64, i32), CodecError> {
+        let exponent = cadmpeg_core::convert::truncate_f64_to_i32(radius.log2().floor())
+            .ok_or_else(|| CodecError::Malformed("IGES conic exponent is out of range".into()))?;
         let half = exponent / 2;
         let mantissa = (radius * 2.0_f64.powi(-half)) * 2.0_f64.powi(half - exponent);
-        (mantissa, exponent)
+        Ok((mantissa, exponent))
     };
-    let (a, a_exponent) = split(major);
-    let (b, b_exponent) = split(minor);
+    let (a, a_exponent) = split(major)?;
+    let (b, b_exponent) = split(minor)?;
     let exponents = [-2 * a_exponent, -2 * b_exponent, 0];
     let minimum = exponents.into_iter().min().unwrap_or(0);
     let maximum = exponents.into_iter().max().unwrap_or(0);
@@ -7010,13 +7011,21 @@ struct PolylineParameters {
 fn polyline_parameters(polyline: &PolylineCurve) -> Result<PolylineParameters, CodecError> {
     let count = polyline.point_count();
     let values: Vec<f64> = polyline.parameters().map_or_else(
-        || (0..count).map(|value| value as f64).collect(),
-        |parameters| {
-            parameters
-                .map(cadmpeg_ir::scalar::FiniteReal::get)
-                .collect()
+        || {
+            (0..count)
+                .map(|value| {
+                    cadmpeg_core::convert::f64_from_index(value).ok_or_else(|| {
+                        cadmpeg_core::decode::refuse_local_limit(
+                            "iges polyline parameters",
+                            u64::MAX,
+                            1,
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
         },
-    );
+        |parameters| Ok(parameters.map(cadmpeg_ir::scalar::FiniteReal::get).collect()),
+    )?;
     if !values.windows(2).all(|pair| pair[0] < pair[1]) {
         return Err(CodecError::NotImplemented(
             "IGES polyline parameters must be finite and strictly increasing".into(),

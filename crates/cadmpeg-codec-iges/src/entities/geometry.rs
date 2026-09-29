@@ -523,7 +523,9 @@ pub(super) fn declared_affine_progression(values: &[f64], uncertainties: &[f64])
         let first_interval = DeclaredInterval::around(values[first], uncertainties[first]);
         for second in first + 1..values.len() {
             let second_interval = DeclaredInterval::around(values[second], uncertainties[second]);
-            let span = (second - first) as f64;
+            let Some(span) = cadmpeg_core::convert::f64_from_index(second - first) else {
+                return false;
+            };
             let pair_lower = (second_interval.lower - first_interval.upper) / span;
             let pair_upper = (second_interval.upper - first_interval.lower) / span;
             if !pair_lower.is_finite() || !pair_upper.is_finite() {
@@ -910,8 +912,8 @@ pub(crate) fn enforce_transform_depth(
             if depth >= depth_limit {
                 return Err(refuse_local_limit(
                     "iges_transform_depth",
-                    depth_limit as u64,
-                    depth.saturating_add(1) as u64,
+                    cadmpeg_core::decode::u64_from_index(depth_limit),
+                    cadmpeg_core::decode::u64_from_index(depth.saturating_add(1)),
                 ));
             }
             if let Some(ctx) = ctx {
