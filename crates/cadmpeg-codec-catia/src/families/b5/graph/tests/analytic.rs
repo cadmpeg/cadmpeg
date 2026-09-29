@@ -1751,3 +1751,22 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         );
     }
 }
+
+#[test]
+fn point_cell_refuses_positive_spatial_overflow() {
+    let point = cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::MAX, 0.0, 0.0)).expect("finite point");
+    let result = crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed { .. })));
+}
+
+#[test]
+fn point_cell_refuses_negative_spatial_overflow() {
+    let point = cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(-f64::MAX, 0.0, 0.0)).expect("finite point");
+    let result = crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed { .. })));
+}
+
+#[test]
+fn point_cell_refuses_nonfinite_coordinate() {
+    assert_eq!(super::super::point_cell([f64::NAN, 0.0, 0.0]), None);
+}
