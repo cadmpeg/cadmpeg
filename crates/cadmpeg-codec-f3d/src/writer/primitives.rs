@@ -55,6 +55,7 @@ pub(crate) fn validate_assembly_projection(
             });
     };
     let projected = crate::design::assembly::project_assembly_joints(
+        None,
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
         &target.model.features,
