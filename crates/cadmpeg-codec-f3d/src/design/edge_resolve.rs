@@ -94,6 +94,29 @@ fn native_edge_selection(
         &group.id, "f3d native edge group id")?))
 }
 
+fn historical_identity_slots(
+    group: &DesignConstructionOperandGroup,
+    state: cadmpeg_ir::ids::FeatureInputTopologyId,
+    feature_key: &cadmpeg_ir::ids::IdentityKey,
+    previous_state_id: i64,
+    slots: &[i64],
+    ctx: Option<&DecodeContext<'_>>,
+    slot_operation: &'static str,
+    native_operation: &'static str,
+) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+    let mut edges = Vec::new();
+    for &slot in slots {
+        let edge = ids::history_input_edge_id(
+            &ids::history_input_prefix(feature_key, previous_state_id), slot);
+        push_edge_item(ctx, &mut edges, edge, slot_operation)?;
+    }
+    let native = copy_edge_text(ctx, &group.id, native_operation)?;
+    match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native) {
+        Ok(selection) => Ok(selection),
+        Err(_) => native_edge_selection(group, ctx),
+    }
+}
+
 pub(super) fn resolved_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
@@ -894,53 +917,20 @@ fn resolved_edge_group_with_transition_chain(
             };
         }
         if let Some(edges) = identity_radius_slots.as_ref() {
-            return Ok(EdgeSelection::historical(
-                state,
-                edges
-                    .iter()
-                    .map(|edge_slot| {
-                        ids::history_input_edge_id(
-                            &ids::history_input_prefix(&feature_key, previous_state_id),
-                            *edge_slot,
-                        )
-                    })
-                    .collect(),
-                group.id.clone(),
-            )
-            .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
+            return historical_identity_slots(group, state, &feature_key, previous_state_id,
+                edges, ctx, "f3d radius identity historical edge",
+                "f3d radius identity historical group id");
         }
         if let Some(edges) = identity_group_transition_slots.as_ref() {
-            return Ok(EdgeSelection::historical(
-                state,
-                edges
-                    .iter()
-                    .map(|edge_slot| {
-                        ids::history_input_edge_id(
-                            &ids::history_input_prefix(&feature_key, previous_state_id),
-                            *edge_slot,
-                        )
-                    })
-                    .collect(),
-                group.id.clone(),
-            )
-            .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
+            return historical_identity_slots(group, state, &feature_key, previous_state_id,
+                edges, ctx, "f3d group identity historical edge",
+                "f3d group identity historical group id");
         }
         if identity_matches.len() == 1 && identity_matches[0].resolved_edge_slot.is_none() {
             if let Some(edges) = identity_transition_slots.as_ref() {
-                return Ok(EdgeSelection::historical(
-                    state,
-                    edges
-                        .iter()
-                        .map(|edge_slot| {
-                            ids::history_input_edge_id(
-                                &ids::history_input_prefix(&feature_key, previous_state_id),
-                                edge_slot,
-                            )
-                        })
-                        .collect(),
-                    group.id.clone(),
-                )
-                .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
+                return historical_identity_slots(group, state, &feature_key, previous_state_id,
+                    edges, ctx, "f3d single identity historical edge",
+                    "f3d single identity historical group id");
             }
         }
         let members = identity_matches
