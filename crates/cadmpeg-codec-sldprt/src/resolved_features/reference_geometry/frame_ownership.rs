@@ -27,8 +27,7 @@ fn matrix_reference_plane_owns_overlapping_compact_scan_window() {
     payload[48] = 1;
 
     assert!(compact_reference_plane_frame_candidates(&payload)
-        .iter()
-        .any(|(offset, _)| *offset == 33));
+        .any(|(offset, _)| offset == 33));
     assert_eq!(
         explicit_reference_plane_frame(&payload),
         Ok(Some((
@@ -77,8 +76,7 @@ fn matrix_reference_plane_owns_overlapping_angled_scan_window() {
     }
 
     assert!(angled_reference_plane_frame_candidates(&payload)
-        .iter()
-        .any(|(offset, _)| *offset == 105));
+        .any(|(offset, _)| offset == 105));
     assert_eq!(
         explicit_reference_plane_frame(&payload),
         Ok(Some((
