@@ -1538,31 +1538,55 @@ pub(crate) fn project_relation_solved_point_geometry(
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
-    let sketches_by_feature = features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some((feature.native_ref.as_deref()?, sketch.clone()))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut sketches_by_feature = HashMap::new();
+    for feature in features {
+        let operation = "index SLDPRT solved-point sketches";
+        ctx.charge_work(1, operation)?;
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !sketches_by_feature.contains_key(native_ref) {
+            ctx.charge_collection_items(1, operation)?;
+            sketches_by_feature.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        sketches_by_feature.insert(native_ref, sketch);
+    }
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
     let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
-    let parameters_by_id = parameters
-        .iter()
-        .map(|parameter| (&parameter.id, parameter))
-        .collect::<HashMap<_, _>>();
-    let markers_by_id = lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
+    let mut parameters_by_id = HashMap::new();
+    for parameter in parameters {
+        let operation = "index SLDPRT solved-point parameters";
+        ctx.charge_work(1, operation)?;
+        if !parameters_by_id.contains_key(&parameter.id) {
+            ctx.charge_collection_items(1, operation)?;
+            parameters_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        parameters_by_id.insert(&parameter.id, parameter);
+    }
+    let mut markers_by_id = HashMap::new();
+    for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
+        let operation = "index SLDPRT solved-point markers";
+        ctx.charge_work(1, operation)?;
+        if !markers_by_id.contains_key(marker.id()) {
+            ctx.charge_collection_items(1, operation)?;
+            markers_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        markers_by_id.insert(marker.id(), marker);
+    }
     let loci_by_marker = profile_loci_by_marker(features, sketches, entities, lanes);
 
     for lane in lanes {
@@ -1601,7 +1625,10 @@ pub(crate) fn project_relation_solved_point_geometry(
                     inferred_point_coordinates_by_index(lane, relation.feature_ref.as_str());
                 let mut resolved_positions = Vec::with_capacity(relation.operands.len());
                 for (index, operand) in relation.operands.iter().enumerate() {
-                    let geometry_ref = relation_operand_geometry_ref(relation, index);
+                    let geometry_ref = ctx.format_retained(
+                        format_args!("{}:operand:{index}", relation.id),
+                        "format SLDPRT solved-point operand reference",
+                    )?;
                     if entities
                         .iter()
                         .any(|entity| entity.geometry_ref.as_deref() == Some(geometry_ref.as_str()))
@@ -1620,25 +1647,33 @@ pub(crate) fn project_relation_solved_point_geometry(
                         Point2::new(coordinates[0] * NATIVE_TO_IR, coordinates[1] * NATIVE_TO_IR),
                         QUANTUM,
                     );
-                    let mut transformed_positions = transforms
+                    let mut unique_position = None;
+                    let mut ambiguous = false;
+                    for transform in transforms
                         .get(relation.feature_ref.as_str())
                         .into_iter()
                         .flatten()
-                        .filter_map(|transform| transform.apply(native))
-                        .collect::<HashSet<_>>();
-                    if transformed_positions.len() != 1 {
-                        if let Some(position) = sketches
-                            .iter()
-                            .find(|candidate| candidate.id == *sketch)
-                            .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
-                            .and_then(|transform| transform.apply(native))
-                        {
-                            transformed_positions = HashSet::from([position]);
+                    {
+                        ctx.charge_work(1, "scan SLDPRT solved-point transforms")?;
+                        let Some(position) = transform.apply(native) else {
+                            continue;
+                        };
+                        if unique_position.is_some_and(|previous| previous != position) {
+                            ambiguous = true;
+                        } else if unique_position.is_none() {
+                            unique_position = Some(position);
                         }
                     }
-                    let mut transformed_positions = transformed_positions.into_iter();
-                    let (Some(position), None) =
-                        (transformed_positions.next(), transformed_positions.next()) else {
+                    let position = if ambiguous || unique_position.is_none() {
+                        sketches
+                            .iter()
+                            .find(|candidate| candidate.id == **sketch)
+                            .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                            .and_then(|transform| transform.apply(native))
+                    } else {
+                        unique_position
+                    };
+                    let Some(position) = position else {
                         resolved_positions.clear();
                         break;
                     };
@@ -1652,29 +1687,31 @@ pub(crate) fn project_relation_solved_point_geometry(
                     .enumerate()
                     .filter_map(|(index, position)| position.map(|position| (index, position)))
                 {
-                    let geometry_ref = relation_operand_geometry_ref(relation, index);
-                    entities.push(
-                        SketchEntity::new(
-                            match SketchEntityId::mint(format!(
+                    let geometry_ref = ctx.format_retained(
+                        format_args!("{}:operand:{index}", relation.id),
+                        "format SLDPRT solved-point operand reference",
+                    )?;
+                    let id_text = ctx.format_retained(format_args!(
                                 "sldprt:model:sketch-entity#solver-point:{lane_key}:{}:{index}",
                                 relation.offset
-                            )) {
-                                Ok(id) => id,
-                                Err(_) => continue,
-                            },
-                            sketch.clone(),
-                            match SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                                position: Point2::new(
-                                    position.0 as f64 * QUANTUM,
-                                    position.1 as f64 * QUANTUM,
-                                ),
-                            }) {
-                                Ok(geometry) => geometry,
-                                Err(_) => continue,
-                            },
-                        )
-                        .with_construction(true)
-                        .with_geometry_ref(Some(geometry_ref)),
+                            ), "format SLDPRT solved-point entity identity")?;
+                    let Ok(id) = SketchEntityId::mint(id_text) else {
+                        continue;
+                    };
+                    let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                        position: Point2::new(
+                            position.0 as f64 * QUANTUM,
+                            position.1 as f64 * QUANTUM,
+                        ),
+                    }) else {
+                        continue;
+                    };
+                    let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
+                    ctx.reserve_collection_vec(entities, 1, "append SLDPRT solved point")?;
+                    entities.push(
+                        SketchEntity::new(id, sketch_id, geometry)
+                            .with_construction(true)
+                            .with_geometry_ref(Some(geometry_ref)),
                     );
                 }
                 continue;
@@ -1710,7 +1747,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             };
             let mut candidates = entities
                 .iter()
-                .filter(|entity| entity.sketch == *sketch)
+                .filter(|entity| entity.sketch == **sketch)
                 .flat_map(sketch_entity_loci)
                 .filter_map(|(point, _)| {
                     let measured = match family {
@@ -1731,32 +1768,34 @@ pub(crate) fn project_relation_solved_point_geometry(
             if candidates.any(|candidate| candidate != point) {
                 continue;
             }
-            let geometry_ref = relation_operand_geometry_ref(relation, missing_index);
+            let geometry_ref = ctx.format_retained(
+                format_args!("{}:operand:{missing_index}", relation.id),
+                "format SLDPRT dimension-point operand reference",
+            )?;
             if entities
                 .iter()
                 .any(|entity| entity.geometry_ref.as_deref() == Some(geometry_ref.as_str()))
             {
                 continue;
             }
-            entities.push(
-                SketchEntity::new(
-                    match SketchEntityId::mint(format!(
+            let id_text = ctx.format_retained(format_args!(
                         "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}:{missing_index}",
                         relation.offset
-                    )) {
-                        Ok(id) => id,
-                        Err(_) => continue,
-                    },
-                    sketch.clone(),
-                    match SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                        position: point.point(QUANTUM),
-                    }) {
-                        Ok(geometry) => geometry,
-                        Err(_) => continue,
-                    },
-                )
-                .with_construction(true)
-                .with_geometry_ref(Some(geometry_ref)),
+                    ), "format SLDPRT dimension-point entity identity")?;
+            let Ok(id) = SketchEntityId::mint(id_text) else {
+                continue;
+            };
+            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: point.point(QUANTUM),
+            }) else {
+                continue;
+            };
+            let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
+            ctx.reserve_collection_vec(entities, 1, "append SLDPRT dimension point")?;
+            entities.push(
+                SketchEntity::new(id, sketch_id, geometry)
+                    .with_construction(true)
+                    .with_geometry_ref(Some(geometry_ref)),
             );
         }
     }
