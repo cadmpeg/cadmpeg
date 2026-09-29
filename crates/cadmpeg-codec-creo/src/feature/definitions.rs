@@ -3556,28 +3556,32 @@ fn resolved_trim_scalar(
     variable_type: VariableType,
     key: u32,
 ) -> Result<Option<cadmpeg_ir::scalar::FiniteReal>, ()> {
-    let values = variables
+    let mut first: Option<cadmpeg_ir::scalar::FiniteReal> = None;
+    let mut missing = false;
+    for row in variables
         .rows
         .iter()
         .filter(|row| row.variable_type == variable_type && row.key == key)
-        .map(|row| row.value.value())
-        .collect::<Vec<_>>();
-    if values.is_empty() || values.iter().all(Option::is_none) {
-        return Ok(None);
-    }
-    let values = values.into_iter().collect::<Option<Vec<_>>>().ok_or(())?;
-    let first = cadmpeg_ir::scalar::FiniteReal::new(*values.first().ok_or(())?).ok_or(())?;
-    values
-        .iter()
-        .copied()
-        .try_fold(first, |first, value| {
-            let value = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or(())?;
+    {
+        let Some(value) = row.value.value() else {
+            missing = true;
+            continue;
+        };
+        let value = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or(())?;
+        if let Some(first) = first {
             let scale = first.get().abs().max(value.get().abs()).max(1.0);
             ((value.get() - first.get()).abs() <= TRIM_COORDINATE_EPS * scale)
-                .then_some(first)
-                .ok_or(())
-        })
-        .map(Some)
+                .then_some(())
+                .ok_or(())?;
+        } else {
+            first = Some(value);
+        }
+    }
+    if missing && first.is_some() {
+        Err(())
+    } else {
+        Ok(first)
+    }
 }
 
 fn trim_endpoint_radius(
@@ -7859,6 +7863,53 @@ mod tables_tests;
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn resolved_trim_scalar_preserves_missing_duplicate_and_conflict_rules() {
+        use super::{resolved_trim_scalar, FeatureVariableRow, FeatureVariableTable, ScalarLane, VariableType};
+
+        let row = |value| FeatureVariableRow {
+            variable_type: VariableType::Radius,
+            key: 7,
+            value,
+            value_body: Vec::new(),
+            guess: ScalarLane::Undefined,
+            guess_body: Vec::new(),
+            known: None,
+            homogeneity: None,
+            uvar_id: None,
+            offset: 0,
+        };
+        let table = |rows: Vec<FeatureVariableRow>| FeatureVariableTable {
+            declared_count: u32::try_from(rows.len()).expect("row count fits"),
+            entity_ref: None,
+            rows,
+            offset: 0,
+        };
+        let resolve = |rows| resolved_trim_scalar(&table(rows), VariableType::Radius, 7);
+        assert_eq!(resolve(Vec::new()), Ok(None));
+        assert_eq!(resolve(vec![row(ScalarLane::Undefined)]), Ok(None));
+        assert_eq!(resolve(vec![row(ScalarLane::DimensionDriven)]), Ok(None));
+        assert_eq!(
+            resolve(vec![row(ScalarLane::Value(2.0)), row(ScalarLane::Value(2.0))])
+                .expect("matching values")
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
+            Some(2.0)
+        );
+        assert_eq!(
+            resolve(vec![row(ScalarLane::Undefined), row(ScalarLane::Value(2.0))]),
+            Err(())
+        );
+        assert_eq!(
+            resolve(vec![row(ScalarLane::Value(2.0)), row(ScalarLane::Undefined)]),
+            Err(())
+        );
+        assert_eq!(
+            resolve(vec![row(ScalarLane::Value(2.0)), row(ScalarLane::Value(3.0))]),
+            Err(())
+        );
+        assert_eq!(resolve(vec![row(ScalarLane::Value(f64::NAN))]), Err(()));
+    }
 
     fn assert_definition_limit(
         payload: &[u8],
