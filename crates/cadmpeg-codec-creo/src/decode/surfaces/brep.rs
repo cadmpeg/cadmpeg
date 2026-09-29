@@ -321,301 +321,303 @@ impl BrepTransferDiagnostics {
 
     pub(in super::super) fn record_coverage(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         coverage: &mut cadmpeg_ir::report::decode::Coverage,
-    ) {
-        coverage.record(
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_CANDIDATE_FACE_COUNT,
             self.candidate_face_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_ADMITTED_FACE_COUNT,
             self.admitted_face_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_EMITTED_FACE_COUNT,
             self.emitted_face_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_BOUNDARY_CURVE_COUNT,
             self.boundary_curve_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_BOUNDARY_CURVE_MISSING_INCIDENCE_COUNT,
             self.boundary_curve_missing_incidence_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_BOUNDARY_CURVE_UNSOLVED_VERTEX_COUNT,
             self.boundary_curve_unsolved_vertex_count,
-        );
+        )?;
         if self.legacy_nonvisible_face_reference_count > 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_LEGACY_NONVISIBLE_FACE_REFERENCE_COUNT,
                 self.legacy_nonvisible_face_reference_count,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_TOPOLOGICAL_COUNT,
             self.vertex_solve.topological_vertices,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_CARRIER_INCIDENT_COUNT,
             self.vertex_solve.carrier_incident_vertices,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_CARRIER_PAIR_INTERSECTION_CANDIDATE_COUNT,
             self.vertex_solve.carrier_pair_candidates,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_CARRIER_TRIPLE_INTERSECTION_CANDIDATE_COUNT,
             self.vertex_solve.carrier_triple_candidates,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_CARRIER_VALID_INTERSECTION_CANDIDATE_COUNT,
             self.vertex_solve.carrier_valid_candidates,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_CARRIER_ZERO_CANDIDATE_COUNT,
             self.vertex_solve.carrier_no_geometric_candidate_vertices
                 + self.vertex_solve.carrier_no_valid_candidate_vertices,
-        );
+        )?;
         if self.vertex_solve.carrier_no_geometric_candidate_vertices != 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_VERTEX_CARRIER_NO_GEOMETRIC_CANDIDATE_COUNT,
                 self.vertex_solve.carrier_no_geometric_candidate_vertices,
-            );
+            )?;
         }
         if self.vertex_solve.carrier_no_valid_candidate_vertices != 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_VERTEX_CARRIER_NO_VALID_CANDIDATE_COUNT,
                 self.vertex_solve.carrier_no_valid_candidate_vertices,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_CARRIER_AMBIGUOUS_CANDIDATE_COUNT,
             self.vertex_solve.carrier_ambiguous_candidate_vertices,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_CARRIER_POINT_COUNT,
             self.vertex_solve.carrier_points,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_RECORD_COUNT,
             self.vertex_solve.pcurve.records,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_PATH_COUNT,
             self.vertex_solve.pcurve.paths(),
-        );
+        )?;
         let pcurve = &self.vertex_solve.pcurve;
         if pcurve.inactive_paths > 0
             || pcurve.inactive_records > 0
             || pcurve.partial_records > 0
             || pcurve.topology_mismatch_records > 0
         {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_INACTIVE_PATH_COUNT,
                 pcurve.inactive_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_INACTIVE_RECORD_COUNT,
                 pcurve.inactive_records,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_PARTIAL_RECORD_COUNT,
                 pcurve.partial_records,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TOPOLOGY_MISMATCH_RECORD_COUNT,
                 pcurve.topology_mismatch_records,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_MISSING_SURFACE_PATH_COUNT,
             self.vertex_solve.pcurve.missing_surfaces,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_UNEVALUABLE_PATH_COUNT,
             self.vertex_solve.pcurve.unevaluable_paths,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_MAPPED_PATH_COUNT,
             self.vertex_solve.pcurve.mapped_paths,
-        );
+        )?;
         if pcurve.carrier_validated_paths > 0
             || pcurve.carrier_rejected_paths > 0
             || pcurve.carrier_unknown_paths() > 0
             || pcurve.carrier_rejected_records > 0
         {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_VALIDATED_PATH_COUNT,
                 pcurve.carrier_validated_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_REJECTED_PATH_COUNT,
                 pcurve.carrier_rejected_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_PATH_COUNT,
                 pcurve.carrier_unknown_paths(),
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_MISSING_SURFACE_PATH_COUNT,
                 pcurve.carrier_unknown_missing_surface_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_MISSING_CARRIER_PATH_COUNT,
                 pcurve.carrier_unknown_missing_carrier_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_UNSUPPORTED_PAIR_PATH_COUNT,
                 pcurve.carrier_unknown_unsupported_pair_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_PARALLEL_PLANE_PATH_COUNT,
                 pcurve.carrier_unknown_parallel_plane_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_UNSUPPORTED_PATH_COUNT,
                 pcurve.carrier_unknown_unsupported_path_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_CARRIER_REJECTED_RECORD_COUNT,
                 pcurve.carrier_rejected_records,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_UNMAPPED_RECORD_COUNT,
             self.vertex_solve.pcurve.unmapped_records,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_INCONSISTENT_RECORD_COUNT,
             self.vertex_solve.pcurve.inconsistent_records,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_ACCEPTED_RECORD_COUNT,
             self.vertex_solve.pcurve.accepted_records,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_COMPLETE_RECORD_COUNT,
             self.vertex_solve.pcurve.complete_records,
-        );
+        )?;
         if self.vertex_solve.pcurve.two_chart_records > 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_records,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_MAPPED_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_mapped_records(),
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_COMPLETE_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_complete_records,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_PARTIAL_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_partial_records,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_MISSING_SURFACE_PATH_COUNT,
                 self.vertex_solve.pcurve.two_chart_missing_surface_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_UNEVALUABLE_PATH_COUNT,
                 self.vertex_solve.pcurve.two_chart_unevaluable_paths,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_SURFACE_MISMATCH_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_surface_mismatch_records,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_NO_SAMPLE_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_no_sample_records,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_PCURVE_TWO_CHART_UNMAPPED_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_unmapped_records,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_PCURVE_CONFLICTING_CURVE_COUNT,
             self.vertex_solve.pcurve.conflicting_curves,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_PCURVE_ENDPOINT_EVIDENCE_COUNT,
             self.vertex_solve.pcurve.evidence,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_COMPLETE_PCURVE_ENDPOINT_EVIDENCE_COUNT,
             self.vertex_solve.pcurve.complete_evidence,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_PCURVE_CONSTRAINT_COUNT,
             self.vertex_solve.pcurve_constraints,
-        );
+        )?;
         if self.vertex_solve.pcurve_fixed_endpoint_conflicts > 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_VERTEX_PCURVE_FIXED_ENDPOINT_CONFLICT_COUNT,
                 self.vertex_solve.pcurve_fixed_endpoint_conflicts,
-            );
+            )?;
         }
         if self.vertex_solve.pcurve_ambiguous_endpoint_vertices > 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::BREP_VERTEX_PCURVE_AMBIGUOUS_ENDPOINT_VERTEX_COUNT,
                 self.vertex_solve.pcurve_ambiguous_endpoint_vertices,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_DIRECTED_ENDPOINT_ASSIGNMENT_COUNT,
             self.vertex_solve.directed_endpoint_assignments,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_DIRECTED_ENDPOINT_CONFLICT_COUNT,
             self.vertex_solve.directed_endpoint_conflicts,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_NURBS_ENDPOINT_CONSTRAINT_COUNT,
             self.vertex_solve.nurbs_endpoint_constraints,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_ANALYTIC_DOMAIN_COUNT,
             self.vertex_solve.analytic_domain_vertices,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_VERTEX_SOLVED_COUNT,
             self.vertex_solve.solved_vertices,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_REJECTED_FACE_COUNT,
             self.face_rejection_diagnostics.len(),
-        );
+        )?;
         for reason in FaceAdmissionRejection::ALL {
-            coverage.record(reason.coverage_key(), self.evidence(reason).0);
+            coverage.record_admitted(ctx,reason.coverage_key(), self.evidence(reason).0)?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_BODY_COUNT_MISMATCH_COUNT,
             usize::from(self.body_count_mismatch),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_LEGACY_BODY_OWNERSHIP_AMBIGUOUS_COUNT,
             usize::from(self.legacy_body_ownership_ambiguous),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_EMPTY_COMPONENT_COUNT,
             self.empty_component_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_ADMITTED_COMPONENT_COUNT,
             self.admitted_component_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_SELECTED_BODY_COUNT,
             self.selected_body_count.unwrap_or_default(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::BREP_SELECTED_BODY_COUNT_UNRESOLVED,
             usize::from(self.selected_body_count.is_none()),
-        );
+        )?;
+        Ok(())
     }
 }
 

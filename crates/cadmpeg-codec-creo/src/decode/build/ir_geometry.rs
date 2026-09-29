@@ -264,7 +264,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         transfer_losses,
         source_carriers,
     )?;
-    diagnostics.record_coverage(coverage);
+    diagnostics.record_coverage(ctx, coverage)?;
     let mut brep_diagnostics = diagnostics;
     let feature_revolution_brep_count = transfer_resolved_revolution_breps(
         ctx,
@@ -389,70 +389,70 @@ pub(super) fn transfer_and_record_scanned_geometry(
         .count();
     let curve_coverage = curve_transfer_coverage(ctx, &scan.curves.topology_rows, &ir.model.curves)?;
     {
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::UNIQUE_VISIBLE_SURFACE_ROW_COUNT,
             surface_coverage.unique_rows(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_VISIBLE_SURFACE_ROW_COUNT,
             surface_coverage.transferred_rows(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::RETAINED_UNKNOWN_VISIBLE_SURFACE_ROW_COUNT,
             surface_coverage.retained_unknown_rows(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT,
             surface_coverage
                 .unique_rows()
                 .saturating_sub(surface_coverage.transferred_rows()),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::AMBIGUOUS_VISIBLE_SURFACE_ROW_COUNT,
             surface_coverage.ambiguous_rows(),
-        );
+        )?;
         for kind in crate::decode::coverage::SURFACE_KINDS {
             let (rows, transferred) = surface_coverage.family(kind);
             let keys = crate::coverage::surface_family_keys(kind);
-            coverage.record(keys.visible, rows);
-            coverage.record(keys.transferred, transferred);
-            coverage.record(keys.untransferred, rows.saturating_sub(transferred));
-            coverage.record(keys.retained_unknown, surface_coverage.unknown_family(kind));
+            coverage.record_admitted(ctx,keys.visible, rows)?;
+            coverage.record_admitted(ctx,keys.transferred, transferred)?;
+            coverage.record_admitted(ctx,keys.untransferred, rows.saturating_sub(transferred))?;
+            coverage.record_admitted(ctx,keys.retained_unknown, surface_coverage.unknown_family(kind))?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::UNIQUE_VISIBLE_CURVE_ROW_COUNT,
             curve_coverage.unique_rows(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_VISIBLE_CURVE_ROW_COUNT,
             curve_coverage.transferred_rows(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT,
             curve_coverage.retained_unknown_rows(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT,
             curve_coverage
                 .unique_rows()
                 .saturating_sub(curve_coverage.transferred_rows()),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::AMBIGUOUS_VISIBLE_CURVE_ROW_COUNT,
             curve_coverage.ambiguous_rows(),
-        );
+        )?;
         for (type_byte, (rows, transferred)) in curve_coverage.by_type() {
-            coverage.record_hex_byte(
+            coverage.record_hex_byte_admitted(ctx,
                 crate::coverage::VISIBLE_CURVE_TYPE_ROW_COUNT,
                 *type_byte,
                 *rows,
-            );
-            coverage.record_hex_byte(
+            )?;
+            coverage.record_hex_byte_admitted(ctx,
                 crate::coverage::TRANSFERRED_VISIBLE_CURVE_TYPE_ROW_COUNT,
                 *type_byte,
                 *transferred,
-            );
-            coverage.record_hex_byte(
+            )?;
+            coverage.record_hex_byte_admitted(ctx,
                 crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_TYPE_ROW_COUNT,
                 *type_byte,
                 curve_coverage
@@ -460,361 +460,361 @@ pub(super) fn transfer_and_record_scanned_geometry(
                     .get(type_byte)
                     .copied()
                     .unwrap_or_default(),
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_CROSS_SECTION_PLANE_COUNT,
             cross_section_plane_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT,
             first_instance_prototype_surface_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_SPLINE_REPLAY_COUNT,
             positional_spline_replay_count,
-        );
+        )?;
         if legacy_ascii_surface_carrier_count != 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::TRANSFERRED_LEGACY_ASCII_SURFACE_CARRIER_COUNT,
                 legacy_ascii_surface_carrier_count,
-            );
+            )?;
         }
         if legacy_torus_sphere_carrier_count != 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::DECODED_LEGACY_TORUS_OR_SPHERE_CARRIER_COUNT,
                 legacy_torus_sphere_carrier_count,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT,
             paired_envelope_sphere_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_TORUS_COUNT,
             positional_torus_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_LINE_EXTRUSION_PLANE_COUNT,
             positional_line_extrusion_plane_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_TABULATED_CYLINDER_SPLINE_EXTRUSION_COUNT,
             tabulated_cylinder_spline_extrusion_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_SAVED_SPLINE_CURVE_COUNT,
             saved_spline_curve_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_TOPOLOGICAL_POINT_COUNT,
             topological_point_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_NATIVE_TOPOLOGICAL_EDGE_COUNT,
             native_topological_edge_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_ANALYTIC_PCURVE_CARRIER_COUNT,
             analytic_pcurve_carrier_count,
-        );
+        )?;
         if support_apex_cone_branch_count != 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::RECONCILED_SUPPORT_APEX_CONE_PARAMETER_BRANCH_COUNT,
                 support_apex_cone_branch_count,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_EXTRUSION_PLANE_BOUNDARY_CURVE_COUNT,
             extrusion_plane_boundary_curve_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_EXTRUSION_PLANE_SECTION_GENERATOR_CURVE_COUNT,
             extrusion_plane_section_generator_curve_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_SHARED_EXTRUSION_GENERATOR_CURVE_COUNT,
             shared_extrusion_generator_curve_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_TOPOLOGY_BOUND_PLANE_SURFACE_COUNT,
             topology_bound_plane_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FEATURE_REVOLUTION_SURFACE_COUNT,
             feature_revolution_surface_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FEATURE_REVOLUTION_VERTEX_ORBIT_CURVE_COUNT,
             feature_revolution_vertex_orbit_curve_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FEATURE_EXTRUSION_SURFACE_COUNT,
             feature_extrusion_surface_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FEATURE_EXTRUSION_VERTEX_ORBIT_CURVE_COUNT,
             feature_extrusion_vertex_orbit_curve_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_CIRCULAR_SWEEP_CYLINDER_COUNT,
             circular_sweep_cylinder_count,
-        );
+        )?;
         if active_datum_cylinder_count != 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::TRANSFERRED_ACTIVE_DATUM_CYLINDER_COUNT,
                 active_datum_cylinder_count,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_HOLE_CYLINDER_COUNT,
             hole_cylinder_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_CYLINDER_COUNT,
             positional_cylinders.transferred,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_COMPLETE_ENVELOPE_COUNT,
             positional_cylinders.round_edge_complete_envelopes,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_MISSING_SUPPORT_PLANE_COUNT,
             positional_cylinders.round_edge_missing_support_planes,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_UNSOLVED_CARRIER_COUNT,
             positional_cylinders.round_edge_unsolved_carriers,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_SOLVED_CARRIER_COUNT,
             positional_cylinders.round_edge_solved_carriers,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_ROUND_EDGE_CARRIER_COUNT,
             positional_cylinders.round_edge_transferred_carriers,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_NO_PERPENDICULAR_SUPPORT_PAIR_COUNT,
             positional_cylinders.round_edge_no_perpendicular_support_pair,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_ENDPOINT_INCIDENCE_MISMATCH_COUNT,
             positional_cylinders.round_edge_endpoint_incidence_mismatch,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_RADIUS_PROJECTION_MISMATCH_COUNT,
             positional_cylinders.round_edge_radius_projection_mismatch,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_NONUNIQUE_RADIUS_COUNT,
             positional_cylinders.round_edge_nonunique_radius,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_CARRIER_VALIDATION_FAILURE_COUNT,
             positional_cylinders.round_edge_carrier_validation_failure,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ROUND_EDGE_REPLAY_CONFLICT_COUNT,
             positional_cylinders.round_edge_replay_conflict,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::AXIAL_INTERVAL_CORNER_ENVELOPE_COUNT,
             positional_cylinders.axial_interval_corner_envelopes,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::AXIAL_INTERVAL_CORNER_SOLVED_CARRIER_COUNT,
             positional_cylinders.axial_interval_corner_solved_carriers,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::DECODED_TYPE24_ROUND_EDGE_ENVELOPE_COUNT,
             decoded_type24_round_edge_envelope_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_POSITIONAL_CONE_COUNT,
             positional_cone_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_SPLIT_OUTLINE_CYLINDER_COUNT,
             split_outline_cylinder_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_CONSTRAINED_SLOT_FILLET_CYLINDER_COUNT,
             constrained_slot_fillet_cylinder_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_ROWLESS_ROUND_CYLINDER_COUNT,
             rowless_round_cylinder_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FEATURE_REVOLUTION_BREP_COUNT,
             feature_revolution_brep_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FEATURE_CIRCULAR_EXTRUSION_BREP_COUNT,
             feature_circular_extrusion_brep_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FEATURE_EXTRUSION_BREP_COUNT,
             feature_extrusion_brep_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_PART_PRODUCT_COUNT,
             usize::from(transferred_part_product),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT,
             sketch_segment_coverage.decoded_rows(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT,
             sketch_segment_coverage.resolved_geometry(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT,
             sketch_segment_coverage
                 .decoded_rows()
                 .saturating_sub(sketch_segment_coverage.resolved_geometry()),
-        );
+        )?;
         for (family, (decoded, resolved)) in sketch_segment_coverage.families() {
             let keys = crate::coverage::sketch_segment_keys(family);
-            coverage.record(keys.decoded, decoded);
-            coverage.record(keys.resolved, resolved);
-            coverage.record(keys.unresolved, decoded.saturating_sub(resolved));
+            coverage.record_admitted(ctx,keys.decoded, decoded)?;
+            coverage.record_admitted(ctx,keys.resolved, resolved)?;
+            coverage.record_admitted(ctx,keys.unresolved, decoded.saturating_sub(resolved))?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT,
             sketch_segment_coverage.missing_rows(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::DECODED_FEATURE_SKAMP_COUNT,
             decoded_feature_skamp_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT,
             missing_feature_skamp_row_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.transferred,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_NATIVE_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.native,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_TYPED_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.typed(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ACTIVE_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.active,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ACTIVE_NATIVE_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.active_native,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ACTIVE_TYPED_FEATURE_SKAMP_CONSTRAINT_COUNT,
             skamp_constraint_coverage.active_typed(),
-        );
+        )?;
         for (kind, count) in &skamp_constraint_coverage.native_by_kind {
-            coverage.record_indexed(
+            coverage.record_indexed_admitted(ctx,
                 crate::coverage::TRANSFERRED_NATIVE_FEATURE_SKAMP_TYPE_CONSTRAINT_COUNT,
                 *kind,
                 *count,
-            );
+            )?;
         }
         for (kind, count) in &skamp_constraint_coverage.active_native_by_kind {
-            coverage.record_indexed(
+            coverage.record_indexed_admitted(ctx,
                 crate::coverage::ACTIVE_NATIVE_FEATURE_SKAMP_TYPE_CONSTRAINT_COUNT,
                 *kind,
                 *count,
-            );
+            )?;
         }
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::DECODED_FEATURE_RELATION_COUNT,
             decoded_feature_relation_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT,
             missing_feature_relation_row_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT,
             malformed_feature_relation_table_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT,
             decoded_feature_relation_triple_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT,
             missing_feature_relation_triple_row_count,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.transferred,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_NATIVE_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.native,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::TRANSFERRED_TYPED_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.typed(),
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ACTIVE_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.active,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.active_native,
-        );
-        coverage.record(
+        )?;
+        coverage.record_admitted(ctx,
             crate::coverage::ACTIVE_TYPED_FEATURE_RELATION_CONSTRAINT_COUNT,
             relation_constraint_coverage.active_typed(),
-        );
+        )?;
         for (kind, count) in &relation_constraint_coverage.native_by_kind {
-            coverage.record_indexed(
+            coverage.record_indexed_admitted(ctx,
                 crate::coverage::TRANSFERRED_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
                 *kind,
                 *count,
-            );
+            )?;
         }
         for (kind, count) in &relation_constraint_coverage.active_native_by_kind {
-            coverage.record_indexed(
+            coverage.record_indexed_admitted(ctx,
                 crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
                 *kind,
                 *count,
-            );
+            )?;
         }
         if equation_constraint_coverage.transferred != 0 {
-            coverage.record(
+            coverage.record_admitted(ctx,
                 crate::coverage::TRANSFERRED_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.transferred,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::TRANSFERRED_NATIVE_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.native,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::TRANSFERRED_TYPED_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.typed(),
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::ACTIVE_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.active,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::ACTIVE_NATIVE_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.active_native,
-            );
-            coverage.record(
+            )?;
+            coverage.record_admitted(ctx,
                 crate::coverage::ACTIVE_TYPED_FEATURE_EQUATION_CONSTRAINT_COUNT,
                 equation_constraint_coverage.active_typed(),
-            );
+            )?;
         }
     }
     Ok(brep_diagnostics)
