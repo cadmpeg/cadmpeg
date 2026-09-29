@@ -318,7 +318,7 @@ fn endpoint_locus_candidates_inner(
     }
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
-        let cell = endpoint_cell(*point);
+        let Some(cell) = endpoint_cell(*point) else { return Ok(None); };
         if let Some(indices) = cells.get_mut(&cell) {
             ctx.push_vec(indices, index, "catia_zero_locus_cell_members")?;
         } else {
@@ -330,7 +330,7 @@ fn endpoint_locus_candidates_inner(
     let mut neighbors =
         ctx.alloc_filled(endpoints.len(), Vec::new(), "catia_zero_locus_neighbors")?;
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
-        let cell = endpoint_cell(*point);
+        let Some(cell) = endpoint_cell(*point) else { return Ok(None); };
         for dx in -1..=1 {
             for dy in -1..=1 {
                 for dz in -1..=1 {
@@ -436,7 +436,7 @@ fn endpoint_match_graph(
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
     for (index, occurrence) in occurrences.iter().enumerate() {
         for endpoint in occurrence.model_endpoints {
-            let cell = endpoint_cell(endpoint);
+            let Some(cell) = endpoint_cell(endpoint) else { return Ok(None); };
             if let Some(indices) = cells.get_mut(&cell) {
                 ctx.push_vec(indices, index, "catia_zero_match_cell_members")?;
             } else {
@@ -450,7 +450,7 @@ fn endpoint_match_graph(
     for (index, occurrence) in occurrences.iter().enumerate() {
         let mut possible = HashSet::new();
         for endpoint in occurrence.model_endpoints {
-            let cell = endpoint_cell(endpoint);
+            let Some(cell) = endpoint_cell(endpoint) else { return Ok(None); };
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     for dz in -1..=1 {
@@ -519,12 +519,12 @@ fn selected_radial_matches(
     Ok(radial)
 }
 
-fn endpoint_cell(point: FinitePoint3) -> [i64; 3] {
-    [
-        (point.x / MODEL_POINT_TOLERANCE).floor() as i64,
-        (point.y / MODEL_POINT_TOLERANCE).floor() as i64,
-        (point.z / MODEL_POINT_TOLERANCE).floor() as i64,
-    ]
+fn endpoint_cell(point: FinitePoint3) -> Option<[i64; 3]> {
+    Some([
+        cadmpeg_core::convert::truncate_f64_to_i64((point.x / MODEL_POINT_TOLERANCE).floor())?,
+        cadmpeg_core::convert::truncate_f64_to_i64((point.y / MODEL_POINT_TOLERANCE).floor())?,
+        cadmpeg_core::convert::truncate_f64_to_i64((point.z / MODEL_POINT_TOLERANCE).floor())?,
+    ])
 }
 
 fn unordered_endpoint_pairs_match(left: [FinitePoint3; 2], right: [FinitePoint3; 2]) -> bool {
@@ -564,6 +564,22 @@ mod tests {
             model_endpoints: model_endpoints.map(finite),
             model_midpoint: finite(model_midpoint),
         }
+    }
+
+    #[test]
+    fn endpoint_match_graph_refuses_positive_spatial_overflow() {
+        let endpoints = [Point3::new(f64::MAX, 0.0, 0.0); 2];
+        let occurrences = [occurrence(1, 1, endpoints, endpoints[0])];
+        let result = crate::test_support::with_service_context(|ctx| super::endpoint_match_graph(ctx, &occurrences, None)).expect("service budget");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn endpoint_match_graph_refuses_negative_spatial_overflow() {
+        let endpoints = [Point3::new(-f64::MAX, 0.0, 0.0); 2];
+        let occurrences = [occurrence(1, 1, endpoints, endpoints[0])];
+        let result = crate::test_support::with_service_context(|ctx| super::endpoint_match_graph(ctx, &occurrences, None)).expect("service budget");
+        assert!(result.is_none());
     }
 
     #[test]

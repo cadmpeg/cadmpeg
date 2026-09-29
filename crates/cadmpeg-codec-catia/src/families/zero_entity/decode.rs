@@ -146,7 +146,7 @@ fn append_oriented_wire_curve(
             annotations,
             &construction_id,
             "zero_entity_a9_03",
-            source_pos as u64,
+            cadmpeg_core::decode::u64_from_index(source_pos),
             "oriented_support_model_curve_construction",
             Exactness::Derived,
         )?;
@@ -209,7 +209,7 @@ fn append_oriented_wire_curve(
         annotations,
         &curve_id,
         "zero_entity_a9_03",
-        source_pos as u64,
+        cadmpeg_core::decode::u64_from_index(source_pos),
         "oriented_support_model_curve",
         Exactness::Derived,
     )?;
@@ -373,7 +373,7 @@ fn transfer_closed_wire_loops(
                     annotations,
                     &body_id,
                     "zero_entity_a9_03",
-                    loop_record.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(loop_record.pos),
                     "standalone_wire_owner",
                     Exactness::Inferred,
                 )?;
@@ -382,7 +382,7 @@ fn transfer_closed_wire_loops(
                     annotations,
                     &region_id,
                     "zero_entity_a9_03",
-                    loop_record.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(loop_record.pos),
                     "standalone_wire_region",
                     Exactness::Inferred,
                 )?;
@@ -391,7 +391,7 @@ fn transfer_closed_wire_loops(
                     annotations,
                     &shell_id,
                     "zero_entity_a9_03",
-                    loop_record.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(loop_record.pos),
                     "standalone_wire_shell",
                     Exactness::Inferred,
                 )?;
@@ -412,7 +412,7 @@ fn transfer_closed_wire_loops(
                     annotations,
                     &point_id,
                     "zero_entity_a9_03",
-                    loop_record.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(loop_record.pos),
                     "standalone_wire_point",
                     Exactness::Derived,
                 )?;
@@ -421,7 +421,7 @@ fn transfer_closed_wire_loops(
                     annotations,
                     &vertex_id,
                     "zero_entity_a9_03",
-                    loop_record.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(loop_record.pos),
                     "standalone_wire_vertex",
                     Exactness::Derived,
                 )?;
@@ -812,7 +812,7 @@ fn transfer_closed_wire_loops(
                     annotations,
                     &edge_id,
                     "zero_entity_a9_03",
-                    support.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(support.pos),
                     "standalone_wire_edge",
                     Exactness::Derived,
                 )?;
@@ -962,7 +962,7 @@ fn transfer_closed_wire_loops(
             annotations,
             &body_id,
             "zero_entity_a9_03",
-            root.body_pos as u64,
+            cadmpeg_core::decode::u64_from_index(root.body_pos),
             "owned_wire_body",
             Exactness::Derived,
         )?;
@@ -971,7 +971,7 @@ fn transfer_closed_wire_loops(
             annotations,
             &region_id,
             "zero_entity_a9_03",
-            root.shell_pos as u64,
+            cadmpeg_core::decode::u64_from_index(root.shell_pos),
             "owned_wire_region",
             Exactness::Derived,
         )?;
@@ -980,7 +980,7 @@ fn transfer_closed_wire_loops(
             annotations,
             &shell_id,
             "zero_entity_a9_03",
-            root.shell_pos as u64,
+            cadmpeg_core::decode::u64_from_index(root.shell_pos),
             "owned_wire_shell",
             Exactness::Derived,
         )?;
@@ -1194,7 +1194,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             &mut annotations,
             &id,
             "zero_entity_a9_03",
-            surface.pos as u64,
+            cadmpeg_core::decode::u64_from_index(surface.pos),
             "analytic_surface",
             Exactness::ByteExact));
         if let Err(error) = admission.reserve_entity(&mut ir.model.surfaces, "catia_zero_surfaces") {
@@ -1229,7 +1229,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                     &mut annotations,
                     &curve_id,
                     "zero_entity_a9_03",
-                    support.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(support.pos),
                     "support_model_curve",
                     Exactness::Derived));
                 admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &curve_id, "geometry", "catia_annotation_field"));
@@ -1328,7 +1328,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                 &mut annotations,
                 &curve_id,
                 "zero_entity_a9_03",
-                support.pos as u64,
+                cadmpeg_core::decode::u64_from_index(support.pos),
                 role,
                 Exactness::Derived));
             admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &curve_id, "geometry", "catia_annotation_field"));
@@ -1362,7 +1362,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         let mut candidate_ir = std::mem::replace(&mut ir, CadIr::empty());
         let mut candidate_annotations = admitted!(annotations.copy_charged(ctx, "catia_zero_topology_annotations"));
         let topology_budget = ctx.work_budget(
-            crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS as u64,
+            cadmpeg_core::decode::u64_from_index(crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS),
         );
         let counts = crate::families::zero_entity::topology_transfer::transfer_closed_face_topology(
             &mut admission,
