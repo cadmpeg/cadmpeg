@@ -4727,7 +4727,7 @@ pub(crate) fn bind_form_cages(
                 scope.record_index,
                 scope.reference_members().values().copied(),
             ) {
-                let serializers = form_cage_serializers(bytes, &records);
+                let serializers = form_cage_serializers(ctx, bytes, &records)?;
                 let mut resolved = Vec::new();
                 let mut valid = true;
                 for object in cage_objects {
@@ -4791,7 +4791,7 @@ pub(crate) fn bind_form_cages(
                 == 1
             && form_class_328_envelope(bytes, &records, scope)
         {
-            let serializers = form_cage_serializers(bytes, &records);
+            let serializers = form_cage_serializers(ctx, bytes, &records)?;
             let mut resolved = Vec::new();
             let mut valid = true;
             for surface in &serializers.ordered {
@@ -4877,7 +4877,7 @@ pub(crate) fn bind_form_cages(
         let Some(surfaces) = form_cage_surfaces(
             ctx, bytes, &records, cage_objects, scope.record_index,
         )? else { continue; };
-        let serializers = form_cage_serializers(bytes, &records);
+        let serializers = form_cage_serializers(ctx, bytes, &records)?;
         let mut resolved = Vec::new();
         for surface in &surfaces {
                 let Some(entry_name) = serializers.entry_name(*surface) else { continue 'scope; };
@@ -5582,11 +5582,18 @@ impl FormCageSerializers {
     }
 }
 
-fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCageSerializers {
-    let mut offsets = records
-        .records()
-        .flat_map(|(_, offsets)| offsets.iter().copied())
-        .collect::<Vec<_>>();
+fn form_cage_serializers(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+) -> Result<FormCageSerializers, CodecError> {
+    let mut offsets = Vec::new();
+    for (_, record_offsets) in records.records() {
+        for offset in record_offsets {
+            push_feature_item(Some(ctx), &mut offsets, *offset,
+                "f3d form serializer offset")?;
+        }
+    }
     offsets.sort_unstable();
     let mut ordered = Vec::new();
     let mut entries = HashMap::new();
@@ -5609,8 +5616,17 @@ fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCa
         {
             continue;
         }
+        let name_at = offset + form_serializer::ENTRY_NAME_LENGTH;
+        let Some(count) = View::u32_le_at(bytes, name_at).map(u64::from)
+            .filter(|count| (1..=256).contains(count)) else { continue; };
+        let reservation_size = count.checked_mul(5).ok_or_else(|| {
+            ctx.refuse_codec_limit("f3d form serializer name materialization", 0, 1)
+        })?;
+        let _reservation = ctx.reserve_scoped(reservation_size,
+            "f3d form serializer name materialization")?;
+        ctx.charge_collection_items(count, "f3d form serializer name units")?;
         let Some((entry_name, after_name)) =
-            lp_utf16_bounded(bytes, offset + form_serializer::ENTRY_NAME_LENGTH, 1..=256)
+            lp_utf16_bounded(bytes, name_at, 1..=256)
         else {
             continue;
         };
@@ -5641,17 +5657,19 @@ fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCa
         if !is_class_335 && after_name + 11 != offset + form_serializer::LEN {
             continue;
         }
-        match entries.entry(surface) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                entry.insert(FormCageEntry::Duplicate);
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(FormCageEntry::Unique(entry_name));
-                ordered.push(surface);
-            }
+        if let Some(entry) = entries.get_mut(&surface) {
+            *entry = FormCageEntry::Duplicate;
+        } else {
+            ctx.charge_retained(u64::try_from(entry_name.len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d form serializer entry name", 0, 1)
+            })?, "f3d form serializer entry name")?;
+            insert_feature_map(Some(ctx), &mut entries, surface,
+                FormCageEntry::Unique(entry_name), "f3d form serializer entry index")?;
+            push_feature_item(Some(ctx), &mut ordered, surface,
+                "f3d form serializer order")?;
         }
     }
-    FormCageSerializers { ordered, entries }
+    Ok(FormCageSerializers { ordered, entries })
 }
 
 fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {
