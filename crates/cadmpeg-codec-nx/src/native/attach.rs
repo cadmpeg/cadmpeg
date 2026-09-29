@@ -3679,7 +3679,7 @@ fn attach_feature_operations(
                 )
             })
             .flatten();
-        let definition = if let Some(definition) = boolean_definition
+        let primary_definition = boolean_definition
             .or(trim_body_projection)
             .or(delete_projection)
             .or(extract_body_projection)
@@ -3688,12 +3688,13 @@ fn attach_feature_operations(
             .or_else(|| blend_projection.map(|(definition, _)| definition))
             .or_else(|| thicken_projection.map(|(definition, _)| definition))
             .or_else(|| offset_projection.map(|(definition, _)| definition))
-            .or(sphere_definition)
-            .or_else(|| {
-                (label.value == "BREP")
-                    .then(|| brep_feature_definition(&outputs))
-                    .flatten()
-            }) {
+            .or(sphere_definition);
+        let brep_projection = if primary_definition.is_none() && label.value == "BREP" {
+            brep_feature_definition(ctx, &outputs)?
+        } else {
+            None
+        };
+        let definition = if let Some(definition) = primary_definition.or(brep_projection) {
             definition
         } else if let Some(sketch) = sketch {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -7258,11 +7259,19 @@ fn non_boolean_feature_definition_with_parameters(
 /// are resolved. A BREP record carries boundary representation rather than a
 /// replayable parametric construction; without a closed result-body relation,
 /// retaining the native definition preserves the unresolved history edge.
-fn brep_feature_definition(outputs: &[BodyId]) -> Option<FeatureDefinition> {
-    (!outputs.is_empty() && outputs.iter().collect::<BTreeSet<_>>().len() == outputs.len())
-        .then_some(FeatureDefinition::Operation(
-            FeatureOperation::StoredGeometry {},
-        ))
+fn brep_feature_definition(
+    ctx: &DecodeContext<'_>,
+    outputs: &[BodyId],
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    for (index, body) in outputs.iter().enumerate() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(index), "NX BREP output uniqueness")?;
+        if outputs[..index].contains(body) {
+            return Ok(None);
+        }
+    }
+    Ok((!outputs.is_empty()).then_some(FeatureDefinition::Operation(
+        FeatureOperation::StoredGeometry {},
+    )))
 }
 
 /// Preserve a SHELL operation as a typed neutral family while its construction roles remain
