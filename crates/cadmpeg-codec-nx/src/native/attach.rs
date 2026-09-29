@@ -2740,9 +2740,10 @@ fn attach_feature_operations(
         };
         if !deletes_body && outputs.is_empty() && !operation_body_writes.is_empty() {
             outputs = complete_operation_body_image_outputs(
+                ctx,
                 operation_body_writes,
                 &body_image_outputs_by_write,
-            );
+            )?;
         }
         if outputs.is_empty() {
             outputs = hole_outputs
@@ -9671,20 +9672,28 @@ fn operation_body_group_partition_outputs_by_write<'a>(
 }
 
 fn complete_operation_body_image_outputs(
+    ctx: &DecodeContext<'_>,
     writes: &[&crate::native::features::FeatureOperationBodyWrite],
     outputs_by_write: &BTreeMap<&str, BodyId>,
-) -> Vec<BodyId> {
-    let mut outputs = Vec::with_capacity(writes.len());
+) -> Result<Vec<BodyId>, CodecError> {
+    let mut outputs = Vec::new();
     for write in writes {
+        ctx.charge_work(1, "NX complete body image output lookup")?;
         let Some(body) = outputs_by_write.get(write.id.as_str()) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(outputs.len()), "NX complete body image output uniqueness")?;
         if outputs.contains(body) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
+        let bytes = std::mem::size_of::<BodyId>().checked_add(body.as_str().len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX complete body image output", 0, cadmpeg_core::decode::u64_from_index(body.as_str().len())))?;
+        ctx.charge_collection_items(1, "NX complete body image output")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX complete body image output")?;
+        reserve_attach_vec(ctx, &mut outputs, 1, "NX complete body image output")?;
         outputs.push(body.clone());
     }
-    outputs
+    Ok(outputs)
 }
 
 fn body_writes_match_boolean_target(

@@ -101,6 +101,9 @@ fn body_image_outputs_require_one_body_per_binding() {
 
 #[test]
 fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let write_a = native_body_write("write-a");
     let write_b = native_body_write("write-b");
     let writes = [&write_a, &write_b];
@@ -115,7 +118,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
         ),
     ]);
     assert_eq!(
-        complete_operation_body_image_outputs(&writes, &complete),
+        complete_operation_body_image_outputs(&ctx, &writes, &complete).unwrap(),
         [
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
             BodyId::mint("test:model:entity#body-b").expect("identity grammar")
@@ -126,7 +129,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
         "write-a",
         BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
     )]);
-    assert!(complete_operation_body_image_outputs(&writes, &partial).is_empty());
+    assert!(complete_operation_body_image_outputs(&ctx, &writes, &partial).unwrap().is_empty());
 
     let duplicate = BTreeMap::from([
         (
@@ -138,7 +141,43 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
             BodyId::mint("test:model:entity#body").expect("identity grammar"),
         ),
     ]);
-    assert!(complete_operation_body_image_outputs(&writes, &duplicate).is_empty());
+    assert!(complete_operation_body_image_outputs(&ctx, &writes, &duplicate).unwrap().is_empty());
+}
+
+fn complete_body_image_output_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let write = native_body_write("write-a");
+    let body = BodyId::mint("test:model:entity#body-a").unwrap();
+    let outputs = BTreeMap::from([("write-a", body.clone())]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let selected = complete_operation_body_image_outputs(&ctx, &[&write], &outputs)?;
+    assert_eq!(selected, [body]);
+    Ok(())
+}
+
+#[test]
+fn complete_body_image_output_refuses_collection_limit() {
+    let error = complete_body_image_output_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn complete_body_image_output_refuses_retained_limit() {
+    let error = complete_body_image_output_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn complete_body_image_output_refuses_work_limit() {
+    let error = complete_body_image_output_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn native_boolean(
