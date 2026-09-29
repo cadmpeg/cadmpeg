@@ -6,10 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 
-use crate::chunks::{
-    checked_count_bytes, chunk_at, ArchiveVersion,
-    BoundedReader, FramingError,
-};
+use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
@@ -207,7 +204,9 @@ fn uuid_list(
 ) -> Result<(Vec<Uuid>, usize), FramingError> {
     let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let count = count(&mut reader, 16)?;
-    let mut values = ctx.collection_vec(count, "Rhino history UUID list").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(count, "Rhino history UUID list")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         values.push(uuid(&mut reader)?);
     }
@@ -222,7 +221,9 @@ fn array<'a, T>(
     mut read: impl FnMut(&mut BoundedReader<'a>) -> Result<T, FramingError>,
 ) -> Result<Vec<T>, FramingError> {
     let count = count(reader, element_size)?;
-    let mut values = ctx.collection_vec(count, "Rhino history value array").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(count, "Rhino history value array")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         values.push(read(reader)?);
     }
@@ -308,7 +309,9 @@ fn object_reference(
     let point = point(&mut reader)?;
     let mut evaluation = evaluation(&mut reader, 0)?;
     let path_count = count(&mut reader, 1)?;
-    let mut instance_path = ctx.collection_vec(path_count, "Rhino history instance path").map_err(crate::chunks::FramingError::from)?;
+    let mut instance_path = ctx
+        .collection_vec(path_count, "Rhino history instance path")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..path_count {
         let (value, value_next) =
             instance_reference(bytes, reader.position(), reader.end(), archive)?;
@@ -344,7 +347,9 @@ fn object_references(
     archive: ArchiveVersion,
 ) -> Result<Vec<ObjectReference>, FramingError> {
     let count = count(reader, 1)?;
-    let mut values = ctx.collection_vec(count, "Rhino history object references").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(count, "Rhino history object references")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let (value, next) = object_reference(
             ctx,
@@ -371,7 +376,9 @@ fn geometries(
         archive,
     )?;
     let count = count(&mut nested, 1)?;
-    let mut values = ctx.collection_vec(count, "Rhino history embedded geometries").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(count, "Rhino history embedded geometries")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
@@ -443,7 +450,9 @@ fn poly_edge(
 ) -> Result<(HistoryPolyEdge, usize), FramingError> {
     let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let segment_count = count(&mut reader, 1)?;
-    let mut segments = ctx.collection_vec(segment_count, "Rhino history polyedge segments").map_err(crate::chunks::FramingError::from)?;
+    let mut segments = ctx
+        .collection_vec(segment_count, "Rhino history polyedge segments")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..segment_count {
         let (segment, segment_next) =
             curve_proxy(ctx, bytes, reader.position(), reader.end(), archive)?;
@@ -477,7 +486,9 @@ fn poly_edges(
         archive,
     )?;
     let count = count(&mut nested, 1)?;
-    let mut values = ctx.collection_vec(count, "Rhino history polyedges").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(count, "Rhino history polyedges")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let (value, value_next) = poly_edge(
             ctx,
@@ -530,7 +541,9 @@ fn subd_edge_chain(
         )?;
         Vec::new()
     } else {
-        let mut edges = ctx.collection_vec(count, "Rhino history SubD edges").map_err(crate::chunks::FramingError::from)?;
+        let mut edges = ctx
+            .collection_vec(count, "Rhino history SubD edges")
+            .map_err(crate::chunks::FramingError::from)?;
         edges.extend(
             edge_ids
                 .into_iter()
@@ -565,7 +578,9 @@ fn subd_edge_chains(
         ));
     }
     let count = count(&mut nested, 1)?;
-    let mut values = ctx.collection_vec(count, "Rhino history SubD edge chains").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(count, "Rhino history SubD edge chains")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let (value, value_next) = subd_edge_chain(
             ctx,
@@ -669,7 +684,9 @@ fn parse_record(
     reader.skip(next - reader.position())?;
     let (mut values_reader, next, _) = anonymous(bytes, reader.position(), reader.end(), archive)?;
     let value_count = count(&mut values_reader, 1)?;
-    let mut values = ctx.collection_vec(value_count, "Rhino history record values").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(value_count, "Rhino history record values")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..value_count {
         let (value, value_next) = parse_value_with_warnings(
             ctx,
@@ -727,7 +744,8 @@ pub(crate) fn parse_records(
     for record in records {
         match parse_record(ctx, bytes, record, archive, warnings) {
             Ok(value) => {
-                ctx.reserve_vec(&mut result.records, 1, "Rhino history records").map_err(crate::chunks::FramingError::from)
+                ctx.reserve_vec(&mut result.records, 1, "Rhino history records")
+                    .map_err(crate::chunks::FramingError::from)
                     .map_err(history_resource_error)?;
                 result.records.push(value);
             }
@@ -737,7 +755,12 @@ pub(crate) fn parse_records(
                     ctx,
                     format_args!("history record at {} degraded: {error}", record.range.start),
                 )?;
-                ctx.reserve_vec(&mut result.opaque_records, 1, "Rhino opaque history records").map_err(crate::chunks::FramingError::from)
+                ctx.reserve_vec(
+                    &mut result.opaque_records,
+                    1,
+                    "Rhino opaque history records",
+                )
+                .map_err(crate::chunks::FramingError::from)
                 .map_err(history_resource_error)?;
                 result.opaque_records.push(OpaqueRecord {
                     table_typecode,
@@ -2193,9 +2216,13 @@ pub(crate) fn project(
         redundant_repairs: 0,
         refusal: None,
     };
-    let mut ids = ctx.collection_vec(records.len(), "Rhino history feature ids").map_err(crate::chunks::FramingError::from)
+    let mut ids = ctx
+        .collection_vec(records.len(), "Rhino history feature ids")
+        .map_err(crate::chunks::FramingError::from)
         .map_err(history_resource_error)?;
-    let mut native_ids = ctx.collection_vec(records.len(), "Rhino history native ids").map_err(crate::chunks::FramingError::from)
+    let mut native_ids = ctx
+        .collection_vec(records.len(), "Rhino history native ids")
+        .map_err(crate::chunks::FramingError::from)
         .map_err(history_resource_error)?;
     let mut seen_record_ids = HashSet::new();
     ctx.reserve_set(
@@ -2251,7 +2278,15 @@ pub(crate) fn project(
             } else {
                 ctx.reserve_map(&mut producers, 1, "Rhino history producers")
                     .map_err(ProjectionError::Codec)?;
-                producers.insert(*descendant, Some((index, ids[index].try_clone_for_decode(ctx, "Rhino history producer identity").map_err(ProjectionError::Codec)?)));
+                producers.insert(
+                    *descendant,
+                    Some((
+                        index,
+                        ids[index]
+                            .try_clone_for_decode(ctx, "Rhino history producer identity")
+                            .map_err(ProjectionError::Codec)?,
+                    )),
+                );
             }
         }
     }
@@ -2273,9 +2308,10 @@ pub(crate) fn project(
             "Rhino history seen dependencies",
         )
         .map_err(ProjectionError::Codec)?;
-        let mut dependencies =
-            ctx.collection_vec(record.antecedents.len(), "Rhino history dependencies").map_err(crate::chunks::FramingError::from)
-                .map_err(history_resource_error)?;
+        let mut dependencies = ctx
+            .collection_vec(record.antecedents.len(), "Rhino history dependencies")
+            .map_err(crate::chunks::FramingError::from)
+            .map_err(history_resource_error)?;
         for antecedent in &record.antecedents {
             let Some((producer_index, id)) = producers.get(antecedent).and_then(Option::as_ref)
             else {
@@ -2284,8 +2320,14 @@ pub(crate) fn project(
             if *producer_index >= index || dependency_seen.contains(id) {
                 continue;
             }
-            dependency_seen.insert(id.try_clone_for_decode(ctx, "Rhino history seen dependency identity").map_err(ProjectionError::Codec)?);
-            dependencies.push(id.try_clone_for_decode(ctx, "Rhino history dependency identity").map_err(ProjectionError::Codec)?);
+            dependency_seen.insert(
+                id.try_clone_for_decode(ctx, "Rhino history seen dependency identity")
+                    .map_err(ProjectionError::Codec)?,
+            );
+            dependencies.push(
+                id.try_clone_for_decode(ctx, "Rhino history dependency identity")
+                    .map_err(ProjectionError::Codec)?,
+            );
         }
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();

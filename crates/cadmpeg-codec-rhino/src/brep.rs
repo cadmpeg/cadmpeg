@@ -594,11 +594,21 @@ impl ValidatedRawBrep {
             }
         }
         let mut resolved = ResolvedBrep {
-            vertices: ctx.collection_vec(raw.vertices.len(), "Rhino resolved Brep vertices").map_err(crate::curves::GeometryError::from)?,
-            edges: ctx.collection_vec(raw.edges.len(), "Rhino resolved Brep edges").map_err(crate::curves::GeometryError::from)?,
-            trims: ctx.collection_vec(raw.trims.len(), "Rhino resolved Brep trims").map_err(crate::curves::GeometryError::from)?,
-            loops: ctx.collection_vec(raw.loops.len(), "Rhino resolved Brep loops").map_err(crate::curves::GeometryError::from)?,
-            faces: ctx.collection_vec(raw.faces.len(), "Rhino resolved Brep faces").map_err(crate::curves::GeometryError::from)?,
+            vertices: ctx
+                .collection_vec(raw.vertices.len(), "Rhino resolved Brep vertices")
+                .map_err(crate::curves::GeometryError::from)?,
+            edges: ctx
+                .collection_vec(raw.edges.len(), "Rhino resolved Brep edges")
+                .map_err(crate::curves::GeometryError::from)?,
+            trims: ctx
+                .collection_vec(raw.trims.len(), "Rhino resolved Brep trims")
+                .map_err(crate::curves::GeometryError::from)?,
+            loops: ctx
+                .collection_vec(raw.loops.len(), "Rhino resolved Brep loops")
+                .map_err(crate::curves::GeometryError::from)?,
+            faces: ctx
+                .collection_vec(raw.faces.len(), "Rhino resolved Brep faces")
+                .map_err(crate::curves::GeometryError::from)?,
             face_sides: Vec::new(),
         };
         for vertex in &raw.vertices {
@@ -1190,7 +1200,9 @@ fn parse_legacy_major2(
     let bounds = bbox(&mut reader)?;
 
     let c2_start = reader.position();
-    let mut c2_meta = ctx.collection_vec(trim_count, "Rhino legacy Brep C2 metadata").map_err(crate::curves::GeometryError::from)?;
+    let mut c2_meta = ctx
+        .collection_vec(trim_count, "Rhino legacy Brep C2 metadata")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..trim_count {
         let curve_range =
             crate::curves::consume_legacy_polycurve_2d(ctx, bytes, &mut reader, archive)?;
@@ -1211,7 +1223,9 @@ fn parse_legacy_major2(
     let c2_range = c2_start..reader.position();
 
     let c3_start = reader.position();
-    let mut c3_meta = ctx.collection_vec(edge_count, "Rhino legacy Brep C3 metadata").map_err(crate::curves::GeometryError::from)?;
+    let mut c3_meta = ctx
+        .collection_vec(edge_count, "Rhino legacy Brep C3 metadata")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..edge_count {
         let curve_range = crate::curves::consume_legacy_polycurve(
             ctx,
@@ -1238,7 +1252,9 @@ fn parse_legacy_major2(
     let c3_range = c3_start..reader.position();
 
     let surfaces_start = reader.position();
-    let mut surface_slots = ctx.collection_vec(face_count, "Rhino legacy Brep surface slots").map_err(crate::curves::GeometryError::from)?;
+    let mut surface_slots = ctx
+        .collection_vec(face_count, "Rhino legacy Brep surface slots")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..face_count {
         let start = reader.position();
         let _surface = crate::surfaces::read_nurbs_surface_prefix(
@@ -1255,9 +1271,15 @@ fn parse_legacy_major2(
     }
     let surfaces_range = surfaces_start..reader.position();
 
-    let mut loops = ctx.collection_vec(loop_count, "Rhino legacy Brep loops").map_err(crate::curves::GeometryError::from)?;
-    let mut trims = ctx.collection_vec(trim_count, "Rhino legacy Brep trims").map_err(crate::curves::GeometryError::from)?;
-    let mut faces = ctx.collection_vec(face_count, "Rhino legacy Brep faces").map_err(crate::curves::GeometryError::from)?;
+    let mut loops = ctx
+        .collection_vec(loop_count, "Rhino legacy Brep loops")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut trims = ctx
+        .collection_vec(trim_count, "Rhino legacy Brep trims")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut faces = ctx
+        .collection_vec(face_count, "Rhino legacy Brep faces")
+        .map_err(crate::curves::GeometryError::from)?;
     let mut warnings = Diagnostics::new();
     for face_position in 0..face_count {
         let face_index = reader.i32()?;
@@ -1272,7 +1294,9 @@ fn parse_legacy_major2(
                 "legacy Brep face has no boundary loops",
             ));
         }
-        let mut face_loops = ctx.collection_vec(boundary_count, "Rhino legacy Brep face loops").map_err(crate::curves::GeometryError::from)?;
+        let mut face_loops = ctx
+            .collection_vec(boundary_count, "Rhino legacy Brep face loops")
+            .map_err(crate::curves::GeometryError::from)?;
         for _ in 0..boundary_count {
             let loop_source_start = reader.position();
             let loop_index = reader.i32()?;
@@ -1290,8 +1314,9 @@ fn parse_legacy_major2(
                 1 => RawLoopKind::Inner,
                 _ => RawLoopKind::Unknown,
             };
-            let mut loop_trim_indexes =
-                ctx.collection_vec(trim_in_loop, "Rhino legacy Brep loop trims").map_err(crate::curves::GeometryError::from)?;
+            let mut loop_trim_indexes = ctx
+                .collection_vec(trim_in_loop, "Rhino legacy Brep loop trims")
+                .map_err(crate::curves::GeometryError::from)?;
             for _ in 0..trim_in_loop {
                 let trim_source_start = reader.position();
                 let stored_trim_index = reader.i32()?;
@@ -1452,8 +1477,9 @@ fn parse_legacy_major2(
     let mut root_vertices =
         ctx.alloc_filled(endpoint_count, None, "Rhino legacy Brep root vertices")?;
     let mut vertices = Vec::new();
-    let mut endpoint_vertices =
-        ctx.collection_vec(endpoint_count, "Rhino legacy Brep endpoint vertices").map_err(crate::curves::GeometryError::from)?;
+    let mut endpoint_vertices = ctx
+        .collection_vec(endpoint_count, "Rhino legacy Brep endpoint vertices")
+        .map_err(crate::curves::GeometryError::from)?;
     for endpoint in 0..endpoint_count {
         let root = legacy_find(&mut endpoint_parent, endpoint);
         let index = match root_vertices[root] {
@@ -1481,7 +1507,9 @@ fn parse_legacy_major2(
         };
         endpoint_vertices.push(index);
     }
-    let mut edges = ctx.collection_vec(edge_count, "Rhino legacy Brep edges").map_err(crate::curves::GeometryError::from)?;
+    let mut edges = ctx
+        .collection_vec(edge_count, "Rhino legacy Brep edges")
+        .map_err(crate::curves::GeometryError::from)?;
     for (edge_index, curve) in c3_meta.iter().enumerate() {
         let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
             let trim = &trims[*trim_index];
@@ -1509,7 +1537,9 @@ fn parse_legacy_major2(
             .map(|trim| trims[*trim].legacy_tolerances[1])
             .filter(|value| value.is_finite() && *value >= 0.0)
             .fold(0.0, f64::max);
-        let mut stored_trim_indexes = ctx.collection_vec(trim_indexes.len(), "Rhino legacy Brep edge trim references").map_err(crate::curves::GeometryError::from)?;
+        let mut stored_trim_indexes = ctx
+            .collection_vec(trim_indexes.len(), "Rhino legacy Brep edge trim references")
+            .map_err(crate::curves::GeometryError::from)?;
         for trim in trim_indexes {
             stored_trim_indexes.push(
                 i32::try_from(*trim)
@@ -1534,8 +1564,9 @@ fn parse_legacy_major2(
             source_range: 0..0,
         });
     }
-    let mut normalized_vertices =
-        ctx.collection_vec(vertices.len(), "Rhino legacy Brep resolved vertices").map_err(crate::curves::GeometryError::from)?;
+    let mut normalized_vertices = ctx
+        .collection_vec(vertices.len(), "Rhino legacy Brep resolved vertices")
+        .map_err(crate::curves::GeometryError::from)?;
     for vertex in vertices {
         normalized_vertices.push(vertex.into_vertex().ok_or_else(|| {
             error(
@@ -1622,11 +1653,15 @@ fn parse_legacy_major2(
             format_args!("legacy ON_Brep skipped {skipped} trailing bytes"),
         )?;
     }
-    let mut c2_slots = ctx.collection_vec(c2_meta.len(), "Rhino legacy Brep C2 slots").map_err(crate::curves::GeometryError::from)?;
+    let mut c2_slots = ctx
+        .collection_vec(c2_meta.len(), "Rhino legacy Brep C2 slots")
+        .map_err(crate::curves::GeometryError::from)?;
     for curve in c2_meta {
         c2_slots.push(Some(curve.into_child()));
     }
-    let mut c3_slots = ctx.collection_vec(c3_meta.len(), "Rhino legacy Brep C3 slots").map_err(crate::curves::GeometryError::from)?;
+    let mut c3_slots = ctx
+        .collection_vec(c3_meta.len(), "Rhino legacy Brep C3 slots")
+        .map_err(crate::curves::GeometryError::from)?;
     for curve in c3_meta {
         c3_slots.push(Some(curve.into_child()));
     }
@@ -1842,7 +1877,9 @@ fn read_legacy_mesh_sides(
     warnings: &mut Diagnostics,
 ) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let start = reader.position();
-    let mut slots = ctx.collection_vec(face_count, "Rhino legacy Brep mesh slots").map_err(crate::curves::GeometryError::from)?;
+    let mut slots = ctx
+        .collection_vec(face_count, "Rhino legacy Brep mesh slots")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..face_count {
         let present = match reader.u8() {
             Ok(value) => value != 0,
@@ -1956,9 +1993,13 @@ fn read_children(
         ));
     }
     let count = count(&mut child_reader, MAX_BREP_ITEMS)?;
-    let mut direct_ranges = ctx.collection_vec(count + 1, "Rhino Brep child ranges").map_err(crate::curves::GeometryError::from)?;
+    let mut direct_ranges = ctx
+        .collection_vec(count + 1, "Rhino Brep child ranges")
+        .map_err(crate::curves::GeometryError::from)?;
     direct_ranges.push(version_offset..child_reader.position());
-    let mut slots = ctx.collection_vec(count, "Rhino Brep child slots").map_err(crate::curves::GeometryError::from)?;
+    let mut slots = ctx
+        .collection_vec(count, "Rhino Brep child slots")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         let presence_start = child_reader.position();
         let present = child_reader.i32()?;
@@ -2012,7 +2053,9 @@ fn read_vertices(
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "vertex", 40)?;
-    let mut result = ctx.collection_vec(count, "Rhino Brep vertices").map_err(crate::curves::GeometryError::from)?;
+    let mut result = ctx
+        .collection_vec(count, "Rhino Brep vertices")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         let start = child.position();
         let index = child.i32()?;
@@ -2078,7 +2121,9 @@ fn read_edges(
     let count = raw_array_start(&mut child, "edge", 44)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
     unstamped_legacy_layout(ctx, archive, writer_version, count, "edge domains", losses)?;
-    let mut result = ctx.collection_vec(count, "Rhino Brep edges").map_err(crate::curves::GeometryError::from)?;
+    let mut result = ctx
+        .collection_vec(count, "Rhino Brep edges")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         let start = child.position();
         let index = child.i32()?;
@@ -2135,7 +2180,9 @@ fn read_trims(
         "trim domains and proxy senses",
         losses,
     )?;
-    let mut result = ctx.collection_vec(count, "Rhino Brep trims").map_err(crate::curves::GeometryError::from)?;
+    let mut result = ctx
+        .collection_vec(count, "Rhino Brep trims")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         let start = child.position();
         let index = child.i32()?;
@@ -2201,7 +2248,9 @@ fn read_loops(
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "loop", 20)?;
-    let mut result = ctx.collection_vec(count, "Rhino Brep loops").map_err(crate::curves::GeometryError::from)?;
+    let mut result = ctx
+        .collection_vec(count, "Rhino Brep loops")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         let start = child.position();
         let index = child.i32()?;
@@ -2248,7 +2297,9 @@ fn read_faces(
             "face count exhausts payload before allocation",
         ));
     }
-    let mut result = ctx.collection_vec(count, "Rhino Brep faces").map_err(crate::curves::GeometryError::from)?;
+    let mut result = ctx
+        .collection_vec(count, "Rhino Brep faces")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         let record_start = child.position();
         let index = child.i32()?;
@@ -2518,8 +2569,12 @@ fn read_region_sides<'a>(
     warnings: &mut Diagnostics,
 ) -> Result<Vec<RawBrepFaceSide>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
-    let mut result = ctx.collection_vec(count, "Rhino Brep region face sides").map_err(crate::curves::GeometryError::from)?;
-    let mut children = ctx.collection_vec(count, "Rhino Brep region side ranges").map_err(crate::curves::GeometryError::from)?;
+    let mut result = ctx
+        .collection_vec(count, "Rhino Brep region face sides")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut children = ctx
+        .collection_vec(count, "Rhino Brep region side ranges")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         let (body, source) = region_element(ctx, bytes, &mut child, archive, ON_BREP_FACE_SIDE)?;
         children.push(source.clone());
@@ -2545,8 +2600,12 @@ fn read_region_records<'a>(
     warnings: &mut Diagnostics,
 ) -> Result<Vec<RawBrepRegion>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
-    let mut result = ctx.collection_vec(count, "Rhino Brep region records").map_err(crate::curves::GeometryError::from)?;
-    let mut children = ctx.collection_vec(count, "Rhino Brep region record ranges").map_err(crate::curves::GeometryError::from)?;
+    let mut result = ctx
+        .collection_vec(count, "Rhino Brep region records")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut children = ctx
+        .collection_vec(count, "Rhino Brep region record ranges")
+        .map_err(crate::curves::GeometryError::from)?;
     let mut index_mismatch = false;
     for position in 0..count {
         let (body, source) = region_element(ctx, bytes, &mut child, archive, ON_BREP_REGION)?;
@@ -2711,7 +2770,9 @@ fn validate_regions(
         ));
     }
     let mut infinite = 0;
-    let mut sides = ctx.collection_vec(raw.face_sides.len(), "Rhino resolved Brep region sides").map_err(crate::curves::GeometryError::from)?;
+    let mut sides = ctx
+        .collection_vec(raw.face_sides.len(), "Rhino resolved Brep region sides")
+        .map_err(crate::curves::GeometryError::from)?;
     for (index, side) in raw.face_sides.iter().enumerate() {
         let Some(face) = position(Some(side.face)).filter(|face| *face < raw.faces.len()) else {
             return Err(error(
@@ -2830,7 +2891,9 @@ fn indexes(
     reader: &mut BoundedReader<'_>,
 ) -> Result<Vec<i32>, GeometryError> {
     let count = count(reader, MAX_BREP_ITEMS)?;
-    let mut result = ctx.collection_vec(count, "Rhino Brep indexes").map_err(crate::curves::GeometryError::from)?;
+    let mut result = ctx
+        .collection_vec(count, "Rhino Brep indexes")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         result.push(reader.i32()?);
     }
@@ -2874,7 +2937,9 @@ fn slots(
     len: usize,
     label: &str,
 ) -> Result<Vec<usize>, GeometryError> {
-    let mut result = ctx.collection_vec(values.len(), "Rhino resolved Brep references").map_err(crate::curves::GeometryError::from)?;
+    let mut result = ctx
+        .collection_vec(values.len(), "Rhino resolved Brep references")
+        .map_err(crate::curves::GeometryError::from)?;
     for value in values {
         result.push(slot(*value, len, label)?);
     }

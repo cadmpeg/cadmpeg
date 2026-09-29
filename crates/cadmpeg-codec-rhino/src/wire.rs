@@ -149,7 +149,8 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
         serde::de::DeserializeSeed::deserialize(self.0, decoder)
     }
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        let copy = DecodeContext::copy_admitted_text(value, self.0.operation).map_err(|error| self.0.fail(error))?;
+        let copy = DecodeContext::copy_admitted_text(value, self.0.operation)
+            .map_err(|error| self.0.fail(error))?;
         Ok(serde_json::Value::String(copy))
     }
     fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
@@ -200,7 +201,8 @@ impl serde::de::Visitor<'_> for CanonicalKeyVisitor<'_, '_> {
         formatter.write_str("a JSON object key")
     }
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        let copy = DecodeContext::copy_admitted_text(value, self.0.operation).map_err(|error| self.0.fail(error))?;
+        let copy = DecodeContext::copy_admitted_text(value, self.0.operation)
+            .map_err(|error| self.0.fail(error))?;
         Ok(copy)
     }
     fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {

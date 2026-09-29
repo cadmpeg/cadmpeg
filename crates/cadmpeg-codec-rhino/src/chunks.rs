@@ -886,7 +886,8 @@ pub(crate) fn checksum_children_through_class_end(
                 value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
             });
         }
-        ctx.reserve_vec(&mut children, 1, "Rhino class-end checksum children").map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_vec(&mut children, 1, "Rhino class-end checksum children")
+            .map_err(crate::chunks::FramingError::from)?;
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
         if child.typecode == TCODE_CLASS_END {

@@ -633,9 +633,17 @@ fn revolution_nurbs(
         .ok_or_else(|| error(offset, "revolution parameter interval is invalid"))
     };
     let mut angular = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut angular, angular_count, "Rhino revolution angular controls")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut angular,
+        angular_count,
+        "Rhino revolution angular controls",
+    )?;
     let mut knots = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut knots, knot_count, "Rhino revolution angular knots")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut knots,
+        knot_count,
+        "Rhino revolution angular knots",
+    )?;
     for span in 0..span_count {
         let a0 = angle[0]
             + angle_step
@@ -669,9 +677,17 @@ fn revolution_nurbs(
         None => ctx.alloc_filled(profile_count, 1.0, "Rhino revolution profile weights")?,
     };
     let mut control_points = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut control_points, output_count, "Rhino revolution control points")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut control_points,
+        output_count,
+        "Rhino revolution control points",
+    )?;
     let mut weights = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut weights, output_count, "Rhino revolution weights")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut weights,
+        output_count,
+        "Rhino revolution weights",
+    )?;
     for (theta, angular_weight) in angular {
         let radial_scale = 1.0 / angular_weight;
         for (profile_point, profile_weight) in
@@ -705,7 +721,9 @@ fn revolution_nurbs(
         })?),
         "Rhino revolution angular knots",
     )?;
-    let profile_knots = ctx.copy_retained_slice(profile.knots(), "Rhino revolution profile knots").map_err(crate::curves::GeometryError::from)?;
+    let profile_knots = ctx
+        .copy_retained_slice(profile.knots(), "Rhino revolution profile knots")
+        .map_err(crate::curves::GeometryError::from)?;
     admit_nurbs_pole_conversion(ctx, output_count, true)?;
     let mut result = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(2, knots, false),
@@ -790,10 +808,18 @@ fn sum_nurbs(
         None => ctx.alloc_filled(v_count, 1.0, "Rhino sum-surface second weights")?,
     };
     let mut control_points = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut control_points, product_count, "Rhino sum surface control points")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut control_points,
+        product_count,
+        "Rhino sum surface control points",
+    )?;
     let mut weights = if rational {
         let mut values = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut values, product_count, "Rhino sum surface weights")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut values,
+            product_count,
+            "Rhino sum surface weights",
+        )?;
         Some(values)
     } else {
         None
@@ -821,8 +847,14 @@ fn sum_nurbs(
         .as_deref()
         .map(|values| copy_rows(ctx, values, row_len, "Rhino sum surface weight grid"))
         .transpose()?;
-    let u_knots = first.knots().try_clone_for_decode(ctx, "Rhino sum surface U knots").map_err(crate::curves::GeometryError::from)?;
-    let v_knots = second.knots().try_clone_for_decode(ctx, "Rhino sum surface V knots").map_err(crate::curves::GeometryError::from)?;
+    let u_knots = first
+        .knots()
+        .try_clone_for_decode(ctx, "Rhino sum surface U knots")
+        .map_err(crate::curves::GeometryError::from)?;
+    let v_knots = second
+        .knots()
+        .try_clone_for_decode(ctx, "Rhino sum surface V knots")
+        .map_err(crate::curves::GeometryError::from)?;
     admit_nurbs_pole_conversion(ctx, product_count, rational)?;
     NurbsSurface::from_checked_lanes(
         NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic()),
@@ -960,7 +992,9 @@ pub(crate) fn extrusion_nurbs(
         },
         _ => return Err(error(offset, "extrusion tensor inputs are incompatible")),
     };
-    let u_knots = start.knots().try_clone_for_decode(ctx, "Rhino extrusion surface knots")?;
+    let u_knots = start
+        .knots()
+        .try_clone_for_decode(ctx, "Rhino extrusion surface knots")?;
     let [path_start, path_end] = path_domain.finite_components();
     let path_knots =
         KnotVector::from_finite_lanes(vec![path_start, path_start, path_end, path_end])
@@ -1415,7 +1449,11 @@ pub(crate) fn reconstruct_knots(
     let ([start, end], capacity, _) =
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index])?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
     let mut result = ctx.retained_vec(capacity, "Rhino NURBS reconstructed knots")?;
     result.push(start.get());
     result.extend_from_slice(knots);
@@ -1431,7 +1469,11 @@ fn reconstruct_checked_knots(
     let ([start, end], capacity, _) =
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index].get())?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
     let mut result = ctx.retained_vec(capacity, "Rhino NURBS reconstructed knots")?;
     result.push(start);
     result.extend_from_slice(knots);

@@ -496,7 +496,9 @@ pub(super) fn revolve_nurbs(
         let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
         let control_count =
             crate::nurbs_surface_control_count(profile.control_points().len(), angular_count)?;
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(angular_count), "catia b5 revolution angles") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(angular_count), "catia b5 revolution angles")
+        {
             return Some(Err(error));
         }
         let mut angles = Vec::new();
@@ -507,7 +509,10 @@ pub(super) fn revolve_nurbs(
         ) {
             return Some(Err(error));
         }
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(angular_count), "catia b5 revolution angular weights") {
+        if let Err(error) = ctx.charge_collection_items(
+            u64_from_index(angular_count),
+            "catia b5 revolution angular weights",
+        ) {
             return Some(Err(error));
         }
         let mut angular_weights = Vec::new();
@@ -518,7 +523,10 @@ pub(super) fn revolve_nurbs(
         ) {
             return Some(Err(error));
         }
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(angular_count + 3), "catia b5 revolution angular knots") {
+        if let Err(error) = ctx.charge_collection_items(
+            u64_from_index(angular_count + 3),
+            "catia b5 revolution angular knots",
+        ) {
             return Some(Err(error));
         }
         let mut v_knots = Vec::new();
@@ -570,7 +578,10 @@ pub(super) fn revolve_nurbs(
                 Err(error) => return Some(Err(error)),
             },
         };
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(control_count), "catia b5 revolution control net") {
+        if let Err(error) = ctx.charge_collection_items(
+            u64_from_index(control_count),
+            "catia b5 revolution control net",
+        ) {
             return Some(Err(error));
         }
         let mut control_points = Vec::new();
@@ -581,7 +592,10 @@ pub(super) fn revolve_nurbs(
         ) {
             return Some(Err(error));
         }
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(control_count), "catia b5 revolution net weights") {
+        if let Err(error) = ctx.charge_collection_items(
+            u64_from_index(control_count),
+            "catia b5 revolution net weights",
+        ) {
             return Some(Err(error));
         }
         let mut weights = Vec::new();
@@ -614,20 +628,32 @@ pub(super) fn revolve_nurbs(
         }
         let row_len = angular_count;
         let row_count = profile.control_points().len();
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(profile.knots().len()), "catia b5 revolution profile knots")
+        if let Err(error) = ctx.charge_collection_items(
+            u64_from_index(profile.knots().len()),
+            "catia b5 revolution profile knots",
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(row_count), "catia b5 revolution point rows")
         {
             return Some(Err(error));
         }
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(row_count), "catia b5 revolution point rows") {
+        if let Err(error) = ctx.charge_collection_items(
+            u64_from_index(control_count),
+            "catia b5 revolution point row values",
+        ) {
             return Some(Err(error));
         }
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(control_count), "catia b5 revolution point row values") {
+        if let Err(error) = ctx
+            .charge_collection_items(u64_from_index(row_count), "catia b5 revolution weight rows")
+        {
             return Some(Err(error));
         }
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(row_count), "catia b5 revolution weight rows") {
-            return Some(Err(error));
-        }
-        if let Err(error) = ctx.charge_collection_items(u64_from_index(control_count), "catia b5 revolution weight row values") {
+        if let Err(error) = ctx.charge_collection_items(
+            u64_from_index(control_count),
+            "catia b5 revolution weight row values",
+        ) {
             return Some(Err(error));
         }
         let profile_knots = match cadmpeg_core::decode::DecodeContext::copy_admitted_slice(

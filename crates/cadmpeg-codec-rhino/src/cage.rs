@@ -223,7 +223,12 @@ pub(crate) fn decode_at(
         ExactVec::<Vec<FiniteReal>>::new(expand.ctx(), control_bound, "Rhino cage control points")
             .map_err(|error| refused(body.position(), &error))?;
     let mut weights = if rational {
-        Some(expand.ctx().collection_vec(control_count, "Rhino cage weights").map_err(crate::curves::GeometryError::from)?)
+        Some(
+            expand
+                .ctx()
+                .collection_vec(control_count, "Rhino cage weights")
+                .map_err(crate::curves::GeometryError::from)?,
+        )
     } else {
         None
     };
@@ -267,8 +272,10 @@ pub(crate) fn decode_at(
         } else {
             FiniteReal::ONE
         };
-        let mut point =
-            expand.ctx().collection_vec(dimension, "Rhino cage scaled coordinates").map_err(crate::curves::GeometryError::from)?;
+        let mut point = expand
+            .ctx()
+            .collection_vec(dimension, "Rhino cage scaled coordinates")
+            .map_err(crate::curves::GeometryError::from)?;
         for coordinate in stored {
             point.push(
                 cadmpeg_ir::math::multiply_divide(coordinate, scale.real(), weight).ok_or_else(

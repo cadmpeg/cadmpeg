@@ -168,7 +168,11 @@ pub(crate) fn transfer_neutral(
         .filter(|occurrence| occurrence.native_ref.is_some())
         .count();
     let mut occurrence_by_native = HashMap::new();
-    ctx.reserve_map(&mut occurrence_by_native, count, "fcstd joint occurrence index")?;
+    ctx.reserve_map(
+        &mut occurrence_by_native,
+        count,
+        "fcstd joint occurrence index",
+    )?;
     for occurrence in occurrences {
         if let Some(native) = occurrence.native_ref.as_deref() {
             occurrence_by_native.insert(native, &occurrence.id);
@@ -242,7 +246,8 @@ pub(crate) fn transfer_neutral(
             }
             Ok(Some(match occurrence_by_native.get(name).copied() {
                 Some(occurrence) => {
-                    let identity = occurrence.try_clone_for_decode(ctx, "fcstd joint occurrence identity")?;
+                    let identity =
+                        occurrence.try_clone_for_decode(ctx, "fcstd joint occurrence identity")?;
                     JointOperand::occurrence(identity, object, subelements)
                 }
                 None => JointOperand::root(object, subelements),

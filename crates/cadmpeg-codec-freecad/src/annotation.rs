@@ -121,7 +121,11 @@ pub(crate) fn transfer_neutral(
     drawings: &[DrawingRecord],
 ) -> Result<(), CodecError> {
     let mut drawing_ids = HashMap::new();
-    ctx.reserve_map(&mut drawing_ids, drawings.len(), "fcstd annotation drawing index")?;
+    ctx.reserve_map(
+        &mut drawing_ids,
+        drawings.len(),
+        "fcstd annotation drawing index",
+    )?;
     for drawing in drawings {
         drawing_ids.insert(
             drawing.object.as_str(),

@@ -360,7 +360,9 @@ struct SemanticJsonWriter<'a, 'b> {
 
 impl Write for SemanticJsonWriter<'_, '_> {
     fn write(&mut self, chunk: &[u8]) -> io::Result<usize> {
-        let result = self.ctx.extend_retained_bytes(&mut self.bytes, chunk, SEMANTIC_JSON_OPERATION);
+        let result =
+            self.ctx
+                .extend_retained_bytes(&mut self.bytes, chunk, SEMANTIC_JSON_OPERATION);
         if let Err(error) = result {
             self.refusal = Some(error);
             return Err(io::ErrorKind::Other.into());

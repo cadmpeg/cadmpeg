@@ -351,7 +351,12 @@ pub(crate) fn transfer_parameters(
                             )?;
                             let program_output = output_id
                                 .try_clone_for_decode(ctx, "catia_formula_program_output")?;
-                            let program_inputs = ctx.try_collect_vec(dependencies.iter().map(|id| id.try_clone_for_decode(ctx, "catia_formula_program_inputs")), "catia_formula_program_inputs")?;
+                            let program_inputs = ctx.try_collect_vec(
+                                dependencies.iter().map(|id| {
+                                    id.try_clone_for_decode(ctx, "catia_formula_program_inputs")
+                                }),
+                                "catia_formula_program_inputs",
+                            )?;
                             ctx.push_vec(
                                 &mut programs,
                                 FormulaProgramCandidate {
@@ -4335,14 +4340,24 @@ mod parser_tests {
         let id =
             ParameterId::mint("synthetic:test:id#input".to_string()).expect("identity grammar");
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            ctx.try_collect_vec(std::slice::from_ref(&id).iter().map(|id| id.try_clone_for_decode(ctx, "catia_formula_program_inputs")), "catia_formula_program_inputs")
+            ctx.try_collect_vec(
+                std::slice::from_ref(&id)
+                    .iter()
+                    .map(|id| id.try_clone_for_decode(ctx, "catia_formula_program_inputs")),
+                "catia_formula_program_inputs",
+            )
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_formula_program_inputs")
         );
         let admitted = crate::test_support::with_service_context(|ctx| {
-            ctx.try_collect_vec(std::slice::from_ref(&id).iter().map(|id| id.try_clone_for_decode(ctx, "catia_formula_program_inputs")), "catia_formula_program_inputs")
+            ctx.try_collect_vec(
+                std::slice::from_ref(&id)
+                    .iter()
+                    .map(|id| id.try_clone_for_decode(ctx, "catia_formula_program_inputs")),
+                "catia_formula_program_inputs",
+            )
         })
         .expect("service profile admits dependency copy");
         assert_eq!(admitted, vec![id]);

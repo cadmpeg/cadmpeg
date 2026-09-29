@@ -395,7 +395,11 @@ fn parse_gradient_userdata(
         offset: count_offset,
     })?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
     let mut colors = ctx.collection_vec(count, "Rhino gradient color stops")?;
     for index in 0..count {
         let stop_offset = reader.position();

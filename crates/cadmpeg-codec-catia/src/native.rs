@@ -7962,7 +7962,10 @@ fn consolidated_circles(
         crate::families::b2::records::b2_circles_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedCircle {
-            id: ctx.format_retained(format_args!("catia:consolidated:circle#{:00}", index), "catia_native_circle_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:circle#{index:00}"),
+                "catia_native_circle_id",
+            )?,
             byte_offset: u64_from_index(circle.pos),
             layout: circle.layout,
             record_id: circle.record_id,
@@ -8306,7 +8309,10 @@ fn consolidated_class61_records(
     let mut output = Vec::new();
     for (index, (pos, header_token, payload)) in class61_records.into_iter().enumerate() {
         let value = CatiaConsolidatedClass61Record {
-            id: ctx.format_retained(format_args!("catia:consolidated:class61-record#{:00}", index), "catia_native_class61_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:class61-record#{index:00}"),
+                "catia_native_class61_id",
+            )?,
             byte_offset: u64_from_index(pos),
             header_token,
             payload,
@@ -8327,7 +8333,10 @@ fn consolidated_class5b5c_records(
     let mut output = Vec::new();
     for (index, record) in control_records.into_iter().enumerate() {
         let value = CatiaConsolidatedClass5b5cRecord {
-            id: ctx.format_retained(format_args!("catia:consolidated:class5b5c-record#{:00}", index), "catia_native_class5b5c_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:class5b5c-record#{index:00}"),
+                "catia_native_class5b5c_id",
+            )?,
             frame: record.frame.into(),
             source_index: u64_from_index(record.source_index),
             source_offset: u64_from_index(record.source_offset),
@@ -8513,7 +8522,10 @@ fn consolidated_cone_faces(
         let byte_offset = u64_from_index(face.pos);
         let byte_len = u64_from_index(face.end - face.pos);
         let value = CatiaConsolidatedConeFace {
-            id: ctx.format_retained(format_args!("catia:consolidated:cone-face#{:00}", index), "catia_native_cone_face_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:cone-face#{index:00}"),
+                "catia_native_cone_face_id",
+            )?,
             byte_offset,
             byte_len,
             program: face.program,
@@ -8536,7 +8548,10 @@ fn consolidated_cones(
         crate::families::b2::records::b2_cones_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedCone {
-            id: ctx.format_retained(format_args!("catia:consolidated:cone#{:00}", index), "catia_native_cone_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:cone#{index:00}"),
+                "catia_native_cone_id",
+            )?,
             byte_offset: u64_from_index(cone.pos),
             apex: cone.apex.coordinates().into(),
             direction_x: cone.frame.reference(),
@@ -8593,7 +8608,10 @@ fn consolidated_cylinders(
             }
         };
         let value = CatiaConsolidatedCylinder {
-            id: ctx.format_retained(format_args!("catia:consolidated:cylinder#{:00}", index), "catia_native_cylinder_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:cylinder#{index:00}"),
+                "catia_native_cylinder_id",
+            )?,
             byte_offset: u64_from_index(cylinder.pos),
             origin: cylinder.origin.coordinates().into(),
             radius: cylinder.radius,
@@ -8624,7 +8642,10 @@ fn consolidated_cylinder_groups(
     for group in crate::families::b2::records::b2_groups_from_records(bytes, records) {
         let group_pos = group.pos;
         let group = CatiaConsolidatedGroup {
-            id: ctx.format_retained(format_args!("catia:consolidated:group#{:00}", groups.len()), "catia_native_group_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:group#{:00}", groups.len()),
+                "catia_native_group_id",
+            )?,
             byte_offset: u64_from_index(group.pos),
             group_type: group.group_type,
         };
@@ -8634,7 +8655,13 @@ fn consolidated_cylinder_groups(
         {
             let Some(entry) = embedded.next() else { break };
             let value = CatiaConsolidatedEmbeddedCylinder {
-                id: ctx.format_retained(format_args!("catia:consolidated:embedded-cylinder#{:00}", cylinders.len()), "catia_native_embedded_cylinder_id")?,
+                id: ctx.format_retained(
+                    format_args!(
+                        "catia:consolidated:embedded-cylinder#{:00}",
+                        cylinders.len()
+                    ),
+                    "catia_native_embedded_cylinder_id",
+                )?,
                 byte_offset: u64_from_index(entry.pos),
                 group: ctx.copy_retained_text(&group.id, "catia_native_embedded_cylinder_group")?,
                 object_id: entry.object_id,
@@ -8856,7 +8883,10 @@ fn consolidated_parameter_points(
             }
         };
         let value = CatiaConsolidatedParameterPoint {
-            id: ctx.format_retained(format_args!("catia:consolidated:parameter-point#{:00}", index), "catia_native_parameter_point_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:parameter-point#{index:00}"),
+                "catia_native_parameter_point_id",
+            )?,
             byte_offset: u64_from_index(point.pos),
             byte_len: u64_from_index(point.end - point.pos),
             prefix: point.prefix,
@@ -8916,7 +8946,10 @@ fn consolidated_plane_carriers(
             }
         };
         let value = CatiaConsolidatedPlaneCarrier {
-            id: ctx.format_retained(format_args!("catia:consolidated:plane-carrier#{:00}", index), "catia_native_plane_carrier_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:plane-carrier#{index:00}"),
+                "catia_native_plane_carrier_id",
+            )?,
             byte_offset: u64_from_index(carrier.pos),
             byte_len: u64_from_index(carrier.end - carrier.pos),
             width: carrier.width,
@@ -8941,7 +8974,10 @@ fn consolidated_reference_lists(
             .enumerate()
     {
         let value = CatiaConsolidatedReferenceList {
-            id: ctx.format_retained(format_args!("catia:consolidated:reference-list#{:00}", index), "catia_native_reference_list_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:reference-list#{index:00}"),
+                "catia_native_reference_list_id",
+            )?,
             byte_offset: u64_from_index(list.pos),
             references: list.references,
         };
@@ -8981,7 +9017,10 @@ fn consolidated_pcurves(
     for (index, (pcurve, family)) in pcurves.into_iter().enumerate() {
         let (knots, points, first_derivatives, second_derivatives) = pcurve.native_lanes(ctx)?;
         let value = CatiaConsolidatedPcurve {
-            id: ctx.format_retained(format_args!("catia:consolidated:pcurve#{:00}", index), "catia_native_pcurve_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:pcurve#{index:00}"),
+                "catia_native_pcurve_id",
+            )?,
             byte_offset: u64_from_index(pcurve.pos),
             family,
             support_id: pcurve.support_id,
@@ -9067,7 +9106,10 @@ fn consolidated_revolutions(
             None => None,
         };
         let value = CatiaConsolidatedRevolution {
-            id: ctx.format_retained(format_args!("catia:consolidated:revolution#{:00}", index), "catia_native_revolution_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:revolution#{index:00}"),
+                "catia_native_revolution_id",
+            )?,
             byte_offset: u64_from_index(revolution.pos),
             reference_token: revolution.reference_token,
             profile_allocation_id: revolution.profile_allocation_id,
@@ -9095,7 +9137,10 @@ fn consolidated_line_profiles(
         crate::families::b2::records::b2_line_profiles_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedLineProfile {
-            id: ctx.format_retained(format_args!("catia:consolidated:line-profile#{:00}", index), "catia_native_line_profile_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:line-profile#{index:00}"),
+                "catia_native_line_profile_id",
+            )?,
             byte_offset: u64_from_index(line.pos),
             origin: line.origin.coordinates().into(),
             direction: line.direction,
@@ -9116,7 +9161,10 @@ fn consolidated_spheres(
         crate::families::b2::records::b2_spheres_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedSphere {
-            id: ctx.format_retained(format_args!("catia:consolidated:sphere#{:00}", index), "catia_native_sphere_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:sphere#{index:00}"),
+                "catia_native_sphere_id",
+            )?,
             byte_offset: u64_from_index(sphere.pos),
             center: sphere.center.coordinates().into(),
             direction_x: sphere.frame.reference(),
@@ -9141,7 +9189,10 @@ fn consolidated_tori(
         crate::families::b2::records::b2_tori_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedTorus {
-            id: ctx.format_retained(format_args!("catia:consolidated:torus#{:00}", index), "catia_native_torus_id")?,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:torus#{index:00}"),
+                "catia_native_torus_id",
+            )?,
             byte_offset: u64_from_index(torus.pos),
             center: torus.center.coordinates().into(),
             direction_x: torus.frame.reference(),

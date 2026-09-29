@@ -366,8 +366,9 @@ fn decode_annotation(
             1 << 20,
             outer.position(),
         )?;
-        points =
-            ctx.collection_vec(bytes / 16, "Rhino modern annotation leader points").map_err(crate::chunks::FramingError::from)?;
+        points = ctx
+            .collection_vec(bytes / 16, "Rhino modern annotation leader points")
+            .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..bytes / 16 {
             let point = [outer.f64()?, outer.f64()?];
             let point = cadmpeg_ir::units::FiniteVector::new(point).ok_or_else(|| {
@@ -834,7 +835,8 @@ pub(crate) fn install(
                         continue;
                     }
                 };
-                let mut leader_points = ctx.collection_vec(value.points.len(), "Rhino legacy leader projection points")?;
+                let mut leader_points = ctx
+                    .collection_vec(value.points.len(), "Rhino legacy leader projection points")?;
                 leader_points.extend(
                     value
                         .points
@@ -923,7 +925,10 @@ pub(crate) fn install(
                 };
                 let rich_text = crate::dimensions::v2_effective_text(ctx, &value.base)?;
                 let leader_points = if is_leader {
-                    let mut points = ctx.collection_vec(value.base.points.len(), "Rhino V2 leader projection points")?;
+                    let mut points = ctx.collection_vec(
+                        value.base.points.len(),
+                        "Rhino V2 leader projection points",
+                    )?;
                     points.extend(
                         value
                             .base

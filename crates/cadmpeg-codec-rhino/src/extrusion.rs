@@ -299,8 +299,14 @@ pub(crate) fn decode(
         path_from.translated(path_delta, trim[1]),
     ];
     let direction = cap_origins[1].vector_from(cap_origins[0]);
-    let mut boundaries = expand.ctx().collection_vec(source_boundaries.len(), "Rhino extrusion boundaries").map_err(crate::curves::GeometryError::from)?;
-    let mut orientations = expand.ctx().collection_vec(source_boundaries.len(), "Rhino extrusion orientations").map_err(crate::curves::GeometryError::from)?;
+    let mut boundaries = expand
+        .ctx()
+        .collection_vec(source_boundaries.len(), "Rhino extrusion boundaries")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut orientations = expand
+        .ctx()
+        .collection_vec(source_boundaries.len(), "Rhino extrusion orientations")
+        .map_err(crate::curves::GeometryError::from)?;
     for source in source_boundaries {
         orientations.push(exact_orientation(expand.ctx(), &source, version_offset)?);
         let source_nurbs = exact_nurbs(expand.ctx(), &source, version_offset)?;
@@ -415,7 +421,9 @@ fn split_profiles(
     offset: usize,
 ) -> Result<Vec<DecodedCurve>, GeometryError> {
     if profile_count == 1 {
-        let mut profiles = ctx.collection_vec(1, "Rhino extrusion profile split").map_err(crate::curves::GeometryError::from)?;
+        let mut profiles = ctx
+            .collection_vec(1, "Rhino extrusion profile split")
+            .map_err(crate::curves::GeometryError::from)?;
         profiles.push(profile);
         return Ok(profiles);
     }
@@ -428,8 +436,9 @@ fn split_profiles(
     if children.len() != profile_count {
         return Err(error(offset, "extrusion profile count mismatch"));
     }
-    let mut profiles =
-        ctx.collection_vec(children.len(), "Rhino extrusion profile split").map_err(crate::curves::GeometryError::from)?;
+    let mut profiles = ctx
+        .collection_vec(children.len(), "Rhino extrusion profile split")
+        .map_err(crate::curves::GeometryError::from)?;
     profiles.extend(children.into_iter().map(|(_, child)| child));
     Ok(profiles)
 }
@@ -707,8 +716,9 @@ fn cap_pcurve(
         Vector3::from(frame.1),
         Vector3::from(frame.2),
     );
-    let mut points =
-        ctx.collection_vec(curve.pole_count(), "Rhino extrusion cap points").map_err(crate::curves::GeometryError::from)?;
+    let mut points = ctx
+        .collection_vec(curve.pole_count(), "Rhino extrusion cap points")
+        .map_err(crate::curves::GeometryError::from)?;
     for index in 0..curve.pole_count() {
         let point = curve
             .pole_rows()
@@ -722,14 +732,16 @@ fn cap_pcurve(
         }
         points.push(Point2::new(delta.dot(frame.0), delta.dot(frame.1)));
     }
-    let mut knots =
-        ctx.collection_vec(curve.knots().len(), "Rhino extrusion cap knots").map_err(crate::curves::GeometryError::from)?;
+    let mut knots = ctx
+        .collection_vec(curve.knots().len(), "Rhino extrusion cap knots")
+        .map_err(crate::curves::GeometryError::from)?;
     knots.extend_from_slice(curve.knots());
     let weights = match curve.pole_rows() {
         NurbsPoles3::Polynomial { .. } => None,
         NurbsPoles3::Rational { points } => {
-            let mut weights =
-                ctx.collection_vec(points.len(), "Rhino extrusion cap weights").map_err(crate::curves::GeometryError::from)?;
+            let mut weights = ctx
+                .collection_vec(points.len(), "Rhino extrusion cap weights")
+                .map_err(crate::curves::GeometryError::from)?;
             weights.extend(points.iter().map(|pole| pole.weight.get()));
             Some(weights)
         }

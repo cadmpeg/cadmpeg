@@ -133,9 +133,7 @@ pub(crate) fn transfer(
     }
     let mut body_ids = ctx.collection_vec(ir.model.bodies.len(), "fcstd design body ids")?;
     for body in &ir.model.bodies {
-        body_ids.push(
-            body.id.try_clone_for_decode(ctx, "fcstd design body id")?,
-        );
+        body_ids.push(body.id.try_clone_for_decode(ctx, "fcstd design body id")?);
     }
     let (feature_ordinals, mut cycle_affected) =
         feature_ordinals(ctx, objects, &properties_by_owner, &parent_by_member)?;
@@ -183,7 +181,9 @@ pub(crate) fn transfer(
         } else if is_sketch(&object.type_name) {
             let decoded = parse_sketch(ctx, object, &owned)?;
             let sketch = decoded.sketch;
-            let sketch_id = sketch.id.try_clone_for_decode(ctx, "fcstd design sketch identity")?;
+            let sketch_id = sketch
+                .id
+                .try_clone_for_decode(ctx, "fcstd design sketch identity")?;
             ctx.insert_hash_map(
                 &mut sketch_ids,
                 object.id.as_str(),
@@ -412,9 +412,7 @@ pub(crate) fn transfer(
                 .filter(|body| body.as_str().starts_with(&prefix))
             {
                 ctx.reserve_vec(&mut outputs, 1, "fcstd design feature outputs")?;
-                outputs.push(
-                    body.try_clone_for_decode(ctx, "fcstd design output body")?,
-                );
+                outputs.push(body.try_clone_for_decode(ctx, "fcstd design output body")?);
             }
         }
         let cycle_affected = cycle_affected.contains(object.id.as_str());
@@ -585,9 +583,8 @@ fn body_definition(
         {
             if let Some(feature) = feature_ids.get(target) {
                 ctx.reserve_vec(&mut children, 1, "fcstd body member features")?;
-                children.push(
-                    feature.try_clone_for_decode(ctx, "fcstd body member feature identity")?,
-                );
+                children
+                    .push(feature.try_clone_for_decode(ctx, "fcstd body member feature identity")?);
             }
         }
     }
@@ -638,11 +635,9 @@ fn body_tip(
                 return Ok(BodyTipResolution::Valid(None));
             };
             match feature_ids.get(target) {
-                Some(feature) => {
-                    BodyTipResolution::Valid(Some(
-                        feature.try_clone_for_decode(ctx, "fcstd body tip feature identity")?,
-                    ))
-                }
+                Some(feature) => BodyTipResolution::Valid(Some(
+                    feature.try_clone_for_decode(ctx, "fcstd body tip feature identity")?,
+                )),
                 None => BodyTipResolution::Invalid,
             }
         }
@@ -1354,9 +1349,7 @@ fn append_operation_parameters(
                 "fcstd operation parameter identity",
             )?)
             .map_err(CodecError::malformed)?,
-            owner: Some(
-                owner.try_clone_for_decode(ctx, "fcstd operation parameter owner")?,
-            ),
+            owner: Some(owner.try_clone_for_decode(ctx, "fcstd operation parameter owner")?),
             ordinal: u32::try_from(property.order).map_err(|_| {
                 ctx.refuse_codec_limit(
                     "FreeCAD ordinal",
@@ -2479,7 +2472,8 @@ fn parse_constraints(
                 resolved.insert(
                     0,
                     SketchLocus::Entity(
-                        root.id().try_clone_for_decode(ctx, "fcstd constraint root entity")?,
+                        root.id()
+                            .try_clone_for_decode(ctx, "fcstd constraint root entity")?,
                     ),
                 );
             }
@@ -2614,8 +2608,10 @@ fn parse_constraints(
                     return Ok(None);
                 };
                 Ok(Some(SketchConstraintDefinitionInput::InternalAlignment {
-                    helper: locus_entity(helper).try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
-                    parent: locus_entity(parent).try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
+                    helper: locus_entity(helper)
+                        .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
+                    parent: locus_entity(parent)
+                        .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
                     alignment,
                 }))
             };
@@ -2719,7 +2715,10 @@ fn parse_constraints(
             let mut entities =
                 ctx.collection_vec(resolved.len(), "fcstd native constraint entities")?;
             for locus in &resolved {
-                entities.push(locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")?);
+                entities.push(
+                    locus_entity(locus)
+                        .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
+                );
             }
             SketchConstraintDefinitionInput::Native {
                 native_kind,
@@ -2810,7 +2809,9 @@ fn midpoint_constraint(
         }
         return Ok(Some(SketchConstraintDefinitionInput::Midpoint {
             point,
-            entity: bounded.id().try_clone_for_decode(ctx, "fcstd midpoint line identity")?,
+            entity: bounded
+                .id()
+                .try_clone_for_decode(ctx, "fcstd midpoint line identity")?,
         }));
     }
     Ok(None)
@@ -2902,13 +2903,13 @@ fn bind_parameter_dependencies(
             names.push(ctx.copy_retained_text(source_name, "fcstd parameter source name")?);
         }
         candidates.push((
-            parameter.id.try_clone_for_decode(ctx, "fcstd parameter candidate identity")?,
+            parameter
+                .id
+                .try_clone_for_decode(ctx, "fcstd parameter candidate identity")?,
             parameter
                 .owner
                 .as_ref()
-                .map(|owner| {
-                    owner.try_clone_for_decode(ctx, "fcstd parameter candidate owner")
-                })
+                .map(|owner| owner.try_clone_for_decode(ctx, "fcstd parameter candidate owner"))
                 .transpose()?,
             names,
         ));
@@ -2927,22 +2928,22 @@ fn bind_parameter_dependencies(
             }
             let bucket = local_candidates.entry(key).or_default();
             ctx.reserve_vec(bucket, 1, "fcstd local candidate identities")?;
-            bucket.push(
-                id.try_clone_for_decode(ctx, "fcstd local candidate identity")?,
-            );
+            bucket.push(id.try_clone_for_decode(ctx, "fcstd local candidate identity")?);
             if let Some(object) = object_names.get(owner) {
                 let key = ctx.format_retained(
                     format_args!("{object}.{name}"),
                     "fcstd qualified candidate name",
                 )?;
                 if !qualified_candidates.contains_key(&key) {
-                    ctx.reserve_map(&mut qualified_candidates, 1, "fcstd qualified candidate keys")?;
+                    ctx.reserve_map(
+                        &mut qualified_candidates,
+                        1,
+                        "fcstd qualified candidate keys",
+                    )?;
                 }
                 let bucket = qualified_candidates.entry(key).or_default();
                 ctx.reserve_vec(bucket, 1, "fcstd qualified candidate identities")?;
-                bucket.push(
-                    id.try_clone_for_decode(ctx, "fcstd qualified candidate identity")?,
-                );
+                bucket.push(id.try_clone_for_decode(ctx, "fcstd qualified candidate identity")?);
             }
         }
     }
@@ -2989,7 +2990,8 @@ fn bind_parameter_dependencies(
                 if !dependencies.contains(dependency) {
                     ctx.charge_collection_items(1, "fcstd parameter dependencies")?;
                     dependencies.insert(
-                        dependency.try_clone_for_decode(ctx, "fcstd parameter dependency identity")?,
+                        dependency
+                            .try_clone_for_decode(ctx, "fcstd parameter dependency identity")?,
                     );
                 }
             }
@@ -3019,9 +3021,7 @@ fn bind_parameter_dependencies(
         let owner = parameter
             .owner
             .as_ref()
-            .map(|owner| {
-                owner.try_clone_for_decode(ctx, "fcstd ordinal owner identity")
-            })
+            .map(|owner| owner.try_clone_for_decode(ctx, "fcstd ordinal owner identity"))
             .transpose()?;
         if !owner_ordinals.contains_key(&owner) {
             ctx.reserve_map(&mut owner_ordinals, 1, "fcstd ordinal owner groups")?;
@@ -3051,9 +3051,7 @@ fn bind_parameter_dependencies(
         let owner = parameter
             .owner
             .as_ref()
-            .map(|owner| {
-                owner.try_clone_for_decode(ctx, "fcstd next ordinal owner")
-            })
+            .map(|owner| owner.try_clone_for_decode(ctx, "fcstd next ordinal owner"))
             .transpose()?;
         if !next_ordinal.contains_key(&owner) {
             ctx.reserve_map(&mut next_ordinal, 1, "fcstd next ordinal owners")?;
@@ -3074,7 +3072,9 @@ fn order_parameters_by_dependencies(
         if !known.contains(&parameter.id) {
             ctx.charge_collection_items(1, "fcstd known parameter identities")?;
             known.insert(
-                parameter.id.try_clone_for_decode(ctx, "fcstd known parameter identity")?,
+                parameter
+                    .id
+                    .try_clone_for_decode(ctx, "fcstd known parameter identity")?,
             );
         }
     }
@@ -3110,7 +3110,9 @@ fn order_parameters_by_dependencies(
         let parameter = remaining.remove(index);
         ctx.charge_collection_items(1, "fcstd emitted parameter identities")?;
         emitted.insert(
-            parameter.id.try_clone_for_decode(ctx, "fcstd emitted parameter identity")?,
+            parameter
+                .id
+                .try_clone_for_decode(ctx, "fcstd emitted parameter identity")?,
         );
         ctx.reserve_vec(parameters, 1, "fcstd reordered parameters")?;
         parameters.push(parameter);
@@ -3138,7 +3140,9 @@ fn neutral_constraint(
     }
     let entity = |index| {
         loci.get(index)
-            .map(|locus| locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity"))
+            .map(|locus| {
+                locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")
+            })
             .transpose()
     };
     let locus = |index| {
@@ -3155,14 +3159,11 @@ fn neutral_constraint(
         };
         Ok(Some((first, second)))
     };
-    let parameter =
-        || {
-            parameter
-                .map(|id| {
-                    id.try_clone_for_decode(ctx, "fcstd constraint parameter identity copy")
-                })
-                .transpose()
-        };
+    let parameter = || {
+        parameter
+            .map(|id| id.try_clone_for_decode(ctx, "fcstd constraint parameter identity copy"))
+            .transpose()
+    };
     Ok(Some(match kind {
         0 => SketchConstraintDefinitionInput::Disabled {},
         1 => SketchConstraintDefinitionInput::CoincidentLoci {
@@ -3238,7 +3239,10 @@ fn neutral_constraint(
         6 => {
             let mut entities = ctx.collection_vec(loci.len(), "fcstd constraint entity copies")?;
             for locus in loci {
-                entities.push(locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")?);
+                entities.push(
+                    locus_entity(locus)
+                        .try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
+                );
             }
             let Some(parameter) = parameter()? else {
                 return Ok(None);
@@ -3639,7 +3643,9 @@ fn sketch_locus(
     if !matches!(position, 0..=3) {
         return Ok(None);
     }
-    let id = entity.id().try_clone_for_decode(ctx, "fcstd resolved operand identity")?;
+    let id = entity
+        .id()
+        .try_clone_for_decode(ctx, "fcstd resolved operand identity")?;
     if matches!(
         *entity.geometry.definition(),
         SketchGeometryDefinition::Point { .. }
@@ -3668,7 +3674,8 @@ fn copy_constraint_locus(
     ctx: &DecodeContext<'_>,
     locus: &SketchLocus,
 ) -> Result<SketchLocus, CodecError> {
-    let entity = locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")?;
+    let entity =
+        locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")?;
     Ok(match locus {
         SketchLocus::Entity(_) => SketchLocus::Entity(entity),
         SketchLocus::Start(_) => SketchLocus::Start(entity),
@@ -3989,10 +3996,16 @@ fn build_profiles(
     while let Some(first) = unused.pop_first() {
         ctx.charge_work(1, "FCStd profile chain construction")?;
         let mut chain = VecDeque::new();
-        ctx.push_back(&mut chain, SketchEntityUse {
-            entity: entities[first].id().try_clone_for_decode(ctx, "FCStd profile use identity")?,
-            reversed: false,
-        }, "FCStd profile uses")?;
+        ctx.push_back(
+            &mut chain,
+            SketchEntityUse {
+                entity: entities[first]
+                    .id()
+                    .try_clone_for_decode(ctx, "FCStd profile use identity")?,
+                reversed: false,
+            },
+            "FCStd profile uses",
+        )?;
         if ambiguous.contains(&first) {
             ctx.reserve_vec(&mut profiles, 1, "FCStd profile chains")?;
             profiles.push(chain.into());
@@ -4036,10 +4049,16 @@ fn build_profiles(
                 )
             };
             unused.remove(&candidate.entity);
-            ctx.push_back(&mut chain, SketchEntityUse {
-                entity: entities[candidate.entity].id().try_clone_for_decode(ctx, "FCStd profile use identity")?,
-                reversed,
-            }, "FCStd profile uses")?;
+            ctx.push_back(
+                &mut chain,
+                SketchEntityUse {
+                    entity: entities[candidate.entity]
+                        .id()
+                        .try_clone_for_decode(ctx, "FCStd profile use identity")?,
+                    reversed,
+                },
+                "FCStd profile uses",
+            )?;
             tail = next_tail;
         }
         loop {
@@ -4079,7 +4098,9 @@ fn build_profiles(
                 )
             })?;
             chain.push_front(SketchEntityUse {
-                entity: entities[candidate.entity].id().try_clone_for_decode(ctx, "FCStd profile use identity")?,
+                entity: entities[candidate.entity]
+                    .id()
+                    .try_clone_for_decode(ctx, "FCStd profile use identity")?,
                 reversed,
             });
             head = next_head;
@@ -7448,9 +7469,7 @@ fn pattern_definition(
         let mut seeds = ctx.collection_vec(count, "fcstd pattern source seeds")?;
         for target in linked_objects() {
             if let Some(feature) = features.get(target) {
-                seeds.push(
-                    feature.try_clone_for_decode(ctx, "fcstd pattern seed identity")?,
-                );
+                seeds.push(feature.try_clone_for_decode(ctx, "fcstd pattern seed identity")?);
             }
         }
         seeds
@@ -7465,9 +7484,7 @@ fn pattern_definition(
             return Ok(None);
         };
         let mut seeds = ctx.collection_vec(1, "fcstd implicit pattern seed")?;
-        seeds.push(
-            feature.try_clone_for_decode(ctx, "fcstd implicit pattern seed identity")?,
-        );
+        seeds.push(feature.try_clone_for_decode(ctx, "fcstd implicit pattern seed identity")?);
         seeds
     };
 
@@ -7577,9 +7594,7 @@ fn multi_transform_stage_seeds(
             let Some(feature) = features.get(object) else {
                 continue;
             };
-            seeds.push(
-                feature.try_clone_for_decode(ctx, "fcstd multi-transform seed identity")?,
-            );
+            seeds.push(feature.try_clone_for_decode(ctx, "fcstd multi-transform seed identity")?);
         }
         return Ok(Some(seeds));
     }

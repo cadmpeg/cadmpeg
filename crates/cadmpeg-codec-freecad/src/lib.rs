@@ -303,7 +303,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     let mut product_by_object = HashMap::new();
-    ctx.reserve_map(&mut product_by_object, product_nodes.len(), "fcstd product validation index")?;
+    ctx.reserve_map(
+        &mut product_by_object,
+        product_nodes.len(),
+        "fcstd product validation index",
+    )?;
     for node in &product_nodes {
         product_by_object.insert(node.object.as_str(), node);
     }
