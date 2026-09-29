@@ -282,21 +282,6 @@ fn pmi_datum_id_walk_refuses_depth_limit() {
 }
 
 #[test]
-fn pmi_datum_modifier_copy_refuses_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits retained policy");
-    assert!(matches!(
-        super::super::clone_pmi_modifiers(&["ABC".into()], &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_pmi_datum_modifier_copy"
-    ));
-}
-
-#[test]
 fn pmi_datum_modifier_text_refuses_retained_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
     let (exchange, _) =

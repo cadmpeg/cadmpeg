@@ -45,19 +45,6 @@ use super::StageOutcome;
 const EPS_TOPOLOGY_READ_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 
-fn copy_topology_body_ids(
-    bodies: &[BodyId],
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<Vec<BodyId>, CodecError> {
-    let mut copies = Vec::new();
-    for body in bodies {
-        ctx.reserve_vec(&mut copies, 1, operation)?;
-        copies.push(body.try_clone_for_decode(ctx, operation)?);
-    }
-    Ok(copies)
-}
-
 fn push_topology_body_group(
     groups: &mut BTreeMap<u64, Vec<BodyId>>,
     key: u64,
@@ -472,7 +459,7 @@ pub(super) fn decode(
                 ctx.insert_hash_set(&mut result.claims, representation, "step_topology_claims")?;
                 if let Some(body_ids) = result.body_by_root.get(&model) {
                     let copies =
-                        copy_topology_body_ids(body_ids, ctx, "step_topology_root_bodies")?;
+                        ctx.collect_indexed_vec(body_ids.len(), "step_topology_root_bodies", |index| body_ids[index].try_clone_for_decode(ctx, "step_topology_root_bodies"))?;
                     ctx.insert_btree_map(&mut result.body_by_root, representation, copies, "step_topology_root_groups")?;
                 }
                 continue;
@@ -618,7 +605,7 @@ pub(super) fn decode(
         if let Some(root_built) = built_roots.get(&key) {
             ctx.insert_hash_set(&mut result.claims, id, "step_topology_claims")?;
             let copies =
-                copy_topology_body_ids(&root_built.body_ids, ctx, "step_topology_root_bodies")?;
+                ctx.collect_indexed_vec(root_built.body_ids.len(), "step_topology_root_bodies", |index| root_built.body_ids[index].try_clone_for_decode(ctx, "step_topology_root_bodies"))?;
             ctx.insert_btree_map(&mut result.body_by_root, id, copies, "step_topology_root_groups")?;
             for (&shell, body_ids) in &root_built.body_by_shell {
                 for body in body_ids {
@@ -714,7 +701,7 @@ pub(super) fn decode(
                     )), "step_topology_losses")?;
             }
         } else {
-            let copies = copy_topology_body_ids(&body_ids, ctx, "step_topology_root_bodies")?;
+            let copies = ctx.collect_indexed_vec(body_ids.len(), "step_topology_root_bodies", |index| body_ids[index].try_clone_for_decode(ctx, "step_topology_root_bodies"))?;
             ctx.insert_btree_map(&mut result.body_by_root, id, copies, "step_topology_root_groups")?;
             ctx.insert_btree_map(&mut built_roots, key, RootBuilt {
                     body_ids,

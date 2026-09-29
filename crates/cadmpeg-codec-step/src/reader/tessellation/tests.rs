@@ -632,7 +632,7 @@ fn tessellation_mesh_body_refuses_retained_limit_before_copy() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits selected policy");
     let error =
-        super::admitted_mesh_body(Some(&body), &ctx).expect_err("body copy exceeds retained limit");
+        body.try_clone_for_decode(&ctx, "step_tessellation_mesh_body").expect_err("body copy exceeds retained limit");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
