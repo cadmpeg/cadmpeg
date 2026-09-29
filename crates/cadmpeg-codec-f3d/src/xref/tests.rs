@@ -766,6 +766,30 @@ fn occurrence_record(
     occurrence_record_with_serializer_magic(role, entity_id, discriminators, transform, None)
 }
 
+#[test]
+fn charged_reference_refuses_retained_limit() {
+    let bytes = cross_document_reference(7, "aaaabbbb-cccc-dddd-eeee-ffff00001111");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = crate::bytes::take_reference_charged(&ctx, &bytes, &mut 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D UTF-16 string"));
+}
+
+#[test]
+fn occurrence_path_refuses_link_collection_limit() {
+    let bytes = occurrence_record("aaaabbbb-cccc-dddd-eeee-ffff00001111", 7, &[1], None);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = super::occurrence_path(Some(&ctx), &bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref placement link names"));
+}
+
 fn occurrence_record_with_serializer_magic(
     role: &str,
     entity_id: u64,
@@ -879,7 +903,7 @@ fn repeated_target_occurrence_record_with_path_role(
     let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
-    let path_end = super::occurrence_path(&bytes).expect("synthetic path").1;
+    let path_end = super::occurrence_path(None, &bytes).unwrap().expect("synthetic path").1;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
     bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));

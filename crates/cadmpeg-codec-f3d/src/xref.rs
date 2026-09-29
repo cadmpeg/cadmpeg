@@ -21,7 +21,7 @@ use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, Proto
 
 use crate::bytes::{
     is_guid_prefix, is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_utf16_bounded,
-    take_reference,
+    take_reference, take_reference_charged, lp_ascii_strict_charged, lp_utf16_bounded_charged,
 };
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
@@ -950,13 +950,13 @@ fn occurrence_placements_with_failures(
             let Some(body) = bytes.get(record.offset..record.end) else {
                 continue;
             };
-            if let Some(placement) = occurrence_placement(body, serializer_magic) {
+            if let Some(placement) = occurrence_placement(Some(ctx), body, serializer_magic)? {
                 ctx.charge_collection_items(1, "collect F3D xref placements")?;
                 placements.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit("collect F3D xref placements", 0, 1)
                 })?;
                 placements.push(placement);
-            } else if let Some((link_names, _)) = occurrence_path(body) {
+            } else if let Some((link_names, _)) = occurrence_path(Some(ctx), body)? {
                 ctx.charge_collection_items(1, "collect F3D xref placement failures")?;
                 failures.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit("collect F3D xref placement failures", 0, 1)
@@ -978,29 +978,38 @@ fn occurrence_placements_with_failures(
 
 /// Parse one record body, header included, requiring the member sequence to end
 /// exactly at the record end.
-fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<OccurrencePlacement> {
-    legacy_occurrence_placement(body)
-        .or_else(|| repeated_target_occurrence_placement(body))
-        .or_else(|| modern_occurrence_placement(body, serializer_magic))
-        .or_else(|| {
-            let record_index = View::u32_le_at(body, 7)?;
-            let (link_name, _) =
-                grouped_component_insert_identity(body, 0, body.len(), record_index)?;
-            Some(OccurrencePlacement {
-                link_names: vec![link_name],
-
-                transform: None,
-            })
-        })
+fn occurrence_placement(
+    decode: Option<&DecodeContext<'_>>,
+    body: &[u8],
+    serializer_magic: Option<u32>,
+) -> Result<Option<OccurrencePlacement>, CodecError> {
+    if let Some(placement) = legacy_occurrence_placement(body) {
+        return Ok(Some(placement));
+    }
+    if let Some(placement) = repeated_target_occurrence_placement(decode, body)? {
+        return Ok(Some(placement));
+    }
+    if let Some(placement) = modern_occurrence_placement(decode, body, serializer_magic)? {
+        return Ok(Some(placement));
+    }
+    let Some(record_index) = View::u32_le_at(body, 7) else { return Ok(None) };
+    let Some((link_name, _)) = grouped_component_insert_identity(body, 0, body.len(), record_index) else { return Ok(None) };
+    if let Some(ctx) = decode {
+        ctx.charge_collection_items(1, "collect F3D grouped placement link name")?;
+    }
+    Ok(Some(OccurrencePlacement { link_names: vec![link_name], transform: None }))
 }
 
 /// Parse the placement generation that repeats the target identity after the
 /// standard path and stores the identity flag beside that repeated target.
-fn repeated_target_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
-    repeated_target_occurrence_placement_details(body).map(|details| OccurrencePlacement {
+fn repeated_target_occurrence_placement(
+    decode: Option<&DecodeContext<'_>>,
+    body: &[u8],
+) -> Result<Option<OccurrencePlacement>, CodecError> {
+    Ok(repeated_target_occurrence_placement_details(decode, body)?.map(|details| OccurrencePlacement {
         link_names: details.link_names,
         transform: details.transform.map(|(_, matrix)| matrix),
-    })
+    }))
 }
 
 struct RepeatedTargetPlacementDetails {
@@ -1010,52 +1019,86 @@ struct RepeatedTargetPlacementDetails {
     transform: Option<(usize, [[f64; 4]; 4])>,
 }
 
-fn repeated_target_occurrence_placement_details(
+macro_rules! xref_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
+fn xref_utf16(
+    decode: Option<&DecodeContext<'_>>,
     body: &[u8],
-) -> Option<RepeatedTargetPlacementDetails> {
+    at: usize,
+    bounds: std::ops::RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    match decode {
+        Some(ctx) => lp_utf16_bounded_charged(ctx, body, at, bounds),
+        None => Ok(lp_utf16_bounded(body, at, bounds)),
+    }
+}
+
+fn xref_ascii(
+    decode: Option<&DecodeContext<'_>>,
+    body: &[u8],
+    at: usize,
+    bounds: std::ops::RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    match decode {
+        Some(ctx) => lp_ascii_strict_charged(ctx, body, at, bounds),
+        None => Ok(lp_ascii_strict(body, at, bounds)),
+    }
+}
+
+fn repeated_target_occurrence_placement_details(
+    decode: Option<&DecodeContext<'_>>,
+    body: &[u8],
+) -> Result<Option<RepeatedTargetPlacementDetails>, CodecError> {
     const METADATA_MARKER: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
-    let (link_names, mut at) = occurrence_path(body)?;
-    if !matches!(View::u32_le_at(body, at)?, 1..=6) {
-        return None;
+    let (link_names, mut at) = xref_some!(occurrence_path(decode, body)?);
+    if !matches!(xref_some!(View::u32_le_at(body, at)), 1..=6) {
+        return Ok(None);
     }
     at += 4;
     for _ in 0..2 {
-        let (guid, next) = lp_utf16_bounded(body, at, 36..=36)?;
+        let (guid, next) = xref_some!(xref_utf16(decode, body, at, 36..=36)?);
         if !is_guid_relaxed(&guid) {
-            return None;
+            return Ok(None);
         }
         at = next;
     }
-    if body.get(at..at + METADATA_MARKER.len())? != METADATA_MARKER {
-        return None;
+    if xref_some!(body.get(at..at + METADATA_MARKER.len())) != METADATA_MARKER {
+        return Ok(None);
     }
     at += METADATA_MARKER.len();
 
-    let (component_guid, next) = lp_utf16_bounded(body, at, 36..=36)?;
+    let (component_guid, next) = xref_some!(xref_utf16(decode, body, at, 36..=36)?);
     if !is_guid_relaxed(&component_guid) {
-        return None;
+        return Ok(None);
     }
     at = next;
     if body.get(at) != Some(&0) {
-        return None;
+        return Ok(None);
     }
     at += 1;
-    let (type_guid, next) = lp_ascii_strict(body, at, 36..=36)?;
+    let (type_guid, next) = xref_some!(xref_ascii(decode, body, at, 36..=36)?);
     if !is_guid_relaxed(&type_guid) {
-        return None;
+        return Ok(None);
     }
     at = next;
     let role_offset = at;
-    let (role, next) = lp_utf16_bounded(body, at, 36..=256)?;
+    let (role, next) = xref_some!(xref_utf16(decode, body, at, 36..=256)?);
     if !is_guid_prefix(&role) {
-        return None;
+        return Ok(None);
     }
     at = next;
     if body.get(at) != Some(&0) {
-        return None;
+        return Ok(None);
     }
     at += 1;
-    let transform = match *body.get(at)? {
+    let transform = match *xref_some!(body.get(at)) {
         1 => {
             at += 1;
             None
@@ -1063,32 +1106,36 @@ fn repeated_target_occurrence_placement_details(
         0 => {
             at += 1;
             let offset = at;
-            let matrix = decode_rigid_matrix(body, at)?;
-            at = at.checked_add(128)?;
+            let matrix = xref_some!(decode_rigid_matrix(body, at));
+            at = xref_some!(at.checked_add(128));
             Some((offset, matrix))
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    if View::u32_le_at(body, at)? != 0 {
-        return None;
+    if xref_some!(View::u32_le_at(body, at)) != 0 {
+        return Ok(None);
     }
     at += 4;
-    let (final_role, next) = lp_utf16_bounded(body, at, 36..=256)?;
+    let (final_role, next) = xref_some!(xref_utf16(decode, body, at, 36..=256)?);
     if !final_role.eq_ignore_ascii_case(&role) {
-        return None;
+        return Ok(None);
     }
     at = next;
     if body.get(at) != Some(&0) {
-        return None;
+        return Ok(None);
     }
     at += 1;
-    take_reference(body, &mut at)?;
-    (at == body.len()).then_some(RepeatedTargetPlacementDetails {
+    let reference = match decode {
+        Some(ctx) => take_reference_charged(ctx, body, &mut at)?,
+        None => take_reference(body, &mut at),
+    };
+    xref_some!(reference);
+    Ok((at == body.len()).then_some(RepeatedTargetPlacementDetails {
         link_names,
         transform,
         role,
         role_offset: role_offset + 4,
-    })
+    }))
 }
 
 /// Bind a repeated-target occurrence carrier to a Component Insert scope
@@ -1104,7 +1151,10 @@ pub(crate) fn repeated_target_component_insert(
     if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
         return None;
     }
-    let details = repeated_target_occurrence_placement_details(body)?;
+    let details = match repeated_target_occurrence_placement_details(None, body) {
+        Ok(Some(details)) => details,
+        Ok(None) | Err(_) => return None,
+    };
     let transform = details.transform.map_or(
         [
             [1.0, 0.0, 0.0, 0.0],
@@ -1349,10 +1399,11 @@ fn grouped_component_insert_identity_with_layout(
 /// Parse the current placement envelope: a standard target path, an optional
 /// rigid matrix, and the generation-selected reference runs.
 fn modern_occurrence_placement(
+    decode: Option<&DecodeContext<'_>>,
     body: &[u8],
     serializer_magic: Option<u32>,
-) -> Option<OccurrencePlacement> {
-    let (link_names, at) = occurrence_path(body)?;
+) -> Result<Option<OccurrencePlacement>, CodecError> {
+    let Some((link_names, at)) = occurrence_path(decode, body)? else { return Ok(None) };
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
     // marker is present and the matrix follows, so the record end decides.
@@ -1379,14 +1430,14 @@ fn modern_occurrence_placement(
             cursor += 128;
         }
         if placement_tail(body, cursor, serializer_magic).is_some() {
-            return Some(OccurrencePlacement {
+            return Ok(Some(OccurrencePlacement {
                 link_names,
 
                 transform,
-            });
+            }));
         }
     }
-    None
+    Ok(None)
 }
 
 /// Parse the legacy typed placement envelope.
@@ -1522,36 +1573,59 @@ fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
 }
 
 /// Parse the target-path prefix shared by every occurrence-placement form.
-fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, usize)> {
+fn occurrence_path(
+    decode: Option<&DecodeContext<'_>>,
+    body: &[u8],
+) -> Result<Option<(Vec<String>, usize)>, CodecError> {
     // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
     // LP-ASCII record name.
-    let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
-    let mut at = after_tag.checked_add(8)?;
-    let (_name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
+    let class_tag = match decode {
+        Some(ctx) => lp_ascii_strict_charged(ctx, body, 0, 3..=3)?,
+        None => lp_ascii_strict(body, 0, 3..=3),
+    };
+    let Some((_, after_tag)) = class_tag else { return Ok(None) };
+    let Some(mut at) = after_tag.checked_add(8) else { return Ok(None) };
+    let name = match decode {
+        Some(ctx) => lp_ascii_strict_charged(ctx, body, at, 0..=256)?,
+        None => lp_ascii_strict(body, at, 0..=256),
+    };
+    let Some((_, after_name)) = name else { return Ok(None) };
     at = after_name;
     if body.get(at) != Some(&1) {
-        return None;
+        return Ok(None);
     }
     at += 1;
-    let count = usize::try_from(View::u32_le_at(body, at)?).ok()?;
+    let Some(count) = View::u32_le_at(body, at).and_then(|count| usize::try_from(count).ok()) else { return Ok(None) };
     if count == 0 || count > 4096 {
-        return None;
+        return Ok(None);
     }
     at += 4;
     let mut link_names = Vec::new();
     for _ in 0..count {
-        let element = take_reference(body, &mut at)?;
+        let element = match decode {
+            Some(ctx) => take_reference_charged(ctx, body, &mut at)?,
+            None => take_reference(body, &mut at),
+        };
+        let Some(element) = element else { return Ok(None) };
         if let Some(link_name) = element.link_name() {
-            link_names.push(link_name.to_owned());
+            let name = match decode {
+                Some(ctx) => copy_string_charged(ctx, link_name, "copy F3D xref placement link name")?,
+                None => link_name.to_owned(),
+            };
+            if let Some(ctx) = decode {
+                ctx.charge_collection_items(1, "collect F3D xref placement link names")?;
+                link_names.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D xref placement link names", 0, 1))?;
+            }
+            link_names.push(name);
         }
-        View::u32_le_at(body, at)?;
+        if View::u32_le_at(body, at).is_none() { return Ok(None) };
         at += 4;
     }
     if body.get(at) != Some(&0) {
-        return None;
+        return Ok(None);
     }
     at += 1;
-    Some((link_names, at))
+    Ok(Some((link_names, at)))
 }
 
 /// Consume the three reference runs that close a placement, returning `Some`
