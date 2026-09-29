@@ -6044,11 +6044,11 @@ fn named_spline_scalar_slots(
         slots.push((Some(0.0), Vec::new()));
     }
     if slots.len() != count {
-        refusal.state(scalar_body_refusal(body, count, slots.len(), cursor.pos()));
+        refusal.state(scalar_body_refusal(ctx, body, count, slots.len(), cursor.pos())?);
         return Ok(None);
     }
     if cursor.pos() != body.len() {
-        refusal.state(trailing_scalar_body_refusal(body, count, cursor.pos()));
+        refusal.state(trailing_scalar_body_refusal(ctx, body, count, cursor.pos())?);
         return Ok(None);
     }
     Ok(Some(slots))
@@ -6429,14 +6429,14 @@ fn scalar_slots(
     let mut cursor = 0;
     while slots.len() < count {
         let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) else {
-            refusal.state(scalar_body_refusal(body, count, slots.len(), cursor));
+            refusal.state(scalar_body_refusal(ctx, body, count, slots.len(), cursor)?);
             return Ok(None);
         };
         slots.push(Some(value));
         cursor = next;
     }
     if cursor != body.len() {
-        refusal.state(trailing_scalar_body_refusal(body, count, cursor));
+        refusal.state(trailing_scalar_body_refusal(ctx, body, count, cursor)?);
         return Ok(None);
     }
     Ok(Some(slots))
@@ -6445,26 +6445,37 @@ fn scalar_slots(
 /// The reason a bounded scalar body states no slot at `cursor`: the byte no
 /// scalar form defines, or the end of a body that declares more slots than it
 /// encodes.
-fn scalar_body_refusal(body: &[u8], count: usize, slot: usize, cursor: usize) -> String {
+fn scalar_body_refusal(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    count: usize,
+    slot: usize,
+    cursor: usize,
+) -> Result<String, CodecError> {
     match body.get(cursor) {
-        Some(byte) => format!(
+        Some(byte) => ctx.format_retained(format_args!(
             "declares {count} scalar slots and states byte 0x{byte:02x} at slot {slot}, \
              which no scalar form defines"
-        ),
-        None => format!(
+        ), "creo scalar body refusal text"),
+        None => ctx.format_retained(format_args!(
             "declares {count} scalar slots and encodes {slot} in {} bytes",
             body.len()
-        ),
+        ), "creo scalar body refusal text"),
     }
 }
 
 /// The reason a bounded scalar body that encodes every declared slot is still
 /// refused: bytes are left after the last slot.
-fn trailing_scalar_body_refusal(body: &[u8], count: usize, cursor: usize) -> String {
-    format!(
+fn trailing_scalar_body_refusal(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    count: usize,
+    cursor: usize,
+) -> Result<String, CodecError> {
+    ctx.format_retained(format_args!(
         "declares {count} scalar slots and ends them at byte {cursor} of {}",
         body.len()
-    )
+    ), "creo trailing scalar body refusal text")
 }
 
 type ScalarTokenSlot = (Option<f64>, Vec<u8>);
@@ -6757,16 +6768,16 @@ fn sequential_named_local_system_slots(
             slots.push(Some(value));
             cursor = next;
         } else {
-            refusal.state(scalar_body_refusal(body, count, slots.len(), cursor));
+            refusal.state(scalar_body_refusal(ctx, body, count, slots.len(), cursor)?);
             return Ok(None);
         }
     }
     if slots.len() != count {
-        refusal.state(scalar_body_refusal(body, count, slots.len(), body.len()));
+        refusal.state(scalar_body_refusal(ctx, body, count, slots.len(), body.len())?);
         return Ok(None);
     }
     if cursor != body.len() {
-        refusal.state(trailing_scalar_body_refusal(body, count, cursor));
+        refusal.state(trailing_scalar_body_refusal(ctx, body, count, cursor)?);
         return Ok(None);
     }
     Ok(Some(slots))
