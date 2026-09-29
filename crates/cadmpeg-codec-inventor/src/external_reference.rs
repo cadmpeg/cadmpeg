@@ -142,11 +142,7 @@ pub(crate) fn parse<'a>(
             }
             Err(error) => {
                 if !matches!(error, CodecError::ResourceLimit(_)) {
-                    crate::record_issue::admit_issue_detail(
-                        ctx,
-                        &error,
-                        "retain Inventor malformed UFRx detail",
-                    )?;
+                    ctx.charge_formatted_retained(format_args!("{}", &error), "retain Inventor malformed UFRx detail")?;
                 }
                 UfrxState::Malformed {
                     stream: stream.id(),
@@ -245,14 +241,10 @@ fn parse_stream_grammar<'a>(
             | DocumentKind::Presentation
             | DocumentKind::Mixed
             | DocumentKind::Unknown => {
-                crate::record_issue::admit_formatted(
-                    ctx,
-                    format_args!(
+                ctx.charge_formatted_retained(format_args!(
                         "UFRxDoc schema 15 {} header is not implemented",
                         document_kind.label()
-                    ),
-                    "retain UFRx schema header diagnostic",
-                )?;
+                    ), "retain UFRx schema header diagnostic")?;
                 return Err(CodecError::NotImplemented(format!(
                     "UFRxDoc schema 15 {} header is not implemented",
                     document_kind.label()
@@ -313,11 +305,7 @@ fn parse_stream_grammar<'a>(
     let model_states = if schema == 15 {
         parse_model_states(ctx, source, &mut cursor, lod_count)?
     } else if lod_count != 0 {
-        crate::record_issue::admit_formatted(
-            ctx,
-            format_args!("UFRxDoc contains {lod_count} unframed LOD records"),
-            "retain UFRx unframed LOD diagnostic",
-        )?;
+        ctx.charge_formatted_retained(format_args!("UFRxDoc contains {lod_count} unframed LOD records"), "retain UFRx unframed LOD diagnostic")?;
         return Err(CodecError::NotImplemented(format!(
             "UFRxDoc contains {lod_count} unframed LOD records"
         )));
@@ -712,11 +700,7 @@ fn parse_occurrence_value(
             cursor.take(16, "occurrence property id")?;
         }
         _ => {
-            crate::record_issue::admit_formatted(
-                ctx,
-                format_args!("UFRxDoc occurrence property tag {tag:#04x} is not implemented"),
-                "retain UFRx occurrence property diagnostic",
-            )?;
+            ctx.charge_formatted_retained(format_args!("UFRxDoc occurrence property tag {tag:#04x} is not implemented"), "retain UFRx occurrence property diagnostic")?;
             return Err(CodecError::NotImplemented(format!(
                 "UFRxDoc occurrence property tag {tag:#04x} is not implemented"
             )));
@@ -741,11 +725,7 @@ fn parse_occurrence_item_value(
             cursor.take(16, "occurrence export item id")?;
         }
         _ => {
-            crate::record_issue::admit_formatted(
-                ctx,
-                format_args!("UFRxDoc occurrence export item tag {tag:#04x} is not implemented"),
-                "retain UFRx occurrence export diagnostic",
-            )?;
+            ctx.charge_formatted_retained(format_args!("UFRxDoc occurrence export item tag {tag:#04x} is not implemented"), "retain UFRx occurrence export diagnostic")?;
             return Err(CodecError::NotImplemented(format!(
                 "UFRxDoc occurrence export item tag {tag:#04x} is not implemented"
             )));

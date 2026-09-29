@@ -11,7 +11,6 @@ use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
 
 use crate::layout::kernel_carrier_header as carrier_header;
-use crate::record_issue::{admit_formatted, admit_issue_detail};
 use crate::rse::{
     DocumentKind, RecordFrameState, SegmentBulkState, SegmentDescriptor, SegmentKind,
 };
@@ -151,14 +150,10 @@ pub(crate) fn decode_kernel_carrier(
             ))
         })
     })?;
-    admit_formatted(
-        ctx,
-        format_args!(
+    ctx.charge_formatted_retained(format_args!(
             "RSeStorage/B{}:record:{}",
             carrier.segment_token, carrier.record_ordinal
-        ),
-        "retain Inventor kernel carrier stream name",
-    )?;
+        ), "retain Inventor kernel carrier stream name")?;
     let stream = format!(
         "RSeStorage/B{}:record:{}",
         carrier.segment_token, carrier.record_ordinal
@@ -258,7 +253,7 @@ pub(crate) fn select_active_carrier<'a>(
         Ok(carrier) => Ok(ActiveCarrierState::Selected(carrier)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            admit_issue_detail(ctx, &error, "retain Inventor carrier unavailable detail")?;
+            ctx.charge_formatted_retained(format_args!("{}", &error), "retain Inventor carrier unavailable detail")?;
             Ok(ActiveCarrierState::Unavailable(error.to_string()))
         }
     }
@@ -268,7 +263,7 @@ fn unavailable<'a>(
     ctx: &DecodeContext<'_>,
     detail: std::fmt::Arguments<'_>,
 ) -> Result<ActiveCarrierState<'a>, CodecError> {
-    admit_formatted(ctx, detail, "retain Inventor carrier unavailable detail")?;
+    ctx.charge_formatted_retained(detail, "retain Inventor carrier unavailable detail")?;
     Ok(ActiveCarrierState::Unavailable(detail.to_string()))
 }
 

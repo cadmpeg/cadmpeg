@@ -26,7 +26,7 @@ use crate::pmdc::{
     PmDcReference, PmDcReferenceList,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
-use crate::record_issue::{admit_issue_detail, RecordIssue, RecordIssueFamily};
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
@@ -484,7 +484,7 @@ pub(crate) fn inventory(
                 }
                 ctx.charge_collection_items(1, "admit Inventor PmDc sketch issue")?;
                 ctx.charge_entities(1, "admit Inventor PmDc sketch issue")?;
-                admit_issue_detail(ctx, &error, "retain Inventor PmDc sketch issue detail")?;
+                ctx.charge_formatted_retained(format_args!("{}", &error), "retain Inventor PmDc sketch issue detail")?;
                 ctx.charge_retained(32, "retain Inventor PmDc sketch issue type id")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),

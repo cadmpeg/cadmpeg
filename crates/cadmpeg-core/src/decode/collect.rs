@@ -1150,6 +1150,16 @@ impl DecodeContext<'_> {
         Ok((values, reservation))
     }
 
+    /// Charges retained text produced by a later aggregate materialization.
+    pub fn charge_formatted_retained(
+        &self,
+        args: fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let length = self.formatted_length(args, operation)?;
+        self.charge_retained(u64_from_index(length), operation)
+    }
+
     /// Formats a retained string after charging its exact byte count.
     pub fn format_retained(
         &self,
@@ -2930,6 +2940,21 @@ mod tests {
         let (mut values, _reservation) = ctx.scoped_admitted_vec(2, "test scoped admitted storage").expect("service admission");
         values.extend([7u16, 9]);
         assert_eq!(values, [7, 9]);
+    }
+
+    #[test]
+    fn charge_formatted_retained_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 2);
+        assert!(matches!(ctx.charge_formatted_retained(format_args!("a{}", 12), "test formatted admission"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3));
+    }
+
+    #[test]
+    fn charge_formatted_retained_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        ctx.charge_formatted_retained(format_args!("a{}", 12), "test formatted admission").expect("service admission");
     }
 
 }

@@ -800,18 +800,8 @@ fn render_expression<'a>(
     for &ordinal in &plan.order {
         let length = plan.lengths[&ordinal].length;
         let mut text = String::new();
-        text.try_reserve_exact(length).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(
-                        "Inventor expression string allocation",
-                    ),
-                    cadmpeg_core::decode::u64_from_index(length),
-                    cadmpeg_core::decode::u64_from_index(length) + 1,
-                    "Inventor expression string allocation",
-                ),
-            )
-        })?;
+
+        DecodeContext::reserve_admitted_string(&mut text, length, "Inventor expression string allocation")?;
         let expression = expressions[&(token, ordinal)];
         match &expression.kind {
             PmDcExpressionKind::Value { .. } => {
