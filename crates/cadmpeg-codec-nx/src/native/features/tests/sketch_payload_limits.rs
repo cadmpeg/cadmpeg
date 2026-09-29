@@ -5,10 +5,15 @@ use crate::native::features::feature_operation_labels;
 use crate::native::features::feature_operation_records;
 use crate::native::features::feature_sketch_construction_inputs;
 use crate::native::features::feature_sketch_construction_payloads;
+use crate::native::features::feature_sketch_payload_scalars;
 use crate::native::features::feature_sketch_records;
 use crate::native::features::feature_sketch_references;
 
+#[derive(Clone, Copy)]
+enum SketchPayloadRoute { Construction, Scalar }
+
 fn sketch_payload_refusal(
+    route: SketchPayloadRoute,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = crate::test_support::with_decode_context(|ctx| {
@@ -23,43 +28,86 @@ fn sketch_payload_refusal(
         let sketches = feature_sketch_records(ctx, &labels, &records, &inputs, &references)?;
         feature_sketch_construction_inputs(ctx, &sketches, &references)
     }).expect("sketch payload construction inputs");
-    let admitted = crate::test_support::with_decode_context(|ctx| {
-        feature_sketch_construction_payloads(ctx, &container, &constructions)
-    }).expect("admitted sketch construction payloads");
-    assert!(!admitted.is_empty());
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        match route {
+            SketchPayloadRoute::Construction =>
+                feature_sketch_construction_payloads(ctx, &container, &constructions)
+                    .map(|rows| rows.len()),
+            SketchPayloadRoute::Scalar =>
+                feature_sketch_payload_scalars(ctx, &container, &constructions)
+                    .map(|rows| rows.len()),
+        }
+    };
+    assert!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted sketch payload route") > 0);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test root");
-    feature_sketch_construction_payloads(&ctx, &container, &constructions)
-        .expect_err("sketch payload resource limit")
+    decode(&ctx).expect_err("sketch payload resource limit")
 }
 
 #[test]
 fn sketch_payload_refuses_collection_limit() {
-    let error = sketch_payload_refusal(|policy| policy.limits.max_collection_items = 0);
+    let error = sketch_payload_refusal(SketchPayloadRoute::Construction,
+        |policy| policy.limits.max_collection_items = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
 fn sketch_payload_refuses_retained_limit() {
-    let error = sketch_payload_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    let error = sketch_payload_refusal(SketchPayloadRoute::Construction,
+        |policy| policy.limits.max_retained_bytes = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
 
 #[test]
 fn sketch_payload_refuses_scoped_limit() {
-    let error = sketch_payload_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    let error = sketch_payload_refusal(SketchPayloadRoute::Construction,
+        |policy| policy.limits.max_materialized_bytes = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
 }
 
 #[test]
 fn sketch_payload_refuses_work_limit() {
-    let error = sketch_payload_refusal(|policy| policy.limits.max_work_units = 0);
+    let error = sketch_payload_refusal(SketchPayloadRoute::Construction,
+        |policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn sketch_payload_scalar_refuses_collection_limit() {
+    let error = sketch_payload_refusal(SketchPayloadRoute::Scalar,
+        |policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn sketch_payload_scalar_refuses_retained_limit() {
+    let error = sketch_payload_refusal(SketchPayloadRoute::Scalar,
+        |policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn sketch_payload_scalar_refuses_scoped_limit() {
+    let error = sketch_payload_refusal(SketchPayloadRoute::Scalar,
+        |policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn sketch_payload_scalar_refuses_work_limit() {
+    let error = sketch_payload_refusal(SketchPayloadRoute::Scalar,
+        |policy| policy.limits.max_work_units = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
