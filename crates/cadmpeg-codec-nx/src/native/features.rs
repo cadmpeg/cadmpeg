@@ -7473,52 +7473,103 @@ pub(super) fn feature_surface_construction_payloads(
     references: &[FeatureSurfaceConstructionReference],
 ) -> Result<Vec<FeatureSurfaceConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(references
-        .iter()
-        .map(|reference| reference.operation_label.as_str())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|operation_label| {
-            let mut graph = references
-                .iter()
-                .filter(|reference| reference.operation_label == operation_label)
-                .collect::<Vec<_>>();
+    let label_bytes = references.len()
+        .checked_mul(std::mem::size_of::<&str>() * 4)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX surface payload labels", 0, 1))?;
+    let _labels_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(label_bytes), "NX surface payload labels",
+    )?;
+    let mut labels = BTreeSet::new();
+    for reference in references {
+        ctx.charge_work(1, "scan NX surface payload labels")?;
+        if !labels.contains(reference.operation_label.as_str()) {
+            ctx.charge_collection_items(1, "NX surface payload labels")?;
+            labels.insert(reference.operation_label.as_str());
+        }
+    }
+    let mut output = Vec::new();
+    for operation_label in labels {
+            let scan_work = references.len().checked_mul(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("scan NX surface construction graph", 0, 1))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(scan_work), "scan NX surface construction graph")?;
+            let graph_count = references.iter().filter(|reference| reference.operation_label == operation_label).count();
+            let graph_bytes = graph_count.checked_mul(std::mem::size_of::<&FeatureSurfaceConstructionReference>())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX surface construction graph", 0, 1))?;
+            ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(graph_count), "NX surface construction graph")?;
+            let _graph_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(graph_bytes), "NX surface construction graph")?;
+            let mut graph = Vec::new();
+            graph.try_reserve_exact(graph_count)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX surface construction graph", 0, cadmpeg_core::decode::u64_from_index(graph_count)))?;
+            graph.extend(references.iter().filter(|reference| reference.operation_label == operation_label));
+            let sort_work = graph_count.checked_mul(graph_count)
+                .ok_or_else(|| ctx.refuse_codec_limit("sort NX surface construction graph", 0, 1))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work), "sort NX surface construction graph")?;
             graph.sort_by_key(|reference| reference.ordinal);
             if graph
                 .iter()
                 .enumerate()
-                .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+                .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
             {
-                return None;
+                continue;
             }
-            let graph: [&FeatureSurfaceConstructionReference; 14] = graph.try_into().ok()?;
-            let data_blocks = graph
-                .each_ref()
-                .map(|reference| reference.data_block.clone())
-                .into_iter()
-                .collect::<Option<Vec<_>>>()?;
-            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
+            let Ok(graph): Result<[&FeatureSurfaceConstructionReference; 14], _> = graph.try_into() else {
+                continue;
+            };
+            let mut data_blocks = Vec::new();
+            ctx.charge_collection_items(14, "NX surface construction source blocks")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(14 * std::mem::size_of::<String>()), "NX surface construction source block slots")?;
+            data_blocks.try_reserve_exact(14)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX surface construction source blocks", 0, 14))?;
+            for reference in graph {
+                let Some(block) = reference.data_block.as_deref() else {
+                    break;
+                };
+                data_blocks.push(copy_operation_text(ctx, block, "NX surface construction source block")?);
+            }
+            if data_blocks.len() != 14 {
+                continue;
+            }
+            let Some(store) = data_blocks.first().and_then(|block| block.rsplit_once(":block#").map(|(store, _)| store)) else {
+                continue;
+            };
             if data_blocks.iter().any(|block| {
                 block
                     .rsplit_once(":block#")
                     .is_none_or(|(prefix, _)| prefix != store)
             }) {
-                return None;
+                continue;
             }
-            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
-                Ok(Some(content)) => content,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
+            let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+                continue;
             };
-            let (_, operation_key) = operation_label.rsplit_once('#')?;
-            Some(Ok(FeatureSurfaceConstructionPayload {
-                id: format!("nx:feature-history:surface-construction-payload#{operation_key}"),
-                operation_label: operation_label.to_string(),
-                construction_references: graph.each_ref().map(|reference| reference.id.clone()),
+            let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
+                continue;
+            };
+            let prefix = "nx:feature-history:surface-construction-payload#";
+            let id_len = prefix.len().checked_add(operation_key.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX surface construction payload identity", 0, 1))?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len), "NX surface construction payload identity")?;
+            let mut id = String::new();
+            id.try_reserve_exact(id_len)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX surface construction payload identity", 0, 1))?;
+            id.push_str(prefix);
+            id.push_str(operation_key);
+            let mut construction_references: [String; 14] = std::array::from_fn(|_| String::new());
+            for (slot, reference) in graph.into_iter().enumerate() {
+                construction_references[slot] = copy_operation_text(ctx, &reference.id, "NX surface construction reference identity")?;
+            }
+            ctx.charge_collection_items(1, "NX surface construction payloads")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSurfaceConstructionPayload>()), "NX surface construction payload")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX surface construction payloads", 0, 1))?;
+            output.push(FeatureSurfaceConstructionPayload {
+                id,
+                operation_label: copy_operation_text(ctx, operation_label, "NX surface construction operation label")?,
+                construction_references,
                 content,
-            }))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
+            });
+    }
+    Ok(output)
 }
 
 /// Decode exact scalar-pair frames from reconstructed surface payloads.

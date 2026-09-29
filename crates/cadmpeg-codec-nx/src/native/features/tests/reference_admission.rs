@@ -2,6 +2,7 @@
 
 use crate::native::features::feature_projected_curve_references;
 use crate::native::features::feature_surface_construction_references;
+use crate::native::features::feature_surface_construction_payloads;
 use crate::native::features::feature_thru_curve_construction_envelopes;
 use crate::native::features::draft::feature_draft_construction_references;
 
@@ -20,7 +21,21 @@ fn projected_curve_container() -> crate::container::Container<'static> {
 }
 
 fn surface_container() -> crate::container::Container<'static> {
-    reference_container("SKIN", b"\x3f\x00\x00\x01\x00\xf1\x02\x46\xf1\x02\x47\xf1\x02\x48\x01\x09\x03\x03\x04\x05\x02\x01\x01\x01\x01\x09\xf1\x02\x49\xf1\x02\x4a\xf1\x02\x4b\xf1\x02\x4c\xf1\x02\x4d\xf1\x02\x4e\xf1\x02\x4f\xf1\x02\x50\x00\x03\x03\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xf1\x02\x56\xf1\x02\x57\xf1\x02\x58\x01\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x01\x02".to_vec())
+    reference_container("SKIN", surface_payload_bytes())
+}
+
+fn surface_payload_bytes() -> Vec<u8> {
+    b"\x3f\x00\x00\x01\x00\xf1\x02\x46\xf1\x02\x47\xf1\x02\x48\x01\x09\x03\x03\x04\x05\x02\x01\x01\x01\x01\x09\xf1\x02\x49\xf1\x02\x4a\xf1\x02\x4b\xf1\x02\x4c\xf1\x02\x4d\xf1\x02\x4e\xf1\x02\x4f\xf1\x02\x50\x00\x03\x03\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xf1\x02\x56\xf1\x02\x57\xf1\x02\x58\x01\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x01\x02".to_vec()
+}
+
+fn surface_payload_container() -> crate::container::Container<'static> {
+    let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "SKIN", surface_payload_bytes())], &store,
+    );
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("synthetic surface payload container")
 }
 
 fn draft_container() -> crate::container::Container<'static> {
@@ -163,6 +178,55 @@ fn thru_curve_envelope_route_refuses_scoped_limit() {
 fn thru_curve_envelope_route_refuses_work_limit() {
     let error = reference_route_refusal(thru_curve_container(), 1, feature_thru_curve_construction_envelopes,
         |policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+fn surface_payload_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = surface_payload_container();
+    let references = crate::test_support::with_decode_context(|ctx| {
+        feature_surface_construction_references(ctx, &container)
+    }).expect("admitted surface references");
+    assert_eq!(references.len(), 14);
+    let payloads = crate::test_support::with_decode_context(|ctx| {
+        feature_surface_construction_payloads(ctx, &container, &references)
+    }).expect("admitted surface payload");
+    assert_eq!(payloads.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_surface_construction_payloads(&ctx, &container, &references)
+        .err().expect("surface payload resource limit")
+}
+
+#[test]
+fn surface_payload_route_refuses_collection_limit() {
+    let error = surface_payload_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn surface_payload_route_refuses_retained_limit() {
+    let error = surface_payload_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn surface_payload_route_refuses_scoped_limit() {
+    let error = surface_payload_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn surface_payload_route_refuses_work_limit() {
+    let error = surface_payload_route_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
