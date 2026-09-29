@@ -1096,11 +1096,16 @@ fn resolved_edge_group_with_transition_chain(
                     edge_slot,
                 );
                 if !edges.contains(&edge) {
-                    edges.push(edge);
+                    push_edge_item(ctx, &mut edges, edge,
+                        "f3d combined historical edge")?;
                 }
             }
-            return Ok(EdgeSelection::historical(state, edges, group.id.clone())
-                .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
+            let native = copy_edge_text(ctx, &group.id,
+                "f3d combined historical group id")?;
+            return match EdgeSelection::historical(state, edges, native) {
+                Ok(selection) => Ok(selection),
+                Err(_) => native_edge_selection(group, ctx),
+            };
         }
         let mut partial_members = Vec::new();
         for (operand, resolved) in matched_operands.iter().zip(combined_edges) {

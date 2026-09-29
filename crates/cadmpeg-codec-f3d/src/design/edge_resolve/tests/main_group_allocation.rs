@@ -325,3 +325,49 @@ fn single_identity_historical_group_id_refuses_retained_limit() {
     assert_identity_historical_refusal(IdentityHistoricalRoute::Single,
         "f3d single identity historical group id", true);
 }
+
+fn assert_combined_historical_refusal(operation: &'static str, retained: bool) {
+    let mut group = group(2, 10);
+    group.try_set_members(vec![
+        crate::records::identity::Located { value: 10, offset: 0 },
+        crate::records::identity::Located { value: 11, offset: 11 },
+    ]).unwrap();
+    let mut first_recipe = recipe_edge_operand(10, &[], &[]);
+    first_recipe.resolved_edge_slot = Some(17);
+    let mut second_recipe = recipe_edge_operand(11, &[18], &[]);
+    second_recipe.terminal_reference_edge_slots = vec![vec![18], vec![19]];
+    let first_identity = identity(10, &[]);
+    let mut second_identity = identity(11, &[]);
+    second_identity.resolved_edge_slot = Some(18);
+    let recipes = [first_recipe, second_recipe];
+    let identities = [first_identity, second_identity];
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combined-history")
+        .unwrap();
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match resolved_edge_group(&group, std::slice::from_ref(&group),
+            &recipes, &identities, Some(7), &feature_id, Some(&ctx)) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected {operation} refusal: {other:?}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn combined_historical_edge_refuses_collection_limit() {
+    assert_combined_historical_refusal("f3d combined historical edge", false);
+}
+
+#[test]
+fn combined_historical_group_id_refuses_retained_limit() {
+    assert_combined_historical_refusal("f3d combined historical group id", true);
+}
