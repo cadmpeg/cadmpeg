@@ -8,7 +8,8 @@ use super::selections::{
 };
 use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FeatureDirection3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::UnitVector3;
@@ -341,27 +342,42 @@ fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Fe
 }
 
 pub(super) fn draft_operand_candidates(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Vec<(String, DraftOperands)> {
-    let mut objects = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
-        .collect::<Vec<_>>();
+) -> Result<Vec<(String, DraftOperands)>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT draft operand candidates";
+    let mut objects = Vec::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        if let Some(name) = feature_object_name(feature, lane) {
+            ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+            objects.push((name.offset, feature));
+        }
+    }
+    let sort_work = u64::try_from(objects.len())
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(sort_work, OPERATION)?;
     objects.sort_unstable_by_key(|(offset, _)| *offset);
-    objects
-        .iter()
-        .enumerate()
-        .filter_map(|(index, (start, feature))| {
-            let start = usize::try_from(*start).ok()?;
-            let end = objects
-                .get(index + 1)
-                .and_then(|(offset, _)| usize::try_from(*offset).ok())
-                .unwrap_or(lane.native_payload.len());
-            draft_operands(feature, lane, start, end).map(|operands| (feature.id.clone(), operands))
-        })
-        .collect()
+    let mut candidates = Vec::new();
+    for (index, (start, feature)) in objects.iter().enumerate() {
+        ctx.charge_work(1, OPERATION)?;
+        let Ok(start) = usize::try_from(*start) else {
+            continue;
+        };
+        let end = objects
+            .get(index + 1)
+            .and_then(|(offset, _)| usize::try_from(*offset).ok())
+            .unwrap_or(lane.native_payload.len());
+        if let Some(operands) = draft_operands(feature, lane, start, end) {
+            let mut id = String::new();
+            ctx.reserve_retained_string(&mut id, feature.id.len(), OPERATION)?;
+            id.push_str(&feature.id);
+            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            candidates.push((id, operands));
+        }
+    }
+    Ok(candidates)
 }
 
 #[cfg(test)]
@@ -436,6 +452,53 @@ mod tests {
             text: None,
             content: Vec::new(),
         }
+    }
+
+    #[test]
+    fn draft_operand_candidates_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![draft_feature()],
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: vec![0],
+            classes: Vec::new(),
+            names: vec![FeatureInputName {
+                id: "name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                value: "Draft1".into(),
+                object_id: ObjectId::from_value(7),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+            .expect("test context");
+        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
+            .expect_err("draft object index exceeds collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect SLDPRT draft operand candidates"));
     }
 
     fn compact_selection(role: u8, paths: &[&[(u16, u32, u32, u32)]]) -> Vec<u8> {
@@ -680,11 +743,20 @@ mod tests {
             ),
             native_ref: Some("draft".into()),
         }];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test decode context");
         super::super::projections::project_draft_operands(
+            &ctx,
             &mut projected,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-        );
+        )
+        .expect("draft projection");
         assert!(matches!(
             projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -717,7 +789,13 @@ mod tests {
             pull.direction =
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
         });
-        super::super::projections::project_draft_operands(&mut projected, &[history], &[lane]);
+        super::super::projections::project_draft_operands(
+            &ctx,
+            &mut projected,
+            &[history],
+            std::slice::from_ref(&lane),
+        )
+        .expect("draft projection");
         assert!(matches!(
             projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Draft {
