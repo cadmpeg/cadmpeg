@@ -1465,7 +1465,12 @@ fn source_less_lanes(
         lane.references = reference_cells(&lane.scalars, &lane.classes);
         lane.sketch_entities = admit_sketch_input_entities(&ctx, &lane.native_payload, &lane.id)?;
     }
-    bind_scalar_operands(&native.feature_histories, &mut lanes);
+    let bytes = lanes.iter().flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    bind_scalar_operands(&ctx, &native.feature_histories, &mut lanes)?;
     Ok(lanes)
 }
 

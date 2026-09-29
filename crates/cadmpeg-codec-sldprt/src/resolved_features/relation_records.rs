@@ -41,37 +41,33 @@ fn same_scalar_name(
 /// next start, so its end is `None`: the interval is open, and every offset at
 /// or after its start is inside it.
 pub(super) fn feature_intervals(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Vec<(u64, Option<u64>, String)> {
-    let mut starts = histories
-        .iter()
-        .flat_map(|history| {
-            history
-                .features
-                .iter()
-                .filter(|feature| !is_history_metadata_record(feature, &history.features))
-        })
-        .filter_map(|feature| {
-            Some((
-                feature_object_name(feature, lane)?.offset,
-                feature.id.clone(),
-            ))
-        })
-        .collect::<Vec<_>>();
+) -> Result<Vec<(u64, Option<u64>, String)>, CodecError> {
+    let mut starts = Vec::new();
+    for history in histories {
+        for feature in &history.features {
+            ctx.charge_work(1, "scan SLDPRT feature intervals")?;
+            if is_history_metadata_record(feature, &history.features) {
+                continue;
+            }
+            if let Some(name) = feature_object_name(feature, lane) {
+                ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT feature intervals")?;
+                let id = ctx.format_retained(format_args!("{}", feature.id), "retain SLDPRT feature interval identity")?;
+                starts.push((name.offset, id));
+            }
+        }
+    }
     starts.sort_unstable_by_key(|(offset, _)| *offset);
     starts.dedup_by_key(|(offset, _)| *offset);
-    starts
-        .iter()
-        .enumerate()
-        .map(|(index, (start, feature))| {
-            (
-                *start,
-                starts.get(index + 1).map(|(next, _)| *next),
-                feature.clone(),
-            )
-        })
-        .collect()
+    let mut intervals = Vec::new();
+    ctx.reserve_collection_vec(&mut intervals, starts.len(), "collect SLDPRT feature intervals")?;
+    let mut starts = starts.into_iter().peekable();
+    while let Some((start, feature)) = starts.next() {
+        intervals.push((start, starts.peek().map(|(next, _)| *next), feature));
+    }
+    Ok(intervals)
 }
 
 /// The interval that contains `offset`, if one does.
@@ -317,16 +313,17 @@ struct RelationGroup<'a> {
 }
 
 pub(super) fn relation_instances(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Vec<FeatureInputRelationInstance> {
+) -> Result<Vec<FeatureInputRelationInstance>, CodecError> {
     let sketch_features = histories
         .iter()
         .flat_map(|history| &history.features)
         .filter(|feature| feature.xml_tag.eq_ignore_ascii_case("Sketch"))
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
-    let intervals = feature_intervals(histories, lane);
+    let intervals = feature_intervals(ctx, histories, lane)?;
     let declaration_candidates =
         relation_declaration_candidates_with_dynamic(&lane.classes, &lane.scalars, &intervals);
     let mut candidate_counts = HashMap::<&str, usize>::new();
@@ -540,7 +537,7 @@ pub(super) fn relation_instances(
     bind_detached_relation_drivers(&mut instances, lane);
     bind_circle_dimension_centers(&mut instances, lane);
     bind_relation_geometry_operands(&mut instances, lane);
-    instances
+    Ok(instances)
 }
 
 #[allow(clippy::items_after_test_module)]
@@ -854,7 +851,7 @@ mod relation_records_tests {
         let driving = scalar(40, FeatureInputScalarRole::Driving);
         let lane = lane(vec![relation_class], vec![native, driving.clone()]);
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -879,7 +876,7 @@ mod relation_records_tests {
             value: "Sketch".into(),
         });
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -905,7 +902,7 @@ mod relation_records_tests {
             value: "Sketch".into(),
         });
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -928,7 +925,7 @@ mod relation_records_tests {
         );
 
         let history = sketch_history();
-        let instances = relation_instances(&history, &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &history, &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -959,7 +956,7 @@ mod relation_records_tests {
         let second = scalar(40, FeatureInputScalarRole::Display);
         let lane = lane(vec![vertical, horizontal], vec![first, second]);
 
-        let relations = relation_instances(&sketch_history(), &lane);
+        let relations = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         assert_eq!(relations.len(), 2);
         assert_eq!(
             relations
@@ -982,7 +979,7 @@ mod relation_records_tests {
             vec![scalar(30, FeatureInputScalarRole::Driving)],
         );
 
-        assert!(relation_instances(&sketch_history(), &lane).is_empty());
+        assert!(relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap().is_empty());
     }
 
     /// Two features, so the first interval ends at the second's start. A class
@@ -1025,7 +1022,7 @@ mod relation_records_tests {
             },
         ];
 
-        let intervals = feature_intervals(&history, &lane);
+        let intervals = feature_intervals(&cadmpeg_test_support::service_decode_context(), &history, &lane).unwrap();
         assert_eq!(
             intervals,
             vec![
@@ -1061,7 +1058,7 @@ mod relation_records_tests {
             value: "Sketch".into(),
         }];
 
-        let intervals = feature_intervals(&history, &lane);
+        let intervals = feature_intervals(&cadmpeg_test_support::service_decode_context(), &history, &lane).unwrap();
         assert_eq!(
             relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals).len(),
             1,
@@ -1103,7 +1100,7 @@ mod relation_records_tests {
             },
         ];
 
-        assert!(relation_instances(&history, &lane).is_empty());
+        assert!(relation_instances(&cadmpeg_test_support::service_decode_context(), &history, &lane).unwrap().is_empty());
     }
 
     #[test]
@@ -1141,7 +1138,7 @@ mod relation_records_tests {
             },
         ];
 
-        let relations = relation_instances(&history, &lane);
+        let relations = relation_instances(&cadmpeg_test_support::service_decode_context(), &history, &lane).unwrap();
         let [relation] = relations.as_slice() else {
             panic!("metadata must not terminate the sketch interval");
         };
@@ -1159,7 +1156,7 @@ mod relation_records_tests {
             ],
         );
 
-        let relations = relation_instances(&sketch_history(), &lane);
+        let relations = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         assert_eq!(relations.len(), 2);
         assert_eq!(
             relations
@@ -1206,7 +1203,7 @@ mod relation_records_tests {
             feature_ref: Some("sketch".into()),
         });
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         assert_eq!(instances.len(), 2);
         assert_eq!(instances[1].offset, 30);
         assert_eq!(
@@ -1246,7 +1243,7 @@ mod relation_records_tests {
             },
         ];
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one circle relation");
         };
@@ -1283,7 +1280,7 @@ mod relation_records_tests {
             })
             .collect();
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one circle relation");
         };
@@ -1326,7 +1323,7 @@ mod relation_records_tests {
             },
         ];
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one repeated circle relation");
         };
@@ -1422,7 +1419,7 @@ mod relation_records_tests {
             )],
         );
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -1446,7 +1443,7 @@ mod relation_records_tests {
         );
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -1472,7 +1469,7 @@ mod relation_records_tests {
         let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -1529,7 +1526,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -1566,7 +1563,7 @@ mod relation_records_tests {
         );
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one grouped relation instance");
         };
@@ -1596,7 +1593,7 @@ mod relation_records_tests {
         let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![display]);
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -1625,7 +1622,7 @@ mod relation_records_tests {
         lane.sketch_entities = dynamic_point_markers();
         lane.sketch_entities[3].coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 0.0]);
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -1685,7 +1682,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -1734,7 +1731,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -1784,7 +1781,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(&sketch_history(), &lane);
+        let instances = relation_instances(&cadmpeg_test_support::service_decode_context(), &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged angle relation");
         };

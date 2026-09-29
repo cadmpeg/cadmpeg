@@ -1314,10 +1314,15 @@ fn resolved_feature_payload(
         &expected_lane.scalars,
         &expected_lane.classes,
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     crate::resolved_features::bindings::bind_scalar_operands(
+        &ctx,
         histories,
         std::slice::from_mut(&mut expected_lane),
-    );
+    )?;
     if !crate::resolved_features::scalars::scalar_indices_match(
         &lane.scalars,
         &expected_lane.scalars,

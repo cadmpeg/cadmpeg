@@ -89,7 +89,7 @@ pub(crate) fn bind_sketch_profiles(
 ) -> Result<(), CodecError> {
     let declared_carriers = declared_entity_handle_circular_carriers(ctx, features, parameters, lanes)?;
     let mut superseded = HashSet::new();
-    let metadata_ids = history_metadata_ids(histories);
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -98,7 +98,7 @@ pub(crate) fn bind_sketch_profiles(
     for lane in lanes {
         let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
         for feature in native_features.values() {
-            if metadata_ids.contains(&feature.id) {
+            if metadata_ids.contains(feature.id.as_str()) {
                 continue;
             }
             let Some(name) = feature_object_name(feature, lane) else {
@@ -307,7 +307,7 @@ pub(crate) fn project_compact_sketch_profiles(
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
-    let metadata_ids = history_metadata_ids(histories);
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
 
     let native_features = histories
         .iter()
@@ -319,7 +319,7 @@ pub(crate) fn project_compact_sketch_profiles(
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let mut objects = native_features
             .values()
-            .filter(|feature| !metadata_ids.contains(&feature.id))
+            .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
                 let start = feature_object_name(feature, lane)
                     .map(|name| name.offset)
@@ -837,7 +837,7 @@ pub(crate) fn project_marker_backed_sketches(
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
-    let metadata_ids = history_metadata_ids(histories);
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
 
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
@@ -884,7 +884,7 @@ pub(crate) fn project_marker_backed_sketches(
             markers_by_id.insert(marker.id(), marker);
         }
         let mut objects = Vec::new();
-        for feature in native_features.values().filter(|feature| !metadata_ids.contains(&feature.id)) {
+        for feature in native_features.values().filter(|feature| !metadata_ids.contains(feature.id.as_str())) {
             let Some((start, feature)) = (|| {
                 let start = feature_object_name(feature, lane)
                     .map(|name| name.offset)
@@ -3430,11 +3430,11 @@ mod detached_legacy_sketch_tests {
             sketch_entities: vec![detached],
         };
 
-        bind_detached_legacy_sketch_objects(
+        bind_detached_legacy_sketch_objects(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&history),
             &HashSet::new(),
             &mut lane,
-        );
+        ).unwrap();
 
         assert_eq!(
             lane.sketch_entities[0].feature_ref.as_deref(),
