@@ -20,7 +20,7 @@ use super::selections::{
     cosmetic_thread_cylinder_marker_reference, variable_fillet_control_references,
     variable_fillet_dimension_index_for_feature,
 };
-use super::terminations::{compact_surface_selection_value, compact_surface_selection_value_charged};
+use super::terminations::compact_surface_selection_value_charged;
 use crate::records::{
     FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
@@ -2085,115 +2085,123 @@ pub(crate) fn project_draft_operands(
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let dependencies = &mut feature.dependencies;
+        let mut edit_result: Result<(), cadmpeg_core::CodecError> = Ok(());
         feature.evaluation.edit(|definition, _| {
-            let Some(native_ref) = native_ref else {
-                return;
-            };
-            let Some(operands) = candidates.get(native_ref) else {
-                return;
-            };
-            let Some(first) = operands
-                .first()
-                .filter(|first| operands.iter().all(|item| same_draft_operands(first, item)))
-            else {
-                return;
-            };
-            let pull_direction = first.pull_direction;
+            edit_result = (|| {
+                let Some(native_ref) = native_ref else {
+                    return Ok(());
+                };
+                let Some(operands) = candidates.get(native_ref) else {
+                    return Ok(());
+                };
+                let Some(first) = operands
+                    .first()
+                    .filter(|first| operands.iter().all(|item| same_draft_operands(first, item)))
+                else {
+                    return Ok(());
+                };
+                let pull_direction = first.pull_direction;
 
-            let FeatureDefinition::Operation(FeatureOperation::Draft { faces, anchor, .. }) =
-                definition
-            else {
-                return;
-            };
-            match (&first.anchor, &mut *anchor) {
-                (
-                    DraftAnchor::NeutralPlane(path),
-                    cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                        plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-                        pull,
-                    },
-                ) => {
-                    let plane = draft_face_selection(
-                        std::slice::from_ref(path),
-                        native_ref,
-                        histories,
-                        &feature_ids_by_native,
-                        dependencies,
-                    );
-                    let pull = pull.take();
-                    *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull };
+                let FeatureDefinition::Operation(FeatureOperation::Draft { faces, anchor, .. }) =
+                    definition
+                else {
+                    return Ok(());
+                };
+                match (&first.anchor, &mut *anchor) {
+                    (
+                        DraftAnchor::NeutralPlane(path),
+                        cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                            plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                            pull,
+                        },
+                    ) => {
+                        let plane = draft_face_selection(
+                            ctx,
+                            std::slice::from_ref(path),
+                            native_ref,
+                            histories,
+                            &feature_ids_by_native,
+                            dependencies,
+                        )?;
+                        let pull = pull.take();
+                        *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull };
+                    }
+                    (
+                        DraftAnchor::PartingTool(paths),
+                        cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                            plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                            ..
+                        },
+                    ) => {
+                        let tool = draft_face_selection(
+                            ctx,
+                            paths,
+                            native_ref,
+                            histories,
+                            &feature_ids_by_native,
+                            dependencies,
+                        )?;
+                        *anchor = cadmpeg_ir::features::DraftAnchor::PartingLine {
+                            tool,
+                            pull: cadmpeg_ir::features::DraftPull {
+                                direction: pull_direction,
+                                plane: None,
+                            },
+                        };
+                    }
+                    _ => {}
                 }
-                (
-                    DraftAnchor::PartingTool(paths),
-                    cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                        plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-                        ..
-                    },
-                ) => {
-                    let tool = draft_face_selection(
-                        paths,
+                if matches!(faces, cadmpeg_ir::features::FaceSelection::Unresolved) {
+                    *faces = draft_face_selection(
+                        ctx,
+                        &first.faces,
                         native_ref,
                         histories,
                         &feature_ids_by_native,
                         dependencies,
-                    );
-                    *anchor = cadmpeg_ir::features::DraftAnchor::PartingLine {
-                        tool,
-                        pull: cadmpeg_ir::features::DraftPull {
+                    )?;
+                }
+                match anchor {
+                    cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull, .. } if pull.is_none() => {
+                        *pull = Some(cadmpeg_ir::features::DraftPull {
                             direction: pull_direction,
                             plane: None,
-                        },
-                    };
+                        });
+                    }
+                    _ => {}
                 }
-                _ => {}
-            }
-            if matches!(faces, cadmpeg_ir::features::FaceSelection::Unresolved) {
-                *faces = draft_face_selection(
-                    &first.faces,
-                    native_ref,
-                    histories,
-                    &feature_ids_by_native,
-                    dependencies,
-                );
-            }
-            match anchor {
-                cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull, .. } if pull.is_none() => {
-                    *pull = Some(cadmpeg_ir::features::DraftPull {
-                        direction: pull_direction,
-                        plane: None,
-                    });
-                }
-                _ => {}
-            }
+                Ok(())
+            })();
         });
+        edit_result?;
     }
     Ok(())
 }
 
 fn draft_face_selection(
+    ctx: &DecodeContext<'_>,
     paths: &[Vec<crate::records::FeatureInputComponentPathEntry>],
     consumer_ref: &str,
     histories: &[crate::records::FeatureHistory],
     feature_ids_by_native: &HashMap<String, cadmpeg_ir::features::FeatureId>,
     dependencies: &mut cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
-) -> cadmpeg_ir::features::FaceSelection {
-    let mut native_values = paths
-        .iter()
-        .map(|path| compact_surface_selection_value(path))
-        .collect::<Vec<_>>();
-    let mut seen_native = HashSet::new();
-    native_values.retain(|value| seen_native.insert(value.clone()));
-    let native = if let [value] = native_values.as_slice() {
-        value.clone()
-    } else {
-        format!(
-            "sldprt:feature-input:draft-surface-vectors:{}",
-            native_values.join(";")
-        )
-    };
+) -> Result<cadmpeg_ir::features::FaceSelection, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "project SLDPRT draft face selections";
+    let native = format_surface_path_set(
+        ctx,
+        paths.len(),
+        |index| &paths[index],
+        "sldprt:feature-input:draft-surface-vectors:",
+        "format SLDPRT draft surface selection set",
+    )?;
     let mut generated = Vec::new();
     let mut generated_dependencies = Vec::new();
     for path in paths {
+        let history_count = histories.iter().try_fold(0usize, |count, history| {
+            count.checked_add(history.features.len())
+        }).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64::try_from(history_count)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         let Some((producer, local_id)) = component_path_terminal_feature(
             path,
             histories.iter().flat_map(|history| &history.features),
@@ -2205,30 +2213,40 @@ fn draft_face_selection(
                     .zip(path.last()?.local_id.as_ref())
             })
         else {
-            return cadmpeg_ir::features::FaceSelection::Native(native);
+            return Ok(cadmpeg_ir::features::FaceSelection::Native(native));
         };
+        let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
+        let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
         let Ok(face) =
-            cadmpeg_ir::features::GeneratedFaceRef::new(producer.clone(), local_id.to_string())
+            cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text)
         else {
-            return cadmpeg_ir::features::FaceSelection::Native(native);
+            return Ok(cadmpeg_ir::features::FaceSelection::Native(native));
         };
+        ctx.charge_work(u64::try_from(generated.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         if !generated.contains(&face) {
+            ctx.reserve_collection_vec(&mut generated, 1, OPERATION)?;
             generated.push(face);
         }
+        ctx.charge_work(u64::try_from(generated_dependencies.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         if !generated_dependencies.contains(producer) {
-            generated_dependencies.push(producer.clone());
+            let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
+            ctx.reserve_collection_vec(&mut generated_dependencies, 1, OPERATION)?;
+            generated_dependencies.push(dependency);
         }
     }
     if generated.is_empty() {
-        cadmpeg_ir::features::FaceSelection::Native(native)
+        Ok(cadmpeg_ir::features::FaceSelection::Native(native))
     } else {
         for dependency in generated_dependencies {
             if !dependencies.contains(&dependency) {
-                dependencies.insert(dependency);
+                dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
             }
         }
-        cadmpeg_ir::features::FaceSelection::generated(generated, native.clone())
-            .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+        let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+        Ok(cadmpeg_ir::features::FaceSelection::generated(generated, native_copy)
+            .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)))
     }
 }
 
@@ -2236,20 +2254,32 @@ fn compact_surface_selection_set_value(
     ctx: &DecodeContext<'_>,
     selections: &[&FeatureInputSurfaceSelection],
 ) -> Result<String, cadmpeg_core::CodecError> {
-    use std::fmt::Write;
+    format_surface_path_set(
+        ctx,
+        selections.len(),
+        |index| &selections[index].components,
+        "sldprt:feature-input:surface-selection-vectors:",
+        "format SLDPRT surface selection set",
+    )
+}
 
-    const OPERATION: &str = "format SLDPRT surface selection set";
+fn format_surface_path_set<'a>(
+    ctx: &DecodeContext<'_>,
+    path_count: usize,
+    path_at: impl Fn(usize) -> &'a [crate::records::FeatureInputComponentPathEntry],
+    set_prefix: &'static str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
     const PATH_PREFIX: &str = "sldprt:feature-input:surface-component-ids:";
-    const SET_PREFIX: &str = "sldprt:feature-input:surface-selection-vectors:";
     let same_ids = |left: &[crate::records::FeatureInputComponentPathEntry],
                     right: &[crate::records::FeatureInputComponentPathEntry]|
      -> Result<bool, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, OPERATION)?;
+        ctx.charge_work(1, operation)?;
         if left.len() != right.len() {
             return Ok(false);
         }
         for (left, right) in left.iter().zip(right) {
-            ctx.charge_work(1, OPERATION)?;
+            ctx.charge_work(1, operation)?;
             if left.local_id != right.local_id {
                 return Ok(false);
             }
@@ -2258,10 +2288,11 @@ fn compact_surface_selection_set_value(
     };
     let mut unique_count = 0usize;
     let mut path_bytes = 0usize;
-    for (index, selection) in selections.iter().enumerate() {
+    for index in 0..path_count {
+        let components = path_at(index);
         let mut duplicate = false;
-        for previous in &selections[..index] {
-            if same_ids(&previous.components, &selection.components)? {
+        for previous_index in 0..index {
+            if same_ids(path_at(previous_index), components)? {
                 duplicate = true;
                 break;
             }
@@ -2270,41 +2301,42 @@ fn compact_surface_selection_set_value(
             continue;
         }
         unique_count = unique_count.checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         let mut bytes = PATH_PREFIX.len();
-        for (component_index, component) in selection.components.iter().enumerate() {
-            ctx.charge_work(1, OPERATION)?;
+        for (component_index, component) in components.iter().enumerate() {
+            ctx.charge_work(1, operation)?;
             let digits = match component.local_id {
                 Some(0) | None => 1,
                 Some(local_id) => usize::try_from(local_id.ilog10())
                     .ok()
                     .and_then(|log| log.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
             };
             let separator = usize::from(component_index != 0);
             bytes = bytes.checked_add(separator).and_then(|sum| sum.checked_add(digits))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         }
         path_bytes = path_bytes.checked_add(bytes)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     }
     let set_bytes = if unique_count == 1 { 0 } else {
         let separators = if unique_count == 0 { 0 } else { unique_count - 1 };
-        SET_PREFIX.len().checked_add(separators)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?
+        set_prefix.len().checked_add(separators)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?
     };
     let total_bytes = path_bytes.checked_add(set_bytes)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     let mut value = String::new();
-    ctx.reserve_retained_string(&mut value, total_bytes, OPERATION)?;
+    ctx.reserve_retained_string(&mut value, total_bytes, operation)?;
     if unique_count != 1 {
-        value.push_str(SET_PREFIX);
+        value.push_str(set_prefix);
     }
     let mut emitted = 0usize;
-    for (index, selection) in selections.iter().enumerate() {
+    for index in 0..path_count {
+        let components = path_at(index);
         let mut duplicate = false;
-        for previous in &selections[..index] {
-            if same_ids(&previous.components, &selection.components)? {
+        for previous_index in 0..index {
+            if same_ids(path_at(previous_index), components)? {
                 duplicate = true;
                 break;
             }
@@ -2316,7 +2348,7 @@ fn compact_surface_selection_set_value(
             value.push(';');
         }
         value.push_str(PATH_PREFIX);
-        for (component_index, component) in selection.components.iter().enumerate() {
+        for (component_index, component) in components.iter().enumerate() {
             if component_index != 0 {
                 value.push(',');
             }
