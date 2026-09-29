@@ -2,7 +2,7 @@
 //! Native-namespace tests for consolidated family layouts.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_test_support::wire;
 
@@ -370,10 +370,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     let [circle] = native.consolidated_circles.as_slice() else {
         panic!("one consolidated circle")
     };
-    assert_eq!(
-        circle.layout,
-        crate::native::CatiaCircleLayout::Word
-    );
+    assert_eq!(circle.layout, crate::native::CatiaCircleLayout::Word);
     assert_eq!(circle.record_id, 0x1234);
     assert_eq!(circle.frame_token, 0x05);
     assert_eq!(
@@ -1266,11 +1263,11 @@ fn native_namespace_retains_closed_fixed_owner_boundary_cycle() {
     assert!(cycle.face_node.is_none());
     assert_eq!(
         cycle.edges.map(|edge| edge.byte_offset),
-        edge_positions.map(|position| u64_from_index(position))
+        edge_positions.map(u64_from_index)
     );
     assert_eq!(
         cycle.edges.map(|edge| edge.endpoint_records),
-        endpoint_records.map(|pair| pair.map(|position| u64_from_index(position)))
+        endpoint_records.map(|pair| pair.map(u64_from_index))
     );
 }
 
@@ -1297,11 +1294,11 @@ fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
     assert_eq!(face_node.terminal, [0x27, 0x05]);
     assert_eq!(
         cycle.edges.map(|edge| edge.byte_offset),
-        edge_positions.map(|position| u64_from_index(position))
+        edge_positions.map(u64_from_index)
     );
     assert_eq!(
         cycle.edges.map(|edge| edge.endpoint_records),
-        endpoint_records.map(|pair| pair.map(|position| u64_from_index(position)))
+        endpoint_records.map(|pair| pair.map(u64_from_index))
     );
 
     let mut wrong_terminal = bytes.clone();

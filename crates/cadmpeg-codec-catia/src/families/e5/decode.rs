@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! E5-stream decode route: analytic carriers, plane fitting, and topology transfer.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 type E5PcurveLiftOutput =
     Result<Option<(PcurveGeometry, [f64; 2], [Point3; 2])>, cadmpeg_core::CodecError>;
@@ -1406,7 +1406,20 @@ fn transfer_e5_topology(
             "catia_e5_transfer_edge_ids",
         )?;
     }
-    if let Err(error) = emit_e5_curves_and_edges(ctx, crate::families::e5::decode::EmitE5CurvesAndEdgesInputs { ir, annotations, topology, vertex_for_ref: &vertex_for_ref, edge_ids: &edge_ids, edge_curves: &boundary.edge_curves, intersections: &boundary.intersections, surface_curves: &boundary.surface_curves, admission }) {
+    if let Err(error) = emit_e5_curves_and_edges(
+        ctx,
+        crate::families::e5::decode::EmitE5CurvesAndEdgesInputs {
+            ir,
+            annotations,
+            topology,
+            vertex_for_ref: &vertex_for_ref,
+            edge_ids: &edge_ids,
+            edge_curves: &boundary.edge_curves,
+            intersections: &boundary.intersections,
+            surface_curves: &boundary.surface_curves,
+            admission,
+        },
+    ) {
         return match error {
             cadmpeg_core::CodecError::ResourceLimit(_) => Err(error),
             _ => Ok(false),
@@ -1424,7 +1437,20 @@ fn transfer_e5_topology(
             _ => Ok(false),
         };
     }
-    if !emit_e5_faces_loops_coedges(ctx, crate::families::e5::decode::EmitE5FacesLoopsCoedgesInputs { ir, annotations, topology, surface_for_ref: &surface_for_ref, face_shell: &face_shell, edge_ids: &edge_ids, vertex_for_ref: &vertex_for_ref, boundary: &boundary, admission })? {
+    if !emit_e5_faces_loops_coedges(
+        ctx,
+        crate::families::e5::decode::EmitE5FacesLoopsCoedgesInputs {
+            ir,
+            annotations,
+            topology,
+            surface_for_ref: &surface_for_ref,
+            face_shell: &face_shell,
+            edge_ids: &edge_ids,
+            vertex_for_ref: &vertex_for_ref,
+            boundary: &boundary,
+            admission,
+        },
+    )? {
         return Ok(false);
     }
     Ok(true)
@@ -1618,8 +1644,7 @@ fn plan_e5_boundary<'a>(
                             )?;
                         }
                     }
-                } else if !support.is_intersection() && !surface_curves.contains_key(&edge_ref)
-                {
+                } else if !support.is_intersection() && !surface_curves.contains_key(&edge_ref) {
                     let surface_id = surface_for_ref[&face.surface]
                         .0
                         .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
@@ -1979,20 +2004,45 @@ fn resolve_e5_ownership(
 }
 
 /// Emits the boundary curve, intersection/surface-curve procedural, and edge layers.
-struct EmitE5CurvesAndEdgesInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10> {
-ir: &'input0 mut CadIr,
-annotations: &'input1 mut AnnotationBuilder,
-topology: &'input2 crate::families::e5::graph::E5Topology,
-vertex_for_ref: &'input3 HashMap<u32, VertexId>,
-edge_ids: &'input4 HashMap<u32, EdgeId>,
-edge_curves: &'input5 BTreeMap<u32, (CurveGeometry, [f64; 2])>,
-intersections: &'input6 BTreeMap<u32, IntcurveSupportContext>,
-surface_curves: &'input7 BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
-admission: &'input10 mut FamilyEntityAdmission<'input8, 'input9>
+struct EmitE5CurvesAndEdgesInputs<
+    'input0,
+    'input1,
+    'input2,
+    'input3,
+    'input4,
+    'input5,
+    'input6,
+    'input7,
+    'input8,
+    'input9,
+    'input10,
+> {
+    ir: &'input0 mut CadIr,
+    annotations: &'input1 mut AnnotationBuilder,
+    topology: &'input2 crate::families::e5::graph::E5Topology,
+    vertex_for_ref: &'input3 HashMap<u32, VertexId>,
+    edge_ids: &'input4 HashMap<u32, EdgeId>,
+    edge_curves: &'input5 BTreeMap<u32, (CurveGeometry, [f64; 2])>,
+    intersections: &'input6 BTreeMap<u32, IntcurveSupportContext>,
+    surface_curves: &'input7 BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
+    admission: &'input10 mut FamilyEntityAdmission<'input8, 'input9>,
 }
 
-fn emit_e5_curves_and_edges(ctx : &cadmpeg_core::decode::DecodeContext<'_>, inputs: EmitE5CurvesAndEdgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), cadmpeg_core::CodecError> {
-let EmitE5CurvesAndEdgesInputs { ir, annotations, topology, vertex_for_ref, edge_ids, edge_curves, intersections, surface_curves, admission } = inputs;
+fn emit_e5_curves_and_edges(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    inputs: EmitE5CurvesAndEdgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let EmitE5CurvesAndEdgesInputs {
+        ir,
+        annotations,
+        topology,
+        vertex_for_ref,
+        edge_ids,
+        edge_curves,
+        intersections,
+        surface_curves,
+        admission,
+    } = inputs;
 
     let mut edge_curve_ids = HashMap::new();
     for record_id in edge_curves.keys().copied() {
@@ -2453,20 +2503,48 @@ fn emit_e5_bodies(
 ///
 /// Returns `false` when the lowering plan is not total for a serialized loop
 /// member.
-struct EmitE5FacesLoopsCoedgesInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11, 'input12> {
-ir: &'input0 mut CadIr,
-annotations: &'input1 mut AnnotationBuilder,
-topology: &'input2 crate::families::e5::graph::E5Topology,
-surface_for_ref: &'input3 HashMap<u32, (SurfaceId, &'input4 crate::families::e5::records::E5Surface)>,
-face_shell: &'input5 HashMap<u32, ShellId>,
-edge_ids: &'input6 HashMap<u32, EdgeId>,
-vertex_for_ref: &'input7 HashMap<u32, VertexId>,
-boundary: &'input9 E5BoundaryPlan<'input8>,
-admission: &'input12 mut FamilyEntityAdmission<'input10, 'input11>
+struct EmitE5FacesLoopsCoedgesInputs<
+    'input0,
+    'input1,
+    'input2,
+    'input3,
+    'input4,
+    'input5,
+    'input6,
+    'input7,
+    'input8,
+    'input9,
+    'input10,
+    'input11,
+    'input12,
+> {
+    ir: &'input0 mut CadIr,
+    annotations: &'input1 mut AnnotationBuilder,
+    topology: &'input2 crate::families::e5::graph::E5Topology,
+    surface_for_ref:
+        &'input3 HashMap<u32, (SurfaceId, &'input4 crate::families::e5::records::E5Surface)>,
+    face_shell: &'input5 HashMap<u32, ShellId>,
+    edge_ids: &'input6 HashMap<u32, EdgeId>,
+    vertex_for_ref: &'input7 HashMap<u32, VertexId>,
+    boundary: &'input9 E5BoundaryPlan<'input8>,
+    admission: &'input12 mut FamilyEntityAdmission<'input10, 'input11>,
 }
 
-fn emit_e5_faces_loops_coedges(ctx : &cadmpeg_core::decode::DecodeContext<'_>, inputs: EmitE5FacesLoopsCoedgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<bool, cadmpeg_core::CodecError> {
-let EmitE5FacesLoopsCoedgesInputs { ir, annotations, topology, surface_for_ref, face_shell, edge_ids, vertex_for_ref, boundary, admission } = inputs;
+fn emit_e5_faces_loops_coedges(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    inputs: EmitE5FacesLoopsCoedgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let EmitE5FacesLoopsCoedgesInputs {
+        ir,
+        annotations,
+        topology,
+        surface_for_ref,
+        face_shell,
+        edge_ids,
+        vertex_for_ref,
+        boundary,
+        admission,
+    } = inputs;
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for face_plan in &boundary.faces {
@@ -3169,7 +3247,19 @@ fn e5_boundary_curve(
             let mut choices = [None, None];
             for (index, axis) in [axis, axis.scale(-1.0)].into_iter().enumerate() {
                 let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                let range = match circle_parameter_range_from_surface_branch(crate::assemble::CircleParameterRangeFromSurfaceBranchInputs { surface, center, radius, axis, ref_direction, start: endpoints[0], end: endpoints[1], pcurve_origin: start_uv, pcurve_direction: span_direction }) {
+                let range = match circle_parameter_range_from_surface_branch(
+                    crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                        surface,
+                        center,
+                        radius,
+                        axis,
+                        ref_direction,
+                        start: endpoints[0],
+                        end: endpoints[1],
+                        pcurve_origin: start_uv,
+                        pcurve_direction: span_direction,
+                    },
+                ) {
                     Ok(Some(range)) => range,
                     Ok(None) => continue,
                     Err(limit) => return Some(Err(limit.into())),

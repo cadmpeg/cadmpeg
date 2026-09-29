@@ -46,7 +46,19 @@ fn rational_arc_pcurve(
     angle_range: [f64; 2],
 ) -> Option<B5Pcurve> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::rational_arc_pcurve(ctx, crate::families::b5::graph::RationalArcPcurveInputs { record, surface, center, reference_x, reference_y, radius, parameter_range, angle_range })
+        super::super::rational_arc_pcurve(
+            ctx,
+            crate::families::b5::graph::RationalArcPcurveInputs {
+                record,
+                surface,
+                center,
+                reference_x,
+                reference_y,
+                radius,
+                parameter_range,
+                angle_range,
+            },
+        )
     })
     .expect("service budget")
 }
@@ -1754,16 +1766,28 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
 
 #[test]
 fn point_cell_refuses_positive_spatial_overflow() {
-    let point = cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::MAX, 0.0, 0.0)).expect("finite point");
-    let result = crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed { .. })));
+    let point =
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::MAX, 0.0, 0.0))
+            .expect("finite point");
+    let result =
+        crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::Malformed { .. })
+    ));
 }
 
 #[test]
 fn point_cell_refuses_negative_spatial_overflow() {
-    let point = cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(-f64::MAX, 0.0, 0.0)).expect("finite point");
-    let result = crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::Malformed { .. })));
+    let point =
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(-f64::MAX, 0.0, 0.0))
+            .expect("finite point");
+    let result =
+        crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::Malformed { .. })
+    ));
 }
 
 #[test]

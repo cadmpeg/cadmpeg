@@ -7,7 +7,7 @@
 //! neutral records in a fixed order. Each pass owns exactly one model layer and
 //! reads only the plan fields its layer needs.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -82,7 +82,6 @@ struct RevolutionPlan {
     angular_parameter_interval: [f64; 2],
     parameter_interval: [f64; 2],
 }
-
 
 enum SurfaceProcedure {
     Extrusion(Box<ResolvedExtrusionSurface>),
@@ -1706,8 +1705,7 @@ fn annotate(
         ctx.format_retained(format_args!("catia:{stream}"), "catia_b5_annotation_stream")?;
     let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    let stream_bytes =
-        u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
+    let stream_bytes = u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
     ctx.charge_retained(stream_bytes, "catia_b5_annotation_stream_handle")?;
     let tag = ctx.copy_retained_text(tag, "catia_b5_annotation_tag")?;
     ctx.charge_collection_items(1, "catia_b5_annotation_provenance")?;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Zero-entity decode route for independently complete geometry carriers.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::HashMap;
 

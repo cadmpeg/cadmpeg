@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CATIA native ownership, alias, and wire projections.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::object_graph;
 
@@ -82,7 +82,7 @@ pub(crate) fn consolidated_owner_packets(
                     }
                 }
             },
-            parameter_point_byte_offsets: chart.parameter_point_offsets().map(|pos| u64_from_index(pos)),
+            parameter_point_byte_offsets: chart.parameter_point_offsets().map(u64_from_index),
         };
         ctx.insert_hash_map(&mut owner_charts, key, value, "catia_native_owner_charts")?;
     }
@@ -143,7 +143,7 @@ pub(crate) fn consolidated_owner_packets(
                     edges: cycle.edges.map(|edge| CatiaOwnerBoundaryEdge {
                         slot: edge.slot,
                         byte_offset: u64_from_index(edge.target_pos),
-                        endpoint_records: edge.endpoint_records.map(|pos| u64_from_index(pos)),
+                        endpoint_records: edge.endpoint_records.map(u64_from_index),
                     }),
                 };
         ctx.insert_hash_map(
@@ -258,7 +258,10 @@ pub(crate) fn consolidated_owner_packets(
                 .remove(&(source_index, pos))
                 .unwrap_or_default();
             *owner_chart = owner_charts.remove(&(source_index, pos)).map(Box::new);
-            *boundary_cycle = boundary_cycles.get(&(source_index, pos)).copied().map(Box::new);
+            *boundary_cycle = boundary_cycles
+                .get(&(source_index, pos))
+                .copied()
+                .map(Box::new);
         }
         output.push(CatiaConsolidatedOwnerPacket {
                 id: crate::resource::format_usize_id(ctx, "catia:consolidated:owner-packet#", pos, 10, "catia_native_owner_packet_id")?,
@@ -339,7 +342,11 @@ pub(crate) fn consolidated_edge_runs(
         .into_iter()
         .enumerate()
     {
-        let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| u64_from_index(pcurve.pos));
+        let pcurve_offsets = run
+            .edge
+            .pcurves
+            .each_ref()
+            .map(|pcurve| u64_from_index(pcurve.pos));
         let resolved = resolved.get(&run.edge.pcurves[0].pos);
         let Some(node) = nodes_by_offset.get(&(u64_from_index(run.node.pos))) else {
             continue;
@@ -440,7 +447,7 @@ pub(crate) fn consolidated_edge_nodes(
         ctx.insert_hash_map(
             &mut compact_endpoints,
             binding.node.pos,
-            binding.endpoint_records.map(|pos| u64_from_index(pos)),
+            binding.endpoint_records.map(u64_from_index),
             "catia_native_edge_compact_endpoints",
         )?;
     }
@@ -726,7 +733,9 @@ pub(crate) fn preview_views(
     let mut views = Vec::new();
     for segment in segments {
         for preview in container::preview_images(ctx, &segment.data)? {
-            let Some(byte_offset) = segment.byte_offset.checked_add(u64_from_index(preview.range.start))
+            let Some(byte_offset) = segment
+                .byte_offset
+                .checked_add(u64_from_index(preview.range.start))
             else {
                 continue;
             };
@@ -763,7 +772,10 @@ pub(crate) fn external_reference_views(
     let mut views = Vec::new();
     for segment in segments {
         for reference in container::external_references(ctx, &segment.data)? {
-            let Some(byte_offset) = segment.byte_offset.checked_add(u64_from_index(reference.offset)) else {
+            let Some(byte_offset) = segment
+                .byte_offset
+                .checked_add(u64_from_index(reference.offset))
+            else {
                 continue;
             };
             let id = ctx.format_retained(
@@ -1234,7 +1246,7 @@ pub(crate) fn native_object_graph(
             byte_len: u64_from_index(graph.total_len),
             finjpl_segment,
             outer_container,
-            catalog_byte_offset: graph.catalog_pos.map(|pos| u64_from_index(pos)),
+            catalog_byte_offset: graph.catalog_pos.map(u64_from_index),
             catalog: None,
             records,
         },

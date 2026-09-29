@@ -4,7 +4,7 @@
 //! class-`0xc8` planes, `0xff` edge-use records, and cylinder/cone/torus
 //! analytic surface carriers.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 type NurbsAxisOutput = Result<Option<(u32, Vec<f64>, Vec<u32>)>, CodecError>;
 
@@ -963,10 +963,7 @@ fn expand_nurbs_axis(
     if control_count <= degree || knots.first() >= knots.last() {
         return Ok(None);
     }
-    let Some(bytes) = total
-        .checked_mul(size_of::<f64>())
-        .map(u64_from_index)
-    else {
+    let Some(bytes) = total.checked_mul(size_of::<f64>()).map(u64_from_index) else {
         return Err(ctx.refuse_codec_limit("catia_e5_nurbs_expanded_axis", u64::MAX, u64::MAX));
     };
     ctx.charge_retained(bytes, "catia_e5_nurbs_expanded_axis")?;

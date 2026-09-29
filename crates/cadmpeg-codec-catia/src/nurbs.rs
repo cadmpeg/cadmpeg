@@ -5,8 +5,8 @@
 //! B-spline conversion, circular
 //! interval canonicalization, and exact circular-helix fitting.
 
-use cadmpeg_core::decode::{u64_from_index};
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
+use cadmpeg_core::decode::u64_from_index;
 
 type QuinticJetOutput<const N: usize> =
     Result<Option<(Vec<f64>, Vec<FiniteVector<N>>)>, cadmpeg_core::CodecError>;
@@ -689,8 +689,14 @@ pub(crate) fn circular_helix_cache(
     if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS {
         return Ok(None);
     }
-    let Some(segment_count) = truncate_f64_to_usize(segment_count) else { return Ok(None); };
-    let step = sweep / match f64_from_index(segment_count) { Some(value) => value, None => return Ok(None) };
+    let Some(segment_count) = truncate_f64_to_usize(segment_count) else {
+        return Ok(None);
+    };
+    let step = sweep
+        / match f64_from_index(segment_count) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
     let sample_count = segment_count
         .checked_add(1)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
@@ -705,7 +711,11 @@ pub(crate) fn circular_helix_cache(
         let parameter = if index == segment_count {
             angle_range[1]
         } else {
-            angle_range[0] + match f64_from_index(index) { Some(value) => value, None => return Ok(None) } * step
+            angle_range[0]
+                + match f64_from_index(index) {
+                    Some(value) => value,
+                    None => return Ok(None),
+                } * step
         };
         if !parameter.is_finite() {
             return Ok(None);

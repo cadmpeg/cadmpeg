@@ -1,4 +1,4 @@
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::test_consolidated::{
     validate_consolidated_circles, validate_consolidated_class5b5c_records,

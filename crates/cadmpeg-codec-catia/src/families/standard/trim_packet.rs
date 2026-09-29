@@ -1,6 +1,6 @@
 //! Checked trim-handle partitions and primitive expansion.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use std::sync::OnceLock;
 

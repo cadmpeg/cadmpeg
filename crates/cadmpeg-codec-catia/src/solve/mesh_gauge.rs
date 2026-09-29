@@ -1,6 +1,6 @@
 //! Evidence-preserving gauge quotient for standard mesh candidates.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::BTreeMap;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard carrier curves, pcurves, and analytic geometry.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::{
     annotate, cgm_source, circle_parameter_range_from_surface_branch, face_surface, ordered_range,
@@ -1041,22 +1041,50 @@ pub(super) fn standard_oriented_native_support_pcurves(
     Ok(Some([first, second]))
 }
 
-pub(super) struct BuildStandardEdgeCurveInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11> {
-pub(super) ir: &'input0 mut CadIr,
-pub(super) annotations: &'input1 mut AnnotationBuilder,
-pub(super) bindings: &'input2 [(SurfaceId, bool, usize)],
-pub(super) surface_indices: &'input3 HashMap<SurfaceId, usize>,
-pub(super) brep: &'input4 [u8],
-pub(super) support: &'input5 crate::families::standard::records::StandardCurveSupport,
-pub(super) points: [usize; 2],
-pub(super) native_support: Option<&'input6 StandardEdgeSupport>,
-pub(super) limit_curve: Option<(&'input7 NurbsCurve, [f64; 2])>,
-pub(super) refusal: &'input8 mut crate::nurbs::LaneRefusals,
-pub(super) admission: &'input11 mut FamilyEntityAdmission<'input9, 'input10>
+pub(super) struct BuildStandardEdgeCurveInputs<
+    'input0,
+    'input1,
+    'input2,
+    'input3,
+    'input4,
+    'input5,
+    'input6,
+    'input7,
+    'input8,
+    'input9,
+    'input10,
+    'input11,
+> {
+    pub(super) ir: &'input0 mut CadIr,
+    pub(super) annotations: &'input1 mut AnnotationBuilder,
+    pub(super) bindings: &'input2 [(SurfaceId, bool, usize)],
+    pub(super) surface_indices: &'input3 HashMap<SurfaceId, usize>,
+    pub(super) brep: &'input4 [u8],
+    pub(super) support: &'input5 crate::families::standard::records::StandardCurveSupport,
+    pub(super) points: [usize; 2],
+    pub(super) native_support: Option<&'input6 StandardEdgeSupport>,
+    pub(super) limit_curve: Option<(&'input7 NurbsCurve, [f64; 2])>,
+    pub(super) refusal: &'input8 mut crate::nurbs::LaneRefusals,
+    pub(super) admission: &'input11 mut FamilyEntityAdmission<'input9, 'input10>,
 }
 
-pub(super) fn build_standard_edge_curve(ctx : &DecodeContext<'_>, inputs: BuildStandardEdgeCurveInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
-let BuildStandardEdgeCurveInputs { ir, annotations, bindings, surface_indices, brep, support, points, native_support, limit_curve, refusal, admission } = inputs;
+pub(super) fn build_standard_edge_curve(
+    ctx: &DecodeContext<'_>,
+    inputs: BuildStandardEdgeCurveInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
+    let BuildStandardEdgeCurveInputs {
+        ir,
+        annotations,
+        bindings,
+        surface_indices,
+        brep,
+        support,
+        points,
+        native_support,
+        limit_curve,
+        refusal,
+        admission,
+    } = inputs;
 
     let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
@@ -1165,7 +1193,15 @@ let BuildStandardEdgeCurveInputs { ir, annotations, bindings, surface_indices, b
                         let mut range = standard_circle_param_range(ctx, crate::families::standard::decode::edge_geometry::StandardCircleParamRangeInputs { ir, bindings, surface_indices, brep, support, center, radius, axis: *candidate_axis.as_raw(), ref_direction: reference, start, end, refusal })?;
                         if range.is_none() {
                             if let Some(native) = native_support {
-                                range = native_support_circle_param_range(native, center, radius, *candidate_axis.as_raw(), reference, start, end)?;
+                                range = native_support_circle_param_range(
+                                    native,
+                                    center,
+                                    radius,
+                                    *candidate_axis.as_raw(),
+                                    reference,
+                                    start,
+                                    end,
+                                )?;
                             }
                         }
                         if let Some(range) = range.and_then(crate::nurbs::canonical_periodic_range)
@@ -1882,23 +1918,46 @@ pub(super) fn circular_ranges_are_nonoverlapping_or_coincident_by(
     })
 }
 
-pub(super) struct StandardCircleParamRangeInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5> {
-pub(super) ir: &'input0 CadIr,
-pub(super) bindings: &'input1 [(SurfaceId, bool, usize)],
-pub(super) surface_indices: &'input2 HashMap<SurfaceId, usize>,
-pub(super) brep: &'input3 [u8],
-pub(super) support: &'input4 crate::families::standard::records::StandardCurveSupport,
-pub(super) center: Point3,
-pub(super) radius: f64,
-pub(super) axis: Vector3,
-pub(super) ref_direction: Vector3,
-pub(super) start: Point3,
-pub(super) end: Point3,
-pub(super) refusal: &'input5 mut crate::nurbs::LaneRefusals
+pub(super) struct StandardCircleParamRangeInputs<
+    'input0,
+    'input1,
+    'input2,
+    'input3,
+    'input4,
+    'input5,
+> {
+    pub(super) ir: &'input0 CadIr,
+    pub(super) bindings: &'input1 [(SurfaceId, bool, usize)],
+    pub(super) surface_indices: &'input2 HashMap<SurfaceId, usize>,
+    pub(super) brep: &'input3 [u8],
+    pub(super) support: &'input4 crate::families::standard::records::StandardCurveSupport,
+    pub(super) center: Point3,
+    pub(super) radius: f64,
+    pub(super) axis: Vector3,
+    pub(super) ref_direction: Vector3,
+    pub(super) start: Point3,
+    pub(super) end: Point3,
+    pub(super) refusal: &'input5 mut crate::nurbs::LaneRefusals,
 }
 
-pub(super) fn standard_circle_param_range(ctx : &DecodeContext<'_>, inputs: StandardCircleParamRangeInputs<'_, '_, '_, '_, '_, '_>) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
-let StandardCircleParamRangeInputs { ir, bindings, surface_indices, brep, support, center, radius, axis, ref_direction, start, end, refusal } = inputs;
+pub(super) fn standard_circle_param_range(
+    ctx: &DecodeContext<'_>,
+    inputs: StandardCircleParamRangeInputs<'_, '_, '_, '_, '_, '_>,
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    let StandardCircleParamRangeInputs {
+        ir,
+        bindings,
+        surface_indices,
+        brep,
+        support,
+        center,
+        radius,
+        axis,
+        ref_direction,
+        start,
+        end,
+        refusal,
+    } = inputs;
 
     let mut selected: Option<[f64; 2]> = None;
     for face in &support.faces {
@@ -1925,7 +1984,19 @@ let StandardCircleParamRangeInputs { ir, bindings, surface_indices, brep, suppor
         else {
             continue;
         };
-        let Some(range) = circle_parameter_range_from_surface_branch(crate::assemble::CircleParameterRangeFromSurfaceBranchInputs { surface: &surface.geometry, center, radius, axis, ref_direction, start, end, pcurve_origin: *line_pcurve.origin(), pcurve_direction: (*line_pcurve.direction()).into() })?
+        let Some(range) = circle_parameter_range_from_surface_branch(
+            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                surface: &surface.geometry,
+                center,
+                radius,
+                axis,
+                ref_direction,
+                start,
+                end,
+                pcurve_origin: *line_pcurve.origin(),
+                pcurve_direction: (*line_pcurve.direction()).into(),
+            },
+        )?
         else {
             continue;
         };
@@ -1942,7 +2013,6 @@ let StandardCircleParamRangeInputs { ir, bindings, surface_indices, brep, suppor
     Ok(selected)
 }
 
-
 pub(super) fn native_support_circle_param_range(
     support: &StandardEdgeSupport,
     center: Point3,
@@ -1952,8 +2022,6 @@ pub(super) fn native_support_circle_param_range(
     start: Point3,
     end: Point3,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
-
-
     (|| -> Option<Result<[f64; 2], cadmpeg_core::decode::ResourceLimit>> {
         const GEOMETRY_TOLERANCE: f64 = 2e-3;
 

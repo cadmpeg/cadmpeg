@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
-use cadmpeg_core::decode::{u64_from_index};
-use cadmpeg_core::convert::{f64_from_index};
+use cadmpeg_core::convert::f64_from_index;
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
@@ -334,8 +334,9 @@ pub(super) fn try_decode_freeform_surfaces(
             Ok(streams) => streams,
             Err(error) => return Some(Err(error)),
         };
-        let selection_budget =
-            ctx.work_budget(u64_from_index(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK));
+        let selection_budget = ctx.work_budget(u64_from_index(
+            crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK,
+        ));
         let object_selection = crate::families::b5::graph::select_object_stream_population(
             ctx,
             &logical_streams,
@@ -3537,7 +3538,9 @@ fn solve_planar_chart_rechart(
     if count < 2 {
         return Ok(None);
     }
-    let Some(count) = f64_from_index(count) else { return Ok(None); };
+    let Some(count) = f64_from_index(count) else {
+        return Ok(None);
+    };
     let scale = 1.0 / count;
     let mean = |values: &[[f64; 2]]| {
         values.iter().fold([0.0, 0.0], |acc, value| {

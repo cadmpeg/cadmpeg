@@ -206,7 +206,11 @@ impl ZeroEntityLoopClass {
 
     /// Native loop-class byte.
     pub(crate) const fn as_byte(self) -> u8 {
-        match self { Self::Outer41 => 0x41, Self::Bound50 => 0x50, Self::ReversedC1 => 0xc1 }
+        match self {
+            Self::Outer41 => 0x41,
+            Self::Bound50 => 0x50,
+            Self::ReversedC1 => 0xc1,
+        }
     }
 }
 
@@ -2585,8 +2589,8 @@ fn zero_entity_surface_at(
         if !zero_entity_surface_carrier_tag(tag) {
             return None;
         }
-        let payload_end =
-            record.checked_add(usize::from(*data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)?) + 12)?;
+        let payload_end = record
+            .checked_add(usize::from(*data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)?) + 12)?;
         let payload = data.get(record + a9_03::LEN..payload_end)?;
         Some((tag, payload))
     })() else {
@@ -2630,9 +2634,10 @@ fn zero_entity_nurbs_surface(
     let Some(layout) = zero_entity_nurbs_layout(ctx, data, record)? else {
         return Ok(None);
     };
-    let Some(pole_count) =
-        crate::nurbs_surface_control_count(index_from_u32(layout.u_count), index_from_u32(layout.v_count))
-    else {
+    let Some(pole_count) = crate::nurbs_surface_control_count(
+        index_from_u32(layout.u_count),
+        index_from_u32(layout.v_count),
+    ) else {
         return Ok(None);
     };
     let mut control_points = Vec::new();
@@ -2665,14 +2670,8 @@ fn zero_entity_nurbs_surface(
     for row in control_points.chunks(index_from_u32(layout.v_count)) {
         rows.push(ctx.copy_slice(row, "catia_zero_nurbs_pole_row_points")?);
     }
-    ctx.charge_collection_items(
-        u64_from_index(rows.len()),
-        "catia_zero_nurbs_checked_rows",
-    )?;
-    ctx.charge_collection_items(
-        u64_from_index(pole_count),
-        "catia_zero_nurbs_checked_poles",
-    )?;
+    ctx.charge_collection_items(u64_from_index(rows.len()), "catia_zero_nurbs_checked_rows")?;
+    ctx.charge_collection_items(u64_from_index(pole_count), "catia_zero_nurbs_checked_poles")?;
     crate::nurbs::note_refusal(
         ctx,
         NurbsSurface::from_lanes(
