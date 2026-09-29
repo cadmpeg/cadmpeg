@@ -2204,19 +2204,23 @@ fn primary_terminal_reference_shared_edge(operand: &DesignEdgeOperand) -> Option
     }
 
     let primary = &structure.sides[0];
-    let reference_ordinals = std::iter::once(primary.header_value)
+    let mut reference_ordinals = std::iter::once(primary.header_value)
         .chain(primary.scalars.iter().copied())
         .filter(|value| *value != 0)
-        .map(|value| usize::try_from(value).ok()?.checked_sub(1))
-        .collect::<Option<Vec<_>>>()?;
-    let [first_ordinal, second_ordinal] = reference_ordinals.as_slice() else {
+        .map(|value| usize::try_from(value).ok()?.checked_sub(1));
+    let (Some(first_ordinal), Some(second_ordinal)) =
+        (reference_ordinals.next()?, reference_ordinals.next()?)
+    else {
         return None;
     };
+    if reference_ordinals.next().is_some() {
+        return None;
+    }
     if first_ordinal == second_ordinal {
         return None;
     }
-    let first = operand.terminal_reference_edge_slots.get(*first_ordinal)?;
-    let second = operand.terminal_reference_edge_slots.get(*second_ordinal)?;
+    let first = operand.terminal_reference_edge_slots.get(first_ordinal)?;
+    let second = operand.terminal_reference_edge_slots.get(second_ordinal)?;
     if first.is_empty() || second.is_empty() {
         return None;
     }
