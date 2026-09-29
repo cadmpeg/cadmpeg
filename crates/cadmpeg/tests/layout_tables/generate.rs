@@ -376,6 +376,46 @@ impl From<std::fmt::Error> for EmitFailure {
     }
 }
 
+/// NX reader constants selected from the complete byte-layout table.
+fn nx_reader_constant(record: &str, name: &str) -> bool {
+    match record {
+        "analytic_common_header" => matches!(name, "ATTRIBUTES"),
+        "chart_s_preamble" => matches!(name, "LEN"),
+        "circle_payload" => matches!(name, "LEN"),
+        "cone_payload" => matches!(name, "LEN"),
+        "cylinder_payload" => matches!(name, "LEN"),
+        "directory_entry" => matches!(name, "LEN"),
+        "directory_file_payload" => matches!(name, "LEN" | "SIZE"),
+        "edge_node" => matches!(name, "ATTRIBUTES" | "LEN"),
+        "ellipse_payload" => matches!(name, "LEN"),
+        "extrefstream_handle_set_record" => matches!(name, "COUNT" | "ID_SLOTS" | "LEN" | "MARKER_A" | "MARKER_B" | "N"),
+        "face_node" => matches!(name, "ATTRIBUTES" | "LEN"),
+        "fastload_structure_envelope" => matches!(name, "LEN" | "PAYLOAD_LEN"),
+        "fin_node" => matches!(name, "ATTRIBUTES" | "LEN"),
+        "intersection_type_38" => matches!(name, "LEN"),
+        "jt_document_header" => matches!(name, "BYTE_ORDER" | "LEN" | "LSG_SEGMENT_ID" | "RESERVED" | "TOC_OFFSET"),
+        "jt_toc_entry" => matches!(name, "LEN"),
+        "jt_tristrip_shape_node_family_data" => matches!(name, "AREA" | "COLOR_QUANTIZATION_BITS" | "COMPRESSION_LEVEL" | "LEN" | "MEMORY_BYTE_LEN" | "NODE_COUNT_RANGE" | "NORMAL_QUANTIZATION_FACTOR" | "POLYGON_COUNT_RANGE" | "RESERVED_BOUNDS" | "SHAPE_VERSION" | "TEXTURE_QUANTIZATION_BITS" | "UNTRANSFORMED_BOUNDS" | "VERTEX_BINDINGS" | "VERTEX_COUNT_RANGE" | "VERTEX_QUANTIZATION_BITS" | "VERTEX_VERSION"),
+        "legacy_ugii_payload_prefix" => matches!(name, "LEN" | "VERSION"),
+        "line_payload" => matches!(name, "LEN"),
+        "loop_node" => matches!(name, "ATTRIBUTES" | "LEN"),
+        "nurbs_curve_descriptor_prefix" => matches!(name, "DEGREE" | "DIMENSION" | "DISTINCT_KNOT_COUNT" | "KNOT_TYPE" | "LEN" | "PERIODIC" | "POLE_COUNT"),
+        "nurbs_surface_descriptor_prefix" => matches!(name, "U_DEGREE" | "U_DISTINCT_KNOT_COUNT" | "U_KNOT_TYPE" | "U_PERIODIC" | "U_POLE_COUNT" | "V_DEGREE" | "V_DISTINCT_KNOT_COUNT" | "V_KNOT_TYPE" | "V_PERIODIC" | "V_POLE_COUNT"),
+        "offset_surf_payload" => matches!(name, "LEN"),
+        "plane_payload" => matches!(name, "LEN"),
+        "point_node" => matches!(name, "ATTRIBUTES" | "LEN"),
+        "shell_node" => matches!(name, "ATTRIBUTES" | "LEN"),
+        "sp_curve_payload" => matches!(name, "LEN"),
+        "sphere_payload" => matches!(name, "LEN"),
+        "splmsstr_header" => matches!(name, "FILE_TAG" | "FOOTER_OFFSET" | "HEADER_MARKER" | "MAGIC_VALUE" | "VERSION_TAG"),
+        "torus_payload" => matches!(name, "LEN"),
+        "trimmed_curve_payload" => matches!(name, "LEN"),
+        "ug_part_segment_index_row" => matches!(name, "LEN" | "SUBTYPE_CODE" | "TYPE_CODE" | "VALUE"),
+        "vertex_node" => matches!(name, "ATTRIBUTES" | "LEN"),
+        _ => false,
+    }
+}
+
 fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
     let mut errors = Vec::new();
     let mut omitted = Vec::new();
@@ -437,6 +477,7 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
             } else {
                 format!("`{}`", field.ty)
             };
+            if file.format != "nx" || nx_reader_constant(&record.name, &const_name) {
             writeln!(
                 fields_out,
                 "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
@@ -446,6 +487,7 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
                 fields_out,
                 "    pub(crate) const {const_name}: usize = {offset};"
             )?;
+            }
             if let Some(raw) = &field.value {
                 let value_name = format!("{const_name}_VALUE");
                 if !seen.insert(value_name.clone()) {
@@ -459,18 +501,23 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
                 let width = type_width(&field.ty, &custom).ok().flatten();
                 match decode_field_value(raw, &field.ty, width) {
                     Ok(binding) => {
+                        if file.format != "nx" || nx_reader_constant(&record.name, &value_name) {
                         writeln!(
                             fields_out,
                             "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
                             field.name, field.ty, record.section
                         )?;
                         writeln!(fields_out, "    pub(crate) const {value_name}: {binding};")?;
+                        }
                     }
                     Err(message) => errors.push(format!("{at}: {message}")),
                 }
             }
         }
 
+        if file.format == "nx" && fields_out.is_empty() && !nx_reader_constant(&record.name, "LEN") {
+            continue;
+        }
         writeln!(
             modules,
             "/// Byte offsets for the `{}` record.",
@@ -509,7 +556,7 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
             writeln!(modules, "/// ```")?;
         }
         writeln!(modules, "pub(crate) mod {} {{", record.name)?;
-        if let Some(size) = record.size {
+        if let Some(size) = record.size.filter(|_| file.format != "nx" || nx_reader_constant(&record.name, "LEN")) {
             writeln!(
                 modules,
                 "    /// Record length in bytes. Spec §{}.",
@@ -589,11 +636,13 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
         "//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`."
     )?;
     writeln!(out)?;
+    if file.format != "nx" {
     writeln!(
         out,
         "#![allow(dead_code)] // Not every generated constant is referenced yet."
     )?;
     writeln!(out)?;
+    }
     if !omitted.is_empty() {
         writeln!(
             out,
