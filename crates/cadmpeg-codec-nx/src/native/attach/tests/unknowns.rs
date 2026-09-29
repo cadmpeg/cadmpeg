@@ -52,7 +52,7 @@ fn container_unknown_route_refuses_retained_limit() {
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain NX native unknown record"),
+            && limit.operation == "NX native unknown records"),
         "{error:?}"
     );
 }

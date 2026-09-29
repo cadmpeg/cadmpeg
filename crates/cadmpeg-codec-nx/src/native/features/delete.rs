@@ -3,8 +3,8 @@
 
 use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use super::{
-    charged_unique_offset_data_block, format_feature_history_id,
-    offset_data_block_bytes, visit_feature_history_operation_records,
+    charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
+    visit_feature_history_operation_records,
 };
 use crate::container::Container;
 use crate::om::delete_references::DeleteReferences;
@@ -278,13 +278,21 @@ fn delete_construction_payload_from_field(
         "NX DELETE source block references",
     )?;
     let mut data_blocks = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut data_blocks, slots.len(), "allocate NX DELETE source block references")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut data_blocks,
+        slots.len(),
+        "allocate NX DELETE source block references",
+    )?;
     for reference in slots {
         let Some((_, Some(block))) = reference else {
             return Ok(None);
         };
         let mut id = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut id, block.len(), "allocate NX DELETE source block reference")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut id,
+            block.len(),
+            "allocate NX DELETE source block reference",
+        )?;
         id.push_str(block);
         data_blocks.push(id);
     }
@@ -320,7 +328,8 @@ fn delete_construction_payload_from_field(
         .map_err(|_| ctx.refuse_codec_limit("write NX DELETE construction identity", 0, 1))?;
     Ok(Some(FeatureDeleteConstructionPayload {
         id,
-        operation_label: ctx.copy_retained_text(&field.operation_label, "NX DELETE construction operation")?,
+        operation_label: ctx
+            .copy_retained_text(&field.operation_label, "NX DELETE construction operation")?,
         reference_field: ctx.copy_retained_text(&field.id, "NX DELETE construction reference")?,
         content,
     }))

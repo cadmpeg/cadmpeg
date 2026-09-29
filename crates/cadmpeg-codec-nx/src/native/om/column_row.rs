@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native column rows retain one checked source frame with resolved targets.
 
-use super::{
-    column_storage_block_at, control_index_data_block, retained_om_index_id,
-};
+use super::{column_storage_block_at, control_index_data_block, retained_om_index_id};
 use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -279,8 +277,7 @@ fn project_column_rows<R, F, T>(
                 )?,
                 block_offset,
             );
-            let source_entry =
-                ctx.copy_retained_text(&entry.name, "NX column row source entry")?;
+            let source_entry = ctx.copy_retained_text(&entry.name, "NX column row source entry")?;
             result.push(project(
                 section_ordinal,
                 section_number,

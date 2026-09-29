@@ -740,8 +740,9 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                             4usize.checked_add(lane.indices().count()).ok_or_else(|| {
                                 ctx.refuse_codec_limit("NX draft complete reference indices", 0, 1)
                             })?;
-                        
-                        let (mut complete_indices, _indices_reservation) = ctx.temporary_vec(count, "NX draft complete reference indices")?;
+
+                        let (mut complete_indices, _indices_reservation) =
+                            ctx.temporary_vec(count, "NX draft complete reference indices")?;
                         complete_indices.extend(
                             graph
                                 .references()
@@ -821,7 +822,8 @@ pub(in crate::native) fn feature_draft_construction_payloads(
         let count = tokens.indices().count();
         let mut data_blocks = ctx.retained_vec(count, "NX draft construction source blocks")?;
         for row in tokens.indices() {
-            data_blocks.push(ctx.copy_retained_text(row.target, "NX draft construction source block")?);
+            data_blocks
+                .push(ctx.copy_retained_text(row.target, "NX draft construction source block")?);
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
@@ -833,7 +835,10 @@ pub(in crate::native) fn feature_draft_construction_payloads(
             "draft-construction-payload#",
             "NX draft construction payload identity",
         )?;
-        let operation_label = ctx.copy_retained_text(&lane.operation_label, "NX draft construction operation label")?;
+        let operation_label = ctx.copy_retained_text(
+            &lane.operation_label,
+            "NX draft construction operation label",
+        )?;
         let index_lane = ctx.copy_retained_text(&lane.id, "NX draft construction index lane")?;
         ctx.reserve_retained_vec(&mut output, 1, "NX draft construction payloads")?;
         output.push(FeatureConstructionPayload {
@@ -878,8 +883,9 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
             .iter()
             .filter(|reference| reference.operation_label == lane.operation_label)
             .count();
-        
-        let (mut graph, _graph_reservation) = ctx.temporary_vec(count, "NX draft construction graph")?;
+
+        let (mut graph, _graph_reservation) =
+            ctx.temporary_vec(count, "NX draft construction graph")?;
         graph.extend(
             references
                 .iter()
@@ -942,7 +948,8 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         ctx.reserve_retained_vec(&mut output, 1, "NX draft construction graph payloads")?;
         output.push(FeatureDraftConstructionGraphPayload {
             id,
-            operation_label: ctx.copy_retained_text(&lane.operation_label, "NX draft graph operation label")?,
+            operation_label: ctx
+                .copy_retained_text(&lane.operation_label, "NX draft graph operation label")?,
             index_lane: ctx.copy_retained_text(&lane.id, "NX draft graph index lane")?,
             construction_references,
             content,
@@ -978,7 +985,8 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(
                 continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-fixed-lane-", ordinal)?;
-            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX draft fixed lane operation")?;
+            let operation_label =
+                ctx.copy_retained_text(&payload.operation_label, "NX draft fixed lane operation")?;
             let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft fixed lane graph")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft fixed lane ordinal", 0, 1))?;
@@ -1023,7 +1031,8 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(
                 continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-binary32-lane-", ordinal)?;
-            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX draft binary32 lane operation")?;
+            let operation_label = ctx
+                .copy_retained_text(&payload.operation_label, "NX draft binary32 lane operation")?;
             let graph_payload =
                 ctx.copy_retained_text(&payload.id, "NX draft binary32 lane graph")?;
             let ordinal = u32::try_from(ordinal)
@@ -1069,7 +1078,9 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft string graph")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft string ordinal", 0, 1))?;
-            let value = PrintableString::new(ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?)
+            let value = PrintableString::new(
+                ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?,
+            )
             .map_err(|reason| CodecError::Malformed(reason.into()))?;
             ctx.reserve_retained_vec(&mut strings, 1, "NX draft construction graph strings")?;
             strings.push(FeatureDraftConstructionGraphString {

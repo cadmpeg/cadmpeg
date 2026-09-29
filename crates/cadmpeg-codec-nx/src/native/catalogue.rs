@@ -2244,8 +2244,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit("NX roll-forward catalog group count", 0, 1)
                     })?;
-            
-            let (mut groups, _groups_reservation) = ctx.temporary_vec(count, "NX roll-forward catalog group references")?;
+
+            let (mut groups, _groups_reservation) =
+                ctx.temporary_vec(count, "NX roll-forward catalog group references")?;
             groups.extend(
                 m.om.operation_state_groups
                     .iter()

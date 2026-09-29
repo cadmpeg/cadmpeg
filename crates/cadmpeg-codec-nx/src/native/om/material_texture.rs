@@ -193,7 +193,11 @@ pub(in crate::native) fn material_texture_assets(
         "sort NX material texture entries",
     )?;
     let mut entries = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut entries, count, "allocate NX material texture entries")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut entries,
+        count,
+        "allocate NX material texture entries",
+    )?;
     entries.extend(
         container
             .entries
@@ -244,7 +248,8 @@ pub(in crate::native) fn material_texture_assets(
         let mut id = ctx.retained_string(id_len, "retain NX material texture identity")?;
         write!(id, "nx:container:material-texture#{ordinal}")
             .map_err(|_| ctx.refuse_codec_limit("write NX material texture identity", 0, 1))?;
-        let mut source_entry = ctx.retained_string(entry.name.len(), "retain NX material texture source entry")?;
+        let mut source_entry =
+            ctx.retained_string(entry.name.len(), "retain NX material texture source entry")?;
         source_entry.push_str(&entry.name);
         ctx.charge_retained(64, "retain NX material texture digest")?;
         ctx.charge_work(

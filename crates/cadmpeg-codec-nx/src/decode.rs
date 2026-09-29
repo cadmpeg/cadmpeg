@@ -175,10 +175,17 @@ fn report_untransferred_streams(
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             charge_loss_code(ctx, NxLossCode::NonParasolidStreamOmitted)?;
-            ctx.push_vec(&mut body.losses, NxLossCode::NonParasolidStreamOmitted.note(ctx.format_retained(format_args!(
+            ctx.push_vec(
+                &mut body.losses,
+                NxLossCode::NonParasolidStreamOmitted.note(ctx.format_retained(
+                    format_args!(
                         "Non-Parasolid {} stream #{index} was classified but not transferred.",
                         stream.kind().label()
-                    ), "nx omitted stream loss text")?), "nx decode losses")?;
+                    ),
+                    "nx omitted stream loss text",
+                )?),
+                "nx decode losses",
+            )?;
         }
     }
     Ok(())

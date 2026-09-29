@@ -301,7 +301,10 @@ pub(crate) fn incomplete_expression_parameters(
                             continue;
                         }
                         ctx.reserve_vec(&mut dependencies, 1, "nx expression dependencies")?;
-                        dependencies.push(dependency.try_clone_for_decode(ctx, "nx expression dependency identity")?);
+                        dependencies.push(
+                            dependency
+                                .try_clone_for_decode(ctx, "nx expression dependency identity")?,
+                        );
                     }
                     Ok(Some(dependencies))
                 })()?;
@@ -378,7 +381,11 @@ pub(crate) fn incomplete_expression_parameters(
                 || !evaluated.contains_key(&parameter.id)
             {
                 ctx.charge_collection_items(1, "nx incomplete expression parameters")?;
-                incomplete.insert(parameter.id.try_clone_for_decode(ctx, "nx incomplete expression identity")?);
+                incomplete.insert(
+                    parameter
+                        .id
+                        .try_clone_for_decode(ctx, "nx incomplete expression identity")?,
+                );
             }
         }
     }

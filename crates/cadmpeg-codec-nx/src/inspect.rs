@@ -67,7 +67,8 @@ pub(super) fn summarize(
             }
         };
         entries.push(ContainerEntry {
-            name: ctx.format_retained(format_args!("{}", entry.name), "nx summary directory name")?,
+            name: ctx
+                .format_retained(format_args!("{}", entry.name), "nx summary directory name")?,
             role: entry.content().role(),
             storage,
             attributes,
@@ -283,12 +284,14 @@ pub(super) fn summarize(
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
                     Ok(storage) => storage,
                     Err(message) => {
-
                         ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes")?;
-                        storage_notes.push(ctx.format_retained(format_args!(
+                        storage_notes.push(ctx.format_retained(
+                            format_args!(
                                 "parasolid#{si}: {message}: {}/{inflated_len}",
                                 stream.consumed
-                            ), "nx summary storage note")?);
+                            ),
+                            "nx summary storage note",
+                        )?);
                         EntryStorage::payload_only(VerbatimLabel::Stored, inflated_len)
                     }
                 }
@@ -308,7 +311,11 @@ pub(super) fn summarize(
     }
 
     let (classification, mut notes) = crate::scan_notes::summarize(ctx, scan)?;
-    ctx.reserve_vec(&mut notes, storage_notes.len(), "nx combined inspection notes")?;
+    ctx.reserve_vec(
+        &mut notes,
+        storage_notes.len(),
+        "nx combined inspection notes",
+    )?;
     notes.extend(storage_notes);
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
@@ -360,7 +367,11 @@ fn insert_summary_attribute(
         "nx summary attribute text",
     )?;
     let mut key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut key, key_len, "nx summary attribute text")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut key,
+        key_len,
+        "nx summary attribute text",
+    )?;
     key.push_str(prefix);
     if lowercase_suffix {
         for character in suffix.chars() {
@@ -370,7 +381,11 @@ fn insert_summary_attribute(
         key.push_str(suffix);
     }
     let mut rendered = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut rendered, value_len, "nx summary attribute text")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut rendered,
+        value_len,
+        "nx summary attribute text",
+    )?;
     match value {
         SummaryValue::Text(text) => rendered.push_str(text),
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")

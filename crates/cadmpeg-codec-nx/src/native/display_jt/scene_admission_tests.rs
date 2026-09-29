@@ -97,5 +97,3 @@ fn display_jt_range_vectors_refuse_before_conversion_allocation() {
         super::JtOptionalReservation::Admitted(_)
     ));
 }
-
-

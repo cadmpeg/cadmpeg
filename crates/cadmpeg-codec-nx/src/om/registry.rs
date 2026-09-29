@@ -226,7 +226,12 @@ fn complete_type_registry_at<'a>(
         let Some(registry_tail) = bytes.get(declaration.name_end()..tail_end) else {
             return Ok(None);
         };
-        ctx.reserve_scoped_vec(&mut reservation, &mut definitions, 1, "nx complete type registry")?;
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut definitions,
+            1,
+            "nx complete type registry",
+        )?;
         definitions.push(TypeDefinition {
             offset: declaration.offset,
             name: declaration.name,

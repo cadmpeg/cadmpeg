@@ -38,7 +38,6 @@ use std::num::NonZeroU8;
 
 mod borrowed_wires;
 
-
 use super::format_feature_child_id;
 use super::format_feature_history_id;
 use super::offset_data_block_bytes;
@@ -1121,7 +1120,12 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.reserve_scoped_vec(&mut graph_reservation, &mut graph, 1, "NX pattern construction graph")?;
+            ctx.reserve_scoped_vec(
+                &mut graph_reservation,
+                &mut graph,
+                1,
+                "NX pattern construction graph",
+            )?;
             graph.push(reference);
         }
         let sort_work = graph
@@ -1194,12 +1198,19 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         id.push_str(operation_key);
         let mut construction_references = Vec::new();
         for reference in &graph {
-            ctx.reserve_retained_vec(&mut construction_references, 1, "NX pattern construction reference IDs")?;
-            construction_references.push(ctx.copy_retained_text(&reference.id, "NX pattern construction reference ID")?);
+            ctx.reserve_retained_vec(
+                &mut construction_references,
+                1,
+                "NX pattern construction reference IDs",
+            )?;
+            construction_references.push(
+                ctx.copy_retained_text(&reference.id, "NX pattern construction reference ID")?,
+            );
         }
         let record = FeatureConstructionPayload {
             id,
-            operation_label: ctx.copy_retained_text(operation_label, "NX pattern construction operation label")?,
+            operation_label: ctx
+                .copy_retained_text(operation_label, "NX pattern construction operation label")?,
             owner: FeatureConstructionOwner::Pattern {
                 operation_kind,
                 reference_layout: graph[0].layout,
@@ -1237,10 +1248,14 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX pattern string ordinal", 0, 1))?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
-            let value = ctx.copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
+            let value = ctx
+                .copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
             let value = PrintableString::new(value)
                 .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
-            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX pattern construction string label")?;
+            let operation_label = ctx.copy_retained_text(
+                &payload.operation_label,
+                "NX pattern construction string label",
+            )?;
             let construction_payload =
                 ctx.copy_retained_text(&payload.id, "NX pattern construction string payload")?;
             ctx.reserve_retained_vec(&mut strings, 1, "NX pattern construction strings")?;

@@ -22,16 +22,15 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchPlacement,
 };
-use cadmpeg_ir::topology::{Color};
+use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
     features::{
-        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp,
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter,
-        DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature, FeatureContent, FeatureDefinition,
-        FeatureId, FeatureOperation, FeatureResultTopology, FeatureSourceContent,
-        FeatureTreeNodeRole, LinearTermination, ParameterId, ParameterValue, PlanarProfileRef,
-        ProfileRef, TreeChildren,
+        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ConfigurationFeatureState,
+        ConfigurationId, DesignConfiguration, DesignParameter, DistinctMembers, ExtrudeExtent,
+        ExtrudeSide, Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+        FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, LinearTermination,
+        ParameterId, ParameterValue, PlanarProfileRef, ProfileRef, TreeChildren,
     },
     scalar::{Angle, FiniteReal, Length},
 };
@@ -43,9 +42,8 @@ pub(super) mod feature_projection;
 
 use body_selection::{
     atomic_disjoint_body_selections, boolean_participant_writer, boolean_target_output,
-    boolean_target_writer, feature_body_selection,
-    feature_body_selection_with_offset_blocks, feature_body_set_selection, local_body_selection,
-    FeatureBodySelection,
+    boolean_target_writer, feature_body_selection, feature_body_selection_with_offset_blocks,
+    feature_body_set_selection, local_body_selection, FeatureBodySelection,
 };
 
 use feature_projection::{
@@ -57,9 +55,9 @@ use feature_projection::{
     hole_axis_placements_for_operations, hole_body_projection, hole_package_projection,
     native_feature_parameters, new_body_boolean_op, non_boolean_feature_definition_with_parameters,
     non_modeling_history_definition, offset_surface_feature_definition, primary_hole_outputs,
-    selection_indices_native, simple_hole_chamfers, simple_hole_native_properties, simple_hole_operations,
-    sphere_body_projection, thicken_feature_definition, HolePackageSources, HoleProjection,
-    NewBodyEvidence, NxBlendFamily,
+    selection_indices_native, simple_hole_chamfers, simple_hole_native_properties,
+    simple_hole_operations, sphere_body_projection, thicken_feature_definition, HolePackageSources,
+    HoleProjection, NewBodyEvidence, NxBlendFamily,
 };
 
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
@@ -295,7 +293,11 @@ pub(super) fn attach(
         },
     )?;
     for (tessellation, source_offset) in display_jt_tessellations {
-        ctx.reserve_retained_vec(&mut ir.model.tessellations, 1, "NX attached display tessellations")?;
+        ctx.reserve_retained_vec(
+            &mut ir.model.tessellations,
+            1,
+            "NX attached display tessellations",
+        )?;
         annotations
             .note(tessellation.id.as_str(), &annotation_stream, source_offset)
             .tag("DISPLAY_JT_TESSELLATION");
@@ -497,9 +499,17 @@ fn attach_part_attributes<'a>(
             "NX part attribute values",
         )?;
         let mut values = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut values, 1, "NX part attribute values")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut values,
+            1,
+            "NX part attribute values",
+        )?;
         values.push(AttributeValue::String(attribute_value.to_string()));
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.attributes, 1, "NX attached part attributes")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.attributes,
+            1,
+            "NX attached part attributes",
+        )?;
         ir.model.attributes.push(SourceAttribute {
             id,
             target: AttributeTarget::Document,
@@ -531,7 +541,11 @@ fn attach_configurations<'a>(
         })?;
         let bodies = if active_attribute_use.is_some() {
             let mut selected = Vec::new();
-            ctx.reserve_retained_vec(&mut selected, ir.model.bodies.len(), "NX active configuration bodies")?;
+            ctx.reserve_retained_vec(
+                &mut selected,
+                ir.model.bodies.len(),
+                "NX active configuration bodies",
+            )?;
             for body in &ir.model.bodies {
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
@@ -620,7 +634,11 @@ fn attach_configurations<'a>(
                 relation.to_string(),
             );
         }
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.configurations, 1, "NX attached configurations")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.configurations,
+            1,
+            "NX attached configurations",
+        )?;
         ir.model.configurations.push(DesignConfiguration {
             id,
             ordinal: ordinal_u32,
@@ -826,7 +844,11 @@ fn attach_rm_appearances(
             cadmpeg_core::decode::u64_from_index(binding_bytes),
             "NX RM source appearance binding",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.appearance_bindings, 1, "NX RM source appearance bindings")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.appearance_bindings,
+            1,
+            "NX RM source appearance bindings",
+        )?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
             target: AppearanceTarget::Source {
@@ -941,7 +963,11 @@ fn attach_rm_appearances(
             cadmpeg_core::decode::u64_from_index(binding_bytes),
             "NX RM face appearance binding",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.appearance_bindings, 1, "NX RM face appearance bindings")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.appearance_bindings,
+            1,
+            "NX RM face appearance bindings",
+        )?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
             target: AppearanceTarget::Face(face_id),
@@ -1034,7 +1060,11 @@ fn ensure_rm_color_appearance(
         cadmpeg_core::decode::u64_from_index(id.as_str().len()),
         "NX RM color appearance binding identity",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.appearances, 1, "NX RM color appearances")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut ir.model.appearances,
+        1,
+        "NX RM color appearances",
+    )?;
     ir.model.appearances.push(Appearance {
         id: id.clone(),
         name: Some(definition.name.clone()),
@@ -1145,7 +1175,11 @@ fn resolve_rm_source_color_bindings(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX RM source color bindings",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bindings, 1, "NX RM source color bindings")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut bindings,
+            1,
+            "NX RM source color bindings",
+        )?;
         bindings.push(RmSourceColorBinding {
             source_id: source_id.to_owned(),
             color_definition: definition.to_owned(),
@@ -1339,7 +1373,11 @@ fn resolve_rm_face_color_bindings(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX RM face color bindings",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bindings, 1, "NX RM face color bindings")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut bindings,
+            1,
+            "NX RM face color bindings",
+        )?;
         bindings.push(RmFaceColorBinding {
             face_id,
             color_definition: definition.to_owned(),
@@ -1486,7 +1524,12 @@ fn attach_material_texture_assets(
         if crate::native::hex::Sha256Hex::digest(bytes) != texture.sha256 {
             return Ok(());
         }
-        ctx.reserve_scoped_vec(&mut source_reservation, &mut sources, 1, "NX material texture source list")?;
+        ctx.reserve_scoped_vec(
+            &mut source_reservation,
+            &mut sources,
+            1,
+            "NX material texture source list",
+        )?;
         sources.push((texture, bytes));
     }
 
@@ -1562,8 +1605,12 @@ fn attach_material_texture_assets(
             .derived(asset.id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
-    
-    ctx.reserve_retained_vec(&mut ir.model.assets, assets.len(), "NX attached material assets")?;
+
+    ctx.reserve_retained_vec(
+        &mut ir.model.assets,
+        assets.len(),
+        "NX attached material assets",
+    )?;
     ir.model.assets.extend(assets);
     Ok(())
 }
@@ -1713,7 +1760,12 @@ fn attach_current_feature_states(
     let mut current_bodies = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX current body identities")?;
     for body in &ir.model.bodies {
-        ctx.reserve_scoped_vec(&mut reservation, &mut current_bodies, 1, "NX current body identities")?;
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut current_bodies,
+            1,
+            "NX current body identities",
+        )?;
         current_bodies.push(body.id.clone());
     }
     let Ok(active_features) = active_feature_closure_for_decode(ctx, ir, &current_bodies)? else {
@@ -1766,7 +1818,11 @@ fn attach_active_configuration_feature_states(
                 ),
                 "NX configuration feature output",
             )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut outputs, 1, "NX configuration feature outputs")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut outputs,
+                1,
+                "NX configuration feature outputs",
+            )?;
             outputs.push(output.clone());
         }
         let mut dependencies = Vec::new();
@@ -1778,7 +1834,11 @@ fn attach_active_configuration_feature_states(
                 ),
                 "NX configuration feature dependency",
             )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut dependencies, 1, "NX configuration feature dependencies")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut dependencies,
+                1,
+                "NX configuration feature dependencies",
+            )?;
             dependencies.push(dependency.clone());
         }
         charge_feature_definition_copy(ctx, feature.evaluation.definition())?;
@@ -1871,7 +1931,8 @@ fn attach_initial_segment_bodies(
         cadmpeg_core::decode::u64_from_index(sorting_work),
         "NX retained-history body order",
     )?;
-    let (mut sorted_bodies, _sorting) = ctx.temporary_vec(body_count, "NX retained-history body order")?;
+    let (mut sorted_bodies, _sorting) =
+        ctx.temporary_vec(body_count, "NX retained-history body order")?;
     sorted_bodies.extend(&ir.model.bodies);
     sorted_bodies.sort_by(|first, second| first.id.cmp(&second.id));
 
@@ -1962,8 +2023,16 @@ fn attach_initial_segment_bodies(
                 cadmpeg_core::decode::u64_from_index(body_bytes),
                 "NX retained-history output bodies",
             )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut selection_bodies, 1, "NX retained-history output bodies")?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut feature_outputs, 1, "NX retained-history output bodies")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut selection_bodies,
+                1,
+                "NX retained-history output bodies",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut feature_outputs,
+                1,
+                "NX retained-history output bodies",
+            )?;
             selection_bodies.push(body.id.clone());
             feature_outputs.push(body.id.clone());
         }
@@ -1990,7 +2059,11 @@ fn attach_initial_segment_bodies(
         cadmpeg_core::decode::u64_from_index(uniqueness_work),
         "NX retained-history output uniqueness",
     )?;
-    ctx.reserve_retained_vec(&mut ir.model.features, 1, "NX retained-history input features")?;
+    ctx.reserve_retained_vec(
+        &mut ir.model.features,
+        1,
+        "NX retained-history input features",
+    )?;
     ir.model.features.push(Feature {
         id: id.clone(),
         ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
@@ -2185,22 +2258,43 @@ fn attach_feature_operations(
     let initial_body_id =
         attach_initial_segment_bodies(ctx, ir, body_bindings, annotations, &stream)?;
     let base_ordinal = ir.model.features.len() as u64;
-    let (booleans, _booleans_reservation) = ctx.collect_scoped_btree_map(booleans
+    let (booleans, _booleans_reservation) = ctx.collect_scoped_btree_map(
+        booleans
             .iter()
-            .map(|operation| (operation.operation_label.as_str(), operation)), "NX last-record index")?;
-    let (body_references_by_id, _body_references_by_id_reservation) = ctx.collect_scoped_btree_map(body_references
-            .iter()
-            .map(|reference| (reference.id.as_str(), reference)), "NX last-record index")?;
+            .map(|operation| (operation.operation_label.as_str(), operation)),
+        "NX last-record index",
+    )?;
+    let (body_references_by_id, _body_references_by_id_reservation) = ctx
+        .collect_scoped_btree_map(
+            body_references
+                .iter()
+                .map(|reference| (reference.id.as_str(), reference)),
+            "NX last-record index",
+        )?;
     let mut group_reservation = ctx.reserve_scoped(0, "NX feature operation group indexes")?;
     let mut body_segment_uses_by_reference =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodySegmentUse>>::new();
     for use_ in body_segment_uses {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut body_segment_uses_by_reference, use_.feature_body_reference.as_str(), || use_, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut body_segment_uses_by_reference,
+            use_.feature_body_reference.as_str(),
+            || use_,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut body_data_block_uses_by_reference =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyDataBlockUse>>::new();
     for use_ in body_data_block_uses {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut body_data_block_uses_by_reference, use_.feature_body_reference.as_str(), || use_, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut body_data_block_uses_by_reference,
+            use_.feature_body_reference.as_str(),
+            || use_,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let body_writer_references_by_operation =
         crate::native::features::unique_feature_body_references(ctx, body_references)?;
@@ -2210,13 +2304,27 @@ fn attach_feature_operations(
         else {
             continue;
         };
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut offset_store_bodies_by_operation, reference.operation_label.as_str(), || (reference.body.value(), body_use.data_block.clone()), body_use.data_block.len(), "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut offset_store_bodies_by_operation,
+            reference.operation_label.as_str(),
+            || (reference.body.value(), body_use.data_block.clone()),
+            body_use.data_block.len(),
+            "NX feature operation group index",
+        )?;
     }
     let body_references = admitted_body_references;
     let mut body_reference_occurrences_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyReference>>::new();
     for reference in body_reference_occurrences {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut body_reference_occurrences_by_operation, reference.operation_label.as_str(), || reference, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut body_reference_occurrences_by_operation,
+            reference.operation_label.as_str(),
+            || reference,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut body_writer_history = BodyWriterHistory::default();
     if let Some(feature) = initial_body_id
@@ -2237,130 +2345,549 @@ fn attach_feature_operations(
     let mut input_blocks_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureInputBlock>>::new();
     for input in input_blocks {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut input_blocks_by_operation, input.operation_label.as_str(), || input, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut input_blocks_by_operation,
+            input.operation_label.as_str(),
+            || input,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let (input_column_row_uses_by_operation, _input_column_row_uses_by_operation_reservation) = ctx.collect_scoped_btree_groups(input_column_row_uses.iter().map(|use_| (use_.operation_label.as_str(), use_)), "NX operation record index")?;
-    let (input_column_targets_by_operation, _input_column_targets_by_operation_reservation) = ctx.collect_scoped_btree_groups(input_column_targets.iter().map(|target| (target.operation_label.as_str(), target)), "NX operation record index")?;
-    let (input_block_identity_group_by_input, _input_block_identity_group_by_input_reservation) = ctx.collect_scoped_btree_map(input_block_identity_groups.iter().flat_map(|group| {
-            group
-                .members
+    let (input_column_row_uses_by_operation, _input_column_row_uses_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            input_column_row_uses
                 .iter()
-                .map(move |member| (member.input_block.as_str(), group.id.as_str()))
-        }), "NX last-record index")?;
-    let (datum_csys_constructions_by_operation, _datum_csys_constructions_by_operation_reservation) = ctx.collect_scoped_btree_map(datum_csys_constructions
+                .map(|use_| (use_.operation_label.as_str(), use_)),
+            "NX operation record index",
+        )?;
+    let (input_column_targets_by_operation, _input_column_targets_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+        input_column_targets
             .iter()
-            .map(|construction| (construction.operation_label.as_str(), construction)), "NX last-record index")?;
-    let (datum_csys_payloads_by_operation, _datum_csys_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
-    let (datum_csys_payload_scalar_pairs_by_operation, _datum_csys_payload_scalar_pairs_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_payload_scalar_pairs.iter().map(|pair| (pair.operation_label.as_str(), pair)), "NX operation record index")?;
-    let (datum_csys_payload_fixed_pairs_by_operation, _datum_csys_payload_fixed_pairs_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_payload_fixed_pairs.iter().map(|pair| (pair.operation_label.as_str(), pair)), "NX operation record index")?;
-    let (datum_csys_payload_scalars_by_operation, _datum_csys_payload_scalars_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_payload_scalars.iter().map(|scalar| (scalar.operation_label.as_str(), scalar)), "NX operation record index")?;
-    let (datum_csys_descriptors_by_operation, _datum_csys_descriptors_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_descriptors.iter().map(|descriptor| (descriptor.operation_label.as_str(), descriptor)), "NX operation record index")?;
-    let (datum_csys_column_row_uses_by_operation, _datum_csys_column_row_uses_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_column_row_uses.iter().map(|use_| (use_.operation_label.as_str(), use_)), "NX operation record index")?;
+            .map(|target| (target.operation_label.as_str(), target)),
+        "NX operation record index",
+    )?;
+    let (input_block_identity_group_by_input, _input_block_identity_group_by_input_reservation) =
+        ctx.collect_scoped_btree_map(
+            input_block_identity_groups.iter().flat_map(|group| {
+                group
+                    .members
+                    .iter()
+                    .map(move |member| (member.input_block.as_str(), group.id.as_str()))
+            }),
+            "NX last-record index",
+        )?;
+    let (datum_csys_constructions_by_operation, _datum_csys_constructions_by_operation_reservation) =
+        ctx.collect_scoped_btree_map(
+            datum_csys_constructions
+                .iter()
+                .map(|construction| (construction.operation_label.as_str(), construction)),
+            "NX last-record index",
+        )?;
+    let (datum_csys_payloads_by_operation, _datum_csys_payloads_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            datum_csys_payloads
+                .iter()
+                .map(|payload| (payload.operation_label.as_str(), payload)),
+            "NX operation record index",
+        )?;
+    let (
+        datum_csys_payload_scalar_pairs_by_operation,
+        _datum_csys_payload_scalar_pairs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_csys_payload_scalar_pairs
+            .iter()
+            .map(|pair| (pair.operation_label.as_str(), pair)),
+        "NX operation record index",
+    )?;
+    let (
+        datum_csys_payload_fixed_pairs_by_operation,
+        _datum_csys_payload_fixed_pairs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_csys_payload_fixed_pairs
+            .iter()
+            .map(|pair| (pair.operation_label.as_str(), pair)),
+        "NX operation record index",
+    )?;
+    let (
+        datum_csys_payload_scalars_by_operation,
+        _datum_csys_payload_scalars_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_csys_payload_scalars
+            .iter()
+            .map(|scalar| (scalar.operation_label.as_str(), scalar)),
+        "NX operation record index",
+    )?;
+    let (datum_csys_descriptors_by_operation, _datum_csys_descriptors_by_operation_reservation) =
+        ctx.collect_scoped_btree_groups(
+            datum_csys_descriptors
+                .iter()
+                .map(|descriptor| (descriptor.operation_label.as_str(), descriptor)),
+            "NX operation record index",
+        )?;
+    let (
+        datum_csys_column_row_uses_by_operation,
+        _datum_csys_column_row_uses_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_csys_column_row_uses
+            .iter()
+            .map(|use_| (use_.operation_label.as_str(), use_)),
+        "NX operation record index",
+    )?;
     let mut datum_csys_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumCsysBlockUse>>::new();
     for block_use in datum_csys_block_uses {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut datum_csys_uses_by_input_operation, block_use.input_operation_label.as_str(), || block_use, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut datum_csys_uses_by_input_operation,
+            block_use.input_operation_label.as_str(),
+            || block_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let (datum_plane_headers_by_operation, _datum_plane_headers_by_operation_reservation) = ctx.collect_scoped_btree_map(datum_plane_headers
+    let (datum_plane_headers_by_operation, _datum_plane_headers_by_operation_reservation) = ctx
+        .collect_scoped_btree_map(
+            datum_plane_headers
+                .iter()
+                .map(|header| (header.operation_label.as_str(), header)),
+            "NX last-record index",
+        )?;
+    let (datum_plane_payloads_by_operation, _datum_plane_payloads_by_operation_reservation) = ctx
+        .collect_scoped_btree_map(
+        datum_plane_payloads
             .iter()
-            .map(|header| (header.operation_label.as_str(), header)), "NX last-record index")?;
-    let (datum_plane_payloads_by_operation, _datum_plane_payloads_by_operation_reservation) = ctx.collect_scoped_btree_map(datum_plane_payloads
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX last-record index",
+    )?;
+    let (
+        datum_plane_payload_scalar_pairs_by_operation,
+        _datum_plane_payload_scalar_pairs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_plane_payload_scalar_pairs
             .iter()
-            .map(|payload| (payload.operation_label.as_str(), payload)), "NX last-record index")?;
-    let (datum_plane_payload_scalar_pairs_by_operation, _datum_plane_payload_scalar_pairs_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_plane_payload_scalar_pairs.iter().map(|pair| (pair.operation_label.as_str(), pair)), "NX operation record index")?;
-    let (datum_plane_descriptors_by_operation, _datum_plane_descriptors_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_plane_descriptors.iter().map(|descriptor| (descriptor.operation_label.as_str(), descriptor)), "NX operation record index")?;
+            .map(|pair| (pair.operation_label.as_str(), pair)),
+        "NX operation record index",
+    )?;
+    let (datum_plane_descriptors_by_operation, _datum_plane_descriptors_by_operation_reservation) =
+        ctx.collect_scoped_btree_groups(
+            datum_plane_descriptors
+                .iter()
+                .map(|descriptor| (descriptor.operation_label.as_str(), descriptor)),
+            "NX operation record index",
+        )?;
     let mut datum_plane_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneBlockUse>>::new();
     for block_use in datum_plane_block_uses {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut datum_plane_uses_by_input_operation, block_use.input_operation_label.as_str(), || block_use, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut datum_plane_uses_by_input_operation,
+            block_use.input_operation_label.as_str(),
+            || block_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let chronological_labels =
         crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
-    let (operation_positions, _operation_positions_reservation) = ctx.collect_scoped_btree_map(chronological_labels
+    let (operation_positions, _operation_positions_reservation) = ctx.collect_scoped_btree_map(
+        chronological_labels
             .iter()
             .enumerate()
-            .map(|(position, label)| (label.id.as_str(), position)), "NX last-record index")?;
-    let (sketch_datum_csys_dependencies, _sketch_datum_csys_dependencies_reservation) = ctx.collect_scoped_btree_map(sketch_datum_csys_dependencies
-            .iter()
-            .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency)), "NX last-record index")?;
+            .map(|(position, label)| (label.id.as_str(), position)),
+        "NX last-record index",
+    )?;
+    let (sketch_datum_csys_dependencies, _sketch_datum_csys_dependencies_reservation) = ctx
+        .collect_scoped_btree_map(
+            sketch_datum_csys_dependencies
+                .iter()
+                .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency)),
+            "NX last-record index",
+        )?;
     let mut datum_identity_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneCsysIdentityUse>>::new();
     for identity_use in datum_plane_csys_identity_uses {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut datum_identity_uses_by_operation, identity_use.datum_plane_operation_label.as_str(), || identity_use, 0, "NX feature operation group index")?;
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut datum_identity_uses_by_operation, identity_use.datum_csys_operation_label.as_str(), || identity_use, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut datum_identity_uses_by_operation,
+            identity_use.datum_plane_operation_label.as_str(),
+            || identity_use,
+            0,
+            "NX feature operation group index",
+        )?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut datum_identity_uses_by_operation,
+            identity_use.datum_csys_operation_label.as_str(),
+            || identity_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchReference>>::new();
     for reference in sketch_references {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_references_by_operation, reference.operation_label.as_str(), || reference, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_references_by_operation,
+            reference.operation_label.as_str(),
+            || reference,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let (projected_curve_references_by_operation, _projected_curve_references_by_operation_reservation) = ctx.collect_scoped_btree_groups(projected_curve_references.iter().map(|reference| (reference.operation_label.as_str(), reference)), "NX operation record index")?;
-    let (projected_curve_construction_payloads_by_operation, _projected_curve_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(projected_curve_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
-    let (projected_curve_construction_strings_by_operation, _projected_curve_construction_strings_by_operation_reservation) = ctx.collect_scoped_btree_groups(projected_curve_construction_strings.iter().map(|value| (value.operation_label.as_str(), value)), "NX operation record index")?;
-    let (fset_reference_graphs_by_operation, _fset_reference_graphs_by_operation_reservation) = ctx.collect_scoped_btree_groups(fset_reference_graphs.iter().map(|graph| (graph.operation_label.as_str(), graph)), "NX operation record index")?;
-    let (fset_construction_payloads_by_operation, _fset_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(fset_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
-    let (delete_reference_fields_by_operation, _delete_reference_fields_by_operation_reservation) = ctx.collect_scoped_btree_groups(delete_reference_fields.iter().map(|field| (field.operation_label.as_str(), field)), "NX operation record index")?;
-    let (delete_construction_payloads_by_operation, _delete_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(delete_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
-    let (pattern_references_by_operation, _pattern_references_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_references.iter().map(|reference| (reference.operation_label.as_str(), reference)), "NX operation record index")?;
-    let (pattern_counted_reference_lanes_by_operation, _pattern_counted_reference_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_counted_reference_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
-    let (pattern_construction_payloads_by_operation, _pattern_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
-    let (pattern_construction_strings_by_operation, _pattern_construction_strings_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_construction_strings.iter().map(|value| (value.operation_label.as_str(), value)), "NX operation record index")?;
-    let (pattern_construction_fixed_lanes_by_operation, _pattern_construction_fixed_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_construction_fixed_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
-    let (pattern_transform_lanes_by_operation, _pattern_transform_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_transform_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
-    let (multi_instance_output_lanes_by_operation, _multi_instance_output_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(multi_instance_output_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
-    let (identical_instance_output_lanes_by_operation, _identical_instance_output_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(identical_instance_output_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
-    let (point_construction_headers_by_operation, _point_construction_headers_by_operation_reservation) = ctx.collect_scoped_btree_map(point_construction_headers
+    let (
+        projected_curve_references_by_operation,
+        _projected_curve_references_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        projected_curve_references
             .iter()
-            .map(|header| (header.operation_label.as_str(), header)), "NX last-record index")?;
-    let (point_construction_scalar_lanes_by_operation, _point_construction_scalar_lanes_by_operation_reservation) = ctx.collect_scoped_btree_map(point_construction_scalar_lanes
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "NX operation record index",
+    )?;
+    let (
+        projected_curve_construction_payloads_by_operation,
+        _projected_curve_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        projected_curve_construction_payloads
             .iter()
-            .map(|lane| (lane.operation_label.as_str(), lane)), "NX last-record index")?;
-    let (draft_construction_references_by_operation, _draft_construction_references_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_references.iter().map(|reference| (reference.operation_label.as_str(), reference)), "NX operation record index")?;
-    let (draft_construction_index_lanes_by_operation, _draft_construction_index_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_index_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
-    let (draft_construction_payloads_by_operation, _draft_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
-    let (draft_construction_graph_payloads_by_operation, _draft_construction_graph_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_graph_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
-    let (draft_construction_fixed_lanes_by_operation, _draft_construction_fixed_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_fixed_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
-    let (draft_construction_binary32_lanes_by_operation, _draft_construction_binary32_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_binary32_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
-    let (draft_construction_graph_strings_by_operation, _draft_construction_graph_strings_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_graph_strings.iter().map(|value| (value.operation_label.as_str(), value)), "NX operation record index")?;
-    let (draft_construction_identity_frames_by_operation, _draft_construction_identity_frames_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_identity_frames.iter().map(|frame| (frame.operation_label.as_str(), frame)), "NX operation record index")?;
-    let (draft_construction_terminal_lanes_by_operation, _draft_construction_terminal_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_terminal_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
-    let (surface_construction_references_by_operation, _surface_construction_references_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_references.iter().map(|reference| (reference.operation_label.as_str(), reference)), "NX operation record index")?;
-    let (surface_construction_payloads_by_operation, _surface_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
-    let (surface_construction_scalar_pairs_by_operation, _surface_construction_scalar_pairs_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_scalar_pairs.iter().map(|pair| (pair.operation_label.as_str(), pair)), "NX operation record index")?;
-    let (surface_construction_strings_by_operation, _surface_construction_strings_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_strings.iter().map(|value| (value.operation_label.as_str(), value)), "NX operation record index")?;
-    let (surface_construction_branches_by_operation, _surface_construction_branches_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_branches.iter().map(|branch| (branch.operation_label.as_str(), branch)), "NX operation record index")?;
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        projected_curve_construction_strings_by_operation,
+        _projected_curve_construction_strings_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        projected_curve_construction_strings
+            .iter()
+            .map(|value| (value.operation_label.as_str(), value)),
+        "NX operation record index",
+    )?;
+    let (fset_reference_graphs_by_operation, _fset_reference_graphs_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            fset_reference_graphs
+                .iter()
+                .map(|graph| (graph.operation_label.as_str(), graph)),
+            "NX operation record index",
+        )?;
+    let (
+        fset_construction_payloads_by_operation,
+        _fset_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        fset_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (delete_reference_fields_by_operation, _delete_reference_fields_by_operation_reservation) =
+        ctx.collect_scoped_btree_groups(
+            delete_reference_fields
+                .iter()
+                .map(|field| (field.operation_label.as_str(), field)),
+            "NX operation record index",
+        )?;
+    let (
+        delete_construction_payloads_by_operation,
+        _delete_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        delete_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (pattern_references_by_operation, _pattern_references_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            pattern_references
+                .iter()
+                .map(|reference| (reference.operation_label.as_str(), reference)),
+            "NX operation record index",
+        )?;
+    let (
+        pattern_counted_reference_lanes_by_operation,
+        _pattern_counted_reference_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        pattern_counted_reference_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        pattern_construction_payloads_by_operation,
+        _pattern_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        pattern_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        pattern_construction_strings_by_operation,
+        _pattern_construction_strings_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        pattern_construction_strings
+            .iter()
+            .map(|value| (value.operation_label.as_str(), value)),
+        "NX operation record index",
+    )?;
+    let (
+        pattern_construction_fixed_lanes_by_operation,
+        _pattern_construction_fixed_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        pattern_construction_fixed_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (pattern_transform_lanes_by_operation, _pattern_transform_lanes_by_operation_reservation) =
+        ctx.collect_scoped_btree_groups(
+            pattern_transform_lanes
+                .iter()
+                .map(|lane| (lane.operation_label.as_str(), lane)),
+            "NX operation record index",
+        )?;
+    let (
+        multi_instance_output_lanes_by_operation,
+        _multi_instance_output_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        multi_instance_output_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        identical_instance_output_lanes_by_operation,
+        _identical_instance_output_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        identical_instance_output_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        point_construction_headers_by_operation,
+        _point_construction_headers_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        point_construction_headers
+            .iter()
+            .map(|header| (header.operation_label.as_str(), header)),
+        "NX last-record index",
+    )?;
+    let (
+        point_construction_scalar_lanes_by_operation,
+        _point_construction_scalar_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        point_construction_scalar_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX last-record index",
+    )?;
+    let (
+        draft_construction_references_by_operation,
+        _draft_construction_references_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_index_lanes_by_operation,
+        _draft_construction_index_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_index_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_payloads_by_operation,
+        _draft_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_graph_payloads_by_operation,
+        _draft_construction_graph_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_graph_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_fixed_lanes_by_operation,
+        _draft_construction_fixed_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_fixed_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_binary32_lanes_by_operation,
+        _draft_construction_binary32_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_binary32_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_graph_strings_by_operation,
+        _draft_construction_graph_strings_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_graph_strings
+            .iter()
+            .map(|value| (value.operation_label.as_str(), value)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_identity_frames_by_operation,
+        _draft_construction_identity_frames_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_identity_frames
+            .iter()
+            .map(|frame| (frame.operation_label.as_str(), frame)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_terminal_lanes_by_operation,
+        _draft_construction_terminal_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_terminal_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_references_by_operation,
+        _surface_construction_references_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_payloads_by_operation,
+        _surface_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_scalar_pairs_by_operation,
+        _surface_construction_scalar_pairs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_scalar_pairs
+            .iter()
+            .map(|pair| (pair.operation_label.as_str(), pair)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_strings_by_operation,
+        _surface_construction_strings_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_strings
+            .iter()
+            .map(|value| (value.operation_label.as_str(), value)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_branches_by_operation,
+        _surface_construction_branches_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_branches
+            .iter()
+            .map(|branch| (branch.operation_label.as_str(), branch)),
+        "NX operation record index",
+    )?;
     let mut sketch_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchNamedPointBlockUse>>::new();
     for block_use in sketch_named_point_block_uses {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_named_point_uses_by_operation, block_use.operation_label.as_str(), || block_use, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_named_point_uses_by_operation,
+            block_use.operation_label.as_str(),
+            || block_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_preceding_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPrecedingNamedPointUse>>::new();
     for point_use in sketch_preceding_named_point_uses {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_preceding_named_point_uses_by_operation, point_use.operation_label.as_str(), || point_use, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_preceding_named_point_uses_by_operation,
+            point_use.operation_label.as_str(),
+            || point_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPointUse>>::new();
     for point_use in sketch_point_uses {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_point_uses_by_operation, point_use.operation_label.as_str(), || point_use, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_point_uses_by_operation,
+            point_use.operation_label.as_str(),
+            || point_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_point_groups_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPointGroup>>::new();
     for group in sketch_point_groups {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_point_groups_by_operation, group.operation_label.as_str(), || group, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_point_groups_by_operation,
+            group.operation_label.as_str(),
+            || group,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut extrude_profile_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureExtrudeProfileReference>>::new();
     for reference in extrude_profile_references {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut extrude_profile_references_by_operation, reference.operation_label.as_str(), || reference, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut extrude_profile_references_by_operation,
+            reference.operation_label.as_str(),
+            || reference,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let (extrude_construction_profiles_by_operation, _extrude_construction_profiles_by_operation_reservation) = ctx.collect_scoped_btree_map(extrude_construction_profiles
+    let (
+        extrude_construction_profiles_by_operation,
+        _extrude_construction_profiles_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        extrude_construction_profiles
             .iter()
-            .map(|profile| (profile.operation_label.as_str(), profile)), "NX last-record index")?;
+            .map(|profile| (profile.operation_label.as_str(), profile)),
+        "NX last-record index",
+    )?;
     let mut operation_body_operands_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
     for operand in operation_body_operands {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut operation_body_operands_by_operation, operand.operation_label.as_str(), || operand, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_operands_by_operation,
+            operand.operation_label.as_str(),
+            || operand,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut segment_body_operands_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
@@ -2368,71 +2895,192 @@ fn attach_feature_operations(
         .iter()
         .filter(|operand| !operand.segment_body_bindings.is_empty())
     {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut segment_body_operands_by_operation, operand.operation_label.as_str(), || operand, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut segment_body_operands_by_operation,
+            operand.operation_label.as_str(),
+            || operand,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let (sketch_construction_inputs_by_operation, _sketch_construction_inputs_by_operation_reservation) = ctx.collect_scoped_btree_map(sketch_construction_inputs
+    let (
+        sketch_construction_inputs_by_operation,
+        _sketch_construction_inputs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        sketch_construction_inputs
             .iter()
-            .map(|inputs| (inputs.operation_label.as_str(), inputs)), "NX last-record index")?;
-    let (sketch_records_by_operation, _sketch_records_by_operation_reservation) = ctx.collect_scoped_btree_groups(sketch_records.iter().map(|record| (record.operation_label.as_str(), record)), "NX operation record index")?;
-    let (sketch_construction_payloads_by_operation, _sketch_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(sketch_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+            .map(|inputs| (inputs.operation_label.as_str(), inputs)),
+        "NX last-record index",
+    )?;
+    let (sketch_records_by_operation, _sketch_records_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            sketch_records
+                .iter()
+                .map(|record| (record.operation_label.as_str(), record)),
+            "NX operation record index",
+        )?;
+    let (
+        sketch_construction_payloads_by_operation,
+        _sketch_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        sketch_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
     let mut sketch_coordinate_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadScalarPair>>::new();
     for pair in sketch_coordinate_pairs {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_coordinate_pairs_by_operation, pair.operation_label.as_str(), || pair, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_coordinate_pairs_by_operation,
+            pair.operation_label.as_str(),
+            || pair,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_fixed_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadFixedPair>>::new();
     for pair in sketch_fixed_pairs {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_fixed_pairs_by_operation, pair.operation_label.as_str(), || pair, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_fixed_pairs_by_operation,
+            pair.operation_label.as_str(),
+            || pair,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_mixed_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadMixedPair>>::new();
     for pair in sketch_mixed_pairs {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_mixed_pairs_by_operation, pair.operation_label.as_str(), || pair, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_mixed_pairs_by_operation,
+            pair.operation_label.as_str(),
+            || pair,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_payload_scalar_lanes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadScalarLane>>::new();
     for lane in sketch_payload_scalar_lanes {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_payload_scalar_lanes_by_operation, lane.operation_label.as_str(), || lane, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_payload_scalar_lanes_by_operation,
+            lane.operation_label.as_str(),
+            || lane,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_fixed_points_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchFixedPoint>>::new();
     for point in sketch_fixed_points {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_fixed_points_by_operation, point.operation_label.as_str(), || point, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_fixed_points_by_operation,
+            point.operation_label.as_str(),
+            || point,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let (block_constructions_by_operation, _block_constructions_by_operation_reservation) = ctx.collect_scoped_btree_map(block_constructions
+    let (block_constructions_by_operation, _block_constructions_by_operation_reservation) = ctx
+        .collect_scoped_btree_map(
+            block_constructions
+                .iter()
+                .map(|construction| (construction.operation_label.as_str(), construction)),
+            "NX last-record index",
+        )?;
+    let (
+        block_construction_payloads_by_operation,
+        _block_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        block_construction_payloads
             .iter()
-            .map(|construction| (construction.operation_label.as_str(), construction)), "NX last-record index")?;
-    let (block_construction_payloads_by_operation, _block_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(block_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
-    let (block_dimensions_by_operation, _block_dimensions_by_operation_reservation) = ctx.collect_scoped_btree_map(block_dimensions
-            .iter()
-            .map(|dimensions| (dimensions.operation_label.as_str(), dimensions)), "NX last-record index")?;
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (block_dimensions_by_operation, _block_dimensions_by_operation_reservation) = ctx
+        .collect_scoped_btree_map(
+            block_dimensions
+                .iter()
+                .map(|dimensions| (dimensions.operation_label.as_str(), dimensions)),
+            "NX last-record index",
+        )?;
     let mut block_payload_points_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPoint>>::new();
     for point in block_payload_points {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut block_payload_points_by_operation, point.operation_label.as_str(), || point, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut block_payload_points_by_operation,
+            point.operation_label.as_str(),
+            || point,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut block_payload_point_groups_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPointGroup>>::new();
     for group in block_payload_point_groups {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut block_payload_point_groups_by_operation, group.operation_label.as_str(), || group, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut block_payload_point_groups_by_operation,
+            group.operation_label.as_str(),
+            || group,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let (extrude_32_constructions_by_operation, _extrude_32_constructions_by_operation_reservation) = ctx.collect_scoped_btree_map(extrude_32_constructions
+    let (extrude_32_constructions_by_operation, _extrude_32_constructions_by_operation_reservation) =
+        ctx.collect_scoped_btree_map(
+            extrude_32_constructions
+                .iter()
+                .map(|construction| (construction.operation_label.as_str(), construction)),
+            "NX last-record index",
+        )?;
+    let (extrude_payload_headers_by_operation, _extrude_payload_headers_by_operation_reservation) =
+        ctx.collect_scoped_btree_map(
+            extrude_payload_headers
+                .iter()
+                .map(|header| (header.operation_label.as_str(), header)),
+            "NX last-record index",
+        )?;
+    let (
+        operation_terminal_discriminators_by_operation,
+        _operation_terminal_discriminators_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        operation_terminal_discriminators
             .iter()
-            .map(|construction| (construction.operation_label.as_str(), construction)), "NX last-record index")?;
-    let (extrude_payload_headers_by_operation, _extrude_payload_headers_by_operation_reservation) = ctx.collect_scoped_btree_map(extrude_payload_headers
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX last-record index",
+    )?;
+    let (
+        extrude_payload_32_branches_by_operation,
+        _extrude_payload_32_branches_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        extrude_payload_32_branches
             .iter()
-            .map(|header| (header.operation_label.as_str(), header)), "NX last-record index")?;
-    let (operation_terminal_discriminators_by_operation, _operation_terminal_discriminators_by_operation_reservation) = ctx.collect_scoped_btree_map(operation_terminal_discriminators
-            .iter()
-            .map(|lane| (lane.operation_label.as_str(), lane)), "NX last-record index")?;
-    let (extrude_payload_32_branches_by_operation, _extrude_payload_32_branches_by_operation_reservation) = ctx.collect_scoped_btree_groups(extrude_payload_32_branches.iter().map(|branch| (branch.operation_label.as_str(), branch)), "NX operation record index")?;
+            .map(|branch| (branch.operation_label.as_str(), branch)),
+        "NX operation record index",
+    )?;
     let mut operation_body_scalar_triples_by_operation = BTreeMap::<
         &str,
         Vec<&crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple>,
     >::new();
     for triple in operation_body_scalar_triples {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut operation_body_scalar_triples_by_operation, triple.operation_label.as_str(), || triple, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_scalar_triples_by_operation,
+            triple.operation_label.as_str(),
+            || triple,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     for triples in operation_body_scalar_triples_by_operation.values_mut() {
         triples.sort_by_key(|triple| triple.body_reference_ordinal);
@@ -2440,17 +3088,38 @@ fn attach_feature_operations(
     let mut operation_body_members_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyMember>>::new();
     for member in operation_body_members {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut operation_body_members_by_operation, member.operation_label.as_str(), || member, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_members_by_operation,
+            member.operation_label.as_str(),
+            || member,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut operation_body_11_continuations_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBody11Continuation>>::new();
     for continuation in operation_body_11_continuations {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut operation_body_11_continuations_by_operation, continuation.operation_label.as_str(), || continuation, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_11_continuations_by_operation,
+            continuation.operation_label.as_str(),
+            || continuation,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut operation_body_reference_lanes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyReferenceLane>>::new();
     for lane in operation_body_reference_lanes {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut operation_body_reference_lanes_by_operation, lane.operation_label.as_str(), || lane, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_reference_lanes_by_operation,
+            lane.operation_label.as_str(),
+            || lane,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let SegmentBindingBodyIndexes {
         by_object: bodies_by_object_index,
@@ -2626,7 +3295,11 @@ fn attach_feature_operations(
             ))?;
         }
         feature_id_reservation.grow(cadmpeg_core::decode::u64_from_index(id_len))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut id_text, id_len, "NX operation feature identity")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut id_text,
+            id_len,
+            "NX operation feature identity",
+        )?;
         id_text.push_str(PREFIX);
         id_text.push_str(key);
         let Ok(id) = FeatureId::mint(id_text) else {
@@ -2637,23 +3310,48 @@ fn attach_feature_operations(
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut parameter_bindings_by_operation, binding.operation_label.as_str(), || binding, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut parameter_bindings_by_operation,
+            binding.operation_label.as_str(),
+            || binding,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut parameter_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
     for parameter_use in parameter_uses {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut parameter_uses_by_operation, parameter_use.operation_label.as_str(), || parameter_use, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut parameter_uses_by_operation,
+            parameter_use.operation_label.as_str(),
+            || parameter_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let (operation_labels_by_record, _operation_labels_by_record_reservation) = ctx.collect_scoped_btree_map(operation_records
-            .iter()
-            .map(|record| (record.id.as_str(), record.operation_label.as_str())), "NX last-record index")?;
+    let (operation_labels_by_record, _operation_labels_by_record_reservation) = ctx
+        .collect_scoped_btree_map(
+            operation_records
+                .iter()
+                .map(|record| (record.id.as_str(), record.operation_label.as_str())),
+            "NX last-record index",
+        )?;
     let mut body_writes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyWrite>>::new();
     for (write, operation_label) in operation_body_writes
         .iter()
         .filter_map(|write| write.operation_label.as_deref().map(|label| (write, label)))
     {
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut body_writes_by_operation, operation_label, || write, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut body_writes_by_operation,
+            operation_label,
+            || write,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut body_identity_writers = BTreeMap::<u8, FeatureId>::new();
     let mut payload_strings_by_operation =
@@ -2663,7 +3361,14 @@ fn attach_feature_operations(
         else {
             continue;
         };
-        ctx.push_scoped_btree_group(&mut group_reservation, &mut payload_strings_by_operation, *operation, || value, 0, "NX feature operation group index")?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut payload_strings_by_operation,
+            *operation,
+            || value,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut parameter_owners = BTreeMap::new();
     let mut parameter_owner_reservation = ctx.reserve_scoped(0, "NX parameter owner index")?;
@@ -2717,7 +3422,11 @@ fn attach_feature_operations(
                 })?;
             ctx.reserve_retained_vec(losses, 1, "NX TEXT annotation losses")?;
             let mut message = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut message, message_len, "allocate NX TEXT annotation order loss")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut message,
+                message_len,
+                "allocate NX TEXT annotation order loss",
+            )?;
             message.push_str(PREFIX);
             message.push_str(&label.id);
             message.push_str(SUFFIX);
@@ -2740,7 +3449,11 @@ fn attach_feature_operations(
             .note(annotation.id.as_str(), &stream, label.source_offset)
             .tag("TEXT_SEMANTIC_ANNOTATION");
         annotations.exactness(annotation.id.as_str(), Exactness::Derived);
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.semantic_annotations, 1, "allocate NX semantic annotations")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.semantic_annotations,
+            1,
+            "allocate NX semantic annotations",
+        )?;
         ir.model.semantic_annotations.push(annotation);
     }
     for (ordinal, label) in chronological_labels.into_iter().enumerate() {
@@ -3143,7 +3856,9 @@ fn attach_feature_operations(
                 .or_else(|| hole_packages.outputs.get(label.id.as_str()))
             {
                 outputs = ctx.retained_vec(bodies.len(), "NX feature output bodies")?;
-                for body in bodies { outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?); }
+                for body in bodies {
+                    outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?);
+                }
             }
         }
         if outputs.is_empty() {
@@ -4380,8 +5095,11 @@ fn attach_feature_operations(
         let operation_payload_string_records = payload_strings_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        
-        let (mut operation_payload_strings, _payload_reservation) = ctx.temporary_vec(operation_payload_string_records.len(), "NX operation payload string references")?;
+
+        let (mut operation_payload_strings, _payload_reservation) = ctx.temporary_vec(
+            operation_payload_string_records.len(),
+            "NX operation payload string references",
+        )?;
         operation_payload_strings.extend(
             operation_payload_string_records
                 .iter()
@@ -4610,7 +5328,12 @@ fn attach_feature_operations(
                     output_kinds.clear();
                     break;
                 };
-                ctx.reserve_scoped_vec(&mut output_kind_reservation, &mut output_kinds, 1, "NX extrude output body kinds")?;
+                ctx.reserve_scoped_vec(
+                    &mut output_kind_reservation,
+                    &mut output_kinds,
+                    1,
+                    "NX extrude output body kinds",
+                )?;
                 output_kinds.push(body.kind);
             }
             let op = extrude_boolean_op(
@@ -4921,7 +5644,11 @@ fn attach_feature_operations(
             cadmpeg_core::decode::u64_from_index(feature_text_bytes),
             "NX feature record",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.features, 1, "allocate NX feature records")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.features,
+            1,
+            "allocate NX feature records",
+        )?;
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
@@ -4963,7 +5690,11 @@ fn attach_feature_operations(
                     "NX feature result body",
                 )?;
                 let mut body_text = String::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut body_text, body_len, "allocate NX feature result body identity")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                    &mut body_text,
+                    body_len,
+                    "allocate NX feature result body identity",
+                )?;
                 std::fmt::Write::write_fmt(
                     &mut body_text,
                     format_args!("{BODY_PREFIX}{:010}", write.frame.body_identity()),
@@ -4975,9 +5706,14 @@ fn attach_feature_operations(
                     CodecError::malformed("NX feature result body identity is blank")
                 })?;
                 let mut bodies = Vec::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bodies, 1, "allocate NX feature result bodies")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    &mut bodies,
+                    1,
+                    "allocate NX feature result bodies",
+                )?;
                 bodies.push(body);
-                let mut native_ref = ctx.retained_string(write.id.len(), "NX result topology native reference")?;
+                let mut native_ref =
+                    ctx.retained_string(write.id.len(), "NX result topology native reference")?;
                 native_ref.push_str(&write.id);
                 append_feature_result_topology(
                     ctx,
@@ -5049,10 +5785,18 @@ fn attach_feature_operations(
                     "NX primary body closure witness",
                 )?;
                 let mut key = String::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut key, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.len(), "allocate NX primary body closure witness key")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                    &mut key,
+                    NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.len(),
+                    "allocate NX primary body closure witness key",
+                )?;
                 key.push_str(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS);
                 let mut value = String::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut value, WITNESS_VALUE.len(), "allocate NX primary body closure witness value")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                    &mut value,
+                    WITNESS_VALUE.len(),
+                    "allocate NX primary body closure witness value",
+                )?;
                 value.push_str(WITNESS_VALUE);
                 initial_feature.source_properties.insert(
                     cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
@@ -5127,7 +5871,11 @@ fn result_topology_id(
         "NX result topology identity",
     )?;
     let mut owned_key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut owned_key, key_len, "allocate NX result topology key")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_key,
+        key_len,
+        "allocate NX result topology key",
+    )?;
     owned_key.push_str(key);
     if let Some(ordinal) = ordinal {
         std::fmt::Write::write_fmt(&mut owned_key, format_args!("-{ordinal:010}"))
@@ -5220,7 +5968,11 @@ fn append_feature_result_topology(
         cadmpeg_core::decode::u64_from_index(member_count),
         "NX result topology member validation",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.feature_result_topologies, 1, "allocate NX result topology records")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut ir.model.feature_result_topologies,
+        1,
+        "allocate NX result topology records",
+    )?;
     let result = FeatureResultTopology::new(
         result_id,
         output_of.clone(),
@@ -5334,9 +6086,17 @@ fn feature_result_group_members(
             cadmpeg_core::decode::u64_from_index(identity_len),
             "NX feature result group member identity formatting",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(output, 1, "allocate NX feature result group members")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            output,
+            1,
+            "allocate NX feature result group members",
+        )?;
         let mut text = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut text, identity_len, "allocate NX feature result group member identity")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut text,
+            identity_len,
+            "allocate NX feature result group member identity",
+        )?;
         std::fmt::Write::write_fmt(
             &mut text,
             format_args!("nx:s{partition_stream_ordinal}:{kind}#{xmt}"),
@@ -5392,14 +6152,22 @@ fn native_result_body_identity(
         "NX result body identity",
     )?;
     let mut local = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut local, local_len, "allocate NX result body local identity")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut local,
+        local_len,
+        "allocate NX result body local identity",
+    )?;
     local.push_str(native);
     local.push_str(suffix);
     let Some(local) = cadmpeg_core::text::NonBlankString::new(local) else {
         return Ok(None);
     };
     let mut native_ref = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut native_ref, native.len(), "allocate NX result body native identity")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut native_ref,
+        native.len(),
+        "allocate NX result body native identity",
+    )?;
     native_ref.push_str(native);
     Ok(Some((local, native_ref)))
 }
@@ -5472,7 +6240,12 @@ fn attach_sketch_graph(
         .iter()
         .filter(|group| group.operation_label == label.id)
     {
-        ctx.reserve_scoped_vec(&mut reservation, &mut operation_groups, 1, "NX sketch operation groups")?;
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut operation_groups,
+            1,
+            "NX sketch operation groups",
+        )?;
         operation_groups.push(group);
     }
     let operation_key = label
@@ -5499,7 +6272,11 @@ fn attach_sketch_graph(
         "NX sketch identity",
     )?;
     let mut owned_operation_key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut owned_operation_key, operation_key.len(), "allocate NX sketch identity")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_operation_key,
+        operation_key.len(),
+        "allocate NX sketch identity",
+    )?;
     owned_operation_key.push_str(operation_key);
     let Some(sketch_id): Option<SketchId> =
         IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id(
@@ -5515,7 +6292,12 @@ fn attach_sketch_graph(
         .iter()
         .filter(|point| point.operation_label == label.id)
     {
-        ctx.reserve_scoped_vec(&mut reservation, &mut operation_fixed_points, 1, "NX sketch fixed-point inputs")?;
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut operation_fixed_points,
+            1,
+            "NX sketch fixed-point inputs",
+        )?;
         operation_fixed_points.push(point);
     }
     if operation_groups.is_empty() {
@@ -5525,7 +6307,12 @@ fn attach_sketch_graph(
             .iter()
             .filter(|pair| pair.operation_label == label.id)
         {
-            ctx.reserve_scoped_vec(&mut reservation, &mut coordinate_pairs, 1, "NX sketch coordinate pair inputs")?;
+            ctx.reserve_scoped_vec(
+                &mut reservation,
+                &mut coordinate_pairs,
+                1,
+                "NX sketch coordinate pair inputs",
+            )?;
             coordinate_pairs.push(pair);
         }
         if coordinate_pairs.is_empty() && operation_fixed_points.is_empty() {
@@ -5536,9 +6323,19 @@ fn attach_sketch_graph(
         let mut pair_entity_keys = BTreeSet::new();
         let mut pair_ordinals = BTreeSet::new();
         for pair in coordinate_pairs {
-            if !ctx.insert_scoped_btree_set(&mut reservation, &mut pair_ids, pair.id.as_str(), "NX sketch key uniqueness", "NX sketch key index")?
-                || !ctx.insert_scoped_btree_set(&mut reservation, &mut pair_ordinals, (pair.payload.id(), pair.ordinal), "NX sketch key uniqueness", "NX sketch key index")?
-            {
+            if !ctx.insert_scoped_btree_set(
+                &mut reservation,
+                &mut pair_ids,
+                pair.id.as_str(),
+                "NX sketch key uniqueness",
+                "NX sketch key index",
+            )? || !ctx.insert_scoped_btree_set(
+                &mut reservation,
+                &mut pair_ordinals,
+                (pair.payload.id(), pair.ordinal),
+                "NX sketch key uniqueness",
+                "NX sketch key index",
+            )? {
                 return Ok(None);
             }
             let pair_key = pair
@@ -5547,7 +6344,13 @@ fn attach_sketch_graph(
                 .map_or(pair.id.as_str(), |(_, key)| key);
             if pair_key.is_empty()
                 || pair_key.chars().any(char::is_whitespace)
-                || !ctx.insert_scoped_btree_set(&mut reservation, &mut pair_entity_keys, pair_key, "NX sketch key uniqueness", "NX sketch key index")?
+                || !ctx.insert_scoped_btree_set(
+                    &mut reservation,
+                    &mut pair_entity_keys,
+                    pair_key,
+                    "NX sketch key uniqueness",
+                    "NX sketch key index",
+                )?
             {
                 return Ok(None);
             }
@@ -5574,7 +6377,10 @@ fn attach_sketch_graph(
             else {
                 return Ok(None);
             };
-            let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(&pair.id, "allocate NX sketch text")?;
+            let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+                &pair.id,
+                "allocate NX sketch text",
+            )?;
             push_sketch_entity(
                 ctx,
                 &mut reservation,
@@ -5643,7 +6449,14 @@ fn attach_sketch_graph(
     let mut groups_by_id =
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointGroup>::new();
     for group in &operation_groups {
-        if !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut groups_by_id, group.id.as_str(), group, "NX sketch record uniqueness", "NX sketch record index")? {
+        if !ctx.insert_scoped_btree_map_if_vacant(
+            &mut reservation,
+            &mut groups_by_id,
+            group.id.as_str(),
+            group,
+            "NX sketch record uniqueness",
+            "NX sketch record index",
+        )? {
             return Ok(None);
         }
     }
@@ -5651,7 +6464,14 @@ fn attach_sketch_graph(
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointUse>::new();
     for point_use in sources.point_uses {
         if point_use.operation_label != label.id
-            || !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut point_uses_by_group, point_use.sketch_point_group.as_str(), point_use, "NX sketch record uniqueness", "NX sketch record index")?
+            || !ctx.insert_scoped_btree_map_if_vacant(
+                &mut reservation,
+                &mut point_uses_by_group,
+                point_use.sketch_point_group.as_str(),
+                point_use,
+                "NX sketch record uniqueness",
+                "NX sketch record index",
+            )?
         {
             return Ok(None);
         }
@@ -5679,13 +6499,27 @@ fn attach_sketch_graph(
     }
     let mut points_by_id = BTreeMap::<&str, &crate::native::features::FeatureSketchPoint>::new();
     for point in sources.points {
-        if !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut points_by_id, point.id.as_str(), point, "NX sketch record uniqueness", "NX sketch record index")? {
+        if !ctx.insert_scoped_btree_map_if_vacant(
+            &mut reservation,
+            &mut points_by_id,
+            point.id.as_str(),
+            point,
+            "NX sketch record uniqueness",
+            "NX sketch record index",
+        )? {
             return Ok(None);
         }
     }
     let mut scalars_by_id = BTreeMap::<&str, &crate::native::features::FeaturePayloadScalar>::new();
     for scalar in sources.payload_scalars {
-        if !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut scalars_by_id, scalar.id.as_str(), scalar, "NX sketch record uniqueness", "NX sketch record index")? {
+        if !ctx.insert_scoped_btree_map_if_vacant(
+            &mut reservation,
+            &mut scalars_by_id,
+            scalar.id.as_str(),
+            scalar,
+            "NX sketch record uniqueness",
+            "NX sketch record index",
+        )? {
             return Ok(None);
         }
     }
@@ -5732,7 +6566,10 @@ fn attach_sketch_graph(
             cadmpeg_core::decode::u64_from_index(copy_bytes),
             "NX sketch point entity",
         )?;
-        let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(native_ref_source, "allocate NX sketch text")?;
+        let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+            native_ref_source,
+            "allocate NX sketch text",
+        )?;
         let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(group.coordinates[0], group.coordinates[1]),
         }) else {
@@ -5908,7 +6745,11 @@ fn sketch_entity_identity(
         "NX sketch entity identity",
     )?;
     let mut text = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut text, key_len, "allocate NX sketch entity identity")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut text,
+        key_len,
+        "allocate NX sketch entity identity",
+    )?;
     text.push_str(prefix);
     text.push_str(key);
     Ok(
@@ -5936,8 +6777,11 @@ fn emit_sketch(
     sketch_id: &SketchId,
     entities: Vec<(u64, SketchEntity)>,
 ) -> Result<(), CodecError> {
-    
-    ctx.reserve_retained_vec(&mut ir.model.sketch_entities, entities.len(), "NX sketch output entities")?;
+    ctx.reserve_retained_vec(
+        &mut ir.model.sketch_entities,
+        entities.len(),
+        "NX sketch output entities",
+    )?;
     let sketch_bytes = std::mem::size_of::<Sketch>()
         .checked_add(sketch_id.as_str().len())
         .and_then(|bytes| bytes.checked_add(label.id.len()))
@@ -5954,9 +6798,19 @@ fn emit_sketch(
         cadmpeg_core::decode::u64_from_index(sketch_bytes),
         "NX sketch output",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.sketches, 1, "NX sketch output")?;
-    let name = cadmpeg_core::decode::DecodeContext::copy_admitted_text(&label.value, "allocate NX sketch text")?;
-    let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(&label.id, "allocate NX sketch text")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut ir.model.sketches,
+        1,
+        "NX sketch output",
+    )?;
+    let name = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+        &label.value,
+        "allocate NX sketch text",
+    )?;
+    let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+        &label.id,
+        "allocate NX sketch text",
+    )?;
     ir.model
         .sketch_entities
         .extend(entities.into_iter().map(|(_, entity)| entity));
@@ -5984,7 +6838,13 @@ fn native_fixed_point_entities(
     let mut entities = Vec::new();
     for point in points {
         if point.operation_label != label.id
-            || !ctx.insert_scoped_btree_set(reservation, &mut point_ids, point.id.as_str(), "NX sketch key uniqueness", "NX sketch key index")?
+            || !ctx.insert_scoped_btree_set(
+                reservation,
+                &mut point_ids,
+                point.id.as_str(),
+                "NX sketch key uniqueness",
+                "NX sketch key index",
+            )?
         {
             return Ok(None);
         }
@@ -5994,7 +6854,13 @@ fn native_fixed_point_entities(
             .map_or(point.id.as_str(), |(_, key)| key);
         if point_key.is_empty()
             || point_key.chars().any(char::is_whitespace)
-            || !ctx.insert_scoped_btree_set(reservation, &mut entity_keys, point_key, "NX sketch key uniqueness", "NX sketch key index")?
+            || !ctx.insert_scoped_btree_set(
+                reservation,
+                &mut entity_keys,
+                point_key,
+                "NX sketch key uniqueness",
+                "NX sketch key index",
+            )?
         {
             return Ok(None);
         }
@@ -6020,7 +6886,10 @@ fn native_fixed_point_entities(
         let Some(native_kind) = cadmpeg_core::text::NonBlankString::new("nx-fixed-point") else {
             return Ok(None);
         };
-        let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(&point.id, "allocate NX sketch text")?;
+        let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+            &point.id,
+            "allocate NX sketch text",
+        )?;
         push_sketch_entity(
             ctx,
             reservation,
@@ -6050,17 +6919,16 @@ fn append_fixed_sketch_entities(
     else {
         return Ok(false);
     };
-    
-    ctx.reserve_scoped_vec(reservation, entities, fixed_entities.len(), "NX sketch merged fixed points")?;
+
+    ctx.reserve_scoped_vec(
+        reservation,
+        entities,
+        fixed_entities.len(),
+        "NX sketch merged fixed points",
+    )?;
     entities.extend(fixed_entities);
     Ok(true)
 }
-
-
-
-
-
-
 
 struct SegmentBindingBodyIndexes<'a, 'ctx> {
     by_object: BTreeMap<u32, Vec<BodyId>>,
@@ -6107,7 +6975,11 @@ fn segment_binding_body_indexes<'a, 'ctx>(
                 })?;
             ctx.charge_collection_items(1, "NX segment body identity")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut stream_bodies, 1, "NX segment body identity")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut stream_bodies,
+                1,
+                "NX segment body identity",
+            )?;
             stream_bodies.push(body.id.clone());
         }
         for identity in [binding.body_object_index, binding.body_alias_object_index] {
@@ -6124,7 +6996,14 @@ fn segment_binding_body_indexes<'a, 'ctx>(
                     continue;
                 }
                 let body = body.try_clone_for_decode(ctx, "NX feature operation group body")?;
-                ctx.push_scoped_btree_group(&mut reservation, &mut by_object, identity, || body, 0, "NX feature operation group index")?;
+                ctx.push_scoped_btree_group(
+                    &mut reservation,
+                    &mut by_object,
+                    identity,
+                    || body,
+                    0,
+                    "NX feature operation group index",
+                )?;
             }
         }
         ctx.charge_work(1, "NX segment binding identity index")?;
@@ -6171,8 +7050,6 @@ fn stream_prefix(ordinal: u32, body_marker: bool) -> ([u8; 20], usize) {
     prefix[suffix_start..prefix_len].copy_from_slice(suffix);
     (prefix, prefix_len)
 }
-
-
 
 fn operation_source_properties(
     ctx: &DecodeContext<'_>,
@@ -6226,7 +7103,11 @@ fn operation_source_properties(
                 "NX operation source property",
             )?;
             let mut key = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut key, key_len, "allocate NX operation source property key")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut key,
+                key_len,
+                "allocate NX operation source property key",
+            )?;
             std::fmt::Write::write_fmt(&mut key, format_args!("{PREFIX}{}", frame.ordinal))
                 .map_err(|_| {
                     CodecError::InvalidInput(
@@ -6234,7 +7115,11 @@ fn operation_source_properties(
                     )
                 })?;
             let mut value = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut value, frame.id.len(), "allocate NX operation source property value")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut value,
+                frame.id.len(),
+                "allocate NX operation source property value",
+            )?;
             value.push_str(&frame.id);
             properties.insert(key, value);
         }
@@ -6274,10 +7159,18 @@ fn insert_operation_source_property(
         "NX operation source property",
     )?;
     let mut owned_key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut owned_key, key.len(), "allocate NX operation source property key")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_key,
+        key.len(),
+        "allocate NX operation source property key",
+    )?;
     owned_key.push_str(key);
     let mut owned_value = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut owned_value, value.len(), "allocate NX operation source property value")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_value,
+        value.len(),
+        "allocate NX operation source property value",
+    )?;
     owned_value.push_str(value);
     properties.insert(owned_key, owned_value);
     Ok(())
@@ -6337,12 +7230,20 @@ fn insert_source_property(
         "NX source property",
     )?;
     let mut owned_key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut owned_key, key_length.0, "allocate NX source property key")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_key,
+        key_length.0,
+        "allocate NX source property key",
+    )?;
     std::fmt::write(&mut owned_key, key).map_err(|_| {
         CodecError::InvalidInput("NX source property key formatting failed".to_string())
     })?;
     let mut owned_value = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut owned_value, value_length.0, "allocate NX source property value")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_value,
+        value_length.0,
+        "allocate NX source property value",
+    )?;
     std::fmt::write(&mut owned_value, value).map_err(|_| {
         CodecError::InvalidInput("NX source property value formatting failed".to_string())
     })?;
@@ -6378,8 +7279,20 @@ fn attach_parasolid_topology_string_attributes(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX Parasolid string attribute lookups")?;
-    let (strings_by_id, _strings_by_id_reservation) = ctx.collect_scoped_btree_map(sources.strings.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
-    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(sources.string_uses.iter().map(|value_use| (value_use.entity_51_record.as_str(), value_use)), "NX Parasolid attribute use groups")?;
+    let (strings_by_id, _strings_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .strings
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
+        sources
+            .string_uses
+            .iter()
+            .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
+        "NX Parasolid attribute use groups",
+    )?;
     for uses in uses_by_entity.values_mut() {
         let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
             ctx.refuse_codec_limit(
@@ -6613,7 +7526,11 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                 const BOUND: usize = 64;
                 field_reservation.grow(cadmpeg_core::decode::u64_from_index(BOUND))?;
                 let mut name = String::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut name, BOUND, "allocate NX Parasolid field name component")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                    &mut name,
+                    BOUND,
+                    "allocate NX Parasolid field name component",
+                )?;
                 std::fmt::Write::write_fmt(
                     &mut name,
                     format_args!(
@@ -6856,7 +7773,11 @@ fn insert_parasolid_topology_target(
     ctx.charge_collection_items(1, "NX Parasolid topology targets")?;
     reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
     let mut key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut key, id.len(), "allocate NX Parasolid topology target key")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut key,
+        id.len(),
+        "allocate NX Parasolid topology target key",
+    )?;
     key.push_str(id);
     targets.insert(key, target());
     Ok(())
@@ -6962,7 +7883,11 @@ fn parasolid_topology_attribute_contexts<'a>(
         })?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(key_capacity))?;
         let mut key = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut key, key_capacity, "allocate NX Parasolid topology reference key")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut key,
+            key_capacity,
+            "allocate NX Parasolid topology reference key",
+        )?;
         std::fmt::Write::write_fmt(
             &mut key,
             format_args!(
@@ -6991,7 +7916,11 @@ fn parasolid_topology_attribute_contexts<'a>(
             &crate::native::parasolid::ParasolidTopologyAttributeListReference,
         >()))?;
         let references = references_by_target.entry(key).or_default();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(references, 1, "NX Parasolid topology reference")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            references,
+            1,
+            "NX Parasolid topology reference",
+        )?;
         references.push(reference);
     }
     let emitted_targets = parasolid_topology_attribute_targets(ctx, reservation, ir)?;
@@ -7052,7 +7981,11 @@ fn parasolid_topology_attribute_contexts<'a>(
                 })?;
             ctx.charge_collection_items(1, "NX Parasolid attribute contexts")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(entry_bytes))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut contexts, 1, "NX Parasolid attribute contexts")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut contexts,
+                1,
+                "NX Parasolid attribute contexts",
+            )?;
             contexts.push(ParasolidTopologyAttributeContext {
                 reference,
                 entity,
@@ -7127,10 +8060,18 @@ fn single_string_attribute_values(
         "NX Parasolid string attribute value",
     )?;
     let mut owned = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut owned, text.len(), "allocate NX Parasolid string attribute value")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned,
+        text.len(),
+        "allocate NX Parasolid string attribute value",
+    )?;
     owned.push_str(text);
     let mut values = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut values, 1, "NX Parasolid string attribute values")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut values,
+        1,
+        "NX Parasolid string attribute values",
+    )?;
     values.push(AttributeValue::String(owned));
     Ok(values)
 }
@@ -7140,7 +8081,6 @@ fn mapped_attribute_values<T>(
     input: &[T],
     map: impl Fn(&T) -> AttributeValue,
 ) -> Result<Vec<AttributeValue>, CodecError> {
-    
     let mut values = ctx.retained_vec(input.len(), "NX Parasolid numeric attribute values")?;
     values.extend(input.iter().map(map));
     Ok(values)
@@ -7202,10 +8142,18 @@ fn mapped_vector_attribute_values<T, const N: usize>(
         "NX Parasolid vector values",
     )?;
     let mut values = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut values, input.len(), "NX Parasolid vector values")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut values,
+        input.len(),
+        "NX Parasolid vector values",
+    )?;
     for item in input {
         let mut components = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut components, N, "NX Parasolid vector components")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut components,
+            N,
+            "NX Parasolid vector components",
+        )?;
         components.extend(map(item));
         values.push(AttributeValue::Vector(components));
     }
@@ -7244,7 +8192,11 @@ fn push_topology_attribute(
         cadmpeg_core::decode::u64_from_index(bytes),
         "NX Parasolid attribute output",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.attributes, 1, "NX Parasolid attribute output")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut ir.model.attributes,
+        1,
+        "NX Parasolid attribute output",
+    )?;
     ir.model.attributes.push(SourceAttribute {
         id,
         target: context.target.clone(),
@@ -7283,9 +8235,27 @@ fn attach_parasolid_topology_numeric_attributes(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX Parasolid numeric attribute lookups")?;
-    let (integers_by_id, _integers_by_id_reservation) = ctx.collect_scoped_btree_map(sources.integers.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
-    let (doubles_by_id, _doubles_by_id_reservation) = ctx.collect_scoped_btree_map(sources.doubles.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
-    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(sources.numeric_uses.iter().map(|value_use| (value_use.entity_51_record.as_str(), value_use)), "NX Parasolid attribute use groups")?;
+    let (integers_by_id, _integers_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .integers
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (doubles_by_id, _doubles_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .doubles
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
+        sources
+            .numeric_uses
+            .iter()
+            .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
+        "NX Parasolid attribute use groups",
+    )?;
     for uses in uses_by_entity.values_mut() {
         let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
             ctx.refuse_codec_limit(
@@ -7395,11 +8365,41 @@ fn attach_parasolid_topology_structured_attributes(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX Parasolid structured attribute lookups")?;
-    let (vectors_by_id, _vectors_by_id_reservation) = ctx.collect_scoped_btree_map(sources.vectors.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
-    let (axes_by_id, _axes_by_id_reservation) = ctx.collect_scoped_btree_map(sources.axes.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
-    let (tags_by_id, _tags_by_id_reservation) = ctx.collect_scoped_btree_map(sources.tags.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
-    let (unicode_by_id, _unicode_by_id_reservation) = ctx.collect_scoped_btree_map(sources.unicode.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
-    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(sources.structured_uses.iter().map(|value_use| (value_use.entity_51_record.as_str(), value_use)), "NX Parasolid attribute use groups")?;
+    let (vectors_by_id, _vectors_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .vectors
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (axes_by_id, _axes_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .axes
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (tags_by_id, _tags_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .tags
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (unicode_by_id, _unicode_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .unicode
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
+        sources
+            .structured_uses
+            .iter()
+            .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
+        "NX Parasolid attribute use groups",
+    )?;
     for uses in uses_by_entity.values_mut() {
         let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
             ctx.refuse_codec_limit(
@@ -7555,7 +8555,11 @@ fn push_referenced_parameter(
     let Some(id) = expressions::expression_parameter_id(expression) else {
         return Ok(());
     };
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(referenced, 1, "NX referenced parameters")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        referenced,
+        1,
+        "NX referenced parameters",
+    )?;
     referenced.push(id);
     Ok(())
 }
@@ -7586,7 +8590,11 @@ fn push_unique_feature_dependency(
         cadmpeg_core::decode::u64_from_index(bytes),
         "NX feature dependency",
     )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(dependencies, 1, "NX feature dependencies")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        dependencies,
+        1,
+        "NX feature dependencies",
+    )?;
     dependencies.push(candidate.clone());
     Ok(())
 }
@@ -7668,12 +8676,20 @@ fn text_semantic_annotation(
     };
     let copy = |source: &str| -> Result<String, CodecError> {
         let mut owned = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut owned, source.len(), "allocate NX TEXT annotation text")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut owned,
+            source.len(),
+            "allocate NX TEXT annotation text",
+        )?;
         owned.push_str(source);
         Ok(owned)
     };
     let mut text_values = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut text_values, 1, "allocate NX TEXT annotation text list")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut text_values,
+        1,
+        "allocate NX TEXT annotation text list",
+    )?;
     text_values.push(copy(text)?);
     let key = cadmpeg_core::text::NonBlankString::new(copy(FONT_KEY)?)
         .ok_or_else(|| CodecError::malformed("NX TEXT annotation font key is blank"))?;
@@ -7736,7 +8752,11 @@ pub(super) fn parameter_owner_dependencies(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX parameter owner dependency",
             )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut dependencies, 1, "NX parameter owner dependencies")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut dependencies,
+                1,
+                "NX parameter owner dependencies",
+            )?;
             dependencies.push(owner.clone());
         }
     }
@@ -7823,7 +8843,10 @@ pub(super) fn boolean_feature_definition(
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, CodecError> {
     let empty_offset_store_body_blocks = BTreeMap::new();
-    let native_target = ctx.format_retained_with_work(format_args!("nx:om-object-index#{}", operation.target.token.value()), "NX feature projection text")?;
+    let native_target = ctx.format_retained_with_work(
+        format_args!("nx:om-object-index#{}", operation.target.token.value()),
+        "NX feature projection text",
+    )?;
     let native_tools =
         selection_indices_native(ctx, operation.tools.iter().map(|token| token.token.value()))?;
     let offset_store_body_blocks = match offset_store_resolution {
@@ -7840,7 +8863,12 @@ pub(super) fn boolean_feature_definition(
             let mut tool_indices = Vec::new();
             let mut reservation = ctx.reserve_scoped(0, "NX Boolean tool indices")?;
             for tool in &operation.tools {
-                ctx.reserve_scoped_vec(&mut reservation, &mut tool_indices, 1, "NX Boolean tool indices")?;
+                ctx.reserve_scoped_vec(
+                    &mut reservation,
+                    &mut tool_indices,
+                    1,
+                    "NX Boolean tool indices",
+                )?;
                 tool_indices.push(tool.token.value());
             }
             atomic_disjoint_body_selections(
@@ -7907,13 +8935,20 @@ fn delete_body_feature_definition(
             &[body],
             body_alias_roots,
             bodies_by_object_index,
-            ctx.format_retained_with_work(format_args!("nx:om-object-index#{body}"), "NX feature projection text")?,
+            ctx.format_retained_with_work(
+                format_args!("nx:om-object-index#{body}"),
+                "NX feature projection text",
+            )?,
         )? {
             FeatureBodySelection::Native(native) => {
                 let mut reservation = ctx.reserve_scoped(0, "NX DELETE local body")?;
                 let mut bodies = Vec::new();
-ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE local body")?;
-                bodies.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("nx:om-body-object#{body}"), "NX body selection text")?);
+                ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE local body")?;
+                bodies.push(ctx.format_scoped_text_with_work(
+                    &mut reservation,
+                    format_args!("nx:om-body-object#{body}"),
+                    "NX body selection text",
+                )?);
                 local_body_selection(ctx, bodies, native)?
             }
             selection => selection.into_selection(ctx)?,
@@ -7924,12 +8959,19 @@ ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE local body")
         } => {
             let mut reservation = ctx.reserve_scoped(0, "NX DELETE offset body")?;
             let mut bodies = Vec::new();
-ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE offset body")?;
-            bodies.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("{data_block}"), "NX body selection text")?);
+            ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE offset body")?;
+            bodies.push(ctx.format_scoped_text_with_work(
+                &mut reservation,
+                format_args!("{data_block}"),
+                "NX body selection text",
+            )?);
             local_body_selection(
                 ctx,
                 bodies,
-                ctx.format_retained_with_work(format_args!("nx:om-object-index#{object_index}"), "NX feature projection text")?,
+                ctx.format_retained_with_work(
+                    format_args!("nx:om-object-index#{object_index}"),
+                    "NX feature projection text",
+                )?,
             )?
         }
     };
@@ -7955,18 +8997,28 @@ fn extract_body_feature_definition(
             &[body],
             body_alias_roots,
             bodies_by_object_index,
-            ctx.format_retained_with_work(format_args!("nx:om-object-index#{body}"), "NX feature projection text")?,
+            ctx.format_retained_with_work(
+                format_args!("nx:om-object-index#{body}"),
+                "NX feature projection text",
+            )?,
         )?
         .into_selection(ctx)?
     } else if let [(object_index, data_block)] = offset_store_bodies {
         let mut reservation = ctx.reserve_scoped(0, "NX EXTRACT local body")?;
         let mut bodies = Vec::new();
-ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX EXTRACT local body")?;
-        bodies.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("{data_block}"), "NX body selection text")?);
+        ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX EXTRACT local body")?;
+        bodies.push(ctx.format_scoped_text_with_work(
+            &mut reservation,
+            format_args!("{data_block}"),
+            "NX body selection text",
+        )?);
         local_body_selection(
             ctx,
             bodies,
-            ctx.format_retained_with_work(format_args!("nx:om-object-index#{object_index}"), "NX feature projection text")?,
+            ctx.format_retained_with_work(
+                format_args!("nx:om-object-index#{object_index}"),
+                "NX feature projection text",
+            )?,
         )?
     } else {
         BodySelection::Unresolved
@@ -7995,7 +9047,12 @@ fn offset_store_trim_body_feature_definition(
             complete = false;
             break;
         };
-        ctx.reserve_scoped_vec(&mut reservation, &mut tool_data_blocks, 1, "NX trim offset tool blocks")?;
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut tool_data_blocks,
+            1,
+            "NX trim offset tool blocks",
+        )?;
         tool_data_blocks.push(block);
     }
     let tools = if operands.is_empty() || primary_store.is_none() || !complete {
@@ -8039,8 +9096,17 @@ fn offset_store_trim_body_feature_definition(
         {
             let mut bodies = Vec::new();
             for block in tool_data_blocks {
-                ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX trim local tool bodies")?;
-                bodies.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("{block}"), "NX body selection text")?);
+                ctx.reserve_scoped_vec(
+                    &mut reservation,
+                    &mut bodies,
+                    1,
+                    "NX trim local tool bodies",
+                )?;
+                bodies.push(ctx.format_scoped_text_with_work(
+                    &mut reservation,
+                    format_args!("{block}"),
+                    "NX body selection text",
+                )?);
             }
             let native = selection_indices_native(
                 ctx,
@@ -8052,12 +9118,24 @@ fn offset_store_trim_body_feature_definition(
         }
     };
     let mut target = Vec::new();
-    ctx.reserve_scoped_vec(&mut reservation, &mut target, 1, "NX trim local target body")?;
-    target.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("{data_block}"), "NX body selection text")?);
+    ctx.reserve_scoped_vec(
+        &mut reservation,
+        &mut target,
+        1,
+        "NX trim local target body",
+    )?;
+    target.push(ctx.format_scoped_text_with_work(
+        &mut reservation,
+        format_args!("{data_block}"),
+        "NX body selection text",
+    )?);
     let target = local_body_selection(
         ctx,
         target,
-        ctx.format_retained_with_work(format_args!("nx:om-object-index#{object_index}"), "NX feature projection text")?,
+        ctx.format_retained_with_work(
+            format_args!("nx:om-object-index#{object_index}"),
+            "NX feature projection text",
+        )?,
     )?;
     let Ok(operands) = cadmpeg_ir::features::TrimBodyOperands::new(target, tools) else {
         return Ok(None);
@@ -8096,7 +9174,12 @@ fn sew_body_feature_definition(
     let mut object_indices = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX sew body indices")?;
     for index in indices {
-        ctx.reserve_scoped_vec(&mut reservation, &mut object_indices, 1, "NX sew body indices")?;
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut object_indices,
+            1,
+            "NX sew body indices",
+        )?;
         object_indices.push(index);
     }
     let bodies = if primary_segment_body_object_index.is_some() {
@@ -8157,7 +9240,11 @@ fn sew_body_feature_definition(
             let mut bodies = Vec::new();
             for block in std::iter::once(primary_data_block).chain(blocks) {
                 ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX sew local bodies")?;
-                bodies.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("{block}"), "NX body selection text")?);
+                bodies.push(ctx.format_scoped_text_with_work(
+                    &mut reservation,
+                    format_args!("{block}"),
+                    "NX body selection text",
+                )?);
             }
             local_body_selection(ctx, bodies, native)?
         } else {
@@ -8184,7 +9271,10 @@ fn trim_body_feature_definition(
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, CodecError> {
-    let native_target = ctx.format_retained_with_work(format_args!("nx:om-object-index#{target_object_index}"), "NX feature projection text")?;
+    let native_target = ctx.format_retained_with_work(
+        format_args!("nx:om-object-index#{target_object_index}"),
+        "NX feature projection text",
+    )?;
     if operands.is_empty() {
         return Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
@@ -8210,7 +9300,12 @@ fn trim_body_feature_definition(
     let mut tool_object_indices = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX trim tool indices")?;
     for operand in operands {
-        ctx.reserve_scoped_vec(&mut reservation, &mut tool_object_indices, 1, "NX trim tool indices")?;
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut tool_object_indices,
+            1,
+            "NX trim tool indices",
+        )?;
         tool_object_indices.push(operand.operand.atom.value());
     }
     if operands.iter().any(|operand| {
@@ -8280,7 +9375,11 @@ fn feature_body_outputs(
         "NX feature body output",
     )?;
     let mut outputs = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut outputs, 1, "NX feature body output")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut outputs,
+        1,
+        "NX feature body output",
+    )?;
     outputs.push(body.clone());
     Ok(outputs)
 }
@@ -8326,9 +9425,14 @@ fn operation_body_image_outputs_by_write<'a, 'ctx>(
             continue;
         };
         ctx.charge_work(1, "NX body image outputs")?;
-        let entry = (write, body.try_clone_for_decode(ctx, "NX body image outputs")?);
+        let entry = (
+            write,
+            body.try_clone_for_decode(ctx, "NX body image outputs")?,
+        );
         if !outputs.contains_key(&entry.0) {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&entry)))?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
+                &entry,
+            )))?;
         }
         ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX body image outputs")?;
     }
@@ -8479,22 +9583,38 @@ fn operation_body_group_partition_outputs_by_write<'a, 'ctx>(
             continue;
         }
         ctx.charge_work(1, "NX unique partition body")?;
-        let entry = (identity, body.id.try_clone_for_decode(ctx, "NX unique partition body")?);
+        let entry = (
+            identity,
+            body.id
+                .try_clone_for_decode(ctx, "NX unique partition body")?,
+        );
         if !unique_bodies.contains_key(&entry.0) {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&entry)))?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
+                &entry,
+            )))?;
         }
-        ctx.insert_btree_map(&mut unique_bodies, entry.0, entry.1, "NX unique partition body")?;
+        ctx.insert_btree_map(
+            &mut unique_bodies,
+            entry.0,
+            entry.1,
+            "NX unique partition body",
+        )?;
     }
     let mut outputs = BTreeMap::new();
     for write in writes {
         ctx.charge_work(1, "NX partition body write lookup")?;
         if let Some(body) = unique_bodies.get(&write.frame.body_identity()) {
             ctx.charge_work(1, "NX partition body output")?;
-        let entry = (write.id.as_str(), body.try_clone_for_decode(ctx, "NX partition body output")?);
-        if !outputs.contains_key(&entry.0) {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&entry)))?;
-        }
-        ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX partition body output")?;
+            let entry = (
+                write.id.as_str(),
+                body.try_clone_for_decode(ctx, "NX partition body output")?,
+            );
+            if !outputs.contains_key(&entry.0) {
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
+                    &entry,
+                )))?;
+            }
+            ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX partition body output")?;
         }
     }
     Ok((outputs, reservation))
@@ -8532,7 +9652,11 @@ fn complete_operation_body_image_outputs(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX complete body image output",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut outputs, 1, "NX complete body image output")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut outputs,
+            1,
+            "NX complete body image output",
+        )?;
         outputs.push(body.clone());
     }
     Ok(outputs)

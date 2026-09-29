@@ -202,7 +202,9 @@ pub(super) fn parasolid_group_records(
             else {
                 continue;
             };
-            ctx.push_retained_vec(&mut groups, ParasolidGroupRecord {
+            ctx.push_retained_vec(
+                &mut groups,
+                ParasolidGroupRecord {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -220,7 +222,9 @@ pub(super) fn parasolid_group_records(
                     linked_reference_status,
                     byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
-                }, "NX GROUP records")?;
+                },
+                "NX GROUP records",
+            )?;
         }
     }
     for record in deltas_records {
@@ -233,7 +237,9 @@ pub(super) fn parasolid_group_records(
         else {
             continue;
         };
-        ctx.push_retained_vec(&mut groups, ParasolidGroupRecord {
+        ctx.push_retained_vec(
+            &mut groups,
+            ParasolidGroupRecord {
                 id: replace_group_record_id(ctx, &record.id)?,
                 origin: GroupOrigin::Deltas {
                     stream_ordinal: record.stream_ordinal,
@@ -248,7 +254,9 @@ pub(super) fn parasolid_group_records(
                 linked_reference_status: *linked_reference_status,
                 byte_len: record.byte_len,
                 inflated_offset: record.inflated_offset,
-            }, "NX GROUP records")?;
+            },
+            "NX GROUP records",
+        )?;
     }
     let scratch = groups
         .len()
@@ -378,7 +386,12 @@ fn group_members_from_records(
                 complete = false;
                 break;
             };
-            ctx.reserve_scoped_vec(&mut chain_guard, &mut reverse_chain, 1, "NX GROUP member chain")?;
+            ctx.reserve_scoped_vec(
+                &mut chain_guard,
+                &mut reverse_chain,
+                1,
+                "NX GROUP member chain",
+            )?;
             reverse_chain.push((current, member_xmt, target));
             expected_next = current;
             current = references[4];
@@ -1368,16 +1381,22 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         let census = census.into_events();
         if let Some(header) = census.transmit_header {
             let bytes = &stream.inflated[..header.end];
-            ctx.push_retained_vec(&mut events.transmit_headers, ParasolidDeltasTransmitHeader {
+            ctx.push_retained_vec(
+                &mut events.transmit_headers,
+                ParasolidDeltasTransmitHeader {
                     id: deltas_event_id(ctx, stream_ordinal, "deltas-transmit-header", 0, None)?,
                     stream_ordinal: stream_ordinal_u32,
                     state: header.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         if let Some(trailer) = census.terminal_null_references {
-            ctx.push_retained_vec(&mut events.terminal_null_references, ParasolidDeltasTerminalNullReferences {
+            ctx.push_retained_vec(
+                &mut events.terminal_null_references,
+                ParasolidDeltasTerminalNullReferences {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1388,10 +1407,14 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     form: trailer.form(),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(trailer.offset()),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for record in census.records {
-            ctx.push_retained_vec(&mut events.records, ParasolidDeltasRecord {
+            ctx.push_retained_vec(
+                &mut events.records,
+                ParasolidDeltasRecord {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1404,10 +1427,14 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     xmt: record.xmt,
                     byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for tombstone in census.tombstones {
-            ctx.push_retained_vec(&mut events.tombstones, ParasolidDeltasTombstone {
+            ctx.push_retained_vec(
+                &mut events.tombstones,
+                ParasolidDeltasTombstone {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1419,11 +1446,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     kind: tombstone.kind,
                     xmt: tombstone.xmt,
                     inflated_offset: cadmpeg_core::decode::u64_from_index(tombstone.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for revision in census.body_revisions {
             let state_tail = &stream.inflated[revision.prefix_end..revision.end];
-            ctx.push_retained_vec(&mut events.body_revisions, ParasolidDeltasBodyRevision {
+            ctx.push_retained_vec(
+                &mut events.body_revisions,
+                ParasolidDeltasBodyRevision {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1441,10 +1472,14 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     ),
                     state_tail_sha256: crate::native::hex::Sha256Hex::digest(state_tail),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(revision.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for tail in census.term_use_numeric_tails {
-            ctx.push_retained_vec(&mut events.term_use_numeric_tails, ParasolidDeltasTermUseNumericTail {
+            ctx.push_retained_vec(
+                &mut events.term_use_numeric_tails,
+                ParasolidDeltasTermUseNumericTail {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1456,11 +1491,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     term_use_xmt: tail.term_use_xmt,
                     inflated_offset: cadmpeg_core::decode::u64_from_index(tail.offset()),
                     values: tail.into_values(),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for lane in census.tagged_reference_lanes {
             let bytes = &stream.inflated[lane.offset..lane.end];
-            ctx.push_retained_vec(&mut events.tagged_reference_lanes, ParasolidDeltasTaggedReferenceLane {
+            ctx.push_retained_vec(
+                &mut events.tagged_reference_lanes,
+                ParasolidDeltasTaggedReferenceLane {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1473,11 +1512,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(lane.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for map in census.reference_type_maps {
             let bytes = &stream.inflated[map.offset..map.end];
-            ctx.push_retained_vec(&mut events.reference_type_maps, ParasolidDeltasReferenceTypeMap {
+            ctx.push_retained_vec(
+                &mut events.reference_type_maps,
+                ParasolidDeltasReferenceTypeMap {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1491,11 +1534,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(map.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for packet in census.reference_state_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            ctx.push_retained_vec(&mut events.reference_state_packets, ParasolidDeltasReferenceStatePacket {
+            ctx.push_retained_vec(
+                &mut events.reference_state_packets,
+                ParasolidDeltasReferenceStatePacket {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1509,11 +1556,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for preamble in census.schema_reference_preambles {
             let bytes = &stream.inflated[preamble.offset..preamble.end];
-            ctx.push_retained_vec(&mut events.schema_reference_preambles, ParasolidDeltasSchemaReferencePreamble {
+            ctx.push_retained_vec(
+                &mut events.schema_reference_preambles,
+                ParasolidDeltasSchemaReferencePreamble {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1526,11 +1577,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(preamble.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for packet in census.reference_marker_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            ctx.push_retained_vec(&mut events.reference_marker_packets, ParasolidDeltasReferenceMarkerPacket {
+            ctx.push_retained_vec(
+                &mut events.reference_marker_packets,
+                ParasolidDeltasReferenceMarkerPacket {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1544,11 +1599,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for packet in census.type_150_state_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            ctx.push_retained_vec(&mut events.type_150_state_packets, ParasolidDeltasType150StatePacket {
+            ctx.push_retained_vec(
+                &mut events.type_150_state_packets,
+                ParasolidDeltasType150StatePacket {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1561,11 +1620,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for declaration in census.inline_schema_declarations {
             let bytes = &stream.inflated[declaration.offset..declaration.end];
-            ctx.push_retained_vec(&mut events.inline_schema_declarations, ParasolidDeltasInlineSchemaDeclaration {
+            ctx.push_retained_vec(
+                &mut events.inline_schema_declarations,
+                ParasolidDeltasInlineSchemaDeclaration {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1578,11 +1641,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(declaration.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
         for state in census.inline_body_states {
             let bytes = &stream.inflated[state.offset..state.end];
-            ctx.push_retained_vec(&mut events.inline_body_states, ParasolidDeltasInlineBodyState {
+            ctx.push_retained_vec(
+                &mut events.inline_body_states,
+                ParasolidDeltasInlineBodyState {
                     id: deltas_event_id(
                         ctx,
                         stream_ordinal,
@@ -1595,7 +1662,9 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(state.offset),
-                }, "NX deltas events")?;
+                },
+                "NX deltas events",
+            )?;
         }
     }
     sort_deltas_events(ctx, &mut events.transmit_headers, |value| value.id.as_str())?;
@@ -1645,14 +1714,18 @@ fn push_deltas_residual_span(
     end: usize,
 ) -> Result<(), CodecError> {
     let residual = &bytes[start..end];
-    ctx.push_retained_vec(residual_spans, ParasolidDeltasResidualSpan {
+    ctx.push_retained_vec(
+        residual_spans,
+        ParasolidDeltasResidualSpan {
             id: deltas_event_id(ctx, stream_ordinal, "deltas-residual", start, None)?,
             stream_ordinal: u32::try_from(stream_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX deltas residual stream ordinal", 0, 1))?,
             byte_len: cadmpeg_core::decode::u64_from_index(residual.len()),
             sha256: crate::native::hex::Sha256Hex::digest(residual),
             inflated_offset: cadmpeg_core::decode::u64_from_index(start),
-        }, "NX deltas events")
+        },
+        "NX deltas events",
+    )
 }
 
 /// Shared skeleton for Parasolid record families read from the cached per-stream
@@ -3413,7 +3486,8 @@ pub(super) fn parasolid_attribute_field_names(
             };
             ctx.reserve_retained_vec(&mut resolved, 1, "NX attribute field names")?;
             resolved.push(NamedField {
-                value_record: ctx.copy_retained_text(value_record, "NX entity 51 value use text")?,
+                value_record: ctx
+                    .copy_retained_text(value_record, "NX entity 51 value use text")?,
                 name: ctx.copy_retained_text(name, "NX entity 51 value use text")?,
             });
         }
@@ -3428,7 +3502,8 @@ pub(super) fn parasolid_attribute_field_names(
                 u32::from(definition.xmt),
             )?,
             stream_ordinal: definition.stream_ordinal,
-            attribute_definition: ctx.copy_retained_text(&definition.id, "NX entity 51 value use text")?,
+            attribute_definition: ctx
+                .copy_retained_text(&definition.id, "NX entity 51 value use text")?,
             field_names_record: ctx.copy_retained_text(&list.id, "NX entity 51 value use text")?,
             fields: resolved,
         });
@@ -3536,7 +3611,11 @@ pub(super) fn parasolid_topology_attribute_list_references(
                 let ordinal = u32::try_from(stream_ordinal).map_err(|_| {
                     ctx.refuse_codec_limit("NX topology attribute stream ordinal", 0, 1)
                 })?;
-                ctx.reserve_retained_vec(&mut references, 1, "NX topology attribute list references")?;
+                ctx.reserve_retained_vec(
+                    &mut references,
+                    1,
+                    "NX topology attribute list references",
+                )?;
                 let digits =
                     |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
                 let length = "nx:s"
@@ -3554,7 +3633,8 @@ pub(super) fn parasolid_topology_attribute_list_references(
                             1,
                         )
                     })?;
-                let mut id = ctx.retained_string(length, "NX topology attribute list reference identity")?;
+                let mut id =
+                    ctx.retained_string(length, "NX topology attribute list reference identity")?;
                 write!(
                     &mut id,
                     "nx:s{stream_ordinal}:topology-attribute-list-reference#{}-{}",
@@ -3672,7 +3752,12 @@ pub(super) fn parasolid_entity_value_records(
                     let Ok(offset) = usize::try_from(record.inflated_offset) else {
                         continue;
                     };
-                    ctx.reserve_scoped_vec(&mut offsets_guard, &mut offsets, 1, "NX value record owner offsets")?;
+                    ctx.reserve_scoped_vec(
+                        &mut offsets_guard,
+                        &mut offsets,
+                        1,
+                        "NX value record owner offsets",
+                    )?;
                     offsets.push(offset);
                 }
                 offsets
@@ -3861,7 +3946,11 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        ctx.reserve_retained_vec(&mut records.unmaterialized, values.unmaterialized.len(), "NX Parasolid unmaterialized value records")?;
+        ctx.reserve_retained_vec(
+            &mut records.unmaterialized,
+            values.unmaterialized.len(),
+            "NX Parasolid unmaterialized value records",
+        )?;
         records.unmaterialized.extend(values.unmaterialized);
     }
     let sort_units = [
@@ -4024,16 +4113,22 @@ pub(super) fn parasolid_entity_51_numeric_uses(
             else {
                 continue;
             };
-            ctx.push_retained_vec(&mut uses, ParasolidEntity51NumericUse {
+            ctx.push_retained_vec(
+                &mut uses,
+                ParasolidEntity51NumericUse {
                     id: entity_51_use_id(ctx, "entity-51-numeric-use", entity, reference_ordinal)?,
                     stream_ordinal: entity.stream_ordinal,
-                    entity_51_record: ctx.copy_retained_text(&entity.id, "NX entity 51 value use text")?,
+                    entity_51_record: ctx
+                        .copy_retained_text(&entity.id, "NX entity 51 value use text")?,
                     position,
                     referenced_xmt: *target_xmt,
                     kind: *kind,
-                    value_record: ctx.copy_retained_text(value_record, "NX entity 51 value use text")?,
+                    value_record: ctx
+                        .copy_retained_text(value_record, "NX entity 51 value use text")?,
                     inflated_offset: entity.inflated_offset,
-                }, "NX entity 51 value uses")?;
+                },
+                "NX entity 51 value uses",
+            )?;
         }
     }
     sort_entity_51_uses(ctx, &mut uses, |value| &value.id)?;
@@ -4067,15 +4162,21 @@ pub(super) fn parasolid_entity_51_string_uses(
             else {
                 continue;
             };
-            ctx.push_retained_vec(&mut uses, ParasolidEntity51StringUse {
+            ctx.push_retained_vec(
+                &mut uses,
+                ParasolidEntity51StringUse {
                     id: entity_51_use_id(ctx, "entity-51-string-use", entity, reference_ordinal)?,
                     stream_ordinal: entity.stream_ordinal,
-                    entity_51_record: ctx.copy_retained_text(&entity.id, "NX entity 51 value use text")?,
+                    entity_51_record: ctx
+                        .copy_retained_text(&entity.id, "NX entity 51 value use text")?,
                     position,
                     referenced_xmt: string.xmt,
-                    string_record: ctx.copy_retained_text(&string.id, "NX entity 51 value use text")?,
+                    string_record: ctx
+                        .copy_retained_text(&string.id, "NX entity 51 value use text")?,
                     inflated_offset: entity.inflated_offset,
-                }, "NX entity 51 value uses")?;
+                },
+                "NX entity 51 value uses",
+            )?;
         }
     }
     sort_entity_51_uses(ctx, &mut uses, |value| &value.id)?;
@@ -4151,7 +4252,9 @@ pub(super) fn parasolid_entity_51_structured_uses(
             else {
                 continue;
             };
-            ctx.push_retained_vec(&mut uses, ParasolidEntity51StructuredUse {
+            ctx.push_retained_vec(
+                &mut uses,
+                ParasolidEntity51StructuredUse {
                     id: entity_51_use_id(
                         ctx,
                         "entity-51-structured-use",
@@ -4159,13 +4262,17 @@ pub(super) fn parasolid_entity_51_structured_uses(
                         reference_ordinal,
                     )?,
                     stream_ordinal: entity.stream_ordinal,
-                    entity_51_record: ctx.copy_retained_text(&entity.id, "NX entity 51 value use text")?,
+                    entity_51_record: ctx
+                        .copy_retained_text(&entity.id, "NX entity 51 value use text")?,
                     position,
                     referenced_xmt: *target_xmt,
                     kind: *kind,
-                    value_record: ctx.copy_retained_text(value_record, "NX entity 51 value use text")?,
+                    value_record: ctx
+                        .copy_retained_text(value_record, "NX entity 51 value use text")?,
                     inflated_offset: entity.inflated_offset,
-                }, "NX entity 51 value uses")?;
+                },
+                "NX entity 51 value uses",
+            )?;
         }
     }
     sort_entity_51_uses(ctx, &mut uses, |value| &value.id)?;
@@ -4205,7 +4312,12 @@ pub(super) fn parasolid_topology_attribute_class_uses(
                     entry.insert(Vec::new())
                 }
             };
-            ctx.reserve_scoped_vec(&mut owner_guard, members, 1, "NX topology attribute owner members")?;
+            ctx.reserve_scoped_vec(
+                &mut owner_guard,
+                members,
+                1,
+                "NX topology attribute owner members",
+            )?;
             members.push(record);
         }
     }
@@ -4320,11 +4432,19 @@ pub(super) fn parasolid_topology_attribute_class_uses(
                 stream_ordinal: reference.stream_ordinal,
                 inflated_offset: member.inflated_offset,
                 id,
-                topology_attribute_reference: ctx.copy_retained_text(&reference.id, "NX entity 51 value use text")?,
-                entity_51_record: ctx.copy_retained_text(&class_use.entity_51_record, "NX entity 51 value use text")?,
-                attribute_class_use: ctx.copy_retained_text(&class_use.id, "NX entity 51 value use text")?,
+                topology_attribute_reference: ctx
+                    .copy_retained_text(&reference.id, "NX entity 51 value use text")?,
+                entity_51_record: ctx.copy_retained_text(
+                    &class_use.entity_51_record,
+                    "NX entity 51 value use text",
+                )?,
+                attribute_class_use: ctx
+                    .copy_retained_text(&class_use.id, "NX entity 51 value use text")?,
                 definition_xmt: class_use.definition_xmt,
-                attribute_definition: ctx.copy_retained_text(&class_use.attribute_definition, "NX entity 51 value use text")?,
+                attribute_definition: ctx.copy_retained_text(
+                    &class_use.attribute_definition,
+                    "NX entity 51 value use text",
+                )?,
             });
         }
     }
@@ -4393,7 +4513,8 @@ pub(super) fn parasolid_attribute_class_uses(
             stream_ordinal: entity.stream_ordinal,
             entity_51_record: ctx.copy_retained_text(&entity.id, "NX entity 51 value use text")?,
             definition_xmt: definition.xmt,
-            attribute_definition: ctx.copy_retained_text(&definition.id, "NX entity 51 value use text")?,
+            attribute_definition: ctx
+                .copy_retained_text(&definition.id, "NX entity 51 value use text")?,
         });
     }
     let work = uses
@@ -4434,7 +4555,12 @@ pub(super) fn parasolid_attribute_field_uses(
                 entry.insert(Vec::new())
             }
         };
-        ctx.reserve_scoped_vec(&mut classes_guard, group, 1, "NX attribute field class members")?;
+        ctx.reserve_scoped_vec(
+            &mut classes_guard,
+            group,
+            1,
+            "NX attribute field class members",
+        )?;
         group.push(class_use);
     }
     let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
@@ -4450,7 +4576,12 @@ pub(super) fn parasolid_attribute_field_uses(
                 entry.insert(Vec::new())
             }
         };
-        ctx.reserve_scoped_vec(&mut definitions_guard, group, 1, "NX attribute field definition members")?;
+        ctx.reserve_scoped_vec(
+            &mut definitions_guard,
+            group,
+            1,
+            "NX attribute field definition members",
+        )?;
         group.push(definition);
     }
     let mut candidates = BTreeMap::<(&str, FieldPosition), Vec<_>>::new();
@@ -4469,7 +4600,12 @@ pub(super) fn parasolid_attribute_field_uses(
                 entry.insert(Vec::new())
             }
         };
-        ctx.reserve_scoped_vec(&mut candidates_guard, group, 1, "NX attribute field candidate members")?;
+        ctx.reserve_scoped_vec(
+            &mut candidates_guard,
+            group,
+            1,
+            "NX attribute field candidate members",
+        )?;
         group.push(candidate);
         Ok(())
     };
@@ -4593,9 +4729,14 @@ pub(super) fn parasolid_attribute_field_uses(
         uses.push(ParasolidAttributeFieldUse {
             id,
             stream_ordinal,
-            attribute_class_use: ctx.copy_retained_text(&class_use.id, "NX entity 51 value use text")?,
-            entity_51_record: ctx.copy_retained_text(entity_51_record, "NX entity 51 value use text")?,
-            attribute_definition: ctx.copy_retained_text(&class_use.attribute_definition, "NX entity 51 value use text")?,
+            attribute_class_use: ctx
+                .copy_retained_text(&class_use.id, "NX entity 51 value use text")?,
+            entity_51_record: ctx
+                .copy_retained_text(entity_51_record, "NX entity 51 value use text")?,
+            attribute_definition: ctx.copy_retained_text(
+                &class_use.attribute_definition,
+                "NX entity 51 value use text",
+            )?,
             position,
             value_kind,
             value_use: ctx.copy_retained_text(value_use, "NX entity 51 value use text")?,

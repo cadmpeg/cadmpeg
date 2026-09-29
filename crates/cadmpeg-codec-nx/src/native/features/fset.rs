@@ -3,9 +3,8 @@
 
 use super::payload_content::FeaturePayloadContent;
 use super::{
-    charged_unique_offset_data_block, format_feature_history_id,
-    offset_data_block_bytes, visit_feature_history_operation_records, FeatureConstructionOwner,
-    FeatureConstructionPayload,
+    charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
+    visit_feature_history_operation_records, FeatureConstructionOwner, FeatureConstructionPayload,
 };
 use crate::container::Container;
 use crate::om::fset_references::{word_reference_bytes, FsetReferences};
@@ -319,13 +318,21 @@ fn fset_construction_payload_from_group(
         "NX FSET source block references",
     )?;
     let mut data_blocks = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut data_blocks, source_blocks.len(), "allocate NX FSET source block references")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut data_blocks,
+        source_blocks.len(),
+        "allocate NX FSET source block references",
+    )?;
     for (_, target) in source_blocks {
         let Some(block) = target else {
             return Ok(None);
         };
         let mut id = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut id, block.len(), "allocate NX FSET source block reference")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut id,
+            block.len(),
+            "allocate NX FSET source block reference",
+        )?;
         id.push_str(block);
         data_blocks.push(id);
     }
@@ -366,7 +373,8 @@ fn fset_construction_payload_from_group(
         .map_err(|_| ctx.refuse_codec_limit("write NX FSET construction identity", 0, 1))?;
     Ok(Some(FeatureConstructionPayload {
         id,
-        operation_label: ctx.copy_retained_text(&graph.operation_label, "NX FSET construction operation")?,
+        operation_label: ctx
+            .copy_retained_text(&graph.operation_label, "NX FSET construction operation")?,
         owner: FeatureConstructionOwner::Fset {
             reference_graph: ctx.copy_retained_text(&graph.id, "NX FSET construction reference")?,
             group,

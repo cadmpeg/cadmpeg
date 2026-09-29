@@ -143,7 +143,7 @@ fn display_jt_index_result_storage_refuses_before_vector_reservation() {
         ),
         (
             ResourceDimension::RetainedBytes,
-            "retain DisplayJT index".to_string()
+            "admit DisplayJT index".to_string()
         )
     );
 }

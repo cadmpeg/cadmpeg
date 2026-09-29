@@ -222,11 +222,15 @@ pub(crate) fn sketch_pairs(
 ) -> Result<Vec<Binary64Pair<SketchBinary64PairForm>>, CodecError> {
     let mut pairs = Vec::new();
     for pair in object_pairs(ctx, bytes)? {
-        ctx.push_retained_vec(&mut pairs, Binary64Pair {
+        ctx.push_retained_vec(
+            &mut pairs,
+            Binary64Pair {
                 form: SketchBinary64PairForm::Object(pair.form),
                 offset: pair.offset,
                 values: pair.values,
-            }, "NX binary64 pairs")?;
+            },
+            "NX binary64 pairs",
+        )?;
     }
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX sketch pairs")?;
     for (offset, window) in bytes.windows(3).enumerate() {

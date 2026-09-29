@@ -47,9 +47,17 @@ impl<'ctx> JoinedPayload<'ctx> {
         let reservation =
             ctx.reserve_scoped(u64_from_index(reserved), "join NX feature payload")?;
         let mut bytes = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bytes, byte_len, "allocate NX feature payload bytes")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut bytes,
+            byte_len,
+            "allocate NX feature payload bytes",
+        )?;
         let mut sources = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut sources, count, "allocate NX feature payload spans")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut sources,
+            count,
+            "allocate NX feature payload spans",
+        )?;
         for id in ids {
             let Some((fragment, source_offset)) = blocks.get(id).copied() else {
                 return Ok(None);

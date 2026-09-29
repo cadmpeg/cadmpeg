@@ -70,8 +70,13 @@ pub(super) fn resolved_feature_payload_references(
                 for (ordinal, (token, source_offset)) in decoded.into_iter().enumerate() {
                     let data_block =
                         charged_unique_offset_data_block(ctx, &indexed, token.value())?;
-                    let section_key = ctx.copy_retained_text(section_key, "NX resolved feature reference section")?;
-                    ctx.reserve_retained_vec(&mut references, 1, "NX resolved feature payload references")?;
+                    let section_key = ctx
+                        .copy_retained_text(section_key, "NX resolved feature reference section")?;
+                    ctx.reserve_retained_vec(
+                        &mut references,
+                        1,
+                        "NX resolved feature payload references",
+                    )?;
                     references.push(ResolvedFeaturePayloadReference {
                         section_key,
                         operation_ordinal,
@@ -188,7 +193,12 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.reserve_scoped_vec(&mut field_reservation, &mut field, 1, "NX projected curve reference field")?;
+            ctx.reserve_scoped_vec(
+                &mut field_reservation,
+                &mut field,
+                1,
+                "NX projected curve reference field",
+            )?;
             field.push(reference);
         }
         let sort_work = field
@@ -225,7 +235,11 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             ))?;
             ctx.reserve_vec(&mut data_blocks, 1, "NX projected curve block IDs")?;
             let mut copy = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut copy, block.len(), "copy NX projected curve block ID")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut copy,
+                block.len(),
+                "copy NX projected curve block ID",
+            )?;
             copy.push_str(block);
             data_blocks.push(copy);
         }
@@ -253,13 +267,21 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
             continue;
         };
-        let id = ctx.format_retained_with_work(format_args!("nx:feature-history:projected-curve-construction-payload#{operation_key}"), "NX projected curve payload identity")?;
+        let id = ctx.format_retained_with_work(
+            format_args!("nx:feature-history:projected-curve-construction-payload#{operation_key}"),
+            "NX projected curve payload identity",
+        )?;
         let operation_label =
             ctx.copy_retained_text(operation_label, "NX projected curve payload operation")?;
         let mut construction_references = Vec::new();
         for reference in field {
-            let identity = ctx.copy_retained_text(&reference.id, "NX projected curve construction reference")?;
-            ctx.reserve_retained_vec(&mut construction_references, 1, "NX projected curve construction references")?;
+            let identity =
+                ctx.copy_retained_text(&reference.id, "NX projected curve construction reference")?;
+            ctx.reserve_retained_vec(
+                &mut construction_references,
+                1,
+                "NX projected curve construction references",
+            )?;
             construction_references.push(identity);
         }
         ctx.reserve_retained_vec(&mut payloads, 1, "NX projected curve payloads")?;
@@ -297,8 +319,14 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            let id = ctx.format_retained_with_work(format_args!("{}-string-{ordinal:010}", payload.id), "NX projected curve string identity")?;
-            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX projected curve string operation")?;
+            let id = ctx.format_retained_with_work(
+                format_args!("{}-string-{ordinal:010}", payload.id),
+                "NX projected curve string identity",
+            )?;
+            let operation_label = ctx.copy_retained_text(
+                &payload.operation_label,
+                "NX projected curve string operation",
+            )?;
             let construction_payload =
                 ctx.copy_retained_text(&payload.id, "NX projected curve string payload")?;
             let text =
@@ -486,14 +514,21 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
             "point-construction-scalar-lane#",
             "NX point scalar lane identity",
         )?;
-        let operation_label = ctx.copy_retained_text(&header.operation_label, "NX point scalar lane operation")?;
+        let operation_label =
+            ctx.copy_retained_text(&header.operation_label, "NX point scalar lane operation")?;
         let construction_header =
             ctx.copy_retained_text(&header.id, "NX point scalar lane header")?;
-        let first_block = ctx.format_retained_with_work(format_args!(
+        let first_block = ctx.format_retained_with_work(
+            format_args!(
                 "nx:om-data-blocks-{section_ordinal}:block#{}",
                 target_ordinal - 1
-            ), "NX point scalar lane first block")?;
-        let second_block = ctx.format_retained_with_work(format_args!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"), "NX point scalar lane second block")?;
+            ),
+            "NX point scalar lane first block",
+        )?;
+        let second_block = ctx.format_retained_with_work(
+            format_args!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"),
+            "NX point scalar lane second block",
+        )?;
         let data_blocks = [first_block, second_block];
         ctx.reserve_retained_vec(&mut lanes, 1, "NX point scalar lanes")?;
         lanes.push(FeaturePointConstructionScalarLane {
@@ -590,7 +625,11 @@ pub(in crate::native) fn feature_thru_curve_construction_envelopes(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.reserve_retained_vec(&mut envelopes, 1, "NX thru-curve construction envelopes")?;
+                ctx.reserve_retained_vec(
+                    &mut envelopes,
+                    1,
+                    "NX thru-curve construction envelopes",
+                )?;
                 Ok(FeatureThruCurveConstructionEnvelope {
                     id,
                     operation_label,
@@ -729,8 +768,9 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
             .count();
-        
-        let (mut graph, _graph_reservation) = ctx.temporary_vec(graph_count, "NX surface construction graph")?;
+
+        let (mut graph, _graph_reservation) =
+            ctx.temporary_vec(graph_count, "NX surface construction graph")?;
         graph.extend(
             references
                 .iter()
@@ -756,12 +796,17 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             continue;
         };
         let mut data_blocks = Vec::new();
-        ctx.reserve_retained_vec(&mut data_blocks, 14, "NX surface construction source blocks")?;
+        ctx.reserve_retained_vec(
+            &mut data_blocks,
+            14,
+            "NX surface construction source blocks",
+        )?;
         for reference in graph {
             let Some(block) = reference.data_block.as_deref() else {
                 break;
             };
-            data_blocks.push(ctx.copy_retained_text(block, "NX surface construction source block")?);
+            data_blocks
+                .push(ctx.copy_retained_text(block, "NX surface construction source block")?);
         }
         if data_blocks.len() != 14 {
             continue;
@@ -797,12 +842,14 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         id.push_str(operation_key);
         let mut construction_references: [String; 14] = std::array::from_fn(|_| String::new());
         for (slot, reference) in graph.into_iter().enumerate() {
-            construction_references[slot] = ctx.copy_retained_text(&reference.id, "NX surface construction reference identity")?;
+            construction_references[slot] = ctx
+                .copy_retained_text(&reference.id, "NX surface construction reference identity")?;
         }
         ctx.reserve_retained_vec(&mut output, 1, "NX surface construction payloads")?;
         output.push(FeatureSurfaceConstructionPayload {
             id,
-            operation_label: ctx.copy_retained_text(operation_label, "NX surface construction operation label")?,
+            operation_label: ctx
+                .copy_retained_text(operation_label, "NX surface construction operation label")?,
             construction_references,
             content,
         });
@@ -838,9 +885,11 @@ pub(in crate::native) fn feature_surface_construction_scalar_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX surface scalar pair ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX surface scalar pair label")?,
+                operation_label: ctx
+                    .copy_retained_text(&payload.operation_label, "NX surface scalar pair label")?,
                 payload: FeatureScalarPairPayload::SurfaceConstruction {
-                    surface_construction_payload: ctx.copy_retained_text(&payload.id, "NX surface scalar pair payload")?,
+                    surface_construction_payload: ctx
+                        .copy_retained_text(&payload.id, "NX surface scalar pair payload")?,
                     frame,
                 },
                 ordinal,
@@ -883,8 +932,12 @@ pub(in crate::native) fn feature_surface_construction_strings(
             ctx.reserve_retained_vec(&mut strings, 1, "NX surface payload strings")?;
             strings.push(FeatureSurfaceConstructionString {
                 id,
-                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX surface payload string label")?,
-                surface_construction_payload: ctx.copy_retained_text(&payload.id, "NX surface payload string owner")?,
+                operation_label: ctx.copy_retained_text(
+                    &payload.operation_label,
+                    "NX surface payload string label",
+                )?,
+                surface_construction_payload: ctx
+                    .copy_retained_text(&payload.id, "NX surface payload string owner")?,
                 ordinal: ordinal_u32,
                 value,
                 payload_offset,
@@ -1275,7 +1328,11 @@ pub(in crate::native) fn feature_operation_body_operands(
                 "format NX operand data block id",
             )?;
             let mut id = String::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut id, length, "allocate NX operand data block id")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut id,
+                length,
+                "allocate NX operand data block id",
+            )?;
             write!(id, "{store}:block#{}", member.member.atom.value())
                 .map_err(|_| ctx.refuse_codec_limit("write NX operand data block id", 0, 1))?;
             if blocks.iter().any(|block| block.id == id) {
@@ -1305,8 +1362,14 @@ pub(in crate::native) fn feature_operation_body_operands(
                 binding.body_object_index == member.member.atom.value()
                     || binding.body_alias_object_index == member.member.atom.value()
             }) {
-                ctx.reserve_retained_vec(&mut segment_body_bindings, 1, "NX operation operand bindings")?;
-                segment_body_bindings.push(ctx.copy_retained_text(&binding.id, "retain NX operation operand binding id")?);
+                ctx.reserve_retained_vec(
+                    &mut segment_body_bindings,
+                    1,
+                    "NX operation operand bindings",
+                )?;
+                segment_body_bindings.push(
+                    ctx.copy_retained_text(&binding.id, "retain NX operation operand binding id")?,
+                );
             }
         }
         if !same_namespace_reference && segment_body_bindings.is_empty() {
@@ -1321,7 +1384,10 @@ pub(in crate::native) fn feature_operation_body_operands(
                 "operation-body-operand",
                 "retain NX operation body operand id",
             )?,
-            operation_label: ctx.copy_retained_text(&member.operation_label, "retain NX operation body operand label")?,
+            operation_label: ctx.copy_retained_text(
+                &member.operation_label,
+                "retain NX operation body operand label",
+            )?,
             body_object_index: member.body_object_index,
             body_reference_ordinal: member.body_reference_ordinal,
             ordinal: member.ordinal,
@@ -1502,7 +1568,11 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                                             1,
                                         )
                                     })?;
-                                ctx.reserve_retained_vec(&mut references, 1, "NX body compact references")?;
+                                ctx.reserve_retained_vec(
+                                    &mut references,
+                                    1,
+                                    "NX body compact references",
+                                )?;
                                 references.push(ConstructionReference {
                                     token: value.atom,
                                     data_block,
@@ -1528,7 +1598,11 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                                             1,
                                         )
                                     })?;
-                                ctx.reserve_retained_vec(&mut references, 1, "NX body object references")?;
+                                ctx.reserve_retained_vec(
+                                    &mut references,
+                                    1,
+                                    "NX body object references",
+                                )?;
                                 references.push(ConstructionReference {
                                     token: value.token,
                                     data_block,
@@ -1597,7 +1671,12 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.reserve_scoped_vec(&mut reference_reservation, &mut operation_references, 1, "NX extrude profile reference order")?;
+            ctx.reserve_scoped_vec(
+                &mut reference_reservation,
+                &mut operation_references,
+                1,
+                "NX extrude profile reference order",
+            )?;
             operation_references.push(reference);
         }
         let sort_work = operation_references
@@ -1632,7 +1711,11 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             };
             let data_block =
                 ctx.copy_retained_text(block, "NX extrude construction profile block")?;
-            ctx.reserve_retained_vec(&mut profile_references, 1, "NX extrude construction profile references")?;
+            ctx.reserve_retained_vec(
+                &mut profile_references,
+                1,
+                "NX extrude construction profile references",
+            )?;
             profile_references.push(FeatureExtrudeConstructionProfileReference {
                 object_index: reference.token.value(),
                 data_block,
@@ -1647,7 +1730,8 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             "extrude-construction-profile",
             "NX extrude construction profile identity",
         )?;
-        let operation_label = ctx.copy_retained_text(operation_label, "NX extrude construction profile operation")?;
+        let operation_label =
+            ctx.copy_retained_text(operation_label, "NX extrude construction profile operation")?;
         ctx.reserve_retained_vec(&mut profiles, 1, "NX extrude construction profiles")?;
         profiles.push(FeatureExtrudeConstructionProfile {
             id,
@@ -1794,7 +1878,12 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.reserve_scoped_vec(&mut profile_reservation, &mut profile, 1, "NX extrude 32 profile order")?;
+            ctx.reserve_scoped_vec(
+                &mut profile_reservation,
+                &mut profile,
+                1,
+                "NX extrude 32 profile order",
+            )?;
             profile.push(reference);
         }
         let sort_work = profile
@@ -1829,7 +1918,8 @@ pub(in crate::native) fn feature_extrude_32_constructions(
                 return Err(ctx.refuse_codec_limit("NX extrude 32 profile block", 0, 1));
             };
             Ok(FeatureConstructionMember {
-                reference: ctx.copy_retained_text(&reference.id, "NX extrude 32 profile reference")?,
+                reference: ctx
+                    .copy_retained_text(&reference.id, "NX extrude 32 profile reference")?,
                 data_block: ctx.copy_retained_text(block, "NX extrude 32 profile block")?,
             })
         })?;
@@ -1864,7 +1954,10 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             "extrude-32-construction",
             "NX extrude 32 construction identity",
         )?;
-        let operation_label = ctx.copy_retained_text(&branch.operation_label, "NX extrude 32 construction operation")?;
+        let operation_label = ctx.copy_retained_text(
+            &branch.operation_label,
+            "NX extrude 32 construction operation",
+        )?;
         let branch_id = ctx.copy_retained_text(&branch.id, "NX extrude 32 construction branch")?;
         ctx.reserve_retained_vec(&mut constructions, 1, "NX extrude 32 constructions")?;
         constructions.push(FeatureExtrude32Construction {
@@ -1924,7 +2017,11 @@ pub(in crate::native) fn feature_block_construction_references(
                     )?;
                     let data_block =
                         charged_unique_offset_data_block(ctx, &indexed, token.value())?;
-                    ctx.reserve_retained_vec(&mut references, 1, "NX block construction references")?;
+                    ctx.reserve_retained_vec(
+                        &mut references,
+                        1,
+                        "NX block construction references",
+                    )?;
                     references.push(FeatureBlockConstructionReference {
                         id,
                         operation_label,
@@ -1974,7 +2071,12 @@ pub(in crate::native) fn feature_block_constructions(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.reserve_scoped_vec(&mut field_reservation, &mut field, 1, "NX block construction field order")?;
+            ctx.reserve_scoped_vec(
+                &mut field_reservation,
+                &mut field,
+                1,
+                "NX block construction field order",
+            )?;
             field.push(reference);
         }
         let sort_work = field
@@ -2006,13 +2108,18 @@ pub(in crate::native) fn feature_block_constructions(
             ),
             "NX block construction member array",
         )?;
-        ctx.reserve_vec(&mut owned_members, members.len(), "NX block construction member array")?;
+        ctx.reserve_vec(
+            &mut owned_members,
+            members.len(),
+            "NX block construction member array",
+        )?;
         for reference in members {
             let Some(block) = reference.data_block.as_deref() else {
                 continue;
             };
             owned_members.push(FeatureConstructionMember {
-                reference: ctx.copy_retained_text(&reference.id, "NX block construction member reference")?,
+                reference: ctx
+                    .copy_retained_text(&reference.id, "NX block construction member reference")?,
                 data_block: ctx.copy_retained_text(block, "NX block construction member block")?,
             });
         }
@@ -2026,7 +2133,8 @@ pub(in crate::native) fn feature_block_constructions(
         };
         let terminal_data_block =
             ctx.copy_retained_text(terminal_block, "NX block construction terminal block")?;
-        let terminal_reference = ctx.copy_retained_text(&terminal.id, "NX block construction terminal reference")?;
+        let terminal_reference =
+            ctx.copy_retained_text(&terminal.id, "NX block construction terminal reference")?;
         let id = replace_operation_text(
             ctx,
             operation_label,
@@ -2058,11 +2166,14 @@ pub(in crate::native) fn feature_block_construction_payloads(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut payloads = Vec::new();
     for construction in constructions {
-        let (data_blocks, reservation) = ctx.collect_scoped_texts(construction
+        let (data_blocks, reservation) = ctx.collect_scoped_texts(
+            construction
                 .members
                 .iter()
                 .map(|member| member.data_block.as_str())
-                .chain(std::iter::once(construction.terminal_data_block.as_str())), "NX block construction source blocks")?;
+                .chain(std::iter::once(construction.terminal_data_block.as_str())),
+            "NX block construction source blocks",
+        )?;
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
@@ -2074,7 +2185,10 @@ pub(in crate::native) fn feature_block_construction_payloads(
             "block-construction-payload",
             "NX block construction payload identity",
         )?;
-        let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX block construction payload operation")?;
+        let operation_label = ctx.copy_retained_text(
+            &construction.operation_label,
+            "NX block construction payload operation",
+        )?;
         let construction_id =
             ctx.copy_retained_text(&construction.id, "NX block construction payload owner")?;
         ctx.reserve_retained_vec(&mut payloads, 1, "NX block construction payloads")?;
@@ -2111,8 +2225,14 @@ pub(in crate::native) fn feature_block_payload_scalars(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            let id = ctx.format_retained_with_work(format_args!("{}-scalar-{ordinal}", payload.id), "NX block payload scalar identity")?;
-            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX block payload scalar operation")?;
+            let id = ctx.format_retained_with_work(
+                format_args!("{}-scalar-{ordinal}", payload.id),
+                "NX block payload scalar identity",
+            )?;
+            let operation_label = ctx.copy_retained_text(
+                &payload.operation_label,
+                "NX block payload scalar operation",
+            )?;
             let construction_payload =
                 ctx.copy_retained_text(&payload.id, "NX block payload scalar owner")?;
             let ordinal = u32::try_from(ordinal)
@@ -2160,8 +2280,12 @@ pub(in crate::native) fn feature_block_payload_names(
             let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else {
                 continue;
             };
-            let id = ctx.format_retained_with_work(format_args!("{}-name-{ordinal}", payload.id), "NX block payload name identity")?;
-            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX block payload name operation")?;
+            let id = ctx.format_retained_with_work(
+                format_args!("{}-name-{ordinal}", payload.id),
+                "NX block payload name identity",
+            )?;
+            let operation_label = ctx
+                .copy_retained_text(&payload.operation_label, "NX block payload name operation")?;
             let construction_payload =
                 ctx.copy_retained_text(&payload.id, "NX block payload name owner")?;
             let ordinal = u32::try_from(ordinal)
@@ -2195,7 +2319,12 @@ pub(in crate::native) fn feature_block_payload_named_records(
             .iter()
             .filter(|name| name.construction_payload == payload.id)
         {
-            ctx.reserve_scoped_vec(&mut name_reservation, &mut payload_names, 1, "NX block payload names for join")?;
+            ctx.reserve_scoped_vec(
+                &mut name_reservation,
+                &mut payload_names,
+                1,
+                "NX block payload names for join",
+            )?;
             payload_names.push(name);
         }
         let name_sort_work = payload_names
@@ -2219,7 +2348,12 @@ pub(in crate::native) fn feature_block_payload_named_records(
                     && scalar.payload_offset > name.frame.offset()
                     && scalar.payload_offset < end
             }) {
-                ctx.reserve_scoped_vec(&mut scalar_reservation, &mut scalar_fields, 1, "NX block payload scalars for join")?;
+                ctx.reserve_scoped_vec(
+                    &mut scalar_reservation,
+                    &mut scalar_fields,
+                    1,
+                    "NX block payload scalars for join",
+                )?;
                 scalar_fields.push(scalar);
             }
             let scalar_sort_work = scalar_fields
@@ -2231,16 +2365,27 @@ pub(in crate::native) fn feature_block_payload_named_records(
                 "sort NX block payload scalars",
             )?;
             scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
-            let id = ctx.format_retained_with_work(format_args!("{}-record-{ordinal}", payload.id), "NX block payload named record identity")?;
-            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX block payload named record operation")?;
+            let id = ctx.format_retained_with_work(
+                format_args!("{}-record-{ordinal}", payload.id),
+                "NX block payload named record identity",
+            )?;
+            let operation_label = ctx.copy_retained_text(
+                &payload.operation_label,
+                "NX block payload named record operation",
+            )?;
             let construction_payload =
                 ctx.copy_retained_text(&payload.id, "NX block payload named record owner")?;
             let name_field =
                 ctx.copy_retained_text(&name.id, "NX block payload named record name field")?;
             let mut scalar_ids = Vec::new();
             for scalar in scalar_fields {
-                let scalar_id = ctx.copy_retained_text(&scalar.id, "NX block payload named record scalar field")?;
-                ctx.reserve_retained_vec(&mut scalar_ids, 1, "NX block payload named record scalar fields")?;
+                let scalar_id = ctx
+                    .copy_retained_text(&scalar.id, "NX block payload named record scalar field")?;
+                ctx.reserve_retained_vec(
+                    &mut scalar_ids,
+                    1,
+                    "NX block payload named record scalar fields",
+                )?;
                 scalar_ids.push(scalar_id);
             }
             ctx.reserve_retained_vec(&mut records, 1, "NX block payload named records")?;
@@ -2296,8 +2441,12 @@ pub(in crate::native) fn feature_block_payload_points(
         let Some(second) = scalars.iter().rev().find(|scalar| scalar.id == *second_id) else {
             continue;
         };
-        let id = ctx.format_retained_with_work(format_args!("{}-point", record.id), "NX block payload point identity")?;
-        let operation_label = ctx.copy_retained_text(&record.operation_label, "NX block payload point operation")?;
+        let id = ctx.format_retained_with_work(
+            format_args!("{}-point", record.id),
+            "NX block payload point identity",
+        )?;
+        let operation_label =
+            ctx.copy_retained_text(&record.operation_label, "NX block payload point operation")?;
         let named_record =
             ctx.copy_retained_text(&record.id, "NX block payload point named record")?;
         let name = ctx.copy_retained_text(name.frame.value(), "NX block payload point name")?;
@@ -2361,8 +2510,14 @@ pub(in crate::native) fn feature_block_payload_point_groups(
             ctx.reserve_retained_vec(&mut witnesses, 1, "NX block payload point group witnesses")?;
             witnesses.push(id);
         }
-        let id = ctx.format_retained_with_work(format_args!("{}-group", point.id), "NX block payload point group identity")?;
-        let operation_label = ctx.copy_retained_text(&point.operation_label, "NX block payload point group operation")?;
+        let id = ctx.format_retained_with_work(
+            format_args!("{}-group", point.id),
+            "NX block payload point group identity",
+        )?;
+        let operation_label = ctx.copy_retained_text(
+            &point.operation_label,
+            "NX block payload point group operation",
+        )?;
         let name = ctx.copy_retained_text(&point.name, "NX block payload point group name")?;
         ctx.reserve_retained_vec(&mut groups, 1, "NX block payload point groups")?;
         groups.push(FeatureBlockPayloadPointGroup {
@@ -2406,7 +2561,12 @@ pub(in crate::native) fn feature_block_dimensions(
             .iter()
             .filter(|binding| binding.operation_label == construction.operation_label)
         {
-            ctx.reserve_scoped_vec(&mut binding_reservation, &mut operation_bindings, 1, "NX block dimension bindings")?;
+            ctx.reserve_scoped_vec(
+                &mut binding_reservation,
+                &mut operation_bindings,
+                1,
+                "NX block dimension bindings",
+            )?;
             operation_bindings.push(binding);
         }
         let Some(anchor) = operation_bindings
@@ -2491,23 +2651,35 @@ pub(in crate::native) fn feature_block_dimensions(
             continue;
         }
         let id = if let Some((prefix, suffix)) = construction.id.split_once("block-construction") {
-            ctx.format_retained_with_work(format_args!("{prefix}block-dimensions{suffix}"), "NX block dimensions identity")?
+            ctx.format_retained_with_work(
+                format_args!("{prefix}block-dimensions{suffix}"),
+                "NX block dimensions identity",
+            )?
         } else {
             ctx.copy_retained_text(&construction.id, "NX block dimensions identity")?
         };
-        let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX block dimensions operation")?;
+        let operation_label = ctx.copy_retained_text(
+            &construction.operation_label,
+            "NX block dimensions operation",
+        )?;
         let construction_id =
             ctx.copy_retained_text(&construction.id, "NX block dimensions construction")?;
         let mut anchor_bindings = Vec::new();
         for binding in operation_bindings {
             let id = ctx.copy_retained_text(&binding.id, "NX block dimension anchor binding")?;
-            ctx.reserve_retained_vec(&mut anchor_bindings, 1, "NX block dimension anchor bindings")?;
+            ctx.reserve_retained_vec(
+                &mut anchor_bindings,
+                1,
+                "NX block dimension anchor bindings",
+            )?;
             anchor_bindings.push(id);
         }
         let dimension = |slot: usize| -> Result<FeatureBlockDimension, CodecError> {
             Ok(FeatureBlockDimension {
-                declaration: ctx.copy_retained_text(&run[slot].id, "NX block dimension declaration")?,
-                expression: ctx.copy_retained_text(&resolved[slot].0.id, "NX block dimension expression")?,
+                declaration: ctx
+                    .copy_retained_text(&run[slot].id, "NX block dimension declaration")?,
+                expression: ctx
+                    .copy_retained_text(&resolved[slot].0.id, "NX block dimension expression")?,
                 value: resolved[slot].1,
             })
         };

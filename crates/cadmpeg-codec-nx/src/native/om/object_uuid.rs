@@ -167,9 +167,12 @@ pub(in crate::native) fn object_uuid_values(
             };
             ctx.reserve_retained_vec(&mut values, 1, "NX OM UUID values")?;
             let id = uuid_value_id(ctx, section_ordinal, value.offset)?;
-            let uuid = crate::canonical_uuid::CanonicalUuid::new(ctx.copy_retained_text(value.value.as_str(), "retain NX OM UUID text")?)
+            let uuid = crate::canonical_uuid::CanonicalUuid::new(
+                ctx.copy_retained_text(value.value.as_str(), "retain NX OM UUID text")?,
+            )
             .map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
-            let source_entry = ctx.copy_retained_text(&entry.name, "retain NX OM UUID source entry")?;
+            let source_entry =
+                ctx.copy_retained_text(&entry.name, "retain NX OM UUID source entry")?;
             values.push(ObjectUuidValue {
                 id,
                 section_ordinal: section_ordinal_u32,

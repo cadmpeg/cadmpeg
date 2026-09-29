@@ -275,7 +275,8 @@ impl StreamView {
             .as_ref()
             .map_or_else(|| Rc::clone(&graph), Rc::clone);
         let intersections = if let Some(delta_indices) = paired_deltas {
-            let (mut replacement_streams, _replacement_reservation) = ctx.temporary_vec(delta_indices.len(), "nx auxiliary replacement views")?;
+            let (mut replacement_streams, _replacement_reservation) =
+                ctx.temporary_vec(delta_indices.len(), "nx auxiliary replacement views")?;
             for delta in delta_indices {
                 replacement_streams.push(scan.streams[*delta].inflated.as_slice());
             }
@@ -404,7 +405,11 @@ impl<'a> ParsedStreams<'a> {
                         census,
                     )?;
                     residual_reservation.grow(cadmpeg_core::decode::u64_from_index(part.len()))?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut residual, part.len(), "nx semantic residual aggregation")?;
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                        &mut residual,
+                        part.len(),
+                        "nx semantic residual aggregation",
+                    )?;
                     residual.extend_from_slice(&part);
                 }
             }
@@ -418,7 +423,11 @@ impl<'a> ParsedStreams<'a> {
                         )?;
                         residual_reservation
                             .grow(cadmpeg_core::decode::u64_from_index(part.len()))?;
-                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut residual, part.len(), "nx semantic residual aggregation")?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                            &mut residual,
+                            part.len(),
+                            "nx semantic residual aggregation",
+                        )?;
                         residual.extend_from_slice(&part);
                     }
                 }
@@ -449,7 +458,11 @@ impl<'a> ParsedStreams<'a> {
                         Cow::Borrowed(bytes) => Cow::Borrowed(*bytes),
                         Cow::Owned(bytes) => {
                             let mut copy = Vec::new();
-                            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut copy, bytes.len(), "nx auxiliary topology snapshot")?;
+                            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                                &mut copy,
+                                bytes.len(),
+                                "nx auxiliary topology snapshot",
+                            )?;
                             copy.extend_from_slice(bytes);
                             Cow::Owned(copy)
                         }
@@ -468,7 +481,11 @@ impl<'a> ParsedStreams<'a> {
                             "nx extended semantic topology",
                         )?;
                         let mut owned = Vec::new();
-                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut owned, total_len, "nx extended semantic topology")?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                            &mut owned,
+                            total_len,
+                            "nx extended semantic topology",
+                        )?;
                         owned.extend_from_slice(bytes);
                         owned.extend_from_slice(&residual);
                         semantic_bytes = Cow::Owned(owned);
@@ -478,7 +495,11 @@ impl<'a> ParsedStreams<'a> {
                             cadmpeg_core::decode::u64_from_index(residual.len()),
                             "nx extended semantic topology",
                         )?;
-                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(bytes, residual.len(), "nx extended semantic topology")?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                            bytes,
+                            residual.len(),
+                            "nx extended semantic topology",
+                        )?;
                         bytes.extend_from_slice(&residual);
                     }
                 }

@@ -305,7 +305,11 @@ pub(super) fn fast_load_component_object_groups(
             "NX fast-load group temporary lists",
         )?;
         let mut uses = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut uses, use_count, "allocate NX fast-load group uses")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut uses,
+            use_count,
+            "allocate NX fast-load group uses",
+        )?;
         for occurrence in occurrences
             .iter()
             .filter(|occurrence| occurrence.component_uuid == uuid.id)
@@ -313,7 +317,11 @@ pub(super) fn fast_load_component_object_groups(
             uses.push(ctx.copy_retained_text(&occurrence.id, "allocate NX fast-load group use")?);
         }
         let mut values = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut values, value_count, "allocate NX fast-load group values")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut values,
+            value_count,
+            "allocate NX fast-load group values",
+        )?;
         for value in object_uuid_values
             .iter()
             .filter(|value| value.uuid == uuid.uuid)
@@ -333,11 +341,13 @@ pub(super) fn fast_load_component_object_groups(
                 uuid.ordinal,
                 "retain NX fast-load group identity",
             )?,
-            component_uuid: ctx.copy_retained_text(&uuid.id, "retain NX fast-load group component UUID")?,
+            component_uuid: ctx
+                .copy_retained_text(&uuid.id, "retain NX fast-load group component UUID")?,
             uuid: crate::canonical_uuid::CanonicalUuid::new(uuid_text)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             members,
-            source_entry: ctx.copy_retained_text(&uuid.source_entry, "retain NX fast-load group source entry")?,
+            source_entry: ctx
+                .copy_retained_text(&uuid.source_entry, "retain NX fast-load group source entry")?,
             source_offset: uuid.source_offset,
         });
     }
@@ -493,7 +503,10 @@ pub(super) fn fast_load_component_roster(
         return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
-    let mut prototypes = ctx.retained_vec::<FastLoadComponentPrototype>(candidate.prototype_count, "NX fast-load prototypes")?;
+    let mut prototypes = ctx.retained_vec::<FastLoadComponentPrototype>(
+        candidate.prototype_count,
+        "NX fast-load prototypes",
+    )?;
     let mut at = candidate.prototypes_offset;
     for ordinal in 0..candidate.prototype_count {
         let (offset, name) = parse_string(payload, &mut at).ok_or_else(|| {
@@ -510,7 +523,8 @@ pub(super) fn fast_load_component_roster(
             )?,
             ordinal,
             name: ctx.copy_retained_text(name, "retain NX fast-load prototype name")?,
-            source_entry: ctx.copy_retained_text(&entry.name, "retain NX fast-load prototype source entry")?,
+            source_entry: ctx
+                .copy_retained_text(&entry.name, "retain NX fast-load prototype source entry")?,
             source_offset: roster_offset(ctx, entry_offset, offset)?,
         });
     }
@@ -535,7 +549,8 @@ pub(super) fn fast_load_component_roster(
             )?,
             ordinal,
             uuid,
-            source_entry: ctx.copy_retained_text(&entry.name, "retain NX fast-load UUID source entry")?,
+            source_entry: ctx
+                .copy_retained_text(&entry.name, "retain NX fast-load UUID source entry")?,
             source_offset: roster_offset(ctx, entry_offset, offset)?,
         });
     }
@@ -550,7 +565,10 @@ pub(super) fn fast_load_component_roster(
     let markers = lane_bytes(candidate.occurrence_markers_offset)?;
     let prototype_indices = lane_bytes(candidate.occurrences_offset)?;
     let uuid_indices = lane_bytes(candidate.uuid_indices_offset)?;
-    let mut records = ctx.retained_vec::<FastLoadComponentOccurrence>(candidate.occurrence_count, "NX fast-load occurrences")?;
+    let mut records = ctx.retained_vec::<FastLoadComponentOccurrence>(
+        candidate.occurrence_count,
+        "NX fast-load occurrences",
+    )?;
     for (ordinal, ((marker, prototype_index), uuid_index)) in markers
         .iter()
         .zip(prototype_indices)
@@ -589,9 +607,13 @@ pub(super) fn fast_load_component_roster(
             marker,
             marker_source_offset: roster_offset(ctx, entry_offset, marker_offset)?,
             prototype_index,
-            component_uuid: ctx.copy_retained_text(&component_uuid.id, "retain NX fast-load occurrence UUID reference")?,
+            component_uuid: ctx.copy_retained_text(
+                &component_uuid.id,
+                "retain NX fast-load occurrence UUID reference",
+            )?,
             uuid_source_offset: roster_offset(ctx, entry_offset, uuid_offset)?,
-            source_entry: ctx.copy_retained_text(&entry.name, "retain NX fast-load occurrence source entry")?,
+            source_entry: ctx
+                .copy_retained_text(&entry.name, "retain NX fast-load occurrence source entry")?,
             source_offset: roster_offset(ctx, entry_offset, occurrence_offset)?,
         });
     }

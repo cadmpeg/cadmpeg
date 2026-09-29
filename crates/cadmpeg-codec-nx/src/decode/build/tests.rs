@@ -3,9 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-use super::{
-    retain_live_annotations, unknown_stream_metadata,
-};
+use super::{retain_live_annotations, unknown_stream_metadata};
 
 fn geometry_route_limit_error(policy: &DecodePolicy) -> cadmpeg_core::CodecError {
     let bytes = crate::test_support::test_prt::prt_with_partition(
@@ -110,9 +108,3 @@ fn live_annotations_refuse_first_identity_at_collection_limit() {
                 && limit.operation == "nx live annotation identities"
     ));
 }
-
-
-
-
-
-

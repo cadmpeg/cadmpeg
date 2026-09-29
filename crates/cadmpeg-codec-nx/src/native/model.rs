@@ -669,9 +669,12 @@ pub(crate) fn terminal_feature_body_ids(
         let prefix_len = 5_u64 + digits;
         let _prefix_reservation = ctx.reserve_scoped(prefix_len, "nx terminal body prefix")?;
         let mut prefix = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut prefix, cadmpeg_core::decode::index_from_u64(prefix_len).ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len)
-                })?, "nx terminal body prefix")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut prefix,
+            cadmpeg_core::decode::index_from_u64(prefix_len)
+                .ok_or_else(|| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?,
+            "nx terminal body prefix",
+        )?;
         write!(&mut prefix, "nx:s{}:", binding.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
         ctx.charge_work(
