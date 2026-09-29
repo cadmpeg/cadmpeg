@@ -5393,41 +5393,44 @@ fn nonlinear_initial_guesses(
 ) -> Result<Option<Vec<Vec<f64>>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
     let mut seeds = Vec::new();
-    let mut add_seed = |seed: Vec<f64>| {
+    let mut add_seed = |seed: Vec<f64>| -> Result<(), cadmpeg_core::CodecError> {
         if seed.iter().all(|value| value.is_finite()) && !seeds.iter().any(|known| known == &seed) {
+            ctx.try_reserve_items(&mut seeds, 1, "creo solve seed rows")?;
             seeds.push(seed);
         }
+        Ok(())
     };
     if initial_values.len() != variable_count {
         return Ok(None);
     }
-    let initial = initial_values
-        .iter()
+    let mut initial = ctx.alloc_filled(variable_count, 0.0, "creo solve initial seed")?;
+    for ((slot, value), dimension) in initial
+        .iter_mut()
+        .zip(initial_values)
         .zip(variable_dimensions)
-        .map(|(value, dimension)| {
-            value.as_ref().and_then(|value| {
-                let (value, value_dimension) = quantity_parts_ref(value)?;
-                (value_dimension == *dimension).then_some(value)
-            })
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(initial) = initial else {
-        return Ok(None);
-    };
-    add_seed(initial);
-    add_seed(ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_zero")?);
+    {
+        let Some((number, value_dimension)) = value.as_ref().and_then(quantity_parts_ref) else {
+            return Ok(None);
+        };
+        if value_dimension != *dimension {
+            return Ok(None);
+        }
+        *slot = number;
+    }
+    add_seed(initial)?;
+    add_seed(ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_zero")?)?;
     for magnitude in [0.01, 0.1, 1.0, 10.0, 100.0] {
-        add_seed(ctx.alloc_filled(variable_count, magnitude, "creo_solve_seed_magnitude")?);
-        add_seed(ctx.alloc_filled(variable_count, -magnitude, "creo_solve_seed_magnitude")?);
+        add_seed(ctx.alloc_filled(variable_count, magnitude, "creo_solve_seed_magnitude")?)?;
+        add_seed(ctx.alloc_filled(variable_count, -magnitude, "creo_solve_seed_magnitude")?)?;
     }
     for index in 0..variable_count {
         for magnitude in [0.1, 1.0, 10.0] {
             let mut positive = ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_axis")?;
             positive[index] = magnitude;
-            add_seed(positive);
+            add_seed(positive)?;
             let mut negative = ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_axis")?;
             negative[index] = -magnitude;
-            add_seed(negative);
+            add_seed(negative)?;
         }
     }
     Ok(Some(seeds))
