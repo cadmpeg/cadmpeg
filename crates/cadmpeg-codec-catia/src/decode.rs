@@ -786,20 +786,9 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
         .fold((0_usize, 0_usize), |(instructions, tokens), signature| {
-            let program = signature.production.signature_program();
-            let qualifier_count = program
-                .iter()
-                .filter(|instruction| {
-                    matches!(
-                        instruction,
-                        crate::entity_table::ReferenceSignatureInstruction::Qualifier { .. }
-                    )
-                })
-                .count();
-            (
-                instructions + program.len(),
-                tokens + program.len() + qualifier_count,
-            )
+            let (instruction_count, token_count) =
+                signature.production.instruction_and_token_counts();
+            (instructions + instruction_count, tokens + token_count)
         });
     let (
         resolved_reference_signature_entity_count,
