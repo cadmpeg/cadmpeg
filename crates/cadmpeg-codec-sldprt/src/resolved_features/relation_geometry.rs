@@ -2612,12 +2612,11 @@ pub(crate) fn owned_relation_parameters<'a>(
             if relation.parameter_scalar_ref().is_some() {
                 continue;
             }
-            let exact_matches = relation
+            let mut exact_matches = relation
                 .scalar_refs()
                 .iter()
-                .filter_map(|scalar| parameters_by_scalar.get(scalar.as_str()).copied())
-                .collect::<Vec<_>>();
-            if let [parameter] = exact_matches.as_slice() {
+                .filter_map(|scalar| parameters_by_scalar.get(scalar.as_str()).copied());
+            if let (Some(parameter), None) = (exact_matches.next(), exact_matches.next()) {
                 if claimed.insert(parameter.id.clone()) {
                     owned.insert(relation.id.clone(), Some(parameter.id.clone()));
                 }
@@ -2656,16 +2655,15 @@ fn relation_display_scalar<'a>(
             .find(|scalar| scalar.id == display_id)
             .filter(|scalar| scalar.role == FeatureInputScalarRole::Display);
     }
-    let candidates = relation
+    let mut candidates = relation
         .scalar_refs()
         .iter()
         .filter_map(|scalar_id| lane.scalars.iter().find(|scalar| scalar.id == *scalar_id))
-        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
-        .collect::<Vec<_>>();
-    let [scalar] = candidates.as_slice() else {
+        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display);
+    let (Some(scalar), None) = (candidates.next(), candidates.next()) else {
         return None;
     };
-    Some(*scalar)
+    Some(scalar)
 }
 
 pub(super) fn relation_display_scalar_for_parameter<'a>(
@@ -2727,17 +2725,16 @@ fn relation_parameter_by_relation_id<'a>(
     relation: &FeatureInputRelationInstance,
     parameters: &'a [cadmpeg_ir::features::DesignParameter],
 ) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
-    let matches = parameters
+    let mut matches = parameters
         .iter()
         .filter(|parameter| {
             parameter.properties.get(RELATION_PARAMETER_ID_PROPERTY) == Some(&relation.id)
                 && is_reference_relation_parameter(parameter)
-        })
-        .collect::<Vec<_>>();
-    let [parameter] = matches.as_slice() else {
+        });
+    let (Some(parameter), None) = (matches.next(), matches.next()) else {
         return None;
     };
-    Some(*parameter)
+    Some(parameter)
 }
 
 fn relation_parameter_matches_display_scalar(
