@@ -1377,8 +1377,10 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
     use cadmpeg_core::CodecError;
     let (scopes, timeline) = authored_ordinal_limit_fixture();
     let unit = if operation == "f3d projected parameter unit" { "custom" } else { "mm" };
+    let expression_lookup = operation.starts_with("f3d expression ");
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(40), "1 mm", "FeatureInput", Some(unit), "InternalValue", 0.1,
+        Some(40), if expression_lookup { "Width / 2" } else { "1 mm" },
+        "FeatureInput", Some(unit), "InternalValue", 0.1,
     )).unwrap();
     parameter.id = "f3d:Design/BulkStream.dat:design-parameter#41".to_owned();
     parameter.record_index = 41;
@@ -1404,17 +1406,28 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
     ).unwrap();
     let document_alias = operation.starts_with("f3d document alias");
     let owners = if document_alias { &[][..] } else { std::slice::from_ref(&owner) };
+    let mut native = vec![parameter];
+    if expression_lookup {
+        let mut width = parse_design_parameter_record(&parameter_record(
+            None, "2 mm", "User Parameter", Some("mm"), "Width", 0.2,
+        )).unwrap();
+        width.id = "f3d:Design/BulkStream.dat:design-parameter#42".to_owned();
+        width.record_index = 42;
+        native.push(width);
+    }
+    let materialized = expression_lookup;
     let max_limit = if retained { 4096 } else { 128 };
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        if retained { policy.limits.max_retained_bytes = limit; }
+        if materialized { policy.limits.max_materialized_bytes = limit; }
+        else if retained { policy.limits.max_retained_bytes = limit; }
         else { policy.limits.max_collection_items = limit; }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = project_parameter_design_with_edge_identities(
             Some(&ctx),
             &crate::design::feature_project::ProjectInputs {
-                native: std::slice::from_ref(&parameter),
+                native: &native,
                 owners,
                 scopes: &scopes,
                 timelines: std::slice::from_ref(&timeline),
@@ -1437,7 +1450,8 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
-                    && failure.dimension == (if retained { ResourceDimension::RetainedBytes }
+                    && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes }
+                        else if retained { ResourceDimension::RetainedBytes }
                         else { ResourceDimension::CollectionItems }) => return,
             Err(CodecError::ResourceLimit(_)) => {},
             Ok(_) => panic!("expected {operation} refusal, got success"),
@@ -1605,6 +1619,90 @@ fn feature_order_index_id_refuses_retained_limit() {
 #[test]
 fn feature_order_index_refuses_collection_limit() {
     assert_projected_feature_refusal("f3d feature order index", false);
+}
+
+fn assert_expression_dependency_refusal(operation: &'static str, retained: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (scopes, timeline) = authored_ordinal_limit_fixture();
+    let parameter = |record_index, expression: &str, name: &str| {
+        let mut parameter = parse_design_parameter_record(&parameter_record(
+            None, expression, "User Parameter", Some("mm"), name, 1.0,
+        )).unwrap();
+        parameter.id = format!("f3d:Design/BulkStream.dat:design-parameter#{record_index}");
+        parameter.record_index = record_index;
+        parameter
+    };
+    let native = [parameter(40, "1 mm", "Width"), parameter(41, "Width / 2", "Half")];
+    let materialized = operation == "f3d expression identifier lookup";
+    let max_limit = if retained { 4096 } else { 128 };
+    for limit in 0..max_limit {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if materialized { policy.limits.max_materialized_bytes = limit; }
+        else if retained { policy.limits.max_retained_bytes = limit; }
+        else { policy.limits.max_collection_items = limit; }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = project_parameter_design_with_edge_identities(
+            Some(&ctx),
+            &crate::design::feature_project::ProjectInputs {
+                native: &native,
+                owners: &[],
+                scopes: &scopes,
+                timelines: std::slice::from_ref(&timeline),
+                construction_groups: &[],
+                fillet_radius_groups: &[],
+                edge_operands: &[],
+                edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
+                entity_selection_operands: &[],
+                curve_identities: &[],
+                face_operands: &[],
+                body_recipe_operands: &[],
+                legacy_loft_body_carriers: &[],
+                placements: &[],
+                body_bindings: &[],
+                component_naming_spaces: &[],
+                histories: &[],
+            },
+        );
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension == (if materialized { ResourceDimension::MaterializedBytes }
+                        else if retained { ResourceDimension::RetainedBytes }
+                        else { ResourceDimension::CollectionItems }) => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn expression_identifier_lookup_refuses_materialized_limit() {
+    assert_expression_dependency_refusal("f3d expression identifier lookup", false);
+}
+
+#[test]
+fn expression_owner_lookup_refuses_materialized_limit() {
+    assert_projected_feature_refusal("f3d expression owner lookup", false);
+}
+
+#[test]
+fn expression_feature_identifier_lookup_refuses_materialized_limit() {
+    assert_projected_feature_refusal("f3d expression feature identifier lookup", false);
+}
+
+#[test]
+fn parameter_dependency_refuses_collection_limit() {
+    assert_expression_dependency_refusal("f3d parameter dependency", false);
+}
+
+#[test]
+fn parameter_dependency_id_refuses_retained_limit() {
+    assert_expression_dependency_refusal("f3d parameter dependency id", true);
 }
 
 fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
