@@ -10285,27 +10285,29 @@ fn standard_oriented_native_support_pcurves(
     if native_pair == endpoint_pair {
         return Ok(Some(copy_native()?));
     }
+    let (first_label, _first_label_reservation) = crate::resource::format_scoped(ctx,
+        format_args!(
+            "standard native edge-support pcurve 0 of the edge between points {} and {}, reversed onto its edge",
+            endpoint_pair[0], endpoint_pair[1]
+        ), "catia_standard_native_pcurve_reverse_label")?;
     let Some(first) = crate::nurbs::reverse_pcurve_geometry(
             ctx,
             &native.pcurves[0],
             native.parameter_range,
             refusal,
-            &format!(
-                "standard native edge-support pcurve 0 of the edge between points {} and {}, \
-                 reversed onto its edge",
-                endpoint_pair[0], endpoint_pair[1]
-            ),
+            &first_label,
         )? else { return Ok(None) };
+    let (second_label, _second_label_reservation) = crate::resource::format_scoped(ctx,
+        format_args!(
+            "standard native edge-support pcurve 1 of the edge between points {} and {}, reversed onto its edge",
+            endpoint_pair[0], endpoint_pair[1]
+        ), "catia_standard_native_pcurve_reverse_label")?;
     let Some(second) = crate::nurbs::reverse_pcurve_geometry(
             ctx,
             &native.pcurves[1],
             native.parameter_range,
             refusal,
-            &format!(
-                "standard native edge-support pcurve 1 of the edge between points {} and {}, \
-                 reversed onto its edge",
-                endpoint_pair[0], endpoint_pair[1]
-            ),
+            &second_label,
         )? else { return Ok(None) };
     Ok(Some([first, second]))
 }
@@ -10404,10 +10406,9 @@ fn build_standard_edge_curve(
                         ),
                         None => (
                             CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                                record: Some(UnknownId::compose(
-                                    &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-                                    cadmpeg_ir::identity_key!("brep-stream"),
-                                )),
+                                record: Some(crate::resource::copy_id(ctx,
+                                    "catia:payload:unknown#brep-stream", UnknownId::mint,
+                                    "catia_standard_unknown_curve_record_id")?),
                             }),
                             None,
                         ),
@@ -10463,10 +10464,9 @@ fn build_standard_edge_curve(
                 }
                 None => (
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: Some(UnknownId::compose(
-                            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-                            cadmpeg_ir::identity_key!("brep-stream"),
-                        )),
+                        record: Some(crate::resource::copy_id(ctx,
+                            "catia:payload:unknown#brep-stream", UnknownId::mint,
+                            "catia_standard_unknown_curve_record_id")?),
                     }),
                     None,
                 ),
@@ -10475,7 +10475,9 @@ fn build_standard_edge_curve(
         crate::families::standard::records::StandardCurveGeometry::Bspline => {
             if let Some((limit_curve, parameter_range)) = limit_curve {
                 (
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(limit_curve.clone())),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                        crate::resource::copy_nurbs_curve(ctx, limit_curve,
+                            "catia_standard_limit_curve_copy")?)),
                     Some(parameter_range),
                 )
             } else {
@@ -10503,12 +10505,9 @@ fn build_standard_edge_curve(
                                     Some(geometry) => (geometry, None),
                                     None => (
                                         CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                                            record: Some(UnknownId::compose(
-                                                &cadmpeg_ir::identity_namespace!(
-                                                    "catia", "payload", "unknown"
-                                                ),
-                                                cadmpeg_ir::identity_key!("brep-stream"),
-                                            )),
+                                            record: Some(crate::resource::copy_id(ctx,
+                                                "catia:payload:unknown#brep-stream", UnknownId::mint,
+                                                "catia_standard_unknown_curve_record_id")?),
                                         }),
                                         None,
                                     ),
@@ -10561,10 +10560,8 @@ fn build_standard_edge_curve(
     } else {
         None
     };
-    let id = CurveId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "curve"),
-        support.pos,
-    );
+    let id = standard_id(ctx, "curve", format_args!("{}", support.pos),
+        CurveId::mint, "catia_standard_edge_curve_identity")?;
     annotate(
         ctx,
         annotations,
@@ -10623,7 +10620,8 @@ fn build_standard_edge_curve(
     );
     admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
     ir.model.curves.push(Curve {
-        id: id.clone(),
+        id: crate::resource::copy_id(ctx, id.as_str(), CurveId::mint,
+            "catia_standard_model_curve_id_copy")?,
         geometry,
         source_object: Some(cgm_source(ctx, "edge-support", support.tag)?),
     });
@@ -10662,15 +10660,16 @@ fn build_standard_edge_curve(
                 },
             ]
         } else {
-            support.faces.map(|face| {
-                let surface = bindings
-                    .get(face)
-                    .and_then(|(id, _, _)| surface_indices.get(id).map(|_| id.clone()));
-                IntcurveSupportSide {
-                    surface,
-                    pcurve: None,
-                }
-            })
+            let side = |face| -> Result<IntcurveSupportSide, CodecError> {
+                let surface = match bindings.get(face) {
+                    Some((id, _, _)) if surface_indices.contains_key(id) =>
+                        Some(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
+                            "catia_standard_intersection_side_surface_id")?),
+                    _ => None,
+                };
+                Ok(IntcurveSupportSide { surface, pcurve: None })
+            };
+            [side(support.faces[0])?, side(support.faces[1])?]
         };
         if sides.iter().all(|side| side.surface.is_some())
             && (native_support.is_some() || sides[0].surface != sides[1].surface)
@@ -10680,10 +10679,9 @@ fn build_standard_edge_curve(
                     .then(|| native_support.map_or([0.0, 1.0], |native| native.parameter_range))
             });
             if let Some(curve_parameter_range) = curve_parameter_range {
-                let procedural_id = ProceduralCurveId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "standard", "intersection"),
-                    support.pos,
-                );
+                let procedural_id = standard_id(ctx, "intersection",
+                    format_args!("{}", support.pos), ProceduralCurveId::mint,
+                    "catia_standard_intersection_identity")?;
                 annotate(
                     ctx,
                     annotations,
@@ -11526,10 +11524,8 @@ fn attach_standard_circles(
             continue;
         }
         let index = ir.model.curves.len();
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "standard", "circle"),
-            index,
-        );
+        let id = standard_id(admission.context(), "circle", format_args!("{index}"),
+            CurveId::mint, "catia_standard_attached_circle_identity")?;
         let Some(ref_direction) = UnitVector3::new(
             cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
         ) else {
@@ -11756,10 +11752,8 @@ fn attach_standard_lines(
             continue;
         };
         let index = ir.model.curves.len();
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "standard", "line"),
-            index,
-        );
+        let id = standard_id(admission.context(), "line", format_args!("{index}"),
+            CurveId::mint, "catia_standard_attached_line_identity")?;
         let Ok(payload) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction)
         else {
             continue;
