@@ -1820,19 +1820,20 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
         crate::design::edge_resolve::edge_group_assignment_candidates(
             &[],
             [&[17, 18][..], &[18, 19][..], &[20][..]],
-        ),
+            None,
+        ).unwrap(),
         Some(crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![18]))
     );
     assert_eq!(
-        crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[][..], &[18][..]]),
+        crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[][..], &[18][..]], None).unwrap(),
         Some(crate::design::edge_resolve::EdgeAssignmentCandidates::Context)
     );
     assert_eq!(
-        crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[17][..], &[18][..]]),
+        crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[17][..], &[18][..]], None).unwrap(),
         None
     );
     assert_eq!(
-        crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[17][..]]),
+        crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[17][..]], None).unwrap(),
         Some(crate::design::edge_resolve::EdgeAssignmentCandidates::Context)
     );
     assert_eq!(
