@@ -8260,28 +8260,49 @@ pub(super) fn feature_point_construction_headers(
 ) -> Result<Vec<FeaturePointConstructionHeader>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut headers = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(header) = crate::om::point_feature_payload_header(record.payload_view())
             else {
                 return;
             };
-            headers.push(FeaturePointConstructionHeader {
-                id: format!(
-                    "nx:feature-history:point-construction-header#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                token: header.reference.token,
-                data_block: unique_offset_data_block(&indexed, header.reference.token.value()),
-                mode: header.mode,
-                source_offset: entry_offset + header.reference.offset as u64,
-            });
+            let projected = (|| -> Result<(), CodecError> {
+                let id = format_feature_history_id(ctx, "point-construction-header",
+                    section_key, operation_ordinal, None)?;
+                let operation_label = format_feature_history_id(ctx, "operation-label",
+                    section_key, operation_ordinal, None)?;
+                let data_block = charged_unique_offset_data_block(ctx, &indexed,
+                    header.reference.token.value())?;
+                let source_offset = entry_offset.checked_add(
+                    cadmpeg_core::decode::u64_from_index(header.reference.offset))
+                    .ok_or_else(|| ctx.refuse_codec_limit(
+                        "NX point construction header source offset", 0, 1))?;
+                ctx.charge_collection_items(1, "NX point construction headers")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeaturePointConstructionHeader>()),
+                    "NX point construction headers")?;
+                headers.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX point construction headers", 0, 1))?;
+                headers.push(FeaturePointConstructionHeader {
+                    id, operation_label, token: header.reference.token,
+                    data_block, mode: header.mode, source_offset,
+                });
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(headers)
 }
 
