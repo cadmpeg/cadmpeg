@@ -2590,6 +2590,13 @@ trait ExpressionValue: Clone {
         None
     }
     fn with_unit(self, unit: RelationUnit) -> Option<Self>;
+    fn with_unit_checked(
+        self,
+        unit: RelationUnit,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.with_unit(unit))
+    }
     fn add(self, right: Self) -> Option<Self>;
     fn add_checked(
         self,
@@ -2607,8 +2614,29 @@ trait ExpressionValue: Clone {
         Ok(self.subtract(right))
     }
     fn multiply(self, right: Self) -> Option<Self>;
+    fn multiply_checked(
+        self,
+        right: Self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.multiply(right))
+    }
     fn divide(self, right: Self) -> Option<Self>;
+    fn divide_checked(
+        self,
+        right: Self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.divide(right))
+    }
     fn power(self, right: Self) -> Option<Self>;
+    fn power_checked(
+        self,
+        right: Self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.power(right))
+    }
     fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self>;
     fn compare_checked(
         self,
@@ -2619,8 +2647,28 @@ trait ExpressionValue: Clone {
         Ok(self.compare(right, operator))
     }
     fn logical_and(self, right: Self) -> Option<Self>;
+    fn logical_and_checked(
+        self,
+        right: Self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.logical_and(right))
+    }
     fn logical_or(self, right: Self) -> Option<Self>;
+    fn logical_or_checked(
+        self,
+        right: Self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.logical_or(right))
+    }
     fn logical_not(self) -> Option<Self>;
+    fn logical_not_checked(
+        self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.logical_not())
+    }
     fn function(
         name: CreoMathFunction,
         scope: Option<&str>,
@@ -3436,6 +3484,7 @@ impl DimensionForm {
             None => return Ok(None),
         };
         for (name, coefficient) in right.variables {
+            ctx.charge_work(1, "creo dimension coefficient combination work")?;
             if let Some(value) = self.variables.get_mut(&name) {
                 *value = match (*value).combine(coefficient, subtract) {
                     Some(value) => value,
@@ -3585,6 +3634,22 @@ impl SymbolicRelationDimension {
             axes[axis] = left.combine(right, subtract)?;
         }
         Some(Self { axes })
+    }
+
+    fn combine_admitted(
+        self,
+        right: Self,
+        subtract: bool,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let [left_length, left_mass, left_time, left_angle, left_temperature] = self.axes;
+        let [right_length, right_mass, right_time, right_angle, right_temperature] = right.axes;
+        let Some(length) = left_length.combine_admitted(ctx, right_length, subtract)? else { return Ok(None) };
+        let Some(mass) = left_mass.combine_admitted(ctx, right_mass, subtract)? else { return Ok(None) };
+        let Some(time) = left_time.combine_admitted(ctx, right_time, subtract)? else { return Ok(None) };
+        let Some(angle) = left_angle.combine_admitted(ctx, right_angle, subtract)? else { return Ok(None) };
+        let Some(temperature) = left_temperature.combine_admitted(ctx, right_temperature, subtract)? else { return Ok(None) };
+        Ok(Some(Self { axes: [length, mass, time, angle, temperature] }))
     }
 
     fn scale(self, factor: i8) -> Option<Self> {
@@ -3738,9 +3803,29 @@ impl DimensionProbeValue {
         self
     }
 
+    fn with_constraint_admitted(
+        mut self,
+        left: SymbolicRelationDimension,
+        right: SymbolicRelationDimension,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.try_reserve_items(&mut self.constraints, 1, "creo dimension constraint growth")?;
+        self.constraints.push(DimensionEquality { left, right });
+        Ok(self)
+    }
+
     fn constrain_to(self, dimension: SymbolicRelationDimension) -> Self {
         let current = self.dimension.clone();
         self.with_constraint(current, dimension)
+    }
+
+    fn constrain_to_admitted(
+        self,
+        dimension: SymbolicRelationDimension,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let current = self.dimension.copy_admitted(ctx)?;
+        self.with_constraint_admitted(current, dimension, ctx)
     }
 
     fn merge_constraints(left: &Self, right: &Self) -> Vec<DimensionEquality> {
@@ -3751,11 +3836,50 @@ impl DimensionProbeValue {
             .collect()
     }
 
+    fn merge_constraints_admitted(
+        left: &Self,
+        right: &Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<DimensionEquality>, cadmpeg_core::CodecError> {
+        let mut constraints = Vec::new();
+        for constraint in left.constraints.iter().chain(&right.constraints) {
+            ctx.try_reserve_items(&mut constraints, 1, "creo dimension merged constraints")?;
+            constraints.push(constraint.copy_admitted(ctx)?);
+        }
+        Ok(constraints)
+    }
+
     fn argument_constraints(arguments: &[Self]) -> Vec<DimensionEquality> {
         arguments
             .iter()
             .flat_map(|argument| argument.constraints.iter().cloned())
             .collect()
+    }
+
+    fn argument_constraints_admitted(
+        arguments: &[Self],
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<DimensionEquality>, cadmpeg_core::CodecError> {
+        let mut constraints = Vec::new();
+        for constraint in arguments.iter().flat_map(|argument| &argument.constraints) {
+            ctx.try_reserve_items(&mut constraints, 1, "creo dimension function constraints")?;
+            constraints.push(constraint.copy_admitted(ctx)?);
+        }
+        Ok(constraints)
+    }
+
+    fn push_constraint_admitted(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        constraints: &mut Vec<DimensionEquality>,
+        left: &SymbolicRelationDimension,
+        right: &SymbolicRelationDimension,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.try_reserve_items(constraints, 1, "creo dimension operation constraints")?;
+        constraints.push(DimensionEquality {
+            left: left.copy_admitted(ctx)?,
+            right: right.copy_admitted(ctx)?,
+        });
+        Ok(())
     }
 
     fn numeric_result(
@@ -3779,14 +3903,16 @@ impl DimensionProbeValue {
     }
 
     fn optional_math(name: CreoMathFunction, arguments: &[Self]) -> Option<DimensionProbeNumber> {
-        let Some(values) = arguments
-            .iter()
-            .map(Self::numeric_value)
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Some(DimensionProbeNumber::Unknown);
-        };
-        evaluate_creo_math_function(name, &values).map(DimensionProbeNumber::Known)
+        let mut values = [0.0; 3];
+        for (index, argument) in arguments.iter().enumerate() {
+            let slot = values.get_mut(index)?;
+            let Some(value) = argument.numeric_value() else {
+                return Some(DimensionProbeNumber::Unknown);
+            };
+            *slot = value;
+        }
+        evaluate_creo_math_function(name, &values[..arguments.len()])
+            .map(DimensionProbeNumber::Known)
     }
 
     fn optional_round(
@@ -3807,6 +3933,139 @@ impl DimensionProbeValue {
             None => 0.0,
         };
         relation_round(value, decimal_places, upward).map(DimensionProbeNumber::Known)
+    }
+}
+
+impl DimensionProbeValue {
+    fn numeric_function_checked(
+        name: CreoMathFunction,
+        arguments: &[Self],
+        mut constraints: Vec<DimensionEquality>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let numeric = |name| Self::optional_math(name, arguments).map(DimensionProbeNumber::into_option);
+        match (name, arguments) {
+            (name @ (CreoMathFunction::Sin | CreoMathFunction::Cos | CreoMathFunction::Tan), [argument]) => {
+                Self::push_constraint_admitted(
+                    ctx, &mut constraints, &argument.dimension,
+                    &SymbolicRelationDimension::from_relation_dimension(RelationDimension::ANGLE),
+                )?;
+                let Some(value) = numeric(name) else { return Ok(None) };
+                Ok(Some(Self::numeric_result(SymbolicRelationDimension::default(), value, constraints)))
+            }
+            (name @ (CreoMathFunction::Asin | CreoMathFunction::Acos | CreoMathFunction::Atan), [argument]) => {
+                Self::push_constraint_admitted(ctx, &mut constraints, &argument.dimension, &SymbolicRelationDimension::default())?;
+                let Some(value) = numeric(name) else { return Ok(None) };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::from_relation_dimension(RelationDimension::ANGLE), value, constraints,
+                )))
+            }
+            (CreoMathFunction::Atan2, [left, right]) => {
+                Self::push_constraint_admitted(ctx, &mut constraints, &left.dimension, &right.dimension)?;
+                let Some(value) = numeric(CreoMathFunction::Atan2) else { return Ok(None) };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::from_relation_dimension(RelationDimension::ANGLE), value, constraints,
+                )))
+            }
+            (name @ (CreoMathFunction::Sinh | CreoMathFunction::Cosh | CreoMathFunction::Tanh
+                | CreoMathFunction::Log | CreoMathFunction::Ln | CreoMathFunction::Exp), [argument]) => {
+                Self::push_constraint_admitted(ctx, &mut constraints, &argument.dimension, &SymbolicRelationDimension::default())?;
+                let Some(value) = numeric(name) else { return Ok(None) };
+                Ok(Some(Self::numeric_result(SymbolicRelationDimension::default(), value, constraints)))
+            }
+            (CreoMathFunction::Sign, [value, sign]) => {
+                let numeric_value = value.numeric_value().zip(sign.numeric_value()).map(|(value, sign)| {
+                    if sign < 0.0 { -value.abs() } else { value.abs() }
+                });
+                Ok(Some(Self::numeric_result(value.dimension.copy_admitted(ctx)?, numeric_value, constraints)))
+            }
+            (CreoMathFunction::Mod, [left, right]) => {
+                Self::push_constraint_admitted(ctx, &mut constraints, &left.dimension, &right.dimension)?;
+                if right.numeric_value().is_some_and(|value| value == 0.0) { return Ok(None) }
+                let value = left.numeric_value().zip(right.numeric_value()).map(|(left, right)| left % right);
+                Ok(Some(Self::numeric_result(left.dimension.copy_admitted(ctx)?, value, constraints)))
+            }
+            (CreoMathFunction::If, [condition, when_true, when_false]) => {
+                Self::push_constraint_admitted(ctx, &mut constraints, &condition.dimension, &SymbolicRelationDimension::default())?;
+                match (&when_true.kind, &when_false.kind) {
+                    (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right)) => {
+                        let value = match condition.numeric_value().zip(left.as_ref().zip(right.as_ref())) {
+                            Some((condition, (left, right))) => {
+                                let selected = if condition == 0.0 { right } else { left };
+                                Some(ctx.copy_retained_text(selected, "creo dimension conditional text")?)
+                            }
+                            None => None,
+                        };
+                        Ok(Some(Self::text_result(value, constraints)))
+                    }
+                    (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right)) => {
+                        Self::push_constraint_admitted(ctx, &mut constraints, &when_true.dimension, &when_false.dimension)?;
+                        let value = condition.numeric_value().zip(left.zip(*right)).map(|(condition, (left, right))| {
+                            if condition == 0.0 { right } else { left }
+                        });
+                        Ok(Some(Self::numeric_result(when_true.dimension.copy_admitted(ctx)?, value, constraints)))
+                    }
+                    _ => Ok(None),
+                }
+            }
+            (CreoMathFunction::Bound | CreoMathFunction::Dead, [value, lower, upper]) => {
+                Self::push_constraint_admitted(ctx, &mut constraints, &value.dimension, &lower.dimension)?;
+                Self::push_constraint_admitted(ctx, &mut constraints, &value.dimension, &upper.dimension)?;
+                let numeric = value.numeric_value().zip(lower.numeric_value()).zip(upper.numeric_value())
+                    .and_then(|((value, lower), upper)| {
+                        if name == CreoMathFunction::Bound {
+                            if lower >= upper { return None }
+                            Some(if value < lower { lower } else if value > upper { upper } else { value })
+                        } else {
+                            if lower > upper { return None }
+                            Some(if value < lower { value - lower } else if value > upper { value - upper } else { 0.0 })
+                        }
+                    });
+                Ok(Some(Self::numeric_result(value.dimension.copy_admitted(ctx)?, numeric, constraints)))
+            }
+            (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
+                Self::push_constraint_admitted(ctx, &mut constraints, &left.dimension, &right.dimension)?;
+                Self::push_constraint_admitted(ctx, &mut constraints, &left.dimension, &tolerance.dimension)?;
+                let numeric = left.numeric_value().zip(right.numeric_value()).zip(tolerance.numeric_value())
+                    .and_then(|((left, right), tolerance)| {
+                        (tolerance >= 0.0).then_some(f64::from((left - right).abs() <= tolerance))
+                    });
+                Ok(Some(Self::numeric_result(SymbolicRelationDimension::default(), numeric, constraints)))
+            }
+            (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
+                Self::push_constraint_admitted(ctx, &mut constraints, &left.dimension, &right.dimension)?;
+                let numeric = left.numeric_value().zip(right.numeric_value()).map(|(left, right)| {
+                    if extremum_selects_left(name, left, right) == Some(true) { left } else { right }
+                });
+                Ok(Some(Self::numeric_result(left.dimension.copy_admitted(ctx)?, numeric, constraints)))
+            }
+            (CreoMathFunction::Pow, [base, exponent]) => {
+                base.clone_admitted(ctx)?.power_checked(exponent.clone_admitted(ctx)?, ctx)
+            }
+            (CreoMathFunction::Sqrt, [argument]) => {
+                let Some(dimension) = argument.dimension.copy_admitted(ctx)?.root(2) else { return Ok(None) };
+                Ok(Some(Self::numeric_result(dimension, argument.numeric_value().map(f64::sqrt), constraints)))
+            }
+            (CreoMathFunction::Abs, [argument]) => Ok(Some(Self::numeric_result(
+                argument.dimension.copy_admitted(ctx)?, argument.numeric_value().map(f64::abs), constraints,
+            ))),
+            (CreoMathFunction::Ceil | CreoMathFunction::Floor, [argument]) => {
+                let Some(value) = Self::optional_round(argument, None, name == CreoMathFunction::Ceil) else { return Ok(None) };
+                Ok(Some(Self::numeric_result(argument.dimension.copy_admitted(ctx)?, value.into_option(), constraints)))
+            }
+            (CreoMathFunction::Ceil | CreoMathFunction::Floor, [argument, decimal_places]) => {
+                let decimal_places = decimal_places.clone_admitted(ctx)?.constrain_to_admitted(
+                    SymbolicRelationDimension::default(), ctx,
+                )?;
+                for constraint in &decimal_places.constraints {
+                    ctx.try_reserve_items(&mut constraints, 1, "creo dimension function control constraints")?;
+                    constraints.push(constraint.copy_admitted(ctx)?);
+                }
+                let Some(value) = Self::optional_round(argument, Some(&decimal_places), name == CreoMathFunction::Ceil) else { return Ok(None) };
+                Ok(Some(Self::numeric_result(argument.dimension.copy_admitted(ctx)?, value.into_option(), constraints)))
+            }
+            _ => Ok(None),
+        }
     }
 }
 
@@ -3873,6 +4132,33 @@ impl ExpressionValue for DimensionProbeValue {
         ))
     }
 
+    fn with_unit_checked(
+        self,
+        unit: RelationUnit,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Self {
+            dimension,
+            kind: DimensionProbeKind::Numeric(value),
+            mut constraints,
+        } = self else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut constraints, 1, "creo dimension unit constraints")?;
+        constraints.push(DimensionEquality {
+            left: dimension,
+            right: SymbolicRelationDimension::default(),
+        });
+        let value = value
+            .map(|value| value * unit.scale + unit.offset)
+            .filter(|value| value.is_finite());
+        Ok(Some(Self::numeric_result(
+            SymbolicRelationDimension::from_relation_dimension(unit.dimension),
+            value,
+            constraints,
+        )))
+    }
+
     fn add(self, right: Self) -> Option<Self> {
         match (&self.kind, &right.kind) {
             (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
@@ -3905,6 +4191,42 @@ impl ExpressionValue for DimensionProbeValue {
         }
     }
 
+    fn add_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        match (&self.kind, &right.kind) {
+            (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
+                let constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+                let value = match left.as_ref().zip(right_value.as_ref()) {
+                    Some((left, right)) => {
+                        let mut value = ctx.copy_retained_text(left, "creo dimension text sum left")?;
+                        ctx.try_reserve_retained_text(
+                            &mut value,
+                            right.len(),
+                            "creo dimension text sum right",
+                        )?;
+                        value.push_str(right);
+                        Some(value)
+                    }
+                    None => None,
+                };
+                Ok(Some(Self::text_result(value, constraints)))
+            }
+            (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
+                let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+                Self::push_constraint_admitted(ctx, &mut constraints, &self.dimension, &right.dimension)?;
+                Ok(Some(Self::numeric_result(
+                    self.dimension.copy_admitted(ctx)?,
+                    (*left).zip(*right_value).map(|(left, right)| left + right),
+                    constraints,
+                )))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn subtract(self, right: Self) -> Option<Self> {
         let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
             (&self.kind, &right.kind)
@@ -3923,6 +4245,25 @@ impl ExpressionValue for DimensionProbeValue {
         ))
     }
 
+    fn subtract_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
+        };
+        let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        Self::push_constraint_admitted(ctx, &mut constraints, &self.dimension, &right.dimension)?;
+        Ok(Some(Self::numeric_result(
+            self.dimension.copy_admitted(ctx)?,
+            (*left).zip(*right_value).map(|(left, right)| left - right),
+            constraints,
+        )))
+    }
+
     fn multiply(self, right: Self) -> Option<Self> {
         let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
             (&self.kind, &right.kind)
@@ -3939,6 +4280,24 @@ impl ExpressionValue for DimensionProbeValue {
             (*left).zip(*right_value).map(|(left, right)| left * right),
             constraints,
         ))
+    }
+
+    fn multiply_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
+        };
+        let constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        let value = (*left).zip(*right_value).map(|(left, right)| left * right);
+        let Some(dimension) = self.dimension.combine_admitted(right.dimension, false, ctx)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self::numeric_result(dimension, value, constraints)))
     }
 
     fn divide(self, right: Self) -> Option<Self> {
@@ -3960,6 +4319,27 @@ impl ExpressionValue for DimensionProbeValue {
             (*left).zip(*right_value).map(|(left, right)| left / right),
             constraints,
         ))
+    }
+
+    fn divide_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
+        };
+        if right_value.is_some_and(|value| value == 0.0) {
+            return Ok(None);
+        }
+        let constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        let value = (*left).zip(*right_value).map(|(left, right)| left / right);
+        let Some(dimension) = self.dimension.combine_admitted(right.dimension, true, ctx)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self::numeric_result(dimension, value, constraints)))
     }
 
     fn power(self, right: Self) -> Option<Self> {
@@ -3987,6 +4367,44 @@ impl ExpressionValue for DimensionProbeValue {
             None => return None,
         };
         Some(Self::numeric_result(dimension, value, constraints))
+    }
+
+    fn power_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let DimensionProbeKind::Numeric(exponent) = &right.kind else {
+            return Ok(None);
+        };
+        let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        Self::push_constraint_admitted(
+            ctx,
+            &mut constraints,
+            &right.dimension,
+            &SymbolicRelationDimension::default(),
+        )?;
+        let value = self
+            .numeric_value()
+            .zip(*exponent)
+            .map(|(value, exponent)| value.powf(exponent));
+        let base_dimension = self.dimension;
+        let dimension = match exponent {
+            Some(exponent) if exponent.fract() == 0.0 => {
+                if *exponent < f64::from(i8::MIN) || *exponent > f64::from(i8::MAX) {
+                    return Ok(None);
+                }
+                let Some(dimension) = base_dimension.scale(*exponent as i8) else {
+                    return Ok(None);
+                };
+                dimension
+            }
+            Some(_) if base_dimension.is_zero() => SymbolicRelationDimension::default(),
+            Some(_) => return Ok(None),
+            None if base_dimension.is_zero() => SymbolicRelationDimension::default(),
+            None => return Ok(None),
+        };
+        Ok(Some(Self::numeric_result(dimension, value, constraints)))
     }
 
     fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
@@ -4027,6 +4445,46 @@ impl ExpressionValue for DimensionProbeValue {
         }
     }
 
+    fn compare_checked(
+        self,
+        right: Self,
+        operator: ComparisonOperator,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        match (&self.kind, &right.kind) {
+            (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
+                let value = match operator {
+                    ComparisonOperator::Equal => left
+                        .as_ref()
+                        .zip(right_value.as_ref())
+                        .map(|(left, right)| f64::from(left == right)),
+                    ComparisonOperator::NotEqual => left
+                        .as_ref()
+                        .zip(right_value.as_ref())
+                        .map(|(left, right)| f64::from(left != right)),
+                    _ => return Ok(None),
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    value,
+                    Self::merge_constraints_admitted(&self, &right, ctx)?,
+                )))
+            }
+            (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
+                let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+                Self::push_constraint_admitted(ctx, &mut constraints, &self.dimension, &right.dimension)?;
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    (*left)
+                        .zip(*right_value)
+                        .map(|(left, right)| f64::from(operator.evaluate(left, right))),
+                    constraints,
+                )))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn logical_and(self, right: Self) -> Option<Self> {
         let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
             (&self.kind, &right.kind)
@@ -4051,6 +4509,28 @@ impl ExpressionValue for DimensionProbeValue {
                 .map(|(left, right)| f64::from(left != 0.0 && right != 0.0)),
             constraints,
         ))
+    }
+
+    fn logical_and_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
+        };
+        let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        Self::push_constraint_admitted(ctx, &mut constraints, &self.dimension, &SymbolicRelationDimension::default())?;
+        Self::push_constraint_admitted(ctx, &mut constraints, &right.dimension, &SymbolicRelationDimension::default())?;
+        Ok(Some(Self::numeric_result(
+            SymbolicRelationDimension::default(),
+            (*left)
+                .zip(*right_value)
+                .map(|(left, right)| f64::from(left != 0.0 && right != 0.0)),
+            constraints,
+        )))
     }
 
     fn logical_or(self, right: Self) -> Option<Self> {
@@ -4079,6 +4559,28 @@ impl ExpressionValue for DimensionProbeValue {
         ))
     }
 
+    fn logical_or_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return Ok(None);
+        };
+        let mut constraints = Self::merge_constraints_admitted(&self, &right, ctx)?;
+        Self::push_constraint_admitted(ctx, &mut constraints, &self.dimension, &SymbolicRelationDimension::default())?;
+        Self::push_constraint_admitted(ctx, &mut constraints, &right.dimension, &SymbolicRelationDimension::default())?;
+        Ok(Some(Self::numeric_result(
+            SymbolicRelationDimension::default(),
+            (*left)
+                .zip(*right_value)
+                .map(|(left, right)| f64::from(left != 0.0 || right != 0.0)),
+            constraints,
+        )))
+    }
+
     fn logical_not(self) -> Option<Self> {
         let DimensionProbeKind::Numeric(value) = self.kind else {
             return None;
@@ -4093,6 +4595,26 @@ impl ExpressionValue for DimensionProbeValue {
             value.map(|value| f64::from(value == 0.0)),
             constraints,
         ))
+    }
+
+    fn logical_not_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let DimensionProbeKind::Numeric(value) = self.kind else {
+            return Ok(None);
+        };
+        let mut constraints = self.constraints;
+        ctx.try_reserve_items(&mut constraints, 1, "creo dimension negation constraints")?;
+        constraints.push(DimensionEquality {
+            left: self.dimension,
+            right: SymbolicRelationDimension::default(),
+        });
+        Ok(Some(Self::numeric_result(
+            SymbolicRelationDimension::default(),
+            value.map(|value| f64::from(value == 0.0)),
+            constraints,
+        )))
     }
 
     fn function(
@@ -4555,6 +5077,206 @@ impl ExpressionValue for DimensionProbeValue {
         }
     }
 
+    fn function_checked(
+        name: CreoMathFunction,
+        scope: Option<&str>,
+        arguments: &[Self],
+        context: RelationEvaluationContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if scope.is_some() {
+            return Ok(None);
+        }
+        let mut constraints = Self::argument_constraints_admitted(arguments, ctx)?;
+        match (name, arguments) {
+            (CreoMathFunction::Itos, [argument]) => {
+                let value = match argument.numeric_value().map(f64::round) {
+                    Some(value) if value == 0.0 => Some(String::new()),
+                    Some(value) => Some(ctx.format_retained(
+                        format_args!("{value:.0}"),
+                        "creo dimension integer text",
+                    )?),
+                    None => None,
+                };
+                Ok(Some(Self::text_result(value, constraints)))
+            }
+            (CreoMathFunction::Rtos, [argument, controls @ ..]) => {
+                let mut values = [0.0; 2];
+                for (index, control) in controls.iter().enumerate() {
+                    let Some(slot) = values.get_mut(index) else {
+                        return Ok(None);
+                    };
+                    let control = control.clone_admitted(ctx)?.constrain_to_admitted(
+                        SymbolicRelationDimension::default(),
+                        ctx,
+                    )?;
+                    for constraint in &control.constraints {
+                        ctx.try_reserve_items(
+                            &mut constraints,
+                            1,
+                            "creo dimension function control constraints",
+                        )?;
+                        constraints.push(constraint.copy_admitted(ctx)?);
+                    }
+                    let Some(value) = control.numeric_value() else {
+                        return Ok(None);
+                    };
+                    *slot = value;
+                }
+                let (decimals, scientific) = match controls.len() {
+                    0 => (None, false),
+                    1 => {
+                        let Some(decimals) = relation_precision(values[0]) else {
+                            return Ok(None);
+                        };
+                        (Some(decimals), false)
+                    }
+                    2 => {
+                        let Some(decimals) = relation_precision(values[0]) else {
+                            return Ok(None);
+                        };
+                        (Some(decimals), values[1] != 0.0)
+                    }
+                    _ => return Ok(None),
+                };
+                let value = match argument.numeric_value() {
+                    Some(value) => format_relation_real_admitted(ctx, value, decimals, scientific)?,
+                    None => None,
+                };
+                Ok(Some(Self::text_result(value, constraints)))
+            }
+            (CreoMathFunction::RelModelName, []) => Ok(Some(Self::text_result(
+                context
+                    .model_name
+                    .map(|name| ctx.copy_retained_text(name, "creo dimension model name text"))
+                    .transpose()?,
+                constraints,
+            ))),
+            (CreoMathFunction::RelModelType, []) => Ok(Some(Self::text_result(
+                Some(ctx.copy_retained_text("part", "creo dimension model type text")?),
+                constraints,
+            ))),
+            (CreoMathFunction::Exists, [argument]) => {
+                let value = match (argument.text_value(), context.existing_symbols) {
+                    (Some(name), Some(symbols)) => {
+                        let (mut key, _reservation) =
+                            ctx.copy_scoped_text(name, "creo dimension exists lookup key")?;
+                        key.make_ascii_lowercase();
+                        symbols.contains(&key).then_some(1.0)
+                    }
+                    _ => None,
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    value,
+                    constraints,
+                )))
+            }
+            (CreoMathFunction::Search, [value, needle]) => {
+                let value = match value.text_value().zip(needle.text_value()) {
+                    Some((value, needle)) => {
+                        ctx.charge_work(
+                            cadmpeg_core::decode::u64_from_index(value.len()),
+                            "creo dimension text search work",
+                        )?;
+                        Some(value.find(needle).map_or(0, |byte| value[..byte].chars().count() + 1) as f64)
+                    }
+                    None => None,
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(), value, constraints,
+                )))
+            }
+            (CreoMathFunction::Extract, [value, position, length]) => {
+                for control in [position, length] {
+                    let control = control.clone_admitted(ctx)?.constrain_to_admitted(
+                        SymbolicRelationDimension::default(), ctx,
+                    )?;
+                    for constraint in &control.constraints {
+                        ctx.try_reserve_items(
+                            &mut constraints, 1, "creo dimension function control constraints",
+                        )?;
+                        constraints.push(constraint.copy_admitted(ctx)?);
+                    }
+                }
+                let value = match value
+                    .text_value()
+                    .zip(position.numeric_value())
+                    .zip(length.numeric_value())
+                {
+                    Some(((value, position), length)) => {
+                        if !position.is_finite()
+                            || !length.is_finite()
+                            || position.fract() != 0.0
+                            || length.fract() != 0.0
+                            || position <= 0.0
+                            || length < 0.0
+                        {
+                            return Ok(None);
+                        }
+                        ctx.charge_work(
+                            cadmpeg_core::decode::u64_from_index(value.len()),
+                            "creo dimension text extract work",
+                        )?;
+                        let character_count = value.chars().count();
+                        if position > character_count as f64 {
+                            Some(String::new())
+                        } else {
+                            let start = position as usize - 1;
+                            let remaining = character_count - start;
+                            let count = if length >= remaining as f64 { remaining } else { length as usize };
+                            let start_byte = value.char_indices().nth(start).map_or(value.len(), |(at, _)| at);
+                            let end_byte = value[start_byte..].char_indices().nth(count).map_or(value.len(), |(at, _)| start_byte + at);
+                            Some(ctx.copy_retained_text(
+                                &value[start_byte..end_byte], "creo dimension extracted text",
+                            )?)
+                        }
+                    }
+                    None => None,
+                };
+                Ok(Some(Self::text_result(value, constraints)))
+            }
+            (CreoMathFunction::StringLength, [value]) => {
+                let value = match value.text_value() {
+                    Some(value) => {
+                        ctx.charge_work(
+                            cadmpeg_core::decode::u64_from_index(value.len()),
+                            "creo dimension text length work",
+                        )?;
+                        Some(value.chars().count() as f64)
+                    }
+                    None => None,
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(), value, constraints,
+                )))
+            }
+            (CreoMathFunction::StringStarts, [value, prefix]) => Ok(Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value.text_value().zip(prefix.text_value()).map(|(value, prefix)| f64::from(value.starts_with(prefix))),
+                constraints,
+            ))),
+            (CreoMathFunction::StringEnds, [value, suffix]) => Ok(Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value.text_value().zip(suffix.text_value()).map(|(value, suffix)| f64::from(value.ends_with(suffix))),
+                constraints,
+            ))),
+            (CreoMathFunction::StringMatch, [value, expected]) => Ok(Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value.text_value().zip(expected.text_value()).map(|(value, expected)| f64::from(value == expected)),
+                constraints,
+            ))),
+            (CreoMathFunction::StringPattern, [value, pattern]) => Ok(Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value.text_value().zip(pattern.text_value())
+                    .and_then(|(value, pattern)| relation_string_pattern(value, pattern))
+                    .map(f64::from),
+                constraints,
+            ))),
+            _ => Self::numeric_function_checked(name, arguments, constraints, ctx),
+        }
+    }
+
     fn negate(self) -> Option<Self> {
         let kind = match self.kind {
             DimensionProbeKind::Numeric(value) => DimensionProbeKind::Numeric(value.map(|v| -v)),
@@ -4980,7 +5702,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 return Some(value);
             }
             self.cursor += 1;
-            value = Self::finite_value(value.logical_or(self.logical_and()?)?)?;
+            let right = self.logical_and()?;
+            let result = value.logical_or_checked(right, self.ctx);
+            value = Self::finite_value(self.admit(result)??)?;
         }
     }
 
@@ -4992,7 +5716,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 return Some(value);
             }
             self.cursor += 1;
-            value = Self::finite_value(value.logical_and(self.comparison()?)?)?;
+            let right = self.comparison()?;
+            let result = value.logical_and_checked(right, self.ctx);
+            value = Self::finite_value(self.admit(result)??)?;
         }
     }
 
@@ -5043,11 +5769,15 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             match self.source.get(self.cursor) {
                 Some(b'*') => {
                     self.cursor += 1;
-                    value = Self::finite_value(value.multiply(self.unary()?)?)?;
+                    let right = self.unary()?;
+                    let result = value.multiply_checked(right, self.ctx);
+                    value = Self::finite_value(self.admit(result)??)?;
                 }
                 Some(b'/') => {
                     self.cursor += 1;
-                    value = Self::finite_value(value.divide(self.unary()?)?)?;
+                    let right = self.unary()?;
+                    let result = value.divide_checked(right, self.ctx);
+                    value = Self::finite_value(self.admit(result)??)?;
                 }
                 _ => return Some(value),
             }
@@ -5067,10 +5797,14 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         }
         let end = self.cursor;
         let mut value = self.power()?;
-        for operator in self.source[start..end].iter().rev() {
+        for index in (start..end).rev() {
+            let operator = self.source[index];
             value = match operator {
                 b'-' => Self::finite_value(value.negate()?)?,
-                b'!' | b'~' => Self::finite_value(value.logical_not()?)?,
+                b'!' | b'~' => {
+                    let result = value.logical_not_checked(self.ctx);
+                    Self::finite_value(self.admit(result)??)?
+                }
                 _ => value,
             };
         }
@@ -5090,7 +5824,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         self.nesting += 1;
         let exponent = self.unary()?;
         self.nesting -= 1;
-        Self::finite_value(value.power(exponent)?)
+        let result = value.power_checked(exponent, self.ctx);
+        Self::finite_value(self.admit(result)??)
     }
 
     fn primary(&mut self) -> Option<V> {
@@ -5123,7 +5858,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 .position(|byte| *byte == b']')?;
             let unit_end = unit_start + unit_length;
             let unit = std::str::from_utf8(&self.source[unit_start..unit_end]).ok()?;
-            value = Self::finite_value(value.with_unit(relation_unit(unit)?)?)?;
+            let result = value.with_unit_checked(relation_unit(unit)?, self.ctx);
+            value = Self::finite_value(self.admit(result)??)?;
             self.cursor = unit_end + 1;
         }
         Self::finite_value(value)
