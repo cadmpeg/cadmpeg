@@ -405,26 +405,29 @@ pub(super) fn fc05_cap_pair_model_frame(
     scan: &ContainerScan,
     pair: &crate::curve::Fc05CylinderCapPair,
 ) -> Option<Fc05CapPairFrame> {
-    let placed_caps = pair
+    let mut placed_caps = pair
         .cap_edges
         .iter()
         .map(|edge| {
             crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
                 .map(|plane| (plane, edge.cap_ordinate_row_frame))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    (placed_caps.len() >= 2).then_some(())?;
-    let (first_cap, first_ordinate) = placed_caps.first().copied()?;
+        });
+    let (first_cap, first_ordinate) = placed_caps.next()??;
+    let (mut last_cap, mut last_ordinate) = placed_caps.next()??;
     let axis_index = Axis::ALL
         .into_iter()
         .find(|axis| first_cap.normal()[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)?;
-    if placed_caps
-        .iter()
-        .any(|(plane, _)| plane.normal != first_cap.normal)
-    {
+    if last_cap.normal != first_cap.normal {
         return None;
     }
-    let (last_cap, last_ordinate) = placed_caps.last().copied()?;
+    for placed_cap in placed_caps {
+        let (plane, ordinate) = placed_cap?;
+        if plane.normal != first_cap.normal {
+            return None;
+        }
+        last_cap = plane;
+        last_ordinate = ordinate;
+    }
     let row_span = last_ordinate - first_ordinate;
     let model_span = last_cap.origin[axis_index.index()] - first_cap.origin[axis_index.index()];
     let span_scale = row_span.abs().max(model_span.abs()).max(1.0);
@@ -440,20 +443,24 @@ pub(super) fn fc05_cap_pair_model_frame(
     } else {
         Sign::Positive
     };
-    let parameter_origins = placed_caps
-        .iter()
-        .map(|(plane, ordinate)| plane.origin[axis_index.index()] - axis_sign.scale() * ordinate)
-        .collect::<Vec<_>>();
-    if parameter_origins
-        .iter()
-        .any(|origin| (origin - parameter_origins[0]).abs() > EPS_FC05_CAP_FRAME)
-    {
+    let axis_origin = first_cap.origin[axis_index.index()] - axis_sign.scale() * first_ordinate;
+    if pair.cap_edges.iter().any(|edge| {
+        let Some(plane) = crate::surface::unique_outline_plane(
+            &scan.planes.outlines,
+            edge.cap_plane_id,
+        ) else {
+            return true;
+        };
+        (plane.origin[axis_index.index()] - axis_sign.scale() * edge.cap_ordinate_row_frame
+            - axis_origin)
+            .abs()
+            > EPS_FC05_CAP_FRAME
+    }) {
         // A cap pair whose row-frame and model-space spans do not agree does
         // not establish a unit parameter-axis transform. Retain the circles
         // for their independent carrier evidence, but do not invent a chart.
         return None;
     }
-    let axis_origin = parameter_origins[0];
     let (origin, _, ref_direction) = fc05_model_frame(
         axis_index,
         axis_origin,
