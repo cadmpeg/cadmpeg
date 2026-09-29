@@ -349,15 +349,14 @@ pub(in super::super) fn transfer_saved_spline_curves(
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                             "FeatDefs:saved_spline#{}",
                             suffix_key.as_str()
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        ),
+                        "creo source object identity",
+                    )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -642,14 +641,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     geometry,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                             "VisibGeom:{surface_id}"
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        ),
+                        "creo source object identity",
+                    )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -712,14 +710,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     geometry,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                             "VisibGeom:{native_surface_id}"
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        ),
+                        "creo source object identity",
+                    )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -830,15 +827,14 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         )),
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
-                            object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                                 "FeatDefs:saved_spline#{}",
                                 suffix_key.as_str()
-                            ))
-                            .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed(
-                                    "source object_id must not be empty",
-                                )
-                            })?,
+                            ),
+                        "creo source object identity",
+                    )?,
                             name: None,
                             color: None,
                             visible: None,
@@ -884,14 +880,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                             "VisibGeom:{native_surface_id}"
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        ),
+                        "creo source object identity",
+                    )?,
                         name: None,
                         color: None,
                         visible: None,

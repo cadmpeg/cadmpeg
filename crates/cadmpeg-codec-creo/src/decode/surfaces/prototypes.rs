@@ -536,14 +536,15 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                    object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                         "{}:{}",
                         section.name(),
                         row.id
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
+                    ),
+                        "creo source object identity",
+                    )?,
                     name: None,
                     color: None,
                     visible: None,
@@ -691,14 +692,15 @@ pub(in super::super) fn transfer_positional_spline_replays(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                    object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                         "{}:{}",
                         section.name(),
                         row.id
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
+                    ),
+                        "creo source object identity",
+                    )?,
                     name: None,
                     color: None,
                     visible: None,
@@ -875,14 +877,15 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                    object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                         "{}{}",
                         carrier.namespace.source_prefix(),
                         carrier.surface_id
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
+                    ),
+                        "creo source object identity",
+                    )?,
                     name: None,
                     color: None,
                     visible: Some(carrier.namespace.is_visible()),

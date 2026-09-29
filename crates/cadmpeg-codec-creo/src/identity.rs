@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{IdentityError, IdentityNamespace};
 
@@ -42,6 +43,16 @@ where
 {
     I::try_from(ctx.copy_retained_text(source, operation)?)
         .map_err(|_| CodecError::malformed("copied Creo identity is invalid"))
+}
+
+/// Build a source-object identity after admitting its retained text.
+pub(crate) fn source_object_id_checked(
+    ctx: &DecodeContext<'_>,
+    value: impl Display,
+    operation: &'static str,
+) -> Result<NonBlankString, CodecError> {
+    NonBlankString::new(ctx.format_retained(value, operation)?)
+        .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))
 }
 
 /// Return unique native rows after admitting the count map and selected rows.
@@ -86,7 +97,34 @@ pub(crate) fn matches_numbered_identity(actual: &str, prefix: &str, number: u32)
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_checked, copy_checked_id, matches_numbered_identity};
+    use super::{compose_checked, copy_checked_id, matches_numbered_identity, source_object_id_checked};
+
+    #[test]
+    fn source_object_identity_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = source_object_id_checked(
+            &ctx,
+            format_args!("VisibGeom:{}", 7),
+            "creo source object identity",
+        )
+        .expect_err("retained identity exceeds the limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo source object identity"));
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("service root admitted");
+        let id = source_object_id_checked(
+            &ctx,
+            format_args!("VisibGeom:{}", 7),
+            "creo source object identity",
+        )
+        .expect("service identity admitted");
+        assert_eq!(id.as_str(), "VisibGeom:7");
+    }
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
