@@ -245,10 +245,70 @@ pub(super) fn project_extrude(
 }
 
 pub(super) fn project_hole(
+    ctx: &DecodeContext<'_>,
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some((shape, profile)) = hole_shape_and_profile(feature, features_by_source, history_features) else { return Ok(None); };
+    let extent = match feature.properties.get("EndCondition").map(String::as_str) {
+        None | Some("Blind")
+            if profile
+                .as_ref()
+                .is_some_and(|profile| profile.exit_kind.is_some()) =>
+        {
+            Some(LinearTermination::ThroughAll {})
+        }
+        None | Some("Blind") => feature
+            .parameters
+            .get("Depth")
+            .and_then(|value| parse_positive_length_mm(value))
+            .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
+            .map(|length| LinearTermination::Blind {
+                length: NonZeroLength::from(length),
+            }),
+        Some("ThroughAll") => Some(LinearTermination::ThroughAll {}),
+        Some(_) => None,
+    };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
+        profile: None,
+        profile_filter: None,
+        face: feature
+            .properties
+            .get("Face")
+            .map(|face| ctx.format_retained(format_args!("{face}"), "retain SLDPRT hole face reference")).transpose()?
+            .map(FaceSelection::Native),
+        direction: None,
+        placements: feature
+            .properties
+            .get("Position")
+            .and_then(|value| parse_point3_mm(value))
+            .zip(
+                feature
+                    .properties
+                    .get("Direction")
+                    .and_then(|value| parse_vector3(value))
+                    .filter(|direction| valid_direction(*direction)),
+            )
+            .and_then(|(position, direction)| {
+                Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
+                    position,
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                }])
+            }),
+        shape,
+
+        extent,
+        bottom: profile.as_ref().and_then(|profile| profile.bottom),
+        taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),
+        allow_multi_profile_faces: None,
+    })))
+}
+fn hole_shape_and_profile(
+    feature: &Feature,
+    features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
+    history_features: &[Feature],
+) -> Option<(cadmpeg_ir::features::holes::HoleShape, Option<HoleProfileConstruction>)> {
     let profile = hole_profile_construction(feature, features_by_source, history_features);
     let diameter = feature
         .parameters
@@ -346,63 +406,10 @@ pub(super) fn project_hole(
             |profile| profile.construction.clone(),
         )
     };
-    let extent = match feature.properties.get("EndCondition").map(String::as_str) {
-        None | Some("Blind")
-            if profile
-                .as_ref()
-                .is_some_and(|profile| profile.exit_kind.is_some()) =>
-        {
-            Some(LinearTermination::ThroughAll {})
-        }
-        None | Some("Blind") => feature
-            .parameters
-            .get("Depth")
-            .and_then(|value| parse_positive_length_mm(value))
-            .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
-            .map(|length| LinearTermination::Blind {
-                length: NonZeroLength::from(length),
-            }),
-        Some("ThroughAll") => Some(LinearTermination::ThroughAll {}),
-        Some(_) => None,
-    };
-    Some(FeatureDefinition::Operation(FeatureOperation::Hole {
-        profile: None,
-        profile_filter: None,
-        face: feature
-            .properties
-            .get("Face")
-            .cloned()
-            .map(FaceSelection::Native),
-        direction: None,
-        placements: feature
-            .properties
-            .get("Position")
-            .and_then(|value| parse_point3_mm(value))
-            .zip(
-                feature
-                    .properties
-                    .get("Direction")
-                    .and_then(|value| parse_vector3(value))
-                    .filter(|direction| valid_direction(*direction)),
-            )
-            .and_then(|(position, direction)| {
-                Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
-                    position,
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
-                }])
-            }),
-        shape: cadmpeg_ir::features::holes::HoleShape::new(
-            construction,
-            profile.as_ref().and_then(|profile| profile.exit_kind),
-            diameter,
-        )
-        .ok()?,
-
-        extent,
-        bottom: profile.as_ref().and_then(|profile| profile.bottom),
-        taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),
-        allow_multi_profile_faces: None,
-    }))
+    let shape = cadmpeg_ir::features::holes::HoleShape::new(
+        construction, profile.as_ref().and_then(|profile| profile.exit_kind), diameter,
+    ).ok()?;
+    Some((shape, profile))
 }
 
 pub(crate) fn threaded_hole_major_diameter(
@@ -413,11 +420,7 @@ pub(crate) fn threaded_hole_major_diameter(
     if classify(feature) != Some(FeatureClass::Hole) {
         return None;
     }
-    let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) =
-        project_hole(feature, features_by_source, history_features)?
-    else {
-        return None;
-    };
+    let (shape, _) = hole_shape_and_profile(feature, features_by_source, history_features)?;
     let HoleConstruction::NativeThread { major_diameter, .. } = shape.construction() else {
         return None;
     };

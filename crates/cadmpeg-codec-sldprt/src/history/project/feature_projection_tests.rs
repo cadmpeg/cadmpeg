@@ -582,10 +582,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         native_profile.id.clone(),
     );
     let projected = project_hole(
+        &cadmpeg_test_support::service_decode_context(),
         &native_owned,
         &HashMap::new(),
         &[native_owned.clone(), native_profile],
     )
+    .expect("resource budget")
     .unwrap();
     assert!(matches!(
         projected, FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -615,10 +617,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     ]
     .into();
     let projected = project_hole(
+        &cadmpeg_test_support::service_decode_context(),
         &canonical,
         &HashMap::new(),
         std::slice::from_ref(&canonical),
     )
+    .expect("resource budget")
     .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         ref shape,

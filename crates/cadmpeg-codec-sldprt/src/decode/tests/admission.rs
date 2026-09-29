@@ -1173,3 +1173,20 @@ fn metadata_loft_projection_refuses_work_limit() {
     assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
     assert_eq!(refusal.additional, 3);
 }
+
+#[test]
+fn metadata_hole_projection_refuses_retained_limit() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43, "Contents/Keywords",
+        br#"<Keywords><Hole Name="Hole" id="10" Face="face-a"><Dimension Name="Diameter">4mm</Dimension><Dimension Name="Depth">9mm</Dimension></Hole></Keywords>"#,
+    ));
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT hole face reference");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT hole face reference"
+    ));
+}
