@@ -336,12 +336,13 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
     };
 
     bind_edge_identity_history(
+        None,
         &mut operands,
         &[],
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
-    );
+    ).unwrap();
 
     assert_eq!(operands[0].transition_edge_candidates, [17, 19]);
     assert_eq!(operands[1].transition_edge_candidates, [17, 19]);

@@ -489,5 +489,5 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
     )
     .unwrap();
 
-    assert_eq!(recipe_reference_common_vertex(&recipe, &topology), Some(3));
+    assert_eq!(recipe_reference_common_vertex(None, &recipe, &topology).unwrap(), Some(3));
 }
