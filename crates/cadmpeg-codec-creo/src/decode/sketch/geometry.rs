@@ -243,16 +243,20 @@ pub(in crate::decode) fn saved_section_line_geometry(
         .or_else(|| {
             let segment_table = definition.segments.as_ref()?;
             segment_table.is_complete().then_some(())?;
-            let segments = segment_table.rows.ordinary().collect::<Vec<_>>();
-            let position = segments
-                .iter()
+            let position = segment_table
+                .rows
+                .ordinary()
                 .position(|candidate| candidate.external_id == segment.external_id)?;
-            let previous = segments[..position]
-                .iter()
-                .rev()
-                .find_map(|candidate| order_table.internal_id(candidate.external_id))?;
-            let next = segments[position + 1..]
-                .iter()
+            let previous = segment_table
+                .rows
+                .ordinary()
+                .take(position)
+                .filter_map(|candidate| order_table.internal_id(candidate.external_id))
+                .last()?;
+            let next = segment_table
+                .rows
+                .ordinary()
+                .skip(position + 1)
                 .find_map(|candidate| order_table.internal_id(candidate.external_id))?;
             let internal_id = previous.checked_add(1)?;
             (next == internal_id.checked_add(1)?
@@ -268,45 +272,24 @@ pub(in crate::decode) fn saved_section_line_geometry(
                 .then_some(())?;
             let segment_table = definition.segments.as_ref()?;
             segment_table.is_complete().then_some(())?;
-            let trimmed_external_ids = trimmed
-                .rows
-                .iter()
-                .filter_map(|row| trim_segment_id(definition, row))
-                .collect::<BTreeSet<_>>();
-            let ordered_external_ids = order_table
-                .rows
-                .iter()
-                .map(|row| row.external_id)
-                .collect::<BTreeSet<_>>();
-            let ordered_internal_ids = order_table
-                .rows
-                .iter()
-                .map(|row| row.internal_id)
-                .collect::<BTreeSet<_>>();
-            let segment_ids = segment_table.rows.ordinary()
+            let external_id = crate::decode::uniqueness::exactly_one(segment_table.rows.ordinary()
                 .filter(|candidate| {
                     matches!(candidate.kind, crate::feature::definitions::FeatureSegmentKind::Line(_))
-                        && trimmed_external_ids.contains(&candidate.external_id)
-                        && !ordered_external_ids.contains(&candidate.external_id)
+                        && trimmed.rows.iter().filter_map(|row| trim_segment_id(definition, row))
+                            .any(|id| id == candidate.external_id)
+                        && !order_table.rows.iter().any(|row| row.external_id == candidate.external_id)
                 })
-                .map(|candidate| candidate.external_id)
-                .collect::<Vec<_>>();
-            let saved_ids = semantic_saved_section_entities(definition)
+                .map(|candidate| candidate.external_id))?;
+            let internal_id = crate::decode::uniqueness::exactly_one(semantic_saved_section_entities(definition)
                 .filter_map(|entity| match entity {
                     crate::feature::definitions::FeatureSavedEntity::Line(line)
-                        if !ordered_internal_ids.contains(&line.entity_id) =>
+                        if !order_table.rows.iter().any(|row| row.internal_id == line.entity_id) =>
                     {
                         Some(line.entity_id)
                     }
                     _ => None,
-                })
-                .collect::<Vec<_>>();
-            match (segment_ids.as_slice(), saved_ids.as_slice()) {
-                ([external_id], [internal_id]) if *external_id == segment.external_id => {
-                    Some(*internal_id)
-                }
-                _ => None,
-            }
+                }))?;
+            (external_id == segment.external_id).then_some(internal_id)
         });
     let internal_id = internal_id?;
     saved_section_internal_id_is_unique(definition, internal_id).then_some(())?;
