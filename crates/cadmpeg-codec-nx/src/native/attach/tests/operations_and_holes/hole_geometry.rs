@@ -11,6 +11,44 @@ use crate::native::attach::tests::simple_hole_diameters;
 use crate::native::attach::SolvedSurfaceGeometry;
 use crate::native::attach::SurfaceGeometry;
 
+fn simple_hole_property_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm};
+    let template = FeatureSimpleHoleTemplate {
+        id: "template".into(),
+        operation_label: "operation".into(),
+        payload_string: "payload".into(),
+        family: SimpleHoleFamily::GeneralHole,
+        form: SimpleHoleForm::Simple,
+        extent: SimpleHoleExtent::Through,
+        start_treatment: SimpleHoleEndTreatment::None,
+        end_treatment: SimpleHoleEndTreatment::None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut properties = std::collections::BTreeMap::new();
+    simple_hole_native_properties(&ctx, &mut properties, "operation", &[template], &[], &[], &[])?;
+    assert_eq!(properties["simple_hole_template"], "template");
+    Ok(())
+}
+
+#[test]
+fn simple_hole_property_refuses_collection_limit() {
+    let error = simple_hole_property_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn simple_hole_property_refuses_retained_limit() {
+    let error = simple_hole_property_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
 fn chamfer_selection_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -269,8 +307,11 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         ])
         .unwrap(),
     };
-    let properties =
-        simple_hole_native_properties(operation, &[template], &[lane], &[blocks], &[group]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut properties = std::collections::BTreeMap::new();
+    simple_hole_native_properties(&ctx, &mut properties, operation, &[template], &[lane], &[blocks], &[group]).unwrap();
     assert_eq!(properties["simple_hole_template"], "template");
     assert_eq!(properties["simple_hole_repeated_scalar_lane"], "lane");
     assert_eq!(
@@ -278,14 +319,17 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         "blocks"
     );
     assert_eq!(properties["simple_hole_construction_group"], "group");
-    assert!(simple_hole_native_properties(
+    let mut empty_properties = std::collections::BTreeMap::new();
+    simple_hole_native_properties(
+        &ctx,
+        &mut empty_properties,
         "nx:feature-history:operation-label#1-5",
         &[],
         &[],
         &[],
         &[],
-    )
-    .is_empty());
+    ).unwrap();
+    assert!(empty_properties.is_empty());
 }
 
 #[test]
