@@ -5319,8 +5319,8 @@ fn form_class_328_envelope(
     {
         return false;
     }
-    let mut members = HashSet::new();
-    for ordinal in 0..form_328_group::MEMBER_COUNT_VALUE as usize {
+    let mut members = [None; 4];
+    for ordinal in 0..members.len() {
         let at = group_start + form_328_group::MEMBER_ENTRIES + ordinal * form_328_entry::LEN;
         if bytes.get(at) != Some(&form_328_entry::MARKER_VALUE)
             || bytes.get(at + form_328_entry::ZERO_TAIL..at + form_328_entry::LEN) != Some(&[0; 2])
@@ -5332,9 +5332,10 @@ fn form_class_328_envelope(
         else {
             return false;
         };
-        if !members.insert(member) {
+        if members[..ordinal].contains(&Some(member)) {
             return false;
         }
+        members[ordinal] = Some(member);
         let Some((member_start, member_paired)) = one_indexed_frame(records, member) else {
             return false;
         };
@@ -5356,9 +5357,6 @@ fn form_class_328_envelope(
         {
             return false;
         }
-    }
-    if members.len() != form_328_group::MEMBER_COUNT_VALUE as usize {
-        return false;
     }
     let Some((metadata_start, metadata_paired)) =
         records.frames(metadata_record).find(|(start, paired)| {
@@ -5433,8 +5431,8 @@ fn form_class_328_envelope(
     {
         return false;
     }
-    let mut metadata_members = HashSet::new();
-    for ordinal in 0..form_328_metadata::MEMBER_COUNT_VALUE as usize {
+    let mut metadata_members = [None; 19];
+    for ordinal in 0..metadata_members.len() {
         let at = metadata_start + form_328_metadata::MEMBER_ENTRIES + ordinal * form_328_entry::LEN;
         if bytes.get(at) != Some(&form_328_entry::MARKER_VALUE)
             || bytes.get(at + form_328_entry::ZERO_TAIL..at + form_328_entry::LEN) != Some(&[0; 2])
@@ -5446,7 +5444,7 @@ fn form_class_328_envelope(
         else {
             return false;
         };
-        if !metadata_members.insert(member)
+        if metadata_members[..ordinal].contains(&Some(member))
             || records.offsets(member).len() != 1
             || records
                 .offsets(member)
@@ -5456,8 +5454,9 @@ fn form_class_328_envelope(
         {
             return false;
         }
+        metadata_members[ordinal] = Some(member);
     }
-    metadata_members.len() == form_328_metadata::MEMBER_COUNT_VALUE as usize
+    true
 }
 
 fn unique_record_has_class(

@@ -456,8 +456,8 @@ fn serializers_preserve_primary_frame_order() {
     assert_eq!(serializers.ordered, vec![8304, 8307]);
 }
 
-#[test]
-fn reads_class_328_form_envelope() {
+fn class_328_form_fixture() -> (Vec<u8>, crate::design::decode::sketch::IndexedRecordOffsets,
+    crate::records::feature::scope::DesignParameterScope) {
     let scope_record = 201;
     let group_record = 205;
     let metadata_record = 207;
@@ -597,6 +597,12 @@ fn reads_class_328_form_envelope() {
             draft.layout_fixture_tail();
         })
         .unwrap();
+    (bytes, records, scope)
+}
+
+#[test]
+fn reads_class_328_form_envelope() {
+    let (bytes, records, scope) = class_328_form_fixture();
     assert!(form_class_328_envelope(&bytes, &records, &scope));
 
     let mut wrong_pair = bytes;
@@ -844,4 +850,33 @@ fn duplicate_surface_serializers_stay_ambiguous() {
     assert_eq!(serializers.ordered, vec![8304, 8307]);
     assert_eq!(serializers.entry_name(8304), None);
     assert_eq!(serializers.entry_name(8307), Some(entry_name));
+}
+
+#[test]
+fn class_328_form_group_rejects_each_duplicate_member_without_heap_growth() {
+    use crate::layout::{form_class_328_scope as scope_layout,
+        form_class_328_cage_group as group, form_class_328_reference_entry as entry};
+    let (bytes, records, scope) = class_328_form_fixture();
+    assert!(form_class_328_envelope(&bytes, &records, &scope));
+    for ordinal in 1..4 {
+        let mut duplicate = bytes.clone();
+        let at = scope_layout::LEN + 15 + group::MEMBER_ENTRIES + ordinal * entry::LEN + entry::RECORD_INDEX;
+        duplicate[at..at + 8].copy_from_slice(&301u64.to_le_bytes());
+        assert!(!form_class_328_envelope(&duplicate, &records, &scope), "duplicate group member {ordinal}");
+    }
+}
+
+#[test]
+fn class_328_form_metadata_rejects_each_duplicate_member_without_heap_growth() {
+    use crate::layout::{form_class_328_scope as scope_layout, form_class_328_cage_group as group,
+        form_class_328_metadata_group as metadata, form_class_328_reference_entry as entry};
+    let (bytes, records, scope) = class_328_form_fixture();
+    assert!(form_class_328_envelope(&bytes, &records, &scope));
+    for ordinal in 1..19 {
+        let mut duplicate = bytes.clone();
+        let at = scope_layout::LEN + 15 + group::LEN + 15 + metadata::MEMBER_ENTRIES
+            + ordinal * entry::LEN + entry::RECORD_INDEX;
+        duplicate[at..at + 8].copy_from_slice(&4000u64.to_le_bytes());
+        assert!(!form_class_328_envelope(&duplicate, &records, &scope), "duplicate metadata member {ordinal}");
+    }
 }
