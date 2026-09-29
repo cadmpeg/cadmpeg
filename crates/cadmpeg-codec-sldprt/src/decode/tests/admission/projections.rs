@@ -952,3 +952,113 @@ fn geometry_hole_ownership_refuses_retained_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
             && limit.operation == "copy SLDPRT hole profile ownership"));
 }
+
+fn hole_bound_sketch_source() -> Vec<u8> {
+    let mut source = crate::test_support::history::sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#));
+    source
+}
+
+#[test]
+fn metadata_profiled_hole_projection_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let limit = collection_refusal_with_options(&hole_ownership_source(false), options, "project SLDPRT profiled hole constructions");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_profiled_hole_projection_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let limit = work_refusal_with_options(&hole_ownership_source(false), options, "project SLDPRT profiled hole constructions");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_profiled_hole_projection_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&hole_bound_sketch_source(), &mut options, "project SLDPRT profiled hole constructions");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "project SLDPRT profiled hole constructions"));
+}
+
+#[test]
+fn geometry_profiled_hole_projection_refuses_collection_limit() {
+    let options = DecodeOptions::default();
+    let limit = collection_refusal_with_options(&hole_ownership_source(true), options, "project SLDPRT profiled hole constructions");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_profiled_hole_projection_refuses_work_limit() {
+    let options = DecodeOptions::default();
+    let limit = work_refusal_with_options(&hole_ownership_source(true), options, "project SLDPRT profiled hole constructions");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_profiled_hole_projection_refuses_retained_limit() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&hole_bound_sketch_source(), &mut options, "project SLDPRT profiled hole constructions");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "project SLDPRT profiled hole constructions"));
+}
+
+#[test]
+fn metadata_hole_position_projection_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let limit = collection_refusal_with_options(&hole_ownership_source(false), options, "project SLDPRT hole position sketches");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_hole_position_projection_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let limit = work_refusal_with_options(&hole_ownership_source(false), options, "project SLDPRT hole position sketches");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_hole_position_projection_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&hole_bound_sketch_source(), &mut options, "project SLDPRT hole position sketches");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "project SLDPRT hole position sketches"));
+}
+
+#[test]
+fn geometry_hole_position_projection_refuses_collection_limit() {
+    let options = DecodeOptions::default();
+    let limit = collection_refusal_with_options(&hole_ownership_source(true), options, "project SLDPRT hole position sketches");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_hole_position_projection_refuses_work_limit() {
+    let options = DecodeOptions::default();
+    let limit = work_refusal_with_options(&hole_ownership_source(true), options, "project SLDPRT hole position sketches");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_hole_position_projection_refuses_retained_limit() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&hole_bound_sketch_source(), &mut options, "project SLDPRT hole position sketches");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "project SLDPRT hole position sketches"));
+}

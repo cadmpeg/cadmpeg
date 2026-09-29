@@ -171,6 +171,25 @@ impl HoleShape {
         Ok(())
     }
 
+    /// Replace the entry form and bore diameter after validating the retained exit
+    /// treatment. Preserve an existing standard specification without copying it.
+    pub fn try_set_form_and_diameter(
+        &mut self,
+        kind: HoleKind,
+        diameter: Option<PositiveLength>,
+    ) -> Result<(), &'static str> {
+        let form = HoleConstruction::form(kind);
+        if !Self::diameter_is_compatible(&form, self.exit_kind.as_ref(), diameter) {
+            return Err("construction and exit_kind treatment diameters must exceed the bore diameter");
+        }
+        match &mut self.construction {
+            HoleConstruction::Form { kind: current, .. } => *current = kind,
+            HoleConstruction::NativeThread { .. } => self.construction = form,
+        }
+        self.diameter = diameter;
+        Ok(())
+    }
+
     /// Map length fields without changing the hole's bore presence, treatment
     /// kinds, or non-length fields. Recheck strict diameter relations, which
     /// can collapse when two positive dimensions are rounded after scaling.
@@ -980,6 +999,34 @@ mod length_mapping_tests {
                 .expect("valid mapped hole without bore"),
             without_bore
         );
+    }
+
+    #[test]
+    fn hole_form_edit_preserves_specification_storage_and_refuses_invalid_diameter() {
+        let specification = Box::new(super::HoleSpecification::Clearance {
+            standard: cadmpeg_core::nonblank_literal!("ISO"),
+            designation: Some("M4".into()), fit: None, modeled: false, cosmetic: false,
+            hand: super::ThreadHand::Right, depth: super::HoleThreadDepth::HoleDepth, clearance: None,
+        });
+        let pointer = std::ptr::from_ref(specification.as_ref());
+        let mut hole = HoleShape::new(HoleConstruction::Form {
+            kind: HoleKind::Simple, specification: Some(specification),
+        }, Some(HoleKind::Counterbore { diameter: positive(5.0), depth: positive(1.0) }), Some(positive(2.0))).unwrap();
+        let previous = hole.clone();
+        assert_eq!(hole.try_set_form_and_diameter(HoleKind::Simple, Some(positive(5.0))),
+            Err("construction and exit_kind treatment diameters must exceed the bore diameter"));
+        assert_eq!(hole, previous);
+        hole.try_set_form_and_diameter(HoleKind::Counterbore { diameter: positive(4.0), depth: positive(1.0) }, Some(positive(3.0))).unwrap();
+        let HoleConstruction::Form { kind, specification: Some(specification) } = hole.construction() else { panic!("standard form"); };
+        assert_eq!(std::ptr::from_ref(specification.as_ref()), pointer);
+        assert_eq!(*kind, HoleKind::Counterbore { diameter: positive(4.0), depth: positive(1.0) });
+        assert_eq!(hole.diameter(), Some(positive(3.0)));
+        let mut threaded = HoleShape::new(HoleConstruction::NativeThread {
+            major_diameter: positive(4.0), thread_depth: positive(2.0), pitch: None,
+            drill_point_angle: InteriorAngle::new(1.0).unwrap(),
+        }, None, Some(positive(2.0))).unwrap();
+        threaded.try_set_form_and_diameter(HoleKind::Simple, Some(positive(3.0))).unwrap();
+        assert_eq!(threaded, HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, Some(positive(3.0))).unwrap());
     }
 
     #[test]

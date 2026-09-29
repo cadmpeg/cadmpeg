@@ -581,11 +581,12 @@ const DISPLAY_DIMENSION_TOLERANCE_MM: f64 = 1.0e-5;
 const GENERATED_PROFILE_TERMINAL_OVERRUN_MM: [f64; 4] = [0.0, 0.000_025, 0.000_05, 0.001];
 
 fn profiled_hole_construction(
+    ctx: &DecodeContext<'_>,
     profile: &crate::records::Feature,
     sketch: &SketchId,
     entities: &[SketchEntity],
-) -> Option<ProfiledHoleConstruction> {
-    profiled_hole_construction_with_evidence(profile, sketch, entities, ProfileEvidence::Dimensions)
+) -> Result<Option<ProfiledHoleConstruction>, CodecError> {
+    profiled_hole_construction_with_evidence(ctx, profile, sketch, entities, ProfileEvidence::Dimensions)
 }
 
 #[derive(Clone, Copy)]
@@ -620,59 +621,65 @@ impl DimensionOnlyHole {
 }
 
 fn profiled_hole_construction_with_evidence(
+    ctx: &DecodeContext<'_>,
     profile: &crate::records::Feature,
     sketch: &SketchId,
     entities: &[SketchEntity],
     evidence: ProfileEvidence,
-) -> Option<ProfiledHoleConstruction> {
-    let source_dimensions = profile
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            crate::records::FeatureContent::Dimension(name) => Some(name.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let expressions = if source_dimensions.is_empty() {
-        profile.parameters.values().map(String::as_str).collect()
-    } else {
-        source_dimensions
-            .into_iter()
-            .filter_map(|name| profile.parameters.get(name).map(String::as_str))
-            .collect::<Vec<_>>()
-    };
-    let mut diameters = expressions
-        .iter()
-        .copied()
-        .filter_map(|value| crate::history::literals::strip_diameter_modifier(value))
-        .filter_map(crate::history::literals::parse_dimension_length_mm)
-        .filter_map(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok())
-        .collect::<Vec<_>>();
-    let mut angles = expressions
-        .iter()
-        .copied()
-        .filter_map(crate::history::literals::parse_bounded_angle_rad)
-        .collect::<Vec<_>>();
-    let flat_bottom = expressions.iter().copied().any(|value| {
-        crate::history::literals::parse_angle_rad(value).is_some_and(|angle| {
+) -> Result<Option<ProfiledHoleConstruction>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT axial hole profile";
+    ctx.charge_work(u64_from_index(profile.content.len()), OPERATION)?;
+    let has_source_dimensions = profile.content.iter().any(|content| matches!(content, crate::records::FeatureContent::Dimension(_)));
+    let mut diameters = Vec::new();
+    let mut angles = Vec::new();
+    let mut lengths = Vec::new();
+    let mut flat_bottom = false;
+    let mut add_expression = |value: &str| -> Result<(), CodecError> {
+        ctx.charge_work(u64_from_index(value.len()).checked_mul(8)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if let Some(value) = crate::history::literals::strip_diameter_modifier(value)
+            .and_then(crate::history::literals::parse_dimension_length_mm)
+            .and_then(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok()) {
+            ctx.reserve_collection_vec(&mut diameters, 1, OPERATION)?;
+            diameters.push(value);
+        }
+        if let Some(angle) = crate::history::literals::parse_bounded_angle_rad(value) {
+            ctx.reserve_collection_vec(&mut angles, 1, OPERATION)?;
+            angles.push(angle);
+        }
+        flat_bottom |= crate::history::literals::parse_angle_rad(value).is_some_and(|angle| {
             (angle.get() - std::f64::consts::PI).abs() <= EPS_HOLE_EXACT_GEOMETRY
-        })
-    });
-    let mut lengths = expressions
-        .iter()
-        .copied()
-        .filter(|value| {
-            crate::history::literals::strip_diameter_modifier(value).is_none()
-                && crate::history::literals::parse_bounded_angle_rad(value).is_none()
-        })
-        .filter_map(crate::history::literals::parse_dimension_length_mm)
-        .filter_map(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok())
-        .collect::<Vec<_>>();
-    diameters.sort_by(|left, right| left.get().total_cmp(&right.get()));
+        });
+        if crate::history::literals::strip_diameter_modifier(value).is_none()
+            && crate::history::literals::parse_bounded_angle_rad(value).is_none() {
+            if let Some(length) = crate::history::literals::parse_dimension_length_mm(value)
+                .and_then(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok()) {
+                ctx.reserve_collection_vec(&mut lengths, 1, OPERATION)?;
+                lengths.push(length);
+            }
+        }
+        Ok(())
+    };
+    if has_source_dimensions {
+        for content in &profile.content {
+            ctx.charge_work(1, OPERATION)?;
+            let crate::records::FeatureContent::Dimension(name) = content else { continue; };
+            if let Some(value) = profile.parameters.get(name.as_str()) { add_expression(value)?; }
+        }
+    } else {
+        for value in profile.parameters.values() { add_expression(value)?; }
+    }
+    charge_hole_sort_work(ctx, diameters.len(), OPERATION)?;
+    diameters.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    ctx.charge_work(u64_from_index(diameters.len()), OPERATION)?;
     diameters.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_GEOMETRY);
-    angles.sort_by(|left, right| left.get().total_cmp(&right.get()));
+    charge_hole_sort_work(ctx, angles.len(), OPERATION)?;
+    angles.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    ctx.charge_work(u64_from_index(angles.len()), OPERATION)?;
     angles.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_EXACT_GEOMETRY);
-    lengths.sort_by(|left, right| left.get().total_cmp(&right.get()));
+    charge_hole_sort_work(ctx, lengths.len(), OPERATION)?;
+    lengths.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    ctx.charge_work(u64_from_index(lengths.len()), OPERATION)?;
     lengths.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_GEOMETRY);
     let dimension_only = if crate::history::project::solid::is_hole_profile_construction(profile) {
         match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
@@ -693,25 +700,31 @@ fn profiled_hole_construction_with_evidence(
     };
     if evidence == ProfileEvidence::Dimensions {
         if let Some(construction) = dimension_only {
-            return Some(construction.into_construction());
+            return Ok(Some(construction.into_construction()));
         }
     }
-    let lines = entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match *entity.geometry.definition() {
-            SketchGeometryDefinition::Line { start, end } => Some((start, end)),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let points = entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match *entity.geometry.definition() {
-            SketchGeometryDefinition::Point { position } => Some(position),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let mut lines = Vec::new();
+    let mut points = Vec::new();
+    for entity in entities {
+        ctx.charge_work(1, OPERATION)?;
+        if entity.sketch != *sketch || entity.construction { continue; }
+        match *entity.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => {
+                ctx.reserve_collection_vec(&mut lines, 1, OPERATION)?;
+                lines.push((start, end));
+            }
+            SketchGeometryDefinition::Point { position } => {
+                ctx.reserve_collection_vec(&mut points, 1, OPERATION)?;
+                points.push(position);
+            }
+            _ => {}
+        }
+    }
+    let geometry_count = u64_from_index(lines.len()).checked_add(u64_from_index(points.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    // Direct geometry tests outside translation search have a fixed set of trials.
+    ctx.charge_work(geometry_count.checked_mul(512)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     let same_point = |left: Point2, right: Point2| {
         (left.u - right.u).abs() <= DISPLAY_DIMENSION_TOLERANCE_MM
             && (left.v - right.v).abs() <= DISPLAY_DIMENSION_TOLERANCE_MM
@@ -726,39 +739,32 @@ fn profiled_hole_construction_with_evidence(
         points.iter().any(|point| same_point(point.get(), first))
             && points.iter().any(|point| same_point(point.get(), second))
     };
-    let profile_translation = |edges: &[(Point2, Point2)], minimum_lines: usize| {
-        let expected_points = edges
-            .iter()
-            .flat_map(|(first, second)| [*first, *second])
-            .collect::<Vec<_>>();
-        let actual_points = lines
-            .iter()
-            .flat_map(|(first, second)| [*first, *second])
-            .chain(points.iter().copied())
-            .collect::<Vec<_>>();
-        actual_points.iter().find_map(|actual| {
-            expected_points.iter().find_map(|expected| {
+    let profile_translation = |edges: &[(Point2, Point2)], minimum_lines: usize| -> Result<Option<Point2>, CodecError> {
+        let actual_count = u64_from_index(lines.len()).checked_mul(2)
+            .and_then(|count| count.checked_add(u64_from_index(points.len())))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        let expected_count = u64_from_index(edges.len()).checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        let scan_work = actual_count.checked_mul(expected_count)
+            .and_then(|count| count.checked_mul(u64_from_index(edges.len())))
+            .and_then(|count| count.checked_mul(geometry_count.checked_add(1)?))
+            .and_then(|count| count.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(scan_work, OPERATION)?;
+        for actual in lines.iter().flat_map(|(first, second)| [*first, *second]).chain(points.iter().copied()) {
+            for expected in edges.iter().flat_map(|(first, second)| [*first, *second]) {
                 let translation = Point2::new(actual.u - expected.u, actual.v - expected.v);
-                let translated = edges
-                    .iter()
-                    .map(|(first, second)| {
-                        (
-                            Point2::new(first.u + translation.u, first.v + translation.v),
-                            Point2::new(second.u + translation.u, second.v + translation.v),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                (translated
-                    .iter()
-                    .filter(|(first, second)| has_line(*first, *second))
-                    .count()
-                    >= minimum_lines
-                    && translated.iter().all(|(first, second)| {
-                        has_line(*first, *second) || has_point_pair(*first, *second)
-                    }))
-                .then_some(translation)
-            })
-        })
+                let translated = edges.iter().map(|(first, second)| (
+                    Point2::new(first.u + translation.u, first.v + translation.v),
+                    Point2::new(second.u + translation.u, second.v + translation.v),
+                ));
+                if translated.clone().filter(|(first, second)| has_line(*first, *second)).count() >= minimum_lines
+                    && translated.clone().all(|(first, second)| has_line(first, second) || has_point_pair(first, second)) {
+                    return Ok(Some(translation));
+                }
+            }
+        }
+        Ok(None)
     };
     if let Some(construction) = dimension_only {
         let length = construction.depth;
@@ -785,13 +791,13 @@ fn profiled_hole_construction_with_evidence(
                         (wall_end, axis_end),
                         (axis_end, axis_entry),
                     ];
-                    if profile_translation(&edges, 2).is_some() {
-                        return Some(construction.into_construction());
+                    if profile_translation(&edges, 2)?.is_some() {
+                        return Ok(Some(construction.into_construction()));
                     }
                 }
             }
         }
-        return None;
+        return Ok(None);
     }
     if let ([diameter, recess_diameter, entry_diameter], [recess_depth, depth], [entry_angle]) =
         (diameters.as_slice(), lengths.as_slice(), angles.as_slice())
@@ -816,7 +822,7 @@ fn profiled_hole_construction_with_evidence(
             || recess_depth <= setback
             || depth <= recess_depth
         {
-            return None;
+            return Ok(None);
         }
         for swap in [false, true] {
             for axial_sign in [-1.0, 1.0] {
@@ -842,36 +848,33 @@ fn profiled_hole_construction_with_evidence(
                             (recess_end, bore_start),
                             (bore_start, bore_end),
                         ];
-                        if profile_translation(&edges, 2).is_some() {
-                            return Some(ProfiledHoleConstruction {
+                        if profile_translation(&edges, 2)?.is_some() {
+                            let Ok(diameters) = cadmpeg_ir::features::holes::CounterdrillDiameters::new(
+                                admitted_recess_diameter, Some(admitted_entry_diameter),
+                            ) else { return Ok(None); };
+                            return Ok(Some(ProfiledHoleConstruction {
                                 diameter: bore_diameter,
                                 extent: LinearTermination::ThroughAll {},
                                 kind: HoleKind::Counterdrill {
-                                    diameters:
-                                        cadmpeg_ir::features::holes::CounterdrillDiameters::new(
-                                            admitted_recess_diameter,
-                                            Some(admitted_entry_diameter),
-                                        )
-                                        .ok()?,
-
+                                    diameters,
                                     depth: admitted_recess_depth,
                                     angle: admitted_entry_angle,
                                 },
                                 bottom: None,
                                 taper_angle: None,
-                            });
+                            }));
                         }
                     }
                 }
             }
         }
-        return None;
+        return Ok(None);
     }
     let [diameter, entry_diameter] = diameters.as_slice() else {
-        return None;
+        return Ok(None);
     };
     if diameter >= entry_diameter {
-        return None;
+        return Ok(None);
     }
     let bore_radius = diameter.get() / 2.0;
     let entry_radius = entry_diameter.get() / 2.0;
@@ -917,17 +920,17 @@ fn profiled_hole_construction_with_evidence(
                         if !half_angle.is_finite() || half_angle <= 0.0 {
                             continue;
                         }
-                        return Some(ProfiledHoleConstruction {
-                            diameter: cadmpeg_ir::scalar::PositiveLength::new(entry_radius * 2.0)?,
+                        let Some(diameter) = cadmpeg_ir::scalar::PositiveLength::new(entry_radius * 2.0) else { return Ok(None); };
+                        let Some(taper_angle) = cadmpeg_ir::scalar::InteriorAngle::new(half_angle * 2.0) else { return Ok(None); };
+                        return Ok(Some(ProfiledHoleConstruction {
+                            diameter,
                             extent: LinearTermination::Blind {
                                 length: cadmpeg_ir::scalar::NonZeroLength::from(*depth),
                             },
                             kind: HoleKind::Simple,
                             bottom: Some(HoleBottom::Flat),
-                            taper_angle: Some(cadmpeg_ir::scalar::InteriorAngle::new(
-                                half_angle * 2.0,
-                            )?),
-                        });
+                            taper_angle: Some(taper_angle),
+                        }));
                     }
                 }
                 if let [entry_depth, depth] = lengths.as_slice() {
@@ -946,7 +949,7 @@ fn profiled_hole_construction_with_evidence(
                             (entry_corner, bore_corner),
                             (bore_corner, bore_end),
                         ];
-                        let Some(translation) = profile_translation(&edges, 2) else {
+                        let Some(translation) = profile_translation(&edges, 2)? else {
                             continue;
                         };
                         let (kind, extent) = match angles.as_slice() {
@@ -993,13 +996,13 @@ fn profiled_hole_construction_with_evidence(
                             }
                             _ => continue,
                         };
-                        return Some(ProfiledHoleConstruction {
+                        return Ok(Some(ProfiledHoleConstruction {
                             diameter: *diameter,
                             extent,
                             kind,
                             bottom: (angles.is_empty() && flat_bottom).then_some(HoleBottom::Flat),
                             taper_angle: None,
-                        });
+                        }));
                     }
                 }
                 let [depth] = lengths.as_slice() else {
@@ -1013,23 +1016,18 @@ fn profiled_hole_construction_with_evidence(
                     let entry = point(0.0, entry_radius);
                     let bore_start = point(-setback, bore_radius);
                     let mirrored_bore_start = point(-setback, -bore_radius);
-                    let profile_matches =
-                        GENERATED_PROFILE_TERMINAL_OVERRUN_MM.iter().any(|overrun| {
-                            [
-                                (bore_start, bore_radius),
-                                (mirrored_bore_start, -bore_radius),
-                            ]
-                            .into_iter()
-                            .any(|(wall_start, wall_radius)| {
-                                let edges = [
-                                    (entry, bore_start),
-                                    (wall_start, point(-depth.get() - overrun, wall_radius)),
-                                ];
-                                profile_translation(&edges, 2).is_some()
-                            })
-                        });
+                    let mut profile_matches = false;
+                    'overruns: for overrun in GENERATED_PROFILE_TERMINAL_OVERRUN_MM {
+                        for (wall_start, wall_radius) in [(bore_start, bore_radius), (mirrored_bore_start, -bore_radius)] {
+                            let edges = [(entry, bore_start), (wall_start, point(-depth.get() - overrun, wall_radius))];
+                            if profile_translation(&edges, 2)?.is_some() {
+                                profile_matches = true;
+                                break 'overruns;
+                            }
+                        }
+                    }
                     if profile_matches {
-                        return Some(ProfiledHoleConstruction {
+                        return Ok(Some(ProfiledHoleConstruction {
                             diameter: *diameter,
                             extent: LinearTermination::ThroughAll {},
                             kind: HoleKind::Countersink {
@@ -1038,7 +1036,7 @@ fn profiled_hole_construction_with_evidence(
                             },
                             bottom: None,
                             taper_angle: None,
-                        });
+                        }));
                     }
                     continue;
                 }
@@ -1058,8 +1056,8 @@ fn profiled_hole_construction_with_evidence(
                     let bore_end = point(-depth.get(), bore_radius);
                     let tip = point(-depth.get() - drill_length, 0.0);
                     let edges = [(entry, bore_start), (bore_start, bore_end), (bore_end, tip)];
-                    if profile_translation(&edges, 2).is_some() {
-                        return Some(ProfiledHoleConstruction {
+                    if profile_translation(&edges, 2)?.is_some() {
+                        return Ok(Some(ProfiledHoleConstruction {
                             diameter: *diameter,
                             extent: LinearTermination::Blind {
                                 length: cadmpeg_ir::scalar::NonZeroLength::from(*depth),
@@ -1073,333 +1071,249 @@ fn profiled_hole_construction_with_evidence(
                                 depth_to_tip: false,
                             }),
                             taper_angle: None,
-                        });
+                        }));
                     }
                 }
             }
         }
     }
-    None
+    Ok(None)
 }
 
 pub(crate) fn project_profiled_hole_constructions(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     entities: &[SketchEntity],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "project SLDPRT profiled hole constructions";
     let mut enriched_histories = crate::records::charged_clone::clone_histories_charged(
         ctx, histories, "SLDPRT unowned incomplete-hole histories",
     )?;
-    crate::history::configuration::enrich_history_parameters_semantic(
-        ctx,
-        &mut enriched_histories,
-        lanes,
-    )?;
+    crate::history::configuration::enrich_history_parameters_semantic(ctx, &mut enriched_histories, lanes)?;
     let mut ownership_histories = crate::records::charged_clone::clone_histories_charged(
         ctx, &enriched_histories, "SLDPRT unowned incomplete-hole histories",
     )?;
     enrich_history_hole_constructions(ctx, &mut ownership_histories, lanes)?;
     let histories = enriched_histories.as_slice();
-    let incomplete =
-        |diameter: &Option<cadmpeg_ir::scalar::PositiveLength>,
-         extent: &Option<LinearTermination>,
-         construction: &cadmpeg_ir::features::holes::HoleConstruction| {
-            diameter.is_none()
-                || extent
-                    .as_ref()
-                    .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved {}))
-                || matches!(
-                    construction,
-                    cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. }
-                        if kind.is_unresolved()
-                )
-        };
-    ctx.charge_collection_items(features.len() as u64, "SLDPRT complete native-hole lookup")?;
-    let complete_native_holes = features
-        .iter()
-        .filter_map(|feature| {
-            let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
-                feature.evaluation.definition()
-            else {
-                return None;
-            };
-            let diameter = &shape.diameter();
-            let construction = shape.construction();
-            if incomplete(diameter, extent, construction) {
-                return None;
-            }
-            feature.native_ref.clone()
-        })
-        .collect::<HashSet<_>>();
-    ctx.charge_collection_items(features.len() as u64, "SLDPRT model sketch lookup")?;
-    let model_sketches = features
-        .iter()
-        .filter_map(|feature| {
-            let FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                ..
-            }) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some((feature.native_ref.clone()?, sketch.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    for history in histories {
-        ctx.charge_collection_items(
-            history.features.len() as u64,
-            "SLDPRT native history lookup",
-        )?;
-    }
-    let native_histories = histories
-        .iter()
-        .enumerate()
-        .flat_map(|(history_index, history)| {
-            history
-                .features
-                .iter()
-                .map(move |feature| (feature.id.as_str(), history_index))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut unowned_incomplete_holes = ctx.alloc_filled(
-        histories.len(),
-        Vec::<(String, u32)>::new(),
-        "SLDPRT unowned incomplete-hole histories",
-    )?;
+    let incomplete = |diameter: &Option<cadmpeg_ir::scalar::PositiveLength>, extent: &Option<LinearTermination>, construction: &cadmpeg_ir::features::holes::HoleConstruction| {
+        diameter.is_none() || extent.as_ref().is_none_or(|extent| matches!(extent, LinearTermination::Unresolved {}))
+            || matches!(construction, cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } if kind.is_unresolved())
+    };
+    let mut complete_native_holes = HashSet::new();
+    let mut model_sketches = HashMap::new();
     for feature in features.iter() {
-        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
-            feature.evaluation.definition()
-        else {
-            continue;
-        };
-        let diameter = &shape.diameter();
-        let construction = shape.construction();
-        if !incomplete(diameter, extent, construction) {
-            continue;
-        }
-        let Some(native) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let Some(&history_index) = native_histories.get(native) else {
-            continue;
-        };
-        let Some(native_feature) = histories[history_index]
-            .features
-            .iter()
-            .find(|candidate| candidate.id == native)
-        else {
-            continue;
-        };
-        let unowned = !native_feature
-            .properties
-            .contains_key("DissectableChildren");
-        if unowned {
-            let ordinal = native_feature.ordinal;
-            ctx.charge_collection_items(1, "SLDPRT unowned incomplete holes")?;
-            ctx.charge_retained(native.len() as u64, "SLDPRT unowned incomplete hole id")?;
-            unowned_incomplete_holes[history_index]
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("SLDPRT unowned incomplete holes", 1, 1))?;
-            unowned_incomplete_holes[history_index].push((native.into(), ordinal));
+        ctx.charge_work(1, OPERATION)?;
+        let Some(native) = feature.native_ref.as_deref() else { continue; };
+        match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) if !incomplete(&shape.diameter(), extent, shape.construction()) => {
+                if !complete_native_holes.contains(native) {
+                    ctx.charge_collection_items(1, OPERATION)?;
+                    complete_native_holes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    complete_native_holes.insert(native);
+                }
+            }
+            FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)) }) => {
+                if !model_sketches.contains_key(native) {
+                    ctx.charge_collection_items(1, OPERATION)?;
+                    model_sketches.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                }
+                ctx.charge_work(u64_from_index(native.len()).checked_add(u64_from_index(sketch.as_str().len()))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                let native = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+                let sketch = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
+                    .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
+                model_sketches.insert(native, sketch);
+            }
+            _ => {}
         }
     }
-    let profiled_constructions = histories
-        .iter()
-        .zip(&ownership_histories)
-        .map(|(history, ownership_history)| {
-            let claimed_profiles = history
-                .features
-                .iter()
-                .filter_map(|feature| feature.properties.get("DissectableChildren"))
-                .chain(
-                    ownership_history
-                        .features
-                        .iter()
-                        .filter(|feature| complete_native_holes.contains(&feature.id))
-                        .filter_map(|feature| feature.properties.get("DissectableChildren")),
-                )
-                .flat_map(|children| children.split(',').map(str::trim))
-                .filter(|child| !child.is_empty())
-                .filter_map(|child| {
-                    let mut profiles = history.features.iter().filter(|candidate| {
-                        FeatureSource::try_from(child)
-                            .is_ok_and(|child| candidate.source_id == Some(child))
-                            || candidate.id == child
-                    });
-                    let profile = profiles.next()?;
-                    profiles.next().is_none().then_some(&profile.id)
-                })
-                .collect::<HashSet<_>>();
-            history
-                .features
-                .iter()
-                .filter(|profile| !claimed_profiles.contains(&profile.id))
-                .filter_map(|profile| {
-                    let sketch = model_sketches.get(&profile.id)?;
-                    Some((
-                        profile.ordinal,
-                        profiled_hole_construction_with_evidence(
-                            profile,
-                            sketch,
-                            entities,
-                            ProfileEvidence::AxialTopology,
-                        )?,
-                    ))
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let fallback_constructions = unowned_incomplete_holes
-        .iter_mut()
-        .zip(profiled_constructions.iter())
-        .flat_map(|(holes, profiles)| {
-            holes.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
-            let mut profiles = profiles.clone();
-            profiles.sort_by_key(|(ordinal, _)| *ordinal);
-            (holes.len() == profiles.len())
-                .then_some(
-                    holes
-                        .iter()
-                        .zip(profiles)
-                        .map(|((hole, _), (_, construction))| (hole.clone(), construction)),
-                )
-                .into_iter()
-                .flatten()
-        })
-        .collect::<HashMap<_, _>>();
+    let mut native_histories = HashMap::new();
+    for (history_index, history) in histories.iter().enumerate() {
+        for feature in &history.features {
+            ctx.charge_work(1, OPERATION)?;
+            if !native_histories.contains_key(feature.id.as_str()) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                native_histories.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            }
+            native_histories.insert(feature.id.as_str(), history_index);
+        }
+    }
+    let mut unowned_incomplete_holes = ctx.alloc_filled(histories.len(), Vec::<(&str, u32)>::new(), "SLDPRT unowned incomplete-hole histories")?;
+    for feature in features.iter() {
+        ctx.charge_work(1, OPERATION)?;
+        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) = feature.evaluation.definition() else { continue; };
+        if !incomplete(&shape.diameter(), extent, shape.construction()) { continue; }
+        let Some(native) = feature.native_ref.as_deref() else { continue; };
+        let Some(&history_index) = native_histories.get(native) else { continue; };
+        ctx.charge_work(u64_from_index(histories[history_index].features.len()), OPERATION)?;
+        let Some(native_feature) = histories[history_index].features.iter().find(|candidate| candidate.id == native) else { continue; };
+        if !native_feature.properties.contains_key("DissectableChildren") {
+            ctx.reserve_collection_vec(&mut unowned_incomplete_holes[history_index], 1, "SLDPRT unowned incomplete holes")?;
+            unowned_incomplete_holes[history_index].push((native_feature.id.as_str(), native_feature.ordinal));
+        }
+    }
+    let mut fallback_constructions = HashMap::new();
+    for ((history, ownership_history), holes) in histories.iter().zip(&ownership_histories).zip(&mut unowned_incomplete_holes) {
+        let mut claimed_profiles = HashSet::new();
+        for feature in &history.features {
+            ctx.charge_work(1, OPERATION)?;
+            if let Some(children) = feature.properties.get("DissectableChildren") {
+                collect_claimed_hole_profiles(ctx, history, children, &mut claimed_profiles)?;
+            }
+        }
+        for feature in &ownership_history.features {
+            ctx.charge_work(1, OPERATION)?;
+            if complete_native_holes.contains(feature.id.as_str()) {
+                if let Some(children) = feature.properties.get("DissectableChildren") {
+                    collect_claimed_hole_profiles(ctx, history, children, &mut claimed_profiles)?;
+                }
+            }
+        }
+        let mut profiles = Vec::new();
+        for (index, profile) in history.features.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
+            if claimed_profiles.contains(profile.id.as_str()) { continue; }
+            let Some(sketch) = model_sketches.get(profile.id.as_str()) else { continue; };
+            let Some(construction) = profiled_hole_construction_with_evidence(ctx, profile, sketch, entities, ProfileEvidence::AxialTopology)? else { continue; };
+            ctx.reserve_collection_vec(&mut profiles, 1, OPERATION)?;
+            profiles.push((profile.ordinal, index, construction));
+        }
+        charge_hole_sort_work(ctx, holes.len(), OPERATION)?;
+        holes.sort_unstable_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(right.0)));
+        charge_hole_sort_work(ctx, profiles.len(), OPERATION)?;
+        // The input index preserves history order for equal ordinals.
+        profiles.sort_unstable_by_key(|(ordinal, index, _)| (*ordinal, *index));
+        if holes.len() != profiles.len() { continue; }
+        for ((hole, _), (_, _, construction)) in holes.iter().zip(profiles) {
+            ctx.charge_work(1, OPERATION)?;
+            if !fallback_constructions.contains_key(hole) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                fallback_constructions.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            }
+            fallback_constructions.insert(*hole, construction);
+        }
+    }
+    drop(complete_native_holes);
     for feature in features.iter_mut() {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let FeatureDefinition::Operation(FeatureOperation::Hole {
-                shape,
-                extent,
-
-                bottom,
-                taper_angle,
-                ..
-            }) = &mut definition
-            else {
-                break 'feature_edit;
-            };
-            shape
-                .try_edit(|hole_construction, _, diameter| {
-                    if !incomplete(diameter, extent, hole_construction) {
-                        return;
-                    }
-                    let Some((history_index, native)) =
-                        feature.native_ref.as_deref().and_then(|native| {
-                            let history_index = *native_histories.get(native)?;
-                            let native = histories[history_index]
-                                .features
-                                .iter()
-                                .find(|candidate| candidate.id == native)?;
-                            Some((history_index, native))
-                        })
-                    else {
-                        return;
-                    };
-                    let history = &histories[history_index];
-                    let position =
-                        hole_position_feature(native, histories, lanes).map(|feature| &feature.id);
-                    let direct =
-                        native
-                            .properties
-                            .get("DissectableChildren")
-                            .and_then(|children| {
-                                let mut constructions = children.split(',').filter_map(|source| {
-                                    let mut profiles =
-                                        history.features.iter().filter(|candidate| {
-                                            FeatureSource::try_from(source.trim()).is_ok_and(
-                                                |source| candidate.source_id == Some(source),
-                                            ) || candidate.id == source.trim()
-                                        });
-                                    let profile = profiles.next()?;
-                                    profiles.next().is_none().then_some(())?;
-                                    if position == Some(&profile.id) {
-                                        return None;
-                                    }
-                                    let sketch = model_sketches.get(&profile.id)?;
-                                    profiled_hole_construction(profile, sketch, entities)
-                                });
-                                let construction = constructions.next()?;
-                                constructions.next().is_none().then_some(construction)
-                            });
-                    let construction = direct.or_else(|| {
-                        if native.properties.contains_key("DissectableChildren") {
-                            return None;
-                        }
-                        fallback_constructions.get(&native.id).cloned()
-                    });
-                    let Some(construction) = construction else {
-                        return;
-                    };
-                    *diameter = Some(construction.diameter);
-                    *extent = Some(construction.extent);
-                    match hole_construction {
-                        cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } => {
-                            *kind = construction.kind;
-                        }
-                        cadmpeg_ir::features::holes::HoleConstruction::NativeThread { .. } => {
-                            *hole_construction =
-                                cadmpeg_ir::features::holes::HoleConstruction::form(
-                                    construction.kind,
-                                );
-                        }
-                    }
-                    *bottom = construction.bottom;
-                    *taper_angle = construction.taper_angle;
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.charge_work(1, OPERATION)?;
+        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) = feature.evaluation.definition() else { continue; };
+        if !incomplete(&shape.diameter(), extent, shape.construction()) { continue; }
+        let Some(native_id) = feature.native_ref.as_deref() else { continue; };
+        let Some(&history_index) = native_histories.get(native_id) else { continue; };
+        let history = &histories[history_index];
+        ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+        let Some(native) = history.features.iter().find(|candidate| candidate.id == native_id) else { continue; };
+        let position = hole_position_feature(native, histories, lanes).map(|feature| feature.id.as_str());
+        let mut direct = None;
+        if let Some(children) = native.properties.get("DissectableChildren") {
+            ctx.charge_work(u64_from_index(children.len()), OPERATION)?;
+            for source in children.split(',') {
+                ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+                let mut profiles = history.features.iter().filter(|candidate| {
+                    FeatureSource::try_from(source.trim()).is_ok_and(|source| candidate.source_id == Some(source))
+                        || candidate.id == source.trim()
+                });
+                let Some(profile) = profiles.next() else { continue; };
+                if profiles.next().is_some() || position == Some(profile.id.as_str()) { continue; }
+                let Some(sketch) = model_sketches.get(&profile.id) else { continue; };
+                if let Some(construction) = profiled_hole_construction(ctx, profile, sketch, entities)? {
+                    if direct.is_some() { direct = None; break; }
+                    direct = Some(construction);
+                }
+            }
         }
-        feature.evaluation.set_definition(definition);
+        let construction = if direct.is_some() || native.properties.contains_key("DissectableChildren") {
+            direct
+        } else { fallback_constructions.get(&native.id.as_str()).cloned() };
+        let Some(construction) = construction else { continue; };
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, bottom, taper_angle, .. }) = definition else { return; };
+            edit_result = shape.try_set_form_and_diameter(construction.kind, Some(construction.diameter));
+            if edit_result.is_ok() {
+                *extent = Some(construction.extent);
+                *bottom = construction.bottom;
+                *taper_angle = construction.taper_angle;
+            }
+        });
+        edit_result.map_err(CodecError::malformed)?;
     }
+    Ok(())
+}
 
+fn collect_claimed_hole_profiles<'a>(
+    ctx: &DecodeContext<'_>,
+    history: &'a crate::records::FeatureHistory,
+    children: &str,
+    profiles: &mut HashSet<&'a str>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "index SLDPRT claimed axial hole profiles";
+    ctx.charge_work(u64_from_index(children.len()), OPERATION)?;
+    for child in children.split(',').map(str::trim).filter(|child| !child.is_empty()) {
+        ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+        let mut candidates = history.features.iter().filter(|candidate| {
+            FeatureSource::try_from(child).is_ok_and(|child| candidate.source_id == Some(child)) || candidate.id == child
+        });
+        let Some(profile) = candidates.next() else { continue; };
+        if candidates.next().is_some() || profiles.contains(profile.id.as_str()) { continue; }
+        ctx.charge_collection_items(1, OPERATION)?;
+        profiles.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        profiles.insert(profile.id.as_str());
+    }
     Ok(())
 }
 
 pub(crate) fn project_hole_position_sketches(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[Sketch],
     sketch_entities: &[SketchEntity],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "project SLDPRT hole position sketches";
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let model_sketch_features = features
-        .iter()
-        .filter_map(|feature| {
-            let FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            }) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some((
-                feature.native_ref.clone()?,
-                (feature.id.clone(), sketch.clone()),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let model_sketches = model_sketch_features
-        .iter()
-        .map(|(native, (_, sketch))| (native.clone(), sketch.clone()))
-        .collect::<HashMap<_, _>>();
+    let mut native_features = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        if !native_features.contains_key(feature.id.as_str()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            native_features.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        native_features.insert(feature.id.as_str(), feature);
+    }
+    let mut model_sketch_features = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, OPERATION)?;
+        let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)) }) = feature.evaluation.definition() else { continue; };
+        let Some(native) = &feature.native_ref else { continue; };
+        if !model_sketch_features.contains_key(native) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            model_sketch_features.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        ctx.charge_work(u64_from_index(native.len())
+            .checked_add(u64_from_index(sketch.as_str().len()))
+            .and_then(|count| count.checked_add(u64_from_index(feature.id.as_str().len())))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let native_key = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+        let feature_id = cadmpeg_ir::features::FeatureId::mint(ctx.format_retained(format_args!("{}", feature.id), OPERATION)?)
+            .map_err(|_| CodecError::malformed("invalid admitted SLDPRT feature identity"))?;
+        let sketch_id = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
+            .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
+        model_sketch_features.insert(native_key, (feature_id, sketch_id));
+    }
     for feature in features.iter_mut() {
-        let mut definition = feature.evaluation.definition().clone();
+        ctx.charge_work(1, OPERATION)?;
+        let mut projection = None;
         'feature_edit: {
             if feature.suppressed == Some(true) {
                 break 'feature_edit;
             }
             let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
-                &mut definition
+                feature.evaluation.definition()
             else {
                 break 'feature_edit;
             };
@@ -1413,46 +1327,37 @@ pub(crate) fn project_hole_position_sketches(
             else {
                 break 'feature_edit;
             };
-            let Some(position_feature) =
-                hole_position_feature(native, histories, lanes).or_else(|| {
-                    direct_hole_position_feature(
-                        native,
-                        histories,
-                        &model_sketches,
-                        sketch_entities,
-                    )
-                })
-            else {
-                break 'feature_edit;
+            let position_feature = match hole_position_feature(native, histories, lanes) {
+                Some(position) => Some(position),
+                None => direct_hole_position_feature(ctx, native, histories, |id| model_sketch_features.get(id).map(|(_, sketch)| sketch), sketch_entities)?,
             };
+            let Some(position_feature) = position_feature else { break 'feature_edit; };
             let Some((position_dependency, sketch_id)) =
                 model_sketch_features.get(position_feature.id.as_str())
             else {
                 break 'feature_edit;
             };
+            ctx.charge_work(u64_from_index(sketches.len()), OPERATION)?;
             let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
                 break 'feature_edit;
             };
             let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
                 break 'feature_edit;
             };
-            let matching_lanes = lanes
-                .iter()
-                .filter(|lane| lane.configuration == sketch.configuration)
-                .collect::<Vec<_>>();
-            let mut authored_markers = matching_lanes
-                .iter()
-                .flat_map(|lane| &lane.sketch_entities)
-                .filter(|marker| {
-                    marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
-                        && marker.object_index().is_some()
-                        && marker.coordinates_m.is_some()
-                        && matches!(
-                            marker.kind(),
-                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                        )
-                })
-                .collect::<Vec<_>>();
+            ctx.charge_work(u64_from_index(lanes.len()), OPERATION)?;
+            let matching_lanes = lanes.iter().filter(|lane| lane.configuration == sketch.configuration);
+            let mut authored_markers = Vec::new();
+            for lane in matching_lanes.clone() {
+                for marker in &lane.sketch_entities {
+                    ctx.charge_work(1, OPERATION)?;
+                    if marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
+                        && marker.object_index().is_some() && marker.coordinates_m.is_some()
+                        && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) {
+                        ctx.reserve_collection_vec(&mut authored_markers, 1, OPERATION)?;
+                        authored_markers.push(marker);
+                    }
+                }
+            }
             let mut unindexed_marker_coordinates = HashMap::new();
             let paired_marker_coordinates = if authored_markers.is_empty() {
                 // Direct projection requires a complete alternate object roster.
@@ -1463,50 +1368,49 @@ pub(crate) fn project_hole_position_sketches(
                 let mut unindexed_locus: Option<(&crate::records::SketchInputEntity, [f64; 2])> =
                     None;
                 let mut complete_unindexed_encoding = true;
+                ctx.charge_work(u64_from_index(lanes.len()), OPERATION)?;
                 for lane in matching_lanes {
+                    ctx.charge_work(u64_from_index(lane.sketch_entities.len()).checked_mul(6)
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                     let position_markers = lane
                         .sketch_entities
                         .iter()
                         .filter(|marker| {
                             marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
                                 && marker.coordinates_m.is_some()
-                        })
-                        .collect::<Vec<_>>();
+                        });
                     let indexed_markers = position_markers
-                        .iter()
+                        .clone()
                         .filter(|marker| marker.object_index().is_some())
                         .count();
                     let paired = paired_object_locus_markers(lane, position_feature.id.as_str());
                     complete_alternate_encoding &= paired.clone().count() == indexed_markers;
-                    paired_marker_coordinates.extend(
-                        paired
-                            .clone()
-                            .map(|(marker, coordinates)| (marker.id(), coordinates)),
-                    );
-                    authored_markers.extend(paired.into_iter().map(|(marker, _)| marker));
+                    for (marker, coordinates) in paired {
+                        if !paired_marker_coordinates.contains_key(marker.id()) {
+                            ctx.charge_collection_items(1, OPERATION)?;
+                            paired_marker_coordinates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                        }
+                        paired_marker_coordinates.insert(marker.id(), coordinates);
+                        ctx.reserve_collection_vec(&mut authored_markers, 1, OPERATION)?;
+                        authored_markers.push(marker);
+                    }
                     if indexed_markers == 0
-                        && position_markers.iter().all(|marker| {
+                        && position_markers.clone().all(|marker| {
                             matches!(
                                 marker.kind(),
                                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                             )
                         })
                     {
-                        let loci = position_markers.into_iter().filter_map(|marker| {
+                        let mut loci = position_markers.filter_map(|marker| {
                             let [u, v] = marker.coordinates_m?.get();
                             (u != 0.0 || v != 0.0).then_some((marker, [u, v]))
                         });
-                        let loci = loci.collect::<Vec<_>>();
-                        if let [(locus, coordinates)] = loci.as_slice() {
-                            if unindexed_locus.is_some_and(|(_, previous)| previous != *coordinates)
-                            {
+                        if let Some((locus, coordinates)) = loci.next() {
+                            if loci.next().is_some() || unindexed_locus.is_some_and(|(_, previous)| previous != coordinates) {
                                 complete_unindexed_encoding = false;
-                            } else {
-                                unindexed_locus = Some((*locus, *coordinates));
-                            }
-                        } else {
-                            complete_unindexed_encoding = false;
-                        }
+                            } else { unindexed_locus = Some((locus, coordinates)); }
+                        } else { complete_unindexed_encoding = false; }
                     } else {
                         complete_unindexed_encoding = false;
                     }
@@ -1517,7 +1421,10 @@ pub(crate) fn project_hole_position_sketches(
                 // zero points are relation anchors and do not identify a hole.
                 if complete_unindexed_encoding {
                     if let Some((marker, coordinates)) = unindexed_locus {
+                        ctx.charge_collection_items(1, OPERATION)?;
+                        unindexed_marker_coordinates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                         unindexed_marker_coordinates.insert(marker.id(), coordinates);
+                        ctx.reserve_collection_vec(&mut authored_markers, 1, OPERATION)?;
                         authored_markers.push(marker);
                         HashMap::new()
                     } else if complete_alternate_encoding {
@@ -1540,8 +1447,10 @@ pub(crate) fn project_hole_position_sketches(
             }
             let marker_transform = sketch_frame_marker_transform(sketch, QUANTUM);
             let v_axis = normal.cross(u_axis.get());
-            let mut resolved = Vec::with_capacity(authored_markers.len());
+            let mut resolved = Vec::new();
+            ctx.reserve_collection_vec(&mut resolved, authored_markers.len(), OPERATION)?;
             for marker in &authored_markers {
+                ctx.charge_work(u64_from_index(sketch_entities.len()), OPERATION)?;
                 let mut positions = sketch_entities.iter().filter_map(|entity| {
                     let SketchGeometryDefinition::Point { position } =
                         *entity.geometry.definition()
@@ -1593,15 +1502,22 @@ pub(crate) fn project_hole_position_sketches(
                 };
                 resolved.push(HolePlacement::Axis { origin, axis });
             }
-            if resolved.len() == authored_markers.len() {
-                *placements = Some(resolved);
-                if !feature.dependencies.contains(position_dependency) {
-                    feature.dependencies.insert(position_dependency.clone());
-                }
+            if resolved.len() == authored_markers.len() { projection = Some((resolved, position_dependency)); }
+        }
+        if let Some((resolved, dependency)) = projection {
+            feature.evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition { *placements = Some(resolved); }
+            });
+            ctx.charge_work(u64_from_index(feature.dependencies.len()), OPERATION)?;
+            if !feature.dependencies.contains(dependency) {
+                ctx.charge_work(u64_from_index(dependency.as_str().len()), OPERATION)?;
+                let dependency = cadmpeg_ir::features::FeatureId::mint(ctx.format_retained(format_args!("{dependency}"), OPERATION)?)
+                    .map_err(|_| CodecError::malformed("invalid admitted SLDPRT feature identity"))?;
+                feature.dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
             }
         }
-        feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 fn paired_object_locus_markers<'a>(
@@ -2987,73 +2903,70 @@ pub(crate) struct HoleTopology<'a> {
     pub(crate) points: &'a [Point],
 }
 
-fn direct_hole_position_feature<'a>(
+fn direct_hole_position_feature<'a, 's>(
+    ctx: &DecodeContext<'_>,
     hole: &crate::records::Feature,
     histories: &'a [crate::records::FeatureHistory],
-    model_sketches: &HashMap<String, cadmpeg_ir::sketches::SketchId>,
+    sketch_for: impl Fn(&str) -> Option<&'s SketchId>,
     sketch_entities: &[SketchEntity],
-) -> Option<&'a crate::records::Feature> {
-    let children = hole.properties.get("DissectableChildren");
-    let history = histories
-        .iter()
-        .find(|history| history.features.iter().any(|feature| feature.id == hole.id))?;
-    let mut direct_sketches = children
-        .into_iter()
-        .flat_map(|children| children.split(','))
-        .map(str::trim)
-        .filter(|source| !source.is_empty())
-        .filter_map(|source| {
+) -> Result<Option<&'a crate::records::Feature>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT direct hole position";
+    let mut history = None;
+    for candidate in histories {
+        ctx.charge_work(u64_from_index(candidate.features.len()), OPERATION)?;
+        if candidate.features.iter().any(|feature| feature.id == hole.id) {
+            history = Some(candidate);
+            break;
+        }
+    }
+    let Some(history) = history else { return Ok(None); };
+    let mut direct_sketches: [Option<&crate::records::Feature>; 2] = [None, None];
+    if let Some(children) = hole.properties.get("DissectableChildren") {
+        ctx.charge_work(u64_from_index(children.len()), OPERATION)?;
+        for source in children.split(',').map(str::trim).filter(|source| !source.is_empty()) {
+            ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
             let mut matches = history.features.iter().filter(|candidate| {
-                FeatureSource::try_from(source)
-                    .is_ok_and(|source| candidate.source_id == Some(source))
+                FeatureSource::try_from(source).is_ok_and(|source| candidate.source_id == Some(source))
                     || candidate.id == source
             });
-            let child = matches.next()?;
-            matches.next().is_none().then_some(child)
-        })
-        .filter(|child| classify(child) == Some(FeatureClass::Sketch))
-        .collect::<Vec<_>>();
-    direct_sketches.sort_by_key(|child| child.id.as_str());
-    direct_sketches.dedup_by_key(|child| child.id.as_str());
-    let is_axial_profile = |child: &crate::records::Feature| {
-        model_sketches.get(&child.id).is_some_and(|sketch| {
-            profiled_hole_construction_with_evidence(
-                child,
-                sketch,
-                sketch_entities,
-                ProfileEvidence::AxialTopology,
-            )
-            .is_some()
-        })
+            let Some(child) = matches.next() else { continue; };
+            if matches.next().is_some() || classify(child) != Some(FeatureClass::Sketch) { continue; }
+            if direct_sketches.iter().flatten().any(|previous| previous.id == child.id) { continue; }
+            if direct_sketches[0].is_none() { direct_sketches[0] = Some(child); }
+            else if direct_sketches[1].is_none() { direct_sketches[1] = Some(child); }
+            else { return Ok(None); }
+        }
+    }
+    let is_axial_profile = |child: &crate::records::Feature| -> Result<bool, CodecError> {
+        let Some(sketch) = sketch_for(&child.id) else { return Ok(false); };
+        Ok(profiled_hole_construction_with_evidence(ctx, child, sketch, sketch_entities, ProfileEvidence::AxialTopology)?.is_some())
     };
-    let adjacent_position = || {
-        let position_ordinal = hole.ordinal.checked_add(1)?;
-        let profile_ordinal = hole.ordinal.checked_add(2)?;
+    let adjacent_position = || -> Result<Option<(&'a crate::records::Feature, &'a crate::records::Feature)>, CodecError> {
+        let (Some(position_ordinal), Some(profile_ordinal)) = (hole.ordinal.checked_add(1), hole.ordinal.checked_add(2)) else { return Ok(None); };
         let unique_at = |ordinal| {
             let mut candidates = history.features.iter().filter(|candidate| {
-                candidate.ordinal == ordinal
-                    && classify(candidate) == Some(FeatureClass::Sketch)
-                    && model_sketches.contains_key(&candidate.id)
+                candidate.ordinal == ordinal && classify(candidate) == Some(FeatureClass::Sketch)
+                    && sketch_for(&candidate.id).is_some()
             });
             let candidate = candidates.next()?;
             candidates.next().is_none().then_some(candidate)
         };
-        let position = unique_at(position_ordinal)?;
-        let profile = unique_at(profile_ordinal)?;
-        (!is_axial_profile(position) && is_axial_profile(profile)).then_some((position, profile))
+        ctx.charge_work(u64_from_index(history.features.len()).checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let (Some(position), Some(profile)) = (unique_at(position_ordinal), unique_at(profile_ordinal)) else { return Ok(None); };
+        if !is_axial_profile(position)? && is_axial_profile(profile)? { Ok(Some((position, profile))) } else { Ok(None) }
     };
-    match direct_sketches.as_slice() {
-        [first, second] => match (is_axial_profile(first), is_axial_profile(second)) {
+    Ok(match direct_sketches {
+        [Some(first), Some(second)] => match (is_axial_profile(first)?, is_axial_profile(second)?) {
             (true, false) => Some(second),
             (false, true) => Some(first),
             _ => None,
         },
-        [profile] => adjacent_position()
-            .filter(|(_, adjacent_profile)| adjacent_profile.id == profile.id)
+        [Some(profile), None] => adjacent_position()?.filter(|(_, adjacent_profile)| adjacent_profile.id == profile.id)
             .map(|(position, _)| position),
-        [] => adjacent_position().map(|(position, _)| position),
+        [None, None] => adjacent_position()?.map(|(position, _)| position),
         _ => None,
-    }
+    })
 }
 
 pub(crate) fn project_hole_axes(
@@ -3095,9 +3008,11 @@ pub(crate) fn project_hole_axes(
     for hole in native_features.values() {
         ctx.charge_work(1, INDEX_OPERATION)?;
         if classify(hole) != Some(FeatureClass::Hole) { continue; }
-        let Some(position) = hole_position_feature(hole, histories, lanes).or_else(|| {
-            direct_hole_position_feature(hole, histories, &model_sketches, sketch_entities)
-        }) else { continue; };
+        let position = match hole_position_feature(hole, histories, lanes) {
+            Some(position) => Some(position),
+            None => direct_hole_position_feature(ctx, hole, histories, |id| model_sketches.get(id), sketch_entities)?,
+        };
+        let Some(position) = position else { continue; };
         ctx.charge_collection_items(1, INDEX_OPERATION)?;
         hole_positions.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?;
         hole_positions.insert(hole.id.as_str(), position);

@@ -658,6 +658,8 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
 
 #[test]
 fn typed_position_sketch_reference_lifts_authored_object_loci() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let hole = model_hole();
     let sketch_feature = cadmpeg_ir::features::Feature {
         id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
@@ -801,13 +803,13 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     alternate_configuration.id = "alternate-lane".into();
     alternate_configuration.configuration = Some("alternate".into());
 
-    project_hole_position_sketches(
+    project_hole_position_sketches(&ctx,
         &mut features,
         std::slice::from_ref(&sketch),
         &entities,
         std::slice::from_ref(&history),
         &[lane, alternate_configuration],
-    );
+    ).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -837,13 +839,13 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     );
 
     let mut paired_features = vec![model_hole(), features[1].clone()];
-    project_hole_position_sketches(
+    project_hole_position_sketches(&ctx,
         &mut paired_features,
         std::slice::from_ref(&sketch),
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&paired_lane),
-    );
+    ).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements: paired_placements,
         ..
@@ -900,13 +902,13 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         constructed_marker
     });
     let mut incomplete_features = vec![model_hole(), features[1].clone()];
-    project_hole_position_sketches(
+    project_hole_position_sketches(&ctx,
         &mut incomplete_features,
         std::slice::from_ref(&sketch),
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&incomplete_lane),
-    );
+    ).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         incomplete_features[0].evaluation.definition()
     else {
@@ -917,6 +919,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
 
 #[test]
 fn unique_unindexed_point_locus_is_projected() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let hole = model_hole();
     let sketch_feature = cadmpeg_ir::features::Feature {
         id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
@@ -994,13 +998,13 @@ fn unique_unindexed_point_locus_is_projected() {
     };
     let mut features = vec![hole, sketch_feature];
 
-    project_hole_position_sketches(
+    project_hole_position_sketches(&ctx,
         &mut features,
         std::slice::from_ref(&sketch),
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1026,13 +1030,13 @@ fn unique_unindexed_point_locus_is_projected() {
     lane.sketch_entities
         .push(marker("ambiguous-locus", 3, [0.006, 0.007]));
     let mut ambiguous_features = vec![model_hole(), features[1].clone()];
-    project_hole_position_sketches(
+    project_hole_position_sketches(&ctx,
         &mut ambiguous_features,
         std::slice::from_ref(&sketch),
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         ambiguous_features[0].evaluation.definition()
     else {
