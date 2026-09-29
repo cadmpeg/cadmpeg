@@ -7,7 +7,7 @@ fn block_dimensions_for_test(
     constructions: &[crate::native::features::FeatureBlockConstruction],
     bindings: &[crate::native::features::FeatureParameterBinding],
     declarations: &[crate::native::om::ExpressionDeclaration],
-    expressions: &[crate::native::om::Expression],
+    expressions: &[crate::native::om::ParameterFormula],
 ) -> Vec<crate::native::features::FeatureBlockDimensions> {
     crate::test_support::with_decode_context(|ctx| {
         feature_block_dimensions(ctx, constructions, bindings, declarations, expressions)
@@ -19,7 +19,7 @@ fn block_dimensions_for_test(
 fn nx_block_dimensions_do_not_cross_expression_sections() {
     use crate::native::features::FeatureBlockConstruction;
     use crate::native::features::FeatureParameterBinding;
-    use crate::native::om::{Expression, ExpressionDeclaration, ExpressionUnit};
+    use crate::native::om::{ParameterFormula, ExpressionDeclaration, ExpressionUnit};
 
     let operation = "nx:feature-history:operation-label#0-1";
     let construction = FeatureBlockConstruction {
@@ -54,7 +54,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
         source_entry: source_entry.into(),
         source_offset: u64::from(index),
     };
-    let expression = |index: u32, source_entry: &str, source_table: &str| Expression {
+    let expression = |index: u32, source_entry: &str, source_table: &str| ParameterFormula {
         id: format!("expression-{index}"),
         owner: Some(crate::native::om::ExpressionOwner {
             object_id: index,
@@ -133,7 +133,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
 fn nx_block_dimensions_refuse_an_inch_length_that_overflows_millimeters() {
     use crate::native::features::FeatureBlockConstruction;
     use crate::native::features::FeatureParameterBinding;
-    use crate::native::om::{Expression, ExpressionDeclaration, ExpressionUnit};
+    use crate::native::om::{ParameterFormula, ExpressionDeclaration, ExpressionUnit};
 
     let operation = "nx:feature-history:operation-label#0-1";
     let construction = FeatureBlockConstruction {
@@ -168,7 +168,7 @@ fn nx_block_dimensions_refuse_an_inch_length_that_overflows_millimeters() {
         source_entry: source_entry.into(),
         source_offset: u64::from(index),
     };
-    let expression = |index: u32, source_entry: &str, source_table: &str| Expression {
+    let expression = |index: u32, source_entry: &str, source_table: &str| ParameterFormula {
         id: format!("expression-{index}"),
         owner: Some(crate::native::om::ExpressionOwner {
             object_id: index,
@@ -222,7 +222,7 @@ fn block_dimension_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     use crate::native::features::{FeatureBlockConstruction, FeatureParameterBinding};
-    use crate::native::om::{Expression, ExpressionDeclaration, ExpressionUnit};
+    use crate::native::om::{ParameterFormula, ExpressionDeclaration, ExpressionUnit};
 
     let operation = "operation";
     let construction = FeatureBlockConstruction {
@@ -260,9 +260,9 @@ fn block_dimension_refusal(
             source_offset: u64::from(index),
         }
     });
-    let expressions: [Expression; 3] = std::array::from_fn(|ordinal| {
+    let expressions: [ParameterFormula; 3] = std::array::from_fn(|ordinal| {
         let index = 20 + u32::try_from(ordinal).expect("three dimension slots");
-        Expression {
+        ParameterFormula {
             id: format!("expression-{index}"),
             owner: None,
             declaration: Some(format!("declaration-{index}")),

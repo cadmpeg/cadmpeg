@@ -2171,8 +2171,8 @@ fn select_terminal_feature_bodies(
     let Some(selected) = crate::native::model::terminal_feature_body_ids(
         ctx,
         &emitted,
-        &model.segments.segment_body_bindings,
-        &model.segments.segment_body_lineage_statuses,
+        &model.segments.body_bindings,
+        &model.segments.body_lineage_statuses,
     )?
     else {
         return Ok(false);

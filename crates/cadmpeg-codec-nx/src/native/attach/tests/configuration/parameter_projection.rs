@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 #[test]
 fn nx_block_dimension_parameters_name_the_block_as_consumer() {
-    let expression = |key: u32| crate::native::om::Expression {
+    let expression = |key: u32| crate::native::om::ParameterFormula {
         id: format!("nx:test:expression#{key}"),
         owner: None,
         declaration: None,
@@ -144,7 +144,7 @@ fn parameter_owner_dependency_refuses_work_limit() {
 #[test]
 fn nx_inch_expression_values_are_attached_in_millimeters() {
     let expression =
-        |key: u32, name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+        |key: u32, name: &str, formula: &str, value: Option<f64>| crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{key}"),
             owner: None,
             declaration: None,
@@ -197,7 +197,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
 
 #[test]
 fn nx_native_expression_units_remain_outside_neutral_values() {
-    let expression = crate::native::om::Expression {
+    let expression = crate::native::om::ParameterFormula {
         id: "nx:test:expression#native".into(),
         owner: None,
         declaration: None,

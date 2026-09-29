@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte identity and native admission for borrowed expression wires.
 
-use super::{Expression, ExpressionDeclaration, ExpressionDeclarationWire, ExpressionWire};
+use super::{ParameterFormula, ExpressionDeclaration, ExpressionDeclarationWire, ExpressionWire};
 
 #[test]
 fn expression_declaration_borrowed_wire_preserves_bytes() {
@@ -27,7 +27,7 @@ fn expression_declaration_native_limit_refuses_before_clone() {
 #[test]
 fn expression_borrowed_wire_preserves_bytes() {
     let json = r#"{"id":"nx:om:expression#test","object_id":4,"record":"record","declaration":"declaration","name":"p12_angle","parameter_index":12,"qualifier":"angle","unit":"millimeter","expression":"3.25","value":3.25,"source_entry":"entry","source_table":"table","source_offset":10}"#;
-    let record: Expression = serde_json::from_str(json).unwrap();
+    let record: ParameterFormula = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
     assert_eq!(
         serde_json::to_vec(&record).unwrap(),
@@ -38,7 +38,7 @@ fn expression_borrowed_wire_preserves_bytes() {
 #[test]
 fn expression_native_limit_refuses_before_clone() {
     let json = r#"{"id":"nx:om:expression#test","object_id":4,"record":"record","declaration":"declaration","name":"p12_angle","parameter_index":12,"qualifier":"angle","unit":"millimeter","expression":"3.25","value":3.25,"source_entry":"entry","source_table":"table","source_offset":10}"#;
-    let record: Expression = serde_json::from_str(json).unwrap();
+    let record: ParameterFormula = serde_json::from_str(json).unwrap();
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
         serde_json::from_str::<serde_json::Value>(json).unwrap(),

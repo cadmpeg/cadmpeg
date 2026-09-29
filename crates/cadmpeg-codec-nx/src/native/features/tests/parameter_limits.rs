@@ -3,7 +3,7 @@
 fn parameter_binding_input() -> (
     crate::native::features::FeatureInputBlock,
     crate::native::om::DataBlockReference,
-    crate::native::om::Expression,
+    crate::native::om::ParameterFormula,
 ) {
     let input = crate::native::features::FeatureInputBlock {
         id: "input".into(),
@@ -24,7 +24,7 @@ fn parameter_binding_input() -> (
         target_expression_declaration: Some("declaration".into()),
         source_offset: 800,
     };
-    let expression = crate::native::om::Expression {
+    let expression = crate::native::om::ParameterFormula {
         id: "expression#1".into(),
         owner: None,
         declaration: Some("declaration".into()),

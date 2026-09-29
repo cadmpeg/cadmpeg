@@ -3418,8 +3418,6 @@ fn consume_intersection_data(
     )
 }
 
-// Names follow the ordered source slots in this fixed-width lane.
-#[allow(clippy::many_single_char_names)]
 fn consume_intersection_auxiliary(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
@@ -3436,13 +3434,13 @@ fn consume_intersection_auxiliary(
     } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
         (RecordFamily::TermUse, term.xmt, end)
     } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
-        let [a, b, c, d, e] = bound.state.header_references();
+        let headers = bound.state.header_references();
         let references = [
-            a,
-            b,
-            c,
-            d,
-            e,
+            headers[0],
+            headers[1],
+            headers[2],
+            headers[3],
+            headers[4],
             bound.state.boundary_index(),
             bound.state.blend_surface(),
         ];

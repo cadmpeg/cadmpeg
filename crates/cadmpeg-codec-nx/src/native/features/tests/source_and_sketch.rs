@@ -978,9 +978,9 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         data_block: "csys-block".into(),
         descriptor: crate::om::csys_descriptor::LocatedCsysDescriptor::new(
             crate::om::csys_descriptor::CsysDescriptor::from_wire(
-                vec![2, 1],
-                plane.descriptor.identity().to_owned().try_into().unwrap(),
-                vec![b'?', b'A'],
+                &[2, 1],
+                &plane.descriptor.identity().to_owned().try_into().unwrap(),
+                &[b'?', b'A'],
             )
             .unwrap(),
             20,
