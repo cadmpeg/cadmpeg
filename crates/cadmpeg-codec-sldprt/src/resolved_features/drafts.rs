@@ -411,9 +411,15 @@ pub(super) fn draft_operand_candidates(
     lane: &FeatureInputLane,
 ) -> Result<Vec<(String, DraftOperands)>, CodecError> {
     const OPERATION: &str = "collect SLDPRT draft operand candidates";
+    const NAME_OPERATION: &str = "scan SLDPRT draft feature names";
+    let name_scan_work = u64::try_from(lane.names.len())
+        .ok()
+        .and_then(|count| count.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit(NAME_OPERATION, u64::MAX - 1, u64::MAX))?;
     let mut objects = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, OPERATION)?;
+        ctx.charge_work(name_scan_work, NAME_OPERATION)?;
         if let Some(name) = feature_object_name(feature, lane) {
             ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
             objects.push((name.offset, feature));
@@ -522,10 +528,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn draft_operand_candidates_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+    fn named_draft_fixture() -> (FeatureHistory, FeatureInputLane) {
         let history = FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -557,6 +560,14 @@ mod tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
+        (history, lane)
+    }
+
+    #[test]
+    fn draft_operand_candidates_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let (history, lane) = named_draft_fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
@@ -567,6 +578,23 @@ mod tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect SLDPRT draft operand candidates"));
+    }
+
+    #[test]
+    fn draft_operand_candidates_refuses_name_scan_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let (history, lane) = named_draft_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+            .expect("test context");
+        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
+            .expect_err("draft name scan exceeds work limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan SLDPRT draft feature names"));
     }
 
     #[test]
