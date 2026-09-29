@@ -345,7 +345,7 @@ use std::io::Write;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
-use super::super::hex::Sha256Hex;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use super::{DisplayJtMaterialAttribute, DisplayJtPartitionBounds, FiniteBinary32, UnitBinary32};
 use cadmpeg_ir::topology::Color;
 
@@ -470,7 +470,7 @@ fn display_jt_index_requires_every_declared_header() {
     );
     assert_eq!(
         compression.inflated_sha256,
-        crate::native::hex::Sha256Hex::digest(&inflated)
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&inflated)
     );
 
     let mut cross_entry = container.clone();
@@ -574,7 +574,7 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
         segment_id: [1; 16],
         segment_type: 7,
         segment_byte_len: 78,
-        payload_sha256: Sha256Hex::digest(&[]),
+        payload_sha256: Sha256Digest::digest(&[]),
         compression: None,
         source_offset: 0,
     };
@@ -692,7 +692,7 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
         segment_id: [1; 16],
         segment_type: 1,
         segment_byte_len: (33 + compressed.len()) as u32,
-        payload_sha256: Sha256Hex::digest(&[]),
+        payload_sha256: Sha256Digest::digest(&[]),
         compression: None,
         source_offset: 0,
     };
@@ -703,7 +703,7 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
         segment_id: [9; 16],
         segment_type: 7,
         segment_byte_len: 0,
-        payload_sha256: Sha256Hex::digest(&[]),
+        payload_sha256: Sha256Digest::digest(&[]),
         compression: None,
         source_offset: 0,
     };
@@ -1811,7 +1811,7 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
         ],
         object_id: 1,
         body_byte_len: body.len() as u32,
-        body_sha256: Sha256Hex::digest(&[]),
+        body_sha256: Sha256Digest::digest(&[]),
         source_offset,
     }];
 

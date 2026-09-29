@@ -12,10 +12,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cadmpeg_codec_nx::{
-    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, NxCodec, Sha256Hex,
+    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, NxCodec,
     UnsupportedBodyCensusReason,
 };
 use cadmpeg_ir::appearance::AppearanceTarget;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossCategory;
 use cadmpeg_ir::topology::Color;
@@ -242,7 +243,7 @@ struct Assertion {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DecodedFixtureEvidence {
-    canonical_sha256: Sha256Hex,
+    canonical_sha256: Sha256Digest,
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
@@ -704,7 +705,7 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
 
 fn canonical_sha256(
     ir: &CadIr,
-) -> Result<Sha256Hex, cadmpeg_ir::hash::finite_json::CanonicalJsonError> {
+) -> Result<Sha256Digest, cadmpeg_ir::hash::finite_json::CanonicalJsonError> {
     struct Sha256Writer(Sha256);
 
     impl Write for Sha256Writer {
@@ -725,7 +726,7 @@ fn canonical_sha256(
     std::io::Write::write_all(&mut writer, canonical.as_bytes())
         .map_err(serde::ser::Error::custom)
         .map_err(cadmpeg_ir::hash::finite_json::CanonicalJsonError::Serialize)?;
-    Ok(Sha256Hex::from_digest(writer.0.finalize().into()))
+    Ok(Sha256Digest::from_bytes(writer.0.finalize().into()))
 }
 
 fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, WorkerFailure> {

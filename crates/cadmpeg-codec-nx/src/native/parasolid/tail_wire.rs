@@ -13,7 +13,7 @@ pub(super) struct NullTailWire {
     stream_ordinal: u32,
     references: Vec<u32>,
     byte_len: u64,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     inflated_offset: u64,
 }
 
@@ -49,7 +49,7 @@ impl From<ParasolidDeltasTerminalNullReferences> for NullTailWire {
             stream_ordinal: value.stream_ordinal,
             references: value.form.references().to_vec(),
             byte_len: value.form.raw().len() as u64,
-            sha256: crate::native::hex::Sha256Hex::digest(value.form.raw()),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(value.form.raw()),
             inflated_offset: value.inflated_offset,
         }
     }
@@ -61,7 +61,7 @@ impl TryFrom<NullTailWire> for ParasolidDeltasTerminalNullReferences {
         if wire.byte_len != form.raw().len() as u64 {
             return Err("byte_len: does not match null-reference encoding");
         }
-        if wire.sha256 != crate::native::hex::Sha256Hex::digest(form.raw()) {
+        if wire.sha256 != cadmpeg_ir::hash::digest::Sha256Digest::digest(form.raw()) {
             return Err("sha256: does not match null-reference bytes");
         }
         Ok(Self {
@@ -82,7 +82,7 @@ pub(super) struct NumericTailWire {
     term_use_count: u32,
     values: Vec<f64>,
     byte_len: u64,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     inflated_offset: u64,
 }
 
@@ -119,7 +119,7 @@ impl Serialize for ParasolidDeltasTermUseNumericTail {
 impl From<ParasolidDeltasTermUseNumericTail> for NumericTailWire {
     fn from(value: ParasolidDeltasTermUseNumericTail) -> Self {
         let byte_len = value.values.byte_len() as u64;
-        let sha256 = crate::native::hex::Sha256Hex::digest(&value.values.bytes());
+        let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::digest(&value.values.bytes());
         Self {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
@@ -140,7 +140,7 @@ impl TryFrom<NumericTailWire> for ParasolidDeltasTermUseNumericTail {
             return Err("byte_len: does not match numeric-tail encoding");
         }
         let (bytes, len) = values.encoded_bytes();
-        if wire.sha256 != crate::native::hex::Sha256Hex::digest(&bytes[..len]) {
+        if wire.sha256 != cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[..len]) {
             return Err("sha256: does not match numeric-tail bytes");
         }
         Ok(Self {
@@ -164,7 +164,7 @@ mod tests {
             ("[1,1]", &[0, 1, 0, 1][..]),
             ("[1,1,1,1]", &[0, 1, 0, 1, 0, 1, 0, 1][..]),
         ] {
-            let sha256 = crate::native::hex::Sha256Hex::digest(bytes);
+            let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes);
             let byte_len = bytes.len();
             let json = format!(
                 r#"{{"id":"tail","stream_ordinal":0,"references":{references},"byte_len":{byte_len},"sha256":"{sha256}","inflated_offset":10}}"#
@@ -195,7 +195,7 @@ mod tests {
             .into_iter()
             .flat_map(f64::to_be_bytes)
             .collect::<Vec<_>>();
-        let sha256 = crate::native::hex::Sha256Hex::digest(&bytes);
+        let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes);
         let json = format!(
             r#"{{"id":"tail","stream_ordinal":0,"term_use_xmt":20,"term_use_count":1,"values":[-0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0],"byte_len":64,"sha256":"{sha256}","inflated_offset":10}}"#
         );
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn null_tail_native_limit_refuses_before_hash_text_allocation() {
         let bytes = [0, 1, 0, 1];
-        let digest = crate::native::hex::Sha256Hex::digest(&bytes);
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes);
         let json = format!(
             r#"{{"id":"nx:parasolid:null-tail#0","stream_ordinal":0,"references":[1,1],"byte_len":4,"sha256":"{digest}","inflated_offset":10}}"#
         );
@@ -238,7 +238,7 @@ mod tests {
             .into_iter()
             .flat_map(f64::to_be_bytes)
             .collect::<Vec<_>>();
-        let digest = crate::native::hex::Sha256Hex::digest(&bytes);
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes);
         let json = format!(
             r#"{{"id":"nx:parasolid:numeric-tail#0","stream_ordinal":0,"term_use_xmt":20,"term_use_count":1,"values":[-0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0],"byte_len":64,"sha256":"{digest}","inflated_offset":10}}"#
         );

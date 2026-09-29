@@ -20,11 +20,11 @@ pub(super) struct FeaturePayloadBlock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FeaturePayloadContent<B> {
     blocks: B,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
-    pub(super) fn new(blocks: B, sha256: crate::native::hex::Sha256Hex) -> Result<Self, String> {
+    pub(super) fn new(blocks: B, sha256: cadmpeg_ir::hash::digest::Sha256Digest) -> Result<Self, String> {
         blocks
             .as_ref()
             .iter()
@@ -87,7 +87,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
         };
         reservation.commit()?;
         ctx.charge_retained(64, "retain NX feature payload digest")?;
-        let digest = crate::native::hex::Sha256Hex::from_digest(hash.finalize().into());
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes(hash.finalize().into());
         let content = Self::new(blocks, digest).map_err(CodecError::Malformed)?;
         Ok(Some(content))
     }
@@ -97,7 +97,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
 struct PayloadContentWire {
     data_blocks: Vec<String>,
     byte_len: u64,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     block_payload_offsets: Vec<u64>,
     block_byte_lengths: Vec<u64>,
     block_source_offsets: Vec<u64>,
@@ -308,7 +308,7 @@ mod tests {
             },
         ];
         assert!(
-            FeaturePayloadContent::new(blocks, crate::native::hex::Sha256Hex::digest(b"hash"))
+            FeaturePayloadContent::new(blocks, cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash"))
                 .is_err()
         );
     }
