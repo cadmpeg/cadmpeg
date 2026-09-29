@@ -302,11 +302,11 @@ fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
     for axial in [0.0, 1e8, 1e200] {
         assert_eq!(
             point_on_surface_if_supported(Point3::new(1.0, 0.0, axial), &cylinder),
-            Some(true)
+            Ok(Some(true))
         );
         assert_eq!(
             point_on_surface_if_supported(Point3::new(2.0, 0.0, axial), &cylinder),
-            Some(false)
+            Ok(Some(false))
         );
     }
     let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(

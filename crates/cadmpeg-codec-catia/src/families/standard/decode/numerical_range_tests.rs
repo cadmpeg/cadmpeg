@@ -121,7 +121,7 @@ fn numerical_0922b_surface_membership_wide_chart() {
     for d in [[0., 1.], [-1e308, 1e308]] {
         let r = point_on_nurbs_surface(Point3::new(0.3, 0.7, 0.), &audit_plane(d, 1.));
         println!("CATIA plane chart{d:?}: {r:?}");
-        assert_eq!(r, Some(true));
+        assert_eq!(r, Ok(Some(true)));
     }
 }
 #[test]
@@ -132,6 +132,6 @@ fn numerical_0922b_surface_membership_large_plane() {
             &audit_plane([0., 1.], scale),
         );
         println!("CATIA plane scale{scale:e}: {r:?}");
-        assert_eq!(r, Some(true));
+        assert_eq!(r, Ok(Some(true)));
     }
 }

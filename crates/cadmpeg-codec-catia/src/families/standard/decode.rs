@@ -373,7 +373,9 @@ fn bind_consolidated_revolution_faces_and_seams(
                 continue;
             };
             let parameter = start.midpoint(end);
-            if let Ok(point) = cadmpeg_ir::eval::curve_point(curve, parameter) {
+            if let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::curve_point(curve, parameter),
+            )? {
                 crate::resource::push(
                     ctx,
                     &mut witnesses,
@@ -5442,14 +5444,21 @@ fn standard_limit_curve_bindings(
             for (point, parameter) in points.iter().copied() {
                 let res = {
                     let position = ir.model.points[point].position().get();
-                    support.faces.iter().all(|face| {
-                        face_surface(ir, bindings, surface_indices, *face).is_some_and(|surface| {
-                            matches!(
-                                surface.geometry,
-                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                            ) || point_on_surface(position, &surface.geometry)
-                        })
-                    })
+                    let mut all_faces = true;
+                    for face in support.faces {
+                        let Some(surface) = face_surface(ir, bindings, surface_indices, face) else {
+                            all_faces = false;
+                            break;
+                        };
+                        if !matches!(
+                            surface.geometry,
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                        ) && !point_on_surface(position, &surface.geometry)? {
+                            all_faces = false;
+                            break;
+                        }
+                    }
+                    all_faces
                 };
                 if res {
                     crate::resource::push(
@@ -5472,25 +5481,36 @@ fn standard_limit_curve_bindings(
                     "catia_limit_curve_geometry_copy",
                 )?,
             ));
-            let Ok(midpoint) =
-                cadmpeg_ir::eval::curve_point(&geometry, 0.5 * (start_parameter + end_parameter))
-            else {
-                continue;
+            let midpoint = match cadmpeg_ir::eval::curve_point(
+                &geometry,
+                0.5 * (start_parameter + end_parameter),
+            ) {
+                Ok(point) => point,
+                Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+                    return Err(limit.into());
+                }
+                Err(cadmpeg_ir::eval::EvaluationFailure::NoValue
+                | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)) => continue,
             };
             let mut checked_surface = false;
-            let agrees = support.faces.iter().all(|face| {
-                let Some(surface) = face_surface(ir, bindings, surface_indices, *face) else {
-                    return false;
+            let mut agrees = true;
+            for face in support.faces {
+                let Some(surface) = face_surface(ir, bindings, surface_indices, face) else {
+                    agrees = false;
+                    break;
                 };
                 if matches!(
                     surface.geometry,
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
                 ) {
-                    return true;
+                    continue;
                 }
                 checked_surface = true;
-                point_on_surface(midpoint.get(), &surface.geometry)
-            });
+                if !point_on_surface(midpoint.get(), &surface.geometry)? {
+                    agrees = false;
+                    break;
+                }
+            }
             if checked_surface && agrees {
                 crate::resource::push(
                     ctx,
@@ -5720,7 +5740,7 @@ fn attach_standard_topology(
                                 point.position().get(),
                                 surface,
                                 face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                            ) {
+                            ).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
                                 crate::resource::push(
                                     ctx,
                                     &mut points,
@@ -6059,23 +6079,32 @@ fn attach_standard_topology(
                         else {
                             continue;
                         };
-                        options[edge].iter().any(|pair| {
-                            pair.iter().all(|point| {
-                                ir.model.points.get(*point).is_some_and(|point| {
-                                    point_on_standard_face(
-                                        point.position().get(),
-                                        &surface.geometry,
-                                        face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                                    )
-                                })
-                            }) && standard_nurbs_line_pair_on_face(
-                                &surface.geometry,
-                                support,
-                                pair,
-                                &ir.model.points,
+                        let mut any_pair = false;
+                        for pair in &options[edge] {
+                            let mut all_points = true;
+                            for point in pair {
+                                let Some(point) = ir.model.points.get(*point) else {
+                                    all_points = false;
+                                    break;
+                                };
+                                if !point_on_standard_face(
+                                    point.position().get(),
+                                    &surface.geometry,
+                                    face_bounds.as_ref().and_then(|bounds| bounds[face]),
+                                ).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                                    all_points = false;
+                                    break;
+                                }
+                            }
+                            if all_points && standard_nurbs_line_pair_on_face(
+                                &surface.geometry, support, pair, &ir.model.points,
                                 face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                            )
-                        })
+                            ).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                                any_pair = true;
+                                break;
+                            }
+                        }
+                        any_pair
                     };
                     if res {
                         crate::resource::push(
@@ -6207,17 +6236,25 @@ fn attach_standard_topology(
                 let Some(surface) = face_surface(ir, bindings, &surface_indices, faces[1]) else {
                     return Err(StandardTopologyFailure::MissingFaceSurface.into());
                 };
-                options[edge].retain(|pair| {
-                    pair.iter().all(|point| {
-                        ir.model.points.get(*point).is_some_and(|point| {
-                            point_on_standard_face(
-                                point.position().get(),
-                                &surface.geometry,
-                                face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
-                            )
-                        })
-                    })
-                });
+                let mut pair_index = 0;
+                while pair_index < options[edge].len() {
+                    let mut all_points = true;
+                    for point in options[edge][pair_index] {
+                        let Some(point) = ir.model.points.get(point) else {
+                            all_points = false;
+                            break;
+                        };
+                        if !point_on_standard_face(
+                            point.position().get(),
+                            &surface.geometry,
+                            face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
+                        ).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                            all_points = false;
+                            break;
+                        }
+                    }
+                    if all_points { pair_index += 1; } else { options[edge].remove(pair_index); }
+                }
                 if options[edge].is_empty() {
                     return Err(StandardTopologyFailure::EmptyEndpointDomain.into());
                 }
@@ -6237,30 +6274,30 @@ fn attach_standard_topology(
     let has_open_face_domains = open_face_domains
         .as_ref()
         .is_some_and(|domains| domains.iter().any(|domain| !domain.is_empty()));
-    let endpoint_pair_on_incident_faces = |edge: usize, pair: [usize; 2]| {
-        pair.iter().all(|point| {
+    let endpoint_pair_on_incident_faces = |edge: usize, pair: [usize; 2]| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+        for point in pair {
             let Some(position) = ir
                 .model
                 .points
-                .get(*point)
+                .get(point)
                 .map(|point| point.position().get())
             else {
-                return false;
+                return Ok(false);
             };
-            supports[edge].faces.iter().all(|face| {
-                face_surface(ir, bindings, &surface_indices, *face).is_some_and(|surface| {
-                    let bounds = face_bounds.as_ref().and_then(|bounds| bounds[*face]);
-                    point_on_standard_face(position, &surface.geometry, bounds)
-                        && standard_nurbs_line_pair_on_face(
-                            &surface.geometry,
-                            &supports[edge],
-                            &pair,
-                            &ir.model.points,
-                            bounds,
-                        )
-                })
-            })
-        })
+            for face in supports[edge].faces {
+                let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
+                    return Ok(false);
+                };
+                let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
+                if !point_on_standard_face(position, &surface.geometry, bounds)?
+                    || !standard_nurbs_line_pair_on_face(
+                        &surface.geometry, &supports[edge], &pair, &ir.model.points, bounds,
+                    )? {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
     };
     if let Some(options) = &mut endpoint_options {
         for (edge, pairs) in options.iter_mut().enumerate() {
@@ -6354,7 +6391,14 @@ fn attach_standard_topology(
                     if deferred_port_edges[edge] {
                         continue;
                     }
-                    domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
+                    let mut index = 0;
+                    while index < domain.len() {
+                        if endpoint_pair_on_incident_faces(edge, domain[index]).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                            index += 1;
+                        } else {
+                            domain.remove(index);
+                        }
+                    }
                     if domain.is_empty() {
                         continue;
                     }
@@ -6392,7 +6436,14 @@ fn attach_standard_topology(
                     if deferred_port_edges[edge] {
                         continue;
                     }
-                    domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
+                    let mut index = 0;
+                    while index < domain.len() {
+                        if endpoint_pair_on_incident_faces(edge, domain[index]).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                            index += 1;
+                        } else {
+                            domain.remove(index);
+                        }
+                    }
                     let previous = crate::resource::copy_slice(
                         ctx,
                         &options[edge],
@@ -6416,7 +6467,14 @@ fn attach_standard_topology(
             }
         }
         for (edge, pairs) in options.iter_mut().enumerate() {
-            pairs.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
+            let mut index = 0;
+            while index < pairs.len() {
+                if endpoint_pair_on_incident_faces(edge, pairs[index]).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                    index += 1;
+                } else {
+                    pairs.remove(index);
+                }
+            }
             pairs.sort_unstable();
             pairs.dedup();
         }
@@ -6853,29 +6911,12 @@ fn attach_standard_topology(
             )?,
         };
         let point_on_face = |face: usize, point: usize| {
-            if let Some(membership) = face_point_membership.as_ref() {
-                return membership
+            face_point_membership.as_ref().is_some_and(|membership| {
+                membership
                     .get(face)
                     .and_then(|points| points.get(point))
                     .copied()
-                    .unwrap_or(false);
-            }
-            let Some(position) = ir
-                .model
-                .points
-                .get(point)
-                .map(|point| point.position().get())
-            else {
-                return false;
-            };
-            face_surface(ir, bindings, &surface_indices, face).is_some_and(|surface| {
-                point_on_standard_face(
-                    position,
-                    &surface.geometry,
-                    face_bounds
-                        .and_then(|bounds| bounds.get(face).copied())
-                        .flatten(),
-                )
+                    .unwrap_or(false)
             })
         };
         let mut point_positions = Vec::new();
@@ -8185,8 +8226,8 @@ fn resolve_standard_endpoint_pairs(
                 if segment_norm != 0.0
                     && follows_direction
                     && follows_same_cone_generator
-                    && point_on_surface(midpoint, &surface0.geometry)
-                    && point_on_surface(midpoint, &surface1.geometry)
+                    && point_on_surface(midpoint, &surface0.geometry)?
+                    && point_on_surface(midpoint, &surface1.geometry)?
                 {
                     crate::resource::push(
                         ctx,
@@ -8341,11 +8382,15 @@ fn standard_circle_endpoint_candidates(
     for (index, point) in points.iter().enumerate() {
         let on_circle =
             (point.position().get().distance_squared(center).sqrt() - radius).abs() <= 1e-3;
-        let incident = faces.is_none_or(|faces| {
-            faces.into_iter().all(|(surface, bounds)| {
-                point_on_standard_face(point.position().get(), surface, bounds)
-            })
-        });
+        let mut incident = true;
+        if let Some(faces) = faces {
+            for (surface, bounds) in faces {
+                if !point_on_standard_face(point.position().get(), surface, bounds)? {
+                    incident = false;
+                    break;
+                }
+            }
+        }
         if on_circle && incident {
             crate::resource::push(
                 ctx,
@@ -8907,7 +8952,7 @@ fn standard_face_point_membership(
         ctx.alloc_filled(bindings.len(), Vec::new(), "catia_face_membership_rows")?;
     for (face, membership) in memberships.iter_mut().enumerate() {
         let Some(surface) = face_surface(ir, bindings, surface_indices, face) else {
-            return Ok(None);
+            continue;
         };
         let bounds = face_bounds
             .and_then(|bounds| bounds.get(face).copied())
@@ -8916,7 +8961,7 @@ fn standard_face_point_membership(
             ctx.alloc_filled(ir.model.points.len(), false, "catia_face_point_membership")?;
         for (point, candidate) in ir.model.points.iter().enumerate() {
             membership[point] =
-                point_on_standard_face(candidate.position().get(), &surface.geometry, bounds);
+                point_on_standard_face(candidate.position().get(), &surface.geometry, bounds)?;
         }
     }
     Ok(Some(memberships))
@@ -8926,11 +8971,11 @@ fn point_on_standard_face(
     point: Point3,
     surface: &SurfaceGeometry,
     bounds: Option<crate::families::standard::records::StandardFaceBounds>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     if bounds.is_some_and(|bounds| !point_inside_standard_face_bounds(point, bounds)) {
-        return false;
+        return Ok(false);
     }
-    point_on_surface_if_supported(point, surface) != Some(false)
+    Ok(point_on_surface_if_supported(point, surface)? != Some(false))
 }
 
 fn point_inside_standard_face_bounds(
@@ -9064,7 +9109,7 @@ fn standard_nurbs_line_pair_on_face(
     pair: &[usize; 2],
     points: &[Point],
     bounds: Option<crate::families::standard::records::StandardFaceBounds>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     if !matches!(
         surface,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
@@ -9072,22 +9117,25 @@ fn standard_nurbs_line_pair_on_face(
         support.geometry,
         crate::families::standard::records::StandardCurveGeometry::Line
     ) {
-        return true;
+        return Ok(true);
     }
     let Some(start) = points.get(pair[0]).map(|point| point.position().get()) else {
-        return false;
+        return Ok(false);
     };
     let Some(end) = points.get(pair[1]).map(|point| point.position().get()) else {
-        return false;
+        return Ok(false);
     };
-    NURBS_LINE_FACE_SAMPLES.iter().all(|fraction| {
+    for fraction in NURBS_LINE_FACE_SAMPLES {
         let point = Point3::new(
             start.x + fraction * (end.x - start.x),
             start.y + fraction * (end.y - start.y),
             start.z + fraction * (end.z - start.z),
         );
-        point_on_standard_face(point, surface, bounds)
-    })
+        if !point_on_standard_face(point, surface, bounds)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]> {
@@ -9497,10 +9545,18 @@ fn standard_endpoint_options_for_selected_faces(
     Ok(filtered_options)
 }
 
-fn nurbs_surface_point_distance(surface: &NurbsSurface, point: Point3, uv: Point2) -> Option<f64> {
-    let position = cadmpeg_ir::eval::nurbs_surface_point(surface, uv.u, uv.v).ok()?;
+fn nurbs_surface_point_distance(
+    surface: &NurbsSurface,
+    point: Point3,
+    uv: Point2,
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(position) = cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::nurbs_surface_point(surface, uv.u, uv.v),
+    )? else {
+        return Ok(None);
+    };
     let distance = position.distance(point);
-    distance.is_finite().then_some(distance)
+    Ok(distance.is_finite().then_some(distance))
 }
 
 fn refine_nurbs_surface_point(
@@ -9508,11 +9564,14 @@ fn refine_nurbs_surface_point(
     point: Point3,
     seed: Point2,
     domains: [[f64; 2]; 2],
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let mut parameters = seed;
     for _ in 0..NURBS_SURFACE_REFINEMENT_ITERATIONS {
-        let partials =
-            cadmpeg_ir::eval::nurbs_surface_partials(surface, parameters.u, parameters.v).ok()?;
+        let Some(partials) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::nurbs_surface_partials(surface, parameters.u, parameters.v),
+        )? else {
+            return Ok(None);
+        };
         let residual = partials.point.vector_from(point);
         let Some((u, v)) =
             cadmpeg_ir::math::solve::least_squares_step(partials.du, partials.dv, residual)
@@ -9520,7 +9579,9 @@ fn refine_nurbs_surface_point(
             break;
         };
         let step = Point2::new(u.get(), v.get());
-        let current = nurbs_surface_point_distance(surface, point, parameters)?;
+        let Some(current) = nurbs_surface_point_distance(surface, point, parameters)? else {
+            return Ok(None);
+        };
         let mut scale = 1.0;
         let mut accepted = None;
         for _ in 0..NURBS_SURFACE_BACKTRACK_STEPS {
@@ -9528,7 +9589,9 @@ fn refine_nurbs_surface_point(
                 (parameters.u - scale * step.u).clamp(domains[0][0], domains[0][1]),
                 (parameters.v - scale * step.v).clamp(domains[1][0], domains[1][1]),
             );
-            let distance = nurbs_surface_point_distance(surface, point, candidate)?;
+            let Some(distance) = nurbs_surface_point_distance(surface, point, candidate)? else {
+                return Ok(None);
+            };
             if distance <= current {
                 accepted = Some((candidate, distance));
                 break;
@@ -9540,30 +9603,36 @@ fn refine_nurbs_surface_point(
         };
         parameters = candidate;
         if distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE {
-            return Some(distance);
+            return Ok(Some(distance));
         }
     }
     nurbs_surface_point_distance(surface, point, parameters)
 }
 
-fn nurbs_surface_witness_distance(surface: &NurbsSurface, point: Point3) -> Option<f64> {
-    let domains = nurbs_surface_parameter_domain(surface)?;
-    let u_degree = usize::try_from(surface.u_degree()).ok()?;
-    let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_knots = surface.u_knots().get(u_degree..=surface.u_count())?;
-    let v_knots = surface.v_knots().get(v_degree..=surface.v_count())?;
+fn nurbs_surface_witness_distance(
+    surface: &NurbsSurface,
+    point: Point3,
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(domains) = nurbs_surface_parameter_domain(surface) else { return Ok(None); };
+    let Ok(u_degree) = usize::try_from(surface.u_degree()) else { return Ok(None); };
+    let Ok(v_degree) = usize::try_from(surface.v_degree()) else { return Ok(None); };
+    let Some(u_knots) = surface.u_knots().get(u_degree..=surface.u_count()) else { return Ok(None); };
+    let Some(v_knots) = surface.v_knots().get(v_degree..=surface.v_count()) else { return Ok(None); };
     let u_spans = u_knots.windows(2).filter(|pair| pair[0] != pair[1]).count();
     let v_spans = v_knots.windows(2).filter(|pair| pair[0] != pair[1]).count();
     if u_spans == 0 || v_spans == 0 {
-        return None;
+        return Ok(None);
     }
-    let samples = u_spans
-        .checked_mul(NURBS_SURFACE_SEEDS_PER_SPAN)?
-        .checked_mul(v_spans)?
-        .checked_mul(NURBS_SURFACE_SEEDS_PER_SPAN)?;
+    let Some(samples) = u_spans
+        .checked_mul(NURBS_SURFACE_SEEDS_PER_SPAN)
+        .and_then(|count| count.checked_mul(v_spans))
+        .and_then(|count| count.checked_mul(NURBS_SURFACE_SEEDS_PER_SPAN))
+    else {
+        return Ok(None);
+    };
     let mut best: Option<f64> = None;
-    let mut consider = |seed: Point2| {
-        if let Some(distance) = refine_nurbs_surface_point(surface, point, seed, domains) {
+    let mut consider = |seed: Point2| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+        if let Some(distance) = refine_nurbs_surface_point(surface, point, seed, domains)? {
             best = Some(best.map_or(distance, |previous| {
                 if previous.total_cmp(&distance).is_le() {
                     previous
@@ -9572,6 +9641,7 @@ fn nurbs_surface_witness_distance(surface: &NurbsSurface, point: Point3) -> Opti
                 }
             }));
         }
+        Ok(())
     };
     if samples > NURBS_SURFACE_MAX_SEEDS {
         const SIDE: usize = 16;
@@ -9579,7 +9649,9 @@ fn nurbs_surface_witness_distance(surface: &NurbsSurface, point: Point3) -> Opti
             for pair in knots.windows(2).filter(|pair| pair[0] != pair[1]) {
                 for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
                     let fraction = step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
-                    cadmpeg_ir::math::interpolate(pair[0], pair[1], fraction)?;
+                    if cadmpeg_ir::math::interpolate(pair[0], pair[1], fraction).is_none() {
+                        return Ok(None);
+                    }
                 }
             }
         }
@@ -9587,32 +9659,41 @@ fn nurbs_surface_witness_distance(surface: &NurbsSurface, point: Point3) -> Opti
             for v in 0..SIDE {
                 let u_fraction = u as f64 / (SIDE - 1) as f64;
                 let v_fraction = v as f64 / (SIDE - 1) as f64;
-                consider(Point2::new(
-                    cadmpeg_ir::math::interpolate(domains[0][0], domains[0][1], u_fraction)?.get(),
-                    cadmpeg_ir::math::interpolate(domains[1][0], domains[1][1], v_fraction)?.get(),
-                ));
+                let Some(u) = cadmpeg_ir::math::interpolate(domains[0][0], domains[0][1], u_fraction) else {
+                    return Ok(None);
+                };
+                let Some(v) = cadmpeg_ir::math::interpolate(domains[1][0], domains[1][1], v_fraction) else {
+                    return Ok(None);
+                };
+                consider(Point2::new(u.get(), v.get()))?;
             }
         }
     } else {
         for u_pair in u_knots.windows(2).filter(|pair| pair[0] != pair[1]) {
             for u_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
                 let u_fraction = u_step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
-                let u = cadmpeg_ir::math::interpolate(u_pair[0], u_pair[1], u_fraction)?.get();
+                let Some(u) = cadmpeg_ir::math::interpolate(u_pair[0], u_pair[1], u_fraction) else {
+                    return Ok(None);
+                };
                 for v_pair in v_knots.windows(2).filter(|pair| pair[0] != pair[1]) {
                     for v_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
                         let v_fraction = v_step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
-                        let v =
-                            cadmpeg_ir::math::interpolate(v_pair[0], v_pair[1], v_fraction)?.get();
-                        consider(Point2::new(u, v));
+                        let Some(v) = cadmpeg_ir::math::interpolate(v_pair[0], v_pair[1], v_fraction) else {
+                            return Ok(None);
+                        };
+                        consider(Point2::new(u.get(), v.get()))?;
                     }
                 }
             }
         }
     }
-    best
+    Ok(best)
 }
 
-fn point_on_nurbs_surface(point: Point3, surface: &NurbsSurface) -> Option<bool> {
+fn point_on_nurbs_surface(
+    point: Point3,
+    surface: &NurbsSurface,
+) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
     // A positive-weight NURBS control net bounds the surface, so its AABB is a
     // sound negative test.  The bounded parameter search supplies positive
     // witnesses only.  A failed search inside that AABB is unknown, not proof
@@ -9627,11 +9708,13 @@ fn point_on_nurbs_surface(point: Point3, surface: &NurbsSurface) -> Option<bool>
                         || coordinate > bounds[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
                 });
         if outside {
-            return Some(false);
+            return Ok(Some(false));
         }
     }
-    let distance = nurbs_surface_witness_distance(surface, point)?;
-    (distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE).then_some(true)
+    let Some(distance) = nurbs_surface_witness_distance(surface, point)? else {
+        return Ok(None);
+    };
+    Ok((distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE).then_some(true))
 }
 
 fn invariant_face_carrier_bindings(
@@ -9724,20 +9807,24 @@ fn invariant_face_carrier_bindings(
 fn owner_matches_a5_carrier(
     tail: &crate::native::owner_numeric_tail::CatiaOwnerNumericTail,
     surface: &NurbsSurface,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let Some(domain) = nurbs_surface_parameter_domain(surface) else {
-        return false;
+        return Ok(false);
     };
     if (0..2).any(|axis| {
         tail.lower()[axis] < domain[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
             || tail.upper()[axis] > domain[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
     }) {
-        return false;
+        return Ok(false);
     }
-    [tail.lower()[0], tail.upper()[0]].into_iter().all(|u| {
-        [tail.lower()[1], tail.upper()[1]].into_iter().all(|v| {
-            cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).is_ok_and(|point| {
-                [point.x, point.y, point.z]
+    for u in [tail.lower()[0], tail.upper()[0]] {
+        for v in [tail.lower()[1], tail.upper()[1]] {
+            let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::nurbs_surface_point(surface, u, v),
+            )? else {
+                return Ok(false);
+            };
+            if ![point.x, point.y, point.z]
                     .into_iter()
                     .enumerate()
                     .all(|(axis, value)| {
@@ -9747,10 +9834,12 @@ fn owner_matches_a5_carrier(
                             && value
                                 <= f64::from(tail.bounds()[axis][1])
                                     + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-                    })
-            })
-        })
-    })
+                    }) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
 fn owner_contains_face_bounds(
@@ -9863,7 +9952,9 @@ fn standard_face_boundary_witnesses(
             else {
                 continue;
             };
-            if let Ok(point) = cadmpeg_ir::eval::curve_point(&curve.geometry, 0.5 * (start + end)) {
+            if let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::curve_point(&curve.geometry, 0.5 * (start + end)),
+            )? {
                 crate::resource::push(
                     ctx,
                     &mut witnesses,
@@ -9924,13 +10015,12 @@ fn bind_standard_a5_owner_surfaces(
     }
     let mut owner_carriers = Vec::new();
     for owner in &owners {
-        let matched = crate::resource::collect_vec(
-            ctx,
-            carriers.iter().enumerate().filter_map(|(carrier, value)| {
-                owner_matches_a5_carrier(&owner.numeric_tail, &value.geometry).then_some(carrier)
-            }),
-            "catia_a5_owner_carrier_indices",
-        )?;
+        let mut matched = Vec::new();
+        for (carrier, value) in carriers.iter().enumerate() {
+            if owner_matches_a5_carrier(&owner.numeric_tail, &value.geometry)? {
+                crate::resource::push(ctx, &mut matched, carrier, "catia_a5_owner_carrier_indices")?;
+            }
+        }
         crate::resource::push(
             ctx,
             &mut owner_carriers,
@@ -10011,12 +10101,19 @@ fn bind_standard_a5_owner_surfaces(
         let mut face_carriers = HashSet::new();
         for carrier in possible_carriers {
             let surface = &carriers[carrier].geometry;
-            if witnesses.get(face).is_some_and(|points| {
-                points.len() >= 3
-                    && points
-                        .iter()
-                        .all(|point| point_on_nurbs_surface(*point, surface) == Some(true))
-            }) {
+            let mut witnessed = false;
+            if let Some(points) = witnesses.get(face) {
+                if points.len() >= 3 {
+                    witnessed = true;
+                    for point in points {
+                        if point_on_nurbs_surface(*point, surface)? != Some(true) {
+                            witnessed = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if witnessed {
                 crate::resource::insert_set(
                     ctx,
                     &mut face_carriers,
@@ -10092,13 +10189,13 @@ fn standard_endpoint_pair_supports_topology(
     witness: Option<FinitePoint3>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let endpoint_is_supported = |point| match surface {
+    let endpoint_is_supported = |point| -> Result<bool, cadmpeg_core::decode::ResourceLimit> { Ok(match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {
-            point_on_surface_if_supported(point, surface) != Some(false)
+            point_on_surface_if_supported(point, surface)? != Some(false)
         }
-        _ => point_on_surface(point, surface),
-    };
-    if !endpoint_is_supported(start) || !endpoint_is_supported(end) {
+        _ => point_on_surface(point, surface)?,
+    }) };
+    if !endpoint_is_supported(start)? || !endpoint_is_supported(end)? {
         return Ok(false);
     }
     if standard_pcurve_geometry(ctx, surface, support, (start, end), witness, None, refusal)?
@@ -10740,6 +10837,7 @@ mod circle_axis_tests {
         )
         .expect("anisotropic nurbs surface");
         let residual = super::nurbs_surface_witness_distance(&surface, Point3::new(0.3, 0.4, 0.))
+            .expect("witness evaluation accepts the fixture")
             .expect("witness distance for a point on the surface");
         assert!(residual <= super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE);
     }

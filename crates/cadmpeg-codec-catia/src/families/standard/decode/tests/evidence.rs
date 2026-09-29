@@ -543,7 +543,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     let signed_sphere_point = surface_point(&signed_sphere, 0.5, 0.25)
         .expect("signed sphere point")
         .get();
-    assert!(point_on_surface(signed_sphere_point, &signed_sphere));
+    assert_eq!(point_on_surface(signed_sphere_point, &signed_sphere), Ok(true));
 
     let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
@@ -556,7 +556,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         .expect("valid TorusSurface fixture"),
     ));
     let torus_point = surface_point(&torus, 0.5, 0.25).expect("torus point").get();
-    assert!(point_on_surface(torus_point, &torus));
+    assert_eq!(point_on_surface(torus_point, &torus), Ok(true));
 }
 
 #[test]

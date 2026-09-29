@@ -1253,10 +1253,14 @@ fn attach_standalone_wires(
         else {
             return Ok(false);
         };
-        let Some(start) = cadmpeg_ir::eval::curve_point(geometry, range[0]).ok() else {
+        let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::curve_point(geometry, range[0]),
+        )? else {
             return Ok(false);
         };
-        let Some(end) = cadmpeg_ir::eval::curve_point(geometry, range[1]).ok() else {
+        let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::curve_point(geometry, range[1]),
+        )? else {
             return Ok(false);
         };
         let carrier_id = crate::resource::copy_id(
@@ -3080,7 +3084,7 @@ fn append_resolved_consolidated_surface_curves(
                         candidates
                             .iter()
                             .map(|(index, geometry)| (*index, geometry)),
-                    );
+                    )?;
                     if let Some(carrier) = carrier {
                         sides[partner] = IntcurveSupportSide {
                             surface: Some(crate::resource::copy_id(
@@ -3764,18 +3768,25 @@ fn solve_planar_chart_rechart(
     }
     // Target-chart image of each locus. A locus off the plane has no image,
     // because the plane inverse discards the normal component.
-    let images = crate::resource::collect_options(
+    let images = crate::resource::collect_fallible_options(
         ctx,
         loci.iter().map(|locus| {
-            let uv = cadmpeg_ir::math::Point2::from(cadmpeg_ir::eval::analytic_surface_parameters(
+            let Some(uv) = cadmpeg_ir::eval::analytic_surface_parameters(
                 target, *locus,
-            )?);
-            let back = cadmpeg_ir::eval::surface_point(target, uv.u, uv.v).ok()?;
-            ((back.x - locus.x)
+            ) else {
+                return Ok(None);
+            };
+            let uv = cadmpeg_ir::math::Point2::from(uv);
+            let Some(back) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::surface_point(target, uv.u, uv.v),
+            )? else {
+                return Ok(None);
+            };
+            Ok(((back.x - locus.x)
                 .hypot(back.y - locus.y)
                 .hypot(back.z - locus.z)
                 <= CONSOLIDATED_SITE_TOLERANCE)
-                .then_some([uv.u, uv.v])
+                .then_some([uv.u, uv.v]))
         }),
         "catia_freeform_chart_images",
     )?;
@@ -3962,45 +3973,68 @@ fn unique_paired_surface_lift_match<'a, T>(
     partner_pcurve: &PcurveGeometry,
     parameter_range: [f64; 2],
     candidates: impl Iterator<Item = (T, &'a SurfaceGeometry)>,
-) -> Option<T> {
+) -> Result<Option<T>, cadmpeg_core::decode::ResourceLimit> {
     const TOLERANCE: f64 = 2e-3;
     let ordinary_midpoint = parameter_range[0] + (parameter_range[1] - parameter_range[0]) * 0.5;
     let midpoint = if ordinary_midpoint.is_finite() {
         ordinary_midpoint
     } else {
-        cadmpeg_ir::math::interpolate(parameter_range[0], parameter_range[1], 0.5)?.get()
+        let Some(midpoint) = cadmpeg_ir::math::interpolate(parameter_range[0], parameter_range[1], 0.5) else {
+            return Ok(None);
+        };
+        midpoint.get()
     };
     let parameters = [parameter_range[0], midpoint, parameter_range[1]];
-    let resolved_lift = |parameter| {
-        let uv = cadmpeg_ir::eval::pcurve_uv(resolved_pcurve, parameter).ok()?;
-        cadmpeg_ir::eval::surface_point(resolved_surface, uv.u, uv.v).ok()
+    let resolved_lift = |parameter| -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::pcurve_uv(resolved_pcurve, parameter),
+        )? else {
+            return Ok(None);
+        };
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
+            resolved_surface, uv.u, uv.v,
+        ))
     };
-    let resolved_loci = [
-        resolved_lift(parameters[0])?,
-        resolved_lift(parameters[1])?,
-        resolved_lift(parameters[2])?,
-    ];
-    let partner_uv = [
-        cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameters[0]).ok()?,
-        cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameters[1]).ok()?,
-        cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameters[2]).ok()?,
-    ];
-    let mut matches = candidates.filter_map(|(identity, surface)| {
-        resolved_loci
-            .iter()
-            .zip(&partner_uv)
-            .all(|(resolved, uv)| {
-                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v).is_ok_and(|partner| {
-                    (resolved.x - partner.x)
-                        .hypot(resolved.y - partner.y)
-                        .hypot(resolved.z - partner.z)
-                        < TOLERANCE
-                })
-            })
-            .then_some(identity)
-    });
-    let winner = matches.next()?;
-    matches.next().is_none().then_some(winner)
+    let mut resolved_loci = [None; 3];
+    let mut partner_uv = [None; 3];
+    for (index, parameter) in parameters.into_iter().enumerate() {
+        resolved_loci[index] = resolved_lift(parameter)?;
+        partner_uv[index] = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameter),
+        )?;
+        if resolved_loci[index].is_none() || partner_uv[index].is_none() {
+            return Ok(None);
+        }
+    }
+    let mut winner = None;
+    for (identity, surface) in candidates {
+        let mut matches = true;
+        for (resolved, uv) in resolved_loci.iter().zip(&partner_uv) {
+            let (Some(resolved), Some(uv)) = (resolved, uv) else {
+                return Ok(None);
+            };
+            let Some(partner) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v),
+            )? else {
+                matches = false;
+                break;
+            };
+            let distance = (resolved.x - partner.x)
+                .hypot(resolved.y - partner.y)
+                .hypot(resolved.z - partner.z);
+            if !(distance < TOLERANCE) {
+                matches = false;
+                break;
+            }
+        }
+        if matches {
+            if winner.is_some() {
+                return Ok(None);
+            }
+            winner = Some(identity);
+        }
+    }
+    Ok(winner)
 }
 
 fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
@@ -5138,7 +5172,7 @@ mod tests {
                 [0.0, 1.0],
                 [(7, &matching), (8, &distant)].into_iter(),
             ),
-            Some(7)
+            Ok(Some(7))
         );
         assert_eq!(
             unique_paired_surface_lift_match(
@@ -5148,7 +5182,7 @@ mod tests {
                 [0.0, 1.0],
                 [(7, &matching), (9, &matching)].into_iter(),
             ),
-            None
+            Ok(None)
         );
     }
 
@@ -5177,7 +5211,7 @@ mod tests {
                 [-f64::MAX, f64::MAX],
                 [(7, &plane)].into_iter(),
             ),
-            Some(7)
+            Ok(Some(7))
         );
     }
 

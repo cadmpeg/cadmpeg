@@ -361,7 +361,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     end: Point3,
     pcurve_origin: FinitePoint2,
     pcurve_direction: FinitePoint2,
-) -> Option<[f64; 2]> {
+) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
     if !center.is_finite()
         || !start.is_finite()
         || !end.is_finite()
@@ -370,7 +370,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         || !radius.is_finite()
         || radius <= 0.0
     {
-        return None;
+        return Ok(None);
     }
     let tangent = axis.cross(ref_direction);
     if !tangent.is_finite()
@@ -381,7 +381,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
             .hypot(ref_direction.z)
             == 0.0
     {
-        return None;
+        return Ok(None);
     }
     let angle = |point: Point3| {
         let offset = point.vector_from(center);
@@ -390,19 +390,19 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     let start = angle(start);
     let end = angle(end);
     if !start.is_finite() || !end.is_finite() {
-        return None;
+        return Ok(None);
     }
     let short_end = unwrap_angle(end, start);
     if !short_end.is_finite() {
-        return None;
+        return Ok(None);
     }
     let delta = short_end - start;
     if !delta.is_finite() || delta == 0.0 {
-        return None;
+        return Ok(None);
     }
     let long_end = short_end - delta.signum() * std::f64::consts::TAU;
     if !long_end.is_finite() {
-        return None;
+        return Ok(None);
     }
     let (pcurve_origin, pcurve_direction) = (pcurve_origin.as_raw(), pcurve_direction.as_raw());
     let midpoint_uv = Point2::new(
@@ -410,11 +410,14 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         pcurve_origin.v + 0.5 * pcurve_direction.v,
     );
     if !midpoint_uv.is_finite() {
-        return None;
+        return Ok(None);
     }
-    let surface_midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)
-        .ok()?
-        .get();
+    let Some(surface_midpoint) = cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v),
+    )? else {
+        return Ok(None);
+    };
+    let surface_midpoint = surface_midpoint.get();
     let mut candidates = [short_end, long_end].into_iter().filter(|end| {
         let parameter = 0.5 * (start + end);
         if !parameter.is_finite() {
@@ -431,11 +434,13 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         let distance_squared = circle_midpoint.distance_squared(surface_midpoint);
         distance_squared.is_finite() && distance_squared.sqrt() <= 2e-3
     });
-    let end = candidates.next()?;
+    let Some(end) = candidates.next() else {
+        return Ok(None);
+    };
     if candidates.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    (end.is_finite() && end != start).then_some([start, end])
+    Ok((end.is_finite() && end != start).then_some([start, end]))
 }
 
 /// Counts of each typed analytic surface kind decoded.
@@ -1435,7 +1440,7 @@ mod route_tests {
             FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite pcurve origin"),
             FinitePoint2::new(Point2::new(0.0, sweep)).expect("finite pcurve direction"),
         )
-        .expect("tiny circle branch");
+        .expect("circle evaluation resources").expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
     }
 
@@ -1474,7 +1479,7 @@ mod route_tests {
             pcurve_origin,
             pcurve_direction,
         )
-        .is_none());
+        .expect("circle evaluation resources").is_none());
         assert!(circle_parameter_range_from_surface_branch(
             &surface,
             center,
@@ -1486,7 +1491,7 @@ mod route_tests {
             pcurve_origin,
             pcurve_direction,
         )
-        .is_none());
+        .expect("circle evaluation resources").is_none());
         assert!(circle_parameter_range_from_surface_branch(
             &surface,
             center,
@@ -1498,7 +1503,7 @@ mod route_tests {
             pcurve_origin,
             pcurve_direction,
         )
-        .is_none());
+        .expect("circle evaluation resources").is_none());
     }
 
     #[test]

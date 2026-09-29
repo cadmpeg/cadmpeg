@@ -27,21 +27,20 @@ pub(super) fn standard_pcurve_geometry(
     edge_curve: Option<&CurveGeometry>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<(PcurveGeometry, [f64; 2])>, cadmpeg_core::CodecError> {
-    let mut resource_error = None;
-    let result = (|| {
         if matches!(
             edge_curve,
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }))
         ) {
-            return None;
+            return Ok(None);
         }
-        if !point_on_surface(start, surface) || !point_on_surface(end, surface) {
-            return None;
+        let on_start = point_on_surface(start, surface)?;
+        let on_end = point_on_surface(end, surface)?;
+        if !on_start || !on_end {
+            return Ok(None);
         }
-        let mut uv = [
-            analytic_surface_uv(surface, start)?,
-            analytic_surface_uv(surface, end)?,
-        ];
+        let Some(start_uv) = analytic_surface_uv(surface, start) else { return Ok(None) };
+        let Some(end_uv) = analytic_surface_uv(surface, end) else { return Ok(None) };
+        let mut uv = [start_uv, end_uv];
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface {
             let origin = cone_surface.origin().get();
             let axis = cone_surface.frame().axis().as_raw();
@@ -73,9 +72,9 @@ pub(super) fn standard_pcurve_geometry(
             Some(witness),
         ) = (&support.geometry, witness)
         {
-            if let Some(end) =
-                witnessed_surface_circle_end(surface, center.get(), radius.get(), uv, witness.get())
-            {
+            if let Some(end) = witnessed_surface_circle_end(
+                surface, center.get(), radius.get(), uv, witness.get(),
+            )? {
                 uv[1] = end;
             }
         }
@@ -90,7 +89,7 @@ pub(super) fn standard_pcurve_geometry(
             let center = center.get();
             let radius = radius.get();
             let normal = plane_surface.frame().axis().as_raw();
-            let contained_carrier = point_on_surface(center, surface)
+            let contained_carrier = point_on_surface(center, surface)?
                 && (start.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
                 && (end.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
                 && edge_curve.is_none_or(|curve| {
@@ -103,9 +102,9 @@ pub(super) fn standard_pcurve_geometry(
                                     })
                 });
             if !contained_carrier {
-                return None;
+                return Ok(None);
             }
-            let center_uv = analytic_surface_uv(surface, center)?;
+            let Some(center_uv) = analytic_surface_uv(surface, center) else { return Ok(None) };
             let range = if start == end {
                 let angle = (uv[0].v - center_uv.v).atan2(uv[0].u - center_uv.u);
                 [angle, angle + std::f64::consts::TAU]
@@ -113,36 +112,29 @@ pub(super) fn standard_pcurve_geometry(
                 let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
                 ordered_range([range[0], unwrap_angle(range[1], range[0])])
             };
-            let geometry = match rational_pcurve_arc(
+            let Some(geometry) = rational_pcurve_arc(
                 ctx,
                 [center_uv.u, center_uv.v],
                 radius,
                 range,
                 refusal,
                 "standard arc pcurve derived from its support",
-            ) {
-                Ok(geometry) => geometry?,
-                Err(error) => {
-                    resource_error = Some(error);
-                    return None;
-                }
-            };
-            return Some((geometry, range));
+            )? else { return Ok(None) };
+            return Ok(Some((geometry, range)));
         }
 
         let direction = Point2::new(uv[1].u - uv[0].u, uv[1].v - uv[0].v);
         let midpoint_uv = Point2::new(uv[0].u + 0.5 * direction.u, uv[0].v + 0.5 * direction.v);
-        let midpoint =
-            cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v).ok()?;
+        let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v),
+        )? else { return Ok(None) };
         let on_curve = match &support.geometry {
             crate::families::standard::records::StandardCurveGeometry::Line => {
                 let chord = end.vector_from(start);
                 let offset = midpoint.vector_from(start);
-                FiniteVector3::new(chord)?
-                    .unit_nonzero()?
-                    .cross(offset)
-                    .norm()
-                    <= STANDARD_FACE_BOUNDS_TOLERANCE
+                let Some(chord) = FiniteVector3::new(chord) else { return Ok(None) };
+                let Some(direction) = chord.unit_nonzero() else { return Ok(None) };
+                direction.cross(offset).norm() <= STANDARD_FACE_BOUNDS_TOLERANCE
             }
             crate::families::standard::records::StandardCurveGeometry::Circle {
                 center,
@@ -160,17 +152,13 @@ pub(super) fn standard_pcurve_geometry(
                 }
             }
         };
-        on_curve.then_some((
-            PcurveGeometry::Line(
-                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(uv[0], direction).ok()?,
-            ),
+        let Ok(line) = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(uv[0], direction) else {
+            return Ok(None);
+        };
+        Ok(on_curve.then_some((
+            PcurveGeometry::Line(line),
             [0.0, 1.0],
-        ))
-    })();
-    match resource_error {
-        Some(error) => Err(error),
-        None => Ok(result),
-    }
+        )))
 }
 
 pub(super) fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Option<f64> {
@@ -198,38 +186,48 @@ pub(super) fn witnessed_surface_circle_end(
     radius: f64,
     uv: [Point2; 2],
     witness: Point3,
-) -> Option<Point2> {
-    let witness_uv = analytic_surface_uv(surface, witness)?;
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(witness_uv) = analytic_surface_uv(surface, witness) else {
+        return Ok(None);
+    };
     let lanes: &[usize] = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => &[0],
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => &[0],
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => &[0],
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => &[0, 1],
-        _ => return None,
+        _ => return Ok(None),
     };
-    let mut candidates = lanes.iter().filter_map(|lane| {
+    let mut selected_candidate = None;
+    for lane in lanes {
         let mut candidate = uv[1];
         let (start, short_end, witness) = if *lane == 0 {
             (uv[0].u, uv[1].u, witness_uv.u)
         } else {
             (uv[0].v, uv[1].v, witness_uv.v)
         };
-        let selected = witness_arc_end(start, short_end, witness)?;
+        let Some(selected) = witness_arc_end(start, short_end, witness) else {
+            continue;
+        };
         if *lane == 0 {
             candidate.u = selected;
         } else {
             candidate.v = selected;
         }
-        let midpoint = cadmpeg_ir::eval::surface_point(
+        let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
             surface,
             0.5 * (uv[0].u + candidate.u),
             0.5 * (uv[0].v + candidate.v),
-        )
-        .ok()?;
-        ((midpoint.distance_squared(center).sqrt() - radius).abs() <= 2e-3).then_some(candidate)
-    });
-    let end = candidates.next()?;
-    candidates.next().is_none().then_some(end)
+        ))? else {
+            continue;
+        };
+        if (midpoint.distance_squared(center).sqrt() - radius).abs() <= 2e-3 {
+            if selected_candidate.is_some() {
+                return Ok(None);
+            }
+            selected_candidate = Some(candidate);
+        }
+    }
+    Ok(selected_candidate)
 }
 
 pub(super) fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point2> {
@@ -318,14 +316,17 @@ pub(super) fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, 
     }
 }
 
-pub(super) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
-    point_on_surface_if_supported(point, surface).unwrap_or(false)
+pub(super) fn point_on_surface(
+    point: Point3,
+    surface: &SurfaceGeometry,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    Ok(point_on_surface_if_supported(point, surface)?.unwrap_or(false))
 }
 
 pub(super) fn point_on_surface_if_supported(
     point: Point3,
     surface: &SurfaceGeometry,
-) -> Option<bool> {
+) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
     const TOLERANCE: f64 = 1e-3;
     let residual = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
@@ -372,9 +373,9 @@ pub(super) fn point_on_surface_if_supported(
             | SolvedSurfaceGeometry::Transformed(_)
             | SolvedSurfaceGeometry::Unknown { .. },
         )
-        | SurfaceGeometry::Procedural { .. } => return None,
+        | SurfaceGeometry::Procedural { .. } => return Ok(None),
     };
-    Some(residual <= TOLERANCE)
+    Ok(Some(residual <= TOLERANCE))
 }
 
 pub(super) fn standard_spline_line(
@@ -383,31 +384,31 @@ pub(super) fn standard_spline_line(
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
-) -> Option<(CurveGeometry, [f64; 2])> {
+) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
     const TOLERANCE: f64 = 2e-3;
 
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
     let [Some(left), Some(right)] = surfaces else {
-        return None;
+        return Ok(None);
     };
-    let start_point = ir.model.points.get(points[0])?;
+    let Some(start_point) = ir.model.points.get(points[0]) else { return Ok(None) };
     let start = start_point.position().get();
-    let end = ir.model.points.get(points[1])?.position().get();
-    if !point_on_surface(start, &left.geometry)
-        || !point_on_surface(start, &right.geometry)
-        || !point_on_surface(end, &left.geometry)
-        || !point_on_surface(end, &right.geometry)
+    let Some(end) = ir.model.points.get(points[1]).map(|point| point.position().get()) else { return Ok(None) };
+    if !point_on_surface(start, &left.geometry)?
+        || !point_on_surface(start, &right.geometry)?
+        || !point_on_surface(end, &left.geometry)?
+        || !point_on_surface(end, &right.geometry)?
     {
-        return None;
+        return Ok(None);
     }
-    let direction = FiniteVector3::new(end.vector_from(start))?;
+    let Some(direction) = FiniteVector3::new(end.vector_from(start)) else { return Ok(None) };
     let length = direction.x.hypot(direction.y).hypot(direction.z);
     if !length.is_finite() || length == 0.0 {
-        return None;
+        return Ok(None);
     }
-    let direction = direction.unit_nonzero()?;
+    let Some(direction) = direction.unit_nonzero() else { return Ok(None) };
     let follows_carrier_line = match (&left.geometry, &right.geometry) {
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
@@ -446,17 +447,17 @@ pub(super) fn standard_spline_line(
         _ => false,
     };
     if !follows_carrier_line {
-        return None;
+        return Ok(None);
     }
-    Some((
+    Ok(Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
                 start_point.position(),
-                cadmpeg_ir::units::UnitVector3::new(direction)?,
+                match cadmpeg_ir::units::UnitVector3::new(direction) { Some(value) => value, None => return Ok(None) },
             ),
         )),
         [0.0, length],
-    ))
+    )))
 }
 
 pub(super) fn standard_spline_circle(
@@ -465,12 +466,12 @@ pub(super) fn standard_spline_circle(
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
-) -> Option<CurveGeometry> {
+) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
     let [Some(left), Some(right)] = surfaces else {
-        return None;
+        return Ok(None);
     };
     let (sphere_center, sphere_radius, plane_origin, plane_normal) =
         match (&left.geometry, &right.geometry) {
@@ -494,43 +495,41 @@ pub(super) fn standard_spline_circle(
                 let radius = sphere_surface_2.radius().abs();
                 (*center, radius, *origin, *normal)
             }
-            _ => return None,
+            _ => return Ok(None),
         };
     let axis = plane_normal;
     let sphere_radius = sphere_radius.get();
     let signed_distance = sphere_center.vector_from(plane_origin).dot(axis);
     if !signed_distance.is_finite() {
-        return None;
+        return Ok(None);
     }
     let section_radius_squared = sphere_radius * sphere_radius - signed_distance * signed_distance;
     if !section_radius_squared.is_finite()
         || section_radius_squared <= SPHERE_SECTION_ENDPOINT_TOLERANCE.powi(2)
     {
-        return None;
+        return Ok(None);
     }
     let section_center = sphere_center.translated(axis, -signed_distance);
     let section_radius = section_radius_squared.sqrt();
-    let start = ir.model.points.get(points[0])?.position().get();
-    let end = ir.model.points.get(points[1])?.position().get();
-    if !point_on_surface(start, &left.geometry)
-        || !point_on_surface(start, &right.geometry)
-        || !point_on_surface(end, &left.geometry)
-        || !point_on_surface(end, &right.geometry)
+    let Some(start) = ir.model.points.get(points[0]).map(|point| point.position().get()) else { return Ok(None) };
+    let Some(end) = ir.model.points.get(points[1]).map(|point| point.position().get()) else { return Ok(None) };
+    if !point_on_surface(start, &left.geometry)?
+        || !point_on_surface(start, &right.geometry)?
+        || !point_on_surface(end, &left.geometry)?
+        || !point_on_surface(end, &right.geometry)?
         || (start.distance(section_center) - section_radius).abs()
             > SPHERE_SECTION_ENDPOINT_TOLERANCE
         || (end.distance(section_center) - section_radius).abs() > SPHERE_SECTION_ENDPOINT_TOLERANCE
     {
-        return None;
+        return Ok(None);
     }
-    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            section_center,
-            axis,
-            cadmpeg_ir::geometry::derive_reference_direction(axis),
-            section_radius,
-        )
-        .ok()?,
-    )))
+    let Ok(circle) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+        section_center,
+        axis,
+        cadmpeg_ir::geometry::derive_reference_direction(axis),
+        section_radius,
+    ) else { return Ok(None) };
+    Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle))))
 }
 
 pub(super) fn standard_spline_cylinder_plane(
@@ -539,12 +538,12 @@ pub(super) fn standard_spline_cylinder_plane(
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
-) -> Option<CurveGeometry> {
+) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
     let [Some(left), Some(right)] = surfaces else {
-        return None;
+        return Ok(None);
     };
     let (cylinder_axis, cylinder_origin, cylinder_radius, plane_origin, plane_axis) =
         match (&left.geometry, &right.geometry) {
@@ -562,47 +561,45 @@ pub(super) fn standard_spline_cylinder_plane(
                 *plane_surface.origin(),
                 *plane_surface.frame().axis(),
             ),
-            _ => return None,
+            _ => return Ok(None),
         };
     let plane_normal = *plane_axis.as_raw();
     let axis_dot_normal = cylinder_axis.dot(plane_normal);
     if !axis_dot_normal.is_finite() || axis_dot_normal.abs() <= CYLINDER_PLANE_CONIC_TOLERANCE {
-        return None;
+        return Ok(None);
     }
     let axis_parameter =
         -cylinder_origin.vector_from(plane_origin).dot(plane_normal) / axis_dot_normal;
     if !axis_parameter.is_finite() {
-        return None;
+        return Ok(None);
     }
     let center = cylinder_origin.translated(cylinder_axis, axis_parameter);
-    let start = ir.model.points.get(points[0])?.position().get();
-    let end = ir.model.points.get(points[1])?.position().get();
-    if !point_on_surface(start, &left.geometry)
-        || !point_on_surface(start, &right.geometry)
-        || !point_on_surface(end, &left.geometry)
-        || !point_on_surface(end, &right.geometry)
+    let Some(start) = ir.model.points.get(points[0]).map(|point| point.position().get()) else { return Ok(None) };
+    let Some(end) = ir.model.points.get(points[1]).map(|point| point.position().get()) else { return Ok(None) };
+    if !point_on_surface(start, &left.geometry)?
+        || !point_on_surface(start, &right.geometry)?
+        || !point_on_surface(end, &left.geometry)?
+        || !point_on_surface(end, &right.geometry)?
     {
-        return None;
+        return Ok(None);
     }
     let minor_vector = cylinder_axis.cross(plane_normal);
     let minor_norm = minor_vector.norm();
     if !minor_norm.is_finite() {
-        return None;
+        return Ok(None);
     }
     if minor_norm <= CYLINDER_PLANE_CONIC_TOLERANCE {
-        let frame = OrthonormalFrame3::from_units(
+        let Some(frame) = OrthonormalFrame3::from_units(
             plane_axis,
-            UnitVector3::new(cadmpeg_ir::geometry::derive_reference_direction(
-                plane_normal,
-            ))?,
-        )?;
-        return Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            match UnitVector3::new(cadmpeg_ir::geometry::derive_reference_direction(plane_normal)) { Some(value) => value, None => return Ok(None) },
+        ) else { return Ok(None) };
+        return Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                FinitePoint3::new(center)?,
+                match FinitePoint3::new(center) { Some(value) => value, None => return Ok(None) },
                 frame,
                 cylinder_radius,
             ),
-        )));
+        ))));
     }
     let minor_direction = minor_vector.scale(1.0 / minor_norm);
     let radial_normal =
@@ -610,10 +607,10 @@ pub(super) fn standard_spline_cylinder_plane(
     let major_unscaled = radial_normal - cylinder_axis.scale(minor_norm / axis_dot_normal);
     let major_norm = major_unscaled.norm();
     if !major_norm.is_finite() || major_norm <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let major_direction = major_unscaled.scale(1.0 / major_norm);
-    let major_radius = PositiveLength::new(cylinder_radius.get() * major_norm)?;
+    let Some(major_radius) = PositiveLength::new(cylinder_radius.get() * major_norm) else { return Ok(None) };
     let endpoint_is_on_ellipse = |point: Point3| {
         let offset = point.vector_from(center);
         let major = offset.dot(major_direction) / major_radius.get();
@@ -622,18 +619,15 @@ pub(super) fn standard_spline_cylinder_plane(
         equation.is_finite() && (equation - 1.0).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE
     };
     if !endpoint_is_on_ellipse(start) || !endpoint_is_on_ellipse(end) {
-        return None;
+        return Ok(None);
     }
-    let frame = OrthonormalFrame3::from_units(plane_axis, UnitVector3::new(major_direction)?)?;
-    Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
-            FinitePoint3::new(center)?,
-            frame,
-            major_radius,
-            cylinder_radius,
-        )
-        .ok()?,
-    )))
+    let Some(major_direction) = UnitVector3::new(major_direction) else { return Ok(None) };
+    let Some(frame) = OrthonormalFrame3::from_units(plane_axis, major_direction) else { return Ok(None) };
+    let Some(center) = FinitePoint3::new(center) else { return Ok(None) };
+    let Ok(ellipse) = cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+        center, frame, major_radius, cylinder_radius,
+    ) else { return Ok(None) };
+    Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse))))
 }
 
 pub(super) fn standard_spline_perpendicular_cylinders(
@@ -642,12 +636,12 @@ pub(super) fn standard_spline_perpendicular_cylinders(
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
-) -> Option<CurveGeometry> {
+) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
     let [Some(left), Some(right)] = surfaces else {
-        return None;
+        return Ok(None);
     };
     let (first_axis, first_origin, first_radius, second_axis, second_origin, second_radius) =
         match (&left.geometry, &right.geometry) {
@@ -670,51 +664,51 @@ pub(super) fn standard_spline_perpendicular_cylinders(
                     second_radius,
                 )
             }
-            _ => return None,
+            _ => return Ok(None),
         };
     if (first_radius - second_radius).abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
-        return None;
+        return Ok(None);
     }
     let axis_dot = first_axis.dot(second_axis);
     if !axis_dot.is_finite() || axis_dot.abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
-        return None;
+        return Ok(None);
     }
     let denominator = 1.0 - axis_dot * axis_dot;
     if !denominator.is_finite() || denominator <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let axis_offset = second_origin.vector_from(first_origin);
     let first_parameter =
         (axis_offset.dot(first_axis) - axis_dot * axis_offset.dot(second_axis)) / denominator;
     let second_parameter = axis_dot * first_parameter - axis_offset.dot(second_axis);
     if !first_parameter.is_finite() || !second_parameter.is_finite() {
-        return None;
+        return Ok(None);
     }
     let first_center = first_origin.translated(first_axis, first_parameter);
     let second_center = second_origin.translated(second_axis, second_parameter);
     if first_center.distance(second_center) > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
-        return None;
+        return Ok(None);
     }
     let center = Point3::new(
         (first_center.x + second_center.x) * 0.5,
         (first_center.y + second_center.y) * 0.5,
         (first_center.z + second_center.z) * 0.5,
     );
-    let start = ir.model.points.get(points[0])?.position().get();
-    let end = ir.model.points.get(points[1])?.position().get();
-    if !point_on_surface(start, &left.geometry)
-        || !point_on_surface(start, &right.geometry)
-        || !point_on_surface(end, &left.geometry)
-        || !point_on_surface(end, &right.geometry)
+    let Some(start) = ir.model.points.get(points[0]).map(|point| point.position().get()) else { return Ok(None) };
+    let Some(end) = ir.model.points.get(points[1]).map(|point| point.position().get()) else { return Ok(None) };
+    if !point_on_surface(start, &left.geometry)?
+        || !point_on_surface(start, &right.geometry)?
+        || !point_on_surface(end, &left.geometry)?
+        || !point_on_surface(end, &right.geometry)?
     {
-        return None;
+        return Ok(None);
     }
-    let minor_direction = unit_vector(first_axis.cross(second_axis))?;
+    let Some(minor_direction) = unit_vector(first_axis.cross(second_axis)) else { return Ok(None) };
     let radius = (first_radius + second_radius) * 0.5;
     let major_radius = radius * 2.0_f64.sqrt();
-    let radius = cadmpeg_ir::scalar::PositiveLength::new(radius)?;
-    let major_radius = cadmpeg_ir::scalar::PositiveLength::new(major_radius)?;
-    let center = FinitePoint3::new(center)?;
+    let Some(radius) = cadmpeg_ir::scalar::PositiveLength::new(radius) else { return Ok(None) };
+    let Some(major_radius) = cadmpeg_ir::scalar::PositiveLength::new(major_radius) else { return Ok(None) };
+    let Some(center) = FinitePoint3::new(center) else { return Ok(None) };
     let mut branches = [
         (first_axis - second_axis, first_axis + second_axis),
         (first_axis + second_axis, first_axis - second_axis),
@@ -745,26 +739,37 @@ pub(super) fn standard_spline_perpendicular_cylinders(
             )),
         )
     });
-    let geometry = branches.next()?;
-    branches.next().is_none().then_some(geometry)
+    let Some(geometry) = branches.next() else { return Ok(None) };
+    Ok(branches.next().is_none().then_some(geometry))
 }
 
-pub(super) fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point3> {
+pub(super) fn standard_native_support_witness(
+    native: &StandardEdgeSupport,
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let parameter = 0.5 * (native.parameter_range[0] + native.parameter_range[1]);
     let lift = |carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
-                pcurve: &PcurveGeometry| {
+                pcurve: &PcurveGeometry| -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
         let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
         else {
-            return None;
+            return Ok(None);
         };
-        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
-        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::pcurve_uv(pcurve, parameter),
+        )? else {
+            return Ok(None);
+        };
+        Ok(cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v),
+        )?
+        .map(cadmpeg_ir::features::FinitePoint3::get))
     };
-    let first = lift(&native.carriers[0], &native.pcurves[0])?;
-    let second = lift(&native.carriers[1], &native.pcurves[1])?;
-    (first.distance_squared(second).sqrt() <= SUPPORT_AGREEMENT_TOLERANCE).then_some(first)
+    let Some(first) = lift(&native.carriers[0], &native.pcurves[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = lift(&native.carriers[1], &native.pcurves[1])? else {
+        return Ok(None);
+    };
+    Ok((first.distance_squared(second).sqrt() <= SUPPORT_AGREEMENT_TOLERANCE).then_some(first))
 }
 
 pub(super) fn standard_analytic_curve_angle(
@@ -1145,10 +1150,10 @@ pub(super) fn build_standard_edge_curve(
                     Some(parameter_range),
                 )
             } else {
-                match standard_spline_line(ir, bindings, surface_indices, support, points) {
+                match standard_spline_line(ir, bindings, surface_indices, support, points)? {
                     Some((geometry, range)) => (geometry, Some(range)),
                     None => {
-                        match standard_spline_circle(ir, bindings, surface_indices, support, points)
+                        match standard_spline_circle(ir, bindings, surface_indices, support, points)?
                         {
                             Some(geometry) => (geometry, None),
                             None => match standard_spline_cylinder_plane(
@@ -1157,7 +1162,7 @@ pub(super) fn build_standard_edge_curve(
                                 surface_indices,
                                 support,
                                 points,
-                            ) {
+                            )? {
                                 Some(geometry) => (geometry, None),
                                 None => match standard_spline_perpendicular_cylinders(
                                     ir,
@@ -1165,7 +1170,7 @@ pub(super) fn build_standard_edge_curve(
                                     surface_indices,
                                     support,
                                     points,
-                                ) {
+                                )? {
                                     Some(geometry) => (geometry, None),
                                     None => (
                                         CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1196,7 +1201,11 @@ pub(super) fn build_standard_edge_curve(
             ir.model.points[points[0]].position().get(),
             ir.model.points[points[1]].position().get(),
         ];
-        if let Some(witness) = native_support.and_then(standard_native_support_witness) {
+        let witness = match native_support {
+            Some(native) => standard_native_support_witness(native)?,
+            None => None,
+        };
+        if let Some(witness) = witness {
             param_range = standard_oriented_analytic_curve_parameter_range(
                 &mut geometry,
                 endpoints[0],
@@ -1849,7 +1858,7 @@ pub(super) fn standard_circle_param_range(
             end,
             *line_pcurve.origin(),
             (*line_pcurve.direction()).into(),
-        ) else {
+        )? else {
             continue;
         };
         if let Some(first) = selected {

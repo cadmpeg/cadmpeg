@@ -166,7 +166,7 @@ pub(super) fn oriented_circle_plan(
     let Some(end_uv) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[1])? else {
         return Ok(None);
     };
-    Ok((|| -> Option<CurvePlan> {
+    (|| -> Option<Result<CurvePlan, cadmpeg_core::CodecError>> {
         let angles = [start_uv[dimension] / scale, end_uv[dimension] / scale];
         let delta = angles[1] - angles[0];
         if !delta.is_finite()
@@ -195,16 +195,22 @@ pub(super) fn oriented_circle_plan(
         };
         let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve));
-        let evaluated = parameter_range.map(|parameter| curve_point(&geometry, parameter).ok());
-        let [Some(start), Some(end)] = evaluated else {
-            return None;
+        let start = match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, parameter_range[0])) {
+            Ok(Some(point)) => point,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit.into())),
+        };
+        let end = match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, parameter_range[1])) {
+            Ok(Some(point)) => point,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit.into())),
         };
         let residual = distance([start.x, start.y, start.z], edge_start)
             .max(distance([end.x, end.y, end.z], edge_end));
         if residual > POINT_TOLERANCE {
             return None;
         }
-        Some(CurvePlan {
+        Some(Ok(CurvePlan {
             geometry,
             parameter_range: Some(parameter_range),
             edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
@@ -215,8 +221,8 @@ pub(super) fn oriented_circle_plan(
                 None
             },
             cache_fit_tolerance: None,
-        })
-    })())
+        }))
+    })().transpose()
 }
 
 fn isoparametric_angle_coordinate(
@@ -259,7 +265,7 @@ pub(super) fn oriented_nurbs_range(
         return Ok(None);
     };
     let mut curve = crate::resource::copy_nurbs_curve(ctx, curve, "catia_b5_oriented_nurbs_curve")?;
-    Ok((|| -> Option<CurvePlan> {
+    (|| -> Option<Result<CurvePlan, cadmpeg_core::CodecError>> {
         let degree = usize::try_from(curve.degree()).ok()?;
         let domain_start = *curve.knots().get(degree)?;
         let domain_end = *curve
@@ -289,14 +295,22 @@ pub(super) fn oriented_nurbs_range(
             return None;
         }
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
-        let start = curve_point(&geometry, range[0]).ok()?;
-        let end = curve_point(&geometry, range[1]).ok()?;
+        let start = match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, range[0])) {
+            Ok(Some(point)) => point,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit.into())),
+        };
+        let end = match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, range[1])) {
+            Ok(Some(point)) => point,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit.into())),
+        };
         let residual = distance([start.x, start.y, start.z], edge_start)
             .max(distance([end.x, end.y, end.z], edge_end));
         if residual > POINT_TOLERANCE {
             return None;
         }
-        Some(CurvePlan {
+        Some(Ok(CurvePlan {
             geometry,
             parameter_range: Some(range),
             edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
@@ -307,8 +321,8 @@ pub(super) fn oriented_nurbs_range(
                 None
             },
             cache_fit_tolerance: None,
-        })
-    })())
+        }))
+    })().transpose()
 }
 
 pub(super) fn isocurve_endpoint_parameters(

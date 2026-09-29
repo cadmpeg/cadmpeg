@@ -331,14 +331,17 @@ pub(super) fn transfer_closed_face_topology(
             ) {
                 source_range.map(|range| (range, false))
             } else {
-                source_range.and_then(|range| {
-                    curve_orientation(
+                match source_range {
+                    Some(range) => match curve_orientation(
                         &curve_geometry,
                         range,
                         occurrence.raw_endpoints.map(FinitePoint3::get),
-                    )
-                    .map(|reversed| (range, reversed))
-                })
+                    ) {
+                        Ok(orientation) => orientation.map(|reversed| (range, reversed)),
+                        Err(limit) => return Some(Err(limit.into())),
+                    },
+                    None => None,
+                }
             };
             let raw_is_oriented = raw_indices == [0, 1];
             let (oriented_curve, oriented_curve_parameter_range) =
@@ -1442,20 +1445,23 @@ fn curve_orientation(
     geometry: &cadmpeg_ir::geometry::CurveGeometry,
     parameter_range: [f64; 2],
     endpoints: [Point3; 2],
-) -> Option<bool> {
-    let evaluated = [
-        curve_point(geometry, parameter_range[0]).ok()?,
-        curve_point(geometry, parameter_range[1]).ok()?,
-    ];
+) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(start) = cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[0]))? else {
+        return Ok(None);
+    };
+    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[1]))? else {
+        return Ok(None);
+    };
+    let evaluated = [start, end];
     let direct = evaluated[0].distance(endpoints[0]) <= MODEL_POINT_TOLERANCE.get()
         && evaluated[1].distance(endpoints[1]) <= MODEL_POINT_TOLERANCE.get();
     let reversed = evaluated[0].distance(endpoints[1]) <= MODEL_POINT_TOLERANCE.get()
         && evaluated[1].distance(endpoints[0]) <= MODEL_POINT_TOLERANCE.get();
-    match (direct, reversed) {
+    Ok(match (direct, reversed) {
         (true, false) => Some(false),
         (false, true) => Some(true),
         _ => None,
-    }
+    })
 }
 
 fn increasing_range(parameters: [f64; 2]) -> Option<[f64; 2]> {
