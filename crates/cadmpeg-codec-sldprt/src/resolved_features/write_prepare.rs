@@ -305,13 +305,14 @@ fn patch_spatial_sketches(
     )?;
     let mut projected_constraints = Vec::new();
     super::relation_geometry::project_spatial_relation_bindings(
+        &ctx,
         &mut projected_constraints,
         &mut projected_entities,
         &projected_sketches,
         &features,
         &ir.model.parameters,
         &native.feature_input_lanes,
-    );
+    )?;
     if ir.model.spatial_sketches != projected_sketches
         || ir.model.spatial_sketch_entities != projected_entities
     {

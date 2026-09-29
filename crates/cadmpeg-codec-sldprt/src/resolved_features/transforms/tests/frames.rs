@@ -343,6 +343,10 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
 
 #[test]
 fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
@@ -438,13 +442,14 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     );
     assert_eq!(
         owned_relation_parameters(
+            &ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&FeatureInputLane {
                 relation_instances: vec![relation.clone()],
                 ..lane.clone()
             }),
-        )["relation"]
+        ).unwrap()["relation"]
             .as_ref(),
         Some(&parameter.id)
     );
@@ -462,13 +467,14 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     );
     let mut synthesized_parameters = vec![mismatched_parameter.clone()];
     crate::resolved_features::projections::synthesize_display_relation_parameters(
+        &ctx,
         &mut synthesized_parameters,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&FeatureInputLane {
             relation_instances: vec![relation.clone()],
             ..lane.clone()
         }),
-    );
+    ).unwrap();
     let synthetic = synthesized_parameters
         .iter()
         .find(|parameter| {
@@ -486,13 +492,14 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     };
     let mut nested_parameters = vec![mismatched_parameter];
     crate::resolved_features::projections::synthesize_display_relation_parameters(
+        &ctx,
         &mut nested_parameters,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&FeatureInputLane {
             relation_instances: vec![nested_relation],
             ..lane.clone()
         }),
-    );
+    ).unwrap();
     let nested = nested_parameters
         .iter()
         .find(|parameter| {
@@ -505,13 +512,14 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     );
     assert_eq!(
         owned_relation_parameters(
+            &ctx,
             std::slice::from_ref(&feature),
             &synthesized_parameters,
             std::slice::from_ref(&FeatureInputLane {
                 relation_instances: vec![relation.clone()],
                 ..lane.clone()
             }),
-        )["relation"]
+        ).unwrap()["relation"]
             .as_ref(),
         Some(&synthetic.id)
     );
@@ -529,10 +537,11 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     }];
     assert_eq!(
         owned_relation_parameters(
+            &ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&exact_parameter),
             std::slice::from_ref(&exact_lane),
-        )["relation"]
+        ).unwrap()["relation"]
             .as_ref(),
         Some(&exact_parameter.id)
     );
@@ -547,13 +556,14 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         ..relation.clone()
     };
     let ownership = owned_relation_parameters(
+        &ctx,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&FeatureInputLane {
             relation_instances: vec![relation.clone(), driving_relation],
             ..lane.clone()
         }),
-    );
+    ).unwrap();
     assert_eq!(ownership.len(), 1);
     assert_eq!(ownership["driving-relation"].as_ref(), Some(&parameter.id));
 
@@ -585,6 +595,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     driving_name.id = driving_scalar.name.clone();
     driving_name.value = driving_parameter.name.clone();
     let ownership = owned_relation_parameters(
+        &ctx,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&driving_parameter),
         std::slice::from_ref(&FeatureInputLane {
@@ -593,7 +604,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             relation_instances: vec![driving_relation],
             ..lane.clone()
         }),
-    );
+    ).unwrap();
     assert_eq!(
         ownership["driving-by-name-relation"].as_ref(),
         Some(&driving_parameter.id)
@@ -613,6 +624,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let mut parameter = parameter;
     parameter.value = Some(ParameterValue::Integer(12));
     type_display_relation_parameters(
+        &ctx,
         std::slice::from_mut(&mut parameter),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&FeatureInputLane {
@@ -638,6 +650,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     parameter.display = None;
     parameter.native_ref = Some("driver".into());
     type_display_relation_parameters(
+        &ctx,
         std::slice::from_mut(&mut parameter),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&FeatureInputLane {
@@ -838,6 +851,10 @@ fn rotated_sketch_frame_projects_native_plane_coordinates() {
 
 #[test]
 fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -943,6 +960,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     };
 
     project_dimensioned_sketch_geometry(
+        &ctx,
         &mut entities,
         &[],
         &[],
@@ -1246,6 +1264,10 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
 
 #[test]
 fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let native_feature = NativeFeature {
         id: "feature-native".into(),
         parent: "history".into(),
@@ -1440,6 +1462,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     annotations = builder.build();
 
     bind_sketch_profiles(
+        &ctx,
         &mut features,
         &mut sketches,
         &mut entities,
@@ -1448,7 +1471,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         &[history],
         &[lane],
         &mut annotations,
-    );
+    ).unwrap();
 
     assert!(sketches.is_empty());
     assert!(entities.is_empty());

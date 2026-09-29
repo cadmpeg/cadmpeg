@@ -351,12 +351,17 @@ pub(crate) fn bind_parameter_scalars<'a>(
 /// relation projection can join the derived value without assigning a
 /// display record to `native_ref`.
 pub(crate) fn synthesize_display_relation_parameters<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
-) {
-    let lanes = lanes.into_iter().collect::<Vec<_>>();
-    let owned = owned_relation_parameters(features, parameters, lanes.iter().copied());
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut lane_refs = Vec::new();
+    for lane in lanes {
+        ctx.reserve_collection_vec(&mut lane_refs, 1, "collect SLDPRT display relation lanes")?;
+        lane_refs.push(lane);
+    }
+    let owned = owned_relation_parameters(ctx, features, parameters, lane_refs.iter().copied())?;
     let features_by_native_ref = features
         .iter()
         .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
@@ -393,7 +398,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         },
     );
 
-    for lane in lanes {
+    for lane in lane_refs {
         for relation in &lane.relation_instances {
             if relation.parameter_scalar_ref().is_some()
                 || owned.get(&relation.id).is_some_and(Option::is_some)
@@ -486,6 +491,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             relation_ids.insert(relation.id.clone());
         }
     }
+    Ok(())
 }
 
 fn relation_display_parameter_value(
@@ -529,11 +535,12 @@ fn relation_display_parameter_value(
 
 /// Apply relation-defined units and display semantics to parameters named by display scalars.
 pub(crate) fn type_display_relation_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let ownership = owned_relation_parameters(features, parameters, lanes);
+    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let mut families = HashMap::<cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
     for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
         if let Some(Some(parameter)) = ownership.get(&relation.id) {

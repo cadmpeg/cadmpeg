@@ -611,6 +611,7 @@ fn transformed_dimensioned_arc(
 
 /// Materialize dimensioned circular sketch geometry omitted by a selected-profile stream.
 pub(crate) fn project_dimensioned_sketch_geometry(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     surfaces: &[cadmpeg_ir::geometry::Surface],
@@ -635,7 +636,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             Some((feature.native_ref.as_deref()?, sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
-    let ownership = owned_relation_parameters(features, parameters, lanes);
+    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let parameters_by_id = parameters
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -886,7 +887,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         }
         sketches_by_feature.insert(native_ref, sketch);
     }
-    let ownership = owned_relation_parameters(features, parameters, lanes);
+    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let mut parameters_by_id = HashMap::new();
     for parameter in parameters {
         if !parameters_by_id.contains_key(&parameter.id) {

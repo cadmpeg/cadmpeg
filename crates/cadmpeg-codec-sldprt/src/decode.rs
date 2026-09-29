@@ -2010,10 +2010,11 @@ fn unprojected_sketch_relation_records(
         "index SLDPRT projected sketch relations",
     )?;
     let owned_instances = crate::resolved_features::relation_geometry::owned_relation_parameters(
+        ctx,
         &ir.model.features,
         &ir.model.parameters,
         &native.feature_input_lanes,
-    );
+    )?;
 
     let mut total = 0;
     for lane in &native.feature_input_lanes {
@@ -2701,11 +2702,13 @@ fn build_geometry_ir(
         parameter_identity_lanes(ctx, &lanes)?,
     )?;
     crate::resolved_features::projections::synthesize_display_relation_parameters(
+        ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         lanes.iter().chain(supplemental_config_lanes.iter()),
-    );
+    )?;
     crate::resolved_features::projections::type_display_relation_parameters(
+        ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         &lanes,
@@ -2719,6 +2722,7 @@ fn build_geometry_ir(
         constraints: mut sketch_constraints,
     } = crate::resolved_features::sketch_projection::sketches(ctx, scan, &mut annotations)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
+        ctx,
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
@@ -2727,7 +2731,7 @@ fn build_geometry_ir(
         &histories,
         &lanes,
         &mut annotations,
-    );
+    )?;
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
         &histories,
@@ -2814,6 +2818,7 @@ fn build_geometry_ir(
         &lanes,
     );
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
+        ctx,
         &mut sketch_entities,
         &sketches,
         &brep.surfaces,
@@ -2842,35 +2847,39 @@ fn build_geometry_ir(
         &sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
+        ctx,
         &mut sketch_entities,
         &sketches,
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_solved_point_geometry(
+        ctx,
         &mut sketch_entities,
         &sketches,
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_bindings(
+        ctx,
         &mut sketch_constraints,
         &sketches,
         &ir.model.features,
         &sketch_entities,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
+        ctx,
         &mut ir.model.spatial_sketch_constraints,
         &mut ir.model.spatial_sketch_entities,
         &ir.model.spatial_sketches,
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     stamp_feature_baseline(&mut ir)?;
     let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
@@ -3070,13 +3079,14 @@ fn build_geometry_ir(
         &all_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_bindings(
+        ctx,
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
         &all_lanes,
-    );
+    )?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(ctx, &mut ir, configuration_bodies)?;
     let configuration_losses =
@@ -4025,11 +4035,13 @@ fn build_metadata_ir(
         parameter_identity_lanes(ctx, &lanes)?,
     )?;
     crate::resolved_features::projections::synthesize_display_relation_parameters(
+        ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         lanes.iter().chain(supplemental_config_lanes.iter()),
-    );
+    )?;
     crate::resolved_features::projections::type_display_relation_parameters(
+        ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         &lanes,
@@ -4038,6 +4050,7 @@ fn build_metadata_ir(
     complete_resolved_configuration_parameter_snapshots(ctx, &mut ir)?;
     stamp_parameter_baseline(&mut ir)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
+        ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
@@ -4046,7 +4059,7 @@ fn build_metadata_ir(
         &histories,
         &lanes,
         &mut annotations,
-    );
+    )?;
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
         &histories,
@@ -4138,6 +4151,7 @@ fn build_metadata_ir(
         &lanes,
     );
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
+        ctx,
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.surfaces,
@@ -4146,13 +4160,14 @@ fn build_metadata_ir(
         &sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
+        ctx,
         &mut ir.model.spatial_sketch_constraints,
         &mut ir.model.spatial_sketch_entities,
         &ir.model.spatial_sketches,
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_point_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
@@ -4167,27 +4182,30 @@ fn build_metadata_ir(
         &sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
+        ctx,
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_solved_point_geometry(
+        ctx,
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_bindings(
+        ctx,
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_profiled_hole_constructions(
         ctx,
         &mut ir.model.features,
@@ -4260,13 +4278,14 @@ fn build_metadata_ir(
         &lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_bindings(
+        ctx,
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         &mut ir.model.features,
         &histories,

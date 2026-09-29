@@ -1095,6 +1095,10 @@ fn compact_line_reference_scalar_counts_follow_their_trailers() {
 
 #[test]
 fn e1_line_distance_indices_address_coordinate_point_pairs() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -1216,13 +1220,14 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
     ];
     let mut constraints = Vec::new();
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         &[],
         std::slice::from_ref(&feature),
         &entities,
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     assert_eq!(constraints.len(), 2);
     assert!(constraints.iter().all(|constraint| matches!(
         constraint.definition.kind(),
@@ -1230,12 +1235,13 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
     )));
 
     project_relation_solved_line_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
 
     let solver_lines = entities
         .iter()
@@ -1257,31 +1263,37 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .collect()
     );
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         &[],
         std::slice::from_ref(&feature),
         &entities,
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     assert_eq!(constraints.len(), 2);
     assert!(constraints.iter().all(|constraint| matches!(
         constraint.definition.kind(),
         SketchConstraintDefinitionInput::Distance { entities, .. } if entities.len() == 2
     )));
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         &[],
         std::slice::from_ref(&feature),
         &entities,
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     assert_eq!(constraints.len(), 2);
 }
 
 #[test]
 fn roster_point_line_distance_materializes_one_solver_line() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -1398,12 +1410,13 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         native_ref: Some("scalar".into()),
     };
     project_relation_solved_line_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     let solver_line = entities
         .iter()
         .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:2"))
@@ -1416,13 +1429,14 @@ fn roster_point_line_distance_materializes_one_solver_line() {
 
     let mut constraints = Vec::new();
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         &[],
         std::slice::from_ref(&feature),
         &entities,
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     let [constraint] = constraints.as_slice() else {
         panic!("one point-line constraint");
     };
@@ -1444,6 +1458,10 @@ fn roster_point_line_distance_materializes_one_solver_line() {
 
 #[test]
 fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguous() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
@@ -1597,12 +1615,13 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         );
     assert!(transforms["feature-native"].len() > 1);
     project_relation_solved_line_geometry(
+        &ctx,
         &mut entities,
         std::slice::from_ref(&sketch),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     let solver_line = entities
         .iter()
         .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:1"))
@@ -1613,13 +1632,14 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
     ));
     let mut constraints = Vec::new();
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         std::slice::from_ref(&sketch),
         std::slice::from_ref(&feature),
         &entities,
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     let [constraint] = constraints.as_slice() else {
         panic!("one point-line constraint");
     };
@@ -1633,6 +1653,10 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
 
 #[test]
 fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -1762,12 +1786,13 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         std::slice::from_ref(&lane),
     );
     project_relation_solved_point_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
 
     let solved = entities
         .iter()
