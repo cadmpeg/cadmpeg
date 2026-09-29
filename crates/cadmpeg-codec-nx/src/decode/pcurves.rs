@@ -1398,7 +1398,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         // counted, so it is below that count on every iteration.
         let candidates_remaining = candidate_count - candidate_index;
         let candidate_geometry_budget = geometry_budget.child_slice(
-            opposite_chart_geometry_work_limit(candidates_remaining, geometry_budget.remaining()),
+            opposite_chart_geometry_work_limit(ctx, candidates_remaining, geometry_budget.remaining())?,
         );
         let replacement =
             (|| -> Result<Option<OppositeChartReplacement>, cadmpeg_core::CodecError> {
@@ -3113,13 +3113,15 @@ const COMPLETION_TRANSFER_SAMPLES_PER_CHART: usize = 8;
 /// models whose charts or adaptive subdivisions are pathological.
 pub(super) const MAX_COMPLETION_TRANSFER_SAMPLES: usize = 65_536;
 
-pub(super) fn completion_transfer_budget_limit(chart_count: usize) -> usize {
-    chart_count
-        .saturating_mul(COMPLETION_TRANSFER_SAMPLES_PER_CHART)
-        .clamp(
-            MIN_COMPLETION_TRANSFER_SAMPLES,
-            MAX_COMPLETION_TRANSFER_SAMPLES,
-        )
+pub(super) fn completion_transfer_budget_limit(ctx: &DecodeContext<'_>, chart_count: usize) -> Result<usize, cadmpeg_core::CodecError> {
+    let requested = chart_count.checked_mul(COMPLETION_TRANSFER_SAMPLES_PER_CHART).ok_or_else(||
+        ctx.refuse_codec_limit("nx completion transfer samples", u64::MAX, cadmpeg_core::decode::u64_from_index(chart_count)))?;
+    // These bounds set the admitted work slice after its size is checked.
+    Ok(match requested {
+        requested if requested < MIN_COMPLETION_TRANSFER_SAMPLES => MIN_COMPLETION_TRANSFER_SAMPLES,
+        requested if requested > MAX_COMPLETION_TRANSFER_SAMPLES => MAX_COMPLETION_TRANSFER_SAMPLES,
+        requested => requested,
+    })
 }
 
 /// Total inverse-surface samples admitted while completing exact-boundary
@@ -3180,11 +3182,13 @@ pub(super) fn transfer_budget_exhausted(budget: &TransferBudget<'_>) -> bool {
 /// the deterministic transfer order. A failed candidate cannot consume the
 /// whole model slice and starve later candidates, while unused work remains
 /// available to later candidates through the parent budget.
-fn opposite_chart_geometry_work_limit(candidates_remaining: usize, remaining: usize) -> usize {
+fn opposite_chart_geometry_work_limit(ctx: &DecodeContext<'_>, candidates_remaining: usize, remaining: usize) -> Result<usize, cadmpeg_core::CodecError> {
     if candidates_remaining == 0 {
-        return 0;
+        return Ok(0);
     }
-    remaining.saturating_add(candidates_remaining - 1) / candidates_remaining
+    let rounded = remaining.checked_add(candidates_remaining - 1).ok_or_else(||
+        ctx.refuse_codec_limit("nx opposite chart geometry work", u64::MAX, cadmpeg_core::decode::u64_from_index(remaining)))?;
+    Ok(rounded / candidates_remaining)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4840,10 +4844,26 @@ mod tests {
 
     #[test]
     fn opposite_chart_geometry_work_limit_reallocates_unused_remainder() {
-        assert_eq!(opposite_chart_geometry_work_limit(0, 10), 0);
-        assert_eq!(opposite_chart_geometry_work_limit(3, 10), 4);
-        assert_eq!(opposite_chart_geometry_work_limit(2, 6), 3);
-        assert_eq!(opposite_chart_geometry_work_limit(1, 3), 3);
+        crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(opposite_chart_geometry_work_limit(ctx, 0, 10).unwrap(), 0);
+        assert_eq!(opposite_chart_geometry_work_limit(ctx, 3, 10).unwrap(), 4);
+        assert_eq!(opposite_chart_geometry_work_limit(ctx, 2, 6).unwrap(), 3);
+        assert_eq!(opposite_chart_geometry_work_limit(ctx, 1, 3).unwrap(), 3);
+        });
+    }
+
+    #[test]
+    fn completion_transfer_count_overflow_refuses_work() {
+        crate::test_support::with_decode_context(|ctx| {
+            assert!(matches!(super::completion_transfer_budget_limit(ctx, usize::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        });
+    }
+
+    #[test]
+    fn opposite_chart_rounding_overflow_refuses_work() {
+        crate::test_support::with_decode_context(|ctx| {
+            assert!(matches!(opposite_chart_geometry_work_limit(ctx, 2, usize::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        });
     }
 
     #[test]

@@ -80,13 +80,15 @@ const MIN_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 16_384;
 /// Maximum geometry work available to one support-UV lane in one strategy.
 const MAX_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 262_144;
 
-pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {
-    chart_count
-        .saturating_mul(SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART)
-        .clamp(
-            MIN_SUPPORT_UV_COMPLETION_SAMPLES,
-            MAX_SUPPORT_UV_COMPLETION_SAMPLES,
-        )
+pub(super) fn support_uv_completion_budget_limit(ctx: &DecodeContext<'_>, chart_count: usize) -> Result<usize, cadmpeg_core::CodecError> {
+    let requested = chart_count.checked_mul(SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART).ok_or_else(||
+        ctx.refuse_codec_limit("nx support UV completion samples", u64::MAX, cadmpeg_core::decode::u64_from_index(chart_count)))?;
+    // These bounds set the admitted work slice after its size is checked.
+    Ok(match requested {
+        requested if requested < MIN_SUPPORT_UV_COMPLETION_SAMPLES => MIN_SUPPORT_UV_COMPLETION_SAMPLES,
+        requested if requested > MAX_SUPPORT_UV_COMPLETION_SAMPLES => MAX_SUPPORT_UV_COMPLETION_SAMPLES,
+        requested => requested,
+    })
 }
 
 type SupportUvBudget<'a> = WorkBudget<'a>;
@@ -101,14 +103,15 @@ fn refuse_geometry_work(
     budget.resource_refusal().map_or(Ok(()), Err)
 }
 
-fn support_uv_lane_geometry_work_limit(sample_count: usize, remaining: usize) -> usize {
-    sample_count
-        .saturating_mul(SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE)
-        .clamp(
-            MIN_SUPPORT_UV_LANE_GEOMETRY_WORK,
-            MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
-        )
-        .min(remaining)
+fn support_uv_lane_geometry_work_limit(ctx: &DecodeContext<'_>, sample_count: usize, remaining: usize) -> Result<usize, cadmpeg_core::CodecError> {
+    let requested = sample_count.checked_mul(SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE).ok_or_else(||
+        ctx.refuse_codec_limit("nx support UV lane geometry work", u64::MAX, cadmpeg_core::decode::u64_from_index(sample_count)))?;
+    let admitted = match requested {
+        requested if requested < MIN_SUPPORT_UV_LANE_GEOMETRY_WORK => MIN_SUPPORT_UV_LANE_GEOMETRY_WORK,
+        requested if requested > MAX_SUPPORT_UV_LANE_GEOMETRY_WORK => MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
+        requested => requested,
+    };
+    Ok(if remaining < admitted { remaining } else { admitted })
 }
 
 #[cfg(test)]
@@ -978,12 +981,13 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                 let tolerance =
                     blend_spine_cache_fit_tolerance_with_index(&index, surface, *fit_tolerance);
                 let parent_geometry_budget = geometry_budget;
-                let lane_geometry_budget = isolate_lanes.then(|| {
-                    parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
-                        points.len(),
-                        parent_geometry_budget.remaining(),
-                    ))
-                });
+                let lane_geometry_budget = if isolate_lanes {
+                    Some(parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
+                        ctx, points.len(), parent_geometry_budget.remaining(),
+                    )?))
+                } else {
+                    None
+                };
                 let geometry_budget = lane_geometry_budget
                     .as_ref()
                     .unwrap_or(parent_geometry_budget);
@@ -1266,9 +1270,8 @@ fn complete_support_uv_wave(
                 let parent_geometry_budget = geometry_budget;
                 let lane_geometry_budget =
                     parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
-                        points.len(),
-                        parent_geometry_budget.remaining(),
-                    ));
+                        ctx, points.len(), parent_geometry_budget.remaining(),
+                    )?);
                 let geometry_budget = &lane_geometry_budget;
                 let mut contact_seeds = BlendContactSeedCache::default();
                 let uv = (|| -> Result<Option<(Vec<Point2>, bool)>, cadmpeg_core::CodecError> {
@@ -1906,7 +1909,9 @@ fn complete_coupled_support_uv(
             continue;
         }
         let missing_lanes = missing.iter().filter(|missing| **missing).count();
-        if !coupled_support_budget.charge_by(work_units(points.len().saturating_mul(missing_lanes)))
+        let sample_work = points.len().checked_mul(missing_lanes).ok_or_else(||
+            ctx.refuse_codec_limit("nx coupled support UV samples", u64::MAX, cadmpeg_core::decode::u64_from_index(points.len())))?;
+        if !coupled_support_budget.charge_by(work_units(sample_work))
         {
             if let Some(limit) = ctx.resource_refusal() {
                 return Err(limit.into());
@@ -1926,7 +1931,7 @@ fn complete_coupled_support_uv(
         });
         let parent_geometry_budget = geometry_budget;
         let lane_geometry_budget = parent_geometry_budget.child_slice(
-            support_uv_lane_geometry_work_limit(points.len(), parent_geometry_budget.remaining()),
+            support_uv_lane_geometry_work_limit(ctx, points.len(), parent_geometry_budget.remaining())?,
         );
         let geometry_budget = &lane_geometry_budget;
         let mut lanes = complete_blend_boundary_support_uv_with_index_and_budget(
@@ -2975,9 +2980,10 @@ mod tests {
 
     #[test]
     fn support_uv_lane_geometry_slice_preserves_parent_fairness() {
+        crate::test_support::with_decode_context(|ctx| {
         let parent = WorkBudget::new(MAX_SUPPORT_UV_LANE_GEOMETRY_WORK * 2);
         let lane_limit =
-            support_uv_lane_geometry_work_limit(MAX_SUPPORT_UV_SAMPLES, parent.remaining());
+            support_uv_lane_geometry_work_limit(ctx, MAX_SUPPORT_UV_SAMPLES, parent.remaining()).unwrap();
         let lane = parent.child_slice(lane_limit);
 
         assert_eq!(lane_limit, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
@@ -2991,10 +2997,24 @@ mod tests {
         assert!(!parent.exhausted());
 
         let later_lane = parent.child_slice(support_uv_lane_geometry_work_limit(
-            MAX_SUPPORT_UV_SAMPLES,
-            parent.remaining(),
-        ));
+            ctx, MAX_SUPPORT_UV_SAMPLES, parent.remaining(),
+        ).unwrap());
         assert!(later_lane.charge());
+        });
+    }
+
+    #[test]
+    fn support_uv_completion_count_overflow_refuses_work() {
+        crate::test_support::with_decode_context(|ctx| {
+            assert!(matches!(super::support_uv_completion_budget_limit(ctx, usize::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        });
+    }
+
+    #[test]
+    fn support_uv_lane_count_overflow_refuses_work() {
+        crate::test_support::with_decode_context(|ctx| {
+            assert!(matches!(support_uv_lane_geometry_work_limit(ctx, usize::MAX, usize::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        });
     }
 
     #[test]

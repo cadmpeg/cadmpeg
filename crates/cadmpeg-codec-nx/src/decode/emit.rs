@@ -1922,7 +1922,10 @@ pub(super) fn source_meta(
         let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
             continue;
         };
-        let Some(payload) = scan.container.data.get(start..start.saturating_add(size)) else {
+        let Some(end) = start.checked_add(size) else {
+            continue;
+        };
+        let Some(payload) = scan.container.data.get(start..end) else {
             continue;
         };
         let Some((width, height, precision, components)) = jpeg_dimensions(payload) else {
