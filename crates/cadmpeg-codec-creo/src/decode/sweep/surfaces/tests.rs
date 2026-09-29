@@ -1,9 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{transfer_saved_spline_curves, unique_feature_surface_row};
+use super::{push_saved_spline_loss, transfer_saved_spline_curves, unique_feature_surface_row, JoinedLaneRecords};
 use crate::decode::tests::surface_row;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::AnnotationBuilder;
+
+#[test]
+fn saved_spline_loss_refuses_text_and_slot_below_limits() {
+    let records = ["first".to_owned(), "second".to_owned()];
+    for (retained_limit, item_limit, dimension, operation) in [
+        (0, u64::MAX, ResourceDimension::RetainedBytes, "creo saved spline loss text"),
+        (u64::MAX, 0, ResourceDimension::CollectionItems, "creo saved spline losses"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained_limit;
+        policy.limits.max_collection_items = item_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = push_saved_spline_loss(&ctx, &mut Vec::new(), format_args!(
+            "Saved section spline at offset 7 cannot form a NURBS curve: {}",
+            JoinedLaneRecords(&records)
+        )).expect_err("below-need limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == dimension && resource.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    push_saved_spline_loss(&ctx, &mut losses, format_args!(
+        "Saved section spline at offset 7 cannot form a NURBS curve: {}",
+        JoinedLaneRecords(&records)
+    )).expect("service loss");
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].message, "Saved section spline at offset 7 cannot form a NURBS curve: first; second");
+}
 
 #[test]
 fn revolved_nurbs_surface_refuses_each_collection_boundary() {

@@ -46,6 +46,31 @@ use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::BTreeSet;
 
+struct JoinedLaneRecords<'a>(&'a [String]);
+
+impl std::fmt::Display for JoinedLaneRecords<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, record) in self.0.iter().enumerate() {
+            if index != 0 {
+                formatter.write_str("; ")?;
+            }
+            formatter.write_str(record)?;
+        }
+        Ok(())
+    }
+}
+
+fn push_saved_spline_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    message: impl std::fmt::Display,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let message = ctx.format_retained(message, "creo saved spline loss text")?;
+    ctx.try_reserve_items(losses, 1, "creo saved spline losses")?;
+    losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(message));
+    Ok(())
+}
+
 pub(in super::super) fn revolved_section_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
@@ -278,20 +303,16 @@ pub(in super::super) fn transfer_saved_spline_curves(
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(nurbs) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records_checked()?;
-                losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
-                    if records.is_empty() {
-                        format!(
-                            "Saved section spline at offset {} cannot form a NURBS curve.",
-                            spline.offset
-                        )
-                    } else {
-                        format!(
-                            "Saved section spline at offset {} cannot form a NURBS curve: {}",
-                            spline.offset,
-                            records.join("; ")
-                        )
-                    },
-                ));
+                if records.is_empty() {
+                    push_saved_spline_loss(ctx, losses, format_args!(
+                        "Saved section spline at offset {} cannot form a NURBS curve.", spline.offset
+                    ))?;
+                } else {
+                    push_saved_spline_loss(ctx, losses, format_args!(
+                        "Saved section spline at offset {} cannot form a NURBS curve: {}",
+                        spline.offset, JoinedLaneRecords(&records)
+                    ))?;
+                }
                 continue;
             };
             let suffix_key = spline
@@ -746,20 +767,16 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records_checked()?;
-                losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
-                    if records.is_empty() {
-                        format!(
-                            "Saved section spline at offset {} cannot form a NURBS curve.",
-                            spline.offset
-                        )
-                    } else {
-                        format!(
-                            "Saved section spline at offset {} cannot form a NURBS curve: {}",
-                            spline.offset,
-                            records.join("; ")
-                        )
-                    },
-                ));
+                if records.is_empty() {
+                    push_saved_spline_loss(ctx, losses, format_args!(
+                        "Saved section spline at offset {} cannot form a NURBS curve.", spline.offset
+                    ))?;
+                } else {
+                    push_saved_spline_loss(ctx, losses, format_args!(
+                        "Saved section spline at offset {} cannot form a NURBS curve: {}",
+                        spline.offset, JoinedLaneRecords(&records)
+                    ))?;
+                }
                 continue;
             };
             let Some(placed) = placed_section_nurbs(ctx, transform, &section_curve)? else {
@@ -781,12 +798,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             )?
             else {
                 for record in refusal.take_records_checked()? {
-                    losses.push(
-                        crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
-                            "Extruded section spline at offset {} states no surface carrier: {record}",
-                            spline.offset
-                        )),
-                    );
+                    push_saved_spline_loss(ctx, losses, format_args!(
+                        "Extruded section spline at offset {} states no surface carrier: {record}",
+                        spline.offset
+                    ))?;
                 }
                 continue;
             };
@@ -888,12 +903,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some((&lower_knot, &upper_knot)) =
                 directrix.knots().first().zip(directrix.knots().last())
             else {
-                losses.push(
-                    crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+                push_saved_spline_loss(ctx, losses, format_args!(
                     "Extrusion directrix for feature {feature_id} at offset {} has no knot range",
                     spline.offset
-                )),
-                );
+                ))?;
                 continue;
             };
             source_carriers.admit_procedural_surface(
