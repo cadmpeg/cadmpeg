@@ -189,7 +189,7 @@ fn sketch_text_output_refuses_collection_limit() {
     );
 
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
+    policy.limits.max_collection_items = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = crate::design::decode::sketch::decode_sketch_texts_from_stream(
         &ctx,
@@ -592,9 +592,9 @@ fn sketch_point_indices_and_output_refuse_collection_limits() {
 
     let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
     for (limit, operation) in [
-        (10, "f3d sketch point frame index"),
-        (15, "f3d sketch point type index"),
-        (20, "f3d sketch point output"),
+        (21, "f3d sketch point frame index"),
+        (26, "f3d sketch point type index"),
+        (31, "f3d sketch point output"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -622,7 +622,7 @@ fn sketch_curve_output_refuses_collection_limit() {
     let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 10;
+    policy.limits.max_collection_items = 21;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
         &ctx,
