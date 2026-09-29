@@ -683,8 +683,6 @@ impl<T> ConcatenatedSegments<T> {
     }
 }
 
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
 /// Reflects a child about its own parameter domain.
 ///
 /// Every answer here is either the reversed child or a named cause: the values

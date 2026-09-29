@@ -37,7 +37,7 @@ use crate::native::ufrx::{
     model_state_issue, occurrence_issue, representation_issue, EmbeddedReferenceRecord,
     EmbeddedReferenceRecordWire, ExternalReferenceRecord, ExternalReferenceRecordWire,
     UfrxModelStateParameterRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
-    UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxRecord, UfrxRepresentationRecord,
+    UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxParsedPrefix, UfrxRecord, UfrxRepresentationRecord,
     UfrxRepresentationRecordWire,
 };
 use crate::native::{
@@ -1962,7 +1962,7 @@ fn project_ufrx_state(
                 .map(|state| project_ufrx_representation(ctx, state, issues))
                 .transpose()?
                 .flatten();
-            UfrxRecord::ParsedPrefix {
+            UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
                 id: retained_clone(
                     ctx,
                     "inventor:ufrx:state#root",
@@ -1999,7 +1999,7 @@ fn project_ufrx_state(
                     document.unparsed_tail.window(),
                     "retain Inventor UFRx tail digest",
                 )?,
-            }
+            }))
         }
     })
 }

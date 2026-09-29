@@ -971,18 +971,22 @@ fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // the table fields, global_table, placement, and Global tolerances are distinct validation inputs
+struct SectionedAreaContext {
+    global_table: GlobalTable,
+    transform: Transform,
+    length_factor: f64,
+    resolution: f64,
+}
+
 fn sectioned_area_valid(
     ir: &CadIr,
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     form: i64,
-    global_table: GlobalTable,
-    transform: Transform,
-    length_factor: f64,
-    resolution: f64,
+    context: SectionedAreaContext,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<bool, CodecError> {
+    let SectionedAreaContext { global_table, transform, length_factor, resolution } = context;
     if !matches!(form, 0 | 1) {
         return Ok(false);
     }
@@ -1148,17 +1152,7 @@ pub(super) fn project(
                             ),
                             AnnotationKind::SectionedArea => {
                                 if let Some(transform) = resolved_transform {
-                                    sectioned_area_valid(
-                                        ir,
-                                        record,
-                                        &entries,
-                                        entry.form,
-                                        global.global_table(),
-                                        transform,
-                                        global.length_factor_mm(),
-                                        global.minimum_resolution_mm(),
-                                        ctx,
-                                    )?
+                                    sectioned_area_valid(ir, record, &entries, entry.form, SectionedAreaContext { global_table: global.global_table(), transform: transform, length_factor: global.length_factor_mm(), resolution: global.minimum_resolution_mm() }, ctx)?
                                 } else {
                                     false
                                 }

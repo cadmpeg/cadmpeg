@@ -302,17 +302,21 @@ fn surface_point_or_refusal(
 /// One resolved pcurve use: its geometry and the parameter range it covers.
 type ResolvedPcurveUses = Vec<(PcurveGeometry, [f64; 2])>;
 
-#[allow(clippy::too_many_arguments)] // the lazily built model index rides along as the eighth argument
+struct PcurveEndpointCheck {
+    start: Point3,
+    end: Point3,
+    tolerance: f64,
+}
+
 fn resolve_pcurve_uses<'a>(
     source: &'a CadIr,
     uses: &[(bool, u32)],
     support: &SurfaceSupport<'_>,
-    expected_start: Point3,
-    expected_end: Point3,
-    tolerance: f64,
+    endpoints: PcurveEndpointCheck,
     ctx: &DecodeContext<'_>,
     model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
+    let PcurveEndpointCheck { start: expected_start, end: expected_end, tolerance } = endpoints;
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
@@ -1217,20 +1221,11 @@ pub(super) fn project(
                                 })
                             };
                             let expected = vertex_lists[vertex_list][*vertex_index];
-                            let Some(resolved) = (match resolve_pcurve_uses(
-                                ir,
-                                pcurves,
-                                &SurfaceSupport {
+                            let Some(resolved) = (match resolve_pcurve_uses(ir, pcurves, &SurfaceSupport {
                                     id: &surface_id,
                                     geometry: support_geometry,
                                     factor,
-                                },
-                                expected,
-                                expected,
-                                tolerance,
-                                ctx,
-                                &mut model_index,
-                            ) {
+                                }, PcurveEndpointCheck { start: expected, end: expected, tolerance: tolerance }, ctx, &mut model_index) {
                                 Ok(resolved) => resolved,
                                 Err(error) => {
                                     let error = error.non_resource()?;
@@ -1323,20 +1318,11 @@ pub(super) fn project(
                         } else {
                             (natural_end, natural_start)
                         };
-                        let Some(resolved) = (match resolve_pcurve_uses(
-                            ir,
-                            pcurves,
-                            &SurfaceSupport {
+                        let Some(resolved) = (match resolve_pcurve_uses(ir, pcurves, &SurfaceSupport {
                                 id: &surface_id,
                                 geometry: support_geometry,
                                 factor,
-                            },
-                            expected_start,
-                            expected_end,
-                            tolerance,
-                            ctx,
-                            &mut model_index,
-                        ) {
+                            }, PcurveEndpointCheck { start: expected_start, end: expected_end, tolerance: tolerance }, ctx, &mut model_index) {
                             Ok(resolved) => resolved,
                             Err(error) => {
                                 let error = error.non_resource()?;
