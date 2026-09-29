@@ -2881,7 +2881,7 @@ pub(crate) fn project_spatial_dimension_constraints(
         })
         .collect::<Vec<_>>();
 
-    let retained_parameters = projected
+    let retained_parameter_ids = projected
         .iter()
         .filter_map(|constraint| match constraint.definition.kind() {
             SpatialSketchConstraintDefinitionInput::Native {
@@ -2905,22 +2905,30 @@ pub(crate) fn project_spatial_dimension_constraints(
                 ..
             } => Some(&parameter.id),
             _ => None,
-        })
-        .cloned()
-        .collect::<HashSet<_>>();
-    let owners_by_record = owners
-        .iter()
-        .filter_map(|owner| Some(((native_stream(owner.id())?, owner.record_index()), owner)))
-        .collect::<HashMap<_, _>>();
-    let companions_by_record = companions
-        .iter()
-        .filter_map(|companion| {
-            Some((
-                (native_stream(companion.id())?, companion.record_index()),
-                companion,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+        });
+    let mut retained_parameters = HashSet::new();
+    for parameter in retained_parameter_ids {
+        let id = copy_dimension_parameter_id(ctx, parameter,
+            "f3d retained spatial parameter id")?;
+        insert_dimension_set(ctx, &mut retained_parameters, id,
+            "f3d retained spatial parameter index")?;
+    }
+    let mut owners_by_record = HashMap::new();
+    for owner in owners {
+        if let Some(scope) = native_stream(owner.id()) {
+            insert_dimension_index(ctx, &mut owners_by_record,
+                (scope, owner.record_index()), owner,
+                "f3d spatial owner record index")?;
+        }
+    }
+    let mut companions_by_record = HashMap::new();
+    for companion in companions {
+        if let Some(scope) = native_stream(companion.id()) {
+            insert_dimension_index(ctx, &mut companions_by_record,
+                (scope, companion.record_index()), companion,
+                "f3d spatial companion record index")?;
+        }
+    }
     let mut missing = source_parameters
         .difference(&retained_parameters)
         .cloned()

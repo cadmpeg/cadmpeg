@@ -281,6 +281,74 @@ fn spatial_parameter_count_id_refuses_retained_limit() {
 }
 
 #[test]
+fn spatial_owner_record_index_refuses_collection_limit() {
+    assert_spatial_index_refusal("f3d spatial owner record index");
+}
+
+fn assert_spatial_companion_collection_refusal(operation: &'static str) {
+    let fixture = fixture();
+    let entity = fixture.spatial_entity();
+    let companion = parameter_companion().bound(DesignCompanionPayload::new(58, 1, Vec::new()));
+    let mut inputs = fixture.inputs();
+    inputs.companions = std::slice::from_ref(&companion);
+    inputs.entities = &[];
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = project_spatial_dimension_constraints(Some(&ctx), &inputs,
+            std::slice::from_ref(&fixture.spatial), std::slice::from_ref(&entity), 1.0e-6);
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension == ResourceDimension::CollectionItems => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn retained_spatial_parameter_index_refuses_collection_limit() {
+    assert_spatial_companion_collection_refusal("f3d retained spatial parameter index");
+}
+
+#[test]
+fn spatial_companion_record_index_refuses_collection_limit() {
+    assert_spatial_companion_collection_refusal("f3d spatial companion record index");
+}
+
+#[test]
+fn retained_spatial_parameter_id_refuses_retained_limit() {
+    let fixture = fixture();
+    let entity = fixture.spatial_entity();
+    let companion = parameter_companion().bound(DesignCompanionPayload::new(58, 1, Vec::new()));
+    let mut inputs = fixture.inputs();
+    inputs.companions = std::slice::from_ref(&companion);
+    inputs.entities = &[];
+    for limit in 0..512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = project_spatial_dimension_constraints(Some(&ctx), &inputs,
+            std::slice::from_ref(&fixture.spatial), std::slice::from_ref(&entity), 1.0e-6);
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d retained spatial parameter id"
+                    && failure.dimension == ResourceDimension::RetainedBytes => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected retained spatial parameter ID refusal"),
+            Err(error) => panic!("expected retained spatial parameter ID refusal: {error}"),
+        }
+    }
+    panic!("no retained spatial parameter ID refusal");
+}
+
+#[test]
 fn planar_spatial_sketch_index_refuses_collection_limit() {
     assert_refusal("f3d planar spatial sketch index");
 }
