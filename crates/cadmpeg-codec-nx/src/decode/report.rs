@@ -6,7 +6,7 @@ use super::feature_completeness::operands::{
     pattern_feature_is_incomplete,
 };
 use super::feature_completeness::{
-    active_configuration_state_is_incomplete, chamfer_definition_is_incomplete,
+    active_configuration_state_is_incomplete_for_decode, chamfer_definition_is_incomplete,
     combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
     delete_body_definition_is_incomplete, draft_definition_is_incomplete,
     extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
@@ -305,7 +305,7 @@ pub(crate) fn append_design_intent_losses(
         .collect::<Vec<_>>();
     // Require a non-BaseFeature writer before treating body-to-history as proven.
     let (active_features, closure_rejection) =
-        match crate::native::history::active_feature_closure(ir, &current_body_ids) {
+        match crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)? {
             Ok(active) => (Some(active), None),
             Err(rejection) => (None, Some(rejection.code())),
         };
@@ -359,22 +359,19 @@ pub(crate) fn append_design_intent_losses(
         .iter()
         .map(|body| &body.id)
         .collect::<BTreeSet<_>>();
-    let incomplete_configuration_count = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| {
-            configuration.bodies.is_none()
-                || active_configuration_count != 1
-                || (configuration.active
-                    && configuration.bodies.as_deref().is_none_or(|bodies| {
-                        bodies.len() != current_bodies.len()
-                            || bodies.iter().collect::<BTreeSet<_>>() != current_bodies
-                    }))
-                || (configuration.active
-                    && active_configuration_state_is_incomplete(ir, configuration))
-        })
-        .count();
+    let mut incomplete_configuration_count = 0usize;
+    for configuration in &ir.model.configurations {
+        let incomplete = configuration.bodies.is_none()
+            || active_configuration_count != 1
+            || (configuration.active
+                && configuration.bodies.as_deref().is_none_or(|bodies| {
+                    bodies.len() != current_bodies.len()
+                        || bodies.iter().collect::<BTreeSet<_>>() != current_bodies
+                }))
+            || (configuration.active
+                && active_configuration_state_is_incomplete_for_decode(ctx, ir, configuration)?);
+        if incomplete { incomplete_configuration_count += 1; }
+    }
     if incomplete_configuration_count != 0 {
         losses.push(NxLossCode::ConfigurationStateUnresolved.note(format!(
             "Activation, complete body membership, evaluated feature state, or evaluated \

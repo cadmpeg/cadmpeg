@@ -98,7 +98,7 @@ use crate::container::EntryContent;
 use crate::decode::ids::{extended_id, native_entity_key, IdScope};
 use crate::decode::Scan;
 use crate::native::history::{
-    active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
+    active_feature_closure_for_decode, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
     NATIVE_PRIMARY_BODY_OBJECT_INDEX,
 };
 use crate::native::om::display_color::{
@@ -376,8 +376,8 @@ pub(super) fn attach(
         &model.features.feature_block_dimensions,
         annotations,
     )?;
-    attach_current_feature_states(ir, annotations)?;
-    attach_active_configuration_feature_states(ir, annotations)?;
+    attach_current_feature_states(ctx, ir, annotations)?;
+    attach_active_configuration_feature_states(ctx, ir, annotations)?;
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
@@ -1403,17 +1403,42 @@ fn attach_active_configuration_parameter_values(
     Ok(())
 }
 
+fn charge_feature_definition_copy(
+    ctx: &DecodeContext<'_>,
+    definition: &FeatureDefinition,
+) -> Result<(), CodecError> {
+    struct ByteCount(usize);
+    impl std::io::Write for ByteCount {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self.0.checked_add(bytes.len()).ok_or_else(|| std::io::Error::other("NX feature definition size overflow"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    }
+    let mut count = ByteCount(0);
+    serde_json::to_writer(&mut count, definition)
+        .map_err(|error| CodecError::malformed(format_args!("NX feature definition size: {error}")))?;
+    let bytes = count.0.checked_mul(32)
+        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<FeatureDefinition>()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX feature definition copy", 0, cadmpeg_core::decode::u64_from_index(count.0)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count.0), "NX feature definition copy")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX feature definition copy")
+}
+
 fn attach_current_feature_states(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let current_bodies = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<Vec<_>>();
-    let Ok(active_features) = active_feature_closure(ir, &current_bodies) else {
+    let mut current_bodies = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX current body identities")?;
+    for body in &ir.model.bodies {
+        ctx.charge_collection_items(1, "NX current body identities")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<BodyId>() + body.id.as_str().len()))?;
+        reserve_attach_vec(ctx, &mut current_bodies, 1, "NX current body identities")?;
+        current_bodies.push(body.id.clone());
+    }
+    let Ok(active_features) = active_feature_closure_for_decode(ctx, ir, &current_bodies)? else {
         return Ok(());
     };
     for index in active_features.into_values() {
@@ -1427,6 +1452,7 @@ fn attach_current_feature_states(
 }
 
 fn attach_active_configuration_feature_states(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1435,9 +1461,7 @@ fn attach_active_configuration_feature_states(
         return Ok(());
     };
     let Some(configuration_bodies) = ir.model.configurations[configuration_index]
-        .bodies
-        .as_deref()
-        .map(<[BodyId]>::to_vec)
+        .bodies.as_deref()
     else {
         return Ok(());
     };
@@ -1447,25 +1471,37 @@ fn attach_active_configuration_feature_states(
     {
         return Ok(());
     }
-    let Ok(active_features) = active_feature_closure(ir, &configuration_bodies) else {
+    let Ok(active_features) = active_feature_closure_for_decode(ctx, ir, configuration_bodies)? else {
         return Ok(());
     };
-    let states = active_features
-        .iter()
-        .map(|(id, &index)| {
-            let feature = &ir.model.features[index];
-            (
-                id.clone(),
-                ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: feature.evaluation.outputs().iter().cloned().collect(),
-                    },
-                    dependencies: feature.dependencies.clone(),
-                    definition: feature.evaluation.definition().clone(),
-                },
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut states = BTreeMap::new();
+    for (id, &index) in &active_features {
+        let feature = &ir.model.features[index];
+        let mut outputs = Vec::new();
+        for output in feature.evaluation.outputs() {
+            ctx.charge_collection_items(1, "NX configuration feature outputs")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<BodyId>() + output.as_str().len()), "NX configuration feature output")?;
+            reserve_attach_vec(ctx, &mut outputs, 1, "NX configuration feature outputs")?;
+            outputs.push(output.clone());
+        }
+        let mut dependencies = Vec::new();
+        for dependency in &feature.dependencies {
+            ctx.charge_collection_items(1, "NX configuration feature dependencies")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureId>() + dependency.as_str().len()), "NX configuration feature dependency")?;
+            reserve_attach_vec(ctx, &mut dependencies, 1, "NX configuration feature dependencies")?;
+            dependencies.push(dependency.clone());
+        }
+        charge_feature_definition_copy(ctx, feature.evaluation.definition())?;
+        ctx.charge_collection_items(1, "NX configuration feature states")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(FeatureId, ConfigurationFeatureState)>() * 4 + id.as_str().len()), "NX configuration feature state")?;
+        states.insert(id.clone(), ConfigurationFeatureState {
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                outputs: DistinctMembers::try_from_unique_vec(outputs).map_err(cadmpeg_core::CodecError::malformed)?,
+            },
+            dependencies: DistinctMembers::try_from_unique_vec(dependencies).map_err(cadmpeg_core::CodecError::malformed)?,
+            definition: feature.evaluation.definition().clone(),
+        });
+    }
     for index in active_features.into_values() {
         let feature = &mut ir.model.features[index];
         if feature.suppressed != Some(false) {
