@@ -411,3 +411,21 @@ fn no_state_native_edge_group_id_refuses_retained_limit() {
 fn standard_recipe_native_edge_group_id_refuses_retained_limit() {
     assert_native_group_refusal(true);
 }
+
+#[test]
+fn edge_assignment_reference_candidate_refuses_collection_limit() {
+    for limit in 0..16 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match crate::design::edge_resolve::edge_group_assignment_candidates(
+            &[], [&[17, 18][..], &[18, 19][..]], Some(&ctx)) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d edge assignment reference candidate" => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected assignment reference refusal: {other:?}"),
+        }
+    }
+    panic!("no assignment reference refusal");
+}

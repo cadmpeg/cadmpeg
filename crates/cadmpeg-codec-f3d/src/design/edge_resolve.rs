@@ -1433,7 +1433,8 @@ fn unique_edge_group_assignment(
             edge_group_assignment_candidates(
                     &operand.recipe_selectors,
                     edge_operand_reference_edge_sets(operand),
-                )
+                    ctx,
+                )?
         };
         let Some(candidates) = candidates else { return Ok(None); };
         push_edge_item(ctx, &mut candidate_sets, candidates,
@@ -1532,23 +1533,27 @@ enum EdgeAssignmentCandidates {
 fn edge_group_assignment_candidates<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-) -> Option<EdgeAssignmentCandidates> {
-    let reference_edge_sets = reference_edge_sets
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<EdgeAssignmentCandidates>, CodecError> {
+    let mut reference_edge_sets = reference_edge_sets
         .into_iter()
-        .filter(|edges| !edges.is_empty())
-        .collect::<Vec<_>>();
+        .filter(|edges| !edges.is_empty());
     if !selector_contexts.is_empty() {
-        return edge_assignment_candidates(selector_contexts, reference_edge_sets)
-            .map(EdgeAssignmentCandidates::Edges);
+        return Ok(edge_assignment_candidates(selector_contexts, reference_edge_sets)
+            .map(EdgeAssignmentCandidates::Edges));
     }
-    let [first, second, ..] = reference_edge_sets.as_slice() else {
-        return Some(EdgeAssignmentCandidates::Context);
+    let (Some(first), Some(second)) = (reference_edge_sets.next(), reference_edge_sets.next()) else {
+        return Ok(Some(EdgeAssignmentCandidates::Context));
     };
-    let mut candidates = first.to_vec();
+    let mut candidates = Vec::new();
+    for &edge in first {
+        push_edge_item(ctx, &mut candidates, edge,
+            "f3d edge assignment reference candidate")?;
+    }
     candidates.retain(|candidate| second.contains(candidate));
     candidates.sort_unstable();
     candidates.dedup();
-    (!candidates.is_empty()).then_some(EdgeAssignmentCandidates::Edges(candidates))
+    Ok((!candidates.is_empty()).then_some(EdgeAssignmentCandidates::Edges(candidates)))
 }
 
 pub(super) fn radius_edge_group_candidates(
@@ -1665,24 +1670,16 @@ fn edge_assignment_candidates<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<Vec<i64>> {
-    let shared_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
-    if !selector_contexts.is_empty()
+    let slots = if !selector_contexts.is_empty()
         && selector_contexts
             .iter()
             .all(|selector| !selector.incidence_matching_edge_slots.is_empty())
     {
-        corroborated_edge_candidates(
-            selector_contexts,
-            shared_edge_sets.iter().copied(),
-            SelectorSlots::Incidence,
-        )
+        SelectorSlots::Incidence
     } else {
-        corroborated_edge_candidates(
-            selector_contexts,
-            shared_edge_sets.iter().copied(),
-            SelectorSlots::BoundaryCount,
-        )
-    }
+        SelectorSlots::BoundaryCount
+    };
+    corroborated_edge_candidates(selector_contexts, shared_edge_sets, slots)
 }
 
 fn unique_bipartite_assignment(
