@@ -255,3 +255,18 @@ fn rectangular_body_seed_id_refuses_retained_limit() {
     assert_rectangular_seed_refusal(DesignOperandRole::BODIES_B,
         "f3d rectangular body seed id");
 }
+
+#[test]
+fn rectangular_pattern_seed_output_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scope = rectangular_scope();
+    let seed_group = group(10, 20, DesignOperandRole::BODIES_B);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(project_rectangular_pattern_scalars(Some(&ctx), &scope,
+        std::slice::from_ref(&seed_group), &[]), Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems && failure.operation == "f3d rectangular pattern seeds"));
+}

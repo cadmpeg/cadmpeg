@@ -7394,7 +7394,10 @@ fn project_rectangular_pattern_scalars(
             _ => None,
         }
     } else { None };
-    let seeds = component_seed.or(group_seed).into_iter().collect();
+    let mut seeds = Vec::new();
+    if let Some(seed) = component_seed.or(group_seed) {
+        push_feature_item(ctx, &mut seeds, seed, "f3d rectangular pattern seeds")?;
+    }
     let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
     let Some(spacing) = PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get())) else {
         return Ok(None);

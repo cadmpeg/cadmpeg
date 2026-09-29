@@ -299,7 +299,7 @@ pub(super) fn decode_stream(
     stream: &str,
     out: &mut Vec<ConstructionRecipe>,
 ) -> Result<(), CodecError> {
-    let mut counters: HashMap<(ConstructionRecipeKind, Option<String>), u32> = HashMap::new();
+    let mut counters: HashMap<(ConstructionRecipeKind, Option<&str>), u32> = HashMap::new();
     for &(name, kind) in RECIPES {
         let mut cursor = 0;
         while let Some(offset) = find_from(bytes, name, cursor) {
@@ -318,7 +318,8 @@ pub(super) fn decode_stream(
             if !framed_name {
                 continue;
             }
-            let design = recipe_design_id(bytes, offset, name).map(|(value, design_id_at)| {
+            let parsed_design_id = recipe_design_id(bytes, offset, name);
+            let design = parsed_design_id.map(|(value, design_id_at)| -> Result<_, CodecError> {
                 let selector = design_id_at
                     .checked_add(value.len())
                     .and_then(|selector_at| {
@@ -327,15 +328,15 @@ pub(super) fn decode_stream(
                             byte_offset: u64::try_from(selector_at).ok()?,
                         })
                     });
-                crate::records::recipes::ConstructionRecipeDesign {
+                Ok(crate::records::recipes::ConstructionRecipeDesign {
                     id: crate::records::identity::RecordedValue {
-                        value,
+                        value: copy_body_map_name(ctx, value, "f3d construction recipe design ID")?,
                         offset: design_id_at as u64,
                     },
                     selector,
-                }
-            });
-            let key = (kind, design.as_ref().map(|design| design.id.value.clone()));
+                })
+            }).transpose()?;
+            let key = (kind, parsed_design_id.map(|(value, _)| value));
             if !counters.contains_key(&key) {
                 ctx.charge_collection_items(1, "f3d construction recipe counters")?;
                 counters.try_reserve(1).map_err(|_| {
@@ -381,7 +382,7 @@ pub(super) fn decode_stream(
     Ok(())
 }
 
-fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String, usize)> {
+fn recipe_design_id<'a>(bytes: &'a [u8], offset: usize, name: &[u8]) -> Option<(&'a str, usize)> {
     let id_end = offset.checked_sub(20)?;
     for length in 1..=8usize {
         let Some(length_at) = id_end.checked_sub(4 + length) else {
@@ -396,24 +397,20 @@ fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String,
     if offset >= 23 {
         let candidate = bytes.get(offset - 23..offset - 20)?;
         if candidate.iter().all(u8::is_ascii_digit) {
-            return Some((String::from_utf8_lossy(candidate).into_owned(), offset - 23));
+            return Some((std::str::from_utf8(candidate).ok()?, offset - 23));
         }
     }
     ascii_id_at(bytes, offset + name.len() + 8)
 }
 
-fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
+fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(&str, usize)> {
     let length = usize::try_from(View::u32_le_at(bytes, length_offset)?).ok()?;
     if !(1..=8).contains(&length) {
         return None;
     }
     let value = bytes.get(length_offset + 4..length_offset + 4 + length)?;
-    value.iter().all(u8::is_ascii_alphanumeric).then(|| {
-        (
-            String::from_utf8_lossy(value).into_owned(),
-            length_offset + 4,
-        )
-    })
+    if !value.iter().all(u8::is_ascii_alphanumeric) { return None; }
+    Some((std::str::from_utf8(value).ok()?, length_offset + 4))
 }
 
 /// One `(asm_body_key, entity_suffix)` pair from a Design `BulkStream` BREP
@@ -2581,4 +2578,37 @@ mod tests {
             })
         );
     }
+    #[test]
+    fn construction_recipe_design_id_refuses_retained_limit() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(b"2265");
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 12]);
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(b"body_recipe_data");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut recipes = Vec::new();
+        assert!(matches!(super::decode_stream(&ctx, &bytes, "Design/BulkStream.dat", &mut recipes),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == "f3d construction recipe design ID"));
+    }
+
+    #[test]
+    fn construction_recipe_counter_keys_borrow_short_design_ids() {
+        for length in 1..=8 {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&u32::try_from(length).unwrap().to_le_bytes());
+            bytes.extend_from_slice(&b"12345678"[..length]);
+            let (id, offset) = super::ascii_id_at(&bytes, 0).unwrap();
+            assert_eq!(offset, 4);
+            assert_eq!(id.as_ptr(), bytes[4..].as_ptr());
+            assert_eq!(id, std::str::from_utf8(&b"12345678"[..length]).unwrap());
+        }
+    }
+
 }
