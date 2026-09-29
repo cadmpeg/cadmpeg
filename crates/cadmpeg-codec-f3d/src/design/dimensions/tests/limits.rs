@@ -331,6 +331,11 @@ fn projected_spatial_dimension_output_refuses_collection_limit() {
     assert_spatial_companion_collection_refusal("f3d projected spatial dimension output");
 }
 
+#[test]
+fn spatial_line_length_match_refuses_collection_limit() {
+    assert_spatial_companion_collection_refusal("f3d spatial line length match");
+}
+
 fn assert_spatial_companion_retained_refusal(operation: &'static str) {
     let fixture = fixture();
     let entity = fixture.spatial_entity();
@@ -370,6 +375,16 @@ fn projected_spatial_sketch_id_refuses_retained_limit() {
 #[test]
 fn spatial_source_parameter_id_refuses_retained_limit() {
     assert_spatial_companion_retained_refusal("f3d spatial source parameter id");
+}
+
+#[test]
+fn spatial_line_length_entity_id_refuses_retained_limit() {
+    assert_spatial_companion_retained_refusal("f3d spatial line length entity id");
+}
+
+#[test]
+fn spatial_line_length_parameter_id_refuses_retained_limit() {
+    assert_spatial_companion_retained_refusal("f3d spatial line length parameter id");
 }
 
 fn assert_missing_spatial_refusal(
