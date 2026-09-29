@@ -985,8 +985,7 @@ fn loft_edge_profile_face_slot(
                 let [preceding_boundary] = context.preceding_face_boundaries.as_slice() else {
                     return None;
                 };
-                let boundary_edge_count =
-                    boundary_edge_count(std::slice::from_ref(&preceding_boundary))?;
+                let boundary_edge_count = boundary_edge_count([preceding_boundary])?;
                 if preceding_boundary.face_slot != slot {
                     return None;
                 }
@@ -1480,7 +1479,7 @@ fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
     }
     let boundary_edge_count =
         unique_preceding_face_boundaries(&operand.historical_support_contexts)
-            .and_then(|boundaries| boundary_edge_count(&boundaries));
+            .and_then(boundary_edge_count);
     (operand.recipe_nodes.len() == header_value || boundary_edge_count == Some(header_value))
         .then_some(header_value)
 }
@@ -1595,10 +1594,11 @@ pub(crate) fn resolve_bounded_face_history_candidates(
         return Ok(Some(candidate));
     }
     let Some(header_value) = complete_counted_face_recipe(operand) else { return Ok(None); };
-    Ok(bounded_face_candidate_by_boundary_cardinality(
+    bounded_face_candidate_by_boundary_cardinality(
+        ctx,
         header_value,
         &operand.historical_support_contexts,
-    ))
+    )
 }
 
 pub(crate) fn resolve_stable_bounded_face_history_set(
@@ -1649,7 +1649,7 @@ pub(crate) fn resolve_surface_delete_face_history_set(
         if !insert_face_set(ctx, &mut covered, context.active_face_slot,
             "f3d SurfaceDeleteFace covered face index")? { return Ok(None); }
         let Some(boundaries) = valid_preceding_face_boundaries(context) else { return Ok(None); };
-        let [boundary] = boundaries.as_slice() else {
+        let [boundary] = boundaries else {
             return Ok(None);
         };
         if boundary.face_slot != context.active_face_slot {
@@ -1817,59 +1817,69 @@ fn convergent_face_support(
 }
 
 fn bounded_face_candidate_by_boundary_cardinality(
+    ctx: Option<&DecodeContext<'_>>,
     header_value: usize,
     contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
-) -> Option<Vec<i64>> {
-    let same_faces = |first: &[&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext],
-                      second: &[&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]| {
-        first.iter().map(|boundary| boundary.face_slot)
-            .eq(second.iter().map(|boundary| boundary.face_slot))
-    };
-    let mut selected: Option<Vec<&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>> = None;
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let mut selected: Option<Vec<i64>> = None;
     for context in contexts {
         let Some(boundaries) = valid_preceding_face_boundaries(context) else { continue; };
-        if boundary_edge_count(&boundaries) != Some(header_value) {
+        if boundary_edge_count(boundaries.iter()) != Some(header_value) {
             continue;
         }
-        if selected.as_ref().is_some_and(|first| !same_faces(first, &boundaries)) {
-            return None;
+        let mut slots = Vec::new();
+        for boundary in boundaries {
+            push_face_item(ctx, &mut slots, boundary.face_slot,
+                "f3d bounded face cardinality candidate")?;
         }
-        selected.get_or_insert(boundaries);
+        slots.sort_unstable();
+        if selected.as_ref().is_some_and(|first| first != &slots) {
+            return Ok(None);
+        }
+        selected.get_or_insert(slots);
     }
     if let Some(boundaries) = unique_preceding_face_boundaries(contexts) {
-        if boundary_edge_count(&boundaries) == Some(header_value) {
-            if selected.as_ref().is_some_and(|first| !same_faces(first, &boundaries)) {
-                return None;
+        let mut slots = Vec::new();
+        let mut edge_count = Some(0usize);
+        for boundary in boundaries {
+            edge_count = edge_count.and_then(|count| {
+                boundary.loops.iter().try_fold(count, |total, loop_| {
+                    let edges = loop_.boundary.coedges().count();
+                    (edges != 0).then(|| total.checked_add(edges)).flatten()
+                })
+            });
+            push_face_item(ctx, &mut slots, boundary.face_slot,
+                "f3d bounded face cardinality union")?;
+        }
+        if edge_count == Some(header_value) {
+            slots.sort_unstable();
+            if selected.as_ref().is_some_and(|first| first != &slots) {
+                return Ok(None);
             }
-            selected.get_or_insert(boundaries);
+            selected.get_or_insert(slots);
         }
     }
-    Some(selected?.iter().map(|boundary| boundary.face_slot).collect())
+    Ok(selected)
 }
 
 fn valid_preceding_face_boundaries(
     context: &crate::records::topology::historical_context::DesignHistoricalFaceSupportContext,
-) -> Option<Vec<&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>>
+) -> Option<&[crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]>
 {
-    let mut expected_faces = context.preceding_face_slots.clone();
-    expected_faces.sort_unstable();
-    expected_faces.dedup();
-    if expected_faces.is_empty() {
+    let expected_faces = &context.preceding_face_slots;
+    let boundaries = &context.preceding_face_boundaries;
+    if expected_faces.is_empty() || boundaries.is_empty() {
         return None;
     }
-    let mut boundaries = context.preceding_face_boundaries.iter().collect::<Vec<_>>();
-    if boundaries.iter().any(|boundary| boundary.loops.is_empty()) {
-        return None;
-    }
-    boundaries.sort_unstable_by_key(|boundary| boundary.face_slot);
     if boundaries
-        .windows(2)
-        .any(|pair| pair[0].face_slot == pair[1].face_slot)
-        || boundaries
-            .iter()
-            .map(|boundary| boundary.face_slot)
-            .collect::<Vec<_>>()
-            != expected_faces
+        .iter()
+        .enumerate()
+        .any(|(index, boundary)| boundary.loops.is_empty()
+            || !expected_faces.contains(&boundary.face_slot)
+            || boundaries[..index].iter().any(|prior| prior.face_slot == boundary.face_slot))
+        || expected_faces.iter().any(|face| {
+            !boundaries.iter().any(|boundary| boundary.face_slot == *face)
+        })
     {
         return None;
     }
@@ -1878,31 +1888,37 @@ fn valid_preceding_face_boundaries(
 
 fn unique_preceding_face_boundaries(
     contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
-) -> Option<Vec<&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>>
+) -> Option<impl Iterator<Item = &crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>>
 {
-    let mut active_faces = HashSet::new();
-    let mut boundaries_by_face = HashMap::new();
-    for context in contexts {
-        if !active_faces.insert(context.active_face_slot) {
+    if contexts.is_empty() {
+        return None;
+    }
+    for (index, context) in contexts.iter().enumerate() {
+        if contexts[..index].iter().any(|prior| prior.active_face_slot == context.active_face_slot) {
             return None;
         }
         for boundary in valid_preceding_face_boundaries(context)? {
-            if let Some(previous) = boundaries_by_face.insert(boundary.face_slot, boundary) {
-                if previous != boundary {
-                    return None;
-                }
+            if contexts[..index].iter()
+                .flat_map(|prior| &prior.preceding_face_boundaries)
+                .any(|prior| prior.face_slot == boundary.face_slot && prior != boundary)
+            {
+                return None;
             }
         }
     }
-    let mut boundaries = boundaries_by_face.into_values().collect::<Vec<_>>();
-    boundaries.sort_unstable_by_key(|boundary| boundary.face_slot);
-    (!boundaries.is_empty()).then_some(boundaries)
+    Some(contexts.iter().enumerate().flat_map(move |(index, context)| {
+        context.preceding_face_boundaries.iter().filter(move |boundary| {
+            !contexts[..index].iter()
+                .flat_map(|prior| &prior.preceding_face_boundaries)
+                .any(|prior| prior.face_slot == boundary.face_slot)
+        })
+    }))
 }
 
-fn boundary_edge_count(
-    boundaries: &[&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext],
+fn boundary_edge_count<'a>(
+    boundaries: impl IntoIterator<Item = &'a crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>,
 ) -> Option<usize> {
-    boundaries.iter().try_fold(0usize, |total, boundary| {
+    boundaries.into_iter().try_fold(0usize, |total, boundary| {
         boundary.loops.iter().try_fold(total, |total, loop_| {
             let count = loop_.boundary.coedges().count();
             (count != 0).then(|| total.checked_add(count)).flatten()
@@ -3335,15 +3351,15 @@ mod tests {
             support(12, &[(101, 4), (102, 4)]),
         ];
         assert_eq!(
-            bounded_face_candidate_by_boundary_cardinality(8, &contexts),
+            bounded_face_candidate_by_boundary_cardinality(None, 8, &contexts).unwrap(),
             Some(vec![101, 102])
         );
         assert_eq!(
-            bounded_face_candidate_by_boundary_cardinality(12, &contexts),
+            bounded_face_candidate_by_boundary_cardinality(None, 12, &contexts).unwrap(),
             Some(vec![100])
         );
         assert_eq!(
-            bounded_face_candidate_by_boundary_cardinality(20, &contexts),
+            bounded_face_candidate_by_boundary_cardinality(None, 20, &contexts).unwrap(),
             Some(vec![100, 101, 102])
         );
     }
@@ -3352,9 +3368,39 @@ mod tests {
     fn bounded_face_cardinality_rejects_conflicting_complete_sets() {
         let contexts = [support(10, &[(100, 4)]), support(11, &[(101, 4)])];
         assert_eq!(
-            bounded_face_candidate_by_boundary_cardinality(4, &contexts),
+            bounded_face_candidate_by_boundary_cardinality(None, 4, &contexts).unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn bounded_face_cardinality_candidate_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let contexts = [support(10, &[(100, 4)])];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = bounded_face_candidate_by_boundary_cardinality(Some(&ctx), 4, &contexts);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d bounded face cardinality candidate"));
+    }
+
+    #[test]
+    fn bounded_face_cardinality_union_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let contexts = [support(10, &[(100, 4)]), support(11, &[(101, 4)])];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = bounded_face_candidate_by_boundary_cardinality(Some(&ctx), 8, &contexts);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d bounded face cardinality union"));
     }
 
     #[test]
