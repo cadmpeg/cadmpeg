@@ -781,16 +781,17 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_geometry_ref(point.geometry_ref.clone())
     .with_endpoint_refs(point.endpoint_refs.clone());
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
+        exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point], None).unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]),
+        exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point], None).unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
-    assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point]).is_none());
+    assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point], None)
+        .unwrap().is_none());
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]),
+        exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point], None).unwrap(),
         Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     for kind in [
@@ -798,7 +799,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(exact_atomic_constraint(kind, &[line, point]).is_none());
+        assert!(exact_atomic_constraint(kind, &[line, point], None).unwrap().is_none());
     }
     let other_line = SketchEntity::new(
         SketchEntityId::mint("generated:test:line#other").unwrap(),
@@ -810,15 +811,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_geometry_ref(line.geometry_ref.clone())
     .with_endpoint_refs(line.endpoint_refs.clone());
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line]),
+        exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line], None).unwrap(),
         Some(SketchConstraintDefinitionInput::Tangent { .. })
     ));
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line]),
+        exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line], None).unwrap(),
         Some(SketchConstraintDefinitionInput::Curvature { .. })
     ));
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line]),
+        exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line], None).unwrap(),
         Some(SketchConstraintDefinitionInput::Equal { .. })
     ));
     for kind in [
@@ -830,7 +831,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(exact_atomic_constraint(kind, &[line, line]).is_none());
+        assert!(exact_atomic_constraint(kind, &[line, line], None).unwrap().is_none());
     }
 }
 

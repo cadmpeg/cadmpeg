@@ -102,6 +102,41 @@ fn copy_dimension_locus(
     })
 }
 
+fn copy_dimension_entity_pair(
+    ctx: Option<&DecodeContext<'_>>,
+    first: &cadmpeg_ir::sketches::SketchEntityId,
+    second: &cadmpeg_ir::sketches::SketchEntityId,
+) -> Result<(cadmpeg_ir::sketches::SketchEntityId, cadmpeg_ir::sketches::SketchEntityId), CodecError> {
+    Ok((copy_dimension_entity_id(ctx, first, "f3d atomic first entity id")?,
+        copy_dimension_entity_id(ctx, second, "f3d atomic second entity id")?))
+}
+
+fn dimension_entity_ids_distinct(
+    ctx: Option<&DecodeContext<'_>>,
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+) -> Result<bool, CodecError> {
+    let mut unique = HashSet::new();
+    for entity in entities {
+        if unique.contains(entity.id()) { return Ok(false); }
+        insert_dimension_set(ctx, &mut unique, entity.id(),
+            "f3d atomic entity uniqueness")?;
+    }
+    Ok(true)
+}
+
+fn copy_dimension_entity_members(
+    ctx: Option<&DecodeContext<'_>>,
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+) -> Result<Vec<cadmpeg_ir::sketches::SketchEntityId>, CodecError> {
+    let mut members = Vec::new();
+    for entity in entities {
+        push_dimension_item(ctx, &mut members,
+            copy_dimension_entity_id(ctx, entity.id(), "f3d atomic member entity id")?,
+            "f3d atomic member")?;
+    }
+    Ok(members)
+}
+
 const EPS_DIMENSIONS_OWNER_SCOPED_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_OWNER_SCOPED_LINE_LENGTH_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_UNIQUE_POINT_CLASS_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
@@ -4176,22 +4211,24 @@ fn insert_dimension_binding<'a>(
 pub(super) fn exact_atomic_constraint(
     kind: SketchConstraintKind,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchCoordinateAxis,
         SketchGeometryDefinition as Geometry, SketchLocus,
     };
 
-    let lines = || {
-        (entities.len() == 2
+    let lines = || -> Result<Option<_>, CodecError> {
+        if entities.len() == 2
             && entities[0].id() != entities[1].id()
             && entities
                 .iter()
-                .all(|entity| matches!(*entity.geometry.definition(), Geometry::Line { .. })))
-        .then(|| (entities[0].id().clone(), entities[1].id().clone()))
+                .all(|entity| matches!(*entity.geometry.definition(), Geometry::Line { .. })) {
+            Ok(Some(copy_dimension_entity_pair(ctx, entities[0].id(), entities[1].id())?))
+        } else { Ok(None) }
     };
-    let curves = || {
-        (entities.len() == 2
+    let curves = || -> Result<Option<_>, CodecError> {
+        if entities.len() == 2
             && entities[0].id() != entities[1].id()
             && entities.iter().all(|entity| {
                 matches!(
@@ -4202,14 +4239,15 @@ pub(super) fn exact_atomic_constraint(
                         | Geometry::Ellipse { .. }
                         | Geometry::Nurbs { .. }
                 )
-            }))
-        .then(|| (entities[0].id().clone(), entities[1].id().clone()))
+            }) {
+            Ok(Some(copy_dimension_entity_pair(ctx, entities[0].id(), entities[1].id())?))
+        } else { Ok(None) }
     };
-    let equal_size_entities = || {
+    let equal_size_entities = || -> Result<Option<_>, CodecError> {
         let [first, second] = entities else {
-            return None;
+            return Ok(None);
         };
-        (first.id() != second.id()
+        if first.id() != second.id()
             && matches!(
                 (first.geometry.definition(), second.geometry.definition()),
                 (Geometry::Line { .. }, Geometry::Line { .. })
@@ -4218,25 +4256,21 @@ pub(super) fn exact_atomic_constraint(
                         Geometry::Circle { .. } | Geometry::Arc { .. }
                     )
                     | (Geometry::Ellipse { .. }, Geometry::Ellipse { .. })
-            ))
-        .then(|| (first.id().clone(), second.id().clone()))
+            ) {
+            Ok(Some(copy_dimension_entity_pair(ctx, first.id(), second.id())?))
+        } else { Ok(None) }
     };
-    match kind {
+    Ok(match kind {
         SketchConstraintKind::Coincident
             if entities.len() >= 2
-                && entities
-                    .iter()
-                    .map(|entity| entity.id())
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == entities.len() =>
+                && dimension_entity_ids_distinct(ctx, entities)? =>
         {
             Some(Definition::Coincident {
-                entities: entities.iter().map(|entity| entity.id().clone()).collect(),
+                entities: copy_dimension_entity_members(ctx, entities)?,
             })
         }
         SketchConstraintKind::Colinear => {
-            lines().map(|(first, second)| Definition::Collinear { first, second })
+            lines()?.map(|(first, second)| Definition::Collinear { first, second })
         }
         SketchConstraintKind::Concentric => {
             if entities.len() == 2
@@ -4248,41 +4282,50 @@ pub(super) fn exact_atomic_constraint(
                     )
                 })
             {
-                return Some(Definition::Concentric {
-                    first: entities[0].id().clone(),
-                    second: entities[1].id().clone(),
-                });
+                let (first, second) = copy_dimension_entity_pair(ctx,
+                    entities[0].id(), entities[1].id())?;
+                return Ok(Some(Definition::Concentric { first, second }));
             }
-            let (first, second, axis) = reflected_symmetry(entities)?;
+            let Some((first, second, axis)) = reflected_symmetry(entities) else {
+                return Ok(None);
+            };
             Some(Definition::Symmetric {
-                first: cadmpeg_ir::sketches::SketchLocus::Entity(first.id().clone()),
-                second: cadmpeg_ir::sketches::SketchLocus::Entity(second.id().clone()),
-                axis: axis.id().clone(),
+                first: SketchLocus::Entity(copy_dimension_entity_id(ctx, first.id(),
+                    "f3d atomic symmetry first id")?),
+                second: SketchLocus::Entity(copy_dimension_entity_id(ctx, second.id(),
+                    "f3d atomic symmetry second id")?),
+                axis: copy_dimension_entity_id(ctx, axis.id(), "f3d atomic symmetry axis id")?,
             })
         }
         SketchConstraintKind::Symmetry => {
-            let (first, second, axis) = reflected_symmetry(entities)?;
+            let Some((first, second, axis)) = reflected_symmetry(entities) else {
+                return Ok(None);
+            };
             Some(Definition::Symmetric {
-                first: cadmpeg_ir::sketches::SketchLocus::Entity(first.id().clone()),
-                second: cadmpeg_ir::sketches::SketchLocus::Entity(second.id().clone()),
-                axis: axis.id().clone(),
+                first: SketchLocus::Entity(copy_dimension_entity_id(ctx, first.id(),
+                    "f3d atomic symmetry first id")?),
+                second: SketchLocus::Entity(copy_dimension_entity_id(ctx, second.id(),
+                    "f3d atomic symmetry second id")?),
+                axis: copy_dimension_entity_id(ctx, axis.id(), "f3d atomic symmetry axis id")?,
             })
         }
         SketchConstraintKind::EqualLength => {
-            lines().map(|(first, second)| Definition::Equal { first, second })
+            lines()?.map(|(first, second)| Definition::Equal { first, second })
         }
-        SketchConstraintKind::Parallel => lines()
-            .map(|(first, second)| Definition::Parallel { first, second })
-            .or_else(|| midpoint_constraint(entities)),
+        SketchConstraintKind::Parallel => match lines()? {
+            Some((first, second)) => Some(Definition::Parallel { first, second }),
+            None => midpoint_constraint(entities, ctx)?,
+        },
         SketchConstraintKind::Perpendicular => {
-            lines().map(|(first, second)| Definition::Perpendicular { first, second })
+            lines()?.map(|(first, second)| Definition::Perpendicular { first, second })
         }
         SketchConstraintKind::Horizontal
             if entities.len() == 1
                 && matches!(*entities[0].geometry.definition(), Geometry::Line { .. }) =>
         {
             Some(Definition::Horizontal {
-                entity: entities[0].id().clone(),
+                entity: copy_dimension_entity_id(ctx, entities[0].id(),
+                    "f3d atomic single entity id")?,
             })
         }
         SketchConstraintKind::Horizontal
@@ -4292,21 +4335,22 @@ pub(super) fn exact_atomic_constraint(
                     matches!(*entity.geometry.definition(), Geometry::Point { .. })
                 }) =>
         {
-            Some(Definition::SameCoordinate {
-                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                    SketchLocus::Entity(entities[0].id().clone()),
-                    SketchLocus::Entity(entities[1].id().clone()),
+            let (first, second) = copy_dimension_entity_pair(ctx,
+                entities[0].id(), entities[1].id())?;
+            let Ok(relation) = cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    SketchLocus::Entity(first),
+                    SketchLocus::Entity(second),
                     SketchCoordinateAxis::V,
-                )
-                .ok()?,
-            })
+                ) else { return Ok(None); };
+            Some(Definition::SameCoordinate { relation })
         }
         SketchConstraintKind::Vertical
             if entities.len() == 1
                 && matches!(*entities[0].geometry.definition(), Geometry::Line { .. }) =>
         {
             Some(Definition::Vertical {
-                entity: entities[0].id().clone(),
+                entity: copy_dimension_entity_id(ctx, entities[0].id(),
+                    "f3d atomic single entity id")?,
             })
         }
         SketchConstraintKind::Vertical
@@ -4316,56 +4360,49 @@ pub(super) fn exact_atomic_constraint(
                     matches!(*entity.geometry.definition(), Geometry::Point { .. })
                 }) =>
         {
-            Some(Definition::SameCoordinate {
-                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                    SketchLocus::Entity(entities[0].id().clone()),
-                    SketchLocus::Entity(entities[1].id().clone()),
+            let (first, second) = copy_dimension_entity_pair(ctx,
+                entities[0].id(), entities[1].id())?;
+            let Ok(relation) = cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    SketchLocus::Entity(first),
+                    SketchLocus::Entity(second),
                     SketchCoordinateAxis::U,
-                )
-                .ok()?,
-            })
+                ) else { return Ok(None); };
+            Some(Definition::SameCoordinate { relation })
         }
         SketchConstraintKind::Tangent => {
-            curves().map(|(first, second)| Definition::Tangent { first, second })
+            curves()?.map(|(first, second)| Definition::Tangent { first, second })
         }
         SketchConstraintKind::Curvature => {
-            curves().map(|(first, second)| Definition::Curvature { first, second })
+            curves()?.map(|(first, second)| Definition::Curvature { first, second })
         }
-        SketchConstraintKind::Midpoint => midpoint_constraint(entities),
+        SketchConstraintKind::Midpoint => midpoint_constraint(entities, ctx)?,
         SketchConstraintKind::Equal => {
-            equal_size_entities().map(|(first, second)| Definition::Equal { first, second })
+            equal_size_entities()?.map(|(first, second)| Definition::Equal { first, second })
         }
         SketchConstraintKind::Polygon
             if entities.len() >= 3
-                && entities
-                    .iter()
-                    .map(|entity| entity.id())
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == entities.len() =>
+                && dimension_entity_ids_distinct(ctx, entities)? =>
         {
+            let members = copy_dimension_entity_members(ctx, entities)?;
+            let polygon = match ctx {
+                Some(ctx) => cadmpeg_ir::sketches::SketchPolygon::try_new_charged(
+                    members, ctx, "f3d atomic polygon uniqueness")?,
+                None => cadmpeg_ir::sketches::SketchPolygon::try_new(members),
+            };
             Some(Definition::Polygon {
-                polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(
-                    entities.iter().map(|entity| entity.id().clone()).collect(),
-                )
-                .ok()?,
+                polygon: match polygon { Ok(polygon) => polygon, Err(_) => return Ok(None) },
             })
         }
         SketchConstraintKind::SplineGroup
             if entities.len() >= 2
-                && entities
-                    .iter()
-                    .map(|entity| entity.id())
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == entities.len() =>
+                && dimension_entity_ids_distinct(ctx, entities)? =>
         {
             Some(Definition::SplineGroup {
-                entities: entities.iter().map(|entity| entity.id().clone()).collect(),
+                entities: copy_dimension_entity_members(ctx, entities)?,
             })
         }
         _ => None,
-    }
+    })
 }
 
 pub(super) fn exact_coincident_loci(
@@ -4468,14 +4505,15 @@ pub(super) fn exact_coincident_loci(
 
 fn midpoint_constraint(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
         SketchLocus,
     };
 
     let [first, second] = entities else {
-        return None;
+        return Ok(None);
     };
     let (line, point, start, end, position) =
         match (first.geometry.definition(), second.geometry.definition()) {
@@ -4485,15 +4523,18 @@ fn midpoint_constraint(
             (Geometry::Point { position }, Geometry::Line { start, end }) => {
                 (*second, *first, start, end, position)
             }
-            _ => return None,
+            _ => return Ok(None),
         };
     let midpoint = Point2::new(start.u.midpoint(end.u), start.v.midpoint(end.v));
-    ((position.u - midpoint.u).abs() <= EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
-        && (position.v - midpoint.v).abs() <= EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9)
-        .then(|| Definition::Midpoint {
-            point: SketchLocus::Entity(point.id().clone()),
-            entity: line.id().clone(),
-        })
+    if (position.u - midpoint.u).abs() > EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
+        || (position.v - midpoint.v).abs() > EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9 {
+        return Ok(None);
+    }
+    Ok(Some(Definition::Midpoint {
+        point: SketchLocus::Entity(copy_dimension_entity_id(ctx, point.id(),
+            "f3d midpoint point id")?),
+        entity: copy_dimension_entity_id(ctx, line.id(), "f3d midpoint line id")?,
+    }))
 }
 
 fn indirect_angular_lines(

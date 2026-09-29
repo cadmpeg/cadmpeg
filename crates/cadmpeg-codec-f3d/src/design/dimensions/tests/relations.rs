@@ -72,7 +72,8 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         SketchConstraintKind::Concentric,
         SketchConstraintKind::Symmetry,
     ] {
-        let definition = exact_atomic_constraint(kind, &[&first, &axis_entity, &second]).unwrap();
+        let definition = exact_atomic_constraint(kind, &[&first, &axis_entity, &second], None)
+            .unwrap().unwrap();
         assert!(matches!(
             definition,
             SketchConstraintDefinitionInput::Symmetric {
@@ -96,7 +97,9 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
     assert!(exact_atomic_constraint(
         SketchConstraintKind::Concentric,
         &[&first, &off_axis, &second],
+        None,
     )
+    .unwrap()
     .is_none());
     let on_axis = entity(
         "generated:test:point#on-axis",
@@ -109,7 +112,8 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         SketchConstraintKind::Concentric,
         SketchConstraintKind::Symmetry,
     ] {
-        assert!(exact_atomic_constraint(kind, &[&on_axis, &axis_entity, &on_axis]).is_none());
+        assert!(exact_atomic_constraint(kind, &[&on_axis, &axis_entity, &on_axis], None)
+            .unwrap().is_none());
     }
 }
 
@@ -344,7 +348,8 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
     );
     assert!(crate::design::dimensions::exact_coincident_loci(&[&degenerate, &point], None).unwrap().is_none());
     assert!(crate::design::dimensions::exact_coincident_loci(&[&line, &line], None).unwrap().is_none());
-    assert!(exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line]).is_none());
+    assert!(exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line], None)
+        .unwrap().is_none());
 }
 
 fn coincident_limit_fixture() -> [cadmpeg_ir::sketches::SketchEntity; 2] {
@@ -453,7 +458,7 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
     let second = entity("generated:test:point#1");
     let third = entity("generated:test:point#2");
     assert_eq!(
-        exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third]),
+        exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third], None).unwrap(),
         Some(SketchConstraintDefinitionInput::Polygon {
             polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(vec![
                 first.id().clone(),
@@ -463,9 +468,11 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
             .unwrap()
         })
     );
-    assert!(exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second]).is_none());
+    assert!(exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second], None)
+        .unwrap().is_none());
     assert!(
-        exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &first])
+        exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &first], None)
+            .unwrap()
             .is_none()
     );
 }
