@@ -24,13 +24,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
 
-fn with_selection_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    f(&ctx)
-}
+
 
 fn boolean_feature_definition(
     operation: &crate::native::features::FeatureBooleanOperation,
@@ -38,7 +32,7 @@ fn boolean_feature_definition(
     resolution: &BooleanOffsetStoreResolution,
     bodies: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
-    with_selection_context(|ctx| {
+    crate::test_support::with_decode_context(|ctx| {
         crate::native::attach::boolean_feature_definition(ctx, operation, roots, resolution, bodies)
     })
 }
@@ -48,7 +42,7 @@ fn delete_body_feature_definition(
     roots: &BTreeMap<u32, u32>,
     bodies: &BTreeMap<u32, Vec<BodyId>>,
 ) -> FeatureDefinition {
-    with_selection_context(|ctx| {
+    crate::test_support::with_decode_context(|ctx| {
         crate::native::attach::delete_body_feature_definition(ctx, field, roots, bodies)
             .expect("resource admission")
     })
@@ -60,7 +54,7 @@ fn extract_body_feature_definition(
     roots: &BTreeMap<u32, u32>,
     bodies: &BTreeMap<u32, Vec<BodyId>>,
 ) -> FeatureDefinition {
-    with_selection_context(|ctx| {
+    crate::test_support::with_decode_context(|ctx| {
         crate::native::attach::extract_body_feature_definition(
             ctx,
             body,
@@ -76,7 +70,7 @@ fn offset_store_trim_body_feature_definition(
     offset_bodies: &[(u32, String)],
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
 ) -> Option<FeatureDefinition> {
-    with_selection_context(|ctx| {
+    crate::test_support::with_decode_context(|ctx| {
         crate::native::attach::offset_store_trim_body_feature_definition(
             ctx,
             offset_bodies,
@@ -93,7 +87,7 @@ fn sew_body_feature_definition(
     roots: &BTreeMap<u32, u32>,
     bodies: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
-    with_selection_context(|ctx| {
+    crate::test_support::with_decode_context(|ctx| {
         crate::native::attach::sew_body_feature_definition(
             ctx,
             primary,
@@ -112,7 +106,7 @@ fn trim_body_feature_definition(
     roots: &BTreeMap<u32, u32>,
     bodies: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
-    with_selection_context(|ctx| {
+    crate::test_support::with_decode_context(|ctx| {
         crate::native::attach::trim_body_feature_definition(ctx, target, operands, roots, bodies)
     })
 }
@@ -947,11 +941,11 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
 
 #[test]
 fn nx_text_payload_projects_semantic_text_and_font_family() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let annotation = text_semantic_annotation(&ctx, "nx:test:text#1", 7, &["plate label", "Arial"])
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
+    let annotation = text_semantic_annotation(ctx, "nx:test:text#1", 7, &["plate label", "Arial"])
         .expect("annotation admission")
         .expect("valid text annotation");
     assert_eq!(annotation.object, "nx:test:text#1");
@@ -964,31 +958,35 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
     assert_eq!(annotation.native_ref, "nx:test:text#1");
     assert_eq!(annotation.order, 7);
 
-    let empty = text_semantic_annotation(&ctx, "nx:test:text#empty", 8, &["", ""])
+    let empty = text_semantic_annotation(ctx, "nx:test:text#empty", 8, &["", ""])
         .expect("annotation admission")
         .expect("empty text fields remain a valid annotation");
     assert_eq!(empty.text, [""]);
     assert_eq!(empty.parameters["font_family"], "");
 
     assert!(
-        text_semantic_annotation(&ctx, "nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],)
+        text_semantic_annotation(ctx, "nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],)
             .unwrap()
             .is_none()
     );
+
+})
 }
 
 fn text_annotation_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let annotation =
-        text_semantic_annotation(&ctx, "nx:test:text#1", 7, &["plate label", "Arial"])?;
+        text_semantic_annotation(ctx, "nx:test:text#1", 7, &["plate label", "Arial"])?;
     assert!(annotation.is_some());
     Ok(())
+
+})
 }
 
 #[test]
@@ -1312,10 +1310,10 @@ fn nx_container_record_is_not_a_modeling_feature() {
 
 #[test]
 fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let dimensions = [10.0, 20.0, 30.0];
     for axis in 0..3 {
@@ -1359,7 +1357,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     }
     let output = ir.model.bodies[0].id.clone();
     let placement = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
-        block_placement(&ctx, ir, dimensions, outputs)
+        block_placement(ctx, ir, dimensions, outputs)
             .unwrap()
             .map(|(_, transform)| transform)
     };
@@ -1369,7 +1367,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_eq!(
-        block_placement(&ctx, &ir, dimensions, &[]).unwrap(),
+        block_placement(ctx, &ir, dimensions, &[]).unwrap(),
         Some((output.clone(), cadmpeg_ir::transform::Transform::identity()))
     );
     assert_eq!(
@@ -1529,47 +1527,47 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         placement(&disconnected, dimensions, std::slice::from_ref(&output),),
         None
     );
+
+})
 }
 
 fn primitive_faces_with_limit(
     sphere: bool,
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = 0;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = 0;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+    
+    
+    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => |policy| { policy.limits.max_materialized_bytes = 0; },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
         _ => {
             return Err(cadmpeg_core::CodecError::InvalidInput(
                 "unsupported primitive face test limit".to_string(),
             ))
         }
-    }
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    };
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let body = ir.model.bodies[0].id.clone();
     if sphere {
         drop(sphere_body_projection(
-            &ctx,
+            ctx,
             &ir,
             std::slice::from_ref(&body),
         )?);
     } else {
         drop(block_placement(
-            &ctx,
+            ctx,
             &ir,
             [1.0, 1.0, 1.0],
             std::slice::from_ref(&body),
         )?);
     }
     Ok(())
+
+})
 }
 
 #[test]
@@ -1598,11 +1596,11 @@ fn block_faces_refuse_work_limit() {
 
 #[test]
 fn block_placement_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     for (axis, extent) in [(1usize, 20.0), (2, 30.0)] {
         let plane = ir
@@ -1635,9 +1633,11 @@ fn block_placement_refuses_retained_limit() {
     }
     let body = &ir.model.bodies[0].id;
     assert!(
-        matches!(block_placement(&ctx, &ir, [10.0, 20.0, 30.0], std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(block_placement(ctx, &ir, [10.0, 20.0, 30.0], std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
+
+})
 }
 
 #[test]
@@ -1666,11 +1666,11 @@ fn sphere_faces_refuse_work_limit() {
 
 #[test]
 fn sphere_projection_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let face = ir.model.faces[0].id.clone();
     let surface = ir.model.faces[0].surface.clone();
@@ -1692,17 +1692,19 @@ fn sphere_projection_refuses_retained_limit() {
     ));
     let body = &ir.model.bodies[0].id;
     assert!(
-        matches!(sphere_body_projection(&ctx, &ir, std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(sphere_body_projection(ctx, &ir, std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
+
+})
 }
 
 #[test]
 fn nx_sphere_projection_requires_one_complete_spherical_body() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     let face = ir.model.faces[0].id.clone();
@@ -1729,7 +1731,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ));
 
     assert_eq!(
-        sphere_body_projection(&ctx, &ir, &[]).unwrap(),
+        sphere_body_projection(ctx, &ir, &[]).unwrap(),
         Some((
             body.clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1739,7 +1741,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         ))
     );
     assert_eq!(
-        sphere_body_projection(&ctx, &ir, std::slice::from_ref(&body)).unwrap(),
+        sphere_body_projection(ctx, &ir, std::slice::from_ref(&body)).unwrap(),
         Some((
             body.clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1788,9 +1790,9 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ir.model.faces.push(second_face);
     ir.model.surfaces.push(second_surface);
 
-    assert!(sphere_body_projection(&ctx, &ir, &[]).unwrap().is_none());
+    assert!(sphere_body_projection(ctx, &ir, &[]).unwrap().is_none());
     assert!(sphere_body_projection(
-        &ctx,
+        ctx,
         &ir,
         &[
             body,
@@ -1799,21 +1801,23 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     )
     .unwrap()
     .is_none());
+
+})
 }
 
 #[test]
 fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
 
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let provisional =
         FeatureId::mint("synthetic:test:id#initial-bodies").expect("identity grammar");
     let mut history = BodyWriterHistory::default();
     history
-        .record_writer(&ctx, None, None, std::slice::from_ref(&body), &provisional)
+        .record_writer(ctx, None, None, std::slice::from_ref(&body), &provisional)
         .expect("admitted writer history");
 
     assert_eq!(
@@ -1835,7 +1839,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
     let mut fallback_history = BodyWriterHistory::default();
     fallback_history
         .record_writer(
-            &ctx,
+            ctx,
             None,
             None,
             std::slice::from_ref(&body),
@@ -1858,7 +1862,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
 
     let prior = FeatureId::mint("synthetic:test:id#prior-feature").expect("identity grammar");
     history
-        .record_writer(&ctx, Some(7), None, std::slice::from_ref(&body), &prior)
+        .record_writer(ctx, Some(7), None, std::slice::from_ref(&body), &prior)
         .expect("admitted writer history");
     assert_eq!(
         new_body_boolean_op(&NewBodyEvidence {
@@ -1891,7 +1895,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         FeatureId::mint("synthetic:test:id#offset-prior-feature").expect("identity grammar");
     let mut offset_history = BodyWriterHistory::default();
     offset_history
-        .record_writer(&ctx, None, Some("store:block#7"), &[], &offset_prior)
+        .record_writer(ctx, None, Some("store:block#7"), &[], &offset_prior)
         .expect("admitted writer history");
     assert_eq!(
         new_body_boolean_op(&NewBodyEvidence {
@@ -1949,5 +1953,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         }),
         BooleanOp::NewBody
     );
+
+})
 }
 mod hole_geometry;

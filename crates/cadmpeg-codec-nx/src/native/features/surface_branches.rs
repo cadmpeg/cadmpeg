@@ -270,13 +270,15 @@ mod tests {
             .as_slice()
             .iter()
             .any(|(_, block)| block.is_some())));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
-        decode(&ctx).expect_err("surface branch resource limit")
-    }
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+        decode(ctx).expect_err("surface branch resource limit")
+    
+})
+}
 
     #[test]
     fn surface_branch_route_refuses_collection_limit() {

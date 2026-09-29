@@ -114,10 +114,10 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
 
 #[test]
 fn nx_feature_source_content_orders_payload_text() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let text = FeaturePayloadString {
         id: "text".into(),
         operation_record: "record".into(),
@@ -133,7 +133,7 @@ fn nx_feature_source_content_orders_payload_text() {
         source_offset: 40,
     };
     let content =
-        crate::native::attach::feature_projection::feature_source_content(&ctx, &[&later, &text])
+        crate::native::attach::feature_projection::feature_source_content(ctx, &[&later, &text])
             .unwrap();
     assert!(matches!(
         &content[0],
@@ -143,32 +143,28 @@ fn nx_feature_source_content_orders_payload_text() {
         &content[1],
         cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Later"
     ));
+
+})
 }
 
 fn feature_source_text_with_limit(
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = 0;
-        }
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = 0;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = 0;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+    
+    
+    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => |policy| { policy.limits.max_materialized_bytes = 0; },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
         _ => {
             return Err(cadmpeg_core::CodecError::InvalidInput(
                 "unsupported source text test limit".to_string(),
             ))
         }
-    }
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    };
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+
     let text = FeaturePayloadString {
         id: "text".into(),
         operation_record: "record".into(),
@@ -177,9 +173,11 @@ fn feature_source_text_with_limit(
         source_offset: 30,
     };
     let content =
-        crate::native::attach::feature_projection::feature_source_content(&ctx, &[&text])?;
+        crate::native::attach::feature_projection::feature_source_content(ctx, &[&text])?;
     assert_eq!(content.len(), 1);
     Ok(())
+
+})
 }
 
 #[test]
@@ -219,10 +217,10 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
     use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
     use std::collections::BTreeMap;
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
 
     let operation = FeatureBooleanOperation {
         id: "boolean#0".to_string(),
@@ -238,7 +236,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 
     assert_eq!(
         crate::native::attach::boolean_feature_definition(
-            &ctx,
+            ctx,
             &operation,
             &roots,
             &crate::native::segments::BooleanOffsetStoreResolution::None,
@@ -260,7 +258,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
     let missing_tool = BTreeMap::from([(10, 10)]);
     assert!(matches!(
         crate::native::attach::boolean_feature_definition(
-            &ctx,
+            ctx,
             &operation,
             &missing_tool,
             &crate::native::segments::BooleanOffsetStoreResolution::None,
@@ -270,6 +268,8 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
+
+})
 }
 
 #[test]
@@ -1321,17 +1321,19 @@ fn nx_operation_body_operands_refuse_collection_limit() {
         stream_role: 0,
         source_offset: 0,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
     let error =
-        feature_operation_body_operands(&ctx, &[member], &[], &[], &[], &[binding]).unwrap_err();
+        feature_operation_body_operands(ctx, &[member], &[], &[], &[], &[binding]).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
+
+})
 }
 
 fn operation_body_operand_store_refusal(
@@ -1375,13 +1377,15 @@ fn operation_body_operand_store_refusal(
         source_entry: "entry".to_string(),
         source_offset: 0,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    feature_operation_body_operands(&ctx, &[member], &[reference], &[input], &[block], &[])
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    feature_operation_body_operands(ctx, &[member], &[reference], &[input], &[block], &[])
         .unwrap_err()
+
+})
 }
 
 #[test]
@@ -1524,17 +1528,19 @@ fn extrude_32_mapping_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let (reference, branch) = extrude_32_fixture();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     crate::native::features::construction_records::feature_extrude_32_constructions(
-        &ctx,
+        ctx,
         &[reference],
         &[branch],
     )
     .unwrap_err()
+
+})
 }
 
 #[test]

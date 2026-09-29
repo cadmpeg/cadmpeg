@@ -240,23 +240,17 @@ pub(in crate::native) fn rm_display_color_assignments(
 #[cfg(test)]
 mod admission_tests {
     use super::{finalize_assignments, push_assignment, RmDisplayColorAssignment};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
     use cadmpeg_core::CodecError;
 
     const ROW: &str = r#"{"id":"nx:rm-display-color-assignments:assignment#0","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":15,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":[128,128],"source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
 
-    fn with_policy<T>(policy: DecodePolicy, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        run(&ctx)
-    }
 
     #[test]
     fn display_color_assignment_refuses_collection_limit() {
         let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let error = with_policy(policy, |ctx| {
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
+        let error = crate::test_support::with_decode_context_over(&[],  adjust_policy, |ctx| {
             push_assignment(ctx, &mut Vec::new(), row.frame, None, "definition", "entry")
                 .unwrap_err()
         });
@@ -267,9 +261,8 @@ mod admission_tests {
     #[test]
     fn display_color_assignment_refuses_retained_limit() {
         let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-        let error = with_policy(policy, |ctx| {
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
+        let error = crate::test_support::with_decode_context_over(&[],  adjust_policy, |ctx| {
             push_assignment(ctx, &mut Vec::new(), row.frame, None, "definition", "entry")
                 .unwrap_err()
         });
@@ -280,7 +273,7 @@ mod admission_tests {
     #[test]
     fn display_color_assignment_preserves_definition_and_source() {
         let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
-        with_policy(DecodePolicy::default(), |ctx| {
+        crate::test_support::with_decode_context_over(&[], |_| {}, |ctx| {
             let mut assignments = Vec::new();
             push_assignment(
                 ctx,
@@ -299,9 +292,8 @@ mod admission_tests {
     #[test]
     fn display_color_finalization_refuses_scoped_limit() {
         let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_materialized_bytes = 0;
-        let error = with_policy(policy, |ctx| {
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_materialized_bytes = 0; };
+        let error = crate::test_support::with_decode_context_over(&[],  adjust_policy, |ctx| {
             finalize_assignments(ctx, vec![row]).unwrap_err()
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -311,9 +303,8 @@ mod admission_tests {
     #[test]
     fn display_color_finalization_refuses_work_limit() {
         let row: RmDisplayColorAssignment = serde_json::from_str(ROW).unwrap();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let error = with_policy(policy, |ctx| {
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
+        let error = crate::test_support::with_decode_context_over(&[],  adjust_policy, |ctx| {
             finalize_assignments(ctx, vec![row]).unwrap_err()
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)

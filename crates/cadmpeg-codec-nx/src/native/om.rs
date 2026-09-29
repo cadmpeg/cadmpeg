@@ -6638,19 +6638,23 @@ mod object_record_identity_tests {
     fn object_record_identity_limit_error(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let file = prt_with_indexed_om_section();
-        let scan_arena = DecodeArena::new();
-        let scan_policy = DecodePolicy::service();
-        let (scan_ctx, _) =
-            DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
-        let container = crate::container::scan_bytes(&scan_ctx, &file).unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        configure(&mut policy);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::object_records(&ctx, &container).unwrap_err()
-    }
+        
+        
+        crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
+
+        let container = crate::container::scan_bytes(scan_ctx, &file).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+        super::object_records(ctx, &container).unwrap_err()
+    
+})
+
+})
+}
 
     #[test]
     fn object_record_identity_route_refuses_work_limit() {

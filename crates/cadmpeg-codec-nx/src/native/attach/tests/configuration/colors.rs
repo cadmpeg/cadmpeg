@@ -22,11 +22,11 @@ fn rm_appearance_result(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     twice: bool,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let definition = crate::native::om::PartColorDefinition {
         id: "nx:test:color#201".into(),
         color_table: "nx:test:table#0".into(),
@@ -49,7 +49,7 @@ fn rm_appearance_result(
     let stream =
         cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     ensure_rm_color_appearance(
-        &ctx,
+        ctx,
         &mut ir,
         &mut annotations,
         &mut appearances,
@@ -59,7 +59,7 @@ fn rm_appearance_result(
     )?;
     if twice {
         ensure_rm_color_appearance(
-            &ctx,
+            ctx,
             &mut ir,
             &mut annotations,
             &mut appearances,
@@ -70,6 +70,8 @@ fn rm_appearance_result(
         assert_eq!(ir.model.appearances.len(), 1);
     }
     Ok(())
+
+})
 }
 
 #[test]
@@ -114,15 +116,17 @@ fn rm_appearance_refuses_work_limit() {
 fn rm_face_identity_lookup_result(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (ids, reservation) = collect_rm_face_ids(&ctx, ["nx:s0:face#99", "nx:s0:face#99"])?;
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    let (ids, reservation) = collect_rm_face_ids(ctx, ["nx:s0:face#99", "nx:s0:face#99"])?;
     assert_eq!(ids.len(), 1);
     drop(reservation);
     Ok(())
+
+})
 }
 
 #[test]
@@ -157,10 +161,10 @@ fn rm_face_identity_lookup_refuses_work_limit() {
 
 #[test]
 fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let definition = crate::native::om::PartColorDefinition {
         id: "nx:test:color#201".into(),
         color_table: "nx:test:table#0".into(),
@@ -214,7 +218,7 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     let pairs = BTreeMap::from([(0, vec![1])]);
     assert_eq!(
         resolve_rm_face_colors(
-            &ctx,
+            ctx,
             &face_ids,
             std::slice::from_ref(&assignment),
             std::slice::from_ref(&definition),
@@ -230,7 +234,7 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
 
     assert_eq!(
         resolve_rm_face_color_bindings(
-            &ctx,
+            ctx,
             &face_ids,
             std::slice::from_ref(&assignment),
             std::slice::from_ref(&definition),
@@ -261,7 +265,7 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     .unwrap();
     assert_eq!(
         resolve_rm_face_colors(
-            &ctx,
+            ctx,
             &face_ids,
             &[assignment.clone(), target_assignment],
             std::slice::from_ref(&definition),
@@ -278,7 +282,7 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     let mut conflicting = assignment;
     conflicting.color_definition = "nx:test:color#other".into();
     assert!(resolve_rm_face_colors(
-        &ctx,
+        ctx,
         &face_ids,
         &[conflicting],
         &[definition],
@@ -287,6 +291,8 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     )
     .expect("valid colors")
     .is_empty());
+
+})
 }
 
 #[test]
@@ -366,12 +372,14 @@ fn source_color_binding_result(
         color_definition: "nx:test:color#201".into(),
         source_entry: "/Root/FastLoad/RMFastLoad".into(),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    resolve_rm_source_color_bindings(&ctx, &[assignment])
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    resolve_rm_source_color_bindings(ctx, &[assignment])
+
+})
 }
 
 #[test]
@@ -474,14 +482,14 @@ fn face_color_projection_result(
     };
     let face_ids = BTreeSet::from(["nx:s0:face#99".to_string()]);
     let pairs = BTreeMap::from([(0, vec![1])]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     match route {
         FaceColorRoute::Bindings => resolve_rm_face_color_bindings(
-            &ctx,
+            ctx,
             &face_ids,
             &[assignment],
             &[definition],
@@ -490,7 +498,7 @@ fn face_color_projection_result(
         )
         .map(|_| ()),
         FaceColorRoute::Colors => resolve_rm_face_colors(
-            &ctx,
+            ctx,
             &face_ids,
             &[assignment],
             &[definition],
@@ -499,6 +507,8 @@ fn face_color_projection_result(
         )
         .map(|_| ()),
     }
+
+})
 }
 
 #[test]

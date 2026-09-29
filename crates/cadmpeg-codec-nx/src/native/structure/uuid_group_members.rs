@@ -100,18 +100,20 @@ mod tests {
     fn group_refusal(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        configure(&mut policy);
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
         UuidGroupMembers::new_charged(
-            &ctx,
+            ctx,
             vec!["a".into(), "b".into()],
             vec!["x".into(), "y".into()],
         )
         .unwrap_err()
-    }
+    
+})
+}
 
     #[test]
     fn uuid_group_members_refuse_collection_limit() {

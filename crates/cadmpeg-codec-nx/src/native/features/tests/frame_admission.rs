@@ -14,7 +14,7 @@ use crate::native::features::{
     FeatureDatumPlanePayload, FeaturePayloadName, FeatureSketchConstructionInputs,
     FeatureSurfaceConstructionPayload,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 #[derive(Clone, Copy)]
@@ -275,19 +275,22 @@ fn assert_frame_limit(route: FrameRoute, dimension: ResourceDimension) {
     })
     .expect("frame route baseline");
     assert!(count > 0, "frame fixture must reach the output record");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+    
+    
+    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
+        ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
+        ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
+        ResourceDimension::MaterializedBytes => |policy| { policy.limits.max_materialized_bytes = 0; },
+        ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
         _ => panic!("unsupported frame test dimension"),
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    };
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+
     let error =
-        run_frame_route(route, &ctx, &container, &payload).expect_err("frame limit refusal");
+        run_frame_route(route, ctx, &container, &payload).expect_err("frame limit refusal");
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+
+})
 }
 
 macro_rules! frame_limit_tests {

@@ -108,10 +108,10 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
 
     let template = |operation_label: &str| FeatureSimpleHoleTemplate {
         id: format!("template-{operation_label}"),
@@ -127,7 +127,7 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
     let operation_positions =
         BTreeMap::from([("operation#older", 0usize), ("operation#newer", 1usize)]);
     assert_eq!(
-        simple_hole_operations(&ctx, &templates, &[], &operation_positions).unwrap(),
+        simple_hole_operations(ctx, &templates, &[], &operation_positions).unwrap(),
         Some(vec!["operation#older".into(), "operation#newer".into()])
     );
 
@@ -150,7 +150,7 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         .unwrap(),
     };
     assert!(
-        simple_hole_operations(&ctx, &templates, &[unordered_group], &operation_positions,)
+        simple_hole_operations(ctx, &templates, &[unordered_group], &operation_positions,)
             .unwrap()
             .is_none()
     );
@@ -170,11 +170,11 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         ("operation#blind", 2usize),
     ]);
     assert_eq!(
-        simple_hole_operations(&ctx, &mixed_templates, &[], &mixed_positions).unwrap(),
+        simple_hole_operations(ctx, &mixed_templates, &[], &mixed_positions).unwrap(),
         Some(vec!["operation#older".into(), "operation#newer".into()])
     );
     assert_eq!(
-        blind_hole_operations(&ctx, &mixed_templates, &mixed_positions).unwrap(),
+        blind_hole_operations(ctx, &mixed_templates, &mixed_positions).unwrap(),
         Some(vec!["operation#blind".into()])
     );
     let duplicate_members =
@@ -196,6 +196,8 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
             },
         ]);
     assert!(duplicate_members.is_err());
+
+})
 }
 
 #[derive(Clone, Copy)]
@@ -229,22 +231,24 @@ fn hole_selector_result(
         end_treatment: SimpleHoleEndTreatment::None,
     };
     let positions = BTreeMap::from([("operation", 0usize)]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     match route {
-        HoleSelectorRoute::Simple => simple_hole_operations(&ctx, &[template], &[], &positions),
-        HoleSelectorRoute::Blind => blind_hole_operations(&ctx, &[template], &positions),
+        HoleSelectorRoute::Simple => simple_hole_operations(ctx, &[template], &[], &positions),
+        HoleSelectorRoute::Blind => blind_hole_operations(ctx, &[template], &positions),
         HoleSelectorRoute::Counterbore => {
             crate::native::attach::feature_projection::counterbore_operations(
-                &ctx,
+                ctx,
                 &[template],
                 &positions,
             )
         }
     }
+
+})
 }
 
 fn assert_hole_selector_limit(
@@ -411,12 +415,12 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .map(|operation| (operation.clone(), chamfer))
         .collect();
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let projection = hole_package_projection(
-        &ctx,
+        ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
@@ -446,7 +450,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         })
         .collect::<Vec<_>>();
     let projection = hole_package_projection(
-        &ctx,
+        ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &untreated_templates,
         std::slice::from_ref(&group),
@@ -469,7 +473,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     let mut mixed_templates = untreated_templates.clone();
     mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
     let projection = hole_package_projection(
-        &ctx,
+        ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &mixed_templates,
         std::slice::from_ref(&group),
@@ -490,7 +494,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         vec![BodyId::mint("test:model:entity#other-body").expect("identity grammar")],
     );
     let projection = hole_package_projection(
-        &ctx,
+        ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
@@ -504,6 +508,8 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     .unwrap();
     assert!(projection.internal_operations.is_empty());
     assert!(projection.outputs.is_empty());
+
+})
 }
 
 fn hole_package_result(
@@ -561,13 +567,13 @@ fn hole_package_result(
     let diameters = BTreeMap::from(
         operations.map(|operation| (operation, cadmpeg_ir::scalar::Length::new(5.1).unwrap())),
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let projection = hole_package_projection(
-        &ctx,
+        ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
@@ -580,6 +586,8 @@ fn hole_package_result(
     )?;
     assert_eq!(projection.outputs["package"], [body]);
     Ok(())
+
+})
 }
 
 #[test]
@@ -709,12 +717,14 @@ fn configuration_parameter_value_result(
         native_ref: None,
     });
     let mut annotations = AnnotationBuilder::new();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    attach_active_configuration_parameter_values(&ctx, &mut ir, &mut annotations)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    attach_active_configuration_parameter_values(ctx, &mut ir, &mut annotations)
+
+})
 }
 
 #[test]
@@ -1162,12 +1172,12 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let sketch = attach_sketch_graph(
-        &ctx,
+        ctx,
         &mut ir,
         &label,
         &SketchSources {
@@ -1194,7 +1204,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut rejected_annotations = AnnotationBuilder::new();
     let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     assert!(attach_sketch_graph(
-        &ctx,
+        ctx,
         &mut rejected_ir,
         &label,
         &SketchSources {
@@ -1212,6 +1222,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     .is_none());
     assert!(rejected_ir.model.sketches.is_empty());
     assert!(rejected_ir.model.sketch_entities.is_empty());
+
+})
 }
 
 #[test]
@@ -1266,12 +1278,12 @@ fn named_sketch_points_project_without_an_external_named_point() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let sketch = attach_sketch_graph(
-        &ctx,
+        ctx,
         &mut ir,
         &label,
         &SketchSources {
@@ -1298,6 +1310,8 @@ fn named_sketch_points_project_without_an_external_named_point() {
         SketchGeometryDefinition::Point { position }
             if position == Point2 { u: 12.5, v: -3.0 }
     ));
+
+})
 }
 
 #[test]
@@ -1460,14 +1474,16 @@ fn native_parameter_with_limit(
         expression: "expression".into(),
         bindings: Vec::new(),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let parameters = native_feature_parameters(&ctx, &[&use_], &[expression])?;
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    let parameters = native_feature_parameters(ctx, &[&use_], &[expression])?;
     assert_eq!(parameters["length"], "12.5");
     Ok(())
+
+})
 }
 
 #[test]
@@ -1541,10 +1557,10 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
     };
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
 
     let boolean = FeatureBooleanOperation {
         id: "nx:test:boolean#0".into(),
@@ -1557,7 +1573,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         source_offset: 0,
     };
     assert_eq!(
-        native_result_body_identity(&ctx, None, Some(&boolean)).unwrap(),
+        native_result_body_identity(ctx, None, Some(&boolean)).unwrap(),
         Some((
             cadmpeg_core::nonblank_literal!("nx:test:boolean#0:target"),
             "nx:test:boolean#0".into(),
@@ -1572,32 +1588,32 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         source_offset: 3,
     };
     assert_eq!(
-        native_result_body_identity(&ctx, Some(&primary), Some(&boolean)).unwrap(),
+        native_result_body_identity(ctx, Some(&primary), Some(&boolean)).unwrap(),
         Some((
             cadmpeg_core::nonblank_literal!("nx:test:primary#0"),
             "nx:test:primary#0".into(),
         ))
     );
+
+})
 }
 
 fn native_result_identity_with_limit(
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    match dimension {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = 0;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+    
+    
+    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
         _ => {
             return Err(cadmpeg_core::CodecError::InvalidInput(
                 "unsupported result identity test limit".to_string(),
             ))
         }
-    }
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    };
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+
     let primary = crate::native::features::FeatureBodyReference {
         ordinal: None,
         id: "nx:test:primary#0".into(),
@@ -1605,9 +1621,11 @@ fn native_result_identity_with_limit(
         body: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
         source_offset: 3,
     };
-    let result = native_result_body_identity(&ctx, Some(&primary), None)?;
+    let result = native_result_body_identity(ctx, Some(&primary), None)?;
     assert!(result.is_some());
     Ok(())
+
+})
 }
 
 #[test]
@@ -1760,10 +1778,10 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     use cadmpeg_ir::features::BooleanOp;
     use cadmpeg_ir::topology::BodyKind;
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
 
     let history = BodyWriterHistory::default();
     assert_eq!(
@@ -1804,7 +1822,7 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     let offset_body = "store:block#7";
     let mut offset_history = BodyWriterHistory::default();
     offset_history
-        .record_writer(&ctx, None, Some(offset_body), &[], &prior)
+        .record_writer(ctx, None, Some(offset_body), &[], &prior)
         .expect("admitted writer history");
     assert_eq!(
         extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
@@ -1819,6 +1837,8 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
         ),
         BooleanOp::NewBody
     );
+
+})
 }
 
 mod colors;

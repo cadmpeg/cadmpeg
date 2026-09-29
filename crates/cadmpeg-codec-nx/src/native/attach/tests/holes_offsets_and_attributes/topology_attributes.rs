@@ -23,15 +23,15 @@ fn attribute_field_name(
     field_uses: &[crate::native::parasolid::ParasolidAttributeFieldUse],
     field_names: &[crate::native::parasolid::ParasolidAttributeFieldNames],
 ) -> Option<String> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let mut reservation = ctx
         .reserve_scoped(0, "test Parasolid attribute names")
         .unwrap();
     ParasolidAttributeNameIndex::new(
-        &ctx,
+        ctx,
         &mut reservation,
         class_uses,
         definitions,
@@ -39,25 +39,29 @@ fn attribute_field_name(
         field_names,
     )
     .unwrap()
-    .field_name(&ctx, topology_reference, value_use)
+    .field_name(ctx, topology_reference, value_use)
     .unwrap()
+
+})
 }
 
 fn attribute_name_index_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let mut reservation = ctx.reserve_scoped(0, "NX attribute name index test")?;
     let mut index = BTreeMap::<&str, Option<&u8>>::new();
     let value = 7_u8;
-    insert_sole(&ctx, &mut reservation, &mut index, "first", &value)?;
-    insert_sole(&ctx, &mut reservation, &mut index, "second", &value)?;
+    insert_sole(ctx, &mut reservation, &mut index, "first", &value)?;
+    insert_sole(ctx, &mut reservation, &mut index, "second", &value)?;
     assert_eq!(index.len(), 2);
     Ok(())
+
+})
 }
 
 #[test]
@@ -94,14 +98,17 @@ fn topology_target_index_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let mut reservation = ctx.reserve_scoped(0, "test Parasolid topology targets")?;
-    let targets = parasolid_topology_attribute_targets(&ctx, &mut reservation, &ir)?;
+    let targets = parasolid_topology_attribute_targets(ctx, &mut reservation, &ir)?;
     assert!(!targets.is_empty());
     Ok(())
+
+})
 }
 
 #[test]
@@ -150,13 +157,16 @@ fn topology_context_index_with_limit(
             inflated_offset: 300,
         },
     ];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let index = ParasolidTopologyAttributeIndex::new(&ctx, &ir, &references, &[], &[], &[], &[])?;
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    let index = ParasolidTopologyAttributeIndex::new(ctx, &ir, &references, &[], &[], &[], &[])?;
     assert_eq!(index.contexts.len(), 1);
     Ok(())
+
+})
 }
 
 #[test]
@@ -193,11 +203,14 @@ fn topology_context_index_refuses_work_limit() {
 fn fallback_attribute_name_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    topology_attribute_name(&ctx, None, Some("CLASS"), "84", 7)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    topology_attribute_name(ctx, None, Some("CLASS"), "84", 7)
+
+})
 }
 
 #[test]
@@ -258,12 +271,12 @@ fn attribute_output_route(
         attribute_list_record: Some("entity".into()),
         inflated_offset: 300,
     };
-    let index_arena = cadmpeg_core::decode::DecodeArena::new();
-    let index_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (index_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &index_arena, &index_policy)?;
+    
+    
+    crate::test_support::with_decode_context(|index_ctx| {
+
     let index = ParasolidTopologyAttributeIndex::new(
-        &index_ctx,
+        index_ctx,
         &ir,
         std::slice::from_ref(&reference),
         &[],
@@ -273,10 +286,11 @@ fn attribute_output_route(
     )?;
     assert_eq!(index.contexts.len(), 1);
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     match route {
         AttributeRoute::String => {
@@ -292,7 +306,7 @@ fn attribute_output_route(
             }))
             .unwrap();
             attach_parasolid_topology_string_attributes(
-                &ctx,
+                ctx,
                 &mut ir,
                 &ParasolidStringAttributeSources {
                     string_uses: &[value_use],
@@ -322,7 +336,7 @@ fn attribute_output_route(
                 inflated_offset: 400,
             };
             attach_parasolid_topology_numeric_attributes(
-                &ctx,
+                ctx,
                 &mut ir,
                 &ParasolidNumericAttributeSources {
                     numeric_uses: &[value_use],
@@ -355,7 +369,7 @@ fn attribute_output_route(
                 inflated_offset: 400,
             };
             attach_parasolid_topology_structured_attributes(
-                &ctx,
+                ctx,
                 &mut ir,
                 &ParasolidStructuredAttributeSources {
                     structured_uses: &[value_use],
@@ -370,6 +384,10 @@ fn attribute_output_route(
         }
     }
     Ok(ir.model.attributes.len())
+
+})
+
+})
 }
 
 #[test]
@@ -568,12 +586,12 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         integers: &[integer],
         doubles: &[double],
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
-        &ctx,
+        ctx,
         &ir,
         &references,
         &class_uses,
@@ -585,7 +603,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let mut annotations = AnnotationBuilder::new();
 
     attach_parasolid_topology_numeric_attributes(
-        &ctx,
+        ctx,
         &mut ir,
         &sources,
         &topology_attribute_index,
@@ -641,6 +659,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             ]
         );
     }
+
+})
 }
 
 #[test]
@@ -1017,12 +1037,12 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             inflated_offset: 410,
         },
     ];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let index = ParasolidTopologyAttributeIndex::new(
-        &ctx,
+        ctx,
         &ir,
         std::slice::from_ref(&reference),
         &class_uses,
@@ -1043,7 +1063,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     let conflicting_definitions = [definition.clone(), conflicting_definition];
     let mut class_reservation = ctx.reserve_scoped(0, "test Parasolid class names").unwrap();
     let class_names = parasolid_topology_attribute_class_names(
-        &ctx,
+        ctx,
         &mut class_reservation,
         &class_uses,
         &conflicting_definitions,
@@ -1053,7 +1073,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     assert_eq!(
         index
             .attribute_names
-            .field_name(&ctx, &reference, "head-use")
+            .field_name(ctx, &reference, "head-use")
             .unwrap()
             .as_deref(),
         Some("CLASS.field_0.parasolid_type_2")
@@ -1061,7 +1081,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     assert_eq!(
         index
             .attribute_names
-            .field_name(&ctx, &reference, "child-use")
+            .field_name(ctx, &reference, "child-use")
             .unwrap()
             .as_deref(),
         Some("CLASS.field_0.parasolid_type_2")
@@ -1073,7 +1093,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         doubles: &doubles,
     };
     let mut annotations = AnnotationBuilder::new();
-    attach_parasolid_topology_numeric_attributes(&ctx, &mut ir, &sources, &index, &mut annotations)
+    attach_parasolid_topology_numeric_attributes(ctx, &mut ir, &sources, &index, &mut annotations)
         .expect("valid exactness fields");
     let attributes = ir
         .model
@@ -1094,6 +1114,8 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     assert!(attributes
         .iter()
         .any(|attribute| { attribute.values == [AttributeValue::float(2.0).expect("finite")] }));
+
+})
 }
 
 #[test]
@@ -1201,12 +1223,12 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         tags: &[tag],
         unicode: &[unicode],
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
-        &ctx,
+        ctx,
         &ir,
         std::slice::from_ref(&reference),
         &[],
@@ -1216,7 +1238,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     )
     .unwrap();
     attach_parasolid_topology_structured_attributes(
-        &ctx,
+        ctx,
         &mut ir,
         &sources,
         &topology_attribute_index,
@@ -1260,4 +1282,6 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         values["parasolid_type_98_unicode_reference_10"],
         [AttributeValue::String("μ".into())]
     );
+
+})
 }

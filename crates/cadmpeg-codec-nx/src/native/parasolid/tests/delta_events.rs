@@ -16,7 +16,6 @@ fn deltas_type_45(xmt: u16) -> Vec<u8> {
 fn deltas_event_limit_error(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let streams = [Stream {
         file_offset: 0,
         consumed: 0,
@@ -26,22 +25,27 @@ fn deltas_event_limit_error(
             schema: None,
         },
     }];
-    let scan_arena = DecodeArena::new();
-    let scan_policy = DecodePolicy::service();
-    let (scan_ctx, _) =
-        DecodeContext::from_root_bytes(&streams[0].inflated, &scan_arena, &scan_policy).unwrap();
-    let census = crate::deltas::census::walk(&scan_ctx, &streams[0].inflated).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context_over(&streams[0].inflated, |_| {}, |scan_ctx| {
+
+    let census = crate::deltas::census::walk(scan_ctx, &streams[0].inflated).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     crate::native::parasolid::parasolid_deltas_events_with_censuses(
-        &ctx,
+        ctx,
         &streams,
         vec![Some(census)],
     )
     .err()
     .expect("deltas event limit refusal")
+
+})
+
+})
 }
 
 #[test]

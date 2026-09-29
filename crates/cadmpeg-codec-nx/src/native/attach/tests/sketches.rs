@@ -42,12 +42,12 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let sketch = super::super::attach_sketch_graph(
-        &ctx,
+        ctx,
         &mut ir,
         &label,
         &super::super::SketchSources {
@@ -84,6 +84,8 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
         SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-coordinate-pair"
     ));
+
+})
 }
 
 #[test]
@@ -110,12 +112,12 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let sketch = super::super::attach_sketch_graph(
-        &ctx,
+        ctx,
         &mut ir,
         &label,
         &super::super::SketchSources {
@@ -149,6 +151,8 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
         SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-fixed-point"
     ));
+
+})
 }
 
 fn fixed_point_sketch_with_limit(
@@ -172,15 +176,16 @@ fn fixed_point_sketch_with_limit(
         values: [0.25, -0.5].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
         source_offset: 91,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     super::super::attach_sketch_graph(
-        &ctx,
+        ctx,
         &mut ir,
         &label,
         &super::super::SketchSources {
@@ -194,6 +199,8 @@ fn fixed_point_sketch_with_limit(
         &mut annotations,
         &stream,
     )
+
+})
 }
 
 #[test]

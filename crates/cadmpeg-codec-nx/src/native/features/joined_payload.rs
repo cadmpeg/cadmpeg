@@ -104,21 +104,20 @@ impl<'ctx> JoinedPayload<'ctx> {
 #[cfg(test)]
 mod tests {
     use super::JoinedPayload;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use std::collections::BTreeMap;
 
     #[test]
     fn source_locations_follow_fragment_boundaries_and_skip_empty_blocks() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+        
+        crate::test_support::with_decode_context(|ctx| {
+
         let ids = ["a".to_owned(), "empty".to_owned(), "b".to_owned()];
         let blocks = BTreeMap::from([
             ("a".to_owned(), (&[1, 2][..], 10)),
             ("empty".to_owned(), (&[][..], u64::MAX)),
             ("b".to_owned(), (&[3, 4, 5][..], 100)),
         ]);
-        let joined = JoinedPayload::from_source(&ctx, ids.iter(), &blocks)
+        let joined = JoinedPayload::from_source(ctx, ids.iter(), &blocks)
             .unwrap()
             .unwrap();
         assert_eq!(joined.bytes(), [1, 2, 3, 4, 5]);
@@ -126,25 +125,29 @@ mod tests {
             [0, 1, 2, 4, 5, u64::MAX].map(|offset| joined.source_offset(offset)),
             [Some(10), Some(11), Some(100), Some(102), None, None]
         );
-    }
+    
+})
+}
 
     #[test]
     fn source_extent_overflow_is_rejected_at_construction() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+        
+        crate::test_support::with_decode_context(|ctx| {
+
         let ids = ["a".to_owned()];
         let blocks = BTreeMap::from([("a".to_owned(), (&[1, 2][..], u64::MAX))]);
-        assert!(JoinedPayload::from_source(&ctx, ids.iter(), &blocks)
+        assert!(JoinedPayload::from_source(ctx, ids.iter(), &blocks)
             .unwrap()
             .is_none());
-    }
+    
+})
+}
 
     #[test]
     fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+        
+        crate::test_support::with_decode_context(|ctx| {
+
         let ids = ["block#2".to_string(), "block#3".to_string()];
         let blocks = std::collections::BTreeMap::from([
             ("block#2".to_string(), (&[0x30, 0x43][..], 120_u64)),
@@ -154,7 +157,7 @@ mod tests {
             ),
         ]);
         let joined = crate::native::features::joined_payload::JoinedPayload::from_source(
-            &ctx,
+            ctx,
             ids.iter(),
             &blocks,
         )
@@ -189,12 +192,14 @@ mod tests {
         let missing = ["block#2".to_string(), "missing".to_string()];
         assert!(
             crate::native::features::joined_payload::JoinedPayload::from_source(
-                &ctx,
+                ctx,
                 missing.iter(),
                 &blocks
             )
             .unwrap()
             .is_none()
         );
-    }
+    
+})
+}
 }

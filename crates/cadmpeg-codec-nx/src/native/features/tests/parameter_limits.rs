@@ -57,12 +57,14 @@ fn parameter_binding_refusal(
             .len(),
         1
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("parameter binding resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    decode(ctx).expect_err("parameter binding resource limit")
+
+})
 }
 
 #[test]
@@ -116,12 +118,14 @@ fn parameter_use_refusal(
         .expect("admitted parameter use");
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].bindings.len(), 2);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("parameter use resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    decode(ctx).expect_err("parameter use resource limit")
+
+})
 }
 
 #[test]

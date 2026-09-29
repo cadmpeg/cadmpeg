@@ -36,13 +36,15 @@ fn boolean_native_route_refusal(
     .expect("admitted native Boolean operations");
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].tools.len(), 2);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    crate::native::features::feature_boolean_operations(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    crate::native::features::feature_boolean_operations(ctx, &container)
         .expect_err("native Boolean resource limit")
+
+})
 }
 
 #[test]
@@ -160,12 +162,14 @@ fn body_segment_use_refusal(
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted body segment uses");
     assert_eq!(admitted.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx).expect_err("body segment use resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx).expect_err("body segment use resource limit")
+
+})
 }
 
 #[test]
@@ -221,13 +225,15 @@ fn chronological_label_refusal(
     })
     .expect("admitted chronological labels");
     assert_eq!(admitted.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_operation_chronological_labels(&ctx, &labels)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    feature_operation_chronological_labels(ctx, &labels)
         .expect_err("chronological label resource limit")
+
+})
 }
 
 #[test]
@@ -897,12 +903,12 @@ fn feature_body_data_block_uses_refuse_collection_at_caller_limit() {
             source_offset: 20,
         },
     ];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = feature_body_data_block_uses(&ctx, &[reference], &[input], &blocks)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+    let error = feature_body_data_block_uses(ctx, &[reference], &[input], &blocks)
         .expect_err("body block use needs one collection item");
     assert!(matches!(
         error,
@@ -910,6 +916,8 @@ fn feature_body_data_block_uses_refuse_collection_at_caller_limit() {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.operation == "NX feature body block uses"
     ));
+
+})
 }
 
 #[test]

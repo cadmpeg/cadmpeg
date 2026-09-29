@@ -4,10 +4,10 @@ use crate::native::attach::operation_source_properties;
 use std::collections::BTreeMap;
 #[test]
 fn operation_source_properties_require_unique_owned_structures() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let properties_for =
         |operation_label: &str,
          records: &[crate::native::features::operation_record::FeatureOperationRecord],
@@ -15,7 +15,7 @@ fn operation_source_properties_require_unique_owned_structures() {
          terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame]| {
             let mut properties = BTreeMap::new();
             operation_source_properties(
-                &ctx,
+                ctx,
                 &mut properties,
                 operation_label,
                 records,
@@ -118,4 +118,6 @@ fn operation_source_properties_require_unique_owned_structures() {
         ),
         BTreeMap::from([("operation_record".into(), "record".into())])
     );
+
+})
 }
