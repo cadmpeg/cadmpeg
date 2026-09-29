@@ -304,12 +304,12 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
         [[0.3, 0.8], [0.2, 0.8], [-0.1, 0.1]],
     );
 
-    assert!(owner_matches_a5_carrier(&admitted, &surface));
-    assert!(!owner_matches_a5_carrier(
+    assert_eq!(owner_matches_a5_carrier(&admitted, &surface), Ok(true));
+    assert_eq!(owner_matches_a5_carrier(
         &outside_parameter_domain,
         &surface
-    ));
-    assert!(!owner_matches_a5_carrier(&clipped_model_bounds, &surface));
+    ), Ok(false));
+    assert_eq!(owner_matches_a5_carrier(&clipped_model_bounds, &surface), Ok(false));
 }
 
 #[test]
@@ -1239,23 +1239,23 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
         Point3::new(100.0, -50.0, 7.0),
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         None,
-    ));
+    ).expect("surface evaluator accepts the fixture"));
     let nurbs = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface()));
     assert!(point_on_standard_face(
         Point3::new(0.5, 0.5, 0.0),
         &nurbs,
         None,
-    ));
+    ).expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
         Point3::new(0.5, 0.5, 0.1),
         &nurbs,
         None,
-    ));
+    ).expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
         Point3::new(100.0, -50.0, 7.0),
         &nurbs,
         None,
-    ));
+    ).expect("surface evaluator accepts the fixture"));
 }
 
 #[test]
@@ -1451,7 +1451,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
                 ir.model.points[point].position().get(),
                 &ir.model.surfaces[0].geometry,
                 None,
-            )
+            ).expect("surface evaluator accepts the fixture")
     }));
 }
 
@@ -1514,17 +1514,17 @@ fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
         Point3::new(2.0, 4.0, 6.0),
         &surface,
         Some(bounds),
-    ));
+    ).expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
         Point3::new(3.01, 3.0, 4.0),
         &surface,
         Some(bounds),
-    ));
+    ).expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
         Point3::new(3.0, 5.0, 7.0),
         &surface,
         Some(bounds),
-    ));
+    ).expect("surface evaluator accepts the fixture"));
 }
 
 #[test]

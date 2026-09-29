@@ -139,7 +139,9 @@ fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
     .expect("wide support context");
     assert_eq!(context.parameter_range().endpoints(), range);
     let (cached, cached_range) =
-        e5_occurrence_intersection_cache(&sides).expect("wide exact carrier cache");
+        e5_occurrence_intersection_cache(&sides)
+            .expect("evaluation resources")
+            .expect("wide exact carrier cache");
     assert_eq!(cached, &line);
     assert_eq!(cached_range, range);
 }
@@ -265,7 +267,9 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
             curve: Some((nurbs, [100.0, 110.0])),
         },
     ];
-    let (cache, range) = e5_occurrence_intersection_cache(&sides).expect("analytic cache");
+    let (cache, range) = e5_occurrence_intersection_cache(&sides)
+        .expect("evaluation resources")
+        .expect("analytic cache");
     assert_eq!(cache, &line);
     assert_eq!(range, [0.0, 1.0]);
 
@@ -281,7 +285,9 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         )),
         [0.0, 1.0],
     ));
-    assert!(e5_occurrence_intersection_cache(&sides).is_none());
+    assert!(e5_occurrence_intersection_cache(&sides)
+        .expect("evaluation resources")
+        .is_none());
 
     let left_circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -307,7 +313,9 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
     ));
     let (cache, range) =
-        e5_occurrence_intersection_cache(&sides).expect("frame-gauged circle cache");
+        e5_occurrence_intersection_cache(&sides)
+            .expect("evaluation resources")
+            .expect("frame-gauged circle cache");
     assert_eq!(cache, &left_circle);
     assert_eq!(range, [0.0, std::f64::consts::PI]);
 }

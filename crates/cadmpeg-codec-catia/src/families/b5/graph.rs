@@ -1491,13 +1491,15 @@ fn parse_from_records_with_class21(
     let implicit_pcurves =
         implicit_pcurve_bindings(ctx, records, by_id, &pcurves, &opaque_pcurves, &surfaces)?;
     for pcurve in pcurves.values_mut() {
-        pcurve.lifted_endpoints = surfaces.get(&pcurve.surface).and_then(|surface| {
-            let endpoints = [
-                pcurve.control_points.first()?.get(),
-                pcurve.control_points.last()?.get(),
-            ];
-            lift_pcurve_endpoints(surface, &profiles, endpoints)
-        });
+        pcurve.lifted_endpoints = if let (Some(surface), Some(first), Some(last)) = (
+            surfaces.get(&pcurve.surface),
+            pcurve.control_points.first(),
+            pcurve.control_points.last(),
+        ) {
+            lift_pcurve_endpoints(surface, &profiles, [first.get(), last.get()])?
+        } else {
+            None
+        };
     }
     let geometry = B5PcurveContext {
         pcurves: &pcurves,
@@ -2768,7 +2770,7 @@ fn lift_parameter_incidence(
             return Ok(None);
         };
         return Ok(
-            lift_pcurve_endpoints(surface, geometry.profiles, [uv, uv]).map(|[point, _]| point)
+            lift_pcurve_endpoints(surface, geometry.profiles, [uv, uv])?.map(|[point, _]| point)
         );
     }
     let Some(opaque) = geometry.opaque_pcurves.get(&pcurve_id) else {
@@ -2981,14 +2983,13 @@ pub(super) fn evaluate_pcurve(
             )
         })
         .transpose()?;
-    let point = nurbs_pcurve_uv(
+    let point = cadmpeg_ir::eval::finite_or_refusal(nurbs_pcurve_uv(
         pcurve.degree,
         &knots,
         &control_points,
         weights.as_deref(),
         parameter,
-    )
-    .ok()
+    ))?
     .map(Point2::from);
     Ok(point.map(|point| [point.u, point.v]))
 }
@@ -3600,7 +3601,7 @@ fn pcurve_endpoints(
             return Ok(pcurve.lifted_endpoints);
         };
         return Ok(
-            lift_pcurve_endpoints(surface, geometry.profiles, uv).or(pcurve.lifted_endpoints)
+            lift_pcurve_endpoints(surface, geometry.profiles, uv)?.or(pcurve.lifted_endpoints)
         );
     }
     let Some(opaque) = geometry.opaque_pcurves.get(&pcurve_id) else {
@@ -5088,7 +5089,17 @@ fn lift_pcurve_endpoints(
     surface: &B5Surface,
     profiles: &BTreeMap<u32, B5Profile>,
     endpoints: [[f64; 2]; 2],
-) -> Option<[FinitePoint3; 2]> {
+) -> Result<Option<[FinitePoint3; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    if let B5Surface::Nurbs(surface) = surface {
+        let Some(start) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
+            surface, endpoints[0][0], endpoints[0][1],
+        ))? else { return Ok(None) };
+        let Some(end) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
+            surface, endpoints[1][0], endpoints[1][1],
+        ))? else { return Ok(None) };
+        return Ok(Some([start, end]));
+    }
+    Ok((|| {
     let lifted = match surface {
         B5Surface::UnresolvedNurbs { .. }
         | B5Surface::Unknown { .. }
@@ -5243,21 +5254,14 @@ fn lift_pcurve_endpoints(
                 )
             }))
         }
-        B5Surface::Nurbs(surface) => Some([
-            evaluate_nurbs(surface, endpoints[0][0], endpoints[0][1])?,
-            evaluate_nurbs(surface, endpoints[1][0], endpoints[1][1])?,
-        ]),
+        B5Surface::Nurbs(_) => None,
     };
     let [start, end] = lifted?;
     Some([
         FinitePoint3::new(Point3::from(start))?,
         FinitePoint3::new(Point3::from(end))?,
     ])
-}
-
-fn evaluate_nurbs(surface: &NurbsSurface, u: f64, v: f64) -> Option<[f64; 3]> {
-    let point = nurbs_surface_point(surface, u, v).ok()?;
-    Some([point.x, point.y, point.z])
+    })())
 }
 
 fn rotate_about_axis(point: [f64; 3], origin: [f64; 3], axis: [f64; 3], angle: f64) -> [f64; 3] {
