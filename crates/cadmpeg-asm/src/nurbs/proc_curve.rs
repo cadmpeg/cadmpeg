@@ -228,20 +228,25 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs)
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
             pcurve
-                .edit_control_points(|point| {
-                    point.u *= LEN_TO_MM;
-                    point.v *= -LEN_TO_MM;
-                    Ok(())
+                .try_map_control_points(|_, point| {
+                    let point = point.get();
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        point.u * LEN_TO_MM,
+                        point.v * -LEN_TO_MM,
+                    ))
+                    .ok_or(())
                 })
                 .ok()?;
         }
         NativeSupportChart::Cone { axial_scale } => {
             pcurve
-                .edit_control_points(|point| {
-                    let native = *point;
-                    point.u = native.v;
-                    point.v = native.u * axial_scale;
-                    Ok(())
+                .try_map_control_points(|_, point| {
+                    let native = point.get();
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        native.v,
+                        native.u * axial_scale,
+                    ))
+                    .ok_or(())
                 })
                 .ok()?;
         }
