@@ -1264,7 +1264,10 @@ struct RseRecordRecordWire {
 impl TryFrom<RseRecordRecordWire> for RseRecordRecord {
     type Error = String;
     fn try_from(wire: RseRecordRecordWire) -> Result<Self, Self::Error> {
-        if wire.type_index != u8::try_from(wire.selector & 0xff).map_err(|_| "selector low byte exceeds u8".to_string())? {
+        if wire.type_index
+            != u8::try_from(wire.selector & 0xff)
+                .map_err(|_| "selector low byte exceeds u8".to_string())?
+        {
             return Err("type_index disagrees with selector".into());
         }
         if wire.trailing_payload_len != 0

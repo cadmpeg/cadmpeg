@@ -604,7 +604,16 @@ pub fn decode_with_header(
         )
     })?;
     for record in records {
-        by_index.insert(i64::try_from(record.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(record.index)))?, record);
+        by_index.insert(
+            i64::try_from(record.index).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "ASM record index",
+                    9_223_372_036_854_775_807,
+                    cadmpeg_core::decode::u64_from_index(record.index),
+                )
+            })?,
+            record,
+        );
     }
     // Subtype-definition positions, built once for every carrier resolution.
     let token_count = records.iter().try_fold(0_u64, |count, record| {

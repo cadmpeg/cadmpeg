@@ -106,7 +106,17 @@ pub(super) fn emit_annotation_records(
         "ASM annotation procedural IDs",
     )?;
     for record in records {
-        let entity_id = id(format, i64::try_from(record.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(record.index)))?).into_string();
+        let entity_id = id(
+            format,
+            i64::try_from(record.index).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "ASM record index",
+                    9_223_372_036_854_775_807,
+                    cadmpeg_core::decode::u64_from_index(record.index),
+                )
+            })?,
+        )
+        .into_string();
         if emitted_ids.contains(entity_id.as_str()) {
             let mut derived_fields = Vec::new();
             match record.head() {

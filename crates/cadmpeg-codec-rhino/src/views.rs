@@ -500,7 +500,10 @@ fn located_presentation_loss(
 ) -> LossNote {
     crate::loss::RhinoLossCode::PresentationRecordDropped
         .note(message.into())
-        .with_provenance(SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag))
+        .with_provenance(
+            SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset))
+                .with_tag(tag),
+        )
 }
 
 fn push_list_loss(
@@ -521,7 +524,9 @@ fn push_list_loss(
         cadmpeg_core::decode::u64_from_index(tag.len()),
         "Rhino view list loss tag",
     )?;
-    losses.push(loss.with_provenance(SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag)));
+    losses.push(loss.with_provenance(
+        SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag),
+    ));
     Ok(())
 }
 
@@ -539,7 +544,9 @@ fn push_view_loss(
         cadmpeg_core::decode::u64_from_index(tag.len()),
         "Rhino view loss tag",
     )?;
-    losses.push(loss.with_provenance(SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag)));
+    losses.push(loss.with_provenance(
+        SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag),
+    ));
     Ok(())
 }
 
@@ -1735,8 +1742,11 @@ pub(crate) fn install(
                         )?;
                         losses.push(
                             loss.with_provenance(
-                                SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(record.range.start))
-                                    .with_tag("VIEW/NAMED_CPLANES"),
+                                SourceProvenance::root(
+                                    "rhino",
+                                    cadmpeg_core::decode::u64_from_index(record.range.start),
+                                )
+                                .with_tag("VIEW/NAMED_CPLANES"),
                             ),
                         );
                         ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque view records")?;

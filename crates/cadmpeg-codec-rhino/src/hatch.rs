@@ -204,9 +204,11 @@ pub(crate) fn decode(
     // A loop contributes at least a five-byte header (`u8` version + `i32`
     // type) before its curve wrapper, so the count is proven against the
     // remaining window at that minimum element size.
-    let loop_bound = body.counted(cadmpeg_core::decode::u64_from_index(count), 5).ok_or_else(|| {
-        GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
-    })?;
+    let loop_bound = body
+        .counted(cadmpeg_core::decode::u64_from_index(count), 5)
+        .ok_or_else(|| {
+            GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
+        })?;
     let mut loops = match ExactVec::<HatchLoop>::new(expand.ctx(), loop_bound, "Rhino hatch loops")
     {
         Ok(loops) => loops,

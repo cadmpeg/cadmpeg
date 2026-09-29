@@ -3942,7 +3942,9 @@ mod cache_form_tests {
         bytes.push(tag);
         match int_width {
             RefWidth::Eight => bytes.extend_from_slice(&value.to_le_bytes()),
-            RefWidth::Four => bytes.extend_from_slice(&(i32::try_from(value).expect("test integer fits")).to_le_bytes()),
+            RefWidth::Four => bytes.extend_from_slice(
+                &(i32::try_from(value).expect("test integer fits")).to_le_bytes(),
+            ),
         }
     }
 

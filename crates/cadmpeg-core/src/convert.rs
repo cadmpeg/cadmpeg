@@ -38,9 +38,7 @@ pub fn f64_from_u64(value: u64) -> Option<f64> {
 )]
 pub fn f64_from_i64(value: i64) -> Option<f64> {
     let magnitude = value.unsigned_abs();
-    if magnitude == 0
-        || u64::BITS - magnitude.leading_zeros() - magnitude.trailing_zeros() <= 53
-    {
+    if magnitude == 0 || u64::BITS - magnitude.leading_zeros() - magnitude.trailing_zeros() <= 53 {
         Some(value as f64)
     } else {
         None
@@ -211,9 +209,15 @@ mod tests {
                 Some(9_007_199_254_740_992.0)
             );
             assert_eq!(f64_from_index(9_007_199_254_740_993), None);
-            assert_eq!(f64_from_index(9_007_199_254_740_994), Some(9_007_199_254_740_994.0));
+            assert_eq!(
+                f64_from_index(9_007_199_254_740_994),
+                Some(9_007_199_254_740_994.0)
+            );
             assert_eq!(f64_from_index(usize::MAX), None);
-            assert_eq!(f64_from_index(1_usize << 63), Some(9_223_372_036_854_775_808.0));
+            assert_eq!(
+                f64_from_index(1_usize << 63),
+                Some(9_223_372_036_854_775_808.0)
+            );
         }
         #[cfg(target_pointer_width = "32")]
         assert_eq!(f64_from_index(usize::MAX), Some(4_294_967_295.0));
@@ -224,7 +228,10 @@ mod tests {
         assert_eq!(f64_from_u64(0), Some(0.0));
         assert_eq!(f64_from_u64(u64::MAX), None);
         assert_eq!(f64_from_u64(1_u64 << 63), Some(9_223_372_036_854_775_808.0));
-        assert_eq!(f64_from_u64(9_007_199_254_740_994), Some(9_007_199_254_740_994.0));
+        assert_eq!(
+            f64_from_u64(9_007_199_254_740_994),
+            Some(9_007_199_254_740_994.0)
+        );
         assert_eq!(
             f64_from_u64(9_007_199_254_740_992),
             Some(9_007_199_254_740_992.0)
@@ -237,8 +244,14 @@ mod tests {
         assert_eq!(f64_from_i64(0), Some(0.0));
         assert_eq!(f64_from_i64(i64::MIN), Some(-9_223_372_036_854_775_808.0));
         assert_eq!(f64_from_i64(i64::MAX), None);
-        assert_eq!(f64_from_i64(9_007_199_254_740_994), Some(9_007_199_254_740_994.0));
-        assert_eq!(f64_from_i64(-9_007_199_254_740_994), Some(-9_007_199_254_740_994.0));
+        assert_eq!(
+            f64_from_i64(9_007_199_254_740_994),
+            Some(9_007_199_254_740_994.0)
+        );
+        assert_eq!(
+            f64_from_i64(-9_007_199_254_740_994),
+            Some(-9_007_199_254_740_994.0)
+        );
         assert_eq!(
             f64_from_i64(-9_007_199_254_740_992),
             Some(-9_007_199_254_740_992.0)

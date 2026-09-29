@@ -557,7 +557,9 @@ impl Chunk {
             ChunkBody::Short { value, .. } => Ok(*value),
             ChunkBody::Long { body, checksum } => {
                 // chunk_at derives this span from a nonnegative i64 length.
-                i64::try_from(body.len() + checksum.map_or(0, ChecksumKind::width)).map_err(|_| FramingError::structural(self.header_start, "chunk length exceeds i64"))
+                i64::try_from(body.len() + checksum.map_or(0, ChecksumKind::width)).map_err(|_| {
+                    FramingError::structural(self.header_start, "chunk length exceeds i64")
+                })
             }
         }
     }

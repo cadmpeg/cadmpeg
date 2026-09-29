@@ -219,9 +219,13 @@ pub(crate) fn project_occurrences(
         ctx.charge_collection_items(1, "project Inventor occurrence")?;
         ctx.charge_entities(1, "project Inventor occurrence")?;
         ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index("inventor:assembly:instance#".len()
-                + usize::try_from(source.occurrence_id.max(1).ilog10()).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?
-                + 1),
+            cadmpeg_core::decode::u64_from_index(
+                "inventor:assembly:instance#".len()
+                    + usize::try_from(source.occurrence_id.max(1).ilog10()).map_err(|_| {
+                        CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                    })?
+                    + 1,
+            ),
             "retain projected Inventor occurrence id",
         )?;
         ctx.charge_retained(
@@ -532,7 +536,10 @@ impl<'a> Cursor<'a> {
         let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor {field} length overflows"))
         })?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), "retain Inventor assembly string")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(len),
+            "retain Inventor assembly string",
+        )?;
         self.source
             .utf16_le(count)
             .ok_or_else(|| CodecError::malformed(format_args!("Inventor {field} is not UTF-16")))

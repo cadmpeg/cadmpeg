@@ -345,8 +345,12 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
                     caption: Some(caption),
                     representation: representation.as_ref(),
                     model_state_count: cadmpeg_core::decode::u64_from_index(model_states.len()),
-                    reference_count: cadmpeg_core::decode::u64_from_index(external_references.len()),
-                    embedded_reference_count: cadmpeg_core::decode::u64_from_index(embedded_references.len()),
+                    reference_count: cadmpeg_core::decode::u64_from_index(
+                        external_references.len(),
+                    ),
+                    embedded_reference_count: cadmpeg_core::decode::u64_from_index(
+                        embedded_references.len(),
+                    ),
                     occurrence_count: cadmpeg_core::decode::u64_from_index(occurrences.len()),
                     tail_len: *tail_len,
                     tail_sha256: Some(tail_sha256),
@@ -418,7 +422,9 @@ impl UfrxRecordWire {
         if wire.reference_count != cadmpeg_core::decode::u64_from_index(external_references.len()) {
             return Err("UFRx reference_count does not match its arena".into());
         }
-        if wire.embedded_reference_count != cadmpeg_core::decode::u64_from_index(embedded_references.len()) {
+        if wire.embedded_reference_count
+            != cadmpeg_core::decode::u64_from_index(embedded_references.len())
+        {
             return Err("UFRx embedded_reference_count does not match its arena".into());
         }
         if wire.occurrence_count != cadmpeg_core::decode::u64_from_index(occurrences.len()) {

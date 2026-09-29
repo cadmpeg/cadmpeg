@@ -129,7 +129,12 @@ fn loop_ring_members_refuse_collection_limit() {
     ];
     let by_index: HashMap<_, _> = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let reach = Reachable {
         loops: HashSet::from([0]),
@@ -513,7 +518,12 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
         ];
         let by_index = records
             .iter()
-            .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+            .map(|record| {
+                (
+                    i64::try_from(record.index).expect("test value fits"),
+                    record,
+                )
+            })
             .collect();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -731,7 +741,12 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
             assert_eq!(records[0].chunk(7), Some(&Token::Double(0.07)));
             let by_index = records
                 .iter()
-                .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+                .map(|record| {
+                    (
+                        i64::try_from(record.index).expect("test value fits"),
+                        record,
+                    )
+                })
                 .collect();
             let reach = Reachable {
                 vertices: HashSet::from([0]),
@@ -794,7 +809,12 @@ fn tolerant_vertex_refuses_nonfinite_leading_tolerance_at_read() {
     let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
     let by_index = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let reach = Reachable {
         vertices: HashSet::from([0]),
@@ -884,7 +904,12 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
         ];
         let by_index = records
             .iter()
-            .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+            .map(|record| {
+                (
+                    i64::try_from(record.index).expect("test value fits"),
+                    record,
+                )
+            })
             .collect();
         let table = subtype_table(&records);
         let parsed = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
@@ -972,7 +997,12 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
         }];
         let by_index = records
             .iter()
-            .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+            .map(|record| {
+                (
+                    i64::try_from(record.index).expect("test value fits"),
+                    record,
+                )
+            })
             .collect();
         let reach = Reachable {
             vertices: HashSet::from([0]),

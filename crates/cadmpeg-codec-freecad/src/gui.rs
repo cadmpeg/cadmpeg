@@ -238,7 +238,10 @@ pub(crate) fn transfer(
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "FCStd GUI XML lexical admission")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "FCStd GUI XML lexical admission",
+    )?;
     if let Some((nodes, _)) = crate::container::xml_envelope_counts(bytes) {
         ctx.charge_collection_items(nodes, "FCStd GUI XML node tree")?;
     }
@@ -398,7 +401,10 @@ fn transfer_schema_one(
         .descendants()
         .filter(|node| node.has_tag_name("ViewProvider"))
         .count();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(provider_count), "FCStd GUI provider nodes")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(provider_count),
+        "FCStd GUI provider nodes",
+    )?;
     let mut providers = cadmpeg_core::decode::DecodeContext::admitted_vec(
         provider_count,
         "FCStd GUI provider nodes",
@@ -495,7 +501,9 @@ fn transfer_schema_one(
                     property.attribute("name") == Some(property_name)
                         && property.attribute("type") == Some(type_name)
                 })
-                .map_or(0, |property| cadmpeg_core::decode::u64_from_index(property.range().start));
+                .map_or(0, |property| {
+                    cadmpeg_core::decode::u64_from_index(property.range().start)
+                });
             gui_provider_property_provenance(ctx, name, property_name, offset)
         };
         let visibility = values
@@ -891,7 +899,10 @@ fn transfer_neutral_presentation(
                 assets,
             });
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(states.len()), "FCStd presentation state order")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(states.len()),
+            "FCStd presentation state order",
+        )?;
         presentation
             .set_states(states)
             .map_err(CodecError::malformed)?;
@@ -975,7 +986,13 @@ fn transfer_neutral_presentation(
                 .as_ref()
                 .map(|object| ctx.copy_retained_text(object.as_str(), "FCStd view object identity"))
                 .transpose()?,
-            order: u32::try_from(provider.order).map_err(|_| ctx.refuse_codec_limit("FreeCAD ordinal", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(provider.order)))?,
+            order: u32::try_from(provider.order).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "FreeCAD ordinal",
+                    u64::from(u32::MAX),
+                    cadmpeg_core::decode::u64_from_index(provider.order),
+                )
+            })?,
             expanded: provider.expanded,
             visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
             display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
@@ -1337,10 +1354,18 @@ fn transfer_primitive_appearance(
         )?),
         category: None,
         base_color: Some(Color::from_rgba8(
-            u8::try_from((packed_color >> 24) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
-            u8::try_from((packed_color >> 16) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
-            u8::try_from((packed_color >> 8) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
-            u8::try_from(packed_color & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
+            u8::try_from((packed_color >> 24) & 0xff).map_err(|_| {
+                CodecError::Malformed("GUI color channel exceeds byte range".into())
+            })?,
+            u8::try_from((packed_color >> 16) & 0xff).map_err(|_| {
+                CodecError::Malformed("GUI color channel exceeds byte range".into())
+            })?,
+            u8::try_from((packed_color >> 8) & 0xff).map_err(|_| {
+                CodecError::Malformed("GUI color channel exceeds byte range".into())
+            })?,
+            u8::try_from(packed_color & 0xff).map_err(|_| {
+                CodecError::Malformed("GUI color channel exceeds byte range".into())
+            })?,
         )),
         textures: Vec::new(),
         properties: admitted_size
@@ -1544,7 +1569,10 @@ fn append_native_provider(
                 format_args!("ViewProvider {name} property has no name"),
             )
         })?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(property_order), "FCStd GUI duplicate property scan")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(property_order),
+            "FCStd GUI duplicate property scan",
+        )?;
         if properties
             .iter()
             .rev()
@@ -4290,7 +4318,12 @@ fn parse_material_list(
                     )
                 })?
             } else {
-                u32::try_from(header).map_err(|_| gui_malformed(ctx, format_args!("GUI material list {property_id} has a negative count")))?
+                u32::try_from(header).map_err(|_| {
+                    gui_malformed(
+                        ctx,
+                        format_args!("GUI material list {property_id} has a negative count"),
+                    )
+                })?
             };
             (count, false)
         }
@@ -4942,10 +4975,18 @@ fn transfer_topology_colors(
                     schema: Some(kind.schema().into()),
                     category: None,
                     base_color: Some(Color::from_rgba8(
-                        u8::try_from((packed >> 24) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
-                        u8::try_from((packed >> 16) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
-                        u8::try_from((packed >> 8) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
-                        u8::try_from(packed & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
+                        u8::try_from((packed >> 24) & 0xff).map_err(|_| {
+                            CodecError::Malformed("GUI color channel exceeds byte range".into())
+                        })?,
+                        u8::try_from((packed >> 16) & 0xff).map_err(|_| {
+                            CodecError::Malformed("GUI color channel exceeds byte range".into())
+                        })?,
+                        u8::try_from((packed >> 8) & 0xff).map_err(|_| {
+                            CodecError::Malformed("GUI color channel exceeds byte range".into())
+                        })?,
+                        u8::try_from(packed & 0xff).map_err(|_| {
+                            CodecError::Malformed("GUI color channel exceeds byte range".into())
+                        })?,
                     )),
                     textures: Vec::new(),
                     properties: BTreeMap::new(),
@@ -5023,10 +5064,27 @@ fn transfer_topology_colors(
 
 fn decode_color(value: u32, transparency: Option<f32>) -> Result<Color, CodecError> {
     Color::new(
-        f32::from(u8::try_from((value >> 24) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?) / 255.0,
-        f32::from(u8::try_from((value >> 16) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?) / 255.0,
-        f32::from(u8::try_from((value >> 8) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?) / 255.0,
-        transparency.map_or(f32::from(u8::try_from(value & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?) / 255.0, |value| 1.0 - value),
+        f32::from(
+            u8::try_from((value >> 24) & 0xff).map_err(|_| {
+                CodecError::Malformed("GUI color channel exceeds byte range".into())
+            })?,
+        ) / 255.0,
+        f32::from(
+            u8::try_from((value >> 16) & 0xff).map_err(|_| {
+                CodecError::Malformed("GUI color channel exceeds byte range".into())
+            })?,
+        ) / 255.0,
+        f32::from(
+            u8::try_from((value >> 8) & 0xff).map_err(|_| {
+                CodecError::Malformed("GUI color channel exceeds byte range".into())
+            })?,
+        ) / 255.0,
+        transparency.map_or(
+            f32::from(u8::try_from(value & 0xff).map_err(|_| {
+                CodecError::Malformed("GUI color channel exceeds byte range".into())
+            })?) / 255.0,
+            |value| 1.0 - value,
+        ),
     )
     .ok_or_else(|| CodecError::Malformed("GUI color components must be in [0, 1]".into()))
 }

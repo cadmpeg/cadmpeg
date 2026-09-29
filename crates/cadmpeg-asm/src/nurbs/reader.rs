@@ -617,7 +617,9 @@ mod string_width_tests {
     /// A `0x09` string whose length prefix is the stream integer width.
     fn long_string_bytes(payload: &str, int_width: RefWidth) -> Vec<u8> {
         let mut bytes = vec![0x09];
-        let mut length = (cadmpeg_core::decode::u64_from_index(payload.len())).to_le_bytes().to_vec();
+        let mut length = (cadmpeg_core::decode::u64_from_index(payload.len()))
+            .to_le_bytes()
+            .to_vec();
         length.truncate(int_width.bytes());
         bytes.extend_from_slice(&length);
         bytes.extend_from_slice(payload.as_bytes());

@@ -1726,7 +1726,9 @@ fn classify_rdk_material_payload(
         reader.skip_remaining()?;
         return Ok(RdkMaterialPayload::Compatibility(None));
     }
-    let xml = reader.take(usize::try_from(length).map_err(|_| FramingError::structural(reader.position(), "XML length exceeds address space"))?)?;
+    let xml = reader.take(usize::try_from(length).map_err(|_| {
+        FramingError::structural(reader.position(), "XML length exceeds address space")
+    })?)?;
     reader.skip_remaining()?;
 
     // The legacy writer omits the UTF-8 terminator that ON_XMLUserData::Write
@@ -2071,9 +2073,11 @@ fn parse_light_record_attributes(
         )?;
     }
     Ok(Some(LightAttributesRecord {
-        source_offset: cadmpeg_core::decode::u64_from_index(attributes_chunk
-            .as_ref()
-            .map_or(record.range.start, |chunk| chunk.header_start)),
+        source_offset: cadmpeg_core::decode::u64_from_index(
+            attributes_chunk
+                .as_ref()
+                .map_or(record.range.start, |chunk| chunk.header_start),
+        ),
         attributes: presentation,
         userdata_requires_opaque,
     }))
@@ -2135,8 +2139,11 @@ fn append_file_reference_diagnostics(
         )?;
         losses.push(
             loss.with_provenance(
-                SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(source_offset))
-                    .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
+                SourceProvenance::root(
+                    "rhino",
+                    cadmpeg_core::decode::u64_from_index(source_offset),
+                )
+                .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
             ),
         );
     }
@@ -4299,7 +4306,9 @@ fn parse_windows_bitmap(
         planes,
         bits_per_pixel,
         compression,
-        image_byte_len: i32::try_from(image_byte_len).map_err(|_| FramingError::structural(reader.position(), "Windows bitmap image exceeds i32"))?,
+        image_byte_len: i32::try_from(image_byte_len).map_err(|_| {
+            FramingError::structural(reader.position(), "Windows bitmap image exceeds i32")
+        })?,
         pixels_per_meter,
         colors_used,
         important_colors,

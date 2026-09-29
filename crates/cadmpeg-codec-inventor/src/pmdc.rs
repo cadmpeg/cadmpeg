@@ -290,7 +290,7 @@ impl PmDcU32List {
     pub(crate) fn values(&self) -> &[u32] {
         self.items
             .as_ref()
-            .map_or(&[] as &[_], |(_, values)| values.as_slice())
+            .map_or(&[][..], |(_, values)| values.as_slice())
     }
 }
 
@@ -411,7 +411,9 @@ impl<'a> Cursor<'a> {
         ctx: &DecodeContext<'_>,
         field: &str,
     ) -> Result<String, CodecError> {
-        let units = usize::try_from(self.u32("string length")?).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+        let units = usize::try_from(self.u32("string length")?).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?;
         if units > 1_048_576 {
             return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} exceeds 1048576 code units"
@@ -423,8 +425,14 @@ impl<'a> Cursor<'a> {
         let utf8_bytes = crate::reader::utf16_utf8_len(self.source, units).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
         })?;
-        let _units = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(len), "decode Inventor PmDc UTF-16 units")?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(utf8_bytes), "retain Inventor PmDc string")?;
+        let _units = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(len),
+            "decode Inventor PmDc UTF-16 units",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(utf8_bytes),
+            "retain Inventor PmDc string",
+        )?;
         self.source.utf16_le(units).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
         })
@@ -487,7 +495,8 @@ fn list_preamble(
             "Inventor PmDc {field} marker is {actual:?}"
         )));
     }
-    let count = usize::try_from(cursor.u32("list count")?).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+    let count = usize::try_from(cursor.u32("list count")?)
+        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
     ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), admission)?;
     let metadata = if count == 0 {
         None
@@ -528,7 +537,10 @@ pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
     operation: &'static str,
     key: impl Fn(&'a T) -> K,
 ) -> Result<std::collections::HashMap<K, &'a T>, CodecError> {
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(records.len()), operation)?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(records.len()),
+        operation,
+    )?;
     let mut unique = std::collections::HashMap::new();
     for record in records {
         unique
@@ -537,7 +549,9 @@ pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
             .or_insert(Some(record));
     }
     ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(unique.values().filter(|value| value.is_some()).count()),
+        cadmpeg_core::decode::u64_from_index(
+            unique.values().filter(|value| value.is_some()).count(),
+        ),
         "index distinct Inventor records",
     )?;
     Ok(unique
@@ -614,7 +628,7 @@ impl<V> PmDcPairedMap<V> {
     pub(crate) fn entries(&self) -> &[(PmDcReference, V)] {
         self.items
             .as_ref()
-            .map_or(&[] as &[_], |(_, entries)| entries.as_slice())
+            .map_or(&[][..], |(_, entries)| entries.as_slice())
     }
 }
 

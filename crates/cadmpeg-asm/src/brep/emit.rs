@@ -4491,7 +4491,13 @@ pub(super) fn emit_carrier_records(
         forward_curve_refs,
     } = senses;
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         match r.head() {
             _ if reach.surfaces.contains(&i) => {
                 emit_carrier_surface(ctx, out, r, i, carriers, reach, format)?;
@@ -4543,7 +4549,13 @@ pub(super) fn emit_pcurves(
         ..
     } = reach;
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         if kept_pcurves.contains(&i) {
             if let Some(geometry) = pcurve_geo.remove(&super::PcurveRecordIndex(i)) {
                 let wrapper_reversed = match r.chunk(4) {
@@ -4627,7 +4639,13 @@ pub(super) fn emit_points(
         ..
     } = reach;
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         if r.head() == "point" && kept_points.contains(&i) {
             let c = collect_carrier(ctx, r)?;
             if let Some(p) = c.positions.first() {
@@ -4662,7 +4680,13 @@ pub(super) fn emit_vertices(
         ..
     } = reach;
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         if is_vertex_record(r) && kept_vertices.contains(&i) {
             if let Some(pi) = vertex_point_ref(r) {
                 if kept_points.contains(&pi) {
@@ -4725,7 +4749,12 @@ pub(super) fn emit_vertices(
                                             format,
                                         ),
                                     vertex: <VertexId>::from(id(format, i)),
-                                    record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(r.index)))?,
+                                    record_index: u32::try_from(r.index).map_err(|_| ctx
+                                        .refuse_codec_limit(
+                                            "ASM native record index",
+                                            u64::from(u32::MAX),
+                                            cadmpeg_core::decode::u64_from_index(r.index)
+                                        ))?,
                                     leading_tolerances: [first, second],
                                     evaluated_slot: {
                                         let trailing = match r.chunk(9) {
@@ -4767,7 +4796,12 @@ pub(super) fn emit_vertices(
                                         format
                                     ),
                                 vertex: <VertexId>::from(id(format, i)),
-                                record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(r.index)))?,
+                                record_index: u32::try_from(r.index).map_err(|_| ctx
+                                    .refuse_codec_limit(
+                                        "ASM native record index",
+                                        u64::from(u32::MAX),
+                                        cadmpeg_core::decode::u64_from_index(r.index)
+                                    ))?,
                                 owning_edge: <EdgeId>::from(id(format, owning_edge)),
                                 endpoint_index,
                             }
@@ -4809,7 +4843,13 @@ pub(super) fn emit_edges(
         }
     };
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         if is_edge_record(r) && kept_edges.contains(&i) {
             let (Some(start), Some(end)) = (r.ref_at(3), r.ref_at(5)) else {
                 continue;
@@ -4910,7 +4950,12 @@ pub(super) fn emit_edges(
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format,),
                         edge: EdgeId::from(id(format, i)),
-                        record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(r.index)))?,
+                        record_index: u32::try_from(r.index).map_err(|_| ctx
+                            .refuse_codec_limit(
+                                "ASM native record index",
+                                u64::from(u32::MAX),
+                                cadmpeg_core::decode::u64_from_index(r.index)
+                            ))?,
                         entity_revision,
                         trailing_field,
                     }
@@ -4924,7 +4969,11 @@ pub(super) fn emit_edges(
                         format,
                     ),
                     edge: EdgeId::from(id(format, i)),
-                    record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(r.index)))?,
+                    record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit(
+                        "ASM native record index",
+                        u64::from(u32::MAX),
+                        cadmpeg_core::decode::u64_from_index(r.index)
+                    ))?,
                     owner_coedge: r.ref_at(7).map(|owner| CoedgeId::from(id(format, owner))),
                 }
             );
@@ -4936,7 +4985,12 @@ pub(super) fn emit_edges(
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format,),
                         edge: EdgeId::from(id(format, i)),
-                        record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(r.index)))?,
+                        record_index: u32::try_from(r.index).map_err(|_| ctx
+                            .refuse_codec_limit(
+                                "ASM native record index",
+                                u64::from(u32::MAX),
+                                cadmpeg_core::decode::u64_from_index(r.index)
+                            ))?,
                         sense: sense_at(r, 9),
                         continuity: ctx
                             .copy_retained_text(continuity, "ASM edge continuity text")?,
@@ -4975,7 +5029,13 @@ pub(super) fn emit_coedges(
         ..
     } = reach;
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         if is_coedge_record(r) && kept_coedges.contains(&i) {
             let (Some(next), Some(prev), Some(edge), Some(owner)) =
                 (r.ref_at(3), r.ref_at(4), r.ref_at(6), r.ref_at(8))
@@ -5102,7 +5162,12 @@ pub(super) fn emit_coedges(
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
                         coedge: <CoedgeId>::from(id(format, i)),
-                        record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(r.index)))?,
+                        record_index: u32::try_from(r.index).map_err(|_| ctx
+                            .refuse_codec_limit(
+                                "ASM native record index",
+                                u64::from(u32::MAX),
+                                cadmpeg_core::decode::u64_from_index(r.index)
+                            ))?,
                         parameter_range,
                         extension,
                     }
@@ -5128,7 +5193,13 @@ pub(super) fn emit_loops(
         ..
     } = reach;
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         if r.head() == "loop" && kept_loops.contains(&i) {
             let Some(owner) = r.ref_at(5) else { continue };
             let coedges = ring_coedges(ctx, r, by_index, kept_coedges, format)?;
@@ -5171,7 +5242,13 @@ pub(super) fn emit_faces(
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         if r.head() == "face" && kept_faces.contains(&i) {
             let (Some(surface), Some(owner)) = (r.ref_at(7), r.ref_at(5)) else {
                 continue;
@@ -5225,7 +5302,11 @@ pub(super) fn emit_faces(
                         format,
                     ),
                     face: <FaceId>::from(id(format, i)),
-                    record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(r.index)))?,
+                    record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit(
+                        "ASM native record index",
+                        u64::from(u32::MAX),
+                        cadmpeg_core::decode::u64_from_index(r.index)
+                    ))?,
                     native_sense,
                     carrier_flipped,
                     containment,
@@ -5240,7 +5321,12 @@ pub(super) fn emit_faces(
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format,),
                         face: face_id,
-                        record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(r.index)))?,
+                        record_index: u32::try_from(r.index).map_err(|_| ctx
+                            .refuse_codec_limit(
+                                "ASM native record index",
+                                u64::from(u32::MAX),
+                                cadmpeg_core::decode::u64_from_index(r.index)
+                            ))?,
                         asm_face_key: u64::try_from(*key).ok(),
                     }
                 );
@@ -5289,7 +5375,13 @@ pub(super) fn emit_containers(
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         match r.head() {
             "shell" => {
                 let Some(owner) = r.ref_at(7) else { continue };
@@ -5347,8 +5439,21 @@ pub(super) fn emit_containers(
                             source_namespace:
                                 crate::brep::records::identity::NativeRecordNamespace::new(format),
                             body: body_id.clone(),
-                            record_index: u32::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(r.index)))?,
-                            body_ordinal: u32::try_from(out.body_native_keys.len()).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(out.body_native_keys.len())))?,
+                            record_index: u32::try_from(r.index).map_err(|_| ctx
+                                .refuse_codec_limit(
+                                    "ASM native record index",
+                                    u64::from(u32::MAX),
+                                    cadmpeg_core::decode::u64_from_index(r.index)
+                                ))?,
+                            body_ordinal: u32::try_from(out.body_native_keys.len()).map_err(
+                                |_| ctx.refuse_codec_limit(
+                                    "ASM native record index",
+                                    u64::from(u32::MAX),
+                                    cadmpeg_core::decode::u64_from_index(
+                                        out.body_native_keys.len()
+                                    )
+                                )
+                            )?,
                             source_brep: stream
                                 .rsplit('/')
                                 .next()
@@ -5379,7 +5484,12 @@ pub(super) fn emit_containers(
                                         format
                                     ),
                                 body: body_id.clone(),
-                                record_index: u32::try_from(transform.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(transform.index)))?,
+                                record_index: u32::try_from(transform.index).map_err(|_| ctx
+                                    .refuse_codec_limit(
+                                        "ASM native record index",
+                                        u64::from(u32::MAX),
+                                        cadmpeg_core::decode::u64_from_index(transform.index)
+                                    ))?,
                                 rotation,
                                 reflection,
                                 shear,
@@ -5462,7 +5572,13 @@ pub(super) fn emit_attributes(
     let mut emitted_attributes = HashSet::new();
     let mut attribute_targets = HashMap::new();
     for record in records {
-        let index = i64::try_from(record.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(record.index)))?;
+        let index = i64::try_from(record.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(record.index),
+            )
+        })?;
         let target = match record.head() {
             "body"
                 if out
@@ -5526,7 +5642,13 @@ pub(super) fn emit_attributes(
     }
 
     for record in records {
-        let index = i64::try_from(record.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(record.index)))?;
+        let index = i64::try_from(record.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(record.index),
+            )
+        })?;
         if !record.name.ends_with("-attrib") || emitted_attributes.contains(&index) {
             continue;
         }
@@ -5560,7 +5682,13 @@ pub(super) fn emit_passthrough_unknowns(
         ..
     } = reach;
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         if undecoded_carriers.contains(&i) || cached_unknown_procedural_surfaces.contains(&i) {
             let end = r.offset.checked_add(r.len).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(format_args!(
@@ -5625,12 +5753,20 @@ pub(super) fn count_other_records(
     let pcurve_intcurves: HashSet<i64> = ctx.collect_hash_set(
         records
             .iter()
-            .filter(|record| i64::try_from(record.index).is_ok_and(|index| kept_pcurves.contains(&index)))
+            .filter(|record| {
+                i64::try_from(record.index).is_ok_and(|index| kept_pcurves.contains(&index))
+            })
             .filter_map(|record| record.ref_at(4)),
         "ASM pcurve intcurve references",
     )?;
     for r in records {
-        let i = i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?;
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
         // Spline/intcurve records that decoded into a NURBS carrier are counted
         // as transferred, not as opaque leftovers.
         let transferred = kept_surfaces.contains(&i)

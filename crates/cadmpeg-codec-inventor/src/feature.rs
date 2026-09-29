@@ -1140,10 +1140,14 @@ pub(crate) fn project(
         )?,
         parameter_values: {
             ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(parameters
-                    .iter()
-                    .filter(|parameter| parameter.native_ref.is_some() && parameter.value.is_some())
-                    .count()),
+                cadmpeg_core::decode::u64_from_index(
+                    parameters
+                        .iter()
+                        .filter(|parameter| {
+                            parameter.native_ref.is_some() && parameter.value.is_some()
+                        })
+                        .count(),
+                ),
                 "index Inventor feature parameter values",
             )?;
             parameters
@@ -1252,7 +1256,10 @@ pub(crate) fn project(
             projected.push(value);
         }
     }
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(projected.len()), "count Inventor feature ordinals")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(projected.len()),
+        "count Inventor feature ordinals",
+    )?;
     let ordinal_counts = projected.iter().map(|(feature, _)| feature.ordinal).fold(
         HashMap::<u64, usize>::new(),
         |mut counts, ordinal| {
@@ -1261,7 +1268,9 @@ pub(crate) fn project(
         },
     );
     ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(ordinal_counts.values().filter(|count| **count > 1).count()),
+        cadmpeg_core::decode::u64_from_index(
+            ordinal_counts.values().filter(|count| **count > 1).count(),
+        ),
         "collect duplicate Inventor feature ordinals",
     )?;
     let duplicate_ordinals = ordinal_counts
@@ -1469,9 +1478,14 @@ fn admit_projected_feature(
         cadmpeg_core::decode::u64_from_index(label.name.as_str().len()),
         "retain Inventor projected feature name",
     )?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(tag.len()), "retain Inventor projected feature tag")?;
     ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(source.id_len().ok_or_else(|| CodecError::Malformed("Inventor identifier length exceeds address space".into()))?),
+        cadmpeg_core::decode::u64_from_index(tag.len()),
+        "retain Inventor projected feature tag",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(source.id_len().ok_or_else(|| {
+            CodecError::Malformed("Inventor identifier length exceeds address space".into())
+        })?),
         "retain Inventor projected feature native id",
     )?;
     Ok(())
@@ -1853,9 +1867,19 @@ fn feature_result(
     }
     let key_len = source.identity.segment_token.as_str().len()
         + 1
-        + match usize::try_from(source.identity.record_ordinal.max(1).ilog10()) { Ok(value) => value, Err(_) => return Some(Err(CodecError::Malformed("Inventor numeric value exceeds target range".into()))) }
+        + match usize::try_from(source.identity.record_ordinal.max(1).ilog10()) {
+            Ok(value) => value,
+            Err(_) => {
+                return Some(Err(CodecError::Malformed(
+                    "Inventor numeric value exceeds target range".into(),
+                )))
+            }
+        }
         + 1;
-    let key_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(key_len), "compose Inventor feature result key");
+    let key_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(key_len),
+        "compose Inventor feature result key",
+    );
     let _key_reservation = match key_reservation {
         Ok(reservation) => reservation,
         Err(error) => return Some(Err(error)),
@@ -1886,9 +1910,10 @@ fn feature_result(
     ) {
         return Some(Err(error));
     }
-    if let Err(error) =
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(bodies.len()), "sort Inventor feature result members")
-    {
+    if let Err(error) = ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(bodies.len()),
+        "sort Inventor feature result members",
+    ) {
         return Some(Err(error));
     }
     if let Err(error) = ctx.charge_collection_items(
@@ -2062,7 +2087,16 @@ fn boolean_properties(
         if let Some(value) = boolean(source, *slot, index) {
             ctx.charge_collection_items(1, "project Inventor feature boolean property")?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("property_".len() + usize::try_from(slot.max(&1).ilog10()).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))? + 1 + "_boolean".len()),
+                cadmpeg_core::decode::u64_from_index(
+                    "property_".len()
+                        + usize::try_from(slot.max(&1).ilog10()).map_err(|_| {
+                            CodecError::Malformed(
+                                "Inventor numeric value exceeds target range".into(),
+                            )
+                        })?
+                        + 1
+                        + "_boolean".len(),
+                ),
                 "retain Inventor feature property name",
             )?;
             ctx.charge_retained(

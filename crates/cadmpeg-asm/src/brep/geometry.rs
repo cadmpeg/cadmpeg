@@ -996,7 +996,8 @@ fn reduce_homogeneous_bezier_to_quadratic(
         );
         reduced.push(control[0]);
         for index in 1..degree {
-            let alpha = cadmpeg_core::convert::f64_from_index(index)? / cadmpeg_core::convert::f64_from_index(degree)?;
+            let alpha = cadmpeg_core::convert::f64_from_index(index)?
+                / cadmpeg_core::convert::f64_from_index(degree)?;
             let denominator = 1.0 - alpha;
             reduced.push(std::array::from_fn(|coordinate| {
                 (control[index][coordinate] - alpha * reduced[index - 1][coordinate]) / denominator

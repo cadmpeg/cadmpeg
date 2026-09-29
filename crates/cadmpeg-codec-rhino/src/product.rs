@@ -367,9 +367,15 @@ pub(crate) fn install(
                     ),
                     "Rhino product occurrence loss tag",
                 )?;
-                losses.push(loss.with_provenance(
-                    SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(object.range.start)).with_tag(tag),
-                ));
+                losses.push(
+                    loss.with_provenance(
+                        SourceProvenance::root(
+                            "rhino",
+                            cadmpeg_core::decode::u64_from_index(object.range.start),
+                        )
+                        .with_tag(tag),
+                    ),
+                );
                 continue;
             }
         };

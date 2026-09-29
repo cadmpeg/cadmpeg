@@ -35,7 +35,10 @@ pub(crate) fn admit_formatted(
     detail_len.write_fmt(args).map_err(|_| {
         ctx.refuse_codec_limit("Inventor issue detail byte count", u64::MAX - 1, u64::MAX)
     })?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(detail_len.0), operation)
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(detail_len.0),
+        operation,
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

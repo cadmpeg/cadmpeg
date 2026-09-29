@@ -200,7 +200,10 @@ pub(crate) fn parse_registry(
 ) -> Result<SegmentRegistry, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe segment registry");
     let count = cursor.count("segment count", 65_536)?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit Inventor segment registry entries")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor segment registry entries",
+    )?;
     let mut entries =
         DecodeContext::admitted_vec(count, "admit Inventor segment registry entries")?;
     for _ in 0..count {
@@ -244,7 +247,10 @@ pub(crate) fn parse_registry(
                 "RSe segment node count exceeds 1000000".into(),
             ));
         }
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(node_count), "admit Inventor segment registry nodes")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(node_count),
+            "admit Inventor segment registry nodes",
+        )?;
         let mut nodes =
             DecodeContext::admitted_vec(node_count, "admit Inventor segment registry nodes")?;
         for _ in 0..node_count {
@@ -295,7 +301,10 @@ pub(crate) fn parse_revisions(
     // does not obey it fails structurally at the cursor.
     let version = cursor.u32("version")?;
     let count = cursor.count("revision count", 1_000_000)?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit Inventor revision entries")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor revision entries",
+    )?;
     let mut entries = DecodeContext::admitted_vec(count, "admit Inventor revision entries")?;
     for _ in 0..count {
         let id = cursor.array("revision id")?;
@@ -404,8 +413,14 @@ impl<'a> Cursor<'a> {
         let utf8_bytes = crate::reader::utf16_utf8_len(self.source, count).ok_or_else(|| {
             CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
         })?;
-        let _units = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(len), "decode RSe table UTF-16 units")?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(utf8_bytes), "retain RSe table UTF-16 field")?;
+        let _units = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(len),
+            "decode RSe table UTF-16 units",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(utf8_bytes),
+            "retain RSe table UTF-16 field",
+        )?;
         self.source.utf16_le(count).ok_or_else(|| {
             CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
         })
@@ -417,7 +432,10 @@ impl<'a> Cursor<'a> {
         field: &'static str,
     ) -> Result<Vec<[u8; 16]>, CodecError> {
         let count = self.count(field, 1_000_000)?;
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit Inventor registry identifier list")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(count),
+            "admit Inventor registry identifier list",
+        )?;
         let mut ids =
             DecodeContext::admitted_vec(count, "admit Inventor registry identifier list")?;
         for _ in 0..count {

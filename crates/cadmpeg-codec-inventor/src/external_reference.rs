@@ -216,7 +216,10 @@ fn parse_stream_grammar<'a>(
     cursor.u16("original file-name state")?;
 
     let lod_toc_count = cursor.count32("LOD table count", 65_536)?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(lod_toc_count), "admit UFRxDoc LOD table entries")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(lod_toc_count),
+        "admit UFRxDoc LOD table entries",
+    )?;
     for _ in 0..lod_toc_count {
         cursor.u16("LOD entry kind")?;
         cursor.u16("LOD entry state")?;
@@ -225,7 +228,10 @@ fn parse_stream_grammar<'a>(
     }
 
     let pair_count = cursor.count32("header pair count", 65_536)?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(pair_count), "admit UFRxDoc header pairs")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(pair_count),
+        "admit UFRxDoc header pairs",
+    )?;
     for _ in 0..pair_count {
         cursor.utf16(ctx, "header pair key", 65_536)?;
         cursor.utf16(ctx, "header pair value", 65_536)?;
@@ -322,7 +328,10 @@ fn parse_stream_grammar<'a>(
     let reference_count = cursor.count32("external-reference count", 1_000_000)?;
     let caption = cursor.utf16(ctx, "external-reference caption", 65_536)?;
     cursor.u32("external-reference table state")?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(reference_count), "admit Inventor external references")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(reference_count),
+        "admit Inventor external references",
+    )?;
     let mut references =
         DecodeContext::admitted_vec(reference_count, "admit Inventor external references")?;
     for _ in 0..reference_count {
@@ -425,7 +434,10 @@ fn parse_embedded_references<'a>(
     section_version: u16,
 ) -> Result<Vec<InventorEmbeddedReference<'a>>, CodecError> {
     let count = cursor.count32("embedded-reference count", 1_000_000)?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit UFRxDoc embedded references")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit UFRxDoc embedded references",
+    )?;
     let mut references = DecodeContext::admitted_vec(count, "admit UFRxDoc embedded references")?;
     for _ in 0..count {
         let start = cursor.position();
@@ -480,7 +492,10 @@ fn parse_occurrences<'a>(
     save_year: u16,
 ) -> Result<Vec<UfrxOccurrence<'a>>, CodecError> {
     let count = cursor.count32("occurrence count", 1_000_000)?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit UFRxDoc occurrences")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit UFRxDoc occurrences",
+    )?;
     let mut occurrences = DecodeContext::admitted_vec(count, "admit UFRxDoc occurrences")?;
     for _ in 0..count {
         let start = cursor.position();
@@ -569,7 +584,10 @@ fn parse_occurrence_section(
 ) -> Result<(), CodecError> {
     cursor.u32("occurrence section state")?;
     let count = cursor.count32("occurrence section property count", 65_536)?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit UFRxDoc occurrence properties")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit UFRxDoc occurrence properties",
+    )?;
     for _ in 0..count {
         cursor.boolean("occurrence property presence")?;
         let tag = cursor.u8("occurrence property tag")?;
@@ -586,7 +604,10 @@ fn parse_occurrence_settings(
     cursor: &mut Cursor<'_>,
 ) -> Result<(), CodecError> {
     let count = cursor.count32("occurrence setting count", 65_536)?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit UFRxDoc occurrence settings")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit UFRxDoc occurrence settings",
+    )?;
     for _ in 0..count {
         cursor.utf16(ctx, "occurrence setting name", 65_536)?;
         cursor.take(16, "occurrence setting id")?;
@@ -620,7 +641,10 @@ fn parse_occurrence_export(
             cursor.utf8(ctx, "occurrence export value", 65_536)?;
         } else {
             let count = cursor.count32("occurrence export count", 65_536)?;
-            ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit UFRxDoc occurrence exports")?;
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(count),
+                "admit UFRxDoc occurrence exports",
+            )?;
             for _ in 0..count {
                 cursor.utf16(ctx, "occurrence export name", 65_536)?;
                 parse_occurrence_items(ctx, cursor)?;
@@ -647,12 +671,18 @@ fn parse_occurrence_items(
             "UFRxDoc occurrence export item counts differ: {count} and {repeated}"
         )));
     }
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit UFRxDoc occurrence export items")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit UFRxDoc occurrence export items",
+    )?;
     for _ in 0..count {
         cursor.boolean("occurrence export item presence")?;
         let tag = cursor.u8("occurrence export item tag")?;
         let value_count = cursor.count32("occurrence export item value count", 65_536)?;
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value_count), "admit UFRxDoc occurrence export values")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(value_count),
+            "admit UFRxDoc occurrence export values",
+        )?;
         for _ in 0..value_count {
             require_tag(cursor.u8("occurrence export repeated tag")?, tag)?;
             parse_occurrence_item_value(ctx, cursor, tag)?;
@@ -748,7 +778,10 @@ fn parse_model_states<'a>(
     cursor: &mut Cursor<'_>,
     count: usize,
 ) -> Result<Vec<UfrxModelState<'a>>, CodecError> {
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit UFRxDoc model states")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit UFRxDoc model states",
+    )?;
     let mut states = DecodeContext::admitted_vec(count, "admit UFRxDoc model states")?;
     for _ in 0..count {
         let prefix = cursor.u8("model-state prefix")?;
@@ -944,7 +977,10 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(count), "retain UFRxDoc string")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(count),
+            "retain UFRxDoc string",
+        )?;
         let value = self.take(count, field)?;
         std::str::from_utf8(value)
             .map(str::to_owned)

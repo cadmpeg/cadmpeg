@@ -445,7 +445,10 @@ pub(crate) fn inventory(
                         u64::MAX,
                     )
                 })?;
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(detail_len.0), "retain Inventor PmDc issue detail")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(detail_len.0),
+                    "retain Inventor PmDc issue detail",
+                )?;
                 ctx.charge_retained(32, "retain Inventor PmDc issue type id")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
@@ -555,10 +558,12 @@ pub(crate) fn project_parameters(
         )?;
         let id = parameter_id(ctx, parameter)?;
         ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index("inventor:pmdc:parameter#".len()
-                + parameter.identity.segment_token.as_str().len()
-                + 1
-                + decimal_len(parameter.identity.record_ordinal)),
+            cadmpeg_core::decode::u64_from_index(
+                "inventor:pmdc:parameter#".len()
+                    + parameter.identity.segment_token.as_str().len()
+                    + 1
+                    + decimal_len(parameter.identity.record_ordinal),
+            ),
             "retain Inventor parameter native reference",
         )?;
         ctx.charge_collection_items(
@@ -603,7 +608,10 @@ fn close_parameter_graph(
                 )
             })
     })?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "index Inventor parameter closure")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "index Inventor parameter closure",
+    )?;
     let indices = parameters
         .iter()
         .enumerate()
@@ -615,8 +623,14 @@ fn close_parameter_graph(
         Vec::<usize>::new(),
         "admit Inventor parameter adjacency",
     )?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(edge_count), "admit Inventor parameter edges")?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit Inventor parameter traversal")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(edge_count),
+        "admit Inventor parameter edges",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor parameter traversal",
+    )?;
     let mut ready = VecDeque::new();
     for (index, parameter) in parameters.iter().enumerate() {
         for dependency in &parameter.dependencies {
@@ -644,7 +658,10 @@ fn close_parameter_graph(
         }
     }
     let accepted = closed.iter().filter(|&&value| value).count();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(accepted), "collect closed Inventor parameters")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(accepted),
+        "collect closed Inventor parameters",
+    )?;
     Ok((
         parameters
             .into_iter()
@@ -666,7 +683,9 @@ fn parameter_id(
         "retain Inventor parameter id",
     )?;
     let _key_bytes = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(token_len + key_len + decimal_len(parameter.identity.record_ordinal)),
+        cadmpeg_core::decode::u64_from_index(
+            token_len + key_len + decimal_len(parameter.identity.record_ordinal),
+        ),
         "compose Inventor parameter id key",
     )?;
     Ok(ParameterId::compose(
@@ -761,10 +780,22 @@ fn render_expression<'a>(
                 ctx.refuse_codec_limit("Inventor expression byte count", u64::MAX - 1, u64::MAX)
             })
     })?;
-    let reserved = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(total), "render Inventor expression bytes")?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(root_length), "retain Inventor expression text")?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(total), "render Inventor expression bytes")?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(plan.order.len()), "memoize Inventor expression text")?;
+    let reserved = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(total),
+        "render Inventor expression bytes",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(root_length),
+        "retain Inventor expression text",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(total),
+        "render Inventor expression bytes",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(plan.order.len()),
+        "memoize Inventor expression text",
+    )?;
     let mut rendered: HashMap<u32, String> = HashMap::new();
     for &ordinal in &plan.order {
         let length = plan.lengths[&ordinal].length;
@@ -1182,7 +1213,10 @@ fn parse_base_unit(
     let magnitude = cursor.f64("base-unit magnitude")?;
     let factor = cursor.f64("base-unit factor")?;
     cursor.finish("base unit")?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(symbol.len()), "retain Inventor PmDc base unit symbol")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(symbol.len()),
+        "retain Inventor PmDc base unit symbol",
+    )?;
     Ok(PmDcUnitPayload {
         save_version_major: version,
         header_value,
@@ -1256,8 +1290,13 @@ impl Cursor<'_> {
                 "Inventor PmDc {field} marker is {marker:?}"
             )));
         }
-        let count = usize::try_from(self.u32("reference-array count")?).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit Inventor PmDc unit references")?;
+        let count = usize::try_from(self.u32("reference-array count")?).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(count),
+            "admit Inventor PmDc unit references",
+        )?;
         let metadata = if count == 0 {
             None
         } else {

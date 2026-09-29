@@ -67,7 +67,19 @@ impl TryFrom<u8> for MetaSectionNumber {
 
 impl From<MetaSectionNumber> for u8 {
     fn from(number: MetaSectionNumber) -> Self {
-        number as Self
+        match number {
+            MetaSectionNumber::One => 1,
+            MetaSectionNumber::Two => 2,
+            MetaSectionNumber::Three => 3,
+            MetaSectionNumber::Four => 4,
+            MetaSectionNumber::Five => 5,
+            MetaSectionNumber::Six => 6,
+            MetaSectionNumber::Seven => 7,
+            MetaSectionNumber::Eight => 8,
+            MetaSectionNumber::Nine => 9,
+            MetaSectionNumber::Ten => 10,
+            MetaSectionNumber::Eleven => 11,
+        }
     }
 }
 
@@ -137,10 +149,12 @@ pub(crate) struct RseRecordFrame<'a> {
 
 impl RseRecordFrame<'_> {
     pub(crate) fn type_index(&self) -> Result<u8, CodecError> {
-        u8::try_from(self.selector & 0xff).map_err(|_| CodecError::Malformed("RSe selector low byte exceeds u8".into()))
+        u8::try_from(self.selector & 0xff)
+            .map_err(|_| CodecError::Malformed("RSe selector low byte exceeds u8".into()))
     }
     pub(crate) fn payload_len(&self) -> Result<u32, CodecError> {
-        u32::try_from(self.payload.window().len()).map_err(|_| CodecError::Malformed("RSe payload length exceeds u32".into()))
+        u32::try_from(self.payload.window().len())
+            .map_err(|_| CodecError::Malformed("RSe payload length exceeds u32".into()))
     }
     pub(crate) fn trailing_payload_len(&self) -> Result<u32, CodecError> {
         if self.trailing_length_written {
@@ -179,34 +193,45 @@ pub(crate) fn parse_meta_tables<'a>(
 
     let (block_count, section_1_payload, section_1_footer) =
         counted_section(&mut view, 4, "block-size table")?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(block_count), "admit Inventor RSe block descriptors")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(block_count),
+        "admit Inventor RSe block descriptors",
+    )?;
     let mut blocks =
         DecodeContext::admitted_vec(block_count, "admit Inventor RSe block descriptors")?;
     let mut sizes = section_1_payload;
     for ordinal in 0..block_count {
         let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
         blocks.push(BlockDescriptor {
-            ordinal: u32::try_from(ordinal).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?,
+            ordinal: u32::try_from(ordinal).map_err(|_| {
+                CodecError::Malformed("Inventor numeric value exceeds target range".into())
+            })?,
             stored: encoded & 0x8000_0000 != 0,
             payload_len: encoded & 0x7fff_ffff,
         });
     }
     let section_1 = MetaSection {
         number: MetaSectionNumber::One,
-        discriminator: u32::try_from(block_count).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?,
+        discriminator: u32::try_from(block_count).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?,
         payload: section_1_payload,
     };
 
     let (section_2_count, section_2_payload, _) = counted_section(&mut view, 10, "section 2")?;
     let section_2 = MetaSection {
         number: MetaSectionNumber::Two,
-        discriminator: u32::try_from(section_2_count).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?,
+        discriminator: u32::try_from(section_2_count).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?,
         payload: section_2_payload,
     };
     let (section_3_count, section_3_payload, _) = counted_section(&mut view, 28, "section 3")?;
     let section_3 = MetaSection {
         number: MetaSectionNumber::Three,
-        discriminator: u32::try_from(section_3_count).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?,
+        discriminator: u32::try_from(section_3_count).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?,
         payload: section_3_payload,
     };
     let (type_count, section_4_payload, section_4_footer) =
@@ -219,7 +244,8 @@ pub(crate) fn parse_meta_tables<'a>(
     // The test above bounds `type_count` at 256 and `SECTION_COUNT` is 11, so
     // the charge is at most 267 and `u64` holds it exactly.
     ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(type_count) + cadmpeg_core::decode::u64_from_index(SECTION_COUNT),
+        cadmpeg_core::decode::u64_from_index(type_count)
+            + cadmpeg_core::decode::u64_from_index(SECTION_COUNT),
         "admit Inventor RSe metadata tables",
     )?;
     let mut types = DecodeContext::admitted_vec(type_count, "admit Inventor RSe metadata tables")?;
@@ -232,7 +258,9 @@ pub(crate) fn parse_meta_tables<'a>(
         )?;
         let mut entry = crate::pmdc::Cursor::new(entry);
         types.push(TypeDescriptor {
-            index: u8::try_from(index).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?,
+            index: u8::try_from(index).map_err(|_| {
+                CodecError::Malformed("Inventor numeric value exceeds target range".into())
+            })?,
             id: entry.take_array("type descriptor id")?,
             fields: [
                 (
@@ -249,7 +277,9 @@ pub(crate) fn parse_meta_tables<'a>(
 
     let section_4 = MetaSection {
         number: MetaSectionNumber::Four,
-        discriminator: u32::try_from(type_count).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?,
+        discriminator: u32::try_from(type_count).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?,
         payload: section_4_payload,
     };
 
@@ -294,13 +324,18 @@ pub(crate) fn frame_bulk_records<'a>(
     segment_version_major: u8,
 ) -> Result<RseRecordTable<'a>, CodecError> {
     let stored_count = tables.blocks.iter().filter(|block| block.stored).count();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(stored_count), "admit Inventor RSe record frames")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(stored_count),
+        "admit Inventor RSe record frames",
+    )?;
     let mut cursor = Cursor::new(bulk);
     let mut records =
         DecodeContext::admitted_vec(stored_count, "admit Inventor RSe record frames")?;
     for block in tables.blocks.iter().filter(|block| block.stored) {
         let selector = cursor.u32("record type selector")?;
-        let type_index = u8::try_from(selector & 0xff).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+        let type_index = u8::try_from(selector & 0xff).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?;
         let descriptor = tables.types.get(usize::from(type_index)).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "RSe record {} selects absent type index {type_index}",
@@ -308,7 +343,12 @@ pub(crate) fn frame_bulk_records<'a>(
             ))
         })?;
         let payload_offset = cadmpeg_core::decode::u64_from_index(cursor.position());
-        let payload = cursor.view(usize::try_from(block.payload_len).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?, "record payload")?;
+        let payload = cursor.view(
+            usize::try_from(block.payload_len).map_err(|_| {
+                CodecError::Malformed("Inventor numeric value exceeds target range".into())
+            })?,
+            "record payload",
+        )?;
         let trailing_payload_len = cursor.u32("record trailing payload length")?;
         if trailing_payload_len != 0 && trailing_payload_len != block.payload_len {
             return Err(CodecError::malformed(format_args!(
@@ -360,7 +400,10 @@ fn reverse_section<'a>(
         .and_then(|after_header| after_header.checked_sub(*payload_len))
         .ok_or_else(|| CodecError::Malformed("RSe metadata section chain underflows".into()))?;
     let mut view = crate::reader::at(body, body.start() + header, "metadata section back span")?;
-    let previous_span = usize::try_from(crate::reader::u32(&mut view, "metadata section back span")?).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+    let previous_span =
+        usize::try_from(crate::reader::u32(&mut view, "metadata section back span")?).map_err(
+            |_| CodecError::Malformed("Inventor numeric value exceeds target range".into()),
+        )?;
     let discriminator = crate::reader::u32(&mut view, "metadata section discriminator")?;
     if previous_span < 4 {
         return Err(CodecError::malformed(format_args!(
@@ -385,7 +428,8 @@ fn counted_section<'a>(
     item_size: usize,
     name: &'static str,
 ) -> Result<(usize, View<'a>, usize), CodecError> {
-    let count = usize::try_from(crate::reader::u32(view, name)?).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+    let count = usize::try_from(crate::reader::u32(view, name)?)
+        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
     if count > 1_000_000 {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata {name} count exceeds 1000000"
@@ -401,7 +445,8 @@ fn counted_section<'a>(
     // the window offset it reached is the payload's exclusive end.
     let payload = crate::reader::take_child(view, payload_len, name)?;
     let footer = view.read_len();
-    let span = usize::try_from(crate::reader::u32(view, name)?).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+    let span = usize::try_from(crate::reader::u32(view, name)?)
+        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
     let expected_span = 4 + payload_len;
     if span != expected_span {
         return Err(CodecError::malformed(format_args!(
@@ -425,7 +470,12 @@ fn validate_reverse_section(
         ReverseSectionNumber::Seven => {
             if discriminator == 0 {
                 0
-            } else if payload_len / usize::try_from(discriminator).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))? >= 0x4c {
+            } else if payload_len
+                / usize::try_from(discriminator).map_err(|_| {
+                    CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                })?
+                >= 0x4c
+            {
                 return Ok(());
             } else {
                 32
@@ -441,7 +491,9 @@ fn validate_reverse_section(
     // passed the test above, so `discriminator` is at most 1000000. The match
     // states an `item_size` of at most 32, so the product is at most 32000000,
     // which a 32-bit `usize` holds.
-    let expected = usize::try_from(discriminator).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))? * item_size;
+    let expected = usize::try_from(discriminator)
+        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?
+        * item_size;
     if payload_len != expected {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata section {number} stores {payload_len} bytes for {discriminator} entries of {item_size} bytes"
@@ -483,7 +535,10 @@ fn parse_extended_record_trailer(
             11 => cursor.skip(10, "record trailer property")?,
             14 => {
                 cursor.skip(2, "record trailer byte-array type")?;
-                let len = usize::try_from(cursor.u32("record trailer byte-array length")?).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+                let len = usize::try_from(cursor.u32("record trailer byte-array length")?)
+                    .map_err(|_| {
+                        CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                    })?;
                 cursor.skip(len, "record trailer byte array")?;
             }
             value => {
@@ -640,7 +695,9 @@ impl<'a> Cursor<'a> {
     }
 
     fn sized_bytes(&mut self, maximum: usize, name: &'static str) -> Result<(), CodecError> {
-        let len = usize::try_from(self.u32(name)?).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+        let len = usize::try_from(self.u32(name)?).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?;
         if len > maximum {
             return Err(CodecError::malformed(format_args!(
                 "RSe {name} exceeds {maximum} bytes"

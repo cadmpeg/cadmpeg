@@ -807,9 +807,10 @@ fn variable_blend_value(
             if count > 100_000 {
                 return None;
             }
-            if let Err(error) = ctx
-                .charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "decode variable blend interpolation points")
-            {
+            if let Err(error) = ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(count),
+                "decode variable blend interpolation points",
+            ) {
                 return Some(Err(error));
             }
             let mut points = Vec::new();
