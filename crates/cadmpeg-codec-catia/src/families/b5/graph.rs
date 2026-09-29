@@ -3494,8 +3494,9 @@ fn pcurve_endpoints(
 /// CATIA's object-stream on-carrier incidence tolerance, in millimetres.
 const POINT_TOLERANCE: f64 = 1e-3;
 
-fn point_cell(point: [f64; 3]) -> [i64; 3] {
-    point.map(|coordinate| (coordinate / POINT_TOLERANCE).floor() as i64)
+fn point_cell(point: [f64; 3]) -> Option<[i64; 3]> {
+    let [x, y, z] = point.map(|coordinate| cadmpeg_core::convert::truncate_f64_to_i64((coordinate / POINT_TOLERANCE).floor()));
+    Some([x?, y?, z?])
 }
 
 fn point_index(
@@ -3504,7 +3505,7 @@ fn point_index(
 ) -> Result<HashMap<[i64; 3], Vec<usize>>, CodecError> {
     let mut index = HashMap::<[i64; 3], Vec<usize>>::new();
     for (point_index, point) in points.iter().enumerate() {
-        let cell = point_cell(coordinates(*point));
+        let cell = point_cell(coordinates(*point)).ok_or_else(|| CodecError::malformed("B5 point exceeds spatial index range"))?;
         ctx.admit_hash_map_entry(&mut index, &cell, "catia_b5_point_index_cells")?;
         ctx.push_vec(
             index.entry(cell).or_default(),
@@ -3520,7 +3521,7 @@ fn canonical_point(
     index: &HashMap<[i64; 3], Vec<usize>>,
     endpoint: [f64; 3],
 ) -> Option<usize> {
-    let cell = point_cell(endpoint);
+    let cell = point_cell(endpoint)?;
     let mut best = None;
     for dx in -1..=1 {
         for dy in -1..=1 {
@@ -4799,7 +4800,7 @@ fn parse_offset_curve_directrix(
     }
     ctx.charge_collection_items(1, "catia_b5_offset_directrix_box")?;
     ctx.charge_retained(
-        std::mem::size_of::<B5ExtrusionDirectrix>() as u64,
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<B5ExtrusionDirectrix>()),
         "catia_b5_offset_directrix_box",
     )?;
     Ok(Some(B5ExtrusionDirectrix::Offset {
@@ -5376,13 +5377,13 @@ let RationalArcPcurveInputs { record, surface, center, reference_x, reference_y,
     let [start, end] = parameter_range;
     let [start_angle, end_angle] = angle_range;
     let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2).ceil();
-    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+    if !span_count.is_finite() || span_count > 4_096.0 {
         return Ok(None);
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let Some(span_count) = std::num::NonZeroUsize::new(span_count as usize) else {
+    let Some(span_count) = cadmpeg_core::convert::truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new) else {
         return Ok(None);
     };
     let span_count = span_count.get();
@@ -5415,8 +5416,8 @@ let RationalArcPcurveInputs { record, surface, center, reference_x, reference_y,
     distinct_knots.push(start);
     multiplicities.push(3);
     for span in 0..span_count {
-        let fraction0 = span as f64 / span_count as f64;
-        let fraction1 = (span + 1) as f64 / span_count as f64;
+        let fraction0 = match cadmpeg_core::convert::f64_from_index(span) { Some(value) => value, None => return Ok(None) } / match cadmpeg_core::convert::f64_from_index(span_count) { Some(value) => value, None => return Ok(None) };
+        let fraction1 = match cadmpeg_core::convert::f64_from_index(span + 1) { Some(value) => value, None => return Ok(None) } / match cadmpeg_core::convert::f64_from_index(span_count) { Some(value) => value, None => return Ok(None) };
         let angle0 = start_angle + (end_angle - start_angle) * fraction0;
         let angle1 = start_angle + (end_angle - start_angle) * fraction1;
         let middle = (angle0 + angle1) * 0.5;

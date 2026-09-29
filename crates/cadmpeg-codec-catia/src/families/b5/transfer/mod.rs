@@ -1014,7 +1014,7 @@ pub(in crate::families) fn resolved_surface_carrier(
             definition: {
                 let copy = surfaces::copy_rolling_ball_definition(ctx, definition)?;
                 ctx.charge_retained(
-                    std::mem::size_of::<ProceduralSurfaceDefinition>() as u64,
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ProceduralSurfaceDefinition>()),
                     "catia_b5_resolved_rolling_ball_box",
                 )?;
                 Box::new(copy)
@@ -1235,7 +1235,7 @@ pub(in crate::families) fn copy_resolved_extrusion_surface(
             cache_fit_tolerance,
         } => {
             ctx.charge_retained(
-                std::mem::size_of::<[ResolvedExtrusionSupport; 2]>() as u64,
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<[ResolvedExtrusionSupport; 2]>()),
                 "catia_b5_extrusion_support_pair_copy",
             )?;
             ResolvedExtrusionDirectrix::Intersection {
@@ -1421,7 +1421,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                 let supports = [left, right];
                 (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
                 if let Err(error) = ctx.charge_retained(
-                    std::mem::size_of::<[ResolvedExtrusionSupport; 2]>() as u64,
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<[ResolvedExtrusionSupport; 2]>()),
                     "catia_b5_extrusion_intersection_support_box",
                 ) {
                     return Some(Err(error));
