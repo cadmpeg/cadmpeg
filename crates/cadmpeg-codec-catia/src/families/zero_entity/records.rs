@@ -204,7 +204,7 @@ impl ZeroEntityLoopClass {
 
     /// Native loop-class byte.
     pub(crate) const fn as_byte(self) -> u8 {
-        self as u8
+        match self { Self::Outer41 => 0x41, Self::Bound50 => 0x50, Self::ReversedC1 => 0xc1 }
     }
 }
 
@@ -2507,14 +2507,14 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
             let [record, owner] = records else {
                 return None;
             };
-            let count = match record.tag {
+            let count: u8 = match record.tag {
                 [0x05, 0x0b] => 2,
                 [0x05, 0x10] => 3,
                 [0x05, 0x15] => 4,
                 _ => return None,
             };
             if tagged_u32(data, record.pos + 7) != Some(1)
-                || data.get(record.pos + 12) != Some(&(0x80 + count as u8))
+                || data.get(record.pos + 12) != Some(&(0x80 + count))
                 || record.end != owner.pos
                 || !zero_entity_vertex_owner(data, *owner)
             {
@@ -2584,7 +2584,7 @@ fn zero_entity_surface_at(
             return None;
         }
         let payload_end =
-            record.checked_add(*data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)? as usize + 12)?;
+            record.checked_add(usize::from(*data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)?) + 12)?;
         let payload = data.get(record + a9_03::LEN..payload_end)?;
         Some((tag, payload))
     })() else {
@@ -2629,7 +2629,7 @@ fn zero_entity_nurbs_surface(
         return Ok(None);
     };
     let Some(pole_count) =
-        crate::nurbs_surface_control_count(layout.u_count as usize, layout.v_count as usize)
+        crate::nurbs_surface_control_count(cadmpeg_core::decode::index_from_u32(layout.u_count), cadmpeg_core::decode::index_from_u32(layout.v_count))
     else {
         return Ok(None);
     };
@@ -2658,9 +2658,9 @@ fn zero_entity_nurbs_surface(
         &layout.v_mults,
     )?;
     let mut rows = Vec::new();
-    let row_count = pole_count / layout.v_count as usize;
+    let row_count = pole_count / cadmpeg_core::decode::index_from_u32(layout.v_count);
     ctx.reserve_vec(&mut rows, row_count, "catia_zero_nurbs_pole_rows")?;
-    for row in control_points.chunks(layout.v_count as usize) {
+    for row in control_points.chunks(cadmpeg_core::decode::index_from_u32(layout.v_count)) {
         rows.push(ctx.copy_slice(row, "catia_zero_nurbs_pole_row_points")?);
     }
     ctx.charge_collection_items(

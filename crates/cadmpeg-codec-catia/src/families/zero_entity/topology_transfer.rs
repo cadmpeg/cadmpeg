@@ -625,7 +625,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &point_ids[index],
                 "zero_entity_a9_03",
-                ownership_root.map_or(first_face.pos, |root| root.face_roster_pos) as u64,
+                cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
                 "endpoint_locus_point",
                 Exactness::Inferred
             ));
@@ -655,7 +655,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &vertex_ids[index],
                 "zero_entity_a9_03",
-                ownership_root.map_or(first_face.pos, |root| root.face_roster_pos) as u64,
+                cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
                 "endpoint_locus_vertex",
                 Exactness::Inferred
             ));
@@ -692,7 +692,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &pcurve.id,
                 "zero_entity_a9_03",
-                occurrence.support_record_ordinal as u64,
+                u64::from(occurrence.support_record_ordinal),
                 "topology_pcurve",
                 Exactness::Derived
             ));
@@ -802,7 +802,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &edge_id,
                 "zero_entity_a9_03",
-                first_occurrence.support_record_ordinal as u64,
+                u64::from(first_occurrence.support_record_ordinal),
                 "topology_physical_edge_candidate",
                 Exactness::Inferred
             ));
@@ -895,7 +895,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 face_id,
                 "zero_entity_a9_03",
-                face.record_ordinal as u64,
+                u64::from(face.record_ordinal),
                 "topology_face",
                 Exactness::Inferred
             ));
@@ -1007,7 +1007,7 @@ pub(super) fn transfer_closed_face_topology(
                     annotations,
                     loop_id,
                     "zero_entity_a9_03",
-                    loop_record.record_ordinal as u64,
+                    u64::from(loop_record.record_ordinal),
                     "topology_loop",
                     Exactness::Inferred
                 ));
@@ -1129,7 +1129,7 @@ pub(super) fn transfer_closed_face_topology(
                         annotations,
                         &coedge_id,
                         "zero_entity_a9_03",
-                        occurrence.support_record_ordinal as u64,
+                        u64::from(occurrence.support_record_ordinal),
                         "topology_coedge",
                         Exactness::Inferred
                     ));
@@ -1237,7 +1237,7 @@ pub(super) fn transfer_closed_face_topology(
             annotations,
             &body_id,
             "zero_entity_a9_03",
-            ownership_root.map_or(first_face.pos, |root| root.body_pos) as u64,
+            cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.body_pos)),
             "topology_body",
             Exactness::Derived
         ));
@@ -1287,7 +1287,7 @@ pub(super) fn transfer_closed_face_topology(
             annotations,
             &region_id,
             "zero_entity_a9_03",
-            ownership_root.map_or(first_face.pos, |root| root.shell_pos) as u64,
+            cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
             "topology_region",
             Exactness::Derived
         ));
@@ -1333,7 +1333,7 @@ pub(super) fn transfer_closed_face_topology(
             annotations,
             &shell_id,
             "zero_entity_a9_03",
-            ownership_root.map_or(first_face.pos, |root| root.shell_pos) as u64,
+            cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
             "topology_shell",
             Exactness::Derived
         ));
