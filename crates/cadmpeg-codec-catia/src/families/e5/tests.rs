@@ -134,7 +134,7 @@ fn e5_carrier_id_creation_refuses_retained_limit() {
             Err(error) => panic!("unexpected E5 decode refusal: {error}"),
         }
     }
-    for operation in ["catia_e5_payload_id", "catia_e5_surface_id"] {
+    for operation in ["catia_e5_payload_id", "catia_e5_surface_id", "catia_e5_free_vertex_id"] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
 }
