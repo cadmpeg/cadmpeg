@@ -100,7 +100,7 @@ pub(crate) fn project_parameters(ctx: &DecodeContext<'_>, histories: &[FeatureHi
         }
     }
     populate_parameter_dependencies(&mut parameters, &feature_names, &global_owners);
-    order_parameters_by_dependencies(&mut parameters);
+    order_parameters_by_dependencies(ctx, &mut parameters)?;
     evaluate_parameter_expressions(&mut parameters, &feature_names, &global_owners);
     for parameter in parameters.iter_mut().filter(|parameter| parameter.value.is_none()) {
         parameter.value = text_parameter_literal(&parameter.name, &parameter.expression);
@@ -337,46 +337,75 @@ fn populate_parameter_dependencies(
     }
 }
 
-fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) {
-    let mut seen_owners = std::collections::HashSet::new();
-    let owner_order = parameters
-        .iter()
-        .map(|parameter| parameter.owner.clone())
-        .filter(|owner| seen_owners.insert(owner.clone()))
-        .collect::<Vec<_>>();
-    let parameter_owners = parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect::<HashMap<_, _>>();
+fn order_parameters_by_dependencies(ctx: &DecodeContext<'_>, parameters: &mut [DesignParameter]) -> Result<(), CodecError> {
+    const OPERATION: &str = "order SLDPRT parameter dependencies";
+    let mut owner_order = Vec::new();
+    let mut seen_owners = HashSet::new();
+    let mut parameter_owners = HashMap::new();
+    for parameter in parameters.iter() {
+        ctx.charge_work(1, OPERATION)?;
+        let owner = parameter.owner.as_ref();
+        if !seen_owners.contains(&owner) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            seen_owners.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            seen_owners.insert(owner);
+            ctx.reserve_collection_vec(&mut owner_order, 1, OPERATION)?;
+            owner_order.push(owner);
+        }
+        if !parameter_owners.contains_key(&parameter.id) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            parameter_owners.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        parameter_owners.insert(&parameter.id, owner);
+    }
+    let mut updates = Vec::new();
     for owner in owner_order {
-        let mut remaining = parameters
-            .iter()
-            .enumerate()
-            .filter(|(_, parameter)| parameter.owner == owner)
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
-        let mut ordered = Vec::<usize>::with_capacity(remaining.len());
-        let mut ordered_ids = std::collections::HashSet::new();
+        let mut remaining = Vec::new();
+        for (index, parameter) in parameters.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
+            if parameter.owner.as_ref() == owner {
+                ctx.reserve_collection_vec(&mut remaining, 1, OPERATION)?;
+                remaining.push(index);
+            }
+        }
+        let mut ordered = Vec::new();
+        let mut ordered_ids = HashSet::new();
         while !remaining.is_empty() {
-            let Some(position) = remaining.iter().position(|index| {
-                parameters[*index].dependencies.iter().all(|dependency| {
-                    parameter_owners
-                        .get(dependency)
+            let mut next = None;
+            for (position, index) in remaining.iter().enumerate() {
+                ctx.charge_work(1, OPERATION)?;
+                ctx.charge_work(parameters[*index].dependencies.as_slice().len() as u64, OPERATION)?;
+                if parameters[*index].dependencies.iter().all(|dependency| {
+                    parameter_owners.get(dependency)
                         .is_none_or(|dependency_owner| dependency_owner != &owner)
                         || ordered_ids.contains(dependency)
-                })
-            }) else {
-                ordered.clear();
-                break;
-            };
+                }) {
+                    next = Some(position);
+                    break;
+                }
+            }
+            let Some(position) = next else { ordered.clear(); break; };
+            ctx.charge_work(remaining.len() as u64, OPERATION)?;
             let index = remaining.remove(position);
-            ordered_ids.insert(parameters[index].id.clone());
+            let id = &parameters[index].id;
+            if !ordered_ids.contains(id) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                ordered_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ordered_ids.insert(id);
+            }
+            ctx.reserve_collection_vec(&mut ordered, 1, OPERATION)?;
             ordered.push(index);
         }
         for (ordinal, index) in ordered.into_iter().enumerate() {
-            parameters[index].ordinal = ordinal as u32;
+            let ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT ordered parameter ordinal", u64::from(u32::MAX), ordinal as u64,
+            ))?;
+            ctx.reserve_collection_vec(&mut updates, 1, OPERATION)?;
+            updates.push((index, ordinal));
         }
     }
+    for (index, ordinal) in updates { parameters[index].ordinal = ordinal; }
+    Ok(())
 }
 
 #[cfg(test)]
