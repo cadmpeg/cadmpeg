@@ -558,7 +558,10 @@ fn revolution_nurbs(
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
     let RevolutionIntervals { angle, parameter } = intervals;
-    let span_count = cadmpeg_core::convert::truncate_f64_to_usize(((angle[1] - angle[0]) / FRAC_PI_2).ceil().max(1.0)).ok_or_else(|| error(offset, "revolution span count exceeds address space"))?;
+    let span_count = cadmpeg_core::convert::truncate_f64_to_usize(
+        ((angle[1] - angle[0]) / FRAC_PI_2).ceil().max(1.0),
+    )
+    .ok_or_else(|| error(offset, "revolution span count exceeds address space"))?;
     let angular_count = span_count
         .checked_mul(2)
         .and_then(|value| value.checked_add(1))
@@ -604,15 +607,30 @@ fn revolution_nurbs(
         })?;
     let temporary_bytes = cadmpeg_core::decode::u64_from_index(temporary_bytes);
     let _temporary = ctx.reserve_scoped(temporary_bytes, "Rhino revolution temporary lanes")?;
-    let angle_step = (angle[1] - angle[0]) / cadmpeg_core::convert::f64_from_index(span_count).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
-    let parameter_step = (parameter[1] - parameter[0]) / cadmpeg_core::convert::f64_from_index(span_count).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+    let angle_step = (angle[1] - angle[0])
+        / cadmpeg_core::convert::f64_from_index(span_count)
+            .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+    let parameter_step = (parameter[1] - parameter[0])
+        / cadmpeg_core::convert::f64_from_index(span_count)
+            .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
     let parameter_at = |span: usize| -> Result<f64, GeometryError> {
         if parameter_step.is_finite() {
-            return Ok(parameter[0] + parameter_step * cadmpeg_core::convert::f64_from_index(span).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?);
+            return Ok(parameter[0]
+                + parameter_step
+                    * cadmpeg_core::convert::f64_from_index(span).ok_or_else(|| {
+                        error(offset, "geometry index exceeds exact float range")
+                    })?);
         }
-        cadmpeg_ir::math::interpolate(parameter[0], parameter[1], cadmpeg_core::convert::f64_from_index(span).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))? / cadmpeg_core::convert::f64_from_index(span_count).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?)
-            .map(FiniteReal::get)
-            .ok_or_else(|| error(offset, "revolution parameter interval is invalid"))
+        cadmpeg_ir::math::interpolate(
+            parameter[0],
+            parameter[1],
+            cadmpeg_core::convert::f64_from_index(span)
+                .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?
+                / cadmpeg_core::convert::f64_from_index(span_count)
+                    .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?,
+        )
+        .map(FiniteReal::get)
+        .ok_or_else(|| error(offset, "revolution parameter interval is invalid"))
     };
     let mut angular = Vec::new();
     angular.try_reserve_exact(angular_count).map_err(|_| {
@@ -637,8 +655,14 @@ fn revolution_nurbs(
         ))
     })?;
     for span in 0..span_count {
-        let a0 = angle[0] + angle_step * cadmpeg_core::convert::f64_from_index(span).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
-        let a1 = angle[0] + angle_step * cadmpeg_core::convert::f64_from_index(span + 1).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+        let a0 = angle[0]
+            + angle_step
+                * cadmpeg_core::convert::f64_from_index(span)
+                    .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+        let a1 = angle[0]
+            + angle_step
+                * cadmpeg_core::convert::f64_from_index(span + 1)
+                    .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
         let middle = (a0 + a1) * 0.5;
         let middle_weight = ((a1 - a0) * 0.5).cos();
         if span == 0 {
@@ -1231,7 +1255,12 @@ fn read_nurbs_curve_inner(
     }
     let knots = read_knots(ctx, reader, stored_knot_count)?;
     validate_stored_domain(&knots, order, cv_count, reader.position())?;
-    let stored_cv_count = crate::wire::element_count(reader, usize::try_from(dimension + rational).map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))? * 8)?;
+    let stored_cv_count = crate::wire::element_count(
+        reader,
+        usize::try_from(dimension + rational)
+            .map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))?
+            * 8,
+    )?;
     if stored_cv_count != cv_count {
         return Err(error(reader.position(), "NURBS curve CV count mismatch"));
     }
@@ -1324,7 +1353,12 @@ pub(crate) fn read_nurbs_surface_prefix(
     validate_stored_domain(&v_knots, v_order, v_count, reader.position())?;
     let u_periodic = periodic_knots_checked(&u_knots, u_order, u_count);
     let v_periodic = periodic_knots_checked(&v_knots, v_order, v_count);
-    let stored_cv_count = crate::wire::element_count(reader, usize::try_from(dimension + rational).map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))? * 8)?;
+    let stored_cv_count = crate::wire::element_count(
+        reader,
+        usize::try_from(dimension + rational)
+            .map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))?
+            * 8,
+    )?;
     let expected_cv_count = u_count
         .checked_mul(v_count)
         .ok_or_else(|| error(reader.position(), "surface CV count overflow"))?;

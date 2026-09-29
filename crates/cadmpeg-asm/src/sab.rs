@@ -1108,7 +1108,10 @@ mod tests {
             let mut bytes = vec![0x0d, 4];
             bytes.extend_from_slice(b"tspl");
             bytes.push(0x09);
-            bytes.extend_from_slice(&(cadmpeg_core::decode::u64_from_index(text.len())).to_le_bytes()[..ref_width.bytes()]);
+            bytes.extend_from_slice(
+                &(cadmpeg_core::decode::u64_from_index(text.len())).to_le_bytes()
+                    [..ref_width.bytes()],
+            );
             bytes.extend_from_slice(text.as_bytes());
             bytes.push(0x04);
             bytes.extend_from_slice(&7i64.to_le_bytes()[..ref_width.bytes()]);

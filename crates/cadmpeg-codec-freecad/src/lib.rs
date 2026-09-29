@@ -303,7 +303,10 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     let mut product_by_object = HashMap::new();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(product_nodes.len()), "fcstd product validation index")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(product_nodes.len()),
+        "fcstd product validation index",
+    )?;
     product_by_object
         .try_reserve(product_nodes.len())
         .map_err(|_| {

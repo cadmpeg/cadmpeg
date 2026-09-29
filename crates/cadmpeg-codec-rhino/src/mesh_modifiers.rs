@@ -844,7 +844,11 @@ fn field_bool_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: bool
         || text.parse::<i32>().is_ok_and(|value| value != 0)
 }
 
-fn field_i32_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) -> Result<i32, FramingError> {
+fn field_i32_untyped(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: i32,
+) -> Result<i32, FramingError> {
     let Some(node) = direct_child(parent, name) else {
         return Ok(default);
     };
@@ -853,7 +857,8 @@ fn field_i32_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) 
         Ok(1)
     } else {
         match text.parse::<f64>() {
-            Ok(value) => cadmpeg_core::convert::truncate_f64_to_i32(value).ok_or_else(|| FramingError::unpositioned(format!("{name} is outside i32 range"))),
+            Ok(value) => cadmpeg_core::convert::truncate_f64_to_i32(value)
+                .ok_or_else(|| FramingError::unpositioned(format!("{name} is outside i32 range"))),
             Err(_) => Ok(0),
         }
     }

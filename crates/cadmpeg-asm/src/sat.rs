@@ -552,7 +552,9 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 _ => {}
             }
             ctx.charge_collection_items(1, "frame SAT primitive")?;
-            scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Prim>()))?;
+            scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                Prim,
+            >()))?;
             ctx.charge_work(1, "lex SAT primitive")?;
             prims.try_reserve(1).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
@@ -572,7 +574,10 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             .len()
             .checked_mul(candidates)
             .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(possible_tokens), "type SAT tokens")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(possible_tokens),
+            "type SAT tokens",
+        )?;
         let token_bytes = possible_tokens
             .checked_mul(std::mem::size_of::<Token>())
             .ok_or_else(|| ctx.refuse_codec_limit("SAT token bytes", u64::MAX, u64::MAX))?;
@@ -587,7 +592,10 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 used.checked_add(extra)
             })
             .ok_or_else(|| ctx.refuse_codec_limit("SAT token strings", u64::MAX, u64::MAX))?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(string_bytes), "retain SAT typed strings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(string_bytes),
+            "retain SAT typed strings",
+        )?;
         let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
             TypedRecordFailure::Resource(error) => StreamFailure::Resource(error),
             TypedRecordFailure::Type(failure) => {
@@ -2100,7 +2108,8 @@ mod tests {
             let reason = format!("record `mystery` {description}");
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = 16 + 21 + 24 + 7 + cadmpeg_core::decode::u64_from_index(reason.len()) - 1;
+            policy.limits.max_retained_bytes =
+                16 + 21 + 24 + 7 + cadmpeg_core::decode::u64_from_index(reason.len()) - 1;
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("error text exceeds retained limit");
@@ -2446,7 +2455,10 @@ mod tests {
     fn numeric_slots_accept_exact_integer_above_contiguous_f64_range() {
         let source = asm_stream("point $-1 -1 $-1 9007199254740994 0 0 #\n");
         let stream = parse(&source).expect("exact integer coordinate");
-        assert_eq!(stream.records[0].tokens[3], Token::Position([9007199254740994.0 * 0.1, 0.0, 0.0]));
+        assert_eq!(
+            stream.records[0].tokens[3],
+            Token::Position([9_007_199_254_740_994.0 * 0.1, 0.0, 0.0])
+        );
     }
 
     #[test]
@@ -2454,7 +2466,10 @@ mod tests {
         let source = asm_stream("point $-1 -1 $-1 9007199254740993 0 0 #\n");
         let stream = parse(&source).expect("inexact numeric shape keeps lexical tokens");
         assert_eq!(stream.records[0].tokens.len(), 6);
-        assert_eq!(stream.records[0].tokens[3], Token::Long(9_007_199_254_740_993));
+        assert_eq!(
+            stream.records[0].tokens[3],
+            Token::Long(9_007_199_254_740_993)
+        );
     }
 
     #[test]

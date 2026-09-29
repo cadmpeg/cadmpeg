@@ -178,7 +178,10 @@ pub(crate) fn transfer_neutral(
         .filter(|occurrence| occurrence.native_ref.is_some())
         .count();
     let mut occurrence_by_native = HashMap::new();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "fcstd joint occurrence index")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "fcstd joint occurrence index",
+    )?;
     occurrence_by_native.try_reserve(count).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(

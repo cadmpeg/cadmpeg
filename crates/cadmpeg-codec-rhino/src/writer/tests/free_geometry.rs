@@ -807,7 +807,6 @@ fn mesh_coordinate_above_f32_max_refuses_round_down() {
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
-
 #[test]
 fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
     let mesh = Tessellation::new(
@@ -829,4 +828,3 @@ fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
-

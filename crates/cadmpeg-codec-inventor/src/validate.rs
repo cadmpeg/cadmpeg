@@ -1622,7 +1622,9 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
     for (token, meta) in metadata_by_token {
         let expected_sections = (1_u8..=11).collect::<HashSet<_>>();
         if sections_by_token.get(token) != Some(&expected_sections)
-            || cadmpeg_core::decode::u64_from_index(types_by_token.get(token).map_or(0, HashSet::len)) != meta.type_count
+            || cadmpeg_core::decode::u64_from_index(
+                types_by_token.get(token).map_or(0, HashSet::len),
+            ) != meta.type_count
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1934,9 +1936,8 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         .map(|state| state.ordinal)
         .collect::<HashSet<_>>();
     if model_state_ordinals.len() != data.ufrx.model_states().len()
-        || !u32::try_from(data.ufrx.model_states().len()).is_ok_and(|count| {
-            model_state_ordinals == (0..count).collect::<HashSet<_>>()
-        })
+        || !u32::try_from(data.ufrx.model_states().len())
+            .is_ok_and(|count| model_state_ordinals == (0..count).collect::<HashSet<_>>())
     {
         findings.push(finding(
             Check::NativeLinks,

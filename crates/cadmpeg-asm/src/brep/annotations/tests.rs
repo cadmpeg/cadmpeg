@@ -93,7 +93,12 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     }];
     let by_index = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let mut out = AsmBrep::default();
     let carriers = Carriers {

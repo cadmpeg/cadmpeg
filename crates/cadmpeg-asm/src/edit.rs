@@ -2071,7 +2071,12 @@ mod tests {
         double(&mut bytes, -2.0);
         double(&mut bytes, 3.0);
         for values in [vec![0.25], vec![], vec![0.5, 0.75]] {
-            integer(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), width);
+            integer(
+                &mut bytes,
+                0x04,
+                i64::try_from(values.len()).expect("test value fits"),
+                width,
+            );
             for value in values {
                 double(&mut bytes, value);
             }

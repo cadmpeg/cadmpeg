@@ -74,8 +74,14 @@ fn admitted_name_with_null_character_is_a_writer_limit() {
 
 #[test]
 fn empty_utf16_string_has_zero_count_and_no_terminator() {
-    assert_eq!(utf16("").expect("empty string count fits"), 0_u32.to_le_bytes());
-    assert_eq!(utf16("A").expect("string count fits"), [2, 0, 0, 0, b'A', 0, 0, 0]);
+    assert_eq!(
+        utf16("").expect("empty string count fits"),
+        0_u32.to_le_bytes()
+    );
+    assert_eq!(
+        utf16("A").expect("string count fits"),
+        [2, 0, 0, 0, b'A', 0, 0, 0]
+    );
 }
 
 #[test]
@@ -101,7 +107,8 @@ fn object_attribute_items_are_written_in_ascending_order() {
         None,
         Some(Color::new(1.0, 0.5, 0.0, 1.0).expect("valid color")),
         Some(false),
-    ).expect("valid object attributes");
+    )
+    .expect("valid object attributes");
     assert_eq!(&payload[21..], &[6, 255, 128, 0, 0, 11, 0, 13, 1, 0]);
 }
 

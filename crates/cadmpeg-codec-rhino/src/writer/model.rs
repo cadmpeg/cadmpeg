@@ -479,8 +479,12 @@ impl<'a> WritableModel<'a> {
                     check_nurbs_curve(curve.id.as_str(), nurbs)?;
                     let count = nurbs.control_points().len();
                     if nurbs.periodic()
-                        || [nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?], nurbs.knots()[count]]
-                            != [lo, hi]
+                        || [
+                            nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| {
+                                CodecError::Malformed("Rhino count exceeds address space".into())
+                            })?],
+                            nurbs.knots()[count],
+                        ] != [lo, hi]
                     {
                         return Err(CodecError::NotImplemented(format!(
                             "edge {} requires a nonperiodic full-domain NURBS curve",

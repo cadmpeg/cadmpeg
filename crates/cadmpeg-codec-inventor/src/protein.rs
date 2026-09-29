@@ -105,7 +105,10 @@ fn parse_stream<'a>(
         .len()
         .checked_sub(protein_header::LEN)
         .ok_or_else(|| CodecError::Malformed("Inventor Protein header is truncated".into()))?;
-    if usize::try_from(declared_len.get()).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))? != payload_len {
+    if usize::try_from(declared_len.get())
+        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?
+        != payload_len
+    {
         return Err(CodecError::malformed(format_args!(
             "Inventor Protein declares {declared_len} bytes but stores {payload_len}"
         )));
@@ -170,13 +173,19 @@ fn decode_instances_from(
         .iter()
         .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
         .count();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit Inventor Protein instance streams")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor Protein instance streams",
+    )?;
     let entries = archive
         .entries()
         .iter()
         .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
         .collect::<Vec<_>>();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit Inventor Protein instance records")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor Protein instance records",
+    )?;
     entries
         .into_iter()
         .map(|entry| {

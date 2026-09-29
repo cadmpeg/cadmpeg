@@ -1480,7 +1480,10 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
                 "Rhino container entry name",
             )?,
             role: ContainerRole::ObjectClass,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, cadmpeg_core::decode::u64_from_index(bytes)),
+            storage: EntryStorage::verbatim(
+                VerbatimLabel::None,
+                cadmpeg_core::decode::u64_from_index(bytes),
+            ),
             attributes,
         });
     }

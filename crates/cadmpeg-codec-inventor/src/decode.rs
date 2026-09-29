@@ -20,7 +20,7 @@ use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::Tolerances;
-use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
+use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
 
 use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
@@ -671,7 +671,7 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
-    ir.set_native_unknowns("inventor", &[] as &[NativeUnknownRecord])?;
+    ir.set_native_unknowns("inventor", &[])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     let body_ids = collect_body_ids(ctx, ir.model.bodies.iter().map(|body| &body.id))?;
@@ -1308,7 +1308,11 @@ fn charge_items(
 
 fn decimal_digits(value: usize) -> Result<usize, CodecError> {
     let digits = value.checked_ilog10().map_or(0, |digits| digits);
-    usize::try_from(digits).map(|digits| digits + 1).map_err(|_| CodecError::Malformed("Inventor decimal digit count exceeds address space".into()))
+    usize::try_from(digits)
+        .map(|digits| digits + 1)
+        .map_err(|_| {
+            CodecError::Malformed("Inventor decimal digit count exceeds address space".into())
+        })
 }
 
 fn record_ordinal(

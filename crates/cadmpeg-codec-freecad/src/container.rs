@@ -81,7 +81,10 @@ pub(crate) struct Scan<'a> {
 /// Scan an archive through the session resource budget.
 pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(archive.entries().len()), "fcstd ZIP entries")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(archive.entries().len()),
+        "fcstd ZIP entries",
+    )?;
     if !archive
         .entries()
         .iter()

@@ -49,7 +49,12 @@ fn ring_coedges_refuses_collection_limit() {
     ];
     let by_index = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let error = with_collection_limit(1, |ctx| {
         super::ring_coedges(
@@ -72,7 +77,12 @@ fn loop_chain_refuses_collection_limit() {
     ];
     let by_index = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let error = with_collection_limit(1, |ctx| {
         super::loop_chain(
@@ -95,7 +105,12 @@ fn face_chain_refuses_collection_limit() {
     ];
     let by_index = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let error = with_collection_limit(1, |ctx| {
         super::shell_faces(
@@ -118,7 +133,12 @@ fn shell_wire_roots_refuses_collection_limit() {
     ];
     let by_index = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let error = with_collection_limit(0, |ctx| {
         super::shell_wire_roots(ctx, &records[0], &by_index).unwrap_err()
@@ -134,7 +154,12 @@ fn shell_chain_refuses_collection_limit() {
     ];
     let by_index = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let error = with_collection_limit(1, |ctx| {
         super::shell_chain(ctx, &records[0], &by_index, crate::asm_format!("f3d")).unwrap_err()
@@ -150,7 +175,12 @@ fn region_chain_refuses_collection_limit() {
     ];
     let by_index = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let error = with_collection_limit(1, |ctx| {
         super::region_chain(ctx, &records[0], &by_index, crate::asm_format!("f3d")).unwrap_err()
@@ -247,7 +277,12 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
             let by_index = records
                 .iter()
-                .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+                .map(|record| {
+                    (
+                        i64::try_from(record.index).expect("test value fits"),
+                        record,
+                    )
+                })
                 .collect();
             let table = nurbs::toks::SubtypeTable::from_records(&asm_decode_ctx, &records).unwrap();
             let decoded = nurbs::proc_surface::procedural_surface_resolving_refs(
@@ -339,7 +374,10 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
         record(3, "edge", &[-1; 9]),
         record(4, "pcurve", &[]),
     ];
-    let by_index = records.iter().map(|r| (i64::try_from(r.index).expect("test value fits"), r)).collect();
+    let by_index = records
+        .iter()
+        .map(|r| (i64::try_from(r.index).expect("test value fits"), r))
+        .collect();
     let table = nurbs::toks::SubtypeTable::from_records(&asm_decode_ctx, &records).unwrap();
     let mut carriers = Carriers::default();
     let mut reach = Reachable {
@@ -417,7 +455,12 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
     ];
     let by_index = records
         .iter()
-        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
         .collect();
     let error = with_collection_limit(18, |ctx| {
         let table = nurbs::toks::SubtypeTable::from_records(ctx, &records)

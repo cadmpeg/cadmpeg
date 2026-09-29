@@ -290,7 +290,7 @@ pub struct DirectAttributeColor {
 fn packed_u32(value: i64) -> Option<u32> {
     u32::try_from(value)
         .ok()
-        .or_else(|| i32::try_from(value).ok().map(|value| value.cast_unsigned()))
+        .or_else(|| i32::try_from(value).ok().map(i32::cast_unsigned))
 }
 
 fn packed_rgb(packed: u32) -> Option<Color> {
@@ -333,7 +333,12 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
                 return None;
             }
             Some(DirectAttributeColor {
-                color: Color::new(cadmpeg_core::convert::f32_from_f64(r)?, cadmpeg_core::convert::f32_from_f64(g)?, cadmpeg_core::convert::f32_from_f64(b)?, 1.0)?,
+                color: Color::new(
+                    cadmpeg_core::convert::f32_from_f64(r)?,
+                    cadmpeg_core::convert::f32_from_f64(g)?,
+                    cadmpeg_core::convert::f32_from_f64(b)?,
+                    1.0,
+                )?,
                 carrier: DirectColorCarrier::NormalizedRgb {
                     fields: [r_field, g_field, b_field],
                 },
@@ -492,7 +497,8 @@ mod tests {
         let expected = "f3d:brep:mystery#1";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 7 + cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+        policy.limits.max_retained_bytes =
+            7 + cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
         let error = super::unknown_record_id(&ctx, &record, crate::asm_format!("f3d"))

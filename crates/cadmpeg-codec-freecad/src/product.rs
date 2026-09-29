@@ -223,7 +223,10 @@ fn product_record_index<'a>(
     records: &'a [ProductNodeRecord],
 ) -> Result<HashMap<&'a str, &'a ProductNodeRecord>, CodecError> {
     let mut index = HashMap::new();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(records.len()), "fcstd product record index")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(records.len()),
+        "fcstd product record index",
+    )?;
     index.try_reserve(records.len()).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -559,7 +562,10 @@ pub(crate) fn transfer_neutral(
     }
 
     let mut object_by_id = HashMap::new();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(objects.len()), "fcstd product object index")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(objects.len()),
+        "fcstd product object index",
+    )?;
     object_by_id.try_reserve(objects.len()).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -574,7 +580,10 @@ pub(crate) fn transfer_neutral(
         object_by_id.insert(object.id.as_str(), object);
     }
     let mut property_owner = HashMap::new();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(properties.len()), "fcstd product property owners")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(properties.len()),
+        "fcstd product property owners",
+    )?;
     property_owner.try_reserve(properties.len()).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -1451,7 +1460,10 @@ pub(crate) fn product_cycle_nodes<'a>(
         Ok(targets)
     };
     let mut reverse = HashMap::<&str, Vec<&str>>::new();
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(nodes.len()), "fcstd product reverse graph")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(nodes.len()),
+        "fcstd product reverse graph",
+    )?;
     reverse.try_reserve(nodes.len()).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
