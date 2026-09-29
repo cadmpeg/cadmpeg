@@ -488,9 +488,10 @@ pub(super) fn input_owned_edge_selections(
 }
 
 pub(super) fn compact_surface_selections(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Vec<FeatureInputSurfaceSelection> {
+) -> Result<Vec<FeatureInputSurfaceSelection>, CodecError> {
     let history_features = history_features_with_object_sources(histories, lane);
     let mut classes = lane
         .classes
@@ -645,12 +646,12 @@ pub(super) fn compact_surface_selections(
                 planar_surface_selection_candidates(&lane.native_payload, start, end)
             }
             NativeClassKind::Operation(operation) => operation_surface_selection_candidates(
-                operation,
+                ctx, operation,
                 lane,
                 start,
                 end,
                 name.object_id.and_then(ObjectId::value),
-            ),
+            )?,
             _ => continue,
         };
         let expected_count = match kind {
@@ -711,7 +712,7 @@ pub(super) fn compact_surface_selections(
             });
         }
     }
-    result
+    Ok(result)
 }
 
 /// Return the opaque endpoint selector belonging to one extrusion selection
@@ -865,14 +866,15 @@ fn face_reference_plane_selection_candidates(
 }
 
 fn operation_surface_selection_candidates(
+    ctx: &DecodeContext<'_>,
     operation: FeatureClass,
     lane: &FeatureInputLane,
     start: usize,
     end: usize,
     object_source: Option<u32>,
-) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     if operation == FeatureClass::CutWithSurface {
-        return (start..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+        return Ok((start..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
             .filter_map(|marker| {
                 let selector = lane
                     .native_payload
@@ -890,33 +892,31 @@ fn operation_surface_selection_candidates(
                         .or_else(|| compact_surface_selection_at(&lane.native_payload, marker))?;
                 Some((marker, components))
             })
-            .collect();
+            .collect());
     }
     if operation == FeatureClass::SplitFace {
         if !["moPLineProjIdRep_c", "moPLineSurfIdRep_c"]
             .into_iter()
             .all(|required| lane.classes.iter().any(|class| class.name == required))
         {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(object_source) = object_source else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        return generated_surface_identities(lane)
-            .into_iter()
-            .filter(|identity| {
-                let Some(first) = identity.components.first() else {
-                    return false;
-                };
-                let Some(last) = identity.components.last() else {
-                    return false;
-                };
-                component_source(first) == Some(object_source)
-                    && component_source(last).is_some_and(|source| source != object_source)
-                    && last.local_id.is_some()
-            })
-            .map(|identity| (identity.offset as usize, identity.components))
-            .collect();
+        const OPERATION: &str = "project SLDPRT split surface identity paths";
+        let mut candidates = Vec::new();
+        for identity in generated_surface_identities(ctx, lane)? {
+            ctx.charge_work(1, OPERATION)?;
+            let (Some(first), Some(last)) = (identity.components.first(), identity.components.last()) else { continue; };
+            if component_source(first) != Some(object_source)
+                || !component_source(last).is_some_and(|source| source != object_source)
+                || last.local_id.is_none() { continue; }
+            let Ok(offset) = usize::try_from(identity.offset) else { continue; };
+            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            candidates.push((offset, identity.components));
+        }
+        return Ok(candidates);
     }
     if !matches!(
         operation,
@@ -931,7 +931,7 @@ fn operation_surface_selection_candidates(
             | FeatureClass::DeleteFace
             | FeatureClass::MoveFace
     ) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let surface_classes = lane
@@ -986,11 +986,11 @@ fn operation_surface_selection_candidates(
     }));
     candidates.sort_by_key(|(offset, _)| *offset);
     candidates.dedup();
-    if candidates.len() == 1 {
+    Ok(if candidates.len() == 1 {
         candidates
     } else {
         Vec::new()
-    }
+    })
 }
 
 fn component_source(component: &FeatureInputComponentPathEntry) -> Option<u32> {
@@ -1942,55 +1942,75 @@ fn inline_mirror_surface_paths(
     result
 }
 
-fn inline_surface_reference_at(
+fn inline_surface_components_at(
     payload: &[u8],
     offset: usize,
-) -> Option<Vec<FeatureInputComponentPathEntry>> {
+) -> Option<impl Iterator<Item = Option<FeatureInputComponentPathEntry>> + '_> {
     let prefix: [u8; 4] = payload.get(offset..offset + 4)?.try_into().ok()?;
     let family = View::u16_le_at(&prefix, 0)?;
     let variant = View::u16_le_at(&prefix, 2)?;
     if !is_class_token(family) || variant == 0 {
         return None;
     }
-    let signature_at = |offset: usize| -> Option<[u8; 12]> {
+    let signature_at = move |offset: usize| -> Option<[u8; 12]> {
         let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
         let source = View::u32_le_at(&signature, 4)?;
         let identity = View::u32_le_at(&signature, 8)?;
         (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
     };
-    let instance_before = |offset: usize| -> Option<u16> {
+    let instance_before = move |offset: usize| -> Option<u16> {
         let bytes = payload.get(offset.checked_sub(4)?..offset)?;
         let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
     let mut cursor = offset;
-    let mut components = Vec::new();
-    loop {
-        let signature = signature_at(cursor)?;
-        let tail: [u8; 4] = payload.get(cursor + 12..cursor + 16)?.try_into().ok()?;
-        let instance = View::u16_le_at(&tail, 0)?;
-        let continues =
-            is_class_token(instance) && tail[2..] == [0, 0] && signature_at(cursor + 16).is_some();
-        components.push(FeatureInputComponentPathEntry {
-            instance: instance_before(cursor),
-            type_signature: signature,
-            local_id: (!continues).then(|| View::u32_le_at(&tail, 0)).flatten(),
-        });
-        if !continues {
-            return Some(components);
+    let mut finished = false;
+    Some(std::iter::from_fn(move || {
+        if finished { return None; }
+        let node = (|| {
+            let signature = signature_at(cursor)?;
+            let tail: [u8; 4] = payload.get(cursor + 12..cursor + 16)?.try_into().ok()?;
+            let instance = View::u16_le_at(&tail, 0)?;
+            let continues = is_class_token(instance) && tail[2..] == [0, 0]
+                && signature_at(cursor + 16).is_some();
+            let component = FeatureInputComponentPathEntry {
+                instance: instance_before(cursor),
+                type_signature: signature,
+                local_id: (!continues).then(|| View::u32_le_at(&tail, 0)).flatten(),
+            };
+            Some((component, continues))
+        })();
+        match node {
+            Some((component, continues)) => {
+                finished = !continues;
+                if continues { cursor += 16; }
+                Some(Some(component))
+            }
+            None => {
+                finished = true;
+                Some(None)
+            }
         }
-        cursor += 16;
-    }
+    }))
+}
+
+fn inline_surface_reference_at(
+    payload: &[u8], offset: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    inline_surface_components_at(payload, offset)?.collect()
 }
 
 /// Decode persistent surface identities declared by `*SurfIdRep_c` classes.
 /// Operation-specific consumers separately project the identities that also
 /// carry input selections, including projected split-line target faces.
 pub(crate) fn generated_surface_identities(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
-) -> Vec<crate::records::FeatureInputGeneratedSurfaceIdentity> {
+) -> Result<Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT generated surface identities";
     struct SurfaceIdentityFields {
         offset: u64,
+        input_index: usize,
         type_prefix: [u8; 4],
         feature_source_id: FeatureSourceId,
         local_identity: u32,
@@ -2008,34 +2028,32 @@ pub(crate) fn generated_surface_identities(
         let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
-    let prefixes = lane
-        .classes
-        .iter()
-        .filter(|class| class.name.ends_with("SurfIdRep_c"))
-        .filter_map(|class| {
-            let body = usize::try_from(class.offset)
-                .ok()?
+    let mut prefixes = HashSet::new();
+    for class in &lane.classes {
+        ctx.charge_work(u64_from_index(class.name.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if !class.name.ends_with("SurfIdRep_c") { continue; }
+        let prefix = (|| {
+            let body = usize::try_from(class.offset).ok()?
                 .checked_add(6 + class.name.len())?;
-            if lane.native_payload.get(body..body + 2)? != [0, 0] {
-                return None;
-            }
-            let prefix: [u8; 4] = lane
-                .native_payload
-                .get(body + 2..body + 6)?
-                .try_into()
-                .ok()?;
+            if lane.native_payload.get(body..body + 2)? != [0, 0] { return None; }
+            let prefix: [u8; 4] = lane.native_payload.get(body + 2..body + 6)?.try_into().ok()?;
             let family = View::u16_le_at(&prefix, 0)?;
             let variant = View::u16_le_at(&prefix, 2)?;
-            if !is_class_token(family) || variant == 0 {
-                return None;
-            }
-            Some(prefix)
-        })
-        .collect::<HashSet<_>>();
+            (is_class_token(family) && variant != 0).then_some(prefix)
+        })();
+        let Some(prefix) = prefix else { continue; };
+        if !prefixes.contains(&prefix) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            prefixes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            prefixes.insert(prefix);
+        }
+    }
 
-    let mut result = Vec::new();
-    let mut seen = HashSet::new();
-    for terminal in 0..=lane.native_payload.len().saturating_sub(16) {
+    let mut result = Vec::<SurfaceIdentityFields>::new();
+    let Some(last) = lane.native_payload.len().checked_sub(16) else { return Ok(Vec::new()); };
+    'terminals: for terminal in 0..=last {
+        ctx.charge_work(64, OPERATION)?;
         let Some(window) = lane
             .native_payload
             .get(terminal..terminal + 16)
@@ -2064,67 +2082,73 @@ pub(crate) fn generated_surface_identities(
             continue;
         }
         let mut offset = terminal;
-        while instance_before(offset).is_some()
-            && offset
-                .checked_sub(16)
-                .and_then(|previous| lane.native_payload.get(previous..))
-                .and_then(|bytes| signature_prefix(bytes, prefix))
-                .is_some()
-        {
-            offset -= 16;
+        loop {
+            ctx.charge_work(32, OPERATION)?;
+            if instance_before(offset).is_none() { break; }
+            let Some(previous) = offset.checked_sub(16) else { break; };
+            if lane.native_payload.get(previous..).and_then(|bytes| signature_prefix(bytes, prefix)).is_none() {
+                break;
+            }
+            offset = previous;
         }
-        let Some(components) = inline_surface_reference_at(&lane.native_payload, offset) else {
+        let Some(mut parsed_components) = inline_surface_components_at(&lane.native_payload, offset) else {
             continue;
         };
-        let local_identity = cadmpeg_core::bytes::assemble_u32_le(tail);
-        let key = (
-            prefix,
-            components
-                .iter()
-                .map(|component| {
-                    (
-                        component.instance,
-                        component.type_signature,
-                        component.local_id,
-                    )
-                })
-                .collect::<Vec<_>>(),
-        );
-        if !seen.insert(key) {
-            continue;
+        let mut components = Vec::new();
+        loop {
+            ctx.charge_work(32, OPERATION)?;
+            let Some(component) = parsed_components.next() else { break; };
+            let Some(component) = component else { continue 'terminals; };
+            ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+            components.push(component);
         }
+        let mut duplicate = false;
+        for identity in &result {
+            ctx.charge_work(u64_from_index(components.len()).checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            if identity.type_prefix == prefix && identity.components == components {
+                duplicate = true;
+                break;
+            }
+        }
+        if duplicate { continue; }
+        let local_identity = cadmpeg_core::bytes::assemble_u32_le(tail);
+        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        let input_index = result.len();
         result.push(SurfaceIdentityFields {
-            offset: offset as u64,
+            offset: u64_from_index(offset),
+            input_index,
             type_prefix: prefix,
             feature_source_id,
             local_identity,
             components,
         });
     }
-    result.sort_by_key(|identity| identity.offset);
-    let lane_key = lane
-        .id
-        .rsplit_once('#')
-        .map_or(lane.id.as_str(), |(_, key)| key);
-    result
-        .into_iter()
-        .enumerate()
-        .map(
-            |(ordinal, fields)| crate::records::FeatureInputGeneratedSurfaceIdentity {
-                id: format!(
-                    "sldprt:feature-input:generated-surface#{lane_key}:{}",
-                    fields.offset
-                ),
-                parent: lane.id.clone(),
-                ordinal: ordinal as u32,
-                offset: fields.offset,
-                type_prefix: fields.type_prefix,
-                feature_source_id: fields.feature_source_id,
-                local_identity: fields.local_identity,
-                components: fields.components,
-            },
-        )
-        .collect()
+    let levels = if result.len() > 1 { result.len().ilog2() + 1 } else { 1 };
+    ctx.charge_work(u64_from_index(result.len()).checked_mul(u64::from(levels))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    result.sort_unstable_by_key(|identity| (identity.offset, identity.input_index));
+    let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
+    let mut identities = Vec::new();
+    ctx.reserve_collection_vec(&mut identities, result.len(), OPERATION)?;
+    for (ordinal, fields) in result.into_iter().enumerate() {
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(ordinal)))?;
+        ctx.charge_work(u64_from_index(lane_key.len()).checked_add(u64_from_index(lane.id.len()))
+            .and_then(|size| size.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let id = ctx.format_retained(format_args!("sldprt:feature-input:generated-surface#{lane_key}:{}", fields.offset), OPERATION)?;
+        let parent = ctx.format_retained(format_args!("{}", lane.id), OPERATION)?;
+        identities.push(crate::records::FeatureInputGeneratedSurfaceIdentity {
+            id, parent, ordinal,
+            offset: fields.offset,
+            type_prefix: fields.type_prefix,
+            feature_source_id: fields.feature_source_id,
+            local_identity: fields.local_identity,
+            components: fields.components,
+        });
+    }
+    Ok(identities)
 }
 
 fn compact_edge_selection_vector(payload: &[u8], base: usize) -> Option<(usize, Vec<u32>)> {

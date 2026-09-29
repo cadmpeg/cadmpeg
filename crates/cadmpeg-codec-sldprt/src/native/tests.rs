@@ -655,6 +655,10 @@ fn native_validation_retained_limit_reaches_caller() {
 
 #[test]
 fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
+    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let class_name = "moWzdHoleSurfIdRep_c";
@@ -690,7 +694,7 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
         sketch_entities: Vec::new(),
     };
     lane.generated_surface_identities =
-        crate::resolved_features::selections::generated_surface_identities(&lane);
+        crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap();
     assert_eq!(lane.generated_surface_identities.len(), 1);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

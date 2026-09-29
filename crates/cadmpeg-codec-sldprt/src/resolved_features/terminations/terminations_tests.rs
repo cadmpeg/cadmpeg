@@ -386,6 +386,10 @@ fn compact_extrusion_to_face_prefers_a_modern_marker_over_a_legacy_body_alias() 
 
 #[test]
 fn extrusion_termination_stops_before_the_following_profile_object() {
+    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut payload = vec![0; 520];
     let anchor = 100;
     payload[anchor..anchor + 2].copy_from_slice(&[0x20, 0x86]);
@@ -483,7 +487,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         histories[0].features[0].properties.get("Face"),
         Some(&"sldprt:feature-input:single-face-ref:7:220".to_string())
     );
-    let selections = compact_surface_selections(&histories, &lane);
+    let selections = compact_surface_selections(&identity_ctx, &histories, &lane).unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].offset, 220);
 }

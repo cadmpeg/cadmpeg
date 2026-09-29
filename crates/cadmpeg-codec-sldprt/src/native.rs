@@ -1453,7 +1453,7 @@ fn generated_surface_identities_disagree_with_payload(
         None
     };
     Ok(lane.generated_surface_identities
-        != crate::resolved_features::selections::generated_surface_identities(lane))
+        != crate::resolved_features::selections::generated_surface_identities(ctx, lane)?)
 }
 
 fn selection_payload_span(lane: &FeatureInputLane, offset: u64) -> usize {
