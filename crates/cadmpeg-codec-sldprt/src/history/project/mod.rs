@@ -1499,7 +1499,7 @@ fn project_definition(
             .map(Ok).unwrap_or_else(|| native_definition(ctx, feature))?);
     }
     Ok(if class == Some(FeatureClass::Extrude) {
-        project_extrude(feature, native_by_source, features_by_source)
+        project_extrude(ctx, feature, native_by_source, features_by_source)?
             .map(Ok).unwrap_or_else(|| native_definition(ctx, feature))?
     } else if class == Some(FeatureClass::Fillet) {
         project_fillet(ctx, feature)?
@@ -1549,15 +1549,15 @@ fn project_definition(
         project_hole(feature, features_by_source, history_features)
             .map(Ok).unwrap_or_else(|| native_definition(ctx, feature))?
     } else if class == Some(FeatureClass::Revolve) {
-        project_revolve(feature, native_by_source)
+        project_revolve(ctx, feature, native_by_source)?
     } else if class == Some(FeatureClass::Pattern) {
         projected_pattern.map(Ok).unwrap_or_else(|| native_definition(ctx, feature))?
     } else if class == Some(FeatureClass::Sweep) {
-        project_sweep(feature, native_by_source).map(Ok).unwrap_or_else(|| native_definition(ctx, feature))?
+        project_sweep(ctx, feature, native_by_source)?.map(Ok).unwrap_or_else(|| native_definition(ctx, feature))?
     } else if class == Some(FeatureClass::Loft) {
-        project_loft(feature, native_by_source).map(Ok).unwrap_or_else(|| native_definition(ctx, feature))?
+        project_loft(ctx, feature, native_by_source)?.map(Ok).unwrap_or_else(|| native_definition(ctx, feature))?
     } else if class == Some(FeatureClass::Rib) {
-        project_rib(feature, native_by_source)
+        project_rib(ctx, feature, native_by_source)?
     } else {
         native_definition(ctx, feature)?
     })
