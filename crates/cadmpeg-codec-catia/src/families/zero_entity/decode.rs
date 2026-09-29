@@ -245,7 +245,7 @@ pub(super) fn copy_zero_curve(
     Ok(match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                crate::resource::copy_nurbs_curve(ctx, nurbs, "catia_zero_wire_curve_copy")?,
+                nurbs.try_clone_for_decode(ctx, "catia_zero_wire_curve_copy")?,
             ))
         }
         CurveGeometry::Procedural {
@@ -260,11 +260,7 @@ pub(super) fn copy_zero_curve(
             )?,
             cache: match cache {
                 Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(SolvedCurveGeometry::Nurbs(
-                    crate::resource::copy_nurbs_curve(
-                        ctx,
-                        nurbs,
-                        "catia_zero_wire_curve_cache_copy",
-                    )?,
+                    nurbs.try_clone_for_decode(ctx, "catia_zero_wire_curve_cache_copy")?,
                 )),
                 other => other.clone(),
             },

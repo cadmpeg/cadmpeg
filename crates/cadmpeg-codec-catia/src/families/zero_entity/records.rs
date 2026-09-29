@@ -1780,7 +1780,7 @@ pub(super) fn zero_entity_neutral_pcurve(
         }
     };
     let knots =
-        crate::resource::copy_knot_vector(ctx, nurbs.knots(), "catia_zero_neutral_pcurve_knots")?;
+        nurbs.knots().try_clone_for_decode(ctx, "catia_zero_neutral_pcurve_knots")?;
     let count = cadmpeg_core::decode::u64_from_index(nurbs.pole_rows().count());
     if weights.is_some() {
         ctx.charge_collection_items(count, "catia_zero_neutral_weighted_poles")?;
@@ -2120,7 +2120,7 @@ fn zero_entity_lift_pcurve(
         }
     };
     let knots =
-        crate::resource::copy_knot_vector(ctx, nurbs.knots(), "catia_zero_lifted_pcurve_knots")?;
+        nurbs.knots().try_clone_for_decode(ctx, "catia_zero_lifted_pcurve_knots")?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(nurbs.pole_rows().count()),
         "catia_zero_lifted_checked_poles",

@@ -12,7 +12,7 @@ use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::topology::ParameterInterval;
 use crate::transform::Transform2;
 use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -1715,11 +1715,7 @@ impl PolarPcurveNurbs {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        super::charge_decode_copy::<f64>(self.knots.len(), ctx, operation)?;
-        let knots = self
-            .knots
-            .try_clone()
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.knots.len())))?;
+        let knots = self.knots.try_clone_for_decode(ctx, operation)?;
         let poles = match &self.poles {
             PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
                 poles: super::copy_decode_slice(poles, ctx, operation)?,
@@ -1904,11 +1900,7 @@ impl PcurveNurbs {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        super::charge_decode_copy::<f64>(self.knots.len(), ctx, operation)?;
-        let knots = self
-            .knots
-            .try_clone()
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.knots.len())))?;
+        let knots = self.knots.try_clone_for_decode(ctx, operation)?;
         let poles = match &self.poles {
             PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
                 points: super::copy_decode_slice(points, ctx, operation)?,
@@ -2341,6 +2333,7 @@ impl PcurveGeometry {
                 nurbs: nurbs.try_clone_for_decode(ctx, operation)?,
             },
             Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
                 super::charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Transformed(PlacedPcurve {
                     basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
@@ -2349,6 +2342,7 @@ impl PcurveGeometry {
                 })
             }
             Self::Trimmed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
                 super::charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Trimmed(TrimmedPcurve {
                     parameter_range: value.parameter_range,
@@ -2358,6 +2352,7 @@ impl PcurveGeometry {
                 })
             }
             Self::Offset(value) => {
+                let _depth = ctx.enter_nested(operation)?;
                 super::charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Offset(OffsetPcurve {
                     distance: value.distance,

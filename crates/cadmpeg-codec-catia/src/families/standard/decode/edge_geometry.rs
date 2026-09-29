@@ -994,16 +994,8 @@ pub(super) fn standard_oriented_native_support_pcurves(
 ) -> Result<Option<[PcurveGeometry; 2]>, cadmpeg_core::CodecError> {
     let copy_native = || -> Result<[PcurveGeometry; 2], cadmpeg_core::CodecError> {
         Ok([
-            crate::resource::copy_pcurve_geometry(
-                ctx,
-                &native.pcurves[0],
-                "catia_standard_native_support_pcurve_copy",
-            )?,
-            crate::resource::copy_pcurve_geometry(
-                ctx,
-                &native.pcurves[1],
-                "catia_standard_native_support_pcurve_copy",
-            )?,
+            native.pcurves[0].try_clone_for_decode(ctx, "catia_standard_native_support_pcurve_copy")?,
+            native.pcurves[1].try_clone_for_decode(ctx, "catia_standard_native_support_pcurve_copy")?,
         ])
     };
     let Some(native_pair) =
@@ -1251,11 +1243,7 @@ pub(super) fn build_standard_edge_curve(
             if let Some((limit_curve, parameter_range)) = limit_curve {
                 (
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        crate::resource::copy_nurbs_curve(
-                            ctx,
-                            limit_curve,
-                            "catia_standard_limit_curve_copy",
-                        )?,
+                        limit_curve.try_clone_for_decode(ctx, "catia_standard_limit_curve_copy")?,
                     )),
                     Some(parameter_range),
                 )
@@ -1702,11 +1690,7 @@ pub(super) fn ensure_native_edge_support_surface(
             let copy = match geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                        crate::resource::copy_nurbs_surface(
-                            admission.context(),
-                            surface,
-                            "catia_native_edge_support_geometry",
-                        )?,
+                        surface.try_clone_for_decode(admission.context(), "catia_native_edge_support_geometry")?,
                     ))
                 }
                 _ => geometry.clone(),

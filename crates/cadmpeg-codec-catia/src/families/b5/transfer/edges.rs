@@ -148,7 +148,7 @@ pub(super) fn b5_edge_support_definition(
             return Ok(None);
         };
         side.pcurve = Some(SupportPcurve::new(
-            crate::resource::copy_pcurve_geometry(ctx, geometry, "catia_b5_edge_support_pcurve")?,
+            geometry.try_clone_for_decode(ctx, "catia_b5_edge_support_pcurve")?,
             mapped_range,
         ));
     }

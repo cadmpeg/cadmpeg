@@ -1839,11 +1839,7 @@ pub(super) fn append_freeform_surface_pools(
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                crate::resource::copy_nurbs_surface(
-                    admission.context(),
-                    &surface.geometry,
-                    "catia_freeform_surface_pool_geometry",
-                )?,
+                surface.geometry.try_clone_for_decode(admission.context(), "catia_freeform_surface_pool_geometry")?,
             )),
             source_object: Some(source_object),
         });
@@ -2997,11 +2993,7 @@ fn append_resolved_consolidated_surface_curves(
                         candidates.push((
                             index,
                             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                                crate::resource::copy_nurbs_surface(
-                                    admission.context(),
-                                    &surface.geometry,
-                                    "catia consolidated partner surface copy",
-                                )?,
+                                surface.geometry.try_clone_for_decode(admission.context(), "catia consolidated partner surface copy")?,
                             )),
                         ));
                     }
@@ -3173,11 +3165,7 @@ fn append_resolved_consolidated_surface_curves(
                                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
                             ) && *standard_partner_geometry
                                 != SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                                    crate::resource::copy_nurbs_surface(
-                                        admission.context(),
-                                        &freeform_surfaces[carrier].geometry,
-                                        "catia_freeform_matched_partner_surface",
-                                    )?,
+                                    freeform_surfaces[carrier].geometry.try_clone_for_decode(admission.context(), "catia_freeform_matched_partner_surface")?,
                                 ))
                             {
                                 return Ok(Some((identity, None)));
@@ -3189,11 +3177,7 @@ fn append_resolved_consolidated_surface_curves(
                             }))
                             .geometry;
                         let partner_pcurve = match &sides[partner].pcurve {
-                            Some(pcurve) => crate::resource::copy_pcurve_geometry(
-                                admission.context(),
-                                &pcurve.geometry,
-                                "catia_freeform_partner_pcurve_copy",
-                            )?,
+                            Some(pcurve) => pcurve.geometry.try_clone_for_decode(admission.context(), "catia_freeform_partner_pcurve_copy")?,
                             None => {
                                 // The free side stores its jet in its own carrier's
                                 // chart, which is not the standard partner face's
@@ -3305,11 +3289,7 @@ fn append_resolved_consolidated_surface_curves(
                             let Some(coedge) = selected_coedge else {
                                 continue;
                             };
-                            let mut geometry = crate::resource::copy_pcurve_geometry(
-                                admission.context(),
-                                &standard_geometries[side],
-                                "catia_freeform_standard_coedge_pcurve_copy",
-                            )?;
+                            let mut geometry = standard_geometries[side].try_clone_for_decode(admission.context(), "catia_freeform_standard_coedge_pcurve_copy")?;
                             if matches!(
                                 ir.model.coedges[coedge].sense,
                                 cadmpeg_ir::topology::Sense::Reversed
@@ -3414,11 +3394,7 @@ fn append_resolved_consolidated_surface_curves(
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
                     ) {
                         surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                            crate::resource::copy_nurbs_surface(
-                                admission.context(),
-                                &freeform_surfaces[carrier].geometry,
-                                "catia_freeform_bound_partner_surface",
-                            )?,
+                            freeform_surfaces[carrier].geometry.try_clone_for_decode(admission.context(), "catia_freeform_bound_partner_surface")?,
                         ));
                         crate::resource::derived_annotation(
                             admission.context(),
@@ -3439,11 +3415,7 @@ fn append_resolved_consolidated_surface_curves(
                                 "catia_freeform_replayed_support_surface",
                             )?),
                             pcurve: Some(
-                                crate::resource::copy_pcurve_geometry(
-                                    admission.context(),
-                                    &binding.edge_pcurves[side],
-                                    "catia_freeform_replayed_support_pcurve",
-                                )?
+                                binding.edge_pcurves[side].try_clone_for_decode(admission.context(), "catia_freeform_replayed_support_pcurve")?
                                 .into(),
                             ),
                         })
@@ -4031,11 +4003,7 @@ fn rechart_equivalent_surface_pcurve(
     target: &SurfaceGeometry,
 ) -> Result<Option<PcurveGeometry>, RechartFailure> {
     if source == target {
-        return crate::resource::copy_pcurve_geometry(
-            ctx,
-            pcurve,
-            "catia_freeform_equivalent_pcurve_copy",
-        )
+        return pcurve.try_clone_for_decode(ctx, "catia_freeform_equivalent_pcurve_copy")
         .map(Some)
         .map_err(RechartFailure::Resource);
     }
@@ -4073,11 +4041,7 @@ fn rechart_equivalent_surface_pcurve(
         }
         PcurveGeometry::Nurbs { nurbs } => {
             use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
-            let knots = crate::resource::copy_knot_vector(
-                ctx,
-                nurbs.knots(),
-                "catia_freeform_rechart_knots",
-            )
+            let knots = nurbs.knots().try_clone_for_decode(ctx, "catia_freeform_rechart_knots")
             .map_err(RechartFailure::Resource)?;
             let mut poles = match nurbs.pole_rows() {
                 PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {

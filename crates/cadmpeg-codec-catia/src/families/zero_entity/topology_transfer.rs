@@ -712,11 +712,7 @@ pub(super) fn transfer_closed_face_topology(
             }
             let pcurve = Pcurve {
                 id: copied_id!(pcurve.id, PcurveId),
-                geometry: admitted!(crate::resource::copy_pcurve_geometry(
-                    admission.context(),
-                    &pcurve.geometry,
-                    "catia_zero_topology_pcurve_copy"
-                )),
+                geometry: admitted!(pcurve.geometry.try_clone_for_decode(admission.context(), "catia_zero_topology_pcurve_copy")),
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
                     Some(cadmpeg_ir::units::FiniteVector::new(
