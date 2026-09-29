@@ -83,3 +83,5 @@ fn audit_regression_near_half_turn_retains_negative_axis() {
     assert!(rotation.direction.z < 0.0);
     assert!((rotation.angle.get() - theta).abs() <= 4.0 * f64::EPSILON);
 }
+
+mod numeric_text_limits;
