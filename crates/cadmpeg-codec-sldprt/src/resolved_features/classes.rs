@@ -523,19 +523,12 @@ fn classless_dimension_schema_class(feature: &crate::records::Feature) -> Option
     {
         return None;
     }
-    let dimensions = feature
-        .content
-        .iter()
-        .map(|content| match content {
-            crate::records::FeatureContent::Dimension(name) => Some(name.as_str()),
-            _ => None,
+    if feature.parameters.len() > 2
+        || !feature.parameters.keys().all(|name| {
+            feature.content.iter().filter(|content| matches!(content,
+                crate::records::FeatureContent::Dimension(candidate) if candidate == name.as_str()
+            )).count() == 1
         })
-        .collect::<Option<HashSet<_>>>()?;
-    if dimensions.len() != feature.parameters.len()
-        || !feature
-            .parameters
-            .keys()
-            .all(|name| dimensions.contains(name.as_str()))
     {
         return None;
     }
