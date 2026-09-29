@@ -137,7 +137,7 @@ fn standard_topology_copy_refuses_each_nested_collection_limit() {
     .enumerate()
     {
         assert_eq!(
-            standard_collection_limit_operation(limit as u64, |ctx| {
+            standard_collection_limit_operation(cadmpeg_core::decode::u64_from_index(limit), |ctx| {
                 topology.clone_charged(ctx)?;
                 Ok(())
             }),
@@ -462,7 +462,7 @@ fn standard_duplicate_face_comparison_refuses_nested_face_lists() {
     .into_iter()
     .enumerate()
     {
-        let result = crate::test_support::with_collection_limit(cap as u64 + 2, run);
+        let result = crate::test_support::with_collection_limit(cadmpeg_core::decode::u64_from_index(cap) + 2, run);
         assert!(matches!(
             result,
             Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
@@ -658,7 +658,7 @@ fn standard_orientation_refuses_before_unpaired_boundary() {
     .enumerate()
     {
         assert_eq!(
-            standard_collection_limit_operation(cap as u64, |ctx| {
+            standard_collection_limit_operation(cadmpeg_core::decode::u64_from_index(cap), |ctx| {
                 orient_face_cycles(ctx, &mut faces())?;
                 Ok(())
             }),

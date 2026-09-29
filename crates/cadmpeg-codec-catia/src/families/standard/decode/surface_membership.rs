@@ -124,7 +124,7 @@ pub(super) fn nurbs_surface_witness_distance(
         for knots in [u_knots, v_knots] {
             for pair in knots.windows(2).filter(|pair| pair[0] != pair[1]) {
                 for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                    let fraction = step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
+                    let fraction = match cadmpeg_core::convert::f64_from_index(step) { Some(value) => value, None => return Ok(None) } / match cadmpeg_core::convert::f64_from_index(NURBS_SURFACE_SEEDS_PER_SPAN - 1) { Some(value) => value, None => return Ok(None) };
                     if cadmpeg_ir::math::interpolate(pair[0], pair[1], fraction).is_none() {
                         return Ok(None);
                     }
@@ -133,8 +133,8 @@ pub(super) fn nurbs_surface_witness_distance(
         }
         for u in 0..SIDE {
             for v in 0..SIDE {
-                let u_fraction = u as f64 / (SIDE - 1) as f64;
-                let v_fraction = v as f64 / (SIDE - 1) as f64;
+                let u_fraction = match cadmpeg_core::convert::f64_from_index(u) { Some(value) => value, None => return Ok(None) } / match cadmpeg_core::convert::f64_from_index(SIDE - 1) { Some(value) => value, None => return Ok(None) };
+                let v_fraction = match cadmpeg_core::convert::f64_from_index(v) { Some(value) => value, None => return Ok(None) } / match cadmpeg_core::convert::f64_from_index(SIDE - 1) { Some(value) => value, None => return Ok(None) };
                 let Some(u) =
                     cadmpeg_ir::math::interpolate(domains[0][0], domains[0][1], u_fraction)
                 else {
@@ -151,14 +151,14 @@ pub(super) fn nurbs_surface_witness_distance(
     } else {
         for u_pair in u_knots.windows(2).filter(|pair| pair[0] != pair[1]) {
             for u_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                let u_fraction = u_step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
+                let u_fraction = match cadmpeg_core::convert::f64_from_index(u_step) { Some(value) => value, None => return Ok(None) } / match cadmpeg_core::convert::f64_from_index(NURBS_SURFACE_SEEDS_PER_SPAN - 1) { Some(value) => value, None => return Ok(None) };
                 let Some(u) = cadmpeg_ir::math::interpolate(u_pair[0], u_pair[1], u_fraction)
                 else {
                     return Ok(None);
                 };
                 for v_pair in v_knots.windows(2).filter(|pair| pair[0] != pair[1]) {
                     for v_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                        let v_fraction = v_step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
+                        let v_fraction = match cadmpeg_core::convert::f64_from_index(v_step) { Some(value) => value, None => return Ok(None) } / match cadmpeg_core::convert::f64_from_index(NURBS_SURFACE_SEEDS_PER_SPAN - 1) { Some(value) => value, None => return Ok(None) };
                         let Some(v) =
                             cadmpeg_ir::math::interpolate(v_pair[0], v_pair[1], v_fraction)
                         else {
