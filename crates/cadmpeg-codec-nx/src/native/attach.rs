@@ -4963,11 +4963,12 @@ fn attach_parasolid_topology_string_attributes(
                 continue;
             };
             let id = topology_attribute_id(
+                ctx,
                 reference,
                 &cadmpeg_ir::identity_component!("topology-string-attribute"),
                 string_use.position.reference_ordinal(),
                 context.id_suffix.as_ref(),
-            );
+            )?;
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
             );
@@ -4990,12 +4991,8 @@ fn attach_parasolid_topology_string_attributes(
                 "84",
                 string_use.position.reference_ordinal(),
             )?;
-            ir.model.attributes.push(SourceAttribute {
-                id,
-                target: context.target.clone(),
-                name,
-                values: vec![AttributeValue::String(string.value.as_str().to_owned())],
-            });
+            let values = single_string_attribute_values(ctx, string.value.as_str())?;
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
@@ -5440,18 +5437,118 @@ fn parasolid_topology_attribute_contexts<'a>(
 }
 
 fn topology_attribute_id(
+    ctx: &DecodeContext<'_>,
     reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
     family: &cadmpeg_ir::ids::IdentityComponent,
     reference_ordinal: u32,
     entity_suffix: Option<&cadmpeg_ir::ids::IdentityKey>,
-) -> AttributeId {
+) -> Result<AttributeId, CodecError> {
+    let suffix_len = entity_suffix.map_or(0, |suffix| suffix.as_str().len());
+    let id_len = family.as_str().len().checked_add(suffix_len)
+        .and_then(|bytes| bytes.checked_add(64))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid attribute identity", 0, cadmpeg_core::decode::u64_from_index(suffix_len)))?;
+    let bytes = id_len.checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid attribute identity", 0, cadmpeg_core::decode::u64_from_index(id_len)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(id_len), "NX Parasolid attribute identity")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX Parasolid attribute identity")?;
     let mut key = cadmpeg_ir::ids::IdentityKey::from(reference.topology_type.code())
         .dash(reference.topology_xmt)
         .dash(reference_ordinal);
     if let Some(suffix) = entity_suffix {
         key = key.dash(suffix);
     }
-    IdScope::stream(reference.stream_ordinal).id(family, key)
+    Ok(IdScope::stream(reference.stream_ordinal).id(family, key))
+}
+
+fn single_string_attribute_values(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+) -> Result<Vec<AttributeValue>, CodecError> {
+    let bytes = std::mem::size_of::<AttributeValue>().checked_add(text.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid string attribute value", 0, cadmpeg_core::decode::u64_from_index(text.len())))?;
+    ctx.charge_collection_items(1, "NX Parasolid string attribute values")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX Parasolid string attribute value")?;
+    let mut owned = String::new();
+    owned.try_reserve(text.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid string attribute value", 0, cadmpeg_core::decode::u64_from_index(text.len())))?;
+    owned.push_str(text);
+    let mut values = Vec::new();
+    reserve_attach_vec(ctx, &mut values, 1, "NX Parasolid string attribute values")?;
+    values.push(AttributeValue::String(owned));
+    Ok(values)
+}
+
+fn mapped_attribute_values<T>(
+    ctx: &DecodeContext<'_>,
+    input: &[T],
+    map: impl Fn(&T) -> AttributeValue,
+) -> Result<Vec<AttributeValue>, CodecError> {
+    let bytes = input.len().checked_mul(std::mem::size_of::<AttributeValue>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid numeric attribute values", 0, cadmpeg_core::decode::u64_from_index(input.len())))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(input.len()), "NX Parasolid numeric attribute values")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX Parasolid numeric attribute values")?;
+    let mut values = Vec::new();
+    reserve_attach_vec(ctx, &mut values, input.len(), "NX Parasolid numeric attribute values")?;
+    values.extend(input.iter().map(map));
+    Ok(values)
+}
+
+fn mapped_vector_attribute_values<T, const N: usize>(
+    ctx: &DecodeContext<'_>,
+    input: &[T],
+    map: impl Fn(&T) -> [FiniteReal; N],
+) -> Result<Vec<AttributeValue>, CodecError> {
+    let per_value = std::mem::size_of::<AttributeValue>()
+        .checked_add(std::mem::size_of::<FiniteReal>().checked_mul(N)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid vector value", 0, cadmpeg_core::decode::u64_from_index(N)))?)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid vector value", 0, cadmpeg_core::decode::u64_from_index(N)))?;
+    let bytes = input.len().checked_mul(per_value)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid vector values", 0, cadmpeg_core::decode::u64_from_index(input.len())))?;
+    let items = input.len().checked_mul(N.checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid vector value items", 0, cadmpeg_core::decode::u64_from_index(N)))?)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid vector value items", 0, cadmpeg_core::decode::u64_from_index(input.len())))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(items), "NX Parasolid vector value items")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX Parasolid vector values")?;
+    let mut values = Vec::new();
+    reserve_attach_vec(ctx, &mut values, input.len(), "NX Parasolid vector values")?;
+    for item in input {
+        let mut components = Vec::new();
+        reserve_attach_vec(ctx, &mut components, N, "NX Parasolid vector components")?;
+        components.extend(map(item));
+        values.push(AttributeValue::Vector(components));
+    }
+    Ok(values)
+}
+
+fn push_topology_attribute(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    context: &ParasolidTopologyAttributeContext<'_>,
+    id: AttributeId,
+    name: String,
+    values: Vec<AttributeValue>,
+) -> Result<(), CodecError> {
+    let target_len = match &context.target {
+        AttributeTarget::Document => 0,
+        AttributeTarget::Body(id) => id.as_str().len(),
+        AttributeTarget::Face(id) => id.as_str().len(),
+        AttributeTarget::Shell(id) => id.as_str().len(),
+        AttributeTarget::Loop(id) => id.as_str().len(),
+        AttributeTarget::Coedge(id) => id.as_str().len(),
+        AttributeTarget::Edge(id) => id.as_str().len(),
+        AttributeTarget::Vertex(id) => id.as_str().len(),
+    };
+    let bytes = std::mem::size_of::<SourceAttribute>().checked_add(target_len)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid attribute output", 0, cadmpeg_core::decode::u64_from_index(target_len)))?;
+    ctx.charge_collection_items(1, "NX Parasolid attribute output")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX Parasolid attribute output")?;
+    reserve_attach_vec(ctx, &mut ir.model.attributes, 1, "NX Parasolid attribute output")?;
+    ir.model.attributes.push(SourceAttribute {
+        id,
+        target: context.target.clone(),
+        name,
+        values,
+    });
+    Ok(())
 }
 
 /// The key half of an entity reference, which is what an id suffix names.
@@ -5500,12 +5597,7 @@ fn attach_parasolid_topology_numeric_attributes(
                         continue;
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|value| AttributeValue::Integer(i64::from(*value)))
-                            .collect(),
+                        mapped_attribute_values(ctx, record.values.as_slice(), |value| AttributeValue::Integer(i64::from(*value)))?,
                         record.inflated_offset,
                         "ENTITY_52_INTEGER_ATTRIBUTE",
                         "integer",
@@ -5516,12 +5608,7 @@ fn attach_parasolid_topology_numeric_attributes(
                         continue;
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|value| AttributeValue::Float(*value))
-                            .collect(),
+                        mapped_attribute_values(ctx, record.values.as_slice(), |value| AttributeValue::Float(*value))?,
                         record.inflated_offset,
                         "ENTITY_53_DOUBLE_ATTRIBUTE",
                         "double",
@@ -5529,11 +5616,12 @@ fn attach_parasolid_topology_numeric_attributes(
                 }
             };
             let id = topology_attribute_id(
+                ctx,
                 reference,
                 &cadmpeg_ir::identity_component!("topology-numeric-attribute"),
                 numeric_use.position.reference_ordinal(),
                 context.id_suffix.as_ref(),
-            );
+            )?;
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
             );
@@ -5556,12 +5644,7 @@ fn attach_parasolid_topology_numeric_attributes(
                 lane,
                 numeric_use.position.reference_ordinal(),
             )?;
-            ir.model.attributes.push(SourceAttribute {
-                id,
-                target: context.target.clone(),
-                name,
-                values,
-            });
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
@@ -5617,12 +5700,7 @@ fn attach_parasolid_topology_structured_attributes(
                         _ => continue,
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|value| AttributeValue::Vector(value.finite_components().into()))
-                            .collect(),
+                        mapped_vector_attribute_values(ctx, record.values.as_slice(), |value| value.finite_components())?,
                         record.inflated_offset,
                         "PARASOLID_VECTOR_ATTRIBUTE",
                         family,
@@ -5633,18 +5711,11 @@ fn attach_parasolid_topology_structured_attributes(
                         continue;
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|axis| {
-                                AttributeValue::Vector(
-                                    axis.iter()
-                                        .flat_map(|vector| vector.finite_components())
-                                        .collect(),
-                                )
-                            })
-                            .collect(),
+                        mapped_vector_attribute_values(ctx, record.values.as_slice(), |axis| {
+                            let first = axis[0].finite_components();
+                            let second = axis[1].finite_components();
+                            [first[0], first[1], first[2], second[0], second[1], second[2]]
+                        })?,
                         record.inflated_offset,
                         "ENTITY_57_AXIS_ATTRIBUTE",
                         "87_axis",
@@ -5655,12 +5726,7 @@ fn attach_parasolid_topology_structured_attributes(
                         continue;
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|value| AttributeValue::Integer(i64::from(*value)))
-                            .collect(),
+                        mapped_attribute_values(ctx, record.values.as_slice(), |value| AttributeValue::Integer(i64::from(*value)))?,
                         record.inflated_offset,
                         "ENTITY_58_TAG_ATTRIBUTE",
                         "88_tag",
@@ -5672,7 +5738,7 @@ fn attach_parasolid_topology_structured_attributes(
                         continue;
                     };
                     (
-                        vec![AttributeValue::String(record.value.as_str().to_owned())],
+                        single_string_attribute_values(ctx, record.value.as_str())?,
                         record.inflated_offset,
                         "ENTITY_62_UNICODE_ATTRIBUTE",
                         "98_unicode",
@@ -5680,11 +5746,12 @@ fn attach_parasolid_topology_structured_attributes(
                 }
             };
             let id = topology_attribute_id(
+                ctx,
                 reference,
                 &cadmpeg_ir::identity_component!("topology-structured-attribute"),
                 structured_use.position.reference_ordinal(),
                 context.id_suffix.as_ref(),
-            );
+            )?;
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
             );
@@ -5707,12 +5774,7 @@ fn attach_parasolid_topology_structured_attributes(
                 family,
                 structured_use.position.reference_ordinal(),
             )?;
-            ir.model.attributes.push(SourceAttribute {
-                id,
-                target: context.target.clone(),
-                name,
-                values,
-            });
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
