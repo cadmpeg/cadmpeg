@@ -71,10 +71,8 @@ impl PlaneDescriptor {
         }))
     }
 
-    // This conversion consumes the input carrier at the typed construction boundary.
-    #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn from_wire(
-        identity: String,
+        identity: &str,
         suffix: &[u8],
         schema_index: u32,
         label: &str,
@@ -134,14 +132,14 @@ mod tests {
             assert_eq!(descriptor.schema_index(), 0);
             assert_eq!(descriptor.suffix(), bytes[30..]);
             assert!(PlaneDescriptor::from_wire(
-                descriptor.identity().into(),
+                descriptor.identity(),
                 &descriptor.suffix(),
                 1,
                 label
             )
             .is_err());
             assert!(PlaneDescriptor::from_wire(
-                descriptor.identity().into(),
+                descriptor.identity(),
                 &descriptor.suffix(),
                 0,
                 "other"

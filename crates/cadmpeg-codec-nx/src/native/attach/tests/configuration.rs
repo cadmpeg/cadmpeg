@@ -1302,7 +1302,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
 
 #[test]
 fn nx_native_feature_parameters_require_unique_resolved_names() {
-    let expression = |id: &str, name: &str, text: &str| crate::native::om::Expression {
+    let expression = |id: &str, name: &str, text: &str| crate::native::om::ParameterFormula {
         id: id.to_string(),
         owner: None,
         declaration: None,
@@ -1441,7 +1441,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
 fn native_parameter_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let expression = crate::native::om::Expression {
+    let expression = crate::native::om::ParameterFormula {
         id: "expression".into(),
         owner: None,
         declaration: None,

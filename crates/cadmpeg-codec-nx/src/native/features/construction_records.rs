@@ -27,7 +27,7 @@ use super::{
     FeatureSurfaceConstructionString, FeatureThruCurveConstructionEnvelope,
 };
 use crate::container::Container;
-use crate::native::om::{Expression, ExpressionDeclaration};
+use crate::native::om::{ParameterFormula, ExpressionDeclaration};
 use crate::native::segments::SegmentBodyBinding;
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::reference_index::PayloadIndexToken;
@@ -2546,7 +2546,7 @@ pub(in crate::native) fn feature_block_dimensions(
     constructions: &[FeatureBlockConstruction],
     bindings: &[FeatureParameterBinding],
     declarations: &[ExpressionDeclaration],
-    expressions: &[Expression],
+    expressions: &[ParameterFormula],
 ) -> Result<Vec<FeatureBlockDimensions>, CodecError> {
     let mut dimensions = Vec::new();
     for construction in constructions {

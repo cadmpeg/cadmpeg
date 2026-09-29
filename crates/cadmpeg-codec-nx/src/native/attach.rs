@@ -273,22 +273,22 @@ pub(super) fn attach(
     let display_jt_tessellations = display_jt_tessellations(
         ctx,
         &DisplayJtTessellationInputs {
-            meshes: &model.display_jt.display_jt_polygon_meshes,
-            coordinates: &model.display_jt.display_jt_vertex_coordinates,
-            normals: &model.display_jt.display_jt_vertex_normals,
-            colors: &model.display_jt.display_jt_vertex_colors,
-            texture_coordinates: &model.display_jt.display_jt_vertex_texture_coordinates,
-            vertex_flags: &model.display_jt.display_jt_vertex_flags,
-            vertex_headers: &model.display_jt.display_jt_vertex_records_headers,
-            coordinate_headers: &model.display_jt.display_jt_coordinate_array_headers,
+            meshes: &model.display_jt.polygon_meshes,
+            coordinates: &model.display_jt.vertex_coordinates,
+            normals: &model.display_jt.vertex_normals,
+            colors: &model.display_jt.vertex_colors,
+            texture_coordinates: &model.display_jt.vertex_texture_coordinates,
+            vertex_flags: &model.display_jt.vertex_flags,
+            vertex_headers: &model.display_jt.vertex_records_headers,
+            coordinate_headers: &model.display_jt.coordinate_array_headers,
             shape_elements: model.display_jt.graph.shape_lod_elements(),
-            bindings: &model.display_jt.display_jt_shape_lod_bindings,
-            shape_nodes: &model.display_jt.display_jt_tri_strip_shape_nodes,
-            base_nodes: &model.display_jt.display_jt_base_node_data,
-            group_nodes: &model.display_jt.display_jt_group_node_data,
-            instance_nodes: &model.display_jt.display_jt_instance_nodes,
-            transforms: &model.display_jt.display_jt_geometric_transform_attributes,
-            materials: &model.display_jt.display_jt_material_attributes,
+            bindings: &model.display_jt.shape_lod_bindings,
+            shape_nodes: &model.display_jt.tri_strip_shape_nodes,
+            base_nodes: &model.display_jt.base_node_data,
+            group_nodes: &model.display_jt.group_node_data,
+            instance_nodes: &model.display_jt.instance_nodes,
+            transforms: &model.display_jt.geometric_transform_attributes,
+            materials: &model.display_jt.material_attributes,
             compressed_elements: model.display_jt.graph.compressed_elements(),
         },
     )?;
@@ -329,18 +329,18 @@ pub(super) fn attach(
     let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
         ctx,
         ir,
-        &model.parasolid.parasolid_topology_attribute_list_references,
-        &model.parasolid.parasolid_topology_attribute_class_uses,
-        &model.parasolid.parasolid_attribute_definitions,
-        &model.parasolid.parasolid_attribute_field_uses,
-        &model.parasolid.parasolid_attribute_field_names,
+        &model.parasolid.topology_attribute_list_references,
+        &model.parasolid.topology_attribute_class_uses,
+        &model.parasolid.attribute_definitions,
+        &model.parasolid.attribute_field_uses,
+        &model.parasolid.attribute_field_names,
     )?;
     attach_parasolid_topology_string_attributes(
         ctx,
         ir,
         &ParasolidStringAttributeSources {
-            string_uses: &model.parasolid.parasolid_entity_51_string_uses,
-            strings: &model.parasolid.parasolid_entity_54_string_records,
+            string_uses: &model.parasolid.entity_51_string_uses,
+            strings: &model.parasolid.entity_54_string_records,
         },
         &topology_attribute_index,
         annotations,
@@ -349,9 +349,9 @@ pub(super) fn attach(
         ctx,
         ir,
         &ParasolidNumericAttributeSources {
-            numeric_uses: &model.parasolid.parasolid_entity_51_numeric_uses,
-            integers: &model.parasolid.parasolid_entity_52_integer_records,
-            doubles: &model.parasolid.parasolid_entity_53_double_records,
+            numeric_uses: &model.parasolid.entity_51_numeric_uses,
+            integers: &model.parasolid.entity_52_integer_records,
+            doubles: &model.parasolid.entity_53_double_records,
         },
         &topology_attribute_index,
         annotations,
@@ -360,11 +360,11 @@ pub(super) fn attach(
         ctx,
         ir,
         &ParasolidStructuredAttributeSources {
-            structured_uses: &model.parasolid.parasolid_entity_51_structured_uses,
-            vectors: &model.parasolid.parasolid_entity_vector_records,
-            axes: &model.parasolid.parasolid_entity_57_axis_records,
-            tags: &model.parasolid.parasolid_entity_58_tag_records,
-            unicode: &model.parasolid.parasolid_entity_62_unicode_records,
+            structured_uses: &model.parasolid.entity_51_structured_uses,
+            vectors: &model.parasolid.entity_vector_records,
+            axes: &model.parasolid.entity_57_axis_records,
+            tags: &model.parasolid.entity_58_tag_records,
+            unicode: &model.parasolid.entity_62_unicode_records,
         },
         &topology_attribute_index,
         annotations,
@@ -671,7 +671,7 @@ fn attach_rm_face_colors(
         &face_ids,
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
-        &model.parasolid.parasolid_deltas_records,
+        &model.parasolid.deltas_records,
         &super::substrate::paired_delta_streams(ctx, scan)?,
     )?;
     for (face_id, color) in bindings {
@@ -761,7 +761,7 @@ fn attach_rm_appearances(
         &face_ids,
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
-        &model.parasolid.parasolid_deltas_records,
+        &model.parasolid.deltas_records,
         &super::substrate::paired_delta_streams(ctx, scan)?,
     )?;
     if source_bindings.is_empty() && face_bindings.is_empty() {
@@ -2097,10 +2097,10 @@ fn attach_feature_operations(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let features = &model.features;
-    let parasolid_group_members = model.parasolid.parasolid_group_members.as_slice();
+    let parasolid_group_members = model.parasolid.group_members.as_slice();
     let data_blocks = model.om.data_blocks.as_slice();
     let expressions = model.om.expressions.as_slice();
-    let body_bindings = model.segments.segment_body_bindings.as_slice();
+    let body_bindings = model.segments.body_bindings.as_slice();
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
     let body_references = features.feature_body_references.as_slice();

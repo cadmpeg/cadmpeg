@@ -1013,7 +1013,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .native
         .namespace("nx")
         .expect("NX namespace")
-        .arena_as::<super::Expression>("expressions")
+        .arena_as::<super::ParameterFormula>("expressions")
         .expect("required invariant");
     assert_eq!(expressions.len(), 1);
     assert_eq!(

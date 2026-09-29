@@ -2169,7 +2169,7 @@ pub(super) fn symbolic_thread_feature_definition() -> FeatureDefinition {
 pub(super) fn native_feature_parameters(
     ctx: &DecodeContext<'_>,
     uses: &[&crate::native::features::FeatureParameterUse],
-    expressions: &[crate::native::om::Expression],
+    expressions: &[crate::native::om::ParameterFormula],
 ) -> Result<BTreeMap<String, String>, CodecError> {
     let mut parameters = BTreeMap::new();
     for parameter_use in uses {
