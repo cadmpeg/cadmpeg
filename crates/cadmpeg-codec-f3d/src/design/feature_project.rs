@@ -1193,7 +1193,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Coil) => {
-                    project_coil(scope, &parameters, construction_groups)
+                    project_coil(ctx, scope, &parameters, construction_groups)?
                         .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Scale) => if let Some(operation) = scope.scale_operation() {
@@ -9697,15 +9697,17 @@ pub(super) fn closed_spatial_sketch_profiles(
 }
 
 fn project_coil(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
         CoilSectionPlacement, FeatureDefinition, FeatureOperation,
     };
 
+    let parsed = (|| {
     let unique = |kind: &str| {
         let mut matches = parameters
             .iter()
@@ -9824,6 +9826,11 @@ fn project_coil(
         }
         first_body_group
     };
+    Some((diameter, extent, taper, section, section_placement, operation, first_body_group))
+    })();
+    let Some((diameter, extent, taper, section, section_placement, operation, first_body_group)) = parsed else {
+        return Ok(None);
+    };
     let result = match (operation, first_body_group) {
         (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody {},
         (operation, Some(group)) => CoilResult::Boolean {
@@ -9831,11 +9838,12 @@ fn project_coil(
                 DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanKind::Join,
                 DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanKind::Cut,
                 DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanKind::Intersect,
-                DesignExtrudeOperation::NewBody => return None,
+                DesignExtrudeOperation::NewBody => return Ok(None),
             },
-            targets: BodySelection::Native(group.id.clone()),
+            targets: BodySelection::Native(copy_feature_text(ctx, &group.id,
+                "f3d Coil Boolean target group id")?),
         },
-        _ => return None,
+        _ => return Ok(None),
     };
     let placement = scope
         .coil_placement()
@@ -9861,22 +9869,27 @@ fn project_coil(
     let placement = match placement {
         Some(frame) => CoilPlacement::Explicit { frame },
         None => CoilPlacement::Native {
-            native_ref: cadmpeg_ir::features::SelectionReference::try_from(scope.id.clone())
-                .ok()?,
+            native_ref: match cadmpeg_ir::features::SelectionReference::try_from(
+                copy_feature_text(ctx, &scope.id, "f3d Coil native placement id")?
+            ) {
+                Ok(reference) => reference,
+                Err(_) => return Ok(None),
+            },
         },
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::Coil {
+    let clockwise = or_none!(scope.coil_clockwise());
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Coil {
         construction: CoilConstruction {
             placement,
             diameter,
             extent,
             section,
             section_placement,
-            clockwise: scope.coil_clockwise()?,
+            clockwise,
             taper,
         },
         result,
-    }))
+    })))
 }
 
 #[cfg(test)]

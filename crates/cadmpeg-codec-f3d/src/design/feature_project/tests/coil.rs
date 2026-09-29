@@ -11,7 +11,7 @@ use crate::records::{
     },
     parameters::DesignParameter,
 };
-use cadmpeg_ir::features::{CoilPlacement, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{CoilPlacement, CoilResult, FeatureDefinition, FeatureOperation};
 
 fn parameter(
     record_index: u32,
@@ -50,8 +50,7 @@ fn parameter(
     .unwrap()
 }
 
-#[test]
-fn long_coil_matrix_projects_as_explicit_placement() {
+fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#40",
         crate::records::feature::scope::DesignFeatureKind::CoilPrimitive,
@@ -128,14 +127,22 @@ fn long_coil_matrix_projects_as_explicit_placement() {
         parameter(4, "Revolutions", None, 3.0),
         parameter(5, "Height", Some("cm"), 1.5),
     ];
-    let owned = parameters
-        .iter()
-        .enumerate()
+    (scope, parameters)
+}
+
+fn owned_parameters(parameters: &[DesignParameter; 5]) -> Vec<(u32, &DesignParameter)> {
+    parameters.iter().enumerate()
         .map(|(ordinal, parameter)| (ordinal as u32, parameter))
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+#[test]
+fn long_coil_matrix_projects_as_explicit_placement() {
+    let (scope, parameters) = long_coil_fixture();
+    let owned = owned_parameters(&parameters);
 
     let FeatureDefinition::Operation(FeatureOperation::Coil { construction, .. }) =
-        project_coil(&scope, &owned, &[]).expect("typed long Coil")
+        project_coil(None, &scope, &owned, &[]).unwrap().expect("typed long Coil")
     else {
         panic!("expected Coil definition")
     };
@@ -149,5 +156,119 @@ fn long_coil_matrix_projects_as_explicit_placement() {
             )
             .unwrap()
         }
+    );
+}
+
+fn assert_coil_retained_refusal(
+    scope: &DesignParameterScope,
+    parameters: &[DesignParameter; 5],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    operation: &'static str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let owned = owned_parameters(parameters);
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            project_coil(Some(&ctx), scope, &owned, groups),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ) {
+            return;
+        }
+    }
+    panic!("no Coil refusal at {operation}");
+}
+
+#[test]
+fn coil_native_placement_id_refuses_retained_limit() {
+    let (mut scope, parameters) = long_coil_fixture();
+    if let crate::records::feature::scope::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
+        scope.payload_mut()
+    {
+        slot.as_mut().unwrap().coil_transform = None;
+    }
+    let owned = owned_parameters(&parameters);
+    let definition = project_coil(None, &scope, &owned, &[]).unwrap().unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Coil { construction, .. })
+            if matches!(&construction.placement, CoilPlacement::Native { native_ref }
+                if native_ref.as_str() == scope.id)
+    ));
+    assert_coil_retained_refusal(&scope, &parameters, &[], "f3d Coil native placement id");
+}
+
+fn coil_body_group() -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    use crate::records::topology::construction::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+        DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+        DesignConstructionOperandRole,
+    };
+    DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: "f3d:Design/BulkStream.dat:group#60".into(),
+        scope_record_index: 40,
+        scope_reference_ordinal: 0,
+        record_index: 60,
+        byte_offset: 0,
+        class_tag: "282".to_owned().try_into().unwrap(),
+        members: vec![crate::records::identity::Located { value: 61, offset: 0 }],
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 0,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 18,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 22,
+                variant: false,
+            },
+        ).unwrap(),
+        operand_role: DesignConstructionOperandRole::Other(
+            crate::records::topology::extrude_selection::DesignOperandRole::BODIES_B,
+        ),
+        role_offset: 0,
+        paired_class_tag: "261".to_owned().try_into().unwrap(),
+        paired_byte_offset: 0,
+    }).unwrap()
+}
+
+#[test]
+fn coil_boolean_target_group_id_refuses_retained_limit() {
+    let (mut scope, parameters) = long_coil_fixture();
+    if let crate::records::feature::scope::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
+        scope.payload_mut()
+    {
+        slot.as_mut().unwrap().coil_operation = Some(crate::records::identity::RecordedValue {
+            value: DesignExtrudeOperation::Join,
+            offset: 62,
+        });
+    }
+    let group = coil_body_group();
+    let owned = owned_parameters(&parameters);
+    let definition = project_coil(None, &scope, &owned, std::slice::from_ref(&group))
+        .unwrap().unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Coil {
+            result: CoilResult::Boolean { .. }, ..
+        })
+    ));
+    assert_coil_retained_refusal(
+        &scope, &parameters, std::slice::from_ref(&group),
+        "f3d Coil Boolean target group id",
     );
 }
