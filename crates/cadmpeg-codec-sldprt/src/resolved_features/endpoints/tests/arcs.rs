@@ -748,7 +748,7 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
             entity("end", 2, Some(9), Some([1.0, 0.0])),
         ],
     };
-    normalize_indexed_curve_entities(&mut lane);
+    normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane).unwrap();
     assert_eq!(lane.sketch_entities[1].kind(), SketchInputKind::Point);
     assert_eq!(lane.sketch_entities[2].kind(), SketchInputKind::Point);
     assert_eq!(
@@ -964,7 +964,7 @@ fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
             ),
         ],
     };
-    normalize_indexed_curve_entities(&mut lane);
+    normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane).unwrap();
     assert_eq!(lane.sketch_entities[1].kind(), SketchInputKind::Point);
     assert_eq!(lane.sketch_entities[2].kind(), SketchInputKind::Point);
 
