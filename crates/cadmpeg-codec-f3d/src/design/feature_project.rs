@@ -1025,6 +1025,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 )?
                 .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
+                    ctx,
                     scope,
                     construction_groups,
                     edge_operands,
@@ -1032,7 +1033,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     placements,
                     curve_identities,
-                )
+                )?
                 .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
@@ -6517,6 +6518,7 @@ fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::fea
 }
 
 pub(super) fn project_fixed_revolve_with_entities(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
@@ -6524,7 +6526,7 @@ pub(super) fn project_fixed_revolve_with_entities(
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         AngularTermination, FeatureDefinition, FeatureOperation, PlanarProfileRef, RevolutionAxis,
         RevolveConstruction, RevolveExtent,
@@ -6536,66 +6538,62 @@ pub(super) fn project_fixed_revolve_with_entities(
         },
     )) = &scope.payload()
     else {
-        return None;
+        return Ok(None);
     };
-    let stream = native_stream(&scope.id)?;
-    let groups = construction_groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    let profiles = groups
-        .iter()
-        .filter(|group| group.role() == DesignOperandRole::PROFILE)
-        .collect::<Vec<_>>();
-    let axes = groups
-        .iter()
-        .filter(|group| group.role() == DesignOperandRole::ROLE_0X21)
-        .collect::<Vec<_>>();
-    let bodies = groups
-        .iter()
-        .filter(|group| {
-            matches!(
-                group.role(),
-                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-            )
-        })
-        .collect::<Vec<_>>();
-    let ([profile], [axis_group]) = (profiles.as_slice(), axes.as_slice()) else {
-        return None;
-    };
+    let stream = or_none!(native_stream(&scope.id));
+    let mut profile = None;
+    let mut axis_group = None;
+    let mut body_count = 0;
+    let mut group_count = 0;
+    for group in construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+    }) {
+        group_count += 1;
+        match group.role() {
+            DesignOperandRole::PROFILE => {
+                if profile.replace(group).is_some() { return Ok(None); }
+            }
+            DesignOperandRole::ROLE_0X21 => {
+                if axis_group.replace(group).is_some() { return Ok(None); }
+            }
+            DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B => body_count += 1,
+            _ => {}
+        }
+    }
+    let profile = or_none!(profile);
+    let axis_group = or_none!(axis_group);
     let expected_body_groups = usize::from(*operation != DesignExtrudeOperation::NewBody);
-    if bodies.len() != expected_body_groups || groups.len() != 2 + expected_body_groups {
-        return None;
+    if body_count != expected_body_groups || group_count != 2 + expected_body_groups {
+        return Ok(None);
     }
     let [_] = profile.members() else {
-        return None;
+        return Ok(None);
     };
     let [crate::records::identity::Located {
         value: axis_member, ..
     }] = axis_group.members()
     else {
-        return None;
+        return Ok(None);
     };
-    let matches = edge_operands
+    let mut matching = edge_operands
         .iter()
         .filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == scope.record_index
                 && operand.record_index() == *axis_member
-        })
-        .collect::<Vec<_>>();
-    let axis = if let [axis_operand] = matches.as_slice() {
+        });
+    let first = matching.next();
+    let second = matching.next();
+    let axis = if let (Some(axis_operand), None) = (first, second) {
         Some(RevolutionAxis {
-            origin: axis_operand.resolved_axis?.origin,
+            origin: or_none!(axis_operand.resolved_axis).origin,
             direction: cadmpeg_ir::features::FeatureDirection3::from(
-                axis_operand.resolved_axis?.direction,
+                or_none!(axis_operand.resolved_axis).direction,
             ),
             reference: None,
         })
-    } else if matches.is_empty() {
+    } else if first.is_none() {
         let resolved = resolve_sketch_axis_selection(
             scope,
             axis_group,
@@ -6613,18 +6611,19 @@ pub(super) fn project_fixed_revolve_with_entities(
             )
             && revolve_face_axis_operand(scope, axis_group, *axis_member, face_operands).is_none()
         {
-            return None;
+            return Ok(None);
         }
         resolved
     } else {
-        return None;
+        return Ok(None);
     };
     let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
-        PlanarProfileRef::Native(profile.id.clone());
+        PlanarProfileRef::Native(copy_feature_text(ctx, &profile.id,
+            "f3d Revolve native profile id")?);
     let extent = RevolveExtent::OneSided {
         termination: AngularTermination::Angle { angle: *angle },
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match axis {
             Some(axis) => RevolveConstruction::Resolved {
                 profile: revolve_profile,
@@ -6647,7 +6646,7 @@ pub(super) fn project_fixed_revolve_with_entities(
             ),
         },
         op: fixed_boolean_operation(*operation),
-    }))
+    })))
 }
 
 fn unresolved_historical_face_axis_selection(
