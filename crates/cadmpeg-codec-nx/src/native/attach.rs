@@ -2270,8 +2270,8 @@ fn attach_feature_operations(
     let mut simple_hole_diameters = BTreeMap::new();
     admit_hole_recognition_tolerances(ir)?;
     if let Some(projection) = hole_body_projection(ctx, ir, &simple_hole_operations, &hole_outputs)? {
-        hole_outputs.extend(projection.outputs);
-        simple_hole_diameters.extend(projection.diameters);
+        extend_hole_projection_map(ctx, &mut hole_outputs, projection.outputs, "NX simple hole output merge")?;
+        extend_hole_projection_map(ctx, &mut simple_hole_diameters, projection.diameters, "NX simple hole diameter merge")?;
     }
     let counterbore_operations =
         counterbore_operations(ctx, simple_hole_templates, &operation_positions)?.unwrap_or_default();
@@ -2279,17 +2279,17 @@ fn attach_feature_operations(
     if let Some(projection) =
         counterbore_body_projection(ctx, ir, &counterbore_operations, &hole_outputs)?
     {
-        hole_outputs.extend(projection.outputs);
-        simple_hole_diameters.extend(projection.diameters);
-        counterbore_dimensions.extend(projection.counterbores);
+        extend_hole_projection_map(ctx, &mut hole_outputs, projection.outputs, "NX counterbore output merge")?;
+        extend_hole_projection_map(ctx, &mut simple_hole_diameters, projection.diameters, "NX counterbore diameter merge")?;
+        extend_hole_projection_map(ctx, &mut counterbore_dimensions, projection.counterbores, "NX counterbore dimension merge")?;
     }
     let blind_hole_operations =
         blind_hole_operations(ctx, simple_hole_templates, &operation_positions)?.unwrap_or_default();
     let mut blind_hole_depths = BTreeMap::new();
     if let Some(projection) = blind_hole_body_projection(ctx, ir, &blind_hole_operations, &hole_outputs)?
     {
-        hole_outputs.extend(projection.outputs);
-        simple_hole_diameters.extend(projection.diameters);
+        extend_hole_projection_map(ctx, &mut hole_outputs, projection.outputs, "NX blind hole output merge")?;
+        extend_hole_projection_map(ctx, &mut simple_hole_diameters, projection.diameters, "NX blind hole diameter merge")?;
         blind_hole_depths = projection.blind_depths;
     }
     let simple_hole_placements =
@@ -7618,6 +7618,23 @@ struct HoleBodyProjection {
     diameters: BTreeMap<String, Length>,
     blind_depths: BTreeMap<String, cadmpeg_ir::scalar::NonZeroLength>,
     counterbores: BTreeMap<String, CounterboreDimensions>,
+}
+
+fn extend_hole_projection_map<V>(
+    ctx: &DecodeContext<'_>,
+    target: &mut BTreeMap<String, V>,
+    source: BTreeMap<String, V>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    for (key, value) in source {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(target.len()), operation)?;
+        if !target.contains_key(&key) {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, V)>()), operation)?;
+        target.insert(key, value);
+    }
+    Ok(())
 }
 
 fn hole_operations_are_unique(
