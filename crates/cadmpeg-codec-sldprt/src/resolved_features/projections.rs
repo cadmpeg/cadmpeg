@@ -2624,9 +2624,12 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 }
                 Some(native)
             };
-            let generated = references
-                .iter()
-                .map(|(_, components, explicit_producer)| {
+            const GENERATED_OPERATION: &str = "resolve SLDPRT cosmetic thread generated face";
+            let mut generated = None;
+            let mut complete = true;
+            for (_, components, explicit_producer) in &references {
+                ctx.charge_work(1, GENERATED_OPERATION)?;
+                let candidate = (|| {
                     let components = components.as_ref()?;
                     let explicit = explicit_producer.as_deref().and_then(|producer_ref| {
                         let producer = history_features
@@ -2634,10 +2637,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             .copied()
                             .find(|candidate| candidate.id.as_str() == producer_ref)?;
                         let component = components.first()?;
-                        component
-                            .local_id
-                            .is_some()
-                            .then_some((component, producer))
+                        component.local_id.is_some().then_some((component, producer))
                     });
                     let (component, producer) = explicit.or_else(|| {
                         component_path_feature(
@@ -2647,29 +2647,41 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             ComponentPathEnd::Leading,
                         )
                     })?;
-                    Some((
-                        feature_ids_by_native.get(producer.id.as_str())?.clone(),
-                        component.local_id?.to_string(),
-                    ))
-                })
-                .collect::<Option<Vec<_>>>()
-                .filter(|candidates| {
-                    candidates
-                        .first()
-                        .is_some_and(|first| candidates.iter().all(|candidate| candidate == first))
-                })
-                .and_then(|mut candidates| candidates.pop());
-            if let Some((producer, local_id)) = generated {
+                    Some((feature_ids_by_native.get(producer.id.as_str())?, component.local_id?))
+                })();
+                let Some(candidate) = candidate else {
+                    complete = false;
+                    break;
+                };
+                if let Some(previous) = generated {
+                    if previous != candidate {
+                        complete = false;
+                        break;
+                    }
+                } else {
+                    generated = Some(candidate);
+                }
+            }
+            if let Some((producer, local_id)) = generated.filter(|_| complete) {
                 let Some(native) = native else {
                     break 'feature_edit;
                 };
-                *face = cadmpeg_ir::features::GeneratedFaceRef::new(producer.clone(), local_id)
-                    .and_then(|face| {
-                        cadmpeg_ir::features::FaceSelection::generated(vec![face], native.clone())
-                    })
-                    .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native));
-                if producer != feature.id && !feature.dependencies.contains(&producer) {
-                    feature.dependencies.insert(producer);
+                let producer_id = copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
+                let local_id_text = ctx.format_retained(format_args!("{local_id}"), GENERATED_OPERATION)?;
+                *face = match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
+                    Ok(generated_face) => {
+                        let mut faces = Vec::new();
+                        ctx.reserve_collection_vec(&mut faces, 1, GENERATED_OPERATION)?;
+                        faces.push(generated_face);
+                        let native_copy = ctx.format_retained(format_args!("{native}"), GENERATED_OPERATION)?;
+                        cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                            .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                    }
+                    Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
+                };
+                if producer != &feature.id && !feature.dependencies.contains(producer) {
+                    let dependency = copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
+                    feature.dependencies.try_insert_charged(dependency, ctx, GENERATED_OPERATION)?;
                 }
                 break 'feature_edit;
             }

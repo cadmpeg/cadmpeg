@@ -198,6 +198,61 @@ fn unbound_cosmetic_thread_refuses_scoped_limit() {
 }
 
 #[test]
+fn unbound_cosmetic_thread_generated_face_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (mut features, mut histories, faces, surfaces) = cosmetic_fallback_fixture();
+    let mut producer = compact_edge_projection_feature();
+    producer.id = FeatureId::mint("synthetic:test:id#producer").expect("identity grammar");
+    producer.native_ref = Some("producer-native".into());
+    features.push(producer);
+    let mut producer_record = histories[0].features[0].clone();
+    producer_record.id = "producer-native".into();
+    producer_record.name = "producer-native".into();
+    histories[0].features.push(producer_record);
+    let mut selection = full_round_selection();
+    selection.feature_ref = "thread-native".into();
+    selection.producer_feature_refs = vec!["producer-native".into()];
+    selection.components = vec![FeatureInputComponentPathEntry {
+        instance: None,
+        type_signature: [0; 12],
+        local_id: Some(7),
+    }];
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: vec![selection],
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 10;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_unbound_cosmetic_thread_faces(
+        &ctx,
+        &mut features,
+        &histories,
+        &[lane],
+        &faces,
+        &surfaces,
+    )
+    .expect_err("generated face vector exceeds collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "resolve SLDPRT cosmetic thread generated face"));
+}
+
+#[test]
 fn unbound_offset_plane_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
