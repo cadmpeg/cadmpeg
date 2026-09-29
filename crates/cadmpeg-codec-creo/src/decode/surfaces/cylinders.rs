@@ -145,10 +145,10 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "ActDatums:{}",
-                        datum.id
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                        format_args!("ActDatums:{}", datum.id),
+                        "creo active datum cylinder source IDs",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -205,31 +205,28 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             continue;
         }
         let local_planes = placed_planes(ctx, scan)?;
-        let Some(planes) = affected
-            .iter()
-            .map(|id| reconciled_model_plane(&local_planes, ir, source_carriers, *id))
-            .collect::<Option<Vec<_>>>()
-        else {
+        let mut planes = Vec::new();
+        for id in affected {
+            let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, *id) else {
+                break;
+            };
+            ctx.try_reserve_items(&mut planes, 1, "creo constrained slot plane rows")?;
+            planes.push(plane);
+        }
+        if planes.len() != affected.len() {
             continue;
-        };
+        }
         let cap_planes = [planes[0], planes[1]];
         let Some(cylinder) = slot_fillet_cylinder(ctx, cap_planes, &planes[cap_ids.len()..])? else {
             continue;
         };
-        let unresolved_rows = scan
-            .surfaces
-            .rows
-            .iter()
-            .filter(|row| {
-                row.feature_id == feature_id
-                    && row.kind == crate::surface::SurfaceKind::Cylinder
-                    && !ir.model.surfaces.iter().any(|surface| {
-                        surface.id
-                            == SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id)
-                    })
-            })
-            .collect::<Vec<_>>();
-        let [row] = unresolved_rows.as_slice() else {
+        let Some(row) = crate::decode::uniqueness::exactly_one(scan.surfaces.rows.iter().filter(|row| {
+            row.feature_id == feature_id
+                && row.kind == crate::surface::SurfaceKind::Cylinder
+                && !ir.model.surfaces.iter().any(|surface| {
+                    surface.id == SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id)
+                })
+        })) else {
             continue;
         };
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
@@ -260,10 +257,10 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "AllFeatur:{}:{}",
-                        feature_id, row.id
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                        format_args!("AllFeatur:{}:{}", feature_id, row.id),
+                        "creo constrained slot cylinder source IDs",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,

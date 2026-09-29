@@ -779,6 +779,84 @@ fn constrained_slot_fillet_propagates_midplane_collection_limit() {
 }
 
 #[test]
+fn constrained_slot_fillet_plane_rows_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = slot_fillet_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 19;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::transfer_constrained_slot_fillet_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("constrained slot plane row exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo constrained slot plane rows"));
+}
+
+#[test]
+fn active_datum_cylinder_source_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.planes.datum_cylinders.push(crate::datum::DatumCylinder {
+        id: 8,
+        feature_id: 1,
+        reversed: false,
+        frame: crate::surface::PositionalCylinderFrame::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            1.0,
+            Some(2.0),
+        )
+        .expect("valid datum cylinder frame"),
+        offset_in_payload: 0,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from("creo:actdatums:surface#8".len())
+        .expect("identity length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::transfer_active_datum_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("datum source identity exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo active datum cylinder source IDs"));
+}
+
+#[test]
+fn constrained_slot_cylinder_source_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = slot_fillet_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::transfer_constrained_slot_fillet_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("constrained slot source identity exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo constrained slot cylinder source IDs"));
+}
+
+#[test]
 fn constrained_slot_cylinder_radius_is_in_millimeters_at_ir_admission() {
     let mut scan = slot_fillet_scan();
     scan.framing.principal_unit = Some(crate::legacy::PrincipalUnitSystem::InchPoundMassSecond);
