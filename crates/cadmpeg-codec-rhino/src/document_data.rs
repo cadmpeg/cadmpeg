@@ -515,12 +515,8 @@ fn render_userdata(
                         "render userdata item must be a long chunk",
                     ));
                 }
-                crate::chunks::reserve_admitted_vec(
-                    ctx,
-                    &mut items,
-                    1,
-                    "Rhino render userdata items",
-                )?;
+                ctx.reserve_vec(&mut items, 1, "Rhino render userdata items")
+                    .map_err(crate::chunks::FramingError::from)?;
                 let mut checksum_warnings = Diagnostics::new();
                 let item = parse_userdata(ctx, data, &chunk, archive, &mut checksum_warnings)?;
                 items.push(item);
@@ -547,12 +543,12 @@ fn render_userdata(
                 ));
             }
             _ => {
-                crate::chunks::reserve_admitted_vec(
-                    ctx,
+                ctx.reserve_vec(
                     &mut unknown_chunks,
                     1,
                     "Rhino render userdata unknown chunks",
-                )?;
+                )
+                .map_err(crate::chunks::FramingError::from)?;
                 unknown_chunks.push(chunk.range());
                 offset = chunk.next_offset();
             }

@@ -11,7 +11,7 @@ use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::cage::Cage;
-use crate::chunks::{admitted_vec, checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
+use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
 use crate::settings::{interval, point, vector, xform, MillimeterScale};
@@ -151,7 +151,9 @@ fn captive_ids(
         });
     }
     let count = count(&mut ids, 16, MAX_CAPTIVES)?;
-    let mut values = admitted_vec(ctx, count, "Rhino morph captive IDs")?;
+    let mut values = ctx
+        .collection_vec(count, "Rhino morph captive IDs")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         values.push(uuid(&mut ids)?);
     }
@@ -427,7 +429,9 @@ fn localizers(
         });
     }
     let localizer_count = count(&mut list, 12, MAX_LOCALIZERS)?;
-    let mut localizers = admitted_vec(ctx, localizer_count, "Rhino morph localizers")?;
+    let mut localizers = ctx
+        .collection_vec(localizer_count, "Rhino morph localizers")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..localizer_count {
         localizers.push(localizer(ctx, data, &mut list, scale, archive)?);
     }
@@ -843,7 +847,7 @@ pub(crate) fn project(
         }
     }
     Ok(Feature {
-        id: feature_id.clone(),
+        id: feature_id.try_clone_for_decode(ctx, "Rhino morph feature identity copy")?,
         ordinal,
         name,
         suppressed: Some(false),

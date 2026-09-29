@@ -7962,11 +7962,8 @@ fn consolidated_circles(
         crate::families::b2::records::b2_circles_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedCircle {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:circle#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:circle#{index:00}"),
                 "catia_native_circle_id",
             )?,
             byte_offset: u64_from_index(circle.pos),
@@ -8312,11 +8309,8 @@ fn consolidated_class61_records(
     let mut output = Vec::new();
     for (index, (pos, header_token, payload)) in class61_records.into_iter().enumerate() {
         let value = CatiaConsolidatedClass61Record {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:class61-record#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:class61-record#{index:00}"),
                 "catia_native_class61_id",
             )?,
             byte_offset: u64_from_index(pos),
@@ -8339,11 +8333,8 @@ fn consolidated_class5b5c_records(
     let mut output = Vec::new();
     for (index, record) in control_records.into_iter().enumerate() {
         let value = CatiaConsolidatedClass5b5cRecord {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:class5b5c-record#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:class5b5c-record#{index:00}"),
                 "catia_native_class5b5c_id",
             )?,
             frame: record.frame.into(),
@@ -8531,11 +8522,8 @@ fn consolidated_cone_faces(
         let byte_offset = u64_from_index(face.pos);
         let byte_len = u64_from_index(face.end - face.pos);
         let value = CatiaConsolidatedConeFace {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:cone-face#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:cone-face#{index:00}"),
                 "catia_native_cone_face_id",
             )?,
             byte_offset,
@@ -8560,11 +8548,8 @@ fn consolidated_cones(
         crate::families::b2::records::b2_cones_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedCone {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:cone#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:cone#{index:00}"),
                 "catia_native_cone_id",
             )?,
             byte_offset: u64_from_index(cone.pos),
@@ -8623,11 +8608,8 @@ fn consolidated_cylinders(
             }
         };
         let value = CatiaConsolidatedCylinder {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:cylinder#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:cylinder#{index:00}"),
                 "catia_native_cylinder_id",
             )?,
             byte_offset: u64_from_index(cylinder.pos),
@@ -8660,11 +8642,8 @@ fn consolidated_cylinder_groups(
     for group in crate::families::b2::records::b2_groups_from_records(bytes, records) {
         let group_pos = group.pos;
         let group = CatiaConsolidatedGroup {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:group#",
-                groups.len(),
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:group#{:00}", groups.len()),
                 "catia_native_group_id",
             )?,
             byte_offset: u64_from_index(group.pos),
@@ -8676,11 +8655,11 @@ fn consolidated_cylinder_groups(
         {
             let Some(entry) = embedded.next() else { break };
             let value = CatiaConsolidatedEmbeddedCylinder {
-                id: crate::resource::format_usize_id(
-                    ctx,
-                    "catia:consolidated:embedded-cylinder#",
-                    cylinders.len(),
-                    0,
+                id: ctx.format_retained(
+                    format_args!(
+                        "catia:consolidated:embedded-cylinder#{:00}",
+                        cylinders.len()
+                    ),
                     "catia_native_embedded_cylinder_id",
                 )?,
                 byte_offset: u64_from_index(entry.pos),
@@ -8904,11 +8883,8 @@ fn consolidated_parameter_points(
             }
         };
         let value = CatiaConsolidatedParameterPoint {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:parameter-point#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:parameter-point#{index:00}"),
                 "catia_native_parameter_point_id",
             )?,
             byte_offset: u64_from_index(point.pos),
@@ -8970,11 +8946,8 @@ fn consolidated_plane_carriers(
             }
         };
         let value = CatiaConsolidatedPlaneCarrier {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:plane-carrier#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:plane-carrier#{index:00}"),
                 "catia_native_plane_carrier_id",
             )?,
             byte_offset: u64_from_index(carrier.pos),
@@ -9001,11 +8974,8 @@ fn consolidated_reference_lists(
             .enumerate()
     {
         let value = CatiaConsolidatedReferenceList {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:reference-list#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:reference-list#{index:00}"),
                 "catia_native_reference_list_id",
             )?,
             byte_offset: u64_from_index(list.pos),
@@ -9047,11 +9017,8 @@ fn consolidated_pcurves(
     for (index, (pcurve, family)) in pcurves.into_iter().enumerate() {
         let (knots, points, first_derivatives, second_derivatives) = pcurve.native_lanes(ctx)?;
         let value = CatiaConsolidatedPcurve {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:pcurve#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:pcurve#{index:00}"),
                 "catia_native_pcurve_id",
             )?,
             byte_offset: u64_from_index(pcurve.pos),
@@ -9139,11 +9106,8 @@ fn consolidated_revolutions(
             None => None,
         };
         let value = CatiaConsolidatedRevolution {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:revolution#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:revolution#{index:00}"),
                 "catia_native_revolution_id",
             )?,
             byte_offset: u64_from_index(revolution.pos),
@@ -9173,11 +9137,8 @@ fn consolidated_line_profiles(
         crate::families::b2::records::b2_line_profiles_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedLineProfile {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:line-profile#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:line-profile#{index:00}"),
                 "catia_native_line_profile_id",
             )?,
             byte_offset: u64_from_index(line.pos),
@@ -9200,11 +9161,8 @@ fn consolidated_spheres(
         crate::families::b2::records::b2_spheres_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedSphere {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:sphere#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:sphere#{index:00}"),
                 "catia_native_sphere_id",
             )?,
             byte_offset: u64_from_index(sphere.pos),
@@ -9231,11 +9189,8 @@ fn consolidated_tori(
         crate::families::b2::records::b2_tori_from_records(bytes, records).enumerate()
     {
         let value = CatiaConsolidatedTorus {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:torus#",
-                index,
-                0,
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:torus#{index:00}"),
                 "catia_native_torus_id",
             )?,
             byte_offset: u64_from_index(torus.pos),
