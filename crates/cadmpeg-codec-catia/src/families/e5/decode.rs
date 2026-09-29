@@ -1384,7 +1384,8 @@ fn plan_e5_boundary<'a>(
                     };
                     reversed
                 } else {
-                    geometry.clone()
+                    crate::resource::copy_pcurve_geometry(ctx, &geometry,
+                        "catia_e5_oriented_pcurve_copy")?
                 };
                 let lifted_curve = if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
                     ctx,
@@ -1417,10 +1418,15 @@ fn plan_e5_boundary<'a>(
                 };
                 if support.is_intersection() {
                     let side = E5OccurrenceIntersectionSide {
-                        surface: surface_for_ref[&face.surface].0.clone(),
-                        pcurve: oriented_pcurve.clone(),
+                        surface: crate::resource::copy_id(ctx,
+                            surface_for_ref[&face.surface].0.as_str(), SurfaceId::mint,
+                            "catia_e5_occurrence_surface_id")?,
+                        pcurve: crate::resource::copy_pcurve_geometry(ctx, &oriented_pcurve,
+                            "catia_e5_occurrence_pcurve")?,
                         pcurve_range: range,
-                        curve: lifted_curve.clone(),
+                        curve: lifted_curve.as_ref().map(|(curve, range)|
+                            Ok::<_, cadmpeg_core::CodecError>((copy_e5_curve(ctx, curve)?, *range)))
+                            .transpose()?,
                     };
                     crate::resource::admit_btree_entry(ctx, &occurrence_intersection_sides, &edge_ref, "catia_e5_occurrence_side_keys")?;
                     let sides = occurrence_intersection_sides.entry(edge_ref).or_default();
@@ -1443,14 +1449,14 @@ fn plan_e5_boundary<'a>(
                         }
                     }
                 } else if !support.is_intersection() {
-                    crate::resource::admit_btree_entry(ctx, &surface_curve_plan, &edge_ref, "catia_e5_surface_curve_plan")?;
-                    surface_curve_plan.entry(edge_ref).or_insert_with(|| {
-                        (
-                            surface_for_ref[&face.surface].0.clone(),
-                            oriented_pcurve,
-                            range,
-                        )
-                    });
+                    if !surface_curve_plan.contains_key(&edge_ref) {
+                        let surface_id = crate::resource::copy_id(ctx,
+                            surface_for_ref[&face.surface].0.as_str(), SurfaceId::mint,
+                            "catia_e5_surface_curve_surface_id")?;
+                        crate::resource::insert_btree_map(ctx, &mut surface_curve_plan,
+                            edge_ref, (surface_id, oriented_pcurve, range),
+                            "catia_e5_surface_curve_plan")?;
+                    }
                 }
                 if let Some((existing, existing_range)) = pcurve_plan.get(&pcurve_ref) {
                     if existing != &geometry || existing_range != &range {
@@ -1553,7 +1559,8 @@ fn plan_e5_boundary<'a>(
             crate::resource::insert_btree_map(ctx, intersection_sides.entry(edge_ref).or_default(),
                 *pcurve_ref,
                 E5IntersectionSidePlan {
-                    surface: surface_id.clone(),
+                    surface: crate::resource::copy_id(ctx, surface_id.as_str(),
+                        SurfaceId::mint, "catia_e5_intersection_surface_id")?,
                     pcurve,
                     pcurve_range: range,
                     curve,
@@ -1588,15 +1595,21 @@ fn plan_e5_boundary<'a>(
         if !(same_carrier && same_parameterization || same_ordered_sweep) {
             continue;
         }
-        crate::resource::insert_btree_map(ctx, &mut edge_curve_plan, edge_ref, (left.curve.clone(), left.curve_range), "catia_e5_edge_curve_plan")?;
+        crate::resource::insert_btree_map(ctx, &mut edge_curve_plan, edge_ref,
+            (copy_e5_curve(ctx, &left.curve)?, left.curve_range), "catia_e5_edge_curve_plan")?;
+        let [left_side, right_side] = [left, right].map(|side| {
+            Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
+                surface: Some(crate::resource::copy_id(ctx, side.surface.as_str(),
+                    SurfaceId::mint, "catia_e5_intersection_context_surface_id")?),
+                pcurve: Some(SupportPcurve::new(
+                    crate::resource::copy_pcurve_geometry(ctx, &side.pcurve,
+                        "catia_e5_intersection_context_pcurve")?,
+                    DirectedParameterRange::new(side.pcurve_range).ok(),
+                )),
+            })
+        });
         let Some(context) = IntcurveSupportContext::try_new(
-                [left, right].map(|side| IntcurveSupportSide {
-                    surface: Some(side.surface.clone()),
-                    pcurve: Some(SupportPcurve::new(
-                        side.pcurve.clone(),
-                        DirectedParameterRange::new(side.pcurve_range).ok(),
-                    )),
-                }),
+                [left_side?, right_side?],
                 left.curve_range,
                 std::array::from_fn(|_| Vec::new()),
             ).ok() else { return Ok(None); };
@@ -1616,18 +1629,23 @@ fn plan_e5_boundary<'a>(
         let support_range = support.range.map(FiniteReal::get);
         let solved_range = cache.as_ref().map_or(support_range, |(_, range)| *range);
         let Some(context) =
-            e5_support_occurrence_intersection_context(support_range, solved_range, sides)
+            e5_support_occurrence_intersection_context(ctx, support_range, solved_range, sides)?
         else {
             if let [side] = sides.as_slice() {
-                crate::resource::admit_btree_entry(ctx, &surface_curve_plan, &edge_ref, "catia_e5_surface_curve_plan")?;
-                surface_curve_plan.entry(edge_ref).or_insert_with(|| {
-                    (side.surface.clone(), side.pcurve.clone(), side.pcurve_range)
-                });
+                if !surface_curve_plan.contains_key(&edge_ref) {
+                    let surface_id = crate::resource::copy_id(ctx, side.surface.as_str(),
+                        SurfaceId::mint, "catia_e5_surface_curve_surface_id")?;
+                    let pcurve = crate::resource::copy_pcurve_geometry(ctx, &side.pcurve,
+                        "catia_e5_surface_curve_pcurve")?;
+                    crate::resource::insert_btree_map(ctx, &mut surface_curve_plan, edge_ref,
+                        (surface_id, pcurve, side.pcurve_range), "catia_e5_surface_curve_plan")?;
+                }
             }
             continue;
         };
         crate::resource::insert_btree_map(ctx, &mut edge_curve_plan, edge_ref,
-            cache.unwrap_or((
+            cache.map(|(curve, range)| Ok::<_, cadmpeg_core::CodecError>((copy_e5_curve(ctx, curve)?, range)))
+                .transpose()?.unwrap_or((
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 solved_range,
             )), "catia_e5_edge_curve_plan")?;
@@ -2684,40 +2702,46 @@ fn e5_occurrence_intersection_context(
 }
 
 fn e5_support_occurrence_intersection_context(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     support_range: [f64; 2],
     solved_range: [f64; 2],
     sides: &[E5OccurrenceIntersectionSide],
-) -> Option<IntcurveSupportContext> {
+) -> Result<Option<IntcurveSupportContext>, cadmpeg_core::CodecError> {
     let [left, right] = sides else {
-        return None;
+        return Ok(None);
     };
     if left.surface == right.surface {
-        return None;
+        return Ok(None);
     }
     if !e5_parameter_range_is_valid(support_range)
         || !e5_parameter_range_is_valid(solved_range)
         || !e5_parameter_range_is_valid(left.pcurve_range)
         || !e5_parameter_range_is_valid(right.pcurve_range)
     {
-        return None;
+        return Ok(None);
     }
-    IntcurveSupportContext::try_new(
-        [left, right].map(|side| IntcurveSupportSide {
-            surface: Some(side.surface.clone()),
+    let [left_side, right_side] = [left, right].map(|side| {
+        Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
+            surface: Some(crate::resource::copy_id(ctx, side.surface.as_str(),
+                SurfaceId::mint, "catia_e5_occurrence_context_surface_id")?),
             pcurve: Some(SupportPcurve::new(
-                side.pcurve.clone(),
+                crate::resource::copy_pcurve_geometry(ctx, &side.pcurve,
+                    "catia_e5_occurrence_context_pcurve")?,
                 DirectedParameterRange::new(side.pcurve_range).ok(),
             )),
-        }),
+        })
+    });
+    Ok(IntcurveSupportContext::try_new(
+        [left_side?, right_side?],
         solved_range,
         std::array::from_fn(|_| Vec::new()),
     )
-    .ok()
+    .ok())
 }
 
 fn e5_occurrence_intersection_cache(
     sides: &[E5OccurrenceIntersectionSide],
-) -> Option<(CurveGeometry, [f64; 2])> {
+) -> Option<(&CurveGeometry, [f64; 2])> {
     let [left, right] = sides else {
         return None;
     };
@@ -2729,7 +2753,7 @@ fn e5_occurrence_intersection_cache(
     if equivalent_e5_curve_carriers(left_curve, right_curve)
         && parameter_span_agreement(*left_range, *right_range).is_some()
     {
-        return Some((left_curve.clone(), *left_range));
+        return Some((left_curve, *left_range));
     }
     if e5_circle_carriers_have_same_ordered_sweep(
         left_curve,
@@ -2737,7 +2761,7 @@ fn e5_occurrence_intersection_cache(
         right_curve,
         *right_range,
     ) {
-        return Some((left_curve.clone(), *left_range));
+        return Some((left_curve, *left_range));
     }
     match (
         is_exact_e5_analytic_curve(left_curve),
@@ -2745,10 +2769,22 @@ fn e5_occurrence_intersection_cache(
         is_e5_nurbs_curve(right_curve),
         is_e5_nurbs_curve(left_curve),
     ) {
-        (true, false, true, _) => Some((left_curve.clone(), *left_range)),
-        (false, true, _, true) => Some((right_curve.clone(), *right_range)),
+        (true, false, true, _) => Some((left_curve, *left_range)),
+        (false, true, _, true) => Some((right_curve, *right_range)),
         _ => None,
     }
+}
+
+fn copy_e5_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curve: &CurveGeometry,
+) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
+    Ok(match curve {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) =>
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                crate::resource::copy_nurbs_curve(ctx, nurbs, "catia_e5_boundary_curve_copy")?)),
+        _ => curve.clone(),
+    })
 }
 
 fn is_exact_e5_analytic_curve(curve: &CurveGeometry) -> bool {

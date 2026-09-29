@@ -2,7 +2,7 @@
 
 use crate::assemble::quintic_jet_pcurve;
 use crate::families::e5::decode::{
-    e5_occurrence_intersection_cache, e5_support_occurrence_intersection_context,
+    copy_e5_curve, e5_occurrence_intersection_cache, e5_support_occurrence_intersection_context,
     parameter_range_agreement_tolerance, E5OccurrenceIntersectionSide,
     EPS_E5_DECODE_EXACT_GEOMETRY,
 };
@@ -17,6 +17,41 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 fn support_range_agreement_requires_matching_endpoints() {
     assert!(parameter_range_agreement_tolerance([0.0, 5.0], [0.0, 5.0]).is_some());
     assert!(parameter_range_agreement_tolerance([0.0, 5.0], [1.0, 6.0]).is_none());
+}
+
+#[test]
+fn occurrence_context_refuses_before_retained_surface_copy() {
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0), Point2::new(1.0, 0.0),
+        ).expect("valid line pcurve"),
+    );
+    let sides = ["left", "right"].map(|name| E5OccurrenceIntersectionSide {
+        surface: SurfaceId::mint(format!("catia:test:surface#{name}"))
+            .expect("identity grammar"),
+        pcurve: pcurve.clone(),
+        pcurve_range: [0.0, 1.0],
+        curve: None,
+    });
+    let refused = crate::test_support::with_retained_limit(0, |ctx|
+        e5_support_occurrence_intersection_context(ctx, [0.0, 1.0], [0.0, 1.0], &sides));
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_e5_occurrence_context_surface_id"));
+}
+
+#[test]
+fn e5_boundary_nurbs_cache_refuses_before_copy() {
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1, vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None, false,
+        ).expect("valid linear NURBS"),
+    ));
+    let refused = crate::test_support::with_collection_limit(0, |ctx|
+        copy_e5_curve(ctx, &curve));
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_e5_boundary_curve_copy"));
 }
 
 #[test]
@@ -53,12 +88,13 @@ fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
             curve: Some((line.clone(), range)),
         },
     ];
-    let context = e5_support_occurrence_intersection_context(range, range, &sides)
-        .expect("wide support context");
+    let context = crate::test_support::with_service_context(|ctx|
+        e5_support_occurrence_intersection_context(ctx, range, range, &sides))
+        .expect("service budget admits context").expect("wide support context");
     assert_eq!(context.parameter_range().endpoints(), range);
     let (cached, cached_range) =
         e5_occurrence_intersection_cache(&sides).expect("wide exact carrier cache");
-    assert_eq!(cached, line);
+    assert_eq!(cached, &line);
     assert_eq!(cached_range, range);
 }
 
@@ -92,8 +128,9 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
             curve: None,
         },
     ];
-    let context = e5_support_occurrence_intersection_context([10.0, 20.0], [10.0, 20.0], &sides)
-        .expect("support intersection context");
+    let context = crate::test_support::with_service_context(|ctx|
+        e5_support_occurrence_intersection_context(ctx, [10.0, 20.0], [10.0, 20.0], &sides))
+        .expect("service budget admits context").expect("support intersection context");
     assert_eq!(context.parameter_range().endpoints(), [10.0, 20.0]);
     assert_eq!(
         context.sides()[0]
@@ -181,7 +218,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         },
     ];
     let (cache, range) = e5_occurrence_intersection_cache(&sides).expect("analytic cache");
-    assert_eq!(cache, line);
+    assert_eq!(cache, &line);
     assert_eq!(range, [0.0, 1.0]);
 
     sides[1].curve = Some((
@@ -223,7 +260,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
     ));
     let (cache, range) =
         e5_occurrence_intersection_cache(&sides).expect("frame-gauged circle cache");
-    assert_eq!(cache, left_circle);
+    assert_eq!(cache, &left_circle);
     assert_eq!(range, [0.0, std::f64::consts::PI]);
 }
 
