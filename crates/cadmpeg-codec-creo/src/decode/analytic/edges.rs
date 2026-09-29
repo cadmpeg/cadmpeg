@@ -100,7 +100,7 @@ pub(super) fn point_pair_alignments(
 }
 
 pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> f64 {
-    let bounds = nurbs.control_points().iter().fold(
+    let bounds = nurbs_points(nurbs).fold(
         [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
         |mut bounds, point| {
             for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
@@ -115,13 +115,23 @@ pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> f64 {
         .fold(1.0, f64::max)
 }
 
+pub(super) fn nurbs_points(nurbs: &NurbsCurve) -> impl Iterator<Item = cadmpeg_ir::features::FinitePoint3> + '_ {
+    (0..nurbs.pole_count()).filter_map(|index| nurbs.pole_rows().point_at(index))
+}
+
+pub(super) fn nurbs_weights_positive(nurbs: &NurbsCurve) -> bool {
+    (0..nurbs.pole_count()).all(|index| {
+        nurbs.pole_rows().weight_at(index).is_none_or(|weight| weight > 0.0)
+    })
+}
+
 pub(in crate::decode) fn nurbs_intrinsic_parameter_range(
     nurbs: &NurbsCurve,
 ) -> Option<[FiniteReal; 2]> {
     let degree = usize::try_from(nurbs.degree()).ok()?;
     let range = [
         nurbs.knots().finite_knot(degree)?,
-        nurbs.knots().finite_knot(nurbs.control_points().len())?,
+        nurbs.knots().finite_knot(nurbs.pole_count())?,
     ];
     (range[0] < range[1]).then_some(range)
 }
@@ -158,10 +168,7 @@ fn nonperiodic_nurbs_edge_parameter_range(
     let range = FiniteReal::raw_array(nurbs_intrinsic_parameter_range(nurbs)?);
 
     if degree == 1 {
-        nurbs
-            .weights()
-            .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
-            .then_some(())?;
+        nurbs_weights_positive(nurbs).then_some(())?;
         let scale = nurbs_control_extent(nurbs);
         let tolerance = EPS_AGREE * scale;
         let first = degree_one_nurbs_point_parameter(geometry, nurbs, points[0], range, tolerance)?;
@@ -301,10 +308,7 @@ pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
         return None;
     };
     nurbs.periodic().then_some(())?;
-    nurbs
-        .weights()
-        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
-        .then_some(())?;
+    nurbs_weights_positive(nurbs).then_some(())?;
     let range = FiniteReal::raw_array(nurbs_intrinsic_parameter_range(nurbs)?);
     let mapped = range.map(|parameter| {
         cadmpeg_ir::eval::curve_point(geometry, parameter)
@@ -333,14 +337,14 @@ fn degree_one_nurbs_point_parameter(
 ) -> Option<f64> {
     let parameter_tolerance = (EPS_AGREE * range[1] - EPS_AGREE * range[0]).abs();
     let mut candidate: Option<f64> = None;
-    for span in 1..nurbs.control_points().len() {
+    for span in 1..nurbs.pole_count() {
         let lower = nurbs.knots()[span];
         let upper = nurbs.knots()[span + 1];
         if upper <= lower {
             continue;
         }
-        let first = nurbs.control_points()[span - 1];
-        let second = nurbs.control_points()[span];
+        let first = nurbs.pole_rows().point_at(span - 1)?;
+        let second = nurbs.pole_rows().point_at(span)?;
         let delta = [second.x - first.x, second.y - first.y, second.z - first.z];
         let denominator = dot(delta, delta);
         if !denominator.is_finite() {
@@ -367,10 +371,8 @@ fn degree_one_nurbs_point_parameter(
         if dot(mismatch, mismatch).sqrt() > tolerance {
             continue;
         }
-        let first_weight = nurbs
-            .weights()
-            .map_or(1.0, |weights| weights[span - 1].get());
-        let second_weight = nurbs.weights().map_or(1.0, |weights| weights[span].get());
+        let first_weight = nurbs.pole_rows().weight_at(span - 1).map_or(1.0, |weight| weight);
+        let second_weight = nurbs.pole_rows().weight_at(span).map_or(1.0, |weight| weight);
         let rational_denominator = second_weight * (1.0 - fraction) + fraction * first_weight;
         if rational_denominator <= 0.0 || !rational_denominator.is_finite() {
             continue;
