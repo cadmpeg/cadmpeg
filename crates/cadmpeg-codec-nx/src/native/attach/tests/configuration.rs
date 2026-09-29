@@ -1001,7 +1001,11 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let sketch = attach_sketch_graph(
+        &ctx,
         &mut ir,
         &label,
         &SketchSources {
@@ -1015,7 +1019,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         &mut annotations,
         &stream,
     )
-    .expect("one exact point use projects a sketch");
+    .unwrap().expect("one exact point use projects a sketch");
     assert_eq!(ir.model.sketches[0].id, sketch);
     assert!(matches!(
         *ir.model.sketch_entities[0].geometry.definition(),
@@ -1027,6 +1031,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut rejected_annotations = AnnotationBuilder::new();
     let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     assert!(attach_sketch_graph(
+        &ctx,
         &mut rejected_ir,
         &label,
         &SketchSources {
@@ -1040,7 +1045,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         &mut rejected_annotations,
         &rejected_stream,
     )
-    .is_none());
+    .unwrap().is_none());
     assert!(rejected_ir.model.sketches.is_empty());
     assert!(rejected_ir.model.sketch_entities.is_empty());
 }
@@ -1097,7 +1102,11 @@ fn named_sketch_points_project_without_an_external_named_point() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let sketch = attach_sketch_graph(
+        &ctx,
         &mut ir,
         &label,
         &SketchSources {
@@ -1111,7 +1120,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
         &mut annotations,
         &stream,
     )
-    .expect("a complete named payload point projects a sketch");
+    .unwrap().expect("a complete named payload point projects a sketch");
     assert_eq!(ir.model.sketches[0].id, sketch);
     assert_eq!(ir.model.sketch_entities.len(), 1);
     assert_eq!(

@@ -3664,9 +3664,9 @@ fn attach_feature_operations(
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
         let native_parameters = native_feature_parameters(ctx, operation_parameter_uses, expressions)?;
-        let sketch = (label.value == "SKETCH")
-            .then(|| {
-                attach_sketch_graph(
+        let sketch = if label.value == "SKETCH" {
+            attach_sketch_graph(
+                    ctx,
                     ir,
                     label,
                     &SketchSources {
@@ -3685,9 +3685,10 @@ fn attach_feature_operations(
                     },
                     annotations,
                     &stream,
-                )
-            })
-            .flatten();
+            )?
+        } else {
+            None
+        };
         let primary_definition = boolean_definition
             .or(trim_body_projection)
             .or(delete_projection)
@@ -4237,49 +4238,64 @@ fn native_primary_body_references<'a>(
 }
 
 fn attach_sketch_graph(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     label: &crate::native::features::FeatureOperationLabel,
     sources: &SketchSources<'_>,
     annotations: &mut AnnotationBuilder,
     stream: &cadmpeg_ir::annotations::StreamHandle,
-) -> Option<SketchId> {
-    let operation_groups = sources
-        .point_groups
-        .iter()
-        .filter(|group| group.operation_label == label.id)
-        .collect::<Vec<_>>();
+) -> Result<Option<SketchId>, CodecError> {
+    let mut reservation = ctx.reserve_scoped(0, "NX sketch projection")?;
+    let mut operation_groups = Vec::new();
+    for group in sources.point_groups.iter().filter(|group| group.operation_label == label.id) {
+        ctx.charge_collection_items(1, "NX sketch operation groups")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&crate::native::features::FeatureSketchPointGroup>()))?;
+        reserve_attach_vec(ctx, &mut operation_groups, 1, "NX sketch operation groups")?;
+        operation_groups.push(group);
+    }
     let operation_key = label
         .id
         .strip_prefix("nx:feature-history:operation-label#")
         .unwrap_or(label.id.as_str());
-    let sketch_id: SketchId = IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-        .try_id(&cadmpeg_ir::identity_component!("sketch"), operation_key)?;
-    let operation_fixed_points = sources
-        .fixed_points
-        .iter()
-        .copied()
-        .filter(|point| point.operation_label == label.id)
-        .collect::<Vec<_>>();
+    let sketch_id_bytes = operation_key.len().checked_mul(3)
+        .and_then(|bytes| bytes.checked_add(40))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch identity", 0, cadmpeg_core::decode::u64_from_index(operation_key.len())))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(sketch_id_bytes), "NX sketch identity")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(operation_key.len()), "NX sketch identity")?;
+    let mut owned_operation_key = String::new();
+    owned_operation_key.try_reserve(operation_key.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX sketch identity", 0, cadmpeg_core::decode::u64_from_index(operation_key.len())))?;
+    owned_operation_key.push_str(operation_key);
+    let Some(sketch_id): Option<SketchId> = IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+        .try_id(&cadmpeg_ir::identity_component!("sketch"), owned_operation_key) else {
+        return Ok(None);
+    };
+    let mut operation_fixed_points = Vec::new();
+    for &point in sources.fixed_points.iter().filter(|point| point.operation_label == label.id) {
+        ctx.charge_collection_items(1, "NX sketch fixed-point inputs")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&crate::native::features::FeatureSketchFixedPoint>()))?;
+        reserve_attach_vec(ctx, &mut operation_fixed_points, 1, "NX sketch fixed-point inputs")?;
+        operation_fixed_points.push(point);
+    }
     if operation_groups.is_empty() {
-        let coordinate_pairs = sources
-            .coordinate_pairs
-            .iter()
-            .filter(|pair| pair.operation_label == label.id)
-            .copied()
-            .collect::<Vec<_>>();
-        if coordinate_pairs.is_empty() && operation_fixed_points.is_empty() {
-            return None;
+        let mut coordinate_pairs = Vec::new();
+        for &pair in sources.coordinate_pairs.iter().filter(|pair| pair.operation_label == label.id) {
+            ctx.charge_collection_items(1, "NX sketch coordinate pair inputs")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&crate::native::features::FeaturePayloadScalarPair>()))?;
+            reserve_attach_vec(ctx, &mut coordinate_pairs, 1, "NX sketch coordinate pair inputs")?;
+            coordinate_pairs.push(pair);
         }
-        let mut entities =
-            Vec::with_capacity(coordinate_pairs.len() + operation_fixed_points.len());
+        if coordinate_pairs.is_empty() && operation_fixed_points.is_empty() {
+            return Ok(None);
+        }
+        let mut entities = Vec::new();
         let mut pair_ids = BTreeSet::new();
         let mut pair_entity_keys = BTreeSet::new();
         let mut pair_ordinals = BTreeSet::new();
         for pair in coordinate_pairs {
-            if !pair_ids.insert(pair.id.as_str())
-                || !pair_ordinals.insert((pair.payload.id(), pair.ordinal))
+            if !insert_sketch_key(ctx, &mut reservation, &mut pair_ids, pair.id.as_str())?
+                || !insert_sketch_key(ctx, &mut reservation, &mut pair_ordinals, (pair.payload.id(), pair.ordinal))?
             {
-                return None;
+                return Ok(None);
             }
             let pair_key = pair
                 .id
@@ -4287,31 +4303,31 @@ fn attach_sketch_graph(
                 .map_or(pair.id.as_str(), |(_, key)| key);
             if pair_key.is_empty()
                 || pair_key.chars().any(char::is_whitespace)
-                || !pair_entity_keys.insert(pair_key)
+                || !insert_sketch_key(ctx, &mut reservation, &mut pair_entity_keys, pair_key)?
             {
-                return None;
+                return Ok(None);
             }
-            entities.push((
-                pair.source_offset,
-                SketchEntity::new(
-                    IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                        .try_id::<SketchEntityId>(
-                        &cadmpeg_ir::identity_component!("sketch-entity"),
-                        format!("coordinate-pair-{pair_key}"),
-                    )?,
-                    sketch_id.clone(),
-                    SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(
-                        "nx-coordinate-pair",
-                    )?),
-                )
-                .with_native_ref(Some(pair.id.clone())),
-            ));
+            let Some(entity_id) = sketch_entity_identity(ctx, "coordinate-pair-", pair_key)? else {
+                return Ok(None);
+            };
+            let copy_bytes = sketch_id.as_str().len().checked_add(pair.id.len())
+                .and_then(|bytes| bytes.checked_add("nx-coordinate-pair".len()))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX coordinate-pair sketch entity", 0, cadmpeg_core::decode::u64_from_index(pair.id.len())))?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(copy_bytes), "NX coordinate-pair sketch entity")?;
+            let Some(native_kind) = cadmpeg_core::text::NonBlankString::new("nx-coordinate-pair") else {
+                return Ok(None);
+            };
+            let native_ref = try_copy_sketch_string(ctx, &pair.id)?;
+            push_sketch_entity(ctx, &mut reservation, &mut entities, pair.source_offset,
+                SketchEntity::new(entity_id, sketch_id.clone(), SketchGeometry::native(native_kind))
+                    .with_native_ref(Some(native_ref)))?;
         }
-        entities.extend(native_fixed_point_entities(
-            label,
-            &sketch_id,
-            &operation_fixed_points,
-        )?);
+        if !append_fixed_sketch_entities(ctx, &mut reservation, &mut entities, label, &sketch_id, &operation_fixed_points)? {
+            return Ok(None);
+        }
+        let sort_work = entities.len().checked_mul(entities.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch entity order", 0, cadmpeg_core::decode::u64_from_index(entities.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work), "NX sketch entity order")?;
         entities.sort_by(|(first_offset, first), (second_offset, second)| {
             first_offset
                 .cmp(second_offset)
@@ -4340,115 +4356,52 @@ fn attach_sketch_graph(
             .note(sketch_id.as_str(), stream, label.source_offset)
             .tag("SKETCH");
         annotations.exactness(sketch_id.as_str(), Exactness::Derived);
-        ir.model
-            .sketch_entities
-            .extend(entities.into_iter().map(|(_, entity)| entity));
-        ir.model.sketches.push(Sketch {
-            id: sketch_id.clone(),
-            name: Some(label.value.clone()),
-            configuration: None,
-            visible: None,
-            placement: SketchPlacement::Unresolved {},
-            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-            native_ref: Some(label.id.clone()),
-        });
-        return Some(sketch_id);
+        emit_sketch(ctx, ir, label, &sketch_id, entities)?;
+        return Ok(Some(sketch_id));
     }
     let mut groups_by_id =
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointGroup>::new();
     for group in &operation_groups {
-        if groups_by_id.insert(group.id.as_str(), group).is_some() {
-            return None;
+        if !insert_sketch_record(ctx, &mut reservation, &mut groups_by_id, group.id.as_str(), group)? {
+            return Ok(None);
         }
     }
     let mut point_uses_by_group =
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointUse>::new();
     for point_use in sources.point_uses {
         if point_use.operation_label != label.id
-            || point_uses_by_group
-                .insert(point_use.sketch_point_group.as_str(), point_use)
-                .is_some()
+            || !insert_sketch_record(ctx, &mut reservation, &mut point_uses_by_group, point_use.sketch_point_group.as_str(), point_use)?
         {
-            return None;
+            return Ok(None);
         }
     }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(groups_by_id.len().checked_mul(point_uses_by_group.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point-use group check", 0, cadmpeg_core::decode::u64_from_index(groups_by_id.len())))?), "NX sketch point-use group check")?;
     if point_uses_by_group
         .keys()
         .any(|group| !groups_by_id.contains_key(group))
     {
-        return None;
+        return Ok(None);
     }
     let mut points_by_id = BTreeMap::<&str, &crate::native::features::FeatureSketchPoint>::new();
     for point in sources.points {
-        if points_by_id.insert(point.id.as_str(), point).is_some() {
-            return None;
+        if !insert_sketch_record(ctx, &mut reservation, &mut points_by_id, point.id.as_str(), point)? {
+            return Ok(None);
         }
     }
     let mut scalars_by_id = BTreeMap::<&str, &crate::native::features::FeaturePayloadScalar>::new();
     for scalar in sources.payload_scalars {
-        if scalars_by_id.insert(scalar.id.as_str(), scalar).is_some() {
-            return None;
+        if !insert_sketch_record(ctx, &mut reservation, &mut scalars_by_id, scalar.id.as_str(), scalar)? {
+            return Ok(None);
         }
     }
     let mut entities = Vec::new();
-    let mut represented_groups = BTreeSet::new();
     for group in operation_groups {
-        if !represented_groups.insert(group.id.as_str()) {
-            return None;
-        }
         let point_use = point_uses_by_group.get(group.id.as_str()).copied();
-        let source_offsets: Vec<_> = if let Some(point_use) = point_use {
-            point_use
-                .references
-                .iter()
-                .map(|reference| reference.source_offset)
-                .collect()
-        } else {
-            group
-                .points
-                .iter()
-                .map(|point_id| {
-                    let point = points_by_id.get(point_id.as_str()).copied()?;
-                    if point.operation_label != label.id
-                        || point.name != group.name
-                        || point
-                            .coordinates
-                            .iter()
-                            .zip(group.coordinates)
-                            .any(|(first, second)| first.to_bits() != second.to_bits())
-                    {
-                        return None;
-                    }
-                    let scalar_fields = point
-                        .scalar_fields
-                        .iter()
-                        .map(|scalar_id| scalars_by_id.get(scalar_id.as_str()).copied())
-                        .collect::<Option<Vec<_>>>()?;
-                    if scalar_fields.len() != 2
-                        || scalar_fields.iter().zip(group.coordinates).any(
-                            |(scalar, coordinate)| {
-                                scalar.operation_label != label.id
-                                    || scalar.scalar.value().get().to_bits() != coordinate.to_bits()
-                            },
-                        )
-                    {
-                        return None;
-                    }
-                    Some(
-                        scalar_fields
-                            .into_iter()
-                            .map(|scalar| scalar.source_offset)
-                            .collect::<Vec<_>>(),
-                    )
-                })
-                .collect::<Option<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                .collect()
+        let Some(source_offset) = sketch_group_source_offset(ctx, label, group, point_use, &points_by_id, &scalars_by_id)? else {
+            return Ok(None);
         };
-        let source_offset = source_offsets.iter().copied().min()?;
-        let native_ref =
-            point_use.map_or_else(|| group.id.clone(), |point_use| point_use.id.clone());
+        let native_ref_source = point_use.map_or(group.id.as_str(), |point_use| point_use.id.as_str());
         let entity_key = point_use
             .map_or(group.id.as_str(), |point_use| point_use.id.as_str())
             .strip_prefix("nx:feature-history:sketch-point-use#")
@@ -4458,35 +4411,34 @@ fn attach_sketch_graph(
                     .strip_prefix("nx:feature-history:sketch-point-group#")
             })
             .unwrap_or(group.id.as_str());
-        entities.push((
-            source_offset,
-            SketchEntity::new(
-                IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                    .try_id::<SketchEntityId>(
-                    &cadmpeg_ir::identity_component!("sketch-entity"),
-                    format!("point-{entity_key}"),
-                )?,
-                sketch_id.clone(),
-                SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                    position: Point2::new(group.coordinates[0], group.coordinates[1]),
-                })
-                .ok()?,
-            )
-            .with_native_ref(Some(native_ref)),
-        ));
+        let Some(entity_id) = sketch_entity_identity(ctx, "point-", entity_key)? else {
+            return Ok(None);
+        };
+        let copy_bytes = sketch_id.as_str().len().checked_add(native_ref_source.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point entity", 0, cadmpeg_core::decode::u64_from_index(native_ref_source.len())))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(copy_bytes), "NX sketch point entity")?;
+        let native_ref = try_copy_sketch_string(ctx, native_ref_source)?;
+        let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(group.coordinates[0], group.coordinates[1]),
+        }) else {
+            return Ok(None);
+        };
+        push_sketch_entity(ctx, &mut reservation, &mut entities, source_offset,
+            SketchEntity::new(entity_id, sketch_id.clone(), geometry).with_native_ref(Some(native_ref)))?;
     }
-    entities.extend(native_fixed_point_entities(
-        label,
-        &sketch_id,
-        &operation_fixed_points,
-    )?);
+    if !append_fixed_sketch_entities(ctx, &mut reservation, &mut entities, label, &sketch_id, &operation_fixed_points)? {
+        return Ok(None);
+    }
+    let sort_work = entities.len().checked_mul(entities.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch entity order", 0, cadmpeg_core::decode::u64_from_index(entities.len())))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work), "NX sketch entity order")?;
     entities.sort_by(|(first_offset, first), (second_offset, second)| {
         first_offset
             .cmp(second_offset)
             .then_with(|| first.id().cmp(second.id()))
     });
     if entities.is_empty() {
-        return None;
+        return Ok(None);
     }
     for (source_offset, entity) in &entities {
         match entity.geometry.definition() {
@@ -4507,26 +4459,15 @@ fn attach_sketch_graph(
                     .tag(tag);
                 annotations.exactness(entity.id().as_str(), Exactness::ByteExact);
             }
-            _ => return None,
+            _ => return Ok(None),
         }
     }
     annotations
         .note(sketch_id.as_str(), stream, label.source_offset)
         .tag("SKETCH");
     annotations.exactness(sketch_id.as_str(), Exactness::Derived);
-    ir.model
-        .sketch_entities
-        .extend(entities.into_iter().map(|(_, entity)| entity));
-    ir.model.sketches.push(Sketch {
-        id: sketch_id.clone(),
-        name: Some(label.value.clone()),
-        configuration: None,
-        visible: None,
-        placement: SketchPlacement::Unresolved {},
-        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-        native_ref: Some(label.id.clone()),
-    });
-    Some(sketch_id)
+    emit_sketch(ctx, ir, label, &sketch_id, entities)?;
+    Ok(Some(sketch_id))
 }
 
 struct SketchSources<'a> {
@@ -4538,17 +4479,171 @@ struct SketchSources<'a> {
     coordinate_pairs: &'a [&'a crate::native::features::FeaturePayloadScalarPair],
 }
 
+fn sketch_group_source_offset(
+    ctx: &DecodeContext<'_>,
+    label: &crate::native::features::FeatureOperationLabel,
+    group: &crate::native::features::FeatureSketchPointGroup,
+    point_use: Option<&crate::native::features::FeatureSketchPointUse>,
+    points_by_id: &BTreeMap<&str, &crate::native::features::FeatureSketchPoint>,
+    scalars_by_id: &BTreeMap<&str, &crate::native::features::FeaturePayloadScalar>,
+) -> Result<Option<u64>, CodecError> {
+    if let Some(point_use) = point_use {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(point_use.references.len()), "NX sketch point-use offsets")?;
+        return Ok(point_use.references.iter().map(|reference| reference.source_offset).min());
+    }
+    let mut minimum = None::<u64>;
+    for point_id in &group.points {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(points_by_id.len()), "NX sketch point lookup")?;
+        let Some(point) = points_by_id.get(point_id.as_str()).copied() else {
+            return Ok(None);
+        };
+        if point.operation_label != label.id
+            || point.name != group.name
+            || point.coordinates.iter().zip(group.coordinates).any(|(first, second)| first.to_bits() != second.to_bits())
+        {
+            return Ok(None);
+        }
+        let [first, second] = point.scalar_fields.as_slice() else {
+            return Ok(None);
+        };
+        for (scalar_id, coordinate) in [first, second].into_iter().zip(group.coordinates) {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(scalars_by_id.len()), "NX sketch scalar lookup")?;
+            let Some(scalar) = scalars_by_id.get(scalar_id.as_str()).copied() else {
+                return Ok(None);
+            };
+            if scalar.operation_label != label.id
+                || scalar.scalar.value().get().to_bits() != coordinate.to_bits()
+            {
+                return Ok(None);
+            }
+            minimum = Some(minimum.map_or(scalar.source_offset, |current| current.min(scalar.source_offset)));
+        }
+    }
+    Ok(minimum)
+}
+
+fn insert_sketch_key<K: Ord>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    keys: &mut BTreeSet<K>,
+    key: K,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(keys.len()), "NX sketch key uniqueness")?;
+    if keys.contains(&key) {
+        return Ok(false);
+    }
+    ctx.charge_collection_items(1, "NX sketch key index")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<K>() * 4))?;
+    keys.insert(key);
+    Ok(true)
+}
+
+fn insert_sketch_record<'a, T>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    records: &mut BTreeMap<&'a str, &'a T>,
+    key: &'a str,
+    record: &'a T,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(records.len()), "NX sketch record uniqueness")?;
+    if records.contains_key(key) {
+        return Ok(false);
+    }
+    ctx.charge_collection_items(1, "NX sketch record index")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, &T)>() * 4))?;
+    records.insert(key, record);
+    Ok(true)
+}
+
+fn sketch_entity_identity(
+    ctx: &DecodeContext<'_>,
+    prefix: &str,
+    key: &str,
+) -> Result<Option<SketchEntityId>, CodecError> {
+    let key_len = prefix.len().checked_add(key.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch entity identity", 0, cadmpeg_core::decode::u64_from_index(key.len())))?;
+    let charged_len = key_len.checked_mul(3)
+        .and_then(|bytes| bytes.checked_add(48))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch entity identity", 0, cadmpeg_core::decode::u64_from_index(key_len)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(key_len), "NX sketch entity identity")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(charged_len), "NX sketch entity identity")?;
+    let mut text = String::new();
+    text.try_reserve(key_len).map_err(|_| ctx.refuse_codec_limit("allocate NX sketch entity identity", 0, cadmpeg_core::decode::u64_from_index(key_len)))?;
+    text.push_str(prefix);
+    text.push_str(key);
+    Ok(IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+        .try_id(&cadmpeg_ir::identity_component!("sketch-entity"), text))
+}
+
+fn push_sketch_entity(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    entities: &mut Vec<(u64, SketchEntity)>,
+    source_offset: u64,
+    entity: SketchEntity,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "NX sketch staged entities")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u64, SketchEntity)>()))?;
+    reserve_attach_vec(ctx, entities, 1, "NX sketch staged entities")?;
+    entities.push((source_offset, entity));
+    Ok(())
+}
+
+fn try_copy_sketch_string(ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError> {
+    let mut owned = String::new();
+    owned.try_reserve(source.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX sketch text", 0, cadmpeg_core::decode::u64_from_index(source.len())))?;
+    owned.push_str(source);
+    Ok(owned)
+}
+
+fn emit_sketch(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    label: &crate::native::features::FeatureOperationLabel,
+    sketch_id: &SketchId,
+    entities: Vec<(u64, SketchEntity)>,
+) -> Result<(), CodecError> {
+    let entity_bytes = entities.len().checked_mul(std::mem::size_of::<SketchEntity>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch output entities", 0, cadmpeg_core::decode::u64_from_index(entities.len())))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(entities.len()), "NX sketch output entities")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(entity_bytes), "NX sketch output entities")?;
+    reserve_attach_vec(ctx, &mut ir.model.sketch_entities, entities.len(), "NX sketch output entities")?;
+    let sketch_bytes = std::mem::size_of::<Sketch>()
+        .checked_add(sketch_id.as_str().len())
+        .and_then(|bytes| bytes.checked_add(label.id.len()))
+        .and_then(|bytes| bytes.checked_add(label.value.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch output", 0, cadmpeg_core::decode::u64_from_index(label.value.len())))?;
+    ctx.charge_collection_items(1, "NX sketch output")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(sketch_bytes), "NX sketch output")?;
+    reserve_attach_vec(ctx, &mut ir.model.sketches, 1, "NX sketch output")?;
+    let name = try_copy_sketch_string(ctx, &label.value)?;
+    let native_ref = try_copy_sketch_string(ctx, &label.id)?;
+    ir.model.sketch_entities.extend(entities.into_iter().map(|(_, entity)| entity));
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: Some(name),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Unresolved {},
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: Some(native_ref),
+    });
+    Ok(())
+}
+
 fn native_fixed_point_entities(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     label: &crate::native::features::FeatureOperationLabel,
     sketch_id: &SketchId,
     points: &[&crate::native::features::FeatureSketchFixedPoint],
-) -> Option<Vec<(u64, SketchEntity)>> {
+) -> Result<Option<Vec<(u64, SketchEntity)>>, CodecError> {
     let mut point_ids = BTreeSet::new();
     let mut entity_keys = BTreeSet::new();
-    let mut entities = Vec::with_capacity(points.len());
+    let mut entities = Vec::new();
     for point in points {
-        if point.operation_label != label.id || !point_ids.insert(point.id.as_str()) {
-            return None;
+        if point.operation_label != label.id || !insert_sketch_key(ctx, reservation, &mut point_ids, point.id.as_str())? {
+            return Ok(None);
         }
         let point_key = point
             .id
@@ -4556,25 +4651,46 @@ fn native_fixed_point_entities(
             .map_or(point.id.as_str(), |(_, key)| key);
         if point_key.is_empty()
             || point_key.chars().any(char::is_whitespace)
-            || !entity_keys.insert(point_key)
+            || !insert_sketch_key(ctx, reservation, &mut entity_keys, point_key)?
         {
-            return None;
+            return Ok(None);
         }
-        entities.push((
-            point.source_offset,
-            SketchEntity::new(
-                IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                    .try_id::<SketchEntityId>(
-                    &cadmpeg_ir::identity_component!("sketch-entity"),
-                    format!("fixed-point-{point_key}"),
-                )?,
-                sketch_id.clone(),
-                SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("nx-fixed-point")?),
-            )
-            .with_native_ref(Some(point.id.clone())),
-        ));
+        let Some(entity_id) = sketch_entity_identity(ctx, "fixed-point-", point_key)? else {
+            return Ok(None);
+        };
+        let copy_bytes = sketch_id.as_str().len().checked_add(point.id.len())
+            .and_then(|bytes| bytes.checked_add("nx-fixed-point".len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fixed-point sketch entity", 0, cadmpeg_core::decode::u64_from_index(point.id.len())))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(copy_bytes), "NX fixed-point sketch entity")?;
+        let Some(native_kind) = cadmpeg_core::text::NonBlankString::new("nx-fixed-point") else {
+            return Ok(None);
+        };
+        let native_ref = try_copy_sketch_string(ctx, &point.id)?;
+        push_sketch_entity(ctx, reservation, &mut entities, point.source_offset,
+            SketchEntity::new(entity_id, sketch_id.clone(), SketchGeometry::native(native_kind))
+                .with_native_ref(Some(native_ref)))?;
     }
-    Some(entities)
+    Ok(Some(entities))
+}
+
+fn append_fixed_sketch_entities(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    entities: &mut Vec<(u64, SketchEntity)>,
+    label: &crate::native::features::FeatureOperationLabel,
+    sketch_id: &SketchId,
+    fixed_points: &[&crate::native::features::FeatureSketchFixedPoint],
+) -> Result<bool, CodecError> {
+    let Some(fixed_entities) = native_fixed_point_entities(ctx, reservation, label, sketch_id, fixed_points)? else {
+        return Ok(false);
+    };
+    let bytes = fixed_entities.len().checked_mul(std::mem::size_of::<(u64, SketchEntity)>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch merged fixed points", 0, cadmpeg_core::decode::u64_from_index(fixed_entities.len())))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(fixed_entities.len()), "NX sketch merged fixed points")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+    reserve_attach_vec(ctx, entities, fixed_entities.len(), "NX sketch merged fixed points")?;
+    entities.extend(fixed_entities);
+    Ok(true)
 }
 
 struct OperationRecords<'a, 'ctx, T> {
