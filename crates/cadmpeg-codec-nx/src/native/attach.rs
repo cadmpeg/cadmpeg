@@ -284,7 +284,7 @@ pub(super) fn attach(
         ir.model.tessellations.push(tessellation);
     }
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, model, annotations);
-    attach_material_texture_assets(ctx, ir, model, scan, annotations)?;
+    attach_material_texture_assets(ctx, ir, &model.om.material_texture_assets, scan, annotations)?;
     attach_part_attributes(
         ctx,
         ir,
@@ -1082,12 +1082,13 @@ fn attach_jpeg_preview_assets(
 fn attach_material_texture_assets(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    model: &crate::native::model::NativeModel,
+    textures: &[crate::native::om::material_texture::MaterialTextureAsset],
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let mut sources = Vec::with_capacity(model.om.material_texture_assets.len());
-    for texture in &model.om.material_texture_assets {
+    let mut sources = Vec::new();
+    let mut source_reservation = ctx.reserve_scoped(0, "NX material texture source list")?;
+    for texture in textures {
         let Some(start) = usize::try_from(texture.source_offset).ok() else {
             return Ok(());
         };
@@ -1100,14 +1101,31 @@ fn attach_material_texture_assets(
         let Some(bytes) = scan.container.data.get(start..end) else {
             return Ok(());
         };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "NX material texture hash")?;
         if crate::native::hex::Sha256Hex::digest(bytes) != texture.sha256 {
             return Ok(());
         }
+        ctx.charge_collection_items(1, "NX material texture source list")?;
+        source_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&crate::native::om::material_texture::MaterialTextureAsset, &[u8])>()))?;
+        reserve_attach_vec(ctx, &mut sources, 1, "NX material texture source list")?;
         sources.push((texture, bytes));
     }
 
-    let mut assets = Vec::with_capacity(sources.len());
+    let mut assets = Vec::new();
     for (texture, bytes) in sources {
+        let id_bytes = texture.id.len().checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(":asset".len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX material asset identity", 0, cadmpeg_core::decode::u64_from_index(texture.id.len())))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_bytes), "NX material asset identity")?;
+        let text_bytes = texture.name().len().checked_add(texture.id.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX material asset text", 0, cadmpeg_core::decode::u64_from_index(texture.id.len())))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(text_bytes), "NX material asset text")?;
+        ctx.charge_collection_items(1, "NX material asset records")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Asset>()),
+            "NX material asset records",
+        )?;
+        reserve_attach_vec(ctx, &mut assets, 1, "NX material asset records")?;
         assets.push(
             Asset::try_new(
                 extended_id::<AssetId>(texture.id.as_str(), &cadmpeg_ir::identity_key!("asset"))
@@ -1130,7 +1148,8 @@ fn attach_material_texture_assets(
         );
     }
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
+    drop(source_reservation);
+    for (texture, asset) in textures.iter().zip(&assets) {
         annotations
             .note(asset.id.as_str(), &stream, texture.source_offset)
             .tag("MATERIAL_TEXTURE_ASSET");
@@ -1145,6 +1164,11 @@ fn attach_material_texture_assets(
             .derived(asset.id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+    let slots = assets.len().checked_mul(std::mem::size_of::<Asset>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX attached material assets", 0, cadmpeg_core::decode::u64_from_index(assets.len())))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(assets.len()), "NX attached material assets")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(slots), "NX attached material assets")?;
+    reserve_attach_vec(ctx, &mut ir.model.assets, assets.len(), "NX attached material assets")?;
     ir.model.assets.extend(assets);
     Ok(())
 }
