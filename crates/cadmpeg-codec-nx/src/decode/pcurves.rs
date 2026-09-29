@@ -1963,13 +1963,15 @@ fn affine_pcurve_coordinate(range: [f64; 2], values: [f64; 2]) -> Option<(f64, f
     Some((origin, if reversed { -scale.get() } else { scale.get() }))
 }
 
-fn finite_parameter_sample(range: [f64; 2], ordinal: usize, count: usize) -> f64 {
-    let parameter = range[0] + (range[1] - range[0]) * ordinal as f64 / count as f64;
+fn finite_parameter_sample(range: [f64; 2], ordinal: usize, count: usize) -> Option<f64> {
+    let ordinal = cadmpeg_core::convert::f64_from_index(ordinal)?;
+    let count = cadmpeg_core::convert::f64_from_index(count)?;
+    let parameter = range[0] + (range[1] - range[0]) * ordinal / count;
     if parameter.is_finite() {
-        parameter
+        Some(parameter)
     } else {
-        let fraction = ordinal as f64 / count as f64;
-        range[0].mul_add(1.0 - fraction, range[1] * fraction)
+        let fraction = ordinal / count;
+        Some(range[0].mul_add(1.0 - fraction, range[1] * fraction))
     }
 }
 
@@ -2482,7 +2484,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
             Err(limit) => return Some(Err(limit)),
         };
         for index in 0..=SAMPLE_INTERVALS {
-            let parameter = finite_parameter_sample(range, index, SAMPLE_INTERVALS);
+            let parameter = finite_parameter_sample(range, index, SAMPLE_INTERVALS)?;
             let point = match finite_or_refusal(curve_point_with_budget(
                 &curve_carrier.geometry,
                 parameter,
@@ -2736,7 +2738,7 @@ fn coincident_pcurve_pair_with_index(
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(false), Err);
         }
-        let middle = finite_parameter_sample([start, end], 1, 2);
+        let Some(middle) = finite_parameter_sample([start, end], 1, 2) else { return Ok(false); };
         let Some(middle_separation) = separation(middle)? else {
             return Ok(false);
         };
@@ -3318,7 +3320,7 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     )?;
     coarse.push(first);
     for sample_index in 1..=continuation_steps {
-        let parameter = finite_parameter_sample(parameter_range, sample_index, continuation_steps);
+        let Some(parameter) = finite_parameter_sample(parameter_range, sample_index, continuation_steps) else { return Ok(None); };
         let Some(sample) = transferred_pcurve_sample_with_budget(
             index,
             curve,
@@ -3696,7 +3698,7 @@ pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
     else {
         return Ok(None);
     };
-    let parameters = Point2::new(parameter, boundary as f64);
+    let parameters = Point2::new(parameter, { let Some(value) = cadmpeg_core::convert::f64_from_index(boundary) else { return Ok(None); }; value });
     // The boundary invariants are the complete contact-free certificate. Test
     // them before evaluating the nested blend frame; the latter may recurse
     // through several NURBS supports and is only needed for a non-boundary
@@ -3879,7 +3881,7 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
                 source_point
             };
             if let Some(contact) = blend_contact {
-                if uv.v.to_bits() == (contact.boundary as f64).to_bits()
+                if uv.v.to_bits() == ({ let Some(value) = cadmpeg_core::convert::f64_from_index(contact.boundary) else { return Ok(false); }; value }).to_bits()
                     && blend_transfer_point_with_index(index, contact, uv.u, geometry_budget)?
                         .is_some_and(|target_point| {
                             Point3::distance(source_point, target_point) <= tolerance
@@ -4761,13 +4763,23 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn pcurve_sample_refuses_inexact_ordinal_and_count() {
+        fn assert_refused(value: impl Into<Option<f64>>) {
+            assert!(value.into().is_none());
+        }
+        assert_refused(finite_parameter_sample([0.0, 1.0], 9_007_199_254_740_993, 9_007_199_254_740_994));
+        assert_refused(finite_parameter_sample([0.0, 1.0], 1, 9_007_199_254_740_993));
+    }
+
+    #[test]
     fn wide_pcurve_sample_grid_keeps_finite_quarter_points() {
         let range = [-f64::MAX, f64::MAX];
-        assert_eq!(finite_parameter_sample(range, 0, 4), -f64::MAX);
-        assert!((finite_parameter_sample(range, 1, 4) / f64::MAX + 0.5).abs() <= f64::EPSILON);
-        assert_eq!(finite_parameter_sample(range, 2, 4), 0.0);
-        assert!((finite_parameter_sample(range, 3, 4) / f64::MAX - 0.5).abs() <= f64::EPSILON);
-        assert_eq!(finite_parameter_sample(range, 4, 4), f64::MAX);
+        assert_eq!(finite_parameter_sample(range, 0, 4).expect("quarter sample indices are exact"), -f64::MAX);
+        assert!((finite_parameter_sample(range, 1, 4).expect("quarter sample indices are exact") / f64::MAX + 0.5).abs() <= f64::EPSILON);
+        assert_eq!(finite_parameter_sample(range, 2, 4).expect("quarter sample indices are exact"), 0.0);
+        assert!((finite_parameter_sample(range, 3, 4).expect("quarter sample indices are exact") / f64::MAX - 0.5).abs() <= f64::EPSILON);
+        assert_eq!(finite_parameter_sample(range, 4, 4).expect("quarter sample indices are exact"), f64::MAX);
     }
 
     #[test]
