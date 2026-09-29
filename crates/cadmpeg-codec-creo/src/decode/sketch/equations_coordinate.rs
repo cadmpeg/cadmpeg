@@ -599,12 +599,12 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
         .iter()
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
         .filter_map(|equation| {
-            let mut rows = Vec::with_capacity(equation.arguments.len());
-            for ordinal in &equation.arguments {
-                rows.push(variables.rows.get(usize::try_from((*ordinal)?).ok()?)?);
-            }
-            let [first_u, first_v, second_u, second_v, third_u, third_v, fourth_u, fourth_v, auxiliary] =
-                rows.as_slice()
+            let rows: [Option<&crate::feature::definitions::FeatureVariableRow>; 9] =
+                std::array::from_fn(|index| {
+                    let ordinal = equation.arguments[index]?;
+                    variables.rows.get(usize::try_from(ordinal).ok()?)
+                });
+            let [Some(first_u), Some(first_v), Some(second_u), Some(second_v), Some(third_u), Some(third_v), Some(fourth_u), Some(fourth_v), Some(auxiliary)] = rows
             else {
                 return None;
             };
