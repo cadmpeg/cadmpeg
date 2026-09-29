@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted native element-map nodes and persistent-name bindings.
 
-use crate::resource::{collection_vec, reserve_vec_items};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -122,7 +121,7 @@ impl TryFrom<Vec<ElementMapNodeWire>> for ElementMapNodes {
     type Error = String;
 
     fn try_from(wire_nodes: Vec<ElementMapNodeWire>) -> Result<Self, Self::Error> {
-        let mut nodes = Vec::with_capacity(wire_nodes.len());
+        let mut nodes = Vec::new();
         for (position, wire) in wire_nodes.into_iter().enumerate() {
             // Every position is below the vector's representable length.
             let expected_index = position + 1;
@@ -173,7 +172,7 @@ impl ElementMapNodes {
         map_id: u64,
         groups: BTreeMap<String, Vec<Vec<ElementMappedName>>>,
     ) -> Result<Self, CodecError> {
-        let mut root_groups = collection_vec(ctx, groups.len(), "FreeCAD legacy root map groups")?;
+        let mut root_groups = ctx.collection_vec(groups.len(), "FreeCAD legacy root map groups")?;
         for (indexed_name, names) in groups {
             root_groups.push(ElementMapGroup {
                 indexed_name,
@@ -181,7 +180,7 @@ impl ElementMapNodes {
                 names,
             });
         }
-        let mut nodes = collection_vec(ctx, 1, "FreeCAD legacy root map node")?;
+        let mut nodes = ctx.collection_vec(1, "FreeCAD legacy root map node")?;
         nodes.push(ElementMapNode {
             map_id,
             groups: root_groups,
@@ -212,12 +211,7 @@ impl ElementMapNodes {
             };
             for name in names {
                 if !name.topology_ids.iter().any(|existing| existing == id) {
-                    reserve_vec_items(
-                        ctx,
-                        &mut name.topology_ids,
-                        1,
-                        "FreeCAD element topology bindings",
-                    )?;
+                    ctx.reserve_vec(&mut name.topology_ids, 1, "FreeCAD element topology bindings")?;
                     name.topology_ids
                         .push(ctx.copy_retained_text(id, "FreeCAD element topology identity")?);
                 }

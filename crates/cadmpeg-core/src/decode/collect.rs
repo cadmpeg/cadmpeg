@@ -280,6 +280,56 @@ impl DecodeContext<'_> {
         })
     }
 
+    /// Creates a vector whose items were charged by aggregate admission.
+    pub fn admitted_vec<T>(
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        let mut values = Vec::new();
+        Self::reserve_admitted_vec(&mut values, count, operation)?;
+        Ok(values)
+    }
+
+    /// Creates a charged vector only when the source is present.
+    pub fn optional_collection_vec<T>(
+        &self,
+        present: bool,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Option<Vec<T>>, CodecError> {
+        if present {
+            Ok(Some(self.collection_vec(count, operation)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Reserves a vector for an optional session after aggregate admission.
+    pub fn optional_admitted_vec<T>(
+        ctx: Option<&Self>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        if ctx.is_some() {
+            Self::admitted_vec(count, operation)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Reserves additional slots for an optional session after admission.
+    pub fn reserve_optional_admitted_vec<T>(
+        ctx: Option<&Self>,
+        values: &mut Vec<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if ctx.is_some() {
+            Self::reserve_admitted_vec(values, count, operation)?;
+        }
+        Ok(())
+    }
+
     /// Reserves a hash map whose entries were charged by aggregate admission.
     pub fn reserve_admitted_map<K: Eq + Hash, V>(
         values: &mut HashMap<K, V>,
@@ -605,6 +655,74 @@ impl DecodeContext<'_> {
         Ok((text, reservation))
     }
 
+    /// Appends retained text after charging its bytes.
+    pub fn append_retained(
+        &self,
+        output: &mut String,
+        suffix: &str,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_retained(u64_from_index(suffix.len()), operation)?;
+        output.try_reserve(suffix.len())
+            .map_err(|_| self.allocation_failed(ResourceDimension::RetainedBytes, suffix.len(), operation))?;
+        output.push_str(suffix);
+        Ok(())
+    }
+
+    /// Copies retained text and appends a retained suffix.
+    pub fn retained_suffix(
+        &self,
+        value: &str,
+        suffix: &str,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        let mut output = self.copy_retained_text(value, operation)?;
+        self.append_retained(&mut output, suffix, operation)?;
+        Ok(output)
+    }
+
+    /// Copies a slice of retained strings after charging collection slots.
+    pub fn copy_retained_strings(
+        &self,
+        values: &[String],
+        operation: &'static str,
+    ) -> Result<Vec<String>, CodecError> {
+        let mut copies = self.collection_vec(values.len(), operation)?;
+        for value in values {
+            copies.push(self.copy_retained_text(value, operation)?);
+        }
+        Ok(copies)
+    }
+
+    /// Joins retained text after measuring and charging the exact byte count.
+    pub fn join_retained<S: AsRef<str>>(
+        &self,
+        parts: &[S],
+        separator: &str,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        let mut count = 0_usize;
+        for part in parts {
+            count = count.checked_add(part.as_ref().len())
+                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        }
+        let gaps = if parts.is_empty() { 0 } else { parts.len() - 1 };
+        count = separator.len().checked_mul(gaps)
+            .and_then(|separators| count.checked_add(separators))
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.charge_retained(u64_from_index(count), operation)?;
+        let mut output = String::new();
+        output.try_reserve_exact(count)
+            .map_err(|_| self.allocation_failed(ResourceDimension::RetainedBytes, count, operation))?;
+        for (index, part) in parts.iter().enumerate() {
+            if index != 0 {
+                output.push_str(separator);
+            }
+            output.push_str(part.as_ref());
+        }
+        Ok(output)
+    }
+
     fn formatted_length(
         &self,
         args: fmt::Arguments<'_>,
@@ -735,6 +853,12 @@ mod tests {
     collection_case!(temporary_vec_charges_before_growth, 1,
         |ctx: &DecodeContext<'_>| ctx.temporary_vec::<u8>(1, "test temporary vec").map(|_| ()),
         |ctx: &DecodeContext<'_>| ctx.temporary_vec::<u8>(1, "test temporary vec").map(|_| ()));
+    collection_case!(copy_retained_strings_charges_before_growth, 2,
+        |ctx: &DecodeContext<'_>| ctx.copy_retained_strings(&[String::from("a"), String::from("b")], "test retained strings").map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.copy_retained_strings(&[String::from("a"), String::from("b")], "test retained strings").map(|_| ()));
+    collection_case!(optional_collection_vec_charges_before_allocation, 2,
+        |ctx: &DecodeContext<'_>| ctx.optional_collection_vec::<u8>(true, 2, "test optional collection").map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.optional_collection_vec::<u8>(true, 2, "test optional collection").map(|_| ()));
 
     macro_rules! admitted_case {
         ($name:ident, $body:expr) => {
@@ -744,27 +868,33 @@ mod tests {
                 let ctx = context(&arena, 1);
                 let result: Result<(), CodecError> = (|| {
                     ctx.charge_collection_items(2, "test admitted")?;
-                    ($body)()
+                    ($body)(&ctx)
                 })();
                 assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::CollectionItems));
                 let arena = DecodeArena::new();
                 let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
                 ctx.charge_collection_items(2, "test admitted").expect("admission");
-                assert!(($body)().is_ok());
+                assert!(($body)(&ctx).is_ok());
             }
         };
     }
     admitted_case!(reserve_admitted_vec_follows_prior_admission,
-        || DecodeContext::reserve_admitted_vec(&mut Vec::<u8>::new(), 2, "test admitted"));
+        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_vec(&mut Vec::<u8>::new(), 2, "test admitted"));
     admitted_case!(reserve_admitted_map_follows_prior_admission,
-        || DecodeContext::reserve_admitted_map(&mut HashMap::<u8, u8>::new(), 2, "test admitted"));
+        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_map(&mut HashMap::<u8, u8>::new(), 2, "test admitted"));
     admitted_case!(reserve_admitted_set_follows_prior_admission,
-        || DecodeContext::reserve_admitted_set(&mut HashSet::<u8>::new(), 2, "test admitted"));
+        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_set(&mut HashSet::<u8>::new(), 2, "test admitted"));
     admitted_case!(copy_admitted_slice_follows_prior_admission,
-        || DecodeContext::copy_admitted_slice(&[1_u8, 2], "test admitted").map(|_| ()));
+        |_ctx: &DecodeContext<'_>| DecodeContext::copy_admitted_slice(&[1_u8, 2], "test admitted").map(|_| ()));
     admitted_case!(copy_admitted_rows_follows_prior_admission,
-        || DecodeContext::copy_admitted_rows(&[1_u8, 2], 1, "test admitted").map(|_| ()));
+        |_ctx: &DecodeContext<'_>| DecodeContext::copy_admitted_rows(&[1_u8, 2], 1, "test admitted").map(|_| ()));
+    admitted_case!(admitted_vec_follows_prior_admission,
+        |_ctx: &DecodeContext<'_>| DecodeContext::admitted_vec::<u8>(2, "test admitted").map(|_| ()));
+    admitted_case!(optional_admitted_vec_follows_prior_admission,
+        |ctx: &DecodeContext<'_>| DecodeContext::optional_admitted_vec::<u8>(Some(ctx), 2, "test admitted").map(|_| ()));
+    admitted_case!(reserve_optional_admitted_vec_follows_prior_admission,
+        |ctx: &DecodeContext<'_>| DecodeContext::reserve_optional_admitted_vec(Some(ctx), &mut Vec::<u8>::new(), 2, "test admitted"));
 
     macro_rules! retained_case {
         ($name:ident, $need:expr, $body:expr) => {
@@ -794,6 +924,12 @@ mod tests {
         |ctx: &DecodeContext<'_>| ctx.copy_retained_set(&HashSet::from([1_u8]), "test retained set").map(|_| ()));
     retained_case!(format_retained_charges_before_allocation, 3,
         |ctx: &DecodeContext<'_>| ctx.format_retained(format_args!("abc"), "test format retained").map(|_| ()));
+    retained_case!(append_retained_charges_before_growth, 3,
+        |ctx: &DecodeContext<'_>| ctx.append_retained(&mut String::new(), "abc", "test append retained"));
+    retained_case!(retained_suffix_charges_before_growth, 2,
+        |ctx: &DecodeContext<'_>| ctx.retained_suffix("a", "b", "test suffix").map(|_| ()));
+    retained_case!(join_retained_charges_before_allocation, 3,
+        |ctx: &DecodeContext<'_>| ctx.join_retained(&["a", "b"], "-", "test join retained").map(|_| ()));
 
     macro_rules! materialized_case {
         ($name:ident, $need:expr, $body:expr) => {

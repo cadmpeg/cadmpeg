@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
-use crate::resource::{collection_vec, materialized_bytes, reserve_vec_items};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
@@ -35,7 +34,7 @@ pub(crate) fn transfer(
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
-            reserve_vec_items(ctx, owned, 1, "fcstd joint owner properties")?;
+            ctx.reserve_vec(owned, 1, "fcstd joint owner properties")?;
             owned.push(property);
         }
     }
@@ -44,7 +43,7 @@ pub(crate) fn transfer(
         let source = by_owner
             .get(object.id.as_str())
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = collection_vec(ctx, source.len(), "fcstd joint selected properties")?;
+        let mut owned = ctx.collection_vec(source.len(), "fcstd joint selected properties")?;
         owned.extend_from_slice(source);
         let grounded_property = sole_named_property(ctx, "joint", &owned, "ObjectToGround")?;
         let joint_type_property = sole_named_property(ctx, "joint", &owned, "JointType")?;
@@ -157,7 +156,7 @@ pub(crate) fn transfer(
                 );
             }
         }
-        reserve_vec_items(ctx, &mut output, 1, "fcstd joint records")?;
+        ctx.reserve_vec(&mut output, 1, "fcstd joint records")?;
         output.push(JointRecord::try_new(
             ctx,
             crate::native::native_id_charged(ctx, "joint", &object.name)?,
@@ -242,11 +241,7 @@ pub(crate) fn transfer_neutral(
                 return Ok(None);
             };
             let object = ctx.copy_retained_text(name, "fcstd joint operand object")?;
-            let mut subelements = collection_vec(
-                ctx,
-                reference.subelements().len(),
-                "fcstd joint operand subelements",
-            )?;
+            let mut subelements = ctx.collection_vec(reference.subelements().len(), "fcstd joint operand subelements")?;
             for name in reference
                 .subelements()
                 .iter()
@@ -366,7 +361,7 @@ pub(crate) fn transfer_neutral(
         joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
         joint.native_ref =
             Some(ctx.copy_retained_text(&record.id, "fcstd joint native reference")?);
-        reserve_vec_items(ctx, &mut output, 1, "fcstd neutral joints")?;
+        ctx.reserve_vec(&mut output, 1, "fcstd neutral joints")?;
         output.push(joint);
     }
     Ok(output)
@@ -387,7 +382,7 @@ fn joint_kind(
     };
     let angle = angle.map(finite_angle).transpose()?;
     let (mut lower, _reservation) =
-        materialized_bytes(ctx, kind.as_str().len(), "fcstd joint kind matching")?;
+        ctx.temporary_vec::<u8>(kind.as_str().len(), "fcstd joint kind matching")?;
     lower.extend_from_slice(kind.as_str().as_bytes());
     lower.make_ascii_lowercase();
     let lower = std::str::from_utf8(&lower)
@@ -615,11 +610,7 @@ fn enumeration_value(
     };
     match selected {
         Some(value) => ctx.copy_retained_text(value, "fcstd joint enumeration value"),
-        None => crate::resource::retained_format(
-            ctx,
-            format_args!("{index}"),
-            "fcstd joint enumeration index",
-        ),
+        None => ctx.format_retained(format_args!("{index}"), "fcstd joint enumeration index"),
     }
 }
 

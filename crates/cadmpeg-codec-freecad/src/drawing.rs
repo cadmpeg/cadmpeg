@@ -14,7 +14,6 @@ use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 use crate::native::{
     sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord,
 };
-use crate::resource::{collection_vec, reserve_vec_items, retained_strings};
 
 fn drawing_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
     crate::resource::malformed_charged(ctx, message, "fcstd drawing diagnostic")
@@ -42,11 +41,11 @@ pub(crate) fn transfer(
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
-            reserve_vec_items(ctx, owned, 1, "fcstd drawing owner properties")?;
+            ctx.reserve_vec(owned, 1, "fcstd drawing owner properties")?;
             owned.push(property);
         }
     }
-    let mut drawings = collection_vec(ctx, objects.len(), "fcstd drawing records")?;
+    let mut drawings = ctx.collection_vec(objects.len(), "fcstd drawing records")?;
     for object in objects
         .iter()
         .filter(|object| is_registered_drawing_type(&object.type_name))
@@ -54,13 +53,13 @@ pub(crate) fn transfer(
         let source = by_owner
             .get(object.id.as_str())
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = collection_vec(ctx, source.len(), "fcstd drawing selected properties")?;
+        let mut owned = ctx.collection_vec(source.len(), "fcstd drawing selected properties")?;
         owned.extend_from_slice(source);
         ensure_unique_property_names(ctx, &owned)?;
         let kind = if is_page_type(&object.type_name) {
             let view_links = typed_property(ctx, &owned, "Views", "App::PropertyLinkList")?
                 .map_or(&[][..], PropertyRecord::links);
-            let mut views = collection_vec(ctx, view_links.len(), "fcstd drawing page views")?;
+            let mut views = ctx.collection_vec(view_links.len(), "fcstd drawing page views")?;
             for link in view_links.iter().flatten() {
                 if let Some(name) = link.object() {
                     views.push(ctx.copy_retained_text(name, "fcstd drawing page view")?);
@@ -98,16 +97,12 @@ pub(crate) fn transfer(
             "Source3d",
         ] {
             let links = source_links(ctx, &owned, name)?;
-            reserve_vec_items(ctx, &mut sources, links.len(), "fcstd drawing source links")?;
+            ctx.reserve_vec(&mut sources, links.len(), "fcstd drawing source links")?;
             sources.extend(links);
         }
         let mut relationships = BTreeMap::new();
         for property in owned.iter().filter(|property| !property.links().is_empty()) {
-            let mut links = collection_vec(
-                ctx,
-                property.links().len(),
-                "fcstd drawing relationship links",
-            )?;
+            let mut links = ctx.collection_vec(property.links().len(), "fcstd drawing relationship links")?;
             for link in property.links() {
                 links.push(
                     link.as_ref()
@@ -124,7 +119,7 @@ pub(crate) fn transfer(
         let mut side_entries = Vec::new();
         for property in &owned {
             for name in property.side_entries() {
-                reserve_vec_items(ctx, &mut side_entries, 1, "fcstd drawing side entries")?;
+                ctx.reserve_vec(&mut side_entries, 1, "fcstd drawing side entries")?;
                 side_entries.push(ctx.copy_retained_text(name, "fcstd drawing side entry")?);
             }
         }
@@ -176,7 +171,7 @@ pub(crate) fn transfer_neutral(
             .iter()
             .filter(|property| property.owner == record.object)
             .count();
-        let mut owned = collection_vec(ctx, count, "fcstd neutral drawing properties")?;
+        let mut owned = ctx.collection_vec(count, "fcstd neutral drawing properties")?;
         owned.extend(
             properties
                 .iter()
@@ -209,11 +204,7 @@ pub(crate) fn transfer_neutral(
             };
             Ok(ReferenceSelection::new(
                 target,
-                retained_strings(
-                    ctx,
-                    link.subelements(),
-                    "fcstd drawing relationship subelements",
-                )?,
+                ctx.copy_retained_strings(link.subelements(), "fcstd drawing relationship subelements")?,
             ))
         };
         let parameter = |name: &str| scalar_property(ctx, &owned, name);
@@ -250,7 +241,7 @@ pub(crate) fn transfer_neutral(
         let mut relationships = BTreeMap::new();
         for (role, targets) in &record.relationships {
             let mut selections =
-                collection_vec(ctx, targets.len(), "fcstd drawing neutral relationships")?;
+                ctx.collection_vec(targets.len(), "fcstd drawing neutral relationships")?;
             for link in targets {
                 selections.push(relationship(link)?);
             }
@@ -284,7 +275,7 @@ pub(crate) fn transfer_neutral(
                 .map_err(CodecError::malformed)
             })
             .transpose()?;
-        reserve_vec_items(ctx, &mut model.drawings, 1, "fcstd neutral drawings")?;
+        ctx.reserve_vec(&mut model.drawings, 1, "fcstd neutral drawings")?;
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
             ctx.charge_collection_items(1, "fcstd drawing neutral parameters")?;
@@ -293,7 +284,7 @@ pub(crate) fn transfer_neutral(
                 ctx.copy_retained_text(value, "fcstd drawing parameter value")?,
             );
         }
-        let mut assets = collection_vec(ctx, record.side_entries.len(), "fcstd drawing assets")?;
+        let mut assets = ctx.collection_vec(record.side_entries.len(), "fcstd drawing assets")?;
         for name in &record.side_entries {
             assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
         }
@@ -494,11 +485,7 @@ fn source_links(
             format_args!("drawing source {name} has multiple targets"),
         ));
     }
-    let mut links = collection_vec(
-        ctx,
-        property.links().len(),
-        "fcstd drawing source property links",
-    )?;
+    let mut links = ctx.collection_vec(property.links().len(), "fcstd drawing source property links")?;
     for link in property.links() {
         links.push(
             link.as_ref()
