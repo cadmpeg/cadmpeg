@@ -9,7 +9,7 @@ use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use self::admission::{
     admit_validation_candidates, collect_index_map, collect_index_set, collect_retained_clones,
-    collect_temporary_clones, invalid_owner, NativeAdmission,
+    collect_temporary_clones, invalid_owner,
 };
 
 use crate::records::{
@@ -322,26 +322,20 @@ impl SldprtNative {
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        Self::load_inner(NativeAdmission::Cadir, namespace)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        )?;
+        Self::load_charged(&ctx, namespace)
     }
 
     pub(crate) fn load_charged(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        Self::load_inner(NativeAdmission::Decode(ctx), namespace)
-    }
-
-    fn load_inner(
-        admission: NativeAdmission<'_, '_>,
-        namespace: &cadmpeg_ir::NativeNamespace,
-    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         macro_rules! read_arena {
             ($name:literal) => {
-                match admission {
-                    NativeAdmission::Decode(ctx) => namespace.arena_as_charged(ctx, $name)?,
-                    NativeAdmission::Cadir => namespace.arena_as($name)?,
-                }
+                namespace.arena_as_charged(ctx, $name)?
             };
         }
         let mut native = Self {
@@ -370,7 +364,7 @@ impl SldprtNative {
             read_arena!("feature_input_relation_instances");
         let scalars: Vec<FeatureInputScalar> = read_arena!("feature_input_scalars");
         let history_ids = collect_index_set(
-            admission,
+            ctx,
             native.feature_histories.len(),
             native.feature_histories.iter().map(|history| history.id.as_str()),
             "index SLDPRT history ids",
@@ -380,7 +374,7 @@ impl SldprtNative {
             .find(|record| !history_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "configuration {} references {}",
                 record.id, record.parent
@@ -392,7 +386,7 @@ impl SldprtNative {
             .find(|record| !history_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature {} references {}",
                 record.id, record.parent
@@ -400,19 +394,19 @@ impl SldprtNative {
             )?);
         }
         let feature_ids = collect_index_set(
-            admission,
+            ctx,
             features.len(),
             features.iter().map(|record| record.id.as_str()),
             "index SLDPRT feature ids",
         )?;
         let lane_ids = collect_index_set(
-            admission,
+            ctx,
             native.feature_input_lanes.len(),
             native.feature_input_lanes.iter().map(|lane| lane.id.as_str()),
             "index SLDPRT lane ids",
         )?;
         let lane_payloads = collect_index_map(
-            admission,
+            ctx,
             native.feature_input_lanes.len(),
             native.feature_input_lanes.iter().map(|lane| (lane.id.as_str(), lane.native_payload.as_slice())),
             "index SLDPRT lane payloads",
@@ -422,7 +416,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "sketch input entity {} references {}",
                 record.id, record.parent
@@ -430,7 +424,7 @@ impl SldprtNative {
             )?);
         }
         let mut entities = Vec::new();
-        if let Some(ctx) = admission.context() {
+        {
             ctx.reserve_collection_vec(
                 &mut entities,
                 entity_wires.len(),
@@ -440,7 +434,7 @@ impl SldprtNative {
         for wire in entity_wires {
             let Some(payload) = lane_payloads.get(wire.parent.as_str()).copied() else {
                 return Err(invalid_owner(
-                    admission,
+                    ctx,
                     format_args!(
                         "sketch input entity {} references lane {} without a payload",
                         wire.id, wire.parent
@@ -457,7 +451,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input class {} references {}",
                 record.id, record.parent
@@ -469,7 +463,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input body selection {} references {}",
                 record.id, record.parent
@@ -481,7 +475,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input edge selection {} references {}",
                 record.id, record.parent
@@ -493,7 +487,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input surface selection {} references {}",
                 record.id, record.parent
@@ -505,7 +499,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input generated surface identity {} references {}",
                 record.id, record.parent
@@ -517,7 +511,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input name {} references {}",
                 record.id, record.parent
@@ -529,7 +523,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input scalar {} references {}",
                 record.id, record.parent
@@ -543,7 +537,7 @@ impl SldprtNative {
                 .is_some_and(|feature| !feature_ids.contains(feature))
         }) {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input scalar {} references missing feature {}",
                 record.id,
@@ -556,7 +550,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input reference {} references {}",
                 record.id, record.parent
@@ -568,7 +562,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input relation binding {} references {}",
                 record.id, record.parent
@@ -580,7 +574,7 @@ impl SldprtNative {
             .find(|record| !lane_ids.contains(record.parent.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input relation instance {} references {}",
                 record.id, record.parent
@@ -588,7 +582,7 @@ impl SldprtNative {
             )?);
         }
         let name_ids = collect_index_set(
-            admission,
+            ctx,
             names.len(),
             names.iter().map(|record| record.id.as_str()),
             "index SLDPRT feature names",
@@ -599,7 +593,7 @@ impl SldprtNative {
                 || record.local_body_ids.is_empty()
         }) {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input body selection {} has unresolved ownership",
                 record.id
@@ -612,7 +606,7 @@ impl SldprtNative {
                 || record.local_edge_ids.is_empty()
         }) {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input edge selection {} has unresolved ownership",
                 record.id
@@ -644,7 +638,7 @@ impl SldprtNative {
                 })
         }) {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input surface selection {} has unresolved ownership",
                 record.id
@@ -656,7 +650,7 @@ impl SldprtNative {
             .find(|record| !name_ids.contains(record.name.as_str()))
         {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input scalar {} references name {}",
                 record.id, record.name
@@ -664,19 +658,19 @@ impl SldprtNative {
             )?);
         }
         let references_by_id = collect_index_map(
-            admission,
+            ctx,
             references.len(),
             references.iter().map(|record| (record.id.as_str(), record)),
             "index SLDPRT references",
         )?;
         let class_ids = collect_index_set(
-            admission,
+            ctx,
             classes.len(),
             classes.iter().map(|record| record.id.as_str()),
             "index SLDPRT classes",
         )?;
         let scalar_ids = collect_index_set(
-            admission,
+            ctx,
             scalars.len(),
             scalars.iter().map(|record| record.id.as_str()),
             "index SLDPRT scalars",
@@ -690,7 +684,7 @@ impl SldprtNative {
                     .is_some_and(|feature| !feature_ids.contains(feature))
         }) {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input relation binding {} has an unresolved class or scalar",
                 record.id
@@ -740,7 +734,7 @@ impl SldprtNative {
                 })
         }) {
             return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                 "feature-input relation instance {} has an unresolved class, feature, or scalar",
                 record.id
@@ -751,7 +745,7 @@ impl SldprtNative {
             for operand in &scalar.operands {
                 let Some(reference) = references_by_id.get(operand.reference_ref.as_str()) else {
                     return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                         "feature-input scalar {} references missing cell {}",
                         scalar.id, operand.reference_ref
@@ -763,7 +757,7 @@ impl SldprtNative {
                     || reference.object_index != operand.entity_index
                 {
                     return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                         "feature-input scalar {} has inconsistent cell {}",
                         scalar.id, operand.reference_ref
@@ -774,7 +768,7 @@ impl SldprtNative {
         }
         for history in &mut native.feature_histories {
             history.configurations = collect_retained_clones(
-                admission,
+                ctx,
                 configurations
                     .iter()
                     .filter(|record| record.parent == history.id),
@@ -787,7 +781,7 @@ impl SldprtNative {
                 .find(|pair| pair[0].ordinal == pair[1].ordinal)
             {
                 return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                     "SolidWorks history {} repeats configuration ordinal {}",
                     history.id, pair[1].ordinal
@@ -795,7 +789,7 @@ impl SldprtNative {
             )?);
             }
             history.features = collect_retained_clones(
-                admission,
+                ctx,
                 features.iter().filter(|record| record.parent == history.id),
                 "attach SLDPRT history features",
             )?;
@@ -806,7 +800,7 @@ impl SldprtNative {
                 .find(|pair| pair[0].ordinal == pair[1].ordinal)
             {
                 return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                     "SolidWorks history {} repeats feature ordinal {}",
                     history.id, pair[1].ordinal
@@ -816,31 +810,31 @@ impl SldprtNative {
         }
         for lane in &mut native.feature_input_lanes {
             lane.classes = collect_retained_clones(
-                admission,
+                ctx,
                 classes.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane classes",
             )?;
             lane.classes.sort_by_key(|record| record.ordinal);
             lane.names = collect_retained_clones(
-                admission,
+                ctx,
                 names.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane names",
             )?;
             lane.names.sort_by_key(|record| record.ordinal);
             lane.scalars = collect_retained_clones(
-                admission,
+                ctx,
                 scalars.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane scalars",
             )?;
             lane.scalars.sort_by_key(|record| record.ordinal);
             lane.references = collect_retained_clones(
-                admission,
+                ctx,
                 references.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane references",
             )?;
             lane.references.sort_by_key(|record| record.ordinal);
             lane.relation_bindings = collect_retained_clones(
-                admission,
+                ctx,
                 relation_bindings
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -848,7 +842,7 @@ impl SldprtNative {
             )?;
             lane.relation_bindings.sort_by_key(|record| record.ordinal);
             lane.relation_instances = collect_retained_clones(
-                admission,
+                ctx,
                 relation_instances
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -856,7 +850,7 @@ impl SldprtNative {
             )?;
             lane.relation_instances.sort_by_key(|record| record.ordinal);
             lane.body_selections = collect_retained_clones(
-                admission,
+                ctx,
                 body_selections
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -864,9 +858,9 @@ impl SldprtNative {
             )?;
             lane.body_selections.sort_by_key(|record| record.ordinal);
             for record in &lane.body_selections {
-                if body_selection_disagrees_with_payload(admission, lane, record)? {
+                if body_selection_disagrees_with_payload(ctx, lane, record)? {
                     return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                         "feature-input body selection {} disagrees with its payload",
                         record.id
@@ -875,7 +869,7 @@ impl SldprtNative {
                 }
             }
             lane.edge_selections = collect_retained_clones(
-                admission,
+                ctx,
                 edge_selections
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -883,7 +877,7 @@ impl SldprtNative {
             )?;
             lane.edge_selections.sort_by_key(|record| record.ordinal);
             let (mut edge_features, _edge_features_reservation) = collect_temporary_clones(
-                admission,
+                ctx,
                 features.iter(),
                 "validate SLDPRT edge feature context",
             )?;
@@ -892,9 +886,9 @@ impl SldprtNative {
                 std::slice::from_ref(lane),
             );
             for record in &lane.edge_selections {
-                if edge_selection_disagrees_with_payload(admission, lane, record, &edge_features)? {
+                if edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)? {
                     return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                         "feature-input edge selection {} disagrees with its payload",
                         record.id
@@ -902,7 +896,7 @@ impl SldprtNative {
             )?);
                 }
                 let _reference_reservation = admit_validation_candidates(
-                    admission,
+                    ctx,
                     selection_payload_span(lane, record.offset),
                     "validate SLDPRT edge reference candidates",
                 )?;
@@ -924,7 +918,7 @@ impl SldprtNative {
                         != record.references;
                 if disagreement {
                     return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                         "feature-input edge selection {} disagrees with its payload",
                         record.id
@@ -933,7 +927,7 @@ impl SldprtNative {
                 }
             }
             let (mut surface_features, _surface_features_reservation) = collect_temporary_clones(
-                admission,
+                ctx,
                 features.iter(),
                 "validate SLDPRT surface feature context",
             )?;
@@ -942,7 +936,7 @@ impl SldprtNative {
                 std::slice::from_ref(lane),
             );
             lane.surface_selections = collect_retained_clones(
-                admission,
+                ctx,
                 surface_selections
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -950,9 +944,9 @@ impl SldprtNative {
             )?;
             lane.surface_selections.sort_by_key(|record| record.ordinal);
             for record in &lane.surface_selections {
-                if surface_selection_disagrees_with_payload(admission, lane, record, &surface_features)? {
+                if surface_selection_disagrees_with_payload(ctx, lane, record, &surface_features)? {
                     return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                         "feature-input surface selection {} disagrees with its payload",
                         record.id
@@ -961,7 +955,7 @@ impl SldprtNative {
                 }
             }
             let mut records = collect_retained_clones(
-                admission,
+                ctx,
                 generated_surface_identities
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -969,9 +963,9 @@ impl SldprtNative {
             )?;
             records.sort_by_key(|record| record.ordinal);
             lane.generated_surface_identities = records;
-            if generated_surface_identities_disagree_with_payload(admission, lane)? {
+            if generated_surface_identities_disagree_with_payload(ctx, lane)? {
                 return Err(invalid_owner(
-                admission,
+                ctx,
                 format_args!(
                     "feature-input lane {} generated surface identities disagree with its payload",
                     lane.id
@@ -979,14 +973,14 @@ impl SldprtNative {
             )?);
             }
             lane.sketch_entities = collect_retained_clones(
-                admission,
+                ctx,
                 entities.iter().filter(|record| record.parent() == lane.id),
                 "attach SLDPRT lane sketch entities",
             )?;
             lane.sketch_entities
                 .sort_by_key(crate::records::SketchInputEntity::ordinal);
         }
-        lanes::admit(&native, admission)?;
+        lanes::admit(&native, ctx)?;
         Ok(native)
     }
 
@@ -1005,7 +999,7 @@ impl SldprtNative {
                 .find(|record| record.parent != history.id)
             {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "configuration {} references {} instead of {}",
                     record.id, record.parent, history.id
@@ -1018,7 +1012,7 @@ impl SldprtNative {
                 .find(|record| record.parent != history.id)
             {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature {} references {} instead of {}",
                     record.id, record.parent, history.id
@@ -1027,46 +1021,46 @@ impl SldprtNative {
             }
         }
         let (features, _features_reservation) = collect_temporary_clones(
-            NativeAdmission::Decode(ctx),
+            ctx,
             self.feature_histories
                 .iter()
                 .flat_map(|history| &history.features),
             "validate SLDPRT store features",
         )?;
         let feature_ids = collect_index_set(
-            NativeAdmission::Decode(ctx),
+            ctx,
             features.len(),
             features.iter().map(|feature| feature.id.as_str()),
             "index SLDPRT stored features",
         )?;
         for lane in &self.feature_input_lanes {
             let name_ids = collect_index_set(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 lane.names.len(),
                 lane.names.iter().map(|record| record.id.as_str()),
                 "index SLDPRT stored names",
             )?;
             let references_by_id = collect_index_map(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 lane.references.len(),
                 lane.references.iter().map(|record| (record.id.as_str(), record)),
                 "index SLDPRT stored references",
             )?;
             let class_ids = collect_index_set(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 lane.classes.len(),
                 lane.classes.iter().map(|record| record.id.as_str()),
                 "index SLDPRT stored classes",
             )?;
             let scalar_ids = collect_index_set(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 lane.scalars.len(),
                 lane.scalars.iter().map(|record| record.id.as_str()),
                 "index SLDPRT stored scalars",
             )?;
             if let Some(record) = lane.classes.iter().find(|record| record.parent != lane.id) {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature-input class {} references {} instead of {}",
                     record.id, record.parent, lane.id
@@ -1075,7 +1069,7 @@ impl SldprtNative {
             }
             if let Some(record) = lane.names.iter().find(|record| record.parent != lane.id) {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature-input name {} references {} instead of {}",
                     record.id, record.parent, lane.id
@@ -1084,7 +1078,7 @@ impl SldprtNative {
             }
             if let Some(record) = lane.scalars.iter().find(|record| record.parent != lane.id) {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature-input scalar {} references {} instead of {}",
                     record.id, record.parent, lane.id
@@ -1098,18 +1092,18 @@ impl SldprtNative {
                     || record.local_body_ids.is_empty();
                 if invalid {
                     return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                         "feature-input body selection {} has inconsistent ownership",
                         record.id
                     ),
             )?);
                 }
-                let invalid = body_state_ids_disagree_with_payload(NativeAdmission::Decode(ctx), lane, record)?
-                    || body_selection_disagrees_with_payload(NativeAdmission::Decode(ctx), lane, record)?;
+                let invalid = body_state_ids_disagree_with_payload(ctx, lane, record)?
+                    || body_selection_disagrees_with_payload(ctx, lane, record)?;
                 if invalid {
                     return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                         "feature-input body selection {} has inconsistent ownership",
                         record.id
@@ -1118,7 +1112,7 @@ impl SldprtNative {
                 }
             }
             let (mut edge_features, _edge_features_reservation) = collect_temporary_clones(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 features.iter(),
                 "validate SLDPRT store edge features",
             )?;
@@ -1133,14 +1127,14 @@ impl SldprtNative {
                     || record.local_edge_ids.is_empty();
                 if invalid
                     || edge_selection_disagrees_with_payload(
-                        NativeAdmission::Decode(ctx),
+                        ctx,
                         lane,
                         record,
                         &edge_features,
                     )?
                 {
                     return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                         "feature-input edge selection {} has inconsistent ownership",
                         record.id
@@ -1149,7 +1143,7 @@ impl SldprtNative {
                 }
             }
             let (mut surface_features, _surface_features_reservation) = collect_temporary_clones(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 features.iter(),
                 "validate SLDPRT store surface features",
             )?;
@@ -1164,14 +1158,14 @@ impl SldprtNative {
                     || record.components.is_empty();
                 if invalid
                     || surface_selection_disagrees_with_payload(
-                        NativeAdmission::Decode(ctx),
+                        ctx,
                         lane,
                         record,
                         &surface_features,
                     )?
                 {
                     return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                         "feature-input surface selection {} has inconsistent ownership",
                         record.id
@@ -1186,7 +1180,7 @@ impl SldprtNative {
                     .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature-input scalar {} references missing feature {}",
                     record.id,
@@ -1200,7 +1194,7 @@ impl SldprtNative {
                 .find(|record| record.parent != lane.id)
             {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature-input reference {} references {} instead of {}",
                     record.id, record.parent, lane.id
@@ -1217,7 +1211,7 @@ impl SldprtNative {
                         .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature-input relation binding {} has inconsistent ownership",
                     record.id
@@ -1251,7 +1245,7 @@ impl SldprtNative {
                     })
             }) {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature-input relation instance {} has inconsistent ownership",
                     record.id
@@ -1265,7 +1259,7 @@ impl SldprtNative {
                     .is_some_and(|scalar| scalar.feature_ref != record.feature_ref)
             }) {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature-input relation binding {} disagrees with its scalar owner",
                     record.id
@@ -1278,7 +1272,7 @@ impl SldprtNative {
                 .find(|record| !name_ids.contains(record.name.as_str()))
             {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "feature-input scalar {} references name {}",
                     record.id, record.name
@@ -1286,7 +1280,7 @@ impl SldprtNative {
             )?);
             }
             let sketch_entities = collect_index_map(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 lane.sketch_entities.len(),
                 lane.sketch_entities.iter().map(|record| (record.id(), record)),
                 "index SLDPRT stored sketch entities",
@@ -1297,7 +1291,7 @@ impl SldprtNative {
                     let Some(reference) = references_by_id.get(operand.reference_ref.as_str())
                     else {
                         return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                             "feature-input scalar {} references missing cell {}",
                             scalar.id, operand.reference_ref
@@ -1309,7 +1303,7 @@ impl SldprtNative {
                         || reference.object_index != operand.entity_index
                     {
                         return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                             "feature-input scalar {} has inconsistent cell {}",
                             scalar.id, operand.reference_ref
@@ -1319,7 +1313,7 @@ impl SldprtNative {
                     if let Some(entity_ref) = operand.entity_ref.as_deref() {
                         let Some(target) = sketch_entities.get(entity_ref) else {
                             return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                                 "feature-input scalar {} references missing sketch marker {}",
                                 scalar.id, entity_ref
@@ -1328,7 +1322,7 @@ impl SldprtNative {
                         };
                         if resolved != Some(*target) {
                             return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                                 "feature-input scalar {} has inconsistent sketch marker {}",
                                 scalar.id, entity_ref
@@ -1346,7 +1340,7 @@ impl SldprtNative {
                         .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
                 return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                     "sketch input entity {} has inconsistent lane or feature ownership",
                     record.id()
@@ -1357,7 +1351,7 @@ impl SldprtNative {
                 for link in record.links() {
                     let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {
                         return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                             "sketch input entity {} references missing local-link target {}",
                             record.id(),
@@ -1369,7 +1363,7 @@ impl SldprtNative {
                         || target.local_id() != Some(u32::from(link.local_id))
                     {
                         return Err(invalid_owner(
-                NativeAdmission::Decode(ctx),
+                ctx,
                 format_args!(
                             "sketch input entity {} has inconsistent local-link target {}",
                             record.id(),
@@ -1381,12 +1375,12 @@ impl SldprtNative {
             }
         }
         let (mut expected_histories, _expected_histories_reservation) = collect_temporary_clones(
-            NativeAdmission::Decode(ctx),
+            ctx,
             self.feature_histories.iter(),
             "validate SLDPRT expected histories",
         )?;
         let (history_lanes, _history_lanes_reservation) = collect_temporary_clones(
-            NativeAdmission::Decode(ctx),
+            ctx,
             self.feature_input_lanes.iter().filter(|lane| {
                 !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
             }),
@@ -1427,7 +1421,7 @@ fn bind_history_classes_charged(
         )
     })?;
     let _reservation = admit_validation_candidates(
-        NativeAdmission::Decode(ctx),
+        ctx,
         source_items,
         "validate SLDPRT history class candidates",
     )?;
@@ -1452,7 +1446,7 @@ fn resolved_scalar_operand_markers<'a>(
             )
         })?;
     let _reservation = admit_validation_candidates(
-        NativeAdmission::Decode(ctx),
+        ctx,
         source_items,
         "validate SLDPRT scalar operand candidates",
     )?;
@@ -1467,7 +1461,7 @@ fn resolved_scalar_operand_markers<'a>(
 }
 
 fn generated_surface_identities_disagree_with_payload(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = if lane
@@ -1476,10 +1470,10 @@ fn generated_surface_identities_disagree_with_payload(
         .any(|class| class.name.ends_with("SurfIdRep_c"))
     {
         admit_validation_candidates(
-            admission,
+            ctx,
             lane.native_payload.len(),
             "validate SLDPRT generated surface identities",
-        )?
+        ).map(Some)?
     } else {
         None
     };
@@ -1495,7 +1489,7 @@ fn selection_payload_span(lane: &FeatureInputLane, offset: u64) -> usize {
 }
 
 fn body_state_ids_disagree_with_payload(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     record: &FeatureInputBodySelection,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
@@ -1507,7 +1501,7 @@ fn body_state_ids_disagree_with_payload(
         .and_then(|span| usize::try_from(span).ok())
         .unwrap_or(0);
     let _reservation =
-        admit_validation_candidates(admission, source_units, "validate SLDPRT body state candidates")?;
+        admit_validation_candidates(ctx, source_units, "validate SLDPRT body state candidates")?;
     Ok(
         crate::resolved_features::selections::compact_body_state_ids_for_selection(lane, record)
             != record.body_state_ids,
@@ -1516,12 +1510,12 @@ fn body_state_ids_disagree_with_payload(
 
 /// `true` when a body selection disagrees with the compact selection in its lane payload.
 fn body_selection_disagrees_with_payload(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     record: &FeatureInputBodySelection,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = admit_validation_candidates(
-        admission,
+        ctx,
         selection_payload_span(lane, record.offset),
         "validate SLDPRT body selection candidates",
     )?;
@@ -1544,13 +1538,13 @@ fn body_selection_disagrees_with_payload(
 ///
 /// `edge_features` are the history features enriched with this lane's object sources.
 fn edge_selection_disagrees_with_payload(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     record: &FeatureInputEdgeSelection,
     edge_features: &[crate::records::Feature],
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = admit_validation_candidates(
-        admission,
+        ctx,
         selection_payload_span(lane, record.offset),
         "validate SLDPRT edge selection candidates",
     )?;
@@ -1602,13 +1596,13 @@ fn edge_selection_disagrees_with_payload(
 ///
 /// `surface_features` are the history features enriched with this lane's object sources.
 fn surface_selection_disagrees_with_payload(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     record: &FeatureInputSurfaceSelection,
     surface_features: &[crate::records::Feature],
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = admit_validation_candidates(
-        admission,
+        ctx,
         selection_payload_span(lane, record.offset),
         "validate SLDPRT surface selection candidates",
     )?;
