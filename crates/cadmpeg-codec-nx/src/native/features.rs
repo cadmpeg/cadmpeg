@@ -9761,32 +9761,36 @@ pub(super) fn feature_block_construction_payloads(
     constructions: &[FeatureBlockConstruction],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(constructions
-        .iter()
-        .filter_map(|construction| {
-            let mut data_blocks = construction
-                .members
-                .iter()
-                .map(|member| member.data_block.clone())
-                .collect::<Vec<_>>();
-            data_blocks.push(construction.terminal_data_block.clone());
-            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
-                Ok(Some(content)) => content,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            Some(Ok(FeatureConstructionPayload {
-                id: construction
-                    .id
-                    .replacen("block-construction", "block-construction-payload", 1),
-                operation_label: construction.operation_label.clone(),
-                owner: FeatureConstructionOwner::Block {
-                    construction: construction.id.clone(),
-                },
-                content,
-            }))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
+    let mut payloads = Vec::new();
+    for construction in constructions {
+        let (data_blocks, reservation) = copy_payload_source_blocks(ctx,
+            construction.members.iter().map(|member| member.data_block.as_str())
+                .chain(std::iter::once(construction.terminal_data_block.as_str())),
+            "NX block construction source blocks")?;
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+            continue;
+        };
+        drop(reservation);
+        let id = replace_operation_text(ctx, &construction.id,
+            "block-construction", "block-construction-payload",
+            "NX block construction payload identity")?;
+        let operation_label = copy_operation_text(ctx, &construction.operation_label,
+            "NX block construction payload operation")?;
+        let construction_id = copy_operation_text(ctx, &construction.id,
+            "NX block construction payload owner")?;
+        ctx.charge_collection_items(1, "NX block construction payloads")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureConstructionPayload>()),
+            "NX block construction payloads")?;
+        payloads.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX block construction payloads", 0, 1))?;
+        payloads.push(FeatureConstructionPayload {
+            id, operation_label,
+            owner: FeatureConstructionOwner::Block { construction: construction_id },
+            content,
+        });
+    }
+    Ok(payloads)
 }
 
 /// Decode exact framed scalar fields across reconstructed `BLOCK` payloads.
