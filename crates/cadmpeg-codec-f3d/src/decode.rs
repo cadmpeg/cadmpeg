@@ -2591,11 +2591,12 @@ impl<'a> F3dDecodeSession<'a> {
             self.ir.tolerances.linear.get(),
         )?;
         crate::design::feature_project::bind_work_point_sketch_point_constructions(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.ir.model.sketch_entities,
             &self.ir.model.spatial_sketch_entities,
-        );
+        )?;
         let arrangement_budget =
             ctx.work_budget(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
         crate::design::profile_select::bind_sweep_sketch_selections(

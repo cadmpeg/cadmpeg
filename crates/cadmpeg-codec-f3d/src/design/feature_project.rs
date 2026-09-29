@@ -153,6 +153,18 @@ fn copy_feature_text(
         .map_err(|_| CodecError::malformed("validated feature text is not UTF-8"))
 }
 
+fn copy_feature_identity<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    text: &str,
+    operation: &'static str,
+) -> Result<T, CodecError>
+where
+    T: TryFrom<String>,
+    T::Error: std::fmt::Display,
+{
+    T::try_from(copy_feature_text(ctx, text, operation)?).map_err(CodecError::malformed)
+}
+
 fn temporary_feature_text<'a, 'b>(
     ctx: Option<&'a DecodeContext<'b>>,
     text: &str,
@@ -219,10 +231,11 @@ fn copy_feature_record_ref(
     ctx: Option<&DecodeContext<'_>>,
     stream: &str,
     offset: u64,
+    tag: &'static str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let suffix = offset.to_string();
-    let size = stream.len().checked_add(22).and_then(|size| size.checked_add(suffix.len()))
+    let size = stream.len().checked_add(tag.len()).and_then(|size| size.checked_add(suffix.len()))
         .ok_or_else(|| CodecError::malformed("Design record reference size overflow"))?;
     let bytes = u64::try_from(size)
         .map_err(|_| CodecError::malformed("Design record reference size overflow"))?;
@@ -234,7 +247,7 @@ fn copy_feature_record_ref(
         reference.try_reserve(size).map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
     }
     reference.push_str(stream);
-    reference.push_str(":design-record-header#");
+    reference.push_str(tag);
     reference.push_str(&suffix);
     Ok(reference)
 }
@@ -2850,7 +2863,8 @@ pub(crate) fn bind_sketch_feature_geometry(
                 let sketch_id = copy_spatial_sketch_id(ctx, &spatial.id,
                     "f3d extrude spatial sketch id")?;
                 let selection = copy_feature_record_ref(ctx, stream,
-                    profile_operand.byte_offset(), "f3d extrude spatial selection ref")?;
+                    profile_operand.byte_offset(), ":design-record-header#",
+                    "f3d extrude spatial selection ref")?;
                 *profile = match ProfileRef::spatial_sketch_selection(sketch_id, vec![selection]) {
                     Ok(profile) => profile,
                     Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
@@ -3033,17 +3047,20 @@ pub(crate) fn bind_sketch_feature_geometry(
 /// the neutral point identity depends on whether that record belongs to a
 /// planar or model-space sketch.
 pub(crate) fn bind_work_point_sketch_point_constructions(
+    ctx: Option<&DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     spatial_sketch_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         DatumPointConstruction, FeatureDefinition, FeatureOperation, SketchPointSelection,
     };
 
     for feature in features.iter_mut() {
-        let mut definition = feature.evaluation.definition().clone();
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+        edit_result = (|| -> Result<(), CodecError> {
         'feature_edit: {
             let Some(scope) = feature
                 .native_ref
@@ -3053,7 +3070,7 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
                 break 'feature_edit;
             };
             let FeatureDefinition::Operation(FeatureOperation::DatumPoint { construction, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
@@ -3078,34 +3095,43 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
             else {
                 break 'feature_edit;
             };
-            let native = format!(
-                "{}:design-record#{record_index}",
-                native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM)
-            );
+            let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
             if let Some(entity) = sketch_entities.iter().find(|entity| {
                 entity.native_ref.as_deref() == Some(selection.point_native_id.as_str())
             }) {
+                let native = copy_feature_record_ref(ctx, stream, u64::from(record_index),
+                    ":design-record#", "f3d work point sketch native ref")?;
                 *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                     point: SketchPointSelection::Planar {
-                        sketch: entity.sketch.clone(),
-                        point: entity.id().clone(),
+                        sketch: copy_feature_identity(ctx, entity.sketch.as_str(),
+                            "f3d work point planar sketch id")?,
+                        point: copy_feature_identity(ctx, entity.id().as_str(),
+                            "f3d work point planar point id")?,
                         native,
                     },
                 }));
             } else if let Some(entity) = spatial_sketch_entities.iter().find(|entity| {
                 entity.native_ref.as_deref() == Some(selection.point_native_id.as_str())
             }) {
+                let native = copy_feature_record_ref(ctx, stream, u64::from(record_index),
+                    ":design-record#", "f3d work point sketch native ref")?;
                 *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                     point: SketchPointSelection::Spatial {
-                        sketch: entity.sketch.clone(),
-                        point: entity.id().clone(),
+                        sketch: copy_feature_identity(ctx, entity.sketch.as_str(),
+                            "f3d work point spatial sketch id")?,
+                        point: copy_feature_identity(ctx, entity.id().as_str(),
+                            "f3d work point spatial point id")?,
                         native,
                     },
                 }));
             }
         }
-        feature.evaluation.set_definition(definition);
+        Ok(())
+        })();
+        });
+        edit_result?;
     }
+    Ok(())
 }
 
 fn project_surface_offset(
