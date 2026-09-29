@@ -1083,44 +1083,51 @@ pub(super) fn resolved_historical_split_face_target_group(
 /// members have a nonempty preceding lane. Members with no updated candidate
 /// are context records and do not add a target face.
 pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
     {
-        return None;
+        return Ok(None);
     }
-    resolved_historical_split_face_target_group(scope, previous_state_id, group, operands).or_else(
-        || {
-            let faces =
-                split_face_updated_target_slots(scope, group, operands, updated_face_slots)?;
-            historical_face_selection_in_state(scope, group, previous_state_id?, faces)
-        },
-    )
+    if let Some(selection) =
+        resolved_historical_split_face_target_group(scope, previous_state_id, group, operands)
+    {
+        return Ok(Some(selection));
+    }
+    let Some(faces) = split_face_updated_target_slots(
+        ctx, scope, group, operands, updated_face_slots)? else { return Ok(None); };
+    let Some(previous_state_id) = previous_state_id else { return Ok(None); };
+    Ok(historical_face_selection_in_state(scope, group, previous_state_id, faces))
 }
 
 fn split_face_updated_target_slots(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
-) -> Option<Vec<i64>> {
+) -> Result<Option<Vec<i64>>, CodecError> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
         || updated_face_slots.is_empty()
         || updated_face_slots.len() != group.members().len()
     {
-        return None;
+        return Ok(None);
     }
-    let updated = updated_face_slots.iter().copied().collect::<HashSet<_>>();
+    let mut updated = HashSet::new();
+    for slot in updated_face_slots {
+        insert_face_set(ctx, &mut updated, *slot, "f3d SplitFace updated face index")?;
+    }
     if updated.len() != updated_face_slots.len() {
-        return None;
+        return Ok(None);
     }
-    let stream = native_stream(&group.id)?;
+    let Some(stream) = native_stream(&group.id) else { return Ok(None); };
     let mut represented = HashSet::new();
     let mut faces = Vec::new();
     for (ordinal, record_index) in group
@@ -1129,7 +1136,7 @@ fn split_face_updated_target_slots(
         .map(|member| &member.value)
         .enumerate()
     {
-        let ordinal = u32::try_from(ordinal).ok()?;
+        let Some(ordinal) = u32::try_from(ordinal).ok() else { return Ok(None); };
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
@@ -1139,21 +1146,24 @@ fn split_face_updated_target_slots(
                 && operand.recipe_kind
                     == crate::records::recipes::ConstructionRecipeKind::BoundedFace
         });
-        let operand = matches.next()?;
+        let Some(operand) = matches.next() else { return Ok(None); };
         if matches.next().is_some() || operand.preceding_candidate_faces.is_empty() {
-            return None;
+            return Ok(None);
         }
         for face in &operand.preceding_candidate_faces {
-            let slot = face
+            let Some(slot) = face
                 .as_str()
                 .rsplit_once('#')
-                .and_then(|(_, slot)| slot.parse().ok())?;
-            if updated.contains(&slot) && represented.insert(slot) {
-                faces.push(slot);
+                .and_then(|(_, slot)| slot.parse().ok()) else { return Ok(None); };
+            if updated.contains(&slot)
+                && insert_face_set(ctx, &mut represented, slot,
+                    "f3d SplitFace represented face index")?
+            {
+                push_face_item(ctx, &mut faces, slot, "f3d SplitFace updated face")?;
             }
         }
     }
-    (represented == updated).then_some(faces)
+    Ok((represented == updated).then_some(faces))
 }
 
 #[derive(Clone, Copy)]
@@ -2758,12 +2768,14 @@ mod tests {
         ];
 
         let selection = resolved_historical_split_face_target_group_with_updated_faces(
+            None,
             &scope,
             scope.previous_history_state_id(),
             &group,
             &operands,
             &[10, 20, 30],
         )
+        .expect("projection resource budget")
         .expect("updated target transition proof");
         let cadmpeg_ir::features::FaceSelection::Historical {
             state,
@@ -2787,24 +2799,115 @@ mod tests {
         );
         assert!(
             resolved_historical_split_face_target_group_with_updated_faces(
+                None,
                 &scope,
                 scope.previous_history_state_id(),
                 &group,
                 &operands,
                 &[10, 20]
             )
+            .expect("projection resource budget")
             .is_none()
         );
         assert!(
             resolved_historical_split_face_target_group_with_updated_faces(
+                None,
                 &scope,
                 scope.previous_history_state_id(),
                 &group,
                 &operands,
                 &[10, 20, 40]
             )
+            .expect("projection resource budget")
             .is_none()
         );
+    }
+
+    fn assert_split_face_updated_slot_refusal(operation: &'static str, limit: u64) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let scope = DesignParameterScope::empty(
+            "f3d:test:scope#100",
+            crate::records::feature::scope::DesignFeatureKind::SplitFace,
+            100,
+        );
+        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:construction-group#150",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 1,
+            "record_index": 150,
+            "byte_offset": 0,
+            "class_tag": "262",
+            "members": [200],
+            "member_offsets": [0],
+            "frame": {
+                "member_count_offset": 0,
+                "opaque_index": 1,
+                "opaque_index_offset": 18,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 22,
+                "variant": false
+            },
+            "role": 0x0000_0010_0000_0000_u64,
+            "role_offset": 0,
+            "paired_class_tag": "258",
+            "paired_byte_offset": 0
+        })).unwrap();
+        let operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 1,
+            "group_record_index": 150,
+            "group_member_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "277",
+            "paired_byte_offset": 407,
+            "paired_class_tag": "258",
+            "recipe_record_index": 203,
+            "recipe_record_byte_offset": 423,
+            "recipe_id": "f3d:test:recipe#200",
+            "recipe_prefix_offset": 434,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [0, -1, 2],
+            "recipe_node_offsets": [],
+            "recipe_nodes": [],
+            "candidate_faces": ["f3d:brep:entity#10"],
+            "preceding_candidate_faces": ["f3d:brep:entity#10"],
+            "next_record_index": 204,
+            "next_byte_offset": 551
+        })).unwrap();
+        assert_eq!(super::split_face_updated_target_slots(None, &scope, &group,
+            std::slice::from_ref(&operand), &[10]).unwrap(), Some(vec![10]));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::split_face_updated_target_slots(Some(&ctx), &scope, &group,
+            std::slice::from_ref(&operand), &[10]);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.operation == operation
+                && failure.dimension == ResourceDimension::CollectionItems),
+            "expected {operation} refusal, got {result:?}");
+    }
+
+    #[test]
+    fn split_face_updated_index_refuses_collection_limit() {
+        assert_split_face_updated_slot_refusal("f3d SplitFace updated face index", 0);
+    }
+
+    #[test]
+    fn split_face_represented_index_refuses_collection_limit() {
+        assert_split_face_updated_slot_refusal("f3d SplitFace represented face index", 1);
+    }
+
+    #[test]
+    fn split_face_updated_face_refuses_collection_limit() {
+        assert_split_face_updated_slot_refusal("f3d SplitFace updated face", 2);
     }
 
     fn boundary(slot: i64, edge_count: usize) -> DesignHistoricalFaceBoundaryContext {

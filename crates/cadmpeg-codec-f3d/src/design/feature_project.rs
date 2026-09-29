@@ -3535,8 +3535,9 @@ fn project_face_selection(
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<cadmpeg_ir::features::FaceSelection, CodecError> {
-    let historical = crate::history::effective_scope_previous_history_state_id(scope, histories)
-        .and_then(|previous_state_id| {
+    let historical = if let Some(previous_state_id) =
+        crate::history::effective_scope_previous_history_state_id(scope, histories)
+    {
             let updated_face_slots = scope
                 .history_state_id()
                 .and_then(|state_id| {
@@ -3550,17 +3551,19 @@ fn project_face_selection(
                 .map_or(&[][..], |transition| {
                     transition.topology.faces.updated.as_slice()
                 });
-            resolved_historical_face_group(scope, Some(previous_state_id), group, face_operands)
-                .or_else(|| {
-                    resolved_historical_split_face_target_group_with_updated_faces(
-                        scope,
-                        Some(previous_state_id),
-                        group,
-                        face_operands,
-                        updated_face_slots,
-                    )
-                })
-        });
+            if let Some(selection) = resolved_historical_face_group(
+                scope, Some(previous_state_id), group, face_operands)
+            {
+                Some(selection)
+            } else {
+                resolved_historical_split_face_target_group_with_updated_faces(
+                    ctx, scope, Some(previous_state_id), group,
+                    face_operands, updated_face_slots,
+                )?
+            }
+    } else {
+        None
+    };
     if let Some(selection) = historical {
         return Ok(selection);
     }
