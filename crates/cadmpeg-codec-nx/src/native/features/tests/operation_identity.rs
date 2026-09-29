@@ -57,6 +57,17 @@ fn body_partition_uses_for_test(
     }).expect("admitted body partition uses")
 }
 
+fn body_group_partition_uses_for_test(
+    writes: &[FeatureOperationBodyWrite],
+    unlabeled_writes: &[FeatureOperationBodyWrite],
+    groups: &[crate::native::parasolid::ParasolidGroupRecord],
+    members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> Vec<crate::native::features::FeatureBodyWriteGroupPartitionUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_body_write_group_partition_uses(ctx, writes, unlabeled_writes, groups, members)
+    }).expect("admitted body-write group partition uses")
+}
+
 fn body_segment_join_refusal<T>(
     route: for<'ctx> fn(
         &cadmpeg_core::decode::DecodeContext<'ctx>,
@@ -973,7 +984,7 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
             inflated_offset: 0,
         };
 
-    let uses = feature_body_write_group_partition_uses(
+    let uses = body_group_partition_uses_for_test(
         &[],
         std::slice::from_ref(&unlabeled),
         &[group("owned", 2)],
@@ -984,13 +995,80 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     assert_eq!(uses[0].partition_stream_ordinal, 2);
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
 
-    assert!(feature_body_write_group_partition_uses(
+    assert!(body_group_partition_uses_for_test(
         &[],
         &[unlabeled],
         &[group("first", 2), group("collision", 4)],
         &[],
     )
     .is_empty());
+}
+
+fn body_group_partition_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let write = FeatureOperationBodyWrite {
+        operation_label: None,
+        id: "unlabeled-body-write".into(),
+        operation_record: "unlabeled-record".into(),
+        ordinal: 0,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
+            crate::om::body_write::BodyWriteIndex::from_wire(99, &[99]).expect("group token"),
+            crate::om::body_write::BodyImageTag::Form10,
+            crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).expect("image token"),
+            9,
+        ).expect("body-write frame"),
+        body_image_data_block: Some("block".into()),
+    };
+    let group = crate::native::parasolid::ParasolidGroupRecord {
+        id: "owned".into(),
+        origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
+            stream_ordinal: 3,
+            partition_stream_ordinal: Some(2),
+        },
+        xmt: 10,
+        node_id: 99,
+        references: [3, 4, 5, 6, 7],
+        selector: crate::deltas::group::GroupSelector::Form4,
+        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+        byte_len: 20,
+        inflated_offset: 0,
+    };
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_body_write_group_partition_uses(ctx, &[], std::slice::from_ref(&write),
+            std::slice::from_ref(&group), &[])
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted body-write group partition use");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("body-write group partition resource limit")
+}
+
+#[test]
+fn body_group_partition_refuses_collection_limit() {
+    let error = body_group_partition_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn body_group_partition_refuses_retained_limit() {
+    let error = body_group_partition_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn body_group_partition_refuses_work_limit() {
+    let error = body_group_partition_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn journal_row(state_ordinal: u32, source_offset: u64) -> JournalRow {

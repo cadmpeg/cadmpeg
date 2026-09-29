@@ -882,11 +882,12 @@ impl NativeModel {
             &parasolid_group_members,
         )?;
         let feature_body_write_group_partition_uses = feature_body_write_group_partition_uses(
+            ctx,
             &feature_operation_body_writes,
             &feature_unlabeled_operation_body_writes,
             &parasolid_group_records,
             &parasolid_group_members,
-        );
+        )?;
         let feature_operation_tagged_references = feature_operation_object_references(
             ctx,
             container,

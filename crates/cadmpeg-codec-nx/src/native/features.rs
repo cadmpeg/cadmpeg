@@ -4514,59 +4514,78 @@ pub(super) fn feature_operation_body_partition_uses(
 /// partition namespace for that node. Labeled and independently bounded
 /// unlabeled writes participate in the same persistent body-identity domain.
 pub(super) fn feature_body_write_group_partition_uses(
+    ctx: &DecodeContext<'_>,
     writes: &[FeatureOperationBodyWrite],
     unlabeled_writes: &[FeatureOperationBodyWrite],
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
     group_members: &[crate::native::parasolid::ParasolidGroupMember],
-) -> Vec<FeatureBodyWriteGroupPartitionUse> {
-    let candidates = writes.iter().chain(unlabeled_writes).map(|write| {
-        (
-            write.id.as_str(),
-            write.frame.body_identity(),
-            write.frame.group_node().value(),
-        )
-    });
-    candidates
-        .filter_map(|(id, body_identity, group_node)| {
-            let matching_groups = groups
-                .iter()
-                .filter(|group| group.node_id == group_node)
-                .collect::<Vec<_>>();
-            (!matching_groups.is_empty()).then_some(())?;
-            let partitions = matching_groups
-                .iter()
-                .filter_map(|group| group.origin.partition_stream_ordinal())
-                .collect::<BTreeSet<_>>();
-            let mut partitions = partitions.into_iter();
-            let partition_stream_ordinal = partitions.next()?;
-            partitions.next().is_none().then_some(())?;
-            matching_groups
-                .iter()
-                .all(|group| {
-                    group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
-                })
-                .then_some(())?;
-            Some(FeatureBodyWriteGroupPartitionUse {
-                id: id.replacen("body-write", "body-write-group-partition-use", 1),
-                body_write: id.to_string(),
-                body_identity,
-                group_node,
-                partition_stream_ordinal,
-                parasolid_group_records: matching_groups
-                    .into_iter()
-                    .map(|group| group.id.clone())
-                    .collect(),
-                parasolid_group_members: group_members
-                    .iter()
-                    .filter(|member| {
-                        member.partition_stream_ordinal == partition_stream_ordinal
-                            && member.group_node_id == group_node
-                    })
-                    .map(|member| member.id.clone())
-                    .collect(),
-            })
-        })
-        .collect()
+) -> Result<Vec<FeatureBodyWriteGroupPartitionUse>, CodecError> {
+    let candidates = writes.len().checked_add(unlabeled_writes.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-write group partitions", 0, 1))?;
+    let scan_width = groups.len().checked_mul(2)
+        .and_then(|count| count.checked_add(group_members.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-write group partitions", 0, 1))?;
+    let work = candidates.checked_mul(scan_width)
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-write group partitions", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work),
+        "join NX body-write group partitions")?;
+    let mut output = Vec::new();
+    for write in writes.iter().chain(unlabeled_writes) {
+        let id = write.id.as_str();
+        let group_node = write.frame.group_node().value();
+        let mut partition = None;
+        let mut valid = true;
+        for group in groups.iter().filter(|group| group.node_id == group_node) {
+            match (partition, group.origin.partition_stream_ordinal()) {
+                (None, Some(ordinal)) => partition = Some(ordinal),
+                (Some(expected), Some(actual)) if expected == actual => {},
+                _ => { valid = false; break; }
+            }
+        }
+        let Some(partition_stream_ordinal) = partition else { continue; };
+        if !valid { continue; }
+        let mut parasolid_group_records = Vec::new();
+        for group in groups.iter().filter(|group| group.node_id == group_node) {
+            ctx.charge_collection_items(1, "NX body-write group records")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+                "NX body-write group record slots")?;
+            parasolid_group_records.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX body-write group records", 0, 1))?;
+            parasolid_group_records.push(copy_operation_text(ctx, &group.id,
+                "NX body-write group record identity")?);
+        }
+        let mut parasolid_group_members = Vec::new();
+        for member in group_members.iter().filter(|member| {
+            member.partition_stream_ordinal == partition_stream_ordinal
+                && member.group_node_id == group_node
+        }) {
+            ctx.charge_collection_items(1, "NX body-write group members")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+                "NX body-write group member slots")?;
+            parasolid_group_members.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX body-write group members", 0, 1))?;
+            parasolid_group_members.push(copy_operation_text(ctx, &member.id,
+                "NX body-write group member identity")?);
+        }
+        let use_record = FeatureBodyWriteGroupPartitionUse {
+            id: replace_operation_text(ctx, id, "body-write", "body-write-group-partition-use",
+                "NX body-write group use identity")?,
+            body_write: copy_operation_text(ctx, id, "NX body-write group write identity")?,
+            body_identity: write.frame.body_identity(),
+            group_node,
+            partition_stream_ordinal,
+            parasolid_group_records,
+            parasolid_group_members,
+        };
+        ctx.charge_collection_items(1, "NX body-write group partition uses")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureBodyWriteGroupPartitionUse>()),
+            "NX body-write group partition uses")?;
+        output.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX body-write group partition uses", 0, 1))?;
+        output.push(use_record);
+    }
+    Ok(output)
 }
 
 /// Decode one direct-reference field family from bounded feature operations.
