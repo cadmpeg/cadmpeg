@@ -157,7 +157,10 @@ fn probe_decoder(
         if read == 0 {
             return Some(output);
         }
-        if read > cap.saturating_sub(output.len()) {
+        if !cap
+            .checked_sub(output.len())
+            .is_some_and(|remaining| read <= remaining)
+        {
             return None;
         }
         output.try_reserve(read).ok()?;

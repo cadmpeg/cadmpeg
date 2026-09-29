@@ -802,7 +802,11 @@ impl CompoundState {
             .directory
             .len()
             .checked_mul(
-                std::mem::size_of::<u32>().saturating_add(std::mem::size_of::<(u32, String)>()),
+                std::mem::size_of::<u32>()
+                    .checked_add(std::mem::size_of::<(u32, String)>())
+                    .ok_or_else(|| {
+                        CodecError::Malformed("CFB traversal scratch size overflow".into())
+                    })?,
             )
             .ok_or_else(|| CodecError::Malformed("CFB traversal scratch size overflow".into()))?;
         let _scratch = ctx.reserve_scoped(scratch_bytes as u64, "traverse CFB directory")?;
@@ -860,14 +864,12 @@ impl CompoundState {
                 pending.push(entry.right);
             }
             let path = if parent.is_empty() {
-                ctx.charge_retained(
-                    entry
-                        .name
-                        .len()
-                        .saturating_add(std::mem::size_of::<CompoundEntry>())
-                        as u64,
-                    "retain CFB entry",
-                )?;
+                let bytes = entry
+                    .name
+                    .len()
+                    .checked_add(std::mem::size_of::<CompoundEntry>())
+                    .ok_or_else(|| CodecError::Malformed("CFB entry storage size overflow".into()))?;
+                ctx.charge_retained(bytes as u64, "retain CFB entry")?;
                 entry.name.clone()
             } else {
                 let path_len = parent
@@ -984,7 +986,8 @@ impl CompoundState {
             }
         }
         let mut mini_used = BTreeSet::new();
-        let mini_capacity = usize::try_from(directory_root(&self.directory)?.size)
+        let root_size = directory_root(&self.directory)?.size;
+        let mini_capacity = usize::try_from(root_size)
             .map_err(|_| {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
@@ -1002,13 +1005,13 @@ impl CompoundState {
                 let mut remaining = stream.logical_size();
                 for &sector in stream.sectors() {
                     let payload = remaining.min(MINI_SECTOR_SIZE as u64);
-                    remaining = remaining.saturating_sub(payload);
+                    remaining -= payload;
                     if allocation == CompoundAllocation::Mini
                         && (sector as usize >= mini_capacity
-                            || u64::from(sector)
-                                .saturating_mul(MINI_SECTOR_SIZE as u64)
-                                .saturating_add(payload)
-                                > directory_root(&self.directory)?.size)
+                            || !u64::from(sector)
+                                .checked_mul(MINI_SECTOR_SIZE as u64)
+                                .and_then(|offset| offset.checked_add(payload))
+                                .is_some_and(|end| end <= root_size))
                     {
                         return malformed("CFB mini stream escapes the root mini stream");
                     }
