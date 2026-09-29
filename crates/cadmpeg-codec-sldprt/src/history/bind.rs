@@ -188,28 +188,6 @@ pub(crate) fn order_features_for_regeneration(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let tree_parent_by_child = features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::TreeNode { children, .. },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some(
-                children
-                    .iter()
-                    .map(|child| (child.clone(), feature.id.clone())),
-            )
-        })
-        .flatten()
-        .collect::<HashMap<_, _>>();
-    let by_id = features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<HashMap<_, _>>();
     let mut outgoing = ctx.alloc_filled(
         features.len(),
         Vec::<usize>::new(),
@@ -220,18 +198,66 @@ pub(crate) fn order_features_for_regeneration(
         0usize,
         "sldprt feature regeneration indegree",
     )?;
+    let mut tree_parent_by_child = HashMap::new();
+    for feature in features.iter() {
+        let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        for child in children {
+            ctx.charge_work(1, "index SLDPRT feature tree parents")?;
+            if !tree_parent_by_child.contains_key(child) {
+                ctx.charge_collection_items(1, "index SLDPRT feature tree parents")?;
+                tree_parent_by_child.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT feature tree parents", u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            tree_parent_by_child.insert(child, &feature.id);
+        }
+    }
+    let mut by_id = HashMap::new();
+    for (index, feature) in features.iter().enumerate() {
+        ctx.charge_work(1, "index SLDPRT feature regeneration IDs")?;
+        if !by_id.contains_key(&feature.id) {
+            ctx.charge_collection_items(1, "index SLDPRT feature regeneration IDs")?;
+            by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT feature regeneration IDs", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        by_id.insert(&feature.id, index);
+    }
     for (consumer, feature) in features.iter().enumerate() {
-        let mut predecessors = feature
-            .dependencies
-            .iter()
-            .collect::<std::collections::HashSet<_>>();
+        let mut predecessors = std::collections::HashSet::new();
+        for predecessor in feature.dependencies.iter() {
+            ctx.charge_work(1, "collect SLDPRT feature predecessors")?;
+            if !predecessors.contains(predecessor) {
+                ctx.charge_collection_items(1, "collect SLDPRT feature predecessors")?;
+                predecessors.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect SLDPRT feature predecessors", u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            predecessors.insert(predecessor);
+        }
         if let Some(parent) = tree_parent_by_child.get(&feature.id) {
+            if !predecessors.contains(parent) {
+                ctx.charge_collection_items(1, "collect SLDPRT feature predecessors")?;
+                predecessors.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect SLDPRT feature predecessors", u64::MAX - 1, u64::MAX)
+                })?;
+            }
             predecessors.insert(parent);
         }
         for predecessor in predecessors {
+            ctx.charge_work(1, "build SLDPRT feature regeneration graph")?;
             let Some(&source) = by_id.get(predecessor) else {
                 continue;
             };
+            ctx.reserve_collection_vec(
+                &mut outgoing[source],
+                1,
+                "collect SLDPRT feature regeneration edges",
+            )?;
             outgoing[source].push(consumer);
             indegree[consumer] += 1;
         }
@@ -239,18 +265,22 @@ pub(crate) fn order_features_for_regeneration(
     let mut ready = std::collections::BTreeSet::new();
     for (index, feature) in features.iter().enumerate() {
         if indegree[index] == 0 {
-            ready.insert((feature.ordinal, feature.id.clone(), index));
+            ctx.charge_collection_items(1, "queue SLDPRT feature regeneration order")?;
+            ready.insert((feature.ordinal, &feature.id, index));
         }
     }
-    let mut order = Vec::with_capacity(features.len());
+    let mut order = Vec::new();
+    ctx.reserve_collection_vec(&mut order, features.len(), "collect SLDPRT feature regeneration order")?;
     while let Some(item) = ready.pop_first() {
+        ctx.charge_work(1, "sort SLDPRT feature regeneration order")?;
         let index = item.2;
         order.push(index);
         for &consumer in &outgoing[index] {
             indegree[consumer] -= 1;
             if indegree[consumer] == 0 {
                 let feature = &features[consumer];
-                ready.insert((feature.ordinal, feature.id.clone(), consumer));
+                ctx.charge_collection_items(1, "queue SLDPRT feature regeneration order")?;
+                ready.insert((feature.ordinal, &feature.id, consumer));
             }
         }
     }
@@ -258,7 +288,9 @@ pub(crate) fn order_features_for_regeneration(
         return Ok(false);
     }
     for (ordinal, index) in order.into_iter().enumerate() {
-        features[index].ordinal = ordinal as u64;
+        features[index].ordinal = u64::try_from(ordinal).map_err(|_| {
+            ctx.refuse_codec_limit("number SLDPRT feature regeneration order", u64::MAX - 1, u64::MAX)
+        })?;
     }
     Ok(true)
 }
@@ -538,5 +570,52 @@ pub(super) fn bind_definition_sketch(
             profile_bound || guide_bound
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::order_features_for_regeneration;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::features::{
+        DistinctMembers, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation,
+    };
+    use cadmpeg_ir::scalar::Length;
+
+    #[test]
+    fn feature_regeneration_index_refuses_work_limit() {
+        let mut features = [Feature {
+            id: FeatureId::mint("synthetic:test:id#ordering")
+                .unwrap_or_else(|error| panic!("invalid test ID: {error}")),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::DatumOffsetPlane {
+                    reference: None,
+                    distance: Length::ZERO,
+                },
+            )),
+            native_ref: None,
+        }];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .unwrap_or_else(|error| panic!("test context failed: {error}"));
+        let error = order_features_for_regeneration(&ctx, &mut features)
+            .expect_err("one feature must exceed the work limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "index SLDPRT feature regeneration IDs"
+        ));
     }
 }
