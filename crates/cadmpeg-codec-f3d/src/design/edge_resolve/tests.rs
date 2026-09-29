@@ -31,6 +31,7 @@ mod context_only_allocation;
 mod boundary_candidate_allocation;
 mod contextual_deleted_allocation;
 mod unique_assignment_allocation;
+mod main_group_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,

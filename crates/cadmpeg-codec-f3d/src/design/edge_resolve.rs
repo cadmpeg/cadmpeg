@@ -593,12 +593,11 @@ fn resolved_edge_group_with_transition_chain(
     });
     if has_surface_patch_operand {
         let mut member_ids = HashSet::new();
-        if members
-            .iter()
-            .map(|member| &member.value)
-            .any(|member| !member_ids.insert(*member))
-        {
-            return unmatched_selection(previous_state_id);
+        for member in members {
+            if !insert_edge_set(ctx, &mut member_ids, member.value,
+                "f3d generic surface patch member index")? {
+                return unmatched_selection(previous_state_id);
+            }
         }
         let matched_operands = members
             .iter()
@@ -936,10 +935,11 @@ fn resolved_edge_group_with_transition_chain(
             None => native_edge_selection(group, ctx),
         };
     }
-    let mut matched_operands = Vec::with_capacity(members.len());
+    let mut matched_operands = Vec::new();
     let mut member_identities = HashSet::new();
     for member in members.iter().map(|member| &member.value) {
-        if !member_identities.insert(*member) {
+        if !insert_edge_set(ctx, &mut member_identities, *member,
+            "f3d edge group member identity")? {
             return unmatched_selection(previous_state_id);
         }
         let mut matches = operands.iter().filter(|operand| {
@@ -953,7 +953,8 @@ fn resolved_edge_group_with_transition_chain(
         if matches.next().is_some() {
             return unmatched_selection(previous_state_id);
         }
-        matched_operands.push(operand);
+        push_edge_item(ctx, &mut matched_operands, operand,
+            "f3d matched edge group operand")?;
     }
     let recipe_state_id = || {
         let mut states = matched_operands
