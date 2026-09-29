@@ -27,17 +27,7 @@ pub(crate) fn transfer(
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            ctx.charge_collection_items(1, "fcstd drawing owner index")?;
-            by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "fcstd drawing owner index",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut by_owner, 1, "fcstd drawing owner index")?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -144,20 +134,7 @@ pub(crate) fn transfer_neutral(
     properties: &[PropertyRecord],
 ) -> Result<(), CodecError> {
     let mut neutral_ids = HashMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(records.len()),
-        "fcstd drawing neutral identities",
-    )?;
-    neutral_ids.try_reserve(records.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(records.len()),
-                "fcstd drawing neutral identities",
-            ),
-        )
-    })?;
+    ctx.reserve_map(&mut neutral_ids, records.len(), "fcstd drawing neutral identities")?;
     for record in records {
         neutral_ids.insert(
             record.object.as_str(),

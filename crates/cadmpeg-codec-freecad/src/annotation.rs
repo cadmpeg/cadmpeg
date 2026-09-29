@@ -28,17 +28,7 @@ pub(crate) fn transfer(
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            ctx.charge_collection_items(1, "fcstd annotation owner index")?;
-            by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "fcstd annotation owner index",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut by_owner, 1, "fcstd annotation owner index")?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -131,20 +121,7 @@ pub(crate) fn transfer_neutral(
     drawings: &[DrawingRecord],
 ) -> Result<(), CodecError> {
     let mut drawing_ids = HashMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(drawings.len()),
-        "fcstd annotation drawing index",
-    )?;
-    drawing_ids.try_reserve(drawings.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(drawings.len()),
-                "fcstd annotation drawing index",
-            ),
-        )
-    })?;
+    ctx.reserve_map(&mut drawing_ids, drawings.len(), "fcstd annotation drawing index")?;
     for drawing in drawings {
         drawing_ids.insert(
             drawing.object.as_str(),

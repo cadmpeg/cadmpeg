@@ -47,18 +47,7 @@ pub(crate) fn native_id_charged(
                 ),
             )
         })?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), OPERATION)?;
-    let mut id = String::new();
-    id.try_reserve_exact(len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                cadmpeg_core::decode::u64_from_index(len),
-                OPERATION,
-            ),
-        )
-    })?;
+    let mut id = ctx.retained_string(len, OPERATION)?;
     id.push_str("fcstd:native:");
     id.push_str(kind);
     id.push('#');
@@ -72,18 +61,7 @@ pub(crate) fn encoded_segment_charged(
     operation: &'static str,
 ) -> Result<IdentityKey, CodecError> {
     let len = encoded_segment_len(ctx, value, operation)?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), operation)?;
-    let mut key = String::new();
-    key.try_reserve_exact(len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                cadmpeg_core::decode::u64_from_index(len),
-                operation,
-            ),
-        )
-    })?;
+    let mut key = ctx.retained_string(len, operation)?;
     push_encoded_segment(&mut key, value);
     IdentityKey::try_new(key).map_err(CodecError::malformed)
 }
@@ -114,18 +92,7 @@ pub(crate) fn native_child_id_charged(
                 ),
             )
         })?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), OPERATION)?;
-    let mut id = String::new();
-    id.try_reserve_exact(len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                cadmpeg_core::decode::u64_from_index(len),
-                OPERATION,
-            ),
-        )
-    })?;
+    let mut id = ctx.retained_string(len, OPERATION)?;
     id.push_str("fcstd:native:");
     id.push_str(kind);
     id.push('#');
@@ -174,18 +141,7 @@ pub(crate) fn model_id_charged_at(
                 ),
             )
         })?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), operation)?;
-    let mut id = String::new();
-    id.try_reserve_exact(len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                cadmpeg_core::decode::u64_from_index(len),
-                operation,
-            ),
-        )
-    })?;
+    let mut id = ctx.retained_string(len, operation)?;
     id.push_str("fcstd:model:");
     id.push_str(kind);
     id.push('#');

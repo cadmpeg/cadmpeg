@@ -702,32 +702,9 @@ fn feature_ordinals<'a>(
         (&mut object_by_id, "fcstd design id index"),
         (&mut object_by_name, "fcstd design name index"),
     ] {
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
-        map.try_reserve(count).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                    ctx.policy().limits.max_collection_items,
-                    cadmpeg_core::decode::u64_from_index(count),
-                    operation,
-                ),
-            )
-        })?;
+        ctx.reserve_map(map, count, operation)?;
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "fcstd design feature index",
-    )?;
-    object_by_feature.try_reserve(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(count),
-                "fcstd design feature index",
-            ),
-        )
-    })?;
+    ctx.reserve_map(&mut object_by_feature, count, "fcstd design feature index")?;
     let mut source_ordinals = ctx.collection_vec(count, "fcstd design source ordinals")?;
     for object in &design_objects {
         object_by_id.insert(object.id.as_str(), *object);
@@ -843,17 +820,7 @@ fn feature_ordinals<'a>(
         let ordinal = source_ordinals[ordinals.len()];
         ctx.charge_collection_items(1, "fcstd design emitted objects")?;
         emitted.insert(next.id.as_str());
-        ctx.charge_collection_items(1, "fcstd design ordinals")?;
-        ordinals.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                    ctx.policy().limits.max_collection_items,
-                    1,
-                    "fcstd design ordinals",
-                ),
-            )
-        })?;
+        ctx.reserve_map(&mut ordinals, 1, "fcstd design ordinals")?;
         ordinals.insert(next.id.as_str(), ordinal);
     }
 
@@ -2702,8 +2669,8 @@ fn parse_constraints(
                     return Ok(None);
                 };
                 Ok(Some(SketchConstraintDefinitionInput::InternalAlignment {
-                    helper: copy_constraint_entity(ctx, locus_entity(helper))?,
-                    parent: copy_constraint_entity(ctx, locus_entity(parent))?,
+                    helper: locus_entity(helper).try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
+                    parent: locus_entity(parent).try_clone_for_decode(ctx, "fcstd constraint entity identity")?,
                     alignment,
                 }))
             };
@@ -2807,7 +2774,7 @@ fn parse_constraints(
             let mut entities =
                 ctx.collection_vec(resolved.len(), "fcstd native constraint entities")?;
             for locus in &resolved {
-                entities.push(copy_constraint_entity(ctx, locus_entity(locus))?);
+                entities.push(locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")?);
             }
             SketchConstraintDefinitionInput::Native {
                 native_kind,
@@ -3029,17 +2996,7 @@ fn bind_parameter_dependencies(
                 ctx.copy_retained_text(name, "fcstd local candidate name")?,
             );
             if !local_candidates.contains_key(&key) {
-                ctx.charge_collection_items(1, "fcstd local candidate keys")?;
-                local_candidates.try_reserve(1).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                            ctx.policy().limits.max_collection_items,
-                            1,
-                            "fcstd local candidate keys",
-                        ),
-                    )
-                })?;
+                ctx.reserve_map(&mut local_candidates, 1, "fcstd local candidate keys")?;
             }
             let bucket = local_candidates.entry(key).or_default();
             ctx.reserve_vec(bucket, 1, "fcstd local candidate identities")?;
@@ -3055,17 +3012,7 @@ fn bind_parameter_dependencies(
                     "fcstd qualified candidate name",
                 )?;
                 if !qualified_candidates.contains_key(&key) {
-                    ctx.charge_collection_items(1, "fcstd qualified candidate keys")?;
-                    qualified_candidates.try_reserve(1).map_err(|_| {
-                        cadmpeg_core::CodecError::ResourceLimit(
-                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                                ctx.policy().limits.max_collection_items,
-                                1,
-                                "fcstd qualified candidate keys",
-                            ),
-                        )
-                    })?;
+                    ctx.reserve_map(&mut qualified_candidates, 1, "fcstd qualified candidate keys")?;
                 }
                 let bucket = qualified_candidates.entry(key).or_default();
                 ctx.reserve_vec(bucket, 1, "fcstd qualified candidate identities")?;
@@ -3166,17 +3113,7 @@ fn bind_parameter_dependencies(
             })
             .transpose()?;
         if !owner_ordinals.contains_key(&owner) {
-            ctx.charge_collection_items(1, "fcstd ordinal owner groups")?;
-            owner_ordinals.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "fcstd ordinal owner groups",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut owner_ordinals, 1, "fcstd ordinal owner groups")?;
         }
         let ordinals = owner_ordinals.entry(owner).or_default();
         ctx.reserve_vec(ordinals, 1, "fcstd owner ordinals")?;
@@ -3209,17 +3146,7 @@ fn bind_parameter_dependencies(
             })
             .transpose()?;
         if !next_ordinal.contains_key(&owner) {
-            ctx.charge_collection_items(1, "fcstd next ordinal owners")?;
-            next_ordinal.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "fcstd next ordinal owners",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut next_ordinal, 1, "fcstd next ordinal owners")?;
         }
         let index = next_ordinal.entry(owner).or_default();
         parameter.ordinal = owner_ordinals[&parameter.owner][*index];
@@ -3314,7 +3241,7 @@ fn neutral_constraint(
     }
     let entity = |index| {
         loci.get(index)
-            .map(|locus| copy_constraint_entity(ctx, locus_entity(locus)))
+            .map(|locus| locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity"))
             .transpose()
     };
     let locus = |index| {
@@ -3418,7 +3345,7 @@ fn neutral_constraint(
         6 => {
             let mut entities = ctx.collection_vec(loci.len(), "fcstd constraint entity copies")?;
             for locus in loci {
-                entities.push(copy_constraint_entity(ctx, locus_entity(locus))?);
+                entities.push(locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")?);
             }
             let Some(parameter) = parameter()? else {
                 return Ok(None);
@@ -3847,21 +3774,11 @@ fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
     }
 }
 
-fn copy_constraint_entity(
-    ctx: &DecodeContext<'_>,
-    entity: &SketchEntityId,
-) -> Result<SketchEntityId, CodecError> {
-    SketchEntityId::mint(
-        ctx.copy_retained_text(entity.as_str(), "fcstd constraint entity identity")?,
-    )
-    .map_err(CodecError::malformed)
-}
-
 fn copy_constraint_locus(
     ctx: &DecodeContext<'_>,
     locus: &SketchLocus,
 ) -> Result<SketchLocus, CodecError> {
-    let entity = copy_constraint_entity(ctx, locus_entity(locus))?;
+    let entity = locus_entity(locus).try_clone_for_decode(ctx, "fcstd constraint entity identity")?;
     Ok(match locus {
         SketchLocus::Entity(_) => SketchLocus::Entity(entity),
         SketchLocus::Start(_) => SketchLocus::Start(entity),
@@ -4181,28 +4098,11 @@ fn build_profiles(
     // FreeCAD persists no profile seed. CADIR selects the first remaining persisted ordinal.
     while let Some(first) = unused.pop_first() {
         ctx.charge_work(1, "FCStd profile chain construction")?;
-        ctx.charge_collection_items(1, "FCStd profile uses")?;
         let mut chain = VecDeque::new();
-        chain.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                    ctx.policy().limits.max_collection_items,
-                    1,
-                    "FCStd profile uses",
-                ),
-            )
-        })?;
-        chain.push_back(SketchEntityUse {
-            entity: SketchEntityId::mint(
-                ctx.copy_retained_text(
-                    entities[first].id().as_str(),
-                    "FCStd profile use identity",
-                )?,
-            )
-            .map_err(CodecError::malformed)?,
+        ctx.push_back(&mut chain, SketchEntityUse {
+            entity: entities[first].id().try_clone_for_decode(ctx, "FCStd profile use identity")?,
             reversed: false,
-        });
+        }, "FCStd profile uses")?;
         if ambiguous.contains(&first) {
             ctx.reserve_vec(&mut profiles, 1, "FCStd profile chains")?;
             profiles.push(chain.into());
@@ -4246,25 +4146,10 @@ fn build_profiles(
                 )
             };
             unused.remove(&candidate.entity);
-            ctx.charge_collection_items(1, "FCStd profile uses")?;
-            chain.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "FCStd profile uses",
-                    ),
-                )
-            })?;
-            chain.push_back(SketchEntityUse {
-                entity: SketchEntityId::mint(ctx.copy_retained_text(
-                    entities[candidate.entity].id().as_str(),
-                    "FCStd profile use identity",
-                )?)
-                .map_err(CodecError::malformed)?,
+            ctx.push_back(&mut chain, SketchEntityUse {
+                entity: entities[candidate.entity].id().try_clone_for_decode(ctx, "FCStd profile use identity")?,
                 reversed,
-            });
+            }, "FCStd profile uses")?;
             tail = next_tail;
         }
         loop {
@@ -4304,11 +4189,7 @@ fn build_profiles(
                 )
             })?;
             chain.push_front(SketchEntityUse {
-                entity: SketchEntityId::mint(ctx.copy_retained_text(
-                    entities[candidate.entity].id().as_str(),
-                    "FCStd profile use identity",
-                )?)
-                .map_err(CodecError::malformed)?,
+                entity: entities[candidate.entity].id().try_clone_for_decode(ctx, "FCStd profile use identity")?,
                 reversed,
             });
             head = next_head;

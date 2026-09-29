@@ -303,22 +303,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     let mut product_by_object = HashMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(product_nodes.len()),
-        "fcstd product validation index",
-    )?;
-    product_by_object
-        .try_reserve(product_nodes.len())
-        .map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                    ctx.policy().limits.max_collection_items,
-                    cadmpeg_core::decode::u64_from_index(product_nodes.len()),
-                    "fcstd product validation index",
-                ),
-            )
-        })?;
+    ctx.reserve_map(&mut product_by_object, product_nodes.len(), "fcstd product validation index")?;
     for node in &product_nodes {
         product_by_object.insert(node.object.as_str(), node);
     }

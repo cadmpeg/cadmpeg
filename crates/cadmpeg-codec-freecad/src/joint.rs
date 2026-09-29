@@ -20,17 +20,7 @@ pub(crate) fn transfer(
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            ctx.charge_collection_items(1, "fcstd joint owner index")?;
-            by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "fcstd joint owner index",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut by_owner, 1, "fcstd joint owner index")?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -178,20 +168,7 @@ pub(crate) fn transfer_neutral(
         .filter(|occurrence| occurrence.native_ref.is_some())
         .count();
     let mut occurrence_by_native = HashMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "fcstd joint occurrence index",
-    )?;
-    occurrence_by_native.try_reserve(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(count),
-                "fcstd joint occurrence index",
-            ),
-        )
-    })?;
+    ctx.reserve_map(&mut occurrence_by_native, count, "fcstd joint occurrence index")?;
     for occurrence in occurrences {
         if let Some(native) = occurrence.native_ref.as_deref() {
             occurrence_by_native.insert(native, &occurrence.id);
