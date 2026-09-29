@@ -1112,14 +1112,14 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
         data_block: block.to_string(),
         source_offset: 200,
     };
-    let uses = feature_datum_csys_block_uses(
+    let uses = crate::test_support::with_decode_context(|ctx| feature_datum_csys_block_uses(ctx,
         &[construction],
         &[
             input("input#0", "operation#0", 1, "block#43"),
             input("input#1", "operation#6", 0, "block#44"),
             input("input#2", "operation#7", 0, "block#44"),
         ],
-    );
+    )).unwrap();
     assert_eq!(uses.len(), 3);
     assert_eq!(
         uses[0].id,

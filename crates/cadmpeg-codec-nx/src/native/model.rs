@@ -1078,7 +1078,7 @@ impl NativeModel {
             feature_datum_csys_descriptors(ctx, container, &feature_datum_csys_constructions)?;
         let feature_datum_plane_headers = feature_datum_plane_headers(ctx, container)?;
         let feature_datum_plane_block_uses =
-            feature_datum_plane_block_uses(&feature_datum_plane_headers, &feature_input_blocks);
+            feature_datum_plane_block_uses(ctx, &feature_datum_plane_headers, &feature_input_blocks)?;
         let feature_datum_plane_payloads =
             feature_datum_plane_payloads(ctx, container, &feature_datum_plane_headers)?;
         let feature_datum_plane_payload_scalar_pairs = feature_datum_plane_payload_scalar_pairs(
@@ -1094,7 +1094,7 @@ impl NativeModel {
             &feature_datum_csys_descriptors,
         )?;
         let feature_datum_csys_block_uses =
-            feature_datum_csys_block_uses(&feature_datum_csys_constructions, &feature_input_blocks);
+            feature_datum_csys_block_uses(ctx, &feature_datum_csys_constructions, &feature_input_blocks)?;
         let feature_sketch_references = feature_sketch_references(ctx, container)?;
         let feature_projected_curve_references =
             feature_projected_curve_references(ctx, container)?;

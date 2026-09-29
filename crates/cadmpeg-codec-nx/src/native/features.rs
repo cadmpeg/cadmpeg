@@ -6310,9 +6310,10 @@ pub(super) fn feature_datum_plane_descriptors(
 
 /// Join resolved datum-plane blocks to operation inputs addressing the same block.
 pub(super) fn feature_datum_plane_block_uses(
+    ctx: &DecodeContext<'_>,
     headers: &[FeatureDatumPlaneHeader],
     inputs: &[FeatureInputBlock],
-) -> Vec<FeatureDatumPlaneBlockUse> {
+) -> Result<Vec<FeatureDatumPlaneBlockUse>, CodecError> {
     let mut uses = Vec::new();
     for header in headers {
         let construction_key = header
@@ -6321,6 +6322,8 @@ pub(super) fn feature_datum_plane_block_uses(
             .map_or(header.operation_label.as_str(), |(_, key)| key);
         for lane in [DatumPlaneBlockLane::Descriptor, DatumPlaneBlockLane::Object] {
             for (reference_ordinal, data_block) in header.resolved_data_blocks(lane).enumerate() {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(inputs.len()),
+                    "join NX datum plane input blocks")?;
                 for input in inputs
                     .iter()
                     .filter(|input| input.data_block == *data_block)
@@ -6333,33 +6336,52 @@ pub(super) fn feature_datum_plane_block_uses(
                         DatumPlaneBlockLane::Descriptor => "descriptor",
                         DatumPlaneBlockLane::Object => "object",
                     };
+                    let id = format_charged_text(ctx, format_args!(
+                        "nx:feature-history:datum-plane-block-use#{construction_key}-{lane_key}-{reference_ordinal}-{input_key}-{}",
+                        input.input_slot), "NX datum plane block use identity")?;
+                    let datum_plane_header = copy_operation_text(ctx, &header.id,
+                        "NX datum plane block use header")?;
+                    let construction_operation_label = copy_operation_text(ctx,
+                        &header.operation_label, "NX datum plane block use construction label")?;
+                    let reference_ordinal = u32::try_from(reference_ordinal).map_err(|_|
+                        ctx.refuse_codec_limit("NX datum plane block use ordinal", 0, 1))?;
+                    let data_block = copy_operation_text(ctx, data_block,
+                        "NX datum plane block use data block")?;
+                    let input_binding = copy_operation_text(ctx, &input.id,
+                        "NX datum plane block use input")?;
+                    let input_operation_label = copy_operation_text(ctx, &input.operation_label,
+                        "NX datum plane block use input label")?;
+                    ctx.charge_collection_items(1, "NX datum plane block uses")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureDatumPlaneBlockUse>()),
+                        "NX datum plane block uses")?;
+                    uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX datum plane block uses", 0, 1))?;
                     uses.push(FeatureDatumPlaneBlockUse {
-                        id: format!(
-                            "nx:feature-history:datum-plane-block-use#{construction_key}-{lane_key}-{reference_ordinal}-{input_key}-{}",
-                            input.input_slot
-                        ),
-                        datum_plane_header: header.id.clone(),
-                        construction_operation_label: header.operation_label.clone(),
+                        id,
+                        datum_plane_header,
+                        construction_operation_label,
                         lane,
-                        reference_ordinal: reference_ordinal as u32,
-                        data_block: data_block.clone(),
-                        input_binding: input.id.clone(),
-                        input_operation_label: input.operation_label.clone(),
+                        reference_ordinal,
+                        data_block,
+                        input_binding,
+                        input_operation_label,
                         input_slot: input.input_slot,
                     });
                 }
             }
         }
     }
-    uses
+    Ok(uses)
 }
 
 /// Join resolved datum-coordinate-system blocks to every exact operation input
 /// addressing the same native block.
 pub(super) fn feature_datum_csys_block_uses(
+    ctx: &DecodeContext<'_>,
     constructions: &[FeatureDatumCsysConstruction],
     inputs: &[FeatureInputBlock],
-) -> Vec<FeatureDatumCsysBlockUse> {
+) -> Result<Vec<FeatureDatumCsysBlockUse>, CodecError> {
     let mut uses = Vec::new();
     for construction in constructions {
         for (reference_ordinal, reference) in DatumCsysSlot::ALL
@@ -6367,6 +6389,8 @@ pub(super) fn feature_datum_csys_block_uses(
             .zip(construction.frame.members())
         {
             let data_block = &reference.1;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(inputs.len()),
+                "join NX datum CSYS input blocks")?;
             for input in inputs
                 .iter()
                 .filter(|input| input.data_block == *data_block)
@@ -6379,23 +6403,39 @@ pub(super) fn feature_datum_csys_block_uses(
                     .operation_label
                     .rsplit_once('#')
                     .map_or(input.operation_label.as_str(), |(_, key)| key);
+                let id = format_charged_text(ctx, format_args!(
+                    "nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
+                    input.input_slot), "NX datum CSYS block use identity")?;
+                let construction_id = copy_operation_text(ctx, &construction.id,
+                    "NX datum CSYS block use construction")?;
+                let construction_operation_label = copy_operation_text(ctx,
+                    &construction.operation_label, "NX datum CSYS block use construction label")?;
+                let data_block = copy_operation_text(ctx, data_block,
+                    "NX datum CSYS block use data block")?;
+                let input_binding = copy_operation_text(ctx, &input.id,
+                    "NX datum CSYS block use input")?;
+                let input_operation_label = copy_operation_text(ctx, &input.operation_label,
+                    "NX datum CSYS block use input label")?;
+                ctx.charge_collection_items(1, "NX datum CSYS block uses")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureDatumCsysBlockUse>()),
+                    "NX datum CSYS block uses")?;
+                uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX datum CSYS block uses", 0, 1))?;
                 uses.push(FeatureDatumCsysBlockUse {
-                    id: format!(
-                        "nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
-                        input.input_slot
-                    ),
-                    construction: construction.id.clone(),
-                    construction_operation_label: construction.operation_label.clone(),
+                    id,
+                    construction: construction_id,
+                    construction_operation_label,
                     reference_ordinal,
-                    data_block: data_block.clone(),
-                    input_binding: input.id.clone(),
-                    input_operation_label: input.operation_label.clone(),
+                    data_block,
+                    input_binding,
+                    input_operation_label,
                     input_slot: input.input_slot,
                 });
             }
         }
     }
-    uses
+    Ok(uses)
 }
 
 /// Join each sketch operation to its bounded record and ordered input blocks.
