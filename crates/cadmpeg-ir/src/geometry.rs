@@ -8,8 +8,6 @@
 
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use crate::math::{
     sum::{fast_dot, ExactSignedSum},
     Point3, Vector3,
@@ -18,6 +16,8 @@ use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -323,7 +323,10 @@ impl SurfaceGeometry {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         Ok(match self {
-            Self::Procedural { construction, cache } => Self::Procedural {
+            Self::Procedural {
+                construction,
+                cache,
+            } => Self::Procedural {
                 construction: copy_geometry_id(ctx, construction.as_str(), operation)?,
                 cache: cache
                     .as_ref()
@@ -446,7 +449,7 @@ impl SolvedCurveGeometry {
             } => {
                 let mut copy = Vec::new();
                 ctx.try_reserve_items(&mut copy, segments.len(), operation)?;
-                for segment in segments.iter() {
+                for segment in segments {
                     copy.push(CompositeCurveSegment {
                         curve: copy_geometry_id(ctx, segment.curve.as_str(), operation)?,
                         same_sense: segment.same_sense,
@@ -611,7 +614,10 @@ impl CurveGeometry {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         Ok(match self {
-            Self::Procedural { construction, cache } => Self::Procedural {
+            Self::Procedural {
+                construction,
+                cache,
+            } => Self::Procedural {
                 construction: copy_geometry_id(ctx, construction.as_str(), operation)?,
                 cache: cache
                     .as_ref()

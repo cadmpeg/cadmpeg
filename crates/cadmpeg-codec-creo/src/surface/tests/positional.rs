@@ -26,8 +26,10 @@ const EPS_ROUND_RADIUS: f64 = 1.0e-12;
 fn tabulated_cylinder_curve_replays(
     payload: &[u8],
 ) -> Vec<crate::surface::TabulatedCylinderCurveReplay> {
-    crate::decode::with_test_decode_ctx(|ctx| checked_tabulated_cylinder_curve_replays(ctx, payload))
-        .expect("tabulated cylinder replays are admitted")
+    crate::decode::with_test_decode_ctx(|ctx| {
+        checked_tabulated_cylinder_curve_replays(ctx, payload)
+    })
+    .expect("tabulated cylinder replays are admitted")
 }
 
 fn line_extrusion_parameter_record(
@@ -232,9 +234,11 @@ fn tabulated_curve_signature_positions_refuse_before_growth() {
         .expect("signature fixture fits the root-byte limit");
     let error = checked_tabulated_cylinder_curve_replays(&ctx, &payload)
         .expect_err("signature index needs a collection item");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo tabulated curve signatures"));
+            && limit.operation == "creo tabulated curve signatures")
+    );
     assert!(tabulated_cylinder_curve_replays(&payload).is_empty());
 }
 
@@ -275,9 +279,11 @@ fn tabulated_curve_replay_refuses_each_retained_copy_and_record() {
         (64 + replay_body_len, "creo tabulated parameter body"),
     ] {
         let error = run(u64::MAX, retained).expect_err("replay copy needs retained bytes");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == operation));
+                && limit.operation == operation)
+        );
     }
     let item_limit = (0..64)
         .find(|limit| matches!(run(*limit, u64::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
@@ -285,10 +291,17 @@ fn tabulated_curve_replay_refuses_each_retained_copy_and_record() {
                 && refusal.operation == "creo tabulated curve replays"))
         .expect("one collection limit reaches the replay record");
     let error = run(item_limit, u64::MAX).expect_err("replay record needs a collection item");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo tabulated curve replays"));
-    assert_eq!(run(u64::MAX, 68 + replay_body_len).expect("replay admitted").len(), 1);
+            && limit.operation == "creo tabulated curve replays")
+    );
+    assert_eq!(
+        run(u64::MAX, 68 + replay_body_len)
+            .expect("replay admitted")
+            .len(),
+        1
+    );
 }
 
 #[test]

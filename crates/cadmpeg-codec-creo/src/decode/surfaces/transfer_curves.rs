@@ -23,13 +23,13 @@ use crate::decode::analytic::pcurves::pcurve_edge_endpoint_evidence;
 use crate::decode::analytic::vertices::solved_topological_vertices;
 use crate::decode::source_carriers::SourceUnitCarriers;
 
+use super::intersection_candidates::FixedCandidates;
+use super::intersection_resolve::curve_contains_points;
 use super::intersection_resolve::{
     fc14_held_coordinate, multi_component_intersection_candidates, resolve_curve_candidates,
     select_fc14_axis_coordinate_candidate,
 };
-use super::intersection_candidates::FixedCandidates;
 use super::intersections::carrier_intersection_curve;
-use super::intersection_resolve::curve_contains_points;
 use super::nurbs_boundaries::{
     cubic_extrusion_plane_generator_curve, nurbs_plane_boundary_curve,
     shared_extrusion_generator_curve,
@@ -40,19 +40,23 @@ pub(in super::super) fn analytic_curve_branches(
     geometry: &CurveGeometry,
     tag: &'static str,
 ) -> Result<FixedCandidates<(CurveGeometry, &'static str)>, CodecError> {
-    let opposite = if let CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) = geometry {
-        Some((
-            CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-                hyperbola_curve.opposite_branch(),
-            )),
-            tag,
-        ))
-    } else {
-        None
-    };
-    Ok(std::iter::once((geometry.copy_admitted(ctx, "creo analytic curve branch geometry")?, tag))
-        .chain(opposite)
-        .collect())
+    let opposite =
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) = geometry {
+            Some((
+                CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+                    hyperbola_curve.opposite_branch(),
+                )),
+                tag,
+            ))
+        } else {
+            None
+        };
+    Ok(std::iter::once((
+        geometry.copy_admitted(ctx, "creo analytic curve branch geometry")?,
+        tag,
+    ))
+    .chain(opposite)
+    .collect())
 }
 
 fn resolve_carrier_intersection_curve(
@@ -62,12 +66,18 @@ fn resolve_carrier_intersection_curve(
     points: Option<[[f64; 3]; 2]>,
     allow_unresolved_endpoint_witness: bool,
 ) -> Result<Option<(CurveGeometry, &'static str)>, CodecError> {
-    let Some((geometry, tag)) = carrier_intersection_curve(first, second) else { return Ok(None) };
+    let Some((geometry, tag)) = carrier_intersection_curve(first, second) else {
+        return Ok(None);
+    };
     let candidates = analytic_curve_branches(ctx, &geometry, tag)?;
     let selected = match points {
-        Some(points) => exactly_one(candidates.iter().enumerate()
-            .filter(|(_, (geometry, _))| curve_contains_points(geometry, points))
-            .map(|(index, _)| index)),
+        Some(points) => exactly_one(
+            candidates
+                .iter()
+                .enumerate()
+                .filter(|(_, (geometry, _))| curve_contains_points(geometry, points))
+                .map(|(index, _)| index),
+        ),
         None => (candidates.len() == 1).then_some(0),
     };
     let selected = selected.or_else(|| {
@@ -76,8 +86,8 @@ fn resolve_carrier_intersection_curve(
         (tag == "plane_intersection_line"
             && (points.is_none() || allow_unresolved_endpoint_witness))
             .then_some(())
-            .filter(|_| candidates.len() == 1)
-            .map(|_| 0)
+            .filter(|()| candidates.len() == 1)
+            .map(|()| 0)
     });
     Ok(selected.and_then(|index| candidates.into_iter().nth(index)))
 }
@@ -103,7 +113,11 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let endpoint_evidence = pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)?;
     let edge_vertices =
         crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
-    for row in crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)? {
+    for row in
+        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+            row.id
+        })?
+    {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;
         };
@@ -154,7 +168,8 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -248,7 +263,11 @@ fn append_boundary_fallback_losses(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     fallback_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    ctx.try_reserve_items(losses, fallback_losses.len(), "creo boundary fallback losses")?;
+    ctx.try_reserve_items(
+        losses,
+        fallback_losses.len(),
+        "creo boundary fallback losses",
+    )?;
     losses.extend(fallback_losses);
     Ok(())
 }
@@ -280,9 +299,7 @@ fn note_boundary_lane_records(
             "creo boundary loss message",
         )?;
         ctx.try_reserve_items(losses, 1, "creo boundary loss notes")?;
-        losses.push(
-            crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(message),
-        );
+        losses.push(crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(message));
     }
     Ok(())
 }
@@ -302,7 +319,11 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         extrusion_plane_section_generator_count: 0,
         shared_extrusion_generator_count: 0,
     };
-    for row in crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)? {
+    for row in
+        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+            row.id
+        })?
+    {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;
         };
@@ -323,7 +344,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     surface_id,
                 )
             }))
-                .map(|surface| source_carriers.surface_geometry(surface))
+            .map(|surface| source_carriers.surface_geometry(surface))
         };
         let Some(first_geometry) = geometry(first.id) else {
             continue;
@@ -395,7 +416,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -473,8 +495,8 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::AnnotationBuilder;
 
-    use super::transfer_nurbs_boundary_curves;
     use super::transfer_carrier_intersection_curves;
+    use super::transfer_nurbs_boundary_curves;
 
     fn resolve_carrier_intersection_curve(
         first: CarrierEquation,
@@ -484,7 +506,11 @@ mod tests {
     ) -> Option<(CurveGeometry, &'static str)> {
         crate::decode::with_test_decode_ctx(|ctx| {
             resolve_carrier_intersection_curve_admitted(
-                ctx, first, second, points, allow_unresolved_endpoint_witness,
+                ctx,
+                first,
+                second,
+                points,
+                allow_unresolved_endpoint_witness,
             )
         })
         .expect("carrier intersection admission")
@@ -509,9 +535,11 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = super::analytic_curve_branches(&ctx, &geometry, "procedural")
             .expect_err("copy exceeds retained limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo analytic curve branch geometry"));
+                && resource.operation == "creo analytic curve branch geometry")
+        );
         policy.limits.max_retained_bytes = identity.len() as u64;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let branches = super::analytic_curve_branches(&ctx, &geometry, "procedural")
@@ -565,8 +593,8 @@ mod tests {
             });
         }
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         transfer_carrier_intersection_curves(
             &ctx,
             &scan,
@@ -592,16 +620,21 @@ mod tests {
             "creo carrier intersection IR curve ID copy",
             "creo carrier intersection source object ID",
         ] {
-            let refusal = (0..512).find_map(|limit| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_retained_bytes = limit;
-                match carrier_transfer_with_limits(policy) {
-                    Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                        if refusal.operation == operation => Some(refusal),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-                    other => panic!("{operation} was not reached before {other:?}"),
-                }
-            }).expect("named retained boundary reached");
+            let refusal = (0..512)
+                .find_map(|limit| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_retained_bytes = limit;
+                    match carrier_transfer_with_limits(policy) {
+                        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                            if refusal.operation == operation =>
+                        {
+                            Some(refusal)
+                        }
+                        Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+                        other => panic!("{operation} was not reached before {other:?}"),
+                    }
+                })
+                .expect("named retained boundary reached");
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
             assert!(refusal.limit < refusal.used + refusal.additional);
         }
@@ -612,16 +645,21 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
 
         assert!(carrier_transfer_with_limits(DecodePolicy::service()).is_ok());
-        let refusal = (0..64).find_map(|limit| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            match carrier_transfer_with_limits(policy) {
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.operation == "creo transferred carrier curve nodes" => Some(refusal),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-                other => panic!("carrier result node was not reached before {other:?}"),
-            }
-        }).expect("carrier result node reached");
+        let refusal = (0..64)
+            .find_map(|limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = limit;
+                match carrier_transfer_with_limits(policy) {
+                    Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                        if refusal.operation == "creo transferred carrier curve nodes" =>
+                    {
+                        Some(refusal)
+                    }
+                    Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+                    other => panic!("carrier result node was not reached before {other:?}"),
+                }
+            })
+            .expect("carrier result node reached");
         assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
         assert_eq!(refusal.limit, refusal.used);
     }
@@ -911,8 +949,8 @@ mod tests {
     ) -> Result<super::TransferredNurbsBoundaryCurves, cadmpeg_core::CodecError> {
         let (scan, mut ir) = nurbs_boundary_fixture(false);
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         transfer_nurbs_boundary_curves(
             &ctx,
             &scan,
@@ -935,17 +973,22 @@ mod tests {
             "creo NURBS boundary curve ID nodes",
             "creo NURBS boundary endpoint nodes",
         ] {
-            let refusal = (0..512).find_map(|limit| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = limit;
-                match nurbs_boundary_transfer_with_limits(policy) {
-                    Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                        if refusal.operation == operation => Some(refusal),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-                    Ok(_) => panic!("{operation} was not reached before transfer completed"),
-                    Err(error) => panic!("{operation} was not reached before {error:?}"),
-                }
-            }).expect("named boundary node reached");
+            let refusal = (0..512)
+                .find_map(|limit| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_collection_items = limit;
+                    match nurbs_boundary_transfer_with_limits(policy) {
+                        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                            if refusal.operation == operation =>
+                        {
+                            Some(refusal)
+                        }
+                        Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+                        Ok(_) => panic!("{operation} was not reached before transfer completed"),
+                        Err(error) => panic!("{operation} was not reached before {error:?}"),
+                    }
+                })
+                .expect("named boundary node reached");
             assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
             assert_eq!(refusal.limit, refusal.used);
         }
@@ -968,17 +1011,22 @@ mod tests {
             "creo NURBS boundary source object ID",
             "creo NURBS boundary result curve ID copy",
         ] {
-            let refusal = (0..1024).find_map(|limit| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_retained_bytes = limit;
-                match nurbs_boundary_transfer_with_limits(policy) {
-                    Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                        if refusal.operation == operation => Some(refusal),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-                    Ok(_) => panic!("{operation} was not reached before transfer completed"),
-                    Err(error) => panic!("{operation} was not reached before {error:?}"),
-                }
-            }).expect("named retained boundary reached");
+            let refusal = (0..1024)
+                .find_map(|limit| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_retained_bytes = limit;
+                    match nurbs_boundary_transfer_with_limits(policy) {
+                        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                            if refusal.operation == operation =>
+                        {
+                            Some(refusal)
+                        }
+                        Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+                        Ok(_) => panic!("{operation} was not reached before transfer completed"),
+                        Err(error) => panic!("{operation} was not reached before {error:?}"),
+                    }
+                })
+                .expect("named retained boundary reached");
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
             assert!(refusal.limit < refusal.used + refusal.additional);
         }
@@ -1016,8 +1064,8 @@ mod tests {
         policy: DecodePolicy,
     ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let mut losses = Vec::new();
         super::note_boundary_lane_records(&ctx, 41, &["surface row 7".to_owned()], &mut losses)?;
         Ok(losses)
@@ -1034,22 +1082,31 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = service[0].message.len() as u64 - 1;
         let error = boundary_loss_with_limits(policy).expect_err("message exceeds retained cap");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "creo boundary loss message"));
+                && refusal.operation == "creo boundary loss message")
+        );
     }
 
     #[test]
     fn boundary_loss_note_refuses_collection_limit() {
         use cadmpeg_core::decode::ResourceDimension;
 
-        assert_eq!(boundary_loss_with_limits(DecodePolicy::service()).expect("service note").len(), 1);
+        assert_eq!(
+            boundary_loss_with_limits(DecodePolicy::service())
+                .expect("service note")
+                .len(),
+            1
+        );
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let error = boundary_loss_with_limits(policy).expect_err("one loss exceeds item cap");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo boundary loss notes"));
+                && refusal.operation == "creo boundary loss notes")
+        );
     }
 
     #[test]
@@ -1058,20 +1115,27 @@ mod tests {
 
         let run = |policy: DecodePolicy| {
             let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root admitted");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
             let mut losses = Vec::new();
-            let fallback = crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved
-                .note("fallback failure");
+            let fallback =
+                crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note("fallback failure");
             super::append_boundary_fallback_losses(&ctx, &mut losses, vec![fallback])?;
             Ok::<_, cadmpeg_core::CodecError>(losses)
         };
-        assert_eq!(run(DecodePolicy::service()).expect("service fallback").len(), 1);
+        assert_eq!(
+            run(DecodePolicy::service())
+                .expect("service fallback")
+                .len(),
+            1
+        );
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let error = run(policy).expect_err("one fallback exceeds item cap");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo boundary fallback losses"));
+                && refusal.operation == "creo boundary fallback losses")
+        );
     }
 }

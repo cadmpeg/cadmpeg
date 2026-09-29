@@ -37,12 +37,15 @@ fn limit_error(carriers: &[CarrierEquation], limit: u64, operation: &'static str
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = solve_carriers_with_diagnostics(&ctx, carriers)
         .expect_err("carrier candidates exceed the collection limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == operation), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]

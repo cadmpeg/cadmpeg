@@ -48,10 +48,11 @@ pub(in crate::decode) fn stepped_hole_form(
 }
 
 fn paired_hole_replay_is_counterbore(
-    generated_by_source: &BTreeMap<u32, [Option<crate::surface::SurfaceKind>; 2]>,
+    generated_by_source: &BTreeMap<u32, ReplaySurfacePair>,
 ) -> bool {
     let cylinder_sources = generated_by_source
         .values()
+        .map(|pair| [pair.first, pair.second])
         .filter(|entries| {
             matches!(
                 entries,
@@ -64,6 +65,7 @@ fn paired_hole_replay_is_counterbore(
         .count();
     let planar_support_sources = generated_by_source
         .values()
+        .map(|pair| [pair.first, pair.second])
         .filter(|entries| {
             entries
                 .iter()
@@ -75,8 +77,8 @@ fn paired_hole_replay_is_counterbore(
         .count();
     let has_cone = generated_by_source
         .values()
-        .flatten()
-        .any(|kind| *kind == Some(crate::surface::SurfaceKind::Cone));
+        .flat_map(|pair| [pair.first, pair.second])
+        .any(|kind| kind == Some(crate::surface::SurfaceKind::Cone));
     cylinder_sources == 2 && planar_support_sources == 1 && !has_cone
 }
 
@@ -100,11 +102,7 @@ fn split_patch_table_is_counterbore(
         plane_count += usize::from(row.kind == crate::surface::SurfaceKind::Plane);
     }
     let unique_surface_count = table.unique_surface_ids().len();
-    if surface_count != 5
-        || unique_surface_count != 5
-        || cylinder_count != 4
-        || plane_count != 1
-    {
+    if surface_count != 5 || unique_surface_count != 5 || cylinder_count != 4 || plane_count != 1 {
         return Ok(false);
     }
     let is_rowless = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
@@ -200,9 +198,14 @@ fn split_patch_table_is_counterbore(
         && plane_ids_by_source[&plane_source].len() == 1
         && !cylinder_ids_by_source.contains_key(&plane_source)
         && rowless_counts_by_source.get(&plane_source) == Some(&1)
-        && cylinder_ids_by_source.values().all(|surface_ids| {
-            surface_ids.len() == 2 && surface_ids[0] != surface_ids[1]
-        }))
+        && cylinder_ids_by_source
+            .values()
+            .all(|surface_ids| surface_ids.len() == 2 && surface_ids[0] != surface_ids[1]))
+}
+
+struct ReplaySurfacePair {
+    first: Option<crate::surface::SurfaceKind>,
+    second: Option<crate::surface::SurfaceKind>,
 }
 
 fn paired_hole_replay_surfaces_by_source(
@@ -210,7 +213,7 @@ fn paired_hole_replay_surfaces_by_source(
     feature_id: u32,
     table: &crate::feature::entity::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
-) -> Result<Option<BTreeMap<u32, [Option<crate::surface::SurfaceKind>; 2]>>, CodecError> {
+) -> Result<Option<BTreeMap<u32, ReplaySurfacePair>>, CodecError> {
     let entry_kind = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
         if table.contains_surface_id(entry.entity_id) {
             Some(Some(
@@ -301,7 +304,13 @@ fn paired_hole_replay_surfaces_by_source(
             return Ok(None);
         };
         ctx.charge_collection_items(1, "creo paired-hole result source nodes")?;
-        paired_by_source.insert(*source_id, [*first_kind, *second_kind]);
+        paired_by_source.insert(
+            *source_id,
+            ReplaySurfacePair {
+                first: *first_kind,
+                second: *second_kind,
+            },
+        );
     }
     Ok(Some(paired_by_source))
 }
@@ -346,11 +355,13 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
         let paired = |kind| {
             generated_by_source
                 .values()
+                .map(|pair| [pair.first, pair.second])
                 .filter(|entries| entries.as_slice() == [Some(kind), Some(kind)])
                 .count()
         };
         let rowless = generated_by_source
             .values()
+            .map(|pair| [pair.first, pair.second])
             .filter(|entries| entries.as_slice() == [None, None])
             .count();
         let dimension_family = match rowless {
@@ -418,12 +429,17 @@ fn simple_drilled_hole_cone_terminal_points(
                 && record.scalar_tokens.len() == 7)
                 .then_some(())?;
             Some([
-                record.scalar_tokens[4].value.filter(|value| value.is_finite())?,
-                record.scalar_tokens[5].value.filter(|value| value.is_finite())?,
-                record.scalar_tokens[6].value.filter(|value| value.is_finite())?,
+                record.scalar_tokens[4]
+                    .value
+                    .filter(|value| value.is_finite())?,
+                record.scalar_tokens[5]
+                    .value
+                    .filter(|value| value.is_finite())?,
+                record.scalar_tokens[6]
+                    .value
+                    .filter(|value| value.is_finite())?,
             ])
-        })
-        ;
+        });
     let first = points.next()??;
     let second = points.next()??;
     points.next().is_none().then_some([first, second])
@@ -454,17 +470,11 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
 ) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError> {
     let feature_id = table.feature_id;
     let mut cylinder_ids = BTreeSet::new();
-    for surface_id in table
-        .surface_ids_iter()
-        .filter(|surface_id| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_some_and(
-                |row| {
-                    row.feature_id == feature_id
-                        && row.kind == crate::surface::SurfaceKind::Cylinder
-                },
-            )
+    for surface_id in table.surface_ids_iter().filter(|surface_id| {
+        crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_some_and(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
-    {
+    }) {
         if !cylinder_ids.contains(&surface_id) {
             ctx.charge_collection_items(1, "creo drilled cylinder ID nodes")?;
             cylinder_ids.insert(surface_id);
@@ -474,11 +484,16 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
         ctx,
         &cylinder_ids,
         &scan.surfaces.parameters,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let mut frames = Vec::new();
-    ctx.try_reserve_items(&mut frames, frame_records.len(), "creo drilled cylinder frame copies")?;
+    ctx.try_reserve_items(
+        &mut frames,
+        frame_records.len(),
+        "creo drilled cylinder frame copies",
+    )?;
     frames.extend(frame_records.into_iter().map(|(_, frame)| frame));
     Ok(simple_drilled_axis_placement_from_frames(&frames, diameter))
 }
@@ -597,9 +612,11 @@ impl DrilledHoleEnvelopeLayout {
             intervals[0][axis.index()][1].max(intervals[1][axis.index()][1])
                 - intervals[0][axis.index()][0].min(intervals[1][axis.index()][0])
         };
-        let axis = exactly_one(Axis::ALL
-            .into_iter()
-            .filter(|axis| shared(*axis) && close(span(*axis), depth)))?;
+        let axis = exactly_one(
+            Axis::ALL
+                .into_iter()
+                .filter(|axis| shared(*axis) && close(span(*axis), depth)),
+        )?;
         let axial_deltas = corners.map(|patch| patch[1][axis.index()] - patch[0][axis.index()]);
         (close(axial_deltas[0], axial_deltas[1]) && close(axial_deltas[0].abs(), depth))
             .then_some(())?;
@@ -735,12 +752,12 @@ pub(in crate::decode) fn clipped_drilled_hole_placement_from_cone_points(
         .flatten()
         .all(|value| value.is_finite())
         .then_some(())?;
-    let diameter_axis = exactly_one(layout
-        .axis
-        .complement()
-        .iter()
-        .copied()
-        .filter(|axis| layout.adjacent(*axis) && layout.close(layout.span(*axis), diameter)))?;
+    let diameter_axis =
+        exactly_one(
+            layout.axis.complement().iter().copied().filter(|axis| {
+                layout.adjacent(*axis) && layout.close(layout.span(*axis), diameter)
+            }),
+        )?;
     let clipped_axis = layout
         .axis
         .complement()
@@ -881,7 +898,8 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
         .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
         .filter(|table| has_simple_drilled_signature(table))
     {
-        let candidate = (|| {
+        let candidate =
+            (|| {
                 let value = |external_id, dimension_type| {
                     let row = exactly_one(table.rows.iter().filter(|row| {
                         row.external_id == external_id && row.dimension_type == dimension_type
@@ -902,7 +920,7 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
                 let drill_point_angle = value(1, 10)?;
                 (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI)
                     .then_some(Some((bore_diameter, drill_point_angle, blind_depth)))
-        })()?;
+            })()?;
         let Some(candidate) = candidate else {
             continue;
         };
@@ -967,29 +985,44 @@ mod resource_tests {
             offset: 0,
         });
         let frame = crate::surface::PositionalCylinderFrame::new(
-            [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 0.75, Some(2.0),
-        ).expect("cylinder frame");
-        scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
-            surface_id: 1,
-            body: Vec::new(),
-            scalar_tokens: Vec::new(),
-            opaque_spans: Vec::new(),
-            scalar_frames: Vec::new(),
-            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
-                crate::surface::InlineSurfaceCarrier::Cylinder { frame, split_bounds: None },
-            ),
-            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-            offset: 0,
-            body_offset: 0,
-        });
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            0.75,
+            Some(2.0),
+        )
+        .expect("cylinder frame");
+        scan.surfaces
+            .parameters
+            .push(crate::surface::SurfaceParameterRecord {
+                surface_id: 1,
+                body: Vec::new(),
+                scalar_tokens: Vec::new(),
+                opaque_spans: Vec::new(),
+                scalar_frames: Vec::new(),
+                carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                    crate::surface::InlineSurfaceCarrier::Cylinder {
+                        frame,
+                        split_bounds: None,
+                    },
+                ),
+                boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+                offset: 0,
+                body_offset: 0,
+            });
         let table = crate::feature::entity::FeatureEntityTable::new(
-            7, 29, vec![crate::feature::entity::dummy_table_entry(1)], &BTreeSet::new(), 0,
-        ).with_surface_ids([1]);
+            7,
+            29,
+            vec![crate::feature::entity::dummy_table_entry(1)],
+            &BTreeSet::new(),
+            0,
+        )
+        .with_surface_ids([1]);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         simple_drilled_hole_axis_placement(&ctx, &scan, &table, 1.5)
     }
 
@@ -999,28 +1032,36 @@ mod resource_tests {
 
     #[test]
     fn drilled_axis_placement_preserves_service_carrier() {
-        assert!(matches!(axis_placement_with_limit(3).expect("service resources"),
-            Some(cadmpeg_ir::features::holes::HolePlacement::Axis { .. })));
+        assert!(matches!(
+            axis_placement_with_limit(3).expect("service resources"),
+            Some(cadmpeg_ir::features::holes::HolePlacement::Axis { .. })
+        ));
     }
 
     #[test]
     fn drilled_cylinder_id_nodes_refuse_collection_limit() {
-        assert!(matches!(axis_placement_limit_error(0), CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(axis_placement_limit_error(0), CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "creo drilled cylinder ID nodes"));
+                && resource.operation == "creo drilled cylinder ID nodes")
+        );
     }
 
     #[test]
     fn drilled_available_frames_refuse_collection_limit() {
-        assert!(matches!(axis_placement_limit_error(1), CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(axis_placement_limit_error(1), CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "creo available positional cylinder frames"));
+                && resource.operation == "creo available positional cylinder frames")
+        );
     }
 
     #[test]
     fn drilled_frame_copies_refuse_collection_limit() {
-        assert!(matches!(axis_placement_limit_error(2), CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(axis_placement_limit_error(2), CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "creo drilled cylinder frame copies"));
+                && resource.operation == "creo drilled cylinder frame copies")
+        );
     }
 }

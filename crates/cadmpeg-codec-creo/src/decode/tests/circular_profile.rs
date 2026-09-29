@@ -193,7 +193,8 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             section_profile_ref(ctx, &ir, "creo:featdefs:sketch#offset:40".to_string())
-        }).expect("profile lookup admitted"),
+        })
+        .expect("profile lookup admitted"),
         ProfileRef::Planar(PlanarProfileRef::Native(
             "creo:featdefs:sketch#offset:40".to_string()
         ))
@@ -207,7 +208,8 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             section_profile_ref(ctx, &ir, "creo:featdefs:sketch#offset:40".to_string())
-        }).expect("profile lookup admitted"),
+        })
+        .expect("profile lookup admitted"),
         ProfileRef::Planar(PlanarProfileRef::Sketch(
             SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture")
         ))
@@ -215,7 +217,8 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             section_profile_ref(ctx, &ir, "creo:featdefs:sketch#918".to_string())
-        }).expect("profile lookup admitted"),
+        })
+        .expect("profile lookup admitted"),
         ProfileRef::Planar(PlanarProfileRef::Native(
             "creo:featdefs:sketch#918".to_string()
         ))
@@ -247,20 +250,28 @@ fn section_profile_lookup_refuses_scan_and_retained_sketch_copy() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = section_profile_ref(&ctx, &ir, "creo:featdefs:sketch#40".to_owned())
         .expect_err("one sketch needs one lookup unit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo section profile sketch lookup"));
+            && resource.operation == "creo section profile sketch lookup")
+    );
     policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
     policy.limits.max_retained_bytes = id.as_str().len() as u64 - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = section_profile_ref(&ctx, &ir, "creo:featdefs:sketch#40".to_owned())
         .expect_err("selected sketch copy exceeds cap");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo section profile sketch identity"));
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| {
-        section_profile_ref(ctx, &ir, "creo:featdefs:sketch#40".to_owned())
-    }).expect("service profile admitted"), ProfileRef::Planar(PlanarProfileRef::Sketch(id)));
+            && resource.operation == "creo section profile sketch identity")
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#40".to_owned())
+        })
+        .expect("service profile admitted"),
+        ProfileRef::Planar(PlanarProfileRef::Sketch(id))
+    );
 }
 
 #[test]
@@ -318,7 +329,8 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
-        ))
+        )
+        .map(std::iter::Iterator::collect::<Vec<_>>))
         .expect("service profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
@@ -343,7 +355,8 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
-        ))
+        )
+        .map(std::iter::Iterator::collect::<Vec<_>>))
         .expect("service profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
@@ -362,14 +375,17 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         definition.try_into()
     })
     .expect("valid test fixture");
-    assert!(crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
-        ctx,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        &sketch_id
-    ))
-    .expect("service profile vertices")
-    .is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+            ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &sketch_id
+        )
+        .map(std::iter::Iterator::collect::<Vec<_>>))
+        .expect("service profile vertices")
+        .is_empty()
+    );
 }
 
 #[test]

@@ -33,7 +33,9 @@ pub(in super::super) fn link_feature_sketch_history(
             continue;
         };
         let (owner, _owner_reservation) = crate::identity::compose_scoped::<IrFeatureId>(
-            ctx, &crate::identity::MODEL_FEATURE, feature_id,
+            ctx,
+            &crate::identity::MODEL_FEATURE,
+            feature_id,
             "creo linked feature lookup identity",
         )?;
         let Some(definition) =

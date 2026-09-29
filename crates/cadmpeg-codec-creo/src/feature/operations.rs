@@ -704,7 +704,12 @@ pub(crate) fn operation_states(
             state_offset: binding.offset,
         });
     }
-    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |operation| operation.offset, "creo operation states result ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.as_mut_slice(),
+        |operation| operation.offset,
+        "creo operation states result ordering",
+    )?;
     let mut display_counts = BTreeMap::<u32, usize>::new();
     for operation in result
         .iter()
@@ -818,8 +823,7 @@ pub(crate) fn operations(
                         projection.display_state_conflict = true;
                         if !same_kind {
                             projection.kind = agreed_recipe
-                                .map(OperationKind::from_recipe)
-                                .unwrap_or(OperationKind::Native);
+                                .map_or(OperationKind::Native, OperationKind::from_recipe);
                         }
                         projection.name = OperationName::Derived;
                         projection.recipe = recipe;
@@ -849,7 +853,12 @@ pub(crate) fn operations(
             operation.kind = OperationKind::Native;
         }
     }
-    crate::sort::stable_sort_by_key(ctx, current.as_mut_slice(), |operation| operation.offset, "creo operations current ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        current.as_mut_slice(),
+        |operation| operation.offset,
+        "creo operations current ordering",
+    )?;
     Ok(current)
 }
 

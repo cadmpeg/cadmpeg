@@ -29,8 +29,8 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId,
-    ShellId, SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
@@ -118,7 +118,9 @@ fn push_rejected_extrusion(
         1,
         "creo extrusion rejection diagnostics",
     )?;
-    diagnostics.rejected_extrusion_bodies.push((body_id, reason));
+    diagnostics
+        .rejected_extrusion_bodies
+        .push((body_id, reason));
     Ok(())
 }
 
@@ -133,7 +135,11 @@ fn cap_coedge_ids_admitted(
 ) -> Result<Vec<CoedgeId>, cadmpeg_core::CodecError> {
     let mut ids = Vec::new();
     for position in 0..count {
-        let index = if reversed { count - 1 - position } else { position };
+        let index = if reversed {
+            count - 1 - position
+        } else {
+            position
+        };
         ctx.try_reserve_items(&mut ids, 1, operation)?;
         ids.push(generated_extrusion_identity(
             ctx,
@@ -180,14 +186,26 @@ fn sketch_profiles_cover_generated_extrusion_sides(
     }
     let mut expected_entity_set = BTreeSet::<&str>::new();
     let mut expected_count = 0;
-    for table in scan.features.entity_tables.iter().filter(|table| table.feature_id == feature_id) {
+    for table in scan
+        .features
+        .entity_tables
+        .iter()
+        .filter(|table| table.feature_id == feature_id)
+    {
         for entry in &table.entries {
-            let Some(external_id) = entry.source_entity_id() else { continue };
+            let Some(external_id) = entry.source_entity_id() else {
+                continue;
+            };
             let (entity, _reservation) = ctx.format_scoped(
-                format_args!("creo:featdefs:sketch_entity#{}:{external_id}", definition.identity.id()),
+                format_args!(
+                    "creo:featdefs:sketch_entity#{}:{external_id}",
+                    definition.identity.id()
+                ),
                 "creo extrusion expected sketch entity ID",
             )?;
-            let Some(matched) = profile_entity_set.get(entity.as_str()) else { continue };
+            let Some(matched) = profile_entity_set.get(entity.as_str()) else {
+                continue;
+            };
             if !generated_profile_entry_is_admissible(
                 feature_id,
                 table,
@@ -272,13 +290,16 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         ) else {
             continue;
         };
-        if !sketch_profiles_cover_generated_extrusion_sides(ctx, scan, definition, feature_id, sketch)? {
+        if !sketch_profiles_cover_generated_extrusion_sides(
+            ctx, scan, definition, feature_id, sketch,
+        )? {
             continue;
         }
-        let Some(profiles) = resolved_sketch_profiles(ctx, ir, source_carriers, &sketch_id, 1)? else {
+        let Some(profiles) = resolved_sketch_profiles(ctx, ir, source_carriers, &sketch_id, 1)?
+        else {
             continue;
         };
-    let Some(profiles) = ordered_extrusion_profiles(ctx, profiles)? else {
+        let Some(profiles) = ordered_extrusion_profiles(ctx, profiles)? else {
             continue;
         };
         let body_id = extrusion_id!(BodyId, "body");
@@ -292,7 +313,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             .flat_map(super::profiles::ValidatedProfile::entities)
             .enumerate()
         {
-        let Some(sketch_geometry) = entity.geometry().to_sketch(ctx)? else {
+            let Some(sketch_geometry) = entity.geometry().to_sketch(ctx)? else {
                 unprojectable = true;
                 break;
             };
@@ -301,14 +322,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 transform,
                 &sketch_geometry,
                 entity.reversed(),
-                entity.start(),
-                entity.end(),
+                [entity.start(), entity.end()],
                 span,
                 &mut crate::lane_refusal::LaneRefusalContext::new(
                     &format_args!("extrusion feature {feature_id} profile entity {entity_index}"),
                     &mut refusal,
                 ),
-            )?.is_none() {
+            )?
+            .is_none()
+            {
                 unprojectable = true;
                 break;
             }
@@ -318,9 +340,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             // The probe states every side before the first record of this body
             // reaches the model, so a refused lane leaves no partial body and
             // the model carries the absence of this one extrusion.
-            push_rejected_extrusion(ctx, diagnostics,
+            push_rejected_extrusion(
+                ctx,
+                diagnostics,
                 copy_id!(body_id),
-                format_args!("refused extrusion side lanes: {}", JoinedLaneRecords(&records)),
+                format_args!(
+                    "refused extrusion side lanes: {}",
+                    JoinedLaneRecords(&records)
+                ),
             )?;
             continue;
         }
@@ -341,7 +368,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         for (profile_index, profile) in profiles.iter().enumerate() {
             for index in 0..profile.entities().len() {
                 ctx.try_reserve_items(&mut shell_faces, 1, "creo extrusion shell face IDs")?;
-                shell_faces.push(extrusion_id!(FaceId, "face:{}:side:{}", profile_index, index));
+                shell_faces.push(extrusion_id!(
+                    FaceId,
+                    "face:{}:side:{}",
+                    profile_index,
+                    index
+                ));
             }
         }
         let shell = match Shell::new(
@@ -363,7 +395,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             (&bottom_surface, span.lower()),
             (&top_surface, span.upper()),
         ] {
-            annotate(ctx,
+            annotate(
+                ctx,
                 annotations,
                 id,
                 "FeatDefs",
@@ -414,8 +447,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         "top" => cadmpeg_ir::identity_key!("top"),
                         _ => continue,
                     };
-                    let point_id = extrusion_id!(PointId, "point:{}:{}:{}", profile_index, index, &side_key);
-                    let vertex_id = extrusion_id!(VertexId, "vertex:{}:{}:{}", profile_index, index, &side_key);
+                    let point_id =
+                        extrusion_id!(PointId, "point:{}:{}:{}", profile_index, index, &side_key);
+                    let vertex_id =
+                        extrusion_id!(VertexId, "vertex:{}:{}:{}", profile_index, index, &side_key);
                     let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                         position[0] + offset * transform.normal()[0],
                         position[1] + offset * transform.normal()[1],
@@ -424,8 +459,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     .ok_or(Point::NON_FINITE_POSITION)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                     ctx.charge_entities(1, "admit Creo model points")?;
-                    source_carriers
-                        .admit_point(ctx, ir, Point::new(copy_id!(point_id), finite_position, None))?;
+                    source_carriers.admit_point(
+                        ctx,
+                        ir,
+                        Point::new(copy_id!(point_id), finite_position, None),
+                    )?;
                     ctx.charge_entities(1, "admit Creo model vertices")?;
                     source_carriers.admit_vertex(
                         ctx,
@@ -463,8 +501,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         "top" => cadmpeg_ir::identity_key!("top"),
                         _ => continue,
                     };
-                    let curve_id = extrusion_id!(CurveId, "curve:{}:{}:{}", profile_index, index, &side_key);
-                    let edge_id = extrusion_id!(EdgeId, "edge:{}:{}:{}", profile_index, index, &side_key);
+                    let curve_id =
+                        extrusion_id!(CurveId, "curve:{}:{}:{}", profile_index, index, &side_key);
+                    let edge_id =
+                        extrusion_id!(EdgeId, "edge:{}:{}:{}", profile_index, index, &side_key);
                     let curve = match geometry {
                         ProfileGeometry::Line { .. } => {
                             let placed_start = section_point_in_model(transform, start);
@@ -518,13 +558,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                 continue;
                             };
                             let Some(translated) = translated_nurbs_curve(
-                                ctx, &placed,
+                                ctx,
+                                &placed,
                                 [
                                     offset * transform.normal()[0],
                                     offset * transform.normal()[1],
                                     offset * transform.normal()[2],
                                 ],
-                            )? else {
+                            )?
+                            else {
                                 continue;
                             };
                             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(translated))
@@ -634,11 +676,21 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             ctx.try_reserve_items(&mut top_loops, 1, "creo extrusion top loop IDs")?;
             top_loops.push(copy_id!(top_loop));
             let bottom_coedges = cap_coedge_ids_admitted(
-                ctx, feature_id, profile_index, count, "bottom-cap", true,
+                ctx,
+                feature_id,
+                profile_index,
+                count,
+                "bottom-cap",
+                true,
                 "creo extrusion bottom cap coedge IDs",
             )?;
             let top_coedges = cap_coedge_ids_admitted(
-                ctx, feature_id, profile_index, count, "top-cap", false,
+                ctx,
+                feature_id,
+                profile_index,
+                count,
+                "top-cap",
+                false,
                 "creo extrusion top cap coedge IDs",
             )?;
             ctx.charge_entities(1, "admit Creo model loops")?;
@@ -696,7 +748,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ir,
                     annotations,
                     PcurveAdmission::Existing(source_carriers, &bottom_surface),
-                    extrusion_id!(PcurveId, "pcurve:{}:{}:bottom-cap", profile_index, edge_index),
+                    extrusion_id!(
+                        PcurveId,
+                        "pcurve:{}:{}:bottom-cap",
+                        profile_index,
+                        edge_index
+                    ),
                     transform.offset,
                     {
                         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -715,14 +772,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         if !records.is_empty() {
                             // The shell of this body already declares this cap
                             // face, so the model cannot omit the pcurve.
-                            return Err(cadmpeg_core::CodecError::malformed(
-                                refused_lane_message(ctx, &record, &records)?,
-                            ));
+                            return Err(cadmpeg_core::CodecError::malformed(refused_lane_message(
+                                ctx, &record, &records,
+                            )?));
                         }
                         let Some(cap) = cap else {
-                            return Err(cadmpeg_core::CodecError::malformed(
-                                missing_cap_message(ctx, &record)?,
-                            ));
+                            return Err(cadmpeg_core::CodecError::malformed(missing_cap_message(
+                                ctx, &record,
+                            )?));
                         };
                         cap
                     },
@@ -735,13 +792,22 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         id,
                         owner_loop: copy_id!(bottom_loop),
                         edge: copy_id!(bottom_edges[edge_index]),
-                        radial_next: extrusion_id!(CoedgeId, "coedge:{}:{}:side-bottom", profile_index, edge_index),
+                        radial_next: extrusion_id!(
+                            CoedgeId,
+                            "coedge:{}:{}:side-bottom",
+                            profile_index,
+                            edge_index
+                        ),
                         sense: Sense::Reversed,
-                        pcurves: crate::decode::collect_items(ctx, [PcurveUse {
-                            pcurve: bottom_pcurve,
-                            isoparametric: None,
-                            parameter_range: None,
-                        }], "creo extrusion bottom coedge pcurve uses")?,
+                        pcurves: crate::decode::collect_items(
+                            ctx,
+                            [PcurveUse {
+                                pcurve: bottom_pcurve,
+                                isoparametric: None,
+                                parameter_range: None,
+                            }],
+                            "creo extrusion bottom coedge pcurve uses",
+                        )?,
                         use_curve: None,
                     },
                 )?;
@@ -779,14 +845,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         if !records.is_empty() {
                             // The shell of this body already declares this cap
                             // face, so the model cannot omit the pcurve.
-                            return Err(cadmpeg_core::CodecError::malformed(
-                                refused_lane_message(ctx, &record, &records)?,
-                            ));
+                            return Err(cadmpeg_core::CodecError::malformed(refused_lane_message(
+                                ctx, &record, &records,
+                            )?));
                         }
                         let Some(cap) = cap else {
-                            return Err(cadmpeg_core::CodecError::malformed(
-                                missing_cap_message(ctx, &record)?,
-                            ));
+                            return Err(cadmpeg_core::CodecError::malformed(missing_cap_message(
+                                ctx, &record,
+                            )?));
                         };
                         cap
                     },
@@ -799,13 +865,22 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         id,
                         owner_loop: copy_id!(top_loop),
                         edge: copy_id!(top_edges[ring_index]),
-                        radial_next: extrusion_id!(CoedgeId, "coedge:{}:{}:side-top", profile_index, ring_index),
+                        radial_next: extrusion_id!(
+                            CoedgeId,
+                            "coedge:{}:{}:side-top",
+                            profile_index,
+                            ring_index
+                        ),
                         sense: Sense::Forward,
-                        pcurves: crate::decode::collect_items(ctx, [PcurveUse {
-                            pcurve: top_pcurve,
-                            isoparametric: None,
-                            parameter_range: None,
-                        }], "creo extrusion top coedge pcurve uses")?,
+                        pcurves: crate::decode::collect_items(
+                            ctx,
+                            [PcurveUse {
+                                pcurve: top_pcurve,
+                                isoparametric: None,
+                                parameter_range: None,
+                            }],
+                            "creo extrusion top coedge pcurve uses",
+                        )?,
                         use_curve: None,
                     },
                 )?;
@@ -820,7 +895,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let start = entity.start();
 
                 let next = (index + 1) % count;
-                let surface_id = extrusion_id!(SurfaceId, "surface:{}:side:{}", profile_index, index);
+                let surface_id =
+                    extrusion_id!(SurfaceId, "surface:{}:side:{}", profile_index, index);
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
                 let (record, _record_reservation) = ctx.format_scoped(
                     format_args!(
@@ -835,8 +911,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     transform,
                     &sketch_geometry,
                     profile[index].reversed(),
-                    start,
-                    profile[index].end(),
+                    [start, profile[index].end()],
                     span,
                     &mut diagnostics,
                 )?;
@@ -844,9 +919,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 if !records.is_empty() {
                     // The shell of this body already declares this side face,
                     // so the model cannot omit the surface.
-                    return Err(cadmpeg_core::CodecError::malformed(
-                        refused_lane_message(ctx, &record, &records)?,
-                    ));
+                    return Err(cadmpeg_core::CodecError::malformed(refused_lane_message(
+                        ctx, &record, &records,
+                    )?));
                 }
                 let Some(surface_geometry) = surface_geometry else {
                     break;
@@ -865,9 +940,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let loop_id = extrusion_id!(LoopId, "loop:{}:side:{}", profile_index, index);
                 let coedges = [
                     extrusion_id!(CoedgeId, "coedge:{}:{}:side-bottom", profile_index, index),
-                    extrusion_id!(CoedgeId, "coedge:{}:{}:side-vertical-out", profile_index, next),
+                    extrusion_id!(
+                        CoedgeId,
+                        "coedge:{}:{}:side-vertical-out",
+                        profile_index,
+                        next
+                    ),
                     extrusion_id!(CoedgeId, "coedge:{}:{}:side-top", profile_index, index),
-                    extrusion_id!(CoedgeId, "coedge:{}:{}:side-vertical-in", profile_index, index),
+                    extrusion_id!(
+                        CoedgeId,
+                        "coedge:{}:{}:side-vertical-in",
+                        profile_index,
+                        index
+                    ),
                 ];
                 ctx.charge_entities(1, "admit Creo model loops")?;
                 ctx.try_reserve_items(&mut ir.model.loops, 1, "creo extrusion model loops")?;
@@ -904,9 +989,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 for use_index in 0..4 {
                     let radial_next = match use_index {
                         0 => copy_id!(bottom_coedges[count - 1 - index]),
-                        1 => extrusion_id!(CoedgeId, "coedge:{}:{}:side-vertical-in", profile_index, next),
+                        1 => extrusion_id!(
+                            CoedgeId,
+                            "coedge:{}:{}:side-vertical-in",
+                            profile_index,
+                            next
+                        ),
                         2 => copy_id!(top_coedges[index]),
-                        3 => extrusion_id!(CoedgeId, "coedge:{}:{}:side-vertical-out", profile_index, index),
+                        3 => extrusion_id!(
+                            CoedgeId,
+                            "coedge:{}:{}:side-vertical-out",
+                            profile_index,
+                            index
+                        ),
                         _ => continue,
                     };
                     let pcurve = add_extrusion_pcurve(
@@ -914,7 +1009,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ir,
                         annotations,
                         PcurveAdmission::Existing(source_carriers, &surface_id),
-                        extrusion_id!(PcurveId, "pcurve:{}:{}:side:{}", profile_index, index, use_index),
+                        extrusion_id!(
+                            PcurveId,
+                            "pcurve:{}:{}:side:{}",
+                            profile_index,
+                            index,
+                            use_index
+                        ),
                         transform.offset,
                         line_pcurve(side_uvs[use_index][0], side_uvs[use_index][1]).ok_or_else(
                             || {
@@ -934,11 +1035,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             edge: copy_id!(edge_uses[use_index].0),
                             radial_next,
                             sense: edge_uses[use_index].1,
-                            pcurves: crate::decode::collect_items(ctx, [PcurveUse {
-                                pcurve,
-                                isoparametric: None,
-                                parameter_range: None,
-                            }], "creo extrusion side coedge pcurve uses")?,
+                            pcurves: crate::decode::collect_items(
+                                ctx,
+                                [PcurveUse {
+                                    pcurve,
+                                    isoparametric: None,
+                                    parameter_range: None,
+                                }],
+                                "creo extrusion side coedge pcurve uses",
+                            )?,
                             use_curve: None,
                         },
                     )?;
@@ -957,7 +1062,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             Sense::Reversed
                         },
                         loops: cadmpeg_ir::topology::FaceLoops::unspecified(
-                            crate::decode::collect_items(ctx, [loop_id], "creo extrusion side face loop IDs")?,
+                            crate::decode::collect_items(
+                                ctx,
+                                [loop_id],
+                                "creo extrusion side face loop IDs",
+                            )?,
                         ),
                         name: None,
                         color: None,
@@ -1012,7 +1121,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         ir.model.regions.push(Region {
             id: copy_id!(region_id),
             body: copy_id!(body_id),
-            shells: crate::decode::collect_items(ctx, [shell_id], "creo extrusion region shell IDs")?,
+            shells: crate::decode::collect_items(
+                ctx,
+                [shell_id],
+                "creo extrusion region shell IDs",
+            )?,
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
@@ -1021,7 +1134,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             Body {
                 id: body_id,
                 kind: BodyKind::Solid,
-                regions: crate::decode::collect_items(ctx, [region_id], "creo extrusion body region IDs")?,
+                regions: crate::decode::collect_items(
+                    ctx,
+                    [region_id],
+                    "creo extrusion body region IDs",
+                )?,
                 transform: None,
                 name: None,
                 color: None,

@@ -38,7 +38,7 @@ fn legacy_visible_surface_row_aggregation_refuses_before_vec_growth() {
         1,
         "the legacy fixture supplies one visible row"
     );
-    let refusal = (0..128).find_map(|limit| {
+    let refusal = (0..253).find_map(|limit| {
         let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
             scan_legacy_surface_with_limit(&bytes, limit)
         else {
@@ -64,7 +64,7 @@ fn legacy_nonvisible_surface_row_aggregation_refuses_before_vec_growth() {
         1,
         "the legacy fixture supplies one nonvisible row"
     );
-    let refusal = (0..128).find_map(|limit| {
+    let refusal = (0..253).find_map(|limit| {
         let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
             scan_legacy_surface_with_limit(&bytes, limit)
         else {

@@ -190,24 +190,35 @@ fn closed_off_axis_revolution() -> (crate::container::ContainerScan<'static>, Ca
     scan.features.definitions.push(definition());
     scan.features.section_transforms.push(
         crate::placement::FeatureSectionTransform::new(
-            40, Some(40), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0,
-        ).expect("section frame"),
+            40,
+            Some(40),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("section frame"),
     );
-    scan.features.operations.push(crate::feature::operations::FeatureOperation {
-        feature_id: 40,
-        kind: crate::feature::operations::OperationKind::Revolve,
-        name: crate::feature::operations::OperationName::Derived,
-        recipe: crate::feature::operations::RecipeResolution::Resolved(
-            crate::feature::operations::FeatureRecipe::ProtrudeRevolve,
-        ),
-        display_state_conflict: false,
-        depdb: None,
-        offset: 0,
-        state_offset: 0,
-    });
-    scan.features.revolution_extents.push(crate::feature::rows::FeatureRevolutionExtent {
-        feature_id: 40, offset: 0,
-    });
+    scan.features
+        .operations
+        .push(crate::feature::operations::FeatureOperation {
+            feature_id: 40,
+            kind: crate::feature::operations::OperationKind::Revolve,
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::operations::RecipeResolution::Resolved(
+                crate::feature::operations::FeatureRecipe::ProtrudeRevolve,
+            ),
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        });
+    scan.features
+        .revolution_extents
+        .push(crate::feature::rows::FeatureRevolutionExtent {
+            feature_id: 40,
+            offset: 0,
+        });
     let sketch_id = SketchId::mint("creo:model:sketch#40".to_string()).expect("sketch id");
     let mut ir = CadIr::empty();
     let mut uses = Vec::new();
@@ -216,17 +227,25 @@ fn closed_off_axis_revolution() -> (crate::container::ContainerScan<'static>, Ca
         ([2.0, 0.0], [2.0, 1.0]),
         ([2.0, 1.0], [1.0, 1.0]),
         ([1.0, 1.0], [1.0, 0.0]),
-    ].into_iter().enumerate() {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let id = SketchEntityId::mint(format!("creo:featdefs:sketch_entity#40:{index}"))
             .expect("entity id");
         ir.model.sketch_entities.push(SketchEntity::new(
-            id.clone(), sketch_id.clone(),
+            id.clone(),
+            sketch_id.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start[0], start[1]),
                 end: Point2::new(end[0], end[1]),
-            }).expect("line"),
+            })
+            .expect("line"),
         ));
-        uses.push(SketchEntityUse { entity: id, reversed: false });
+        uses.push(SketchEntityUse {
+            entity: id,
+            reversed: false,
+        });
     }
     ir.model.sketches.push(Sketch {
         id: sketch_id,
@@ -246,10 +265,15 @@ fn closed_off_axis_revolution_reaches_brep_admission() {
     let mut losses = Vec::new();
     let count = crate::decode::with_test_decode_ctx(|ctx| {
         transfer_resolved_revolution_breps(
-            ctx, &scan, &mut ir, &mut AnnotationBuilder::new(), &mut losses,
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut losses,
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
-    }).expect("service profile admits the closed revolution");
+    })
+    .expect("service profile admits the closed revolution");
     assert_eq!(count, 1);
     assert_eq!(ir.model.bodies.len(), 1);
     assert!(losses.is_empty());
@@ -262,21 +286,30 @@ fn revolution_refuses_at_collection_boundary(operation: &'static str) {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let mut losses = Vec::new();
         let result = transfer_resolved_revolution_breps(
-            &ctx, &scan, &mut ir, &mut AnnotationBuilder::new(), &mut losses,
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut losses,
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
         match result {
             Err(cadmpeg_core::CodecError::ResourceLimit(resource))
                 if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation => return,
+                    && resource.operation == operation =>
+            {
+                return
+            }
             Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
                 last_refusal = Some((limit, resource.dimension, resource.operation));
             }
-            Err(error) => panic!("unexpected revolution error at collection limit {limit}: {error:?}"),
+            Err(error) => {
+                panic!("unexpected revolution error at collection limit {limit}: {error:?}")
+            }
             Ok(_) => panic!("revolution succeeded before the named {operation} refusal"),
         }
     }
@@ -292,22 +325,67 @@ macro_rules! revolution_collection_limit_test {
     };
 }
 
-revolution_collection_limit_test!(revolution_vertex_curves_refuse_limit, "creo revolution vertex curves");
-revolution_collection_limit_test!(revolution_surface_geometries_refuse_limit, "creo revolution surface geometries");
-revolution_collection_limit_test!(revolution_segment_boundaries_refuse_limit, "creo revolution segment boundaries");
-revolution_collection_limit_test!(revolution_boundary_rows_refuse_limit, "creo revolution boundary rows");
-revolution_collection_limit_test!(revolution_face_senses_refuse_limit, "creo revolution face senses");
-revolution_collection_limit_test!(revolution_profile_edges_refuse_limit, "creo revolution profile edges");
-revolution_collection_limit_test!(revolution_ring_coedges_refuse_limit, "creo revolution ring coedges");
-revolution_collection_limit_test!(revolution_ring_validation_nodes_refuse_limit, "creo revolution loop validation nodes");
+revolution_collection_limit_test!(
+    revolution_vertex_curves_refuse_limit,
+    "creo revolution vertex curves"
+);
+revolution_collection_limit_test!(
+    revolution_surface_geometries_refuse_limit,
+    "creo revolution surface geometries"
+);
+revolution_collection_limit_test!(
+    revolution_segment_boundaries_refuse_limit,
+    "creo revolution segment boundaries"
+);
+revolution_collection_limit_test!(
+    revolution_boundary_rows_refuse_limit,
+    "creo revolution boundary rows"
+);
+revolution_collection_limit_test!(
+    revolution_face_senses_refuse_limit,
+    "creo revolution face senses"
+);
+revolution_collection_limit_test!(
+    revolution_profile_edges_refuse_limit,
+    "creo revolution profile edges"
+);
+revolution_collection_limit_test!(
+    revolution_ring_coedges_refuse_limit,
+    "creo revolution ring coedges"
+);
+revolution_collection_limit_test!(
+    revolution_ring_validation_nodes_refuse_limit,
+    "creo revolution loop validation nodes"
+);
 revolution_collection_limit_test!(revolution_loops_refuse_limit, "creo model revolution loops");
-revolution_collection_limit_test!(revolution_coedge_pcurves_refuse_limit, "creo revolution coedge pcurves");
-revolution_collection_limit_test!(revolution_face_loop_ids_refuse_limit, "creo revolution face loop IDs");
-revolution_collection_limit_test!(revolution_shell_face_ids_refuse_limit, "creo revolution shell face IDs");
-revolution_collection_limit_test!(revolution_shells_refuse_limit, "creo model revolution shells");
-revolution_collection_limit_test!(revolution_region_shell_ids_refuse_limit, "creo revolution region shell IDs");
-revolution_collection_limit_test!(revolution_regions_refuse_limit, "creo model revolution regions");
-revolution_collection_limit_test!(revolution_body_region_ids_refuse_limit, "creo revolution body region IDs");
+revolution_collection_limit_test!(
+    revolution_coedge_pcurves_refuse_limit,
+    "creo revolution coedge pcurves"
+);
+revolution_collection_limit_test!(
+    revolution_face_loop_ids_refuse_limit,
+    "creo revolution face loop IDs"
+);
+revolution_collection_limit_test!(
+    revolution_shell_face_ids_refuse_limit,
+    "creo revolution shell face IDs"
+);
+revolution_collection_limit_test!(
+    revolution_shells_refuse_limit,
+    "creo model revolution shells"
+);
+revolution_collection_limit_test!(
+    revolution_region_shell_ids_refuse_limit,
+    "creo revolution region shell IDs"
+);
+revolution_collection_limit_test!(
+    revolution_regions_refuse_limit,
+    "creo model revolution regions"
+);
+revolution_collection_limit_test!(
+    revolution_body_region_ids_refuse_limit,
+    "creo revolution body region IDs"
+);
 
 #[test]
 fn revolution_identity_and_copy_refuse_below_retained_limits() {
@@ -320,7 +398,11 @@ fn revolution_identity_and_copy_refuse_below_retained_limits() {
             policy.limits.max_retained_bytes = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = transfer_resolved_revolution_breps(
-                &ctx, &scan, &mut ir, &mut AnnotationBuilder::new(), &mut Vec::new(),
+                &ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &mut Vec::new(),
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             );
             if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
@@ -338,8 +420,10 @@ fn revolution_identity_and_copy_refuse_below_retained_limits() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         revolution_identity::<BodyId>(&ctx, 40, "body").expect("identity"),
-        BodyId::compose(&crate::identity::FEATURE_REVOLUTION,
-            cadmpeg_ir::ids::IdentityKey::from(40).colon(cadmpeg_ir::identity_key!("body"))),
+        BodyId::compose(
+            &crate::identity::FEATURE_REVOLUTION,
+            cadmpeg_ir::ids::IdentityKey::from(40).colon(cadmpeg_ir::identity_key!("body"))
+        ),
     );
 }
 
@@ -350,30 +434,52 @@ fn revolution_loss_text_and_slot_refuse_named_limits() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = push_revolution_loss(&ctx, &mut Vec::new(), 40,
-        "states no face sense; its B-rep was skipped", &records)
-        .err().expect("text refused");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    let error = push_revolution_loss(
+        &ctx,
+        &mut Vec::new(),
+        40,
+        "states no face sense; its B-rep was skipped",
+        &records,
+    )
+    .expect_err("text refused");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo revolution rejection text"));
+            && resource.operation == "creo revolution rejection text")
+    );
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = push_revolution_loss(&ctx, &mut Vec::new(), 40,
-        "states no face sense; its B-rep was skipped", &records)
-        .err().expect("loss slot refused");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    let error = push_revolution_loss(
+        &ctx,
+        &mut Vec::new(),
+        40,
+        "states no face sense; its B-rep was skipped",
+        &records,
+    )
+    .expect_err("loss slot refused");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo revolution losses"));
+            && resource.operation == "creo revolution losses")
+    );
 
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut losses = Vec::new();
-    push_revolution_loss(&ctx, &mut losses, 40,
-        "states no face sense; its B-rep was skipped", &records).expect("service loss");
-    assert_eq!(losses[0].message,
-        "Revolution feature 40 states no face sense; its B-rep was skipped: first; second");
+    push_revolution_loss(
+        &ctx,
+        &mut losses,
+        40,
+        "states no face sense; its B-rep was skipped",
+        &records,
+    )
+    .expect("service loss");
+    assert_eq!(
+        losses[0].message,
+        "Revolution feature 40 states no face sense; its B-rep was skipped: first; second"
+    );
 }

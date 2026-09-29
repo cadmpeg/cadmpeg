@@ -325,8 +325,18 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
         result.records.extend(records);
         search = search.max(result.frames.last().map_or(search, |frame| frame.end));
     }
-    crate::sort::stable_sort_by_key(ctx, result.frames.as_mut_slice(), |frame| frame.offset, "creo scan result frames ordering")?;
-    crate::sort::stable_sort_by_key(ctx, result.records.as_mut_slice(), |record| record.offset, "creo scan result records ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.frames.as_mut_slice(),
+        |frame| frame.offset,
+        "creo scan result frames ordering",
+    )?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.records.as_mut_slice(),
+        |record| record.offset,
+        "creo scan result records ordering",
+    )?;
     Ok(result)
 }
 

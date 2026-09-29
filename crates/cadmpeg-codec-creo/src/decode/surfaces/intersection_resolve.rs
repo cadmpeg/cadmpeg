@@ -2,9 +2,9 @@
 //! Multi-component intersection candidates and FC14 axis selection.
 
 use crate::vecmath::unit_length;
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
 use crate::decode::analytic::edges::{
     nonperiodic_conic_parameter, periodic_conic_frame, PeriodicConicFrame,
@@ -77,7 +77,11 @@ pub(in super::super) fn intersect_plane_with_carrier_components(
             continue;
         };
         for point in intersect_plane_with_circle(ctx, plane, center, axis, radius)? {
-            ctx.try_reserve_items(&mut intersections, 1, "creo plane-carrier component intersections")?;
+            ctx.try_reserve_items(
+                &mut intersections,
+                1,
+                "creo plane-carrier component intersections",
+            )?;
             intersections.push(point);
         }
     }
@@ -183,34 +187,32 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
     candidates: impl IntoIterator<Item = (CurveGeometry, &'static str)>,
     held_coordinate: f64,
 ) -> Option<(CurveGeometry, &'static str)> {
-    let mut matching = candidates
-        .into_iter()
-        .filter(|(geometry, tag)| {
-            if *tag != "coaxial_cone_cylinder_secant_circle" {
-                return false;
-            }
-            let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
-                return false;
-            };
-            let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis().as_raw();
-            let axis = [axis.x, axis.y, axis.z];
-            let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {
-                ((value.abs() - 1.0).abs() <= EPS_AXIS_COMPONENT).then_some(index)
-            }) else {
-                return false;
-            };
-            if axis
-                .iter()
-                .enumerate()
-                .any(|(index, value)| index != axis_index && value.abs() > EPS_AXIS_COMPONENT)
-            {
-                return false;
-            }
-            let center = [center.x, center.y, center.z];
-            let scale = center[axis_index].abs().max(held_coordinate.abs()).max(1.0);
-            (center[axis_index] - held_coordinate).abs() <= EPS_CENTER_AGREEMENT * scale
-        });
+    let mut matching = candidates.into_iter().filter(|(geometry, tag)| {
+        if *tag != "coaxial_cone_cylinder_secant_circle" {
+            return false;
+        }
+        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
+            return false;
+        };
+        let center = circle_curve.center().get();
+        let axis = circle_curve.frame().axis().as_raw();
+        let axis = [axis.x, axis.y, axis.z];
+        let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {
+            ((value.abs() - 1.0).abs() <= EPS_AXIS_COMPONENT).then_some(index)
+        }) else {
+            return false;
+        };
+        if axis
+            .iter()
+            .enumerate()
+            .any(|(index, value)| index != axis_index && value.abs() > EPS_AXIS_COMPONENT)
+        {
+            return false;
+        }
+        let center = [center.x, center.y, center.z];
+        let scale = center[axis_index].abs().max(held_coordinate.abs()).max(1.0);
+        (center[axis_index] - held_coordinate).abs() <= EPS_CENTER_AGREEMENT * scale
+    });
     let candidate = matching.next()?;
     matching.next().is_none().then_some(candidate)
 }
@@ -251,10 +253,14 @@ mod tests {
                 .expect("empty root fits the collection policy");
             super::carrier_intersection_components(&ctx, cone, sphere)
         };
-        assert!(matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        assert!(
+            matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo carrier intersection components"));
-        assert!(!run(u64::MAX).expect("service budget admits the circle").is_empty());
+                && refusal.operation == "creo carrier intersection components")
+        );
+        assert!(!run(u64::MAX)
+            .expect("service budget admits the circle")
+            .is_empty());
     }
 
     #[test]
@@ -273,13 +279,17 @@ mod tests {
             super::intersect_plane_with_carrier_components(&ctx, plane, cone, sphere)
         };
         let limit = (0..64)
-            .find(|limit| matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            .find(|limit| {
+                matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo plane-carrier component intersections"))
+                    && refusal.operation == "creo plane-carrier component intersections")
+            })
             .expect("the carrier circle reaches the output boundary");
-        assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        assert!(
+            matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo plane-carrier component intersections"));
+                && refusal.operation == "creo plane-carrier component intersections")
+        );
         let points = run(u64::MAX).expect("service budget admits the circle cut");
         assert!(points.contains(&[0.0, -1.0, -1.0]));
         assert!(points.contains(&[0.0, 1.0, -1.0]));

@@ -11,8 +11,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
-use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::lane_refusal::JoinedLaneRecords;
+use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::surface::SurfaceParameterRecord;
 
 use super::super::native::annotate;
@@ -235,11 +235,9 @@ pub(super) fn surface_prototype_frame_bounds(
         return Ok(None);
     };
     let complete_bounds = crate::surface::complete_surface_array_bounds(ctx, payload)?;
-    let mut matches = complete_bounds
-        .into_iter()
-        .filter(|(start, end)| {
-            relative_prototype_offset >= *start && relative_prototype_offset < *end
-        });
+    let mut matches = complete_bounds.into_iter().filter(|(start, end)| {
+        relative_prototype_offset >= *start && relative_prototype_offset < *end
+    });
     let Some((start, end)) = matches.next() else {
         return Ok(None);
     };
@@ -259,12 +257,15 @@ fn frame_bound(
     relative: usize,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let Some(bound) = section.offset().checked_add(relative) else {
-        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(format_args!(
+        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!(
             "section {} states offset {} and a surface array bound at {relative}, which do not \
              form an address",
             section.name(),
             section.offset()
-        ), "creo surface prototype frame address error")?));
+        ),
+            "creo surface prototype frame address error",
+        )?));
     };
     Ok(bound)
 }
@@ -491,7 +492,9 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let refused = refusal.take_records_checked()?;
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {
-                        push_prototype_loss(ctx, losses,
+                        push_prototype_loss(
+                            ctx,
+                            losses,
                             crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
                             format_args!(
                                 "VisibGeom surface row {} states a spline prototype at offset {} \
@@ -508,12 +511,16 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             }
         };
         let id = crate::identity::compose_checked::<SurfaceId>(
-            ctx, &crate::identity::VISIBGEOM_SURFACE, row.id, "creo decoded model identity",
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            row.id,
+            "creo decoded model identity",
         )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             section.name(),
@@ -532,11 +539,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
-                        format_args!(
-                        "{}:{}",
-                        section.name(),
-                        row.id
-                    ),
+                        format_args!("{}:{}", section.name(), row.id),
                         "creo source object identity",
                     )?,
                     name: None,
@@ -634,8 +637,12 @@ pub(in super::super) fn transfer_positional_spline_replays(
             continue;
         };
         let cache = crate::scalar::ScalarCache::from_section_checked(ctx, payload)?;
-        let Some(replay) =
-            crate::surface::decode_positional_spline_replay(ctx, &parameter.body, &prototype, &cache)?
+        let Some(replay) = crate::surface::decode_positional_spline_replay(
+            ctx,
+            &parameter.body,
+            &prototype,
+            &cache,
+        )?
         else {
             continue;
         };
@@ -652,7 +659,9 @@ pub(in super::super) fn transfer_positional_spline_replays(
         let refused = refusal.take_records_checked()?;
         let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
             if !refused.is_empty() {
-                push_prototype_loss(ctx, losses,
+                push_prototype_loss(
+                    ctx,
+                    losses,
                     crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
                     format_args!(
                         "VisibGeom surface row {} states a positional spline replay at offset {} \
@@ -666,12 +675,16 @@ pub(in super::super) fn transfer_positional_spline_replays(
             continue;
         };
         let id = crate::identity::compose_checked::<SurfaceId>(
-            ctx, &crate::identity::VISIBGEOM_SURFACE, row.id, "creo decoded model identity",
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            row.id,
+            "creo decoded model identity",
         )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             section.name(),
@@ -690,11 +703,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
-                        format_args!(
-                        "{}:{}",
-                        section.name(),
-                        row.id
-                    ),
+                        format_args!("{}:{}", section.name(), row.id),
                         "creo source object identity",
                     )?,
                     name: None,
@@ -747,7 +756,10 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     }
     let carrier_counts = legacy_carrier_counts(
         ctx,
-        scan.surfaces.legacy_carriers.iter().map(|carrier| carrier.surface_id),
+        scan.surfaces
+            .legacy_carriers
+            .iter()
+            .map(|carrier| carrier.surface_id),
     )?;
 
     let mut transferred = 0;
@@ -830,7 +842,9 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 let refused = refusal.take_records_checked()?;
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {
-                        push_prototype_loss(ctx, losses,
+                        push_prototype_loss(
+                            ctx,
+                            losses,
                             crate::loss::CreoLossCode::LegacySurfaceCarrierUnresolved,
                             format_args!(
                                 "{}{} states a legacy spline carrier at offset {} that forms no \
@@ -853,12 +867,16 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
         };
         let id = crate::identity::compose_checked::<SurfaceId>(
-            ctx, namespace, carrier.surface_id, "creo decoded model identity",
+            ctx,
+            namespace,
+            carrier.surface_id,
+            "creo decoded model identity",
         )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "legacy_ascii",
@@ -878,10 +896,10 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
                         format_args!(
-                        "{}{}",
-                        carrier.namespace.source_prefix(),
-                        carrier.surface_id
-                    ),
+                            "{}{}",
+                            carrier.namespace.source_prefix(),
+                            carrier.surface_id
+                        ),
                         "creo source object identity",
                     )?,
                     name: None,

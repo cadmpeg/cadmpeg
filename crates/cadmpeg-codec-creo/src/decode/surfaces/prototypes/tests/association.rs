@@ -80,10 +80,10 @@ fn association_result(limit: u64) -> Result<usize, CodecError> {
 #[test]
 fn prototype_association_vec_refuses_before_growth() {
     assert_eq!(
-        association_result(2).expect("service limit admits association"),
+        association_result(19).expect("service limit admits association"),
         1
     );
-    let error = association_result(0).expect_err("one association needs a vector item");
+    let error = association_result(17).expect_err("one association needs a vector item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -94,7 +94,7 @@ fn prototype_association_vec_refuses_before_growth() {
 
 #[test]
 fn prototype_association_row_count_refuses_before_node_insertion() {
-    let error = association_result(1).expect_err("row count follows association vector");
+    let error = association_result(18).expect_err("row count follows association vector");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)

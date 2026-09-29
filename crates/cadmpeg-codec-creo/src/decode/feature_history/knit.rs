@@ -4,9 +4,7 @@
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use super::axes::model_feature_ids;
-use super::dependencies::{
-    surface_merge_quilt_ids, surface_merge_quilt_state_offset,
-};
+use super::dependencies::{surface_merge_quilt_ids, surface_merge_quilt_state_offset};
 use super::outputs::CommaList;
 use super::round::unique_positive_length;
 use super::selections::feature_result_edge_ids;
@@ -14,6 +12,9 @@ use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::vecmath::dot;
 use crate::vecmath::normalize;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
@@ -21,9 +22,6 @@ use cadmpeg_ir::features::{
     GeneratedFaceRef, PathRef, SurfaceBoundary, SurfaceContinuity, ThickenSide,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-use cadmpeg_core::text::NonBlankString;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_NORMAL_ALIGNMENT: f64 = 1.0e-9;
@@ -43,24 +41,27 @@ pub(in super::super) fn filled_surface_feature_definition(
         Some(definition) => model_sketch_id(ctx, scan, definition)?,
         None => None,
     };
-    let boundary = sketch.filter(|sketch| {
-        ir.model
-            .sketches
-            .iter()
-            .any(|candidate| candidate.id == *sketch)
-    })
-    .map_or(
-        SurfaceBoundary::Edges(EdgeSelection::Unresolved),
-        |sketch| SurfaceBoundary::Path(PathRef::Sketch(sketch)),
-    );
-    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
-        boundary,
-        support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
-            SurfaceContinuity::Contact,
-        ),
-        merge_result: Some(false),
-    }))
+    let boundary = sketch
+        .filter(|sketch| {
+            ir.model
+                .sketches
+                .iter()
+                .any(|candidate| candidate.id == *sketch)
+        })
+        .map_or(
+            SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+            |sketch| SurfaceBoundary::Path(PathRef::Sketch(sketch)),
+        );
+    Ok(IrFeatureDefinition::Operation(
+        IrFeatureOperation::FilledSurface {
+            boundary,
+            support_faces: FaceSelection::Faces(Vec::new()),
+            continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+                SurfaceContinuity::Contact,
+            ),
+            merge_result: Some(false),
+        },
+    ))
 }
 
 pub(in super::super) fn knit_class_100_operand_entity_ids(
@@ -137,8 +138,10 @@ fn knit_operand_entity_ids(
         }
         return Ok(Some((copied, "surface_merge_quilts")));
     }
-    Ok(knit_class_100_operand_entity_ids(ctx, feature_id, &scan.features.entity_tables)?
-        .map(|ids| (ids, "surface_merge_entities")))
+    Ok(
+        knit_class_100_operand_entity_ids(ctx, feature_id, &scan.features.entity_tables)?
+            .map(|ids| (ids, "surface_merge_entities")),
+    )
 }
 
 pub(in super::super) fn knit_operand_surface_ids(
@@ -195,7 +198,8 @@ pub(in super::super) fn knit_operand_surface_ids(
         let Some(surface_id) = surface_id else {
             return Ok(None);
         };
-        let Some(surface) = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id) else {
+        let Some(surface) = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
+        else {
             return Ok(None);
         };
         if surface.feature_id != producer || seen.contains(&surface_id) {
@@ -214,9 +218,13 @@ pub(super) fn knit_surface_feature_definition(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<IrFeatureDefinition, CodecError> {
-    let faces = if let Some((quilt_ids, namespace)) = knit_operand_entity_ids(ctx, scan, feature_id)? {
+    let faces =
+        if let Some((quilt_ids, namespace)) = knit_operand_entity_ids(ctx, scan, feature_id)? {
             let native = ctx.format_retained(
-                format_args!("creo:allfeatur:{namespace}#{feature_id}:{}", CommaList(&quilt_ids)),
+                format_args!(
+                    "creo:allfeatur:{namespace}#{feature_id}:{}",
+                    CommaList(&quilt_ids)
+                ),
                 "creo knit native selection",
             )?;
             let available_features = model_feature_ids(ctx, scan)?;
@@ -227,12 +235,12 @@ pub(super) fn knit_surface_feature_definition(
             )?;
             let generated = match knit_operand_surface_ids(ctx, scan, feature_id, &quilt_ids)? {
                 Some(surface_ids) => generated_surface_face_refs(
-                        ctx,
-                        &surface_ids,
-                        &scan.surfaces.rows,
-                        &result_surface_ids,
-                        &available_features,
-                    )?,
+                    ctx,
+                    &surface_ids,
+                    &scan.surfaces.rows,
+                    &result_surface_ids,
+                    &available_features,
+                )?,
                 None => None,
             };
             match generated {
@@ -240,18 +248,20 @@ pub(super) fn knit_surface_feature_definition(
                     faces,
                     ctx.copy_retained_text(&native, "creo knit generated native selection")?,
                 )
-                    .unwrap_or(FaceSelection::Native(native)),
+                .unwrap_or(FaceSelection::Native(native)),
                 None => FaceSelection::Native(native),
             }
-    } else {
-        FaceSelection::Unresolved
-    };
-    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface {
-        faces,
-        merge_entities: Some(true),
-        create_solid: Some(false),
-        gap_tolerance: None,
-    }))
+        } else {
+            FaceSelection::Unresolved
+        };
+    Ok(IrFeatureDefinition::Operation(
+        IrFeatureOperation::KnitSurface {
+            faces,
+            merge_entities: Some(true),
+            create_solid: Some(false),
+            gap_tolerance: None,
+        },
+    ))
 }
 
 /// Select the neutral plane carried by a Draft feature's class-209 entity.
@@ -397,8 +407,8 @@ pub(in super::super) fn surface_transition_dependencies(
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Result<Vec<u32>, CodecError> {
     let mut dependencies = Vec::new();
-    for (source_id, _) in feature_surface_transitions(ctx, feature_id, tables, surface_rows)?
-        .unwrap_or_default()
+    for (source_id, _) in
+        feature_surface_transitions(ctx, feature_id, tables, surface_rows)?.unwrap_or_default()
     {
         let Some(row) = crate::surface::unique_surface_row(surface_rows, source_id) else {
             continue;
@@ -434,8 +444,7 @@ pub(in super::super) fn thicken_plane_offset(
                 }
             });
             let output_normal = normalize(output.normal)?;
-            (dot(source_normal, output_normal).abs() >= 1.0 - EPS_NORMAL_ALIGNMENT)
-                .then_some(())?;
+            (dot(source_normal, output_normal).abs() >= 1.0 - EPS_NORMAL_ALIGNMENT).then_some(())?;
             let displacement =
                 std::array::from_fn(|index| output.origin[index] - source.origin[index]);
             Some(dot(displacement, source_normal))
@@ -446,11 +455,17 @@ pub(in super::super) fn thicken_plane_offset(
         offsets.push(offset);
     }
     let mut magnitudes = Vec::new();
-    ctx.try_reserve_items(&mut magnitudes, offsets.len(), "creo thicken plane magnitudes")?;
+    ctx.try_reserve_items(
+        &mut magnitudes,
+        offsets.len(),
+        "creo thicken plane magnitudes",
+    )?;
     for offset in &offsets {
         magnitudes.push(offset.abs());
     }
-    let Some(magnitude) = unique_positive_length(&magnitudes).map(|value| value.get()) else {
+    let Some(magnitude) =
+        unique_positive_length(&magnitudes).map(cadmpeg_ir::scalar::PositiveLength::get)
+    else {
         return Ok(None);
     };
     let tolerance = EPS_OFFSET_AGREEMENT * magnitude.max(1.0);
@@ -532,8 +547,9 @@ pub(in super::super) fn feature_result_topology(
     feature_id: u32,
 ) -> Result<Option<FeatureResultTopology>, CodecError> {
     let mut faces = Vec::new();
-    for surface_id in feature_result_surface_ids(ctx, tables, surface_rows, feature_id)?
-        .unwrap_or_default() {
+    for surface_id in
+        feature_result_surface_ids(ctx, tables, surface_rows, feature_id)?.unwrap_or_default()
+    {
         let text = ctx.format_retained(
             format_args!("surface#{surface_id}"),
             "creo feature result face local IDs",
@@ -544,8 +560,7 @@ pub(in super::super) fn feature_result_topology(
         faces.push(id);
     }
     let mut edges = Vec::new();
-    for curve_id in feature_result_edge_ids(ctx, curve_rows, feature_id)?
-        .unwrap_or_default() {
+    for curve_id in feature_result_edge_ids(ctx, curve_rows, feature_id)?.unwrap_or_default() {
         let text = ctx.format_retained(
             format_args!("curve#{curve_id}"),
             "creo feature result edge local IDs",
@@ -576,16 +591,7 @@ pub(in super::super) fn feature_result_topology(
         "creo feature result owner ID",
     )?)
     .map_err(|_| CodecError::Malformed("constructed result owner ID is invalid".into()))?;
-    Ok(FeatureResultTopology::new(
-        id,
-        output_of,
-        Vec::new(),
-        faces,
-        edges,
-        Vec::new(),
-        None,
-    )
-    .ok())
+    Ok(FeatureResultTopology::new(id, output_of, Vec::new(), faces, edges, Vec::new(), None).ok())
 }
 
 pub(in super::super) fn generated_surface_face_refs(
@@ -647,7 +653,8 @@ pub(in super::super) fn emit_feature_result_topologies(
             &scan.surfaces.rows,
             &scan.curves.topology_rows,
             feature_id,
-        )? else {
+        )?
+        else {
             continue;
         };
         ctx.try_reserve_items(

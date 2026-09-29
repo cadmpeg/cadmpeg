@@ -20,12 +20,12 @@ fn run<T>(
     parse(&ctx)
 }
 
-fn item(error: CodecError, operation: &'static str) {
+fn item(error: &CodecError, operation: &'static str) {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
 }
 
-fn retained(error: CodecError, operation: &'static str) {
+fn retained(error: &CodecError, operation: &'static str) {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation));
 }
@@ -57,7 +57,7 @@ fn field_choice(payload: Vec<u8>) -> FeatureChoice {
 fn choice_hit_refuses_before_vec_growth() {
     let row = row();
     item(
-        run(&row.body, 0, u64::MAX, |ctx| {
+        &run(&row.body, 0, u64::MAX, |ctx| {
             super::super::choices(ctx, std::slice::from_ref(&row))
         })
         .expect_err("one recognized label needs a hit item"),
@@ -69,7 +69,7 @@ fn choice_hit_refuses_before_vec_growth() {
 fn choice_label_refuses_before_retained_text_copy() {
     let row = row();
     retained(
-        run(&row.body, 2, 0, |ctx| {
+        &run(&row.body, 2, 0, |ctx| {
             super::super::choices(ctx, std::slice::from_ref(&row))
         })
         .expect_err("choice label needs retained text"),
@@ -81,7 +81,7 @@ fn choice_label_refuses_before_retained_text_copy() {
 fn choice_payload_refuses_before_retained_byte_copy() {
     let row = row();
     retained(
-        run(&row.body, 2, "blend_choice".len() as u64, |ctx| {
+        &run(&row.body, 2, "blend_choice".len() as u64, |ctx| {
             super::super::choices(ctx, std::slice::from_ref(&row))
         })
         .expect_err("choice payload needs retained bytes"),
@@ -101,7 +101,7 @@ fn choice_record_refuses_before_vec_growth() {
         1
     );
     item(
-        run(&row.body, 1, u64::MAX, |ctx| {
+        &run(&row.body, 1, u64::MAX, |ctx| {
             super::super::choices(ctx, std::slice::from_ref(&row))
         })
         .expect_err("choice result needs another item"),
@@ -113,7 +113,7 @@ fn choice_record_refuses_before_vec_growth() {
 fn raw_feature_field_refuses_before_retained_copy() {
     let payload = [0xff, 0x00];
     retained(
-        run(&payload, 0, 0, |ctx| {
+        &run(&payload, 0, 0, |ctx| {
             super::super::field_value(ctx, &payload)
         })
         .expect_err("raw bytes need retained admission"),
@@ -125,7 +125,7 @@ fn raw_feature_field_refuses_before_retained_copy() {
 fn scalar_feature_field_cache_refuses_before_hashset_growth() {
     let payload = [0xf9, 0x01, 0x01, 0x46, 0, 0, 0, 0, 0, 0, 0];
     item(
-        run(&payload, 0, u64::MAX, |ctx| {
+        &run(&payload, 0, u64::MAX, |ctx| {
             super::super::field_value(ctx, &payload)
         })
         .expect_err("scalar image requires a cache item"),
@@ -144,7 +144,7 @@ fn scalar_feature_values_refuse_before_vec_growth() {
         matches!(value, FeatureFieldValue::ScalarArray { decoded_values: Some(values), .. } if values == [0.0])
     );
     item(
-        run(&payload, 0, u64::MAX, |ctx| {
+        &run(&payload, 0, u64::MAX, |ctx| {
             super::super::field_value(ctx, &payload)
         })
         .expect_err("decoded scalar needs one item"),
@@ -156,7 +156,7 @@ fn scalar_feature_values_refuse_before_vec_growth() {
 fn scalar_feature_body_refuses_before_retained_copy() {
     let payload = [0xf9, 0x01, 0x01, 0x0f];
     retained(
-        run(&payload, 1, 0, |ctx| {
+        &run(&payload, 1, 0, |ctx| {
             super::super::field_value(ctx, &payload)
         })
         .expect_err("scalar body needs retained bytes"),
@@ -168,7 +168,7 @@ fn scalar_feature_body_refuses_before_retained_copy() {
 fn compact_feature_integer_refuses_before_vec_growth() {
     let payload = [0xf8, 0x01, 0x07];
     item(
-        run(&payload, 0, u64::MAX, |ctx| {
+        &run(&payload, 0, u64::MAX, |ctx| {
             super::super::field_value(ctx, &payload)
         })
         .expect_err("compact array needs one value item"),
@@ -180,7 +180,7 @@ fn compact_feature_integer_refuses_before_vec_growth() {
 fn choice_field_header_refuses_before_vec_growth() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     item(
-        run(&choice.payload, 0, u64::MAX, |ctx| {
+        &run(&choice.payload, 0, u64::MAX, |ctx| {
             super::super::choice_fields(ctx, std::slice::from_ref(&choice))
         })
         .expect_err("field header needs one item"),
@@ -192,7 +192,7 @@ fn choice_field_header_refuses_before_vec_growth() {
 fn choice_field_label_refuses_before_retained_text_copy() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     retained(
-        run(&choice.payload, 3, 0, |ctx| {
+        &run(&choice.payload, 3, 0, |ctx| {
             super::super::choice_fields(ctx, std::slice::from_ref(&choice))
         })
         .expect_err("copied choice label needs retained bytes"),
@@ -204,7 +204,7 @@ fn choice_field_label_refuses_before_retained_text_copy() {
 fn choice_field_name_refuses_before_retained_text_copy() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     retained(
-        run(&choice.payload, 3, choice.label.len() as u64, |ctx| {
+        &run(&choice.payload, 3, choice.label.len() as u64, |ctx| {
             super::super::choice_fields(ctx, std::slice::from_ref(&choice))
         })
         .expect_err("field name needs retained bytes"),
@@ -224,7 +224,7 @@ fn choice_field_record_refuses_before_vec_growth() {
         1
     );
     item(
-        run(&choice.payload, 2, u64::MAX, |ctx| {
+        &run(&choice.payload, 2, u64::MAX, |ctx| {
             super::super::choice_fields(ctx, std::slice::from_ref(&choice))
         })
         .expect_err("choice field result needs one item"),
@@ -251,7 +251,7 @@ fn named_datum_row() -> FeatureRow {
 fn named_datum_ids_refuse_before_vec_growth() {
     let row = named_datum_row();
     item(
-        run(&row.body, 0, u64::MAX, |ctx| {
+        &run(&row.body, 0, u64::MAX, |ctx| {
             super::super::geometry_tables(ctx, std::slice::from_ref(&row))
         })
         .expect_err("named datum id needs one item"),
@@ -263,7 +263,7 @@ fn named_datum_ids_refuse_before_vec_growth() {
 fn feature_geometry_table_refuses_before_vec_growth() {
     let row = named_datum_row();
     item(
-        run(&row.body, 1, u64::MAX, |ctx| {
+        &run(&row.body, 1, u64::MAX, |ctx| {
             super::super::geometry_tables(ctx, std::slice::from_ref(&row))
         })
         .expect_err("geometry table needs one result item"),
@@ -283,7 +283,7 @@ fn datum_class_stream_refuses_before_btree_insertion() {
         1
     );
     item(
-        run(&row.body, 2, u64::MAX, |ctx| {
+        &run(&row.body, 2, u64::MAX, |ctx| {
             super::super::geometry_tables(ctx, std::slice::from_ref(&row))
         })
         .expect_err("datum stream class needs one node"),
@@ -298,7 +298,7 @@ fn positional_datum_ids_refuse_before_counted_vec_reserve() {
         0xe2, 0x80, 0x92, 0xf6, 0xe3,
     ];
     item(
-        run(&body, 1, u64::MAX, |ctx| {
+        &run(&body, 1, u64::MAX, |ctx| {
             super::super::positional_datum_geometry_table_at(ctx, &body, 1, 87)
                 .transpose()
                 .map(|decoded| decoded.map(|(_, ids)| ids))
@@ -326,7 +326,7 @@ fn affected_row() -> FeatureRow {
 fn affected_ids_refuse_before_counted_vec_reserve() {
     let row = affected_row();
     item(
-        run(&row.body, 0, u64::MAX, |ctx| {
+        &run(&row.body, 0, u64::MAX, |ctx| {
             super::super::affected_ids(ctx, std::slice::from_ref(&row))
         })
         .expect_err("one affected id needs one item"),
@@ -346,7 +346,7 @@ fn affected_id_record_refuses_before_vec_growth() {
         1
     );
     item(
-        run(&row.body, 1, u64::MAX, |ctx| {
+        &run(&row.body, 1, u64::MAX, |ctx| {
             super::super::affected_ids(ctx, std::slice::from_ref(&row))
         })
         .expect_err("affected-id record needs another item"),
@@ -374,7 +374,7 @@ fn round_replay_scalar_refuses_before_vec_growth() {
         1
     );
     item(
-        run(body, 0, u64::MAX, |ctx| {
+        &run(body, 0, u64::MAX, |ctx| {
             super::super::round_replay_scalars(ctx, std::slice::from_ref(&row))
         })
         .expect_err("round scalar needs one item"),
@@ -402,7 +402,7 @@ fn loop_restore_direction_refuses_before_vec_growth() {
         1
     );
     item(
-        run(body, 0, u64::MAX, |ctx| {
+        &run(body, 0, u64::MAX, |ctx| {
             super::super::loop_restore_directions(ctx, std::slice::from_ref(&row))
         })
         .expect_err("restore direction needs one item"),
@@ -431,7 +431,7 @@ fn feature_revolution_extent_refuses_before_vec_growth() {
         1
     );
     item(
-        run(body, 0, u64::MAX, |ctx| {
+        &run(body, 0, u64::MAX, |ctx| {
             super::super::revolution_extents(ctx, std::slice::from_ref(&row))
         })
         .expect_err("revolution extent needs one item"),
@@ -443,7 +443,7 @@ fn feature_revolution_extent_refuses_before_vec_growth() {
 fn replay_id_array_refuses_before_nested_vec_growth() {
     let bytes = [10, 11];
     item(
-        run(&bytes, 1, u64::MAX, |ctx| {
+        &run(&bytes, 1, u64::MAX, |ctx| {
             super::super::replay_ids(ctx, &bytes, 2, 0)
                 .transpose()?
                 .ok_or_else(|| CodecError::malformed("replay ids"))
@@ -469,7 +469,7 @@ fn explicit_replay_array_record_refuses_before_outer_vec_growth() {
         .position(|bytes| bytes == [0xe1, 0xe1])
         .expect("replay suffix");
     item(
-        run(&row.body, 1, u64::MAX, |ctx| {
+        &run(&row.body, 1, u64::MAX, |ctx| {
             super::super::explicit_replay_pair_before_suffix(ctx, &row, suffix)
                 .transpose()?
                 .ok_or_else(|| CodecError::malformed("replay pair"))
@@ -490,7 +490,7 @@ fn explicit_replay_array_record_refuses_before_outer_vec_growth() {
 fn unanchored_replay_candidate_refuses_before_vec_growth() {
     let row = super::unanchored_replay_row(1, 40, None, &[0xf8, 1, 10, 0xf8, 1, 20]);
     item(
-        run(&row.body, 4, u64::MAX, |ctx| {
+        &run(&row.body, 4, u64::MAX, |ctx| {
             super::super::unique_unanchored_replay_pair(ctx, &row, [None; 2])
                 .transpose()?
                 .ok_or_else(|| CodecError::malformed("replay candidate"))
@@ -511,7 +511,7 @@ fn unanchored_replay_candidate_refuses_before_vec_growth() {
 fn replay_extent_state_refuses_before_btree_insertion() {
     let row = super::replay_row(1, &[0xf8, 1, 10, 0xf8, 1, 20]);
     item(
-        run(&row.body, 0, u64::MAX, |ctx| {
+        &run(&row.body, 0, u64::MAX, |ctx| {
             super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
         })
         .expect_err("one extent state needs one item"),
@@ -523,7 +523,7 @@ fn replay_extent_state_refuses_before_btree_insertion() {
 fn replay_affected_record_refuses_before_vec_growth() {
     let row = super::replay_row(1, &[0xf8, 1, 10, 0xf8, 1, 20]);
     item(
-        run(&row.body, 3, u64::MAX, |ctx| {
+        &run(&row.body, 3, u64::MAX, |ctx| {
             super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
         })
         .expect_err("one replay record needs a fourth item"),
@@ -543,7 +543,7 @@ fn replay_affected_record_refuses_before_vec_growth() {
 fn surface_merge_extent_state_refuses_before_btree_insertion() {
     let row = super::surface_merge_row(1, 40, &[]);
     item(
-        run(&row.body, 0, u64::MAX, |ctx| {
+        &run(&row.body, 0, u64::MAX, |ctx| {
             super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
         })
         .expect_err("one surface merge state needs one item"),
@@ -562,7 +562,7 @@ fn surface_merge_nested_arrays_refuse_before_each_vec_growth() {
     );
     for admitted in 0..4 {
         item(
-            run(&row.body, admitted, u64::MAX, |ctx| {
+            &run(&row.body, admitted, u64::MAX, |ctx| {
                 super::super::positional_surface_merge_affected_ids(ctx, &row, [None; 3])
                     .transpose()?
                     .ok_or_else(|| CodecError::malformed("surface merge arrays"))
@@ -589,7 +589,7 @@ fn surface_merge_record_refuses_before_vec_growth() {
         ],
     );
     item(
-        run(&row.body, 5, u64::MAX, |ctx| {
+        &run(&row.body, 5, u64::MAX, |ctx| {
             super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
         })
         .expect_err("one surface merge record needs another item"),
@@ -609,7 +609,7 @@ fn surface_merge_record_refuses_before_vec_growth() {
 fn loop_history_roster_refuses_before_counted_vec_growth() {
     let body = [42, 1, 2, 3, 4, 0xe3];
     item(
-        run(&body, 0, u64::MAX, |ctx| {
+        &run(&body, 0, u64::MAX, |ctx| {
             super::super::loop_history_roster(ctx, &body, 0, 1)
                 .transpose()?
                 .ok_or_else(|| CodecError::malformed("loop history roster"))
@@ -631,7 +631,7 @@ fn loop_history_fields_refuse_before_each_retained_copy() {
     let body = [42, 1, 2, 3, 4, 0xe3];
     for admitted in 0..4 {
         retained(
-            run(&body, 1, admitted, |ctx| {
+            &run(&body, 1, admitted, |ctx| {
                 super::super::loop_history_roster(ctx, &body, 0, 1)
                     .transpose()?
                     .ok_or_else(|| CodecError::malformed("loop history fields"))
@@ -647,7 +647,7 @@ fn loop_history_fields_refuse_before_each_retained_copy() {
 fn loop_history_trailing_field_refuses_before_retained_copy() {
     let body = b"\x2a\x01\x02\x03\x04\x07\xe0\x00next\0";
     retained(
-        run(body, 1, 4, |ctx| {
+        &run(body, 1, 4, |ctx| {
             super::super::loop_history_roster(ctx, body, 0, 1)
                 .transpose()?
                 .ok_or_else(|| CodecError::malformed("loop history trailing field"))
@@ -684,7 +684,7 @@ fn loop_history_result_refuses_before_vec_growth() {
         offset: 1000,
     };
     item(
-        run(body, 1, u64::MAX, |ctx| {
+        &run(body, 1, u64::MAX, |ctx| {
             super::super::loop_history_entries(
                 ctx,
                 std::slice::from_ref(&row),

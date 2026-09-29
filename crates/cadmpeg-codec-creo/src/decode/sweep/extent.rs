@@ -29,19 +29,28 @@ pub(in super::super) struct ExtrusionCarrierSpan {
     pub(in super::super) vector: [f64; 3],
 }
 
+enum SourceSurfaceGeometry<'a> {
+    Missing,
+    Present(&'a SurfaceGeometry),
+}
+
 fn unique_source_surface_geometry<'a>(
     ir: &'a CadIr,
     source_carriers: &'a crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
-) -> Option<Option<&'a SurfaceGeometry>> {
+) -> Option<SourceSurfaceGeometry<'a>> {
     let mut surfaces = ir.model.surfaces.iter().filter(|surface| {
         crate::identity::matches_numbered_identity(
-            surface.id.as_str(), "creo:visibgeom:surface#", surface_id,
+            surface.id.as_str(),
+            "creo:visibgeom:surface#",
+            surface_id,
         )
     });
     let surface = surfaces.next();
     surfaces.next().is_none().then(|| {
-        surface.map(|surface| source_carriers.surface_geometry(surface))
+        surface.map_or(SourceSurfaceGeometry::Missing, |surface| {
+            SourceSurfaceGeometry::Present(source_carriers.surface_geometry(surface))
+        })
     })
 }
 
@@ -240,16 +249,18 @@ mod tests {
     #[test]
     fn nurbs_translation_start_limit_refuses_before_grid_creation() {
         let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                1, vec![0.0, 0.0, 1.0, 1.0], false,
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                1, vec![0.0, 0.0, 1.0, 1.0], false,
-            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![
-                    vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0), cadmpeg_ir::math::Point3::new(0.0, 0.0, 2.0)],
-                    vec![cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0), cadmpeg_ir::math::Point3::new(1.0, 0.0, 2.0)],
+                    vec![
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 2.0),
+                    ],
+                    vec![
+                        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(1.0, 0.0, 2.0),
+                    ],
                 ],
                 None,
             ),
@@ -287,31 +298,38 @@ mod tests {
                 offset: id as usize,
             });
         }
-        scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
-            surface_id: 33,
-            body: Vec::new(),
-            scalar_tokens: Vec::new(),
-            opaque_spans: Vec::new(),
-            scalar_frames: Vec::new(),
-            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
-                crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame::new(
-                        [2.0, 4.0, 0.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0], 1.0, Some(8.0),
-                    )
-                    .expect("valid frame"),
-                    split_bounds: None,
-                },
-            ),
-            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-            offset: 33,
-            body_offset: 34,
-        });
+        scan.surfaces
+            .parameters
+            .push(crate::surface::SurfaceParameterRecord {
+                surface_id: 33,
+                body: Vec::new(),
+                scalar_tokens: Vec::new(),
+                opaque_spans: Vec::new(),
+                scalar_frames: Vec::new(),
+                carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                    crate::surface::InlineSurfaceCarrier::Cylinder {
+                        frame: crate::surface::PositionalCylinderFrame::new(
+                            [2.0, 4.0, 0.0],
+                            [0.0, -1.0, 0.0],
+                            [1.0, 0.0, 0.0],
+                            1.0,
+                            Some(8.0),
+                        )
+                        .expect("valid frame"),
+                        split_bounds: None,
+                    },
+                ),
+                boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+                offset: 33,
+                body_offset: 34,
+            });
         let plane = |id, y, normal| Surface {
-            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
-                .expect("identity grammar"),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, y, 0.0), normal, Vector3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, y, 0.0),
+                    normal,
+                    Vector3::new(1.0, 0.0, 0.0),
                 )
                 .expect("valid plane"),
             )),
@@ -322,8 +340,7 @@ mod tests {
             plane(31, 4.0, Vector3::new(0.0, 1.0, 0.0)),
             plane(32, -4.0, Vector3::new(0.0, -1.0, 0.0)),
             Surface {
-                id: SurfaceId::mint("creo:visibgeom:surface#33")
-                    .expect("identity grammar"),
+                id: SurfaceId::mint("creo:visibgeom:surface#33").expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         Point3::new(2.0, 4.0, 0.0),
@@ -352,21 +369,29 @@ mod tests {
 
     #[test]
     fn bounded_cylinder_cap_plane_limit_refuses() {
-        assert!(matches!(bounded_extent_at_limit(0), Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo bounded cylinder cap planes"));
+        assert!(
+            matches!(bounded_extent_at_limit(0), Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo bounded cylinder cap planes")
+        );
     }
 
     #[test]
     fn bounded_cylinder_frame_limit_refuses() {
-        assert!(matches!(bounded_extent_at_limit(2), Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo bounded cylinder frames"));
+        assert!(
+            matches!(bounded_extent_at_limit(2), Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo bounded cylinder frames")
+        );
     }
 
     #[test]
     fn bounded_cylinder_carrier_limit_refuses() {
-        assert!(matches!(bounded_extent_at_limit(4), Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo bounded cylinder carriers"));
-        assert!(bounded_extent_at_limit(5).expect("admitted extent").is_some());
+        assert!(
+            matches!(bounded_extent_at_limit(4), Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo bounded cylinder carriers")
+        );
+        assert!(bounded_extent_at_limit(5)
+            .expect("admitted extent")
+            .is_some());
     }
 
     fn nurbs_extent_at_limit(
@@ -391,7 +416,10 @@ mod tests {
         .expect("valid translation surface");
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         for (id, kind) in [
-            (31, crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear)),
+            (
+                31,
+                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+            ),
             (32, crate::surface::SurfaceKind::Plane),
         ] {
             scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -440,14 +468,18 @@ mod tests {
 
     #[test]
     fn nurbs_translation_carrier_limit_refuses() {
-        assert!(matches!(nurbs_extent_at_limit(3), Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo NURBS translation carriers"));
+        assert!(
+            matches!(nurbs_extent_at_limit(3), Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo NURBS translation carriers")
+        );
     }
 
     #[test]
     fn nurbs_translation_cap_plane_limit_refuses() {
-        assert!(matches!(nurbs_extent_at_limit(4), Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.operation == "creo NURBS translation cap planes"));
+        assert!(
+            matches!(nurbs_extent_at_limit(4), Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.operation == "creo NURBS translation cap planes")
+        );
         assert!(nurbs_extent_at_limit(5).expect("admitted extent").is_some());
     }
 }
@@ -468,7 +500,12 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
     let mut frames = Vec::new();
     let mut planes = Vec::new();
     let mut saw_row = false;
-    for row in scan.surfaces.rows.iter().filter(|row| row.feature_id == feature_id) {
+    for row in scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+    {
         saw_row = true;
         let kind = match row.kind {
             crate::surface::SurfaceKind::Plane => CylinderExtentSurface::Plane,
@@ -478,75 +515,89 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let Some(source_geometry) = unique_source_surface_geometry(ir, source_carriers, row.id) else {
+        let Some(source_geometry) = unique_source_surface_geometry(ir, source_carriers, row.id)
+        else {
             return Ok(None);
         };
         match kind {
             CylinderExtentSurface::Plane => match source_geometry {
-                None => {
+                SourceSurfaceGeometry::Missing => {
                     if let Some(plane) = local_planes.get(&row.id) {
                         ctx.try_reserve_items(&mut planes, 1, "creo bounded cylinder cap planes")?;
                         planes.push((plane.origin, plane.normal));
                     }
                 }
-                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))) => {
-                    let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, row.id) else {
+                SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Plane(_),
+                )) => {
+                    let Some(plane) =
+                        reconciled_model_plane(&local_planes, ir, source_carriers, row.id)
+                    else {
                         return Ok(None);
                     };
                     ctx.try_reserve_items(&mut planes, 1, "creo bounded cylinder cap planes")?;
                     planes.push((plane.origin, plane.normal));
                 }
-                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) => {
+                SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Unknown { .. },
+                )) => {
                     if let Some(plane) = local_planes.get(&row.id) {
                         ctx.try_reserve_items(&mut planes, 1, "creo bounded cylinder cap planes")?;
                         planes.push((plane.origin, plane.normal));
                     }
                 }
+                SourceSurfaceGeometry::Present(_) => return Ok(None),
+            },
+            CylinderExtentSurface::Carrier => match source_geometry {
+                SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Unknown { .. },
+                )) => {}
+                SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Cylinder(cylinder_surface),
+                )) => {
+                    let origin = cylinder_surface.origin().get();
+                    let axis = *cylinder_surface.frame().axis();
+                    let Some(parameters) =
+                        crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(frame) = parameters.positional_cylinder_frame() else {
+                        return Ok(None);
+                    };
+                    let transferred_origin = [origin.x, origin.y, origin.z];
+                    let transferred_axis = unit_length(axis);
+                    let frame_axis = unit_length(*frame.frame().orthonormal_frame().axis());
+                    let scale = transferred_origin
+                        .into_iter()
+                        .chain(frame.frame().origin())
+                        .map(f64::abs)
+                        .fold(1.0, f64::max);
+                    if !(transferred_origin
+                        .into_iter()
+                        .zip(frame.frame().origin())
+                        .all(|(left, right)| {
+                            (left - right).abs() <= EPS_SWEEP_EXTENT_GEOMETRY * scale
+                        })
+                        && transferred_axis
+                            .into_iter()
+                            .zip(frame_axis)
+                            .all(|(left, right)| {
+                                (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE
+                            }))
+                    {
+                        return Ok(None);
+                    }
+                    ctx.try_reserve_items(&mut frames, 1, "creo bounded cylinder frames")?;
+                    frames.push(frame);
+                }
                 _ => return Ok(None),
             },
-            CylinderExtentSurface::Carrier => {
-                match source_geometry {
-                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) => {}
-                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                        cylinder_surface,
-                    ))) => {
-                        let origin = cylinder_surface.origin().get();
-                        let axis = *cylinder_surface.frame().axis();
-                        let Some(parameters) = crate::surface::unique_surface_parameter(
-                            &scan.surfaces.parameters,
-                            row.id,
-                        ) else { return Ok(None) };
-                        let Some(frame) = parameters.positional_cylinder_frame() else {
-                            return Ok(None);
-                        };
-                        let transferred_origin = [origin.x, origin.y, origin.z];
-                        let transferred_axis = unit_length(axis);
-                        let frame_axis = unit_length(*frame.frame().orthonormal_frame().axis());
-                        let scale = transferred_origin
-                            .into_iter()
-                            .chain(frame.frame().origin())
-                            .map(f64::abs)
-                            .fold(1.0, f64::max);
-                        if !(transferred_origin
-                            .into_iter()
-                            .zip(frame.frame().origin())
-                            .all(|(left, right)| {
-                                (left - right).abs() <= EPS_SWEEP_EXTENT_GEOMETRY * scale
-                            })
-                            && transferred_axis.into_iter().zip(frame_axis).all(
-                                |(left, right)| (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE,
-                            )) {
-                            return Ok(None);
-                        }
-                        ctx.try_reserve_items(&mut frames, 1, "creo bounded cylinder frames")?;
-                        frames.push(frame);
-                    }
-                    _ => return Ok(None),
-                }
-            }
         }
     }
-    if !saw_row { return Ok(None); }
+    if !saw_row {
+        return Ok(None);
+    }
     let mut carriers = Vec::new();
     for frame in frames {
         let Some(span) = bounded_cylinder_span(ctx, frame, &planes)? else {
@@ -566,49 +617,48 @@ pub(in super::super) fn bounded_cylinder_span(
     let axis = unit_length(*frame.frame().orthonormal_frame().axis());
     let vector = (|| -> Option<[f64; 3]> {
         let vector = match frame.length() {
-        Some(length) => axis.map(|component| component * length.get()),
-        None => {
-            let scale = planes
-                .iter()
-                .flat_map(|(origin, _)| *origin)
-                .chain(frame.frame().origin())
-                .map(f64::abs)
-                .fold(1.0, f64::max);
-            let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * scale;
-            let start_station = dot(frame.frame().origin(), axis);
-            let mut terminal_offset: Option<f64> = None;
-            for (origin, normal) in planes {
-                let normal = normalize(*normal)?;
-                let alignment = dot(normal, axis).abs();
-                if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
-                    let offset = dot(*origin, axis) - start_station;
-                    if offset.abs() > tolerance {
-                        if let Some(existing) = terminal_offset {
-                            if (offset - existing).abs() > tolerance {
-                                return None;
+            Some(length) => axis.map(|component| component * length.get()),
+            None => {
+                let scale = planes
+                    .iter()
+                    .flat_map(|(origin, _)| *origin)
+                    .chain(frame.frame().origin())
+                    .map(f64::abs)
+                    .fold(1.0, f64::max);
+                let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * scale;
+                let start_station = dot(frame.frame().origin(), axis);
+                let mut terminal_offset: Option<f64> = None;
+                for (origin, normal) in planes {
+                    let normal = normalize(*normal)?;
+                    let alignment = dot(normal, axis).abs();
+                    if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
+                        let offset = dot(*origin, axis) - start_station;
+                        if offset.abs() > tolerance {
+                            if let Some(existing) = terminal_offset {
+                                if (offset - existing).abs() > tolerance {
+                                    return None;
+                                }
+                            } else {
+                                terminal_offset = Some(offset);
                             }
-                        } else {
-                            terminal_offset = Some(offset);
                         }
+                    } else if alignment > EPS_SWEEP_EXTENT_DEGENERATE {
+                        return None;
                     }
-                } else if alignment > EPS_SWEEP_EXTENT_DEGENERATE {
-                    return None;
                 }
+                let offset = terminal_offset?;
+                axis.map(|component| component * offset)
             }
-            let offset = terminal_offset?;
-            axis.map(|component| component * offset)
-        }
         };
         Some(vector)
     })();
-    let Some(vector) = vector else { return Ok(None) };
+    let Some(vector) = vector else {
+        return Ok(None);
+    };
     let mut starts = Vec::new();
     ctx.try_reserve_items(&mut starts, 1, "creo bounded cylinder starts")?;
     starts.push(frame.frame().origin());
-    Ok(Some(ExtrusionCarrierSpan {
-        starts,
-        vector,
-    }))
+    Ok(Some(ExtrusionCarrierSpan { starts, vector }))
 }
 
 fn nurbs_translation_candidate(
@@ -634,7 +684,13 @@ fn nurbs_translation_candidate(
     let [first, second, third, fourth] = knots.as_slice() else {
         return Ok(None);
     };
-    if !(degree == 1 && count == 2 && !periodic && first == second && third == fourth && first < third) {
+    if !(degree == 1
+        && count == 2
+        && !periodic
+        && first == second
+        && third == fourth
+        && first < third)
+    {
         return Ok(None);
     }
     let u_count = nurbs.u_count();
@@ -649,16 +705,23 @@ fn nurbs_translation_candidate(
         } else {
             ((0, index), (1, index))
         };
-        let Some(start) = nurbs.pole(start_index.0, start_index.1) else { return Ok(None) };
-        let Some(end) = nurbs.pole(end_index.0, end_index.1) else { return Ok(None) };
+        let Some(start) = nurbs.pole(start_index.0, start_index.1) else {
+            return Ok(None);
+        };
+        let Some(end) = nurbs.pole(end_index.0, end_index.1) else {
+            return Ok(None);
+        };
         let start = [start.x, start.y, start.z];
         let end = [end.x, end.y, end.z];
         if let Some(start_weight) = nurbs.weight(start_index.0, start_index.1) {
             let start_weight = start_weight.get();
-            let Some(end_weight) = nurbs.weight(end_index.0, end_index.1) else { return Ok(None) };
+            let Some(end_weight) = nurbs.weight(end_index.0, end_index.1) else {
+                return Ok(None);
+            };
             let end_weight = end_weight.get();
             if (start_weight - end_weight).abs()
-                > EPS_SWEEP_EXTENT_DEGENERATE * start_weight.abs().max(end_weight.abs()).max(1.0) {
+                > EPS_SWEEP_EXTENT_DEGENERATE * start_weight.abs().max(end_weight.abs()).max(1.0)
+            {
                 return Ok(None);
             }
         }
@@ -673,16 +736,15 @@ fn nurbs_translation_candidate(
                 .into_iter()
                 .zip(reference)
                 .all(|(left, right)| (left - right).abs() <= EPS_SWEEP_EXTENT_GEOMETRY * scale)
-            { return Ok(None); }
+            {
+                return Ok(None);
+            }
         } else {
             vector = Some(candidate);
         }
         starts.push(start);
     }
-    Ok(vector.map(|vector| ExtrusionCarrierSpan {
-        starts,
-        vector,
-    }))
+    Ok(vector.map(|vector| ExtrusionCarrierSpan { starts, vector }))
 }
 
 pub(in super::super) fn nurbs_translation_span(
@@ -713,7 +775,12 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     let mut planes = Vec::new();
     let local_planes = placed_planes(ctx, scan)?;
     let mut saw_row = false;
-    for row in scan.surfaces.rows.iter().filter(|row| row.feature_id == feature_id) {
+    for row in scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+    {
         saw_row = true;
         let kind = match row.kind {
             crate::surface::SurfaceKind::Plane => TranslationExtentSurface::Plane,
@@ -723,22 +790,26 @@ pub(in super::super) fn generated_nurbs_translation_extent(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let Some(source_geometry) = unique_source_surface_geometry(ir, source_carriers, row.id) else {
+        let Some(source_geometry) = unique_source_surface_geometry(ir, source_carriers, row.id)
+        else {
             return Ok(None);
         };
         match kind {
             TranslationExtentSurface::Plane => {
                 let plane = match source_geometry {
-                    None | Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) => {
-                        local_planes.get(&row.id).copied()
-                    }
-                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))) => Some(
+                    SourceSurfaceGeometry::Missing
+                    | SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
+                        SolvedSurfaceGeometry::Unknown { .. },
+                    )) => local_planes.get(&row.id).copied(),
+                    SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
+                        SolvedSurfaceGeometry::Plane(_),
+                    )) => Some(
                         match reconciled_model_plane(&local_planes, ir, source_carriers, row.id) {
                             Some(plane) => plane,
                             None => return Ok(None),
                         },
                     ),
-                    _ => return Ok(None),
+                    SourceSurfaceGeometry::Present(_) => return Ok(None),
                 };
                 if let Some(plane) = plane {
                     ctx.try_reserve_items(&mut planes, 1, "creo NURBS translation cap planes")?;
@@ -746,18 +817,26 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                 }
             }
             TranslationExtentSurface::Carrier => match source_geometry {
-                None => {}
-                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))) => {
-                    let Some(span) = nurbs_translation_span(ctx, nurbs)? else { return Ok(None) };
+                SourceSurfaceGeometry::Missing => {}
+                SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Nurbs(nurbs),
+                )) => {
+                    let Some(span) = nurbs_translation_span(ctx, nurbs)? else {
+                        return Ok(None);
+                    };
                     ctx.try_reserve_items(&mut carriers, 1, "creo NURBS translation carriers")?;
                     carriers.push(span);
                 }
-                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) => {}
-                _ => return Ok(None),
+                SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Unknown { .. },
+                )) => {}
+                SourceSurfaceGeometry::Present(_) => return Ok(None),
             },
         }
     }
-    if !saw_row { return Ok(None); }
+    if !saw_row {
+        return Ok(None);
+    }
     Ok(blind_extrusion_from_carriers(&carriers, &planes, transform))
 }
 
@@ -799,11 +878,7 @@ fn unit_plane(normal: cadmpeg_ir::units::UnitVector3, origin: [f64; 3]) -> Optio
 }
 
 fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence {
-    let mut datums = scan
-        .planes
-        .datums
-        .iter()
-        .filter(|datum| datum.id == id);
+    let mut datums = scan.planes.datums.iter().filter(|datum| datum.id == id);
     let datum = datums.next();
     let duplicate_datums = datums.next().is_some();
     let mut model_planes = scan
@@ -830,26 +905,30 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
         .iter()
         .any(|plane| plane.surface_id == id);
     let (outline_equation, duplicate_outline_planes) = if has_outline {
-        let mut planes = scan.planes
+        let mut planes = scan
+            .planes
             .outlines
             .iter()
             .filter(|plane| plane.surface_id == id);
         let first = planes.next();
         let duplicate = planes.next().is_some();
         (
-            first.filter(|_| !duplicate)
+            first
+                .filter(|_| !duplicate)
                 .and_then(|plane| unit_plane(plane.normal, plane.origin)),
             duplicate,
         )
     } else {
-        let mut planes = scan.planes
+        let mut planes = scan
+            .planes
             .positional_frames
             .iter()
             .filter(|plane| plane.surface_id == id);
         let first = planes.next();
         let duplicate = planes.next().is_some();
         (
-            first.filter(|_| !duplicate)
+            first
+                .filter(|_| !duplicate)
                 .and_then(|plane| unit_plane(plane.normal, plane.origin)),
             duplicate,
         )
@@ -944,22 +1023,34 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     feature_id: u32,
     section: Option<&crate::feature::definitions::FeatureSection3d>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
-    let Some(section) = section else { return Ok(None) };
-    let Some(section_plane_id) = section.sketch_plane_entity_id else { return Ok(None) };
-    let Some(sketch_plane_flip) = section.sketch_plane_flip else { return Ok(None) };
+    let Some(section) = section else {
+        return Ok(None);
+    };
+    let Some(section_plane_id) = section.sketch_plane_entity_id else {
+        return Ok(None);
+    };
+    let Some(sketch_plane_flip) = section.sketch_plane_flip else {
+        return Ok(None);
+    };
     let plane_flip = match sketch_plane_flip {
         crate::feature::definitions::BinaryFlag::Clear => false,
         crate::feature::definitions::BinaryFlag::Set => true,
     };
-    let Some(orientation_flip) = section.orientation.section_flip else { return Ok(None) };
+    let Some(orientation_flip) = section.orientation.section_flip else {
+        return Ok(None);
+    };
     let section_flip = match orientation_flip {
         crate::feature::definitions::BinaryFlag::Clear => false,
         crate::feature::definitions::BinaryFlag::Set => true,
     };
     let start_reversed = plane_flip ^ section_flip;
-    let rows = || scan.surfaces.rows.iter().filter(|row| row.feature_id == feature_id);
-    if rows().count() < 4
-        || !rows().all(|row| row.kind == crate::surface::SurfaceKind::Plane) {
+    let rows = || {
+        scan.surfaces
+            .rows
+            .iter()
+            .filter(|row| row.feature_id == feature_id)
+    };
+    if rows().count() < 4 || !rows().all(|row| row.kind == crate::surface::SurfaceKind::Plane) {
         return Ok(None);
     }
 
@@ -969,7 +1060,9 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let Some(Some(source_geometry)) = unique_source_surface_geometry(ir, source_carriers, row.id) else {
+        let Some(SourceSurfaceGeometry::Present(source_geometry)) =
+            unique_source_surface_geometry(ir, source_carriers, row.id)
+        else {
             return Ok(None);
         };
         let plane = match source_geometry {
@@ -977,7 +1070,9 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
                 local_planes.get(&row.id).copied()
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-                let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, row.id) else {
+                let Some(plane) =
+                    reconciled_model_plane(&local_planes, ir, source_carriers, row.id)
+                else {
                     return Ok(None);
                 };
                 Some(plane)
@@ -990,7 +1085,9 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         let Some(plane) = canonical_plane(PlaneEquation {
             origin: plane.origin,
             normal: plane.normal,
-        }) else { return Ok(None) };
+        }) else {
+            return Ok(None);
+        };
         ctx.try_reserve_items(&mut planes, 1, "creo rectilinear cap planes")?;
         planes.push((plane, row.reversed));
     }
@@ -1018,7 +1115,9 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
                 .iter()
                 .find(|known| (station.get() - known.coordinate.get()).abs() <= station_tolerance)
             {
-                if known.reversed != reversed { return Ok(None); }
+                if known.reversed != reversed {
+                    return Ok(None);
+                }
             } else {
                 ctx.try_reserve_items(&mut family.stations, 1, "creo rectilinear stations")?;
                 family.stations.push(RectilinearPlaneStation {
@@ -1030,7 +1129,9 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             if !families
                 .iter()
                 .all(|family| dot(family.normal, plane.normal).abs() <= EPS_SWEEP_EXTENT_DEGENERATE)
-            { return Ok(None); }
+            {
+                return Ok(None);
+            }
             let mut stations = Vec::new();
             ctx.try_reserve_items(&mut stations, 1, "creo rectilinear stations")?;
             stations.push(RectilinearPlaneStation {
@@ -1049,7 +1150,10 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .iter()
             .filter(|family| family.stations.len() >= 2)
             .count()
-            >= 2) { return Ok(None); }
+            >= 2)
+    {
+        return Ok(None);
+    }
 
     match section_plane_evidence(scan, section_plane_id) {
         SectionPlaneEvidence::Ambiguous => return Ok(None),
@@ -1061,13 +1165,15 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             if section_flip {
                 section_normal = section_normal.map(|component| -component);
             }
-            let mut axial_families = families
-                .iter()
-                .filter(|family| {
-                    dot(section_normal, family.normal).abs() >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE
-                });
-            let Some(family) = axial_families.next() else { return Ok(None) };
-            if axial_families.next().is_some() { return Ok(None); }
+            let mut axial_families = families.iter().filter(|family| {
+                dot(section_normal, family.normal).abs() >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE
+            });
+            let Some(family) = axial_families.next() else {
+                return Ok(None);
+            };
+            if axial_families.next().is_some() {
+                return Ok(None);
+            }
             return Ok(rectilinear_extent_from_section_plane(
                 family,
                 section_plane.origin,
@@ -1084,10 +1190,18 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             rectilinear_family_extent(family, start_reversed, station_tolerance)?;
         Some((direction.map(|component| component * length), length))
     });
-    let Some((vector, length)) = candidates.next() else { return Ok(None) };
-    if candidates.next().is_some() { return Ok(None); }
-    let Some(direction) = normalize(vector) else { return Ok(None) };
-    let Some(length) = cadmpeg_ir::scalar::NonZeroLength::new(length) else { return Ok(None) };
+    let Some((vector, length)) = candidates.next() else {
+        return Ok(None);
+    };
+    if candidates.next().is_some() {
+        return Ok(None);
+    }
+    let Some(direction) = normalize(vector) else {
+        return Ok(None);
+    };
+    let Some(length) = cadmpeg_ir::scalar::NonZeroLength::new(length) else {
+        return Ok(None);
+    };
     Ok(Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
@@ -1159,11 +1273,21 @@ pub(in super::super) fn resolved_feature_extrusion_span(
     let Some(feature_id) = feature_id_for_section_transform(definition, transform) else {
         return Ok(None);
     };
-    let mut span = generated_arc_cylinder_extent(ctx, scan, ir, source_carriers, definition, transform)?
-        .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction));
+    let mut span =
+        generated_arc_cylinder_extent(ctx, scan, ir, source_carriers, definition, transform)?
+            .and_then(|(extent, direction)| {
+                derived_blind_extrusion_span(transform, &extent, direction)
+            });
     if span.is_none() {
-        span = feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?
-            .and_then(|planes| extrusion_span(transform.origin(), transform.normal(), planes));
+        span = feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?.and_then(
+            |planes| {
+                extrusion_span(
+                    transform.origin(),
+                    transform.normal(),
+                    planes.into_iter().map(|plane| (plane.origin, plane.normal)),
+                )
+            },
+        );
     }
     if span.is_none() {
         span = generated_cap_plane_extent(ctx, scan, ir, source_carriers, feature_id)?.and_then(
@@ -1172,15 +1296,29 @@ pub(in super::super) fn resolved_feature_extrusion_span(
     }
     if span.is_none() {
         span = generated_bounded_cylinder_extent(
-            ctx, scan, ir, source_carriers, feature_id, Some(transform),
+            ctx,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            Some(transform),
         )?
-        .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction));
+        .and_then(|(extent, direction)| {
+            derived_blind_extrusion_span(transform, &extent, direction)
+        });
     }
     if span.is_none() {
         span = generated_nurbs_translation_extent(
-            ctx, scan, ir, source_carriers, feature_id, Some(transform),
+            ctx,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            Some(transform),
         )?
-        .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction));
+        .and_then(|(extent, direction)| {
+            derived_blind_extrusion_span(transform, &extent, direction)
+        });
     }
     Ok(span)
 }

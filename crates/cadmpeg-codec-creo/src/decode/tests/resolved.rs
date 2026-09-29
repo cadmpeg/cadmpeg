@@ -28,9 +28,18 @@ fn section_linear_distance_coordinate(
     saved_segment_points: &[(u32, [f64; 2])],
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Option<crate::decode::sketch::axis::SectionAxis> {
-    crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch::coordinates::section_linear_distance_coordinate(
-        ctx, definition, segments, first, second, coordinates, saved_segment_points, ambiguous_point_ids,
-    )).expect("test linear distance coordinate")
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::sketch::coordinates::section_linear_distance_coordinate(
+            ctx,
+            definition,
+            segments,
+            [first, second],
+            coordinates,
+            saved_segment_points,
+            ambiguous_point_ids,
+        )
+    })
+    .expect("test linear distance coordinate")
 }
 
 #[test]

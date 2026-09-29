@@ -99,7 +99,12 @@ fn withholds_parameters_for_points_off_the_line() {
 fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
     let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
     let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
 
     let nurbs = nurbs_curve(
         2,
@@ -113,11 +118,21 @@ fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
         false,
     );
     assert_eq!(
-        nonperiodic_nurbs_edge_parameter_range(&evaluation_ctx, &nurbs, [[9.0, 8.0, 3.0], [1.0, 2.0, 3.0]],).expect("evaluation resources"),
+        nonperiodic_nurbs_edge_parameter_range(
+            &evaluation_ctx,
+            &nurbs,
+            [[9.0, 8.0, 3.0], [1.0, 2.0, 3.0]],
+        )
+        .expect("evaluation resources"),
         Some([2.0, 5.0])
     );
     assert_eq!(
-        nonperiodic_nurbs_edge_parameter_range(&evaluation_ctx, &nurbs, [[9.0, 8.0, 3.0], [1.0, 2.1, 3.0]],).expect("evaluation resources"),
+        nonperiodic_nurbs_edge_parameter_range(
+            &evaluation_ctx,
+            &nurbs,
+            [[9.0, 8.0, 3.0], [1.0, 2.1, 3.0]],
+        )
+        .expect("evaluation resources"),
         None
     );
 }
@@ -126,7 +141,12 @@ fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
 fn orients_reversed_nonperiodic_nurbs_edges_with_increasing_ranges() {
     let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
     let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
 
     let mut nurbs = nurbs_curve(
         1,
@@ -137,7 +157,12 @@ fn orients_reversed_nonperiodic_nurbs_edges_with_increasing_ranges() {
     );
 
     assert_eq!(
-        orient_nonperiodic_nurbs_edge_carrier(&evaluation_ctx, &mut nurbs, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],).expect("evaluation resources"),
+        orient_nonperiodic_nurbs_edge_carrier(
+            &evaluation_ctx,
+            &mut nurbs,
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        )
+        .expect("evaluation resources"),
         Some([0.0, 1.0])
     );
     assert_eq!(evaluated(&nurbs, 0.0), [0.0, 0.0, 0.0]);
@@ -152,7 +177,12 @@ fn orients_reversed_nonperiodic_nurbs_edges_with_increasing_ranges() {
 fn degree_one_nurbs_recovers_unique_bounded_parameters() {
     let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
     let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
 
     let nurbs = nurbs_curve(
         1,
@@ -166,11 +196,21 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
         false,
     );
     assert_eq!(
-        nonperiodic_nurbs_edge_parameter_range(&evaluation_ctx, &nurbs, [[3.0, 3.0, 0.0], [1.0, 0.0, 0.0]],).expect("evaluation resources"),
+        nonperiodic_nurbs_edge_parameter_range(
+            &evaluation_ctx,
+            &nurbs,
+            [[3.0, 3.0, 0.0], [1.0, 0.0, 0.0]],
+        )
+        .expect("evaluation resources"),
         Some([3.5, 7.0])
     );
     assert_eq!(
-        nonperiodic_nurbs_edge_parameter_range(&evaluation_ctx, &nurbs, [[3.0, 3.0, 0.0], [1.0, 0.1, 0.0]],).expect("evaluation resources"),
+        nonperiodic_nurbs_edge_parameter_range(
+            &evaluation_ctx,
+            &nurbs,
+            [[3.0, 3.0, 0.0], [1.0, 0.1, 0.0]],
+        )
+        .expect("evaluation resources"),
         None
     );
 
@@ -185,10 +225,12 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
         false,
     );
     assert_eq!(
-        nonperiodic_nurbs_edge_parameter_range(&evaluation_ctx,
+        nonperiodic_nurbs_edge_parameter_range(
+            &evaluation_ctx,
             &translated,
             [[100_000_001.0, 0.01, 0.0], [100_000_003.0, 0.0, 0.0]],
-        ).expect("evaluation resources"),
+        )
+        .expect("evaluation resources"),
         None
     );
 
@@ -204,10 +246,12 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
         false,
     );
     assert_eq!(
-        nonperiodic_nurbs_edge_parameter_range(&evaluation_ctx,
+        nonperiodic_nurbs_edge_parameter_range(
+            &evaluation_ctx,
             &self_intersecting,
             [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
-        ).expect("evaluation resources"),
+        )
+        .expect("evaluation resources"),
         None
     );
 
@@ -224,7 +268,12 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
         false,
     );
     assert_eq!(
-        nonperiodic_nurbs_edge_parameter_range(&evaluation_ctx, &constant_span, [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],).expect("evaluation resources"),
+        nonperiodic_nurbs_edge_parameter_range(
+            &evaluation_ctx,
+            &constant_span,
+            [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        )
+        .expect("evaluation resources"),
         None
     );
 }
@@ -233,7 +282,12 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
 fn periodic_nurbs_does_not_imply_a_full_edge_trim() {
     let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
     let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
 
     let nurbs = nurbs_curve(
         1,
@@ -243,7 +297,12 @@ fn periodic_nurbs_does_not_imply_a_full_edge_trim() {
         true,
     );
     assert_eq!(
-        nonperiodic_nurbs_edge_parameter_range(&evaluation_ctx, &nurbs, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],).expect("evaluation resources"),
+        nonperiodic_nurbs_edge_parameter_range(
+            &evaluation_ctx,
+            &nurbs,
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        )
+        .expect("evaluation resources"),
         None
     );
 
@@ -260,11 +319,13 @@ fn periodic_nurbs_does_not_imply_a_full_edge_trim() {
         true,
     );
     assert_eq!(
-        full_periodic_nurbs_edge_parameter_range(&evaluation_ctx, &closed, [1.0, 0.0, 0.0]).expect("evaluation resources"),
+        full_periodic_nurbs_edge_parameter_range(&evaluation_ctx, &closed, [1.0, 0.0, 0.0])
+            .expect("evaluation resources"),
         Some([2.0, 9.0])
     );
     assert_eq!(
-        full_periodic_nurbs_edge_parameter_range(&evaluation_ctx, &closed, [0.0, 1.0, 0.0]).expect("evaluation resources"),
+        full_periodic_nurbs_edge_parameter_range(&evaluation_ctx, &closed, [0.0, 1.0, 0.0])
+            .expect("evaluation resources"),
         None
     );
 }
@@ -418,7 +479,12 @@ fn solved_endpoints_select_one_hyperbola_branch() {
 fn surface_pcurve_midpoint_retains_periodic_path() {
     let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
     let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
 
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -429,11 +495,13 @@ fn surface_pcurve_midpoint_retains_periodic_path() {
         )
         .expect("valid CylinderSurface fixture"),
     ));
-    let midpoint = native_pcurve_midpoint(&evaluation_ctx,
+    let midpoint = native_pcurve_midpoint(
+        &evaluation_ctx,
         &cylinder,
         [[0.0, 0.0], [-3.0 * std::f64::consts::FRAC_PI_2, 0.0]],
         [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
-    ).expect("evaluation resources")
+    )
+    .expect("evaluation resources")
     .expect("periodic midpoint");
     assert!((midpoint[0] + std::f64::consts::SQRT_2).abs() <= 1.0e-12);
     assert!((midpoint[1] + std::f64::consts::SQRT_2).abs() <= 1.0e-12);
@@ -443,7 +511,12 @@ fn surface_pcurve_midpoint_retains_periodic_path() {
 fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
     let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
     let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
 
     let surface_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -473,15 +546,16 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
         vec![([[0.0, 0.0], [std::f64::consts::FRAC_PI_2, 0.0]], 20)],
     );
     assert_eq!(
-        pcurve_backed_periodic_conic_parameter_range(&evaluation_ctx,
+        pcurve_backed_periodic_conic_parameter_range(
+            &evaluation_ctx,
             &circle(),
-            7,
-            [10, 11],
+            (7, [10, 11]),
             &candidates,
             &surfaces,
             points,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ).expect("evaluation resources"),
+        )
+        .expect("evaluation resources"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
 
@@ -490,15 +564,16 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
         vec![([[0.0, 0.0], [-3.0 * std::f64::consts::FRAC_PI_2, 0.0]], 20)],
     );
     assert_eq!(
-        pcurve_backed_periodic_conic_parameter_range(&evaluation_ctx,
+        pcurve_backed_periodic_conic_parameter_range(
+            &evaluation_ctx,
             &circle(),
-            7,
-            [10, 11],
+            (7, [10, 11]),
             &candidates,
             &surfaces,
             points,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ).expect("evaluation resources"),
+        )
+        .expect("evaluation resources"),
         None
     );
 }

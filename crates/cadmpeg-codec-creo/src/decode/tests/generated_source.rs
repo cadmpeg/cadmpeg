@@ -1,53 +1,52 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: generated source.
 
+use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
+use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
 use super::{simple_drilled_recipe_surface_rows, simple_drilled_recipe_table, surface_row};
 use crate::decode::analytic::carriers::rowless_round_face_orientations;
 use crate::decode::feature_history::draft::schema_feature_definition;
-use crate::decode::feature_history::link::{
-    analytic_surface_id_for_feature, generated_surface_id_for_feature,
-    ordered_analytic_surface_id_for_feature, ordered_family_surface_bindings_for_feature,
-    section_entity_is_generated_profile, section_generated_profile_surface_kinds,
-};
-use crate::decode::holes::counterbore::{
-    counterbore_axis_placement_from_sources, counterbore_cylinder_sources,
-    counterbore_dimension_tuple_matches_radius, counterbore_dimension_values,
-    counterbore_directed_span, counterbore_envelope_dimension_values,
-    counterbore_placement_from_corner_envelopes, counterbore_source_patch_geometries,
-    counterbore_support_axis_placement, counterbore_unenveloped_dimension_values,
-};
-use crate::decode::holes::drilled::{
-    clipped_drilled_hole_placement_from_cone_points, dimension_pair_matches_envelope_spans,
-    drilled_hole_placement_from_corner_envelopes, paired_corner_envelope_axis_spans,
-    simple_drilled_axis_placement_from_frames, simple_drilled_hole_dimension_values,
-    simple_drilled_hole_recipe, stepped_hole_form, SimpleDrilledDimensionFamily,
-};
-use crate::decode::holes::placement::ExtrusionSpan;
+use crate::decode::feature_history::link::{analytic_surface_id_for_feature, generated_surface_id_for_feature, ordered_analytic_surface_id_for_feature, ordered_family_surface_bindings_for_feature, section_entity_is_generated_profile, section_generated_profile_surface_kinds};
+use crate::decode::holes::counterbore::{counterbore_axis_placement_from_sources, counterbore_cylinder_sources, counterbore_dimension_tuple_matches_radius, counterbore_dimension_values, counterbore_directed_span, counterbore_envelope_dimension_values, counterbore_placement_from_corner_envelopes, counterbore_source_patch_geometries, counterbore_support_axis_placement, counterbore_unenveloped_dimension_values};
+use crate::decode::holes::drilled::{clipped_drilled_hole_placement_from_cone_points, dimension_pair_matches_envelope_spans, drilled_hole_placement_from_corner_envelopes, paired_corner_envelope_axis_spans, simple_drilled_axis_placement_from_frames, simple_drilled_hole_dimension_values, simple_drilled_hole_recipe, stepped_hole_form, SimpleDrilledDimensionFamily};
 use crate::decode::sketch::equations_coordinate::approximately_equal;
 use crate::decode::surfaces::cylinders::rowless_round_cylinder_pairs;
-use crate::decode::sweep::nurbs::extruded_nurbs_surface;
-use crate::decode::sweep::profiles::ProfileEntity;
-use crate::decode::sweep::profiles::{
-    circular_pcurve, extrusion_cap_pcurve, extrusion_profile_signed_area, extrusion_side_uvs,
-    ordered_extrusion_profiles, oriented_arc_parameterization, oriented_full_turn_angles,
-    point_on_profile_arc, profile_arc, resolved_sketch_profiles,
-};
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    holes::{HoleForm, HoleKind},
-    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
-    LinearTermination,
-};
-use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::features::holes::{HoleForm, HoleKind};
+use cadmpeg_ir::features::LinearTermination;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
-use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-    SketchGeometryDefinition, SketchId,
-};
+use cadmpeg_ir::scalar::{FiniteReal, Length, PositiveLength, Angle};
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
+use crate::decode::holes::placement::ExtrusionSpan;
+use crate::decode::sweep::nurbs::extruded_nurbs_surface;
+use crate::decode::sweep::profiles::{circular_pcurve, extrusion_cap_pcurve, extrusion_profile_signed_area, extrusion_side_uvs, ordered_extrusion_profiles, oriented_arc_parameterization, oriented_full_turn_angles, point_on_profile_arc, profile_arc, resolved_sketch_profiles, ProfileEntity};
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
 
@@ -55,10 +54,8 @@ fn service_counterbore_cylinder_sources(
     scan: &crate::container::ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<Vec<Vec<u32>>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        counterbore_cylinder_sources(ctx, scan, feature_id)
-    })
-    .expect("service resources")
+    crate::decode::with_test_decode_ctx(|ctx| counterbore_cylinder_sources(ctx, scan, feature_id))
+        .expect("service resources")
 }
 
 fn service_counterbore_source_patch_geometries(
@@ -68,7 +65,13 @@ fn service_counterbore_source_patch_geometries(
     counterbore_diameter: f64,
 ) -> Option<Vec<(u32, cadmpeg_ir::geometry::analytic::CylinderSurface)>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        counterbore_source_patch_geometries(ctx, sources, existing, bore_diameter, counterbore_diameter)
+        counterbore_source_patch_geometries(
+            ctx,
+            sources,
+            existing,
+            bore_diameter,
+            counterbore_diameter,
+        )
     })
     .expect("service resources")
 }
@@ -381,17 +384,35 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
     ];
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service stepped form"),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service stepped form"),
         Some(HoleForm::Counterbore)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, &[table.clone(), table.clone()], &rows)).expect("service stepped ambiguity"),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            &[table.clone(), table.clone()],
+            &rows
+        ))
+        .expect("service stepped ambiguity"),
         None
     );
 
     rows[4].kind = crate::surface::SurfaceKind::Cone;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service stepped form"),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service stepped form"),
         None
     );
 }
@@ -458,11 +479,23 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
     let (table, mut rows) = split_patch_counterbore_fixture();
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service split-patch form"),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service split-patch form"),
         Some(HoleForm::Counterbore)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, &[table.clone(), table.clone()], &rows)).expect("service split-patch ambiguity"),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            &[table.clone(), table.clone()],
+            &rows
+        ))
+        .expect("service split-patch ambiguity"),
         None
     );
 
@@ -471,13 +504,25 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         .entries
         .retain(|entry| entry.entity_id != 32);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&missing_plane_companion), &rows)).expect("service missing companion"),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&missing_plane_companion),
+            &rows
+        ))
+        .expect("service missing companion"),
         None
     );
 
     rows[2].kind = crate::surface::SurfaceKind::Cylinder;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service nonplanar form"),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service nonplanar form"),
         None
     );
 }
@@ -488,21 +533,29 @@ fn assert_split_patch_collection_refusal(operation: &'static str) {
     let (table, rows) = split_patch_counterbore_fixture();
     let run = |policy: DecodePolicy| {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         stepped_hole_form(&ctx, 9, std::slice::from_ref(&table), &rows)
     };
-    assert_eq!(run(DecodePolicy::service()).expect("service split-patch form"), Some(HoleForm::Counterbore));
-    let refusal = (0..256).find_map(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        match run(policy) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == operation => Some(refusal),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-            other => panic!("{operation} was not reached before {other:?}"),
-        }
-    }).expect("named split-patch allocation reached");
+    assert_eq!(
+        run(DecodePolicy::service()).expect("service split-patch form"),
+        Some(HoleForm::Counterbore)
+    );
+    let refusal = (0..256)
+        .find_map(|limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            match run(policy) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.operation == operation =>
+                {
+                    Some(refusal)
+                }
+                Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+                other => panic!("{operation} was not reached before {other:?}"),
+            }
+        })
+        .expect("named split-patch allocation reached");
     assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
     assert_eq!(refusal.limit, refusal.used);
 }
@@ -516,12 +569,30 @@ macro_rules! split_patch_collection_test {
     };
 }
 
-split_patch_collection_test!(split_patch_materialized_ids_refuse_limit, "creo split-patch materialized surface ID nodes");
-split_patch_collection_test!(split_patch_cylinder_sources_refuse_limit, "creo split-patch cylinder source nodes");
-split_patch_collection_test!(split_patch_cylinder_ids_refuse_limit, "creo split-patch cylinder IDs");
-split_patch_collection_test!(split_patch_plane_sources_refuse_limit, "creo split-patch plane source nodes");
-split_patch_collection_test!(split_patch_plane_ids_refuse_limit, "creo split-patch plane IDs");
-split_patch_collection_test!(split_patch_rowless_sources_refuse_limit, "creo split-patch rowless source nodes");
+split_patch_collection_test!(
+    split_patch_materialized_ids_refuse_limit,
+    "creo split-patch materialized surface ID nodes"
+);
+split_patch_collection_test!(
+    split_patch_cylinder_sources_refuse_limit,
+    "creo split-patch cylinder source nodes"
+);
+split_patch_collection_test!(
+    split_patch_cylinder_ids_refuse_limit,
+    "creo split-patch cylinder IDs"
+);
+split_patch_collection_test!(
+    split_patch_plane_sources_refuse_limit,
+    "creo split-patch plane source nodes"
+);
+split_patch_collection_test!(
+    split_patch_plane_ids_refuse_limit,
+    "creo split-patch plane IDs"
+);
+split_patch_collection_test!(
+    split_patch_rowless_sources_refuse_limit,
+    "creo split-patch rowless source nodes"
+);
 
 fn assert_paired_hole_collection_refusal(operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -530,22 +601,30 @@ fn assert_paired_hole_collection_refusal(operation: &'static str) {
     let rows = simple_drilled_recipe_surface_rows(9);
     let run = |policy: DecodePolicy| {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         simple_drilled_hole_recipe(&ctx, 9, std::slice::from_ref(&table), &rows)
             .map(|recipe| recipe.map(|recipe| recipe.dimension_family))
     };
-    assert_eq!(run(DecodePolicy::service()).expect("service drilled recipe"), Some(SimpleDrilledDimensionFamily::ExternalId2Depth));
-    let refusal = (0..256).find_map(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        match run(policy) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == operation => Some(refusal),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
-            other => panic!("{operation} was not reached before {other:?}"),
-        }
-    }).expect("named paired-hole allocation reached");
+    assert_eq!(
+        run(DecodePolicy::service()).expect("service drilled recipe"),
+        Some(SimpleDrilledDimensionFamily::ExternalId2Depth)
+    );
+    let refusal = (0..256)
+        .find_map(|limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            match run(policy) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.operation == operation =>
+                {
+                    Some(refusal)
+                }
+                Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+                other => panic!("{operation} was not reached before {other:?}"),
+            }
+        })
+        .expect("named paired-hole allocation reached");
     assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
     assert_eq!(refusal.limit, refusal.used);
 }
@@ -559,9 +638,15 @@ macro_rules! paired_hole_collection_test {
     };
 }
 
-paired_hole_collection_test!(paired_hole_run_sources_refuse_limit, "creo paired-hole run source nodes");
+paired_hole_collection_test!(
+    paired_hole_run_sources_refuse_limit,
+    "creo paired-hole run source nodes"
+);
 paired_hole_collection_test!(paired_hole_runs_refuse_limit, "creo paired-hole runs");
-paired_hole_collection_test!(paired_hole_result_sources_refuse_limit, "creo paired-hole result source nodes");
+paired_hole_collection_test!(
+    paired_hole_result_sources_refuse_limit,
+    "creo paired-hole result source nodes"
+);
 
 #[test]
 fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
@@ -569,11 +654,26 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     let mut rows = simple_drilled_recipe_surface_rows(9);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service drilled recipe")
-            .map(|recipe| recipe.dimension_family),
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service drilled recipe")
+        .map(|recipe| recipe.dimension_family),
         Some(SimpleDrilledDimensionFamily::ExternalId2Depth)
     );
-    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, &[table.clone(), table.clone()], &rows).map(|recipe| recipe.is_none())).expect("service drilled ambiguity"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            &[table.clone(), table.clone()],
+            &rows
+        )
+        .map(|recipe| recipe.is_none()))
+        .expect("service drilled ambiguity")
+    );
 
     let mut extended = table.clone();
     let mut extra = extended.entries[3].clone();
@@ -585,8 +685,14 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     extra.entity_id = 27;
     extended.entries.insert(14, extra);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&extended), &rows)).expect("service extended recipe")
-            .map(|recipe| recipe.dimension_family),
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&extended),
+            &rows
+        ))
+        .expect("service extended recipe")
+        .map(|recipe| recipe.dimension_family),
         Some(SimpleDrilledDimensionFamily::ExternalId4Depth)
     );
     let mut unknown_family = extended;
@@ -596,20 +702,56 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     unknown_family.entries.insert(8, extra.clone());
     extra.entity_id = 29;
     unknown_family.entries.insert(16, extra);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&unknown_family), &rows)).expect("service unknown family").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&unknown_family),
+            &rows
+        ))
+        .expect("service unknown family")
+        .is_none()
+    );
 
     let mut bottom = table.entries[2].clone();
     bottom.entity_id = 20;
     bottom.payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) };
     table.entries.insert(2, bottom.clone());
-    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service source-zero recipe").is_some());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service source-zero recipe")
+        .is_some()
+    );
     bottom.entity_id = 25;
     table.entries.insert(3, bottom);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service duplicate source-zero recipe").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service duplicate source-zero recipe")
+        .is_none()
+    );
 
     let table = simple_drilled_recipe_table(9);
     rows[1].kind = crate::surface::SurfaceKind::Cylinder;
-    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, &[table], &rows).map(|recipe| recipe.is_none())).expect("service missing cone recipe"));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            &[table],
+            &rows
+        )
+        .map(|recipe| recipe.is_none()))
+        .expect("service missing cone recipe")
+    );
 }
 
 #[test]
@@ -1615,14 +1757,24 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
     )
     .with_surface_ids([10, 11, 13]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(ctx, &BTreeSet::from([23]), std::slice::from_ref(&table), &rows,))
-            .expect("service pair admitted"),
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(
+            ctx,
+            &BTreeSet::from([23]),
+            std::slice::from_ref(&table),
+            &rows,
+        ))
+        .expect("service pair admitted"),
         vec![(12, 13, 47)]
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(ctx, &BTreeSet::new(), std::slice::from_ref(&table), &rows,))
-            .expect("service empty pair admitted")
-            .is_empty()
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(
+            ctx,
+            &BTreeSet::new(),
+            std::slice::from_ref(&table),
+            &rows,
+        ))
+        .expect("service empty pair admitted")
+        .is_empty()
     );
     rows[2].reversed = true;
     assert_eq!(
@@ -1636,21 +1788,28 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
         .expect("service rowless orientation admitted"),
         BTreeMap::from([(12, true)])
     );
-    assert!(crate::decode::with_test_decode_ctx(|ctx| rowless_round_face_orientations(
-        ctx,
-        &BTreeSet::from([23]),
-        std::slice::from_ref(&table),
-        &rows,
-        &BTreeSet::new(),
-    ))
-    .expect("service absent orientation admitted")
-    .is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_face_orientations(
+            ctx,
+            &BTreeSet::from([23]),
+            std::slice::from_ref(&table),
+            &rows,
+            &BTreeSet::new(),
+        ))
+        .expect("service absent orientation admitted")
+        .is_empty()
+    );
     let mut materialized_rowless = rows;
     materialized_rowless.push(row(12, crate::surface::SurfaceKind::Cylinder));
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(ctx, &BTreeSet::from([23]), &[table], &materialized_rowless,))
-            .expect("service materialized row admitted")
-            .is_empty()
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(
+            ctx,
+            &BTreeSet::from([23]),
+            &[table],
+            &materialized_rowless,
+        ))
+        .expect("service materialized row admitted")
+        .is_empty()
     );
 }
 
@@ -1727,15 +1886,17 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
         (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
     ] {
-        let pcurve = crate::decode::with_test_decode_ctx(|ctx| circular_pcurve(
-            ctx,
-            [2.0, 2.0],
-            3.0,
-            start,
-            end,
-            &"circular pcurve fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        ))
+        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
+            circular_pcurve(
+                ctx,
+                [2.0, 2.0],
+                3.0,
+                start,
+                end,
+                &"circular pcurve fixture",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
         .expect("resource admission")
         .expect("circular pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
@@ -1769,12 +1930,20 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
     })
     .expect("valid test fixture");
     let counterclockwise = vec![
-        ProfileEntity::new(&ctx, arc.clone(), false).expect("service resources").expect("valid profile entity"),
-        ProfileEntity::new(&ctx, line.clone(), false).expect("service resources").expect("valid profile entity"),
+        ProfileEntity::new(&ctx, arc.clone(), false)
+            .expect("service resources")
+            .expect("valid profile entity"),
+        ProfileEntity::new(&ctx, line.clone(), false)
+            .expect("service resources")
+            .expect("valid profile entity"),
     ];
     let clockwise = vec![
-        ProfileEntity::new(&ctx, arc, true).expect("service resources").expect("valid profile entity"),
-        ProfileEntity::new(&ctx, line, true).expect("service resources").expect("valid profile entity"),
+        ProfileEntity::new(&ctx, arc, true)
+            .expect("service resources")
+            .expect("valid profile entity"),
+        ProfileEntity::new(&ctx, line, true)
+            .expect("service resources")
+            .expect("valid profile entity"),
     ];
     assert!(
         (extrusion_profile_signed_area(&ctx, &counterclockwise)
@@ -1873,20 +2042,22 @@ fn circle_remains_a_closed_extrusion_profile() {
         circle.clone(),
     ));
 
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| resolved_sketch_profiles(
-        ctx,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        &sketch_id,
-        1,
-    ))
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_sketch_profiles(
+            ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &sketch_id,
+            1,
+        )
+    })
     .expect("resource admission")
     .expect("one circle profile");
     assert_eq!(
         profiles,
-        vec![vec![
-            ProfileEntity::new(&ctx, circle.clone(), false).expect("service resources").expect("valid profile entity")
-        ]]
+        vec![vec![ProfileEntity::new(&ctx, circle.clone(), false)
+            .expect("service resources")
+            .expect("valid profile entity")]]
     );
     let ordered = ordered_extrusion_profiles(&ctx, profiles.clone())
         .expect("service ordering resources")
@@ -1902,15 +2073,17 @@ fn circle_remains_a_closed_extrusion_profile() {
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
-        let pcurve = crate::decode::with_test_decode_ctx(|ctx| extrusion_cap_pcurve(
-            ctx,
-            &circle,
-            reversed,
-            seam,
-            seam,
-            &"extrusion cap fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        ))
+        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
+            extrusion_cap_pcurve(
+                ctx,
+                &circle,
+                reversed,
+                seam,
+                seam,
+                &"extrusion cap fixture",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
         .expect("resource admission")
         .expect("extrusion cap pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("circle seam");
@@ -1937,7 +2110,9 @@ fn circle_remains_a_closed_extrusion_profile() {
         );
         assert_eq!(
             profile_arc(
-                &ProfileEntity::new(&ctx, circle.clone(), reversed).expect("service resources").expect("valid profile entity")
+                &ProfileEntity::new(&ctx, circle.clone(), reversed)
+                    .expect("service resources")
+                    .expect("valid profile entity")
             ),
             Some((
                 [1.0, -2.0],
@@ -1953,8 +2128,12 @@ fn circle_remains_a_closed_extrusion_profile() {
     }
     assert!(point_on_profile_arc(
         seam,
-        profile_arc(&ProfileEntity::new(&ctx, circle, false).expect("service resources").expect("valid profile entity"))
-            .expect("circle arc"),
+        profile_arc(
+            &ProfileEntity::new(&ctx, circle, false)
+                .expect("service resources")
+                .expect("valid profile entity")
+        )
+        .expect("circle arc"),
         1.0e-9,
     ));
     assert_eq!(

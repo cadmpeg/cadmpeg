@@ -152,7 +152,10 @@ fn history_link_preserves_service_profile_dependency() {
 
     link_service(&scan, &mut ir);
 
-    assert_eq!(ir.model.features[0].dependencies.as_slice(), &[sketch_feature]);
+    assert_eq!(
+        ir.model.features[0].dependencies.as_slice(),
+        &[sketch_feature]
+    );
 }
 
 #[test]
@@ -212,15 +215,14 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
 
 #[test]
 fn rowless_generated_profile_rejects_duplicate_entity_ids() {
-    let entry = |entity_id, class_id, source_entity_id| {
-        crate::feature::entity::FeatureEntityTableEntry {
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
             entity_id,
             prefixed: false,
             offset: 0,
             end_offset: 0,
-        }
-    };
+        };
     let mut table = crate::feature::entity::FeatureEntityTable::new(
         7,
         29,
@@ -313,8 +315,8 @@ fn ordered_binding_limit_error(limit: u64, operation: &'static str) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = ordered_family_surface_bindings_for_feature(
         &ctx,
         &rows,
@@ -325,8 +327,11 @@ fn ordered_binding_limit_error(limit: u64, operation: &'static str) {
         crate::surface::SurfaceKind::TorusOrSphere,
     )
     .expect_err("one generated surface binding exceeds the collection limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == operation), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -382,15 +387,23 @@ fn profile_segment_ids_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = profile_segment_ids(&ctx, 2, &[&segment], &profiles)
         .expect_err("one matched profile ID exceeds the collection limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo profile segment ID nodes"), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo profile segment ID nodes"),
+        "{error:?}"
+    );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| profile_segment_ids(ctx, 2, &[&segment], &profiles))
-            .expect("service profile admits one profile ID"),
+        crate::decode::with_test_decode_ctx(|ctx| profile_segment_ids(
+            ctx,
+            2,
+            &[&segment],
+            &profiles
+        ))
+        .expect("service profile admits one profile ID"),
         std::collections::BTreeSet::from([9]),
     );
 }

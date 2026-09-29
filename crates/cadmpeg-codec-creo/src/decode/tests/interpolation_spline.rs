@@ -54,10 +54,8 @@ fn draft_neutral_plane_selection_with_service(
     scan: &crate::container::ContainerScan<'_>,
     feature_id: u32,
 ) -> FaceSelection {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        draft_neutral_plane_selection(ctx, scan, feature_id)
-    })
-    .expect("service profile admits draft neutral plane selection")
+    crate::decode::with_test_decode_ctx(|ctx| draft_neutral_plane_selection(ctx, scan, feature_id))
+        .expect("service profile admits draft neutral plane selection")
 }
 
 fn thicken_plane_offset_with_service(
@@ -65,10 +63,8 @@ fn thicken_plane_offset_with_service(
     planes: &BTreeMap<u32, PlaneEquation>,
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<(f64, ThickenSide)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        thicken_plane_offset(ctx, transitions, planes, rows)
-    })
-    .expect("service profile admits thicken plane offsets")
+    crate::decode::with_test_decode_ctx(|ctx| thicken_plane_offset(ctx, transitions, planes, rows))
+        .expect("service profile admits thicken plane offsets")
 }
 
 fn feature_surface_transitions_with_service(
@@ -172,13 +168,15 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             .push(SketchEntity::new(id, sketch_id.clone(), geometry));
     }
 
-    let profiles = crate::decode::with_test_decode_ctx(|ctx| resolved_sketch_profiles(
-        ctx,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        &sketch_id,
-        1,
-    ))
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_sketch_profiles(
+            ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &sketch_id,
+            1,
+        )
+    })
     .expect("resource admission")
     .expect("spline profile");
     assert_eq!(profiles[0][0].start(), [1.0, 0.0]);
@@ -196,7 +194,9 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     );
     assert!(area > 0.0);
     assert!(profile_strictly_contains(&ctx, &profiles[0], [0.2, 0.2]).expect("service containment"));
-    assert!(!profile_strictly_contains(&ctx, &profiles[0], [2.0, 2.0]).expect("service containment"));
+    assert!(
+        !profile_strictly_contains(&ctx, &profiles[0], [2.0, 2.0]).expect("service containment")
+    );
     let diagonal = ProfileEntity::new(
         &ctx,
         SketchGeometry::nurbs(
@@ -224,25 +224,25 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     )
     .expect("service profile resources")
     .expect("valid profile entity");
-    assert!(profile_segments_intersect(
-        &ctx,
-        &diagonal,
-        &crossing_line,
-        1.0e-9
-    ).expect("service intersection resources"));
+    assert!(
+        profile_segments_intersect(&ctx, &diagonal, &crossing_line, 1.0e-9)
+            .expect("service intersection resources")
+    );
 
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };
-        let pcurve = crate::decode::with_test_decode_ctx(|ctx| extrusion_cap_pcurve(
-            ctx,
-            &spline,
-            reversed,
-            start,
-            end,
-            &"spline extrusion cap fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        ))
+        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
+            extrusion_cap_pcurve(
+                ctx,
+                &spline,
+                reversed,
+                start,
+                end,
+                &"spline extrusion cap fixture",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
         .expect("resource admission")
         .unwrap();
         let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
@@ -296,8 +296,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         &transform,
         &spline,
         false,
-        [1.0, 0.0],
-        [0.0, 1.0],
+        [[1.0, 0.0], [0.0, 1.0]],
         ExtrusionSpan::new(-2.0, 3.0).expect("valid span fixture"),
         &mut diagnostics,
     )
@@ -378,16 +377,24 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     assert!(outer_area > 0.0);
     assert!(profiles[1].area() < 0.0);
 
-    assert!(ordered_extrusion_profiles(&ctx, vec![
-        rectangle([-2.0, -2.0], [2.0, 2.0], false),
-        rectangle([-1.0, -1.0], [1.0, 1.0], false),
-    ])
-    .expect("service ordering resources").is_none());
-    assert!(ordered_extrusion_profiles(&ctx, vec![
-        rectangle([-2.0, -2.0], [2.0, 2.0], false),
-        rectangle([1.0, -1.0], [3.0, 1.0], true),
-    ])
-    .expect("service ordering resources").is_none());
+    assert!(ordered_extrusion_profiles(
+        &ctx,
+        vec![
+            rectangle([-2.0, -2.0], [2.0, 2.0], false),
+            rectangle([-1.0, -1.0], [1.0, 1.0], false),
+        ]
+    )
+    .expect("service ordering resources")
+    .is_none());
+    assert!(ordered_extrusion_profiles(
+        &ctx,
+        vec![
+            rectangle([-2.0, -2.0], [2.0, 2.0], false),
+            rectangle([1.0, -1.0], [3.0, 1.0], true),
+        ]
+    )
+    .expect("service ordering resources")
+    .is_none());
 
     let circular_hole = [
         (std::f64::consts::PI, 0.0, [-0.5, 0.0], [0.5, 0.0]),
@@ -415,10 +422,10 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
         .expect("valid profile entity")
     })
     .collect::<ExtrusionProfile>();
-    let profiles = ordered_extrusion_profiles(&ctx, vec![
-        circular_hole,
-        rectangle([-2.0, -2.0], [2.0, 2.0], false),
-    ])
+    let profiles = ordered_extrusion_profiles(
+        &ctx,
+        vec![circular_hole, rectangle([-2.0, -2.0], [2.0, 2.0], false)],
+    )
     .expect("service ordering resources")
     .expect("arc-bounded hole");
     assert!(matches!(
@@ -841,7 +848,10 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
 
     let mut partial = table.clone();
     partial.entries.pop();
-    assert_eq!(feature_surface_transitions_with_service(17, &[partial], &rows), None);
+    assert_eq!(
+        feature_surface_transitions_with_service(17, &[partial], &rows),
+        None
+    );
 
     let mut conflicting = table.clone();
     conflicting.entries[3].payload = crate::feature::entity::EntryPayload::Related {
@@ -849,7 +859,10 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         entity: 101,
         state: crate::feature::entity::RelatedState::Zero,
     };
-    assert_eq!(feature_surface_transitions_with_service(17, &[conflicting], &rows), None);
+    assert_eq!(
+        feature_surface_transitions_with_service(17, &[conflicting], &rows),
+        None
+    );
     let mut wrong_predecessor_class = table.clone();
     wrong_predecessor_class.entries[0].payload = crate::feature::entity::EntryPayload::Related {
         class: crate::feature::entity::RelatedClass::Class219,
@@ -1005,15 +1018,24 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
     );
 
     planes.get_mut(&202).expect("plane").origin[0] = -2.0;
-    assert_eq!(thicken_plane_offset_with_service(&transitions, &planes, &rows), None);
+    assert_eq!(
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
+        None
+    );
 
     planes.get_mut(&202).expect("plane").origin[0] = -1.0;
     planes.get_mut(&202).expect("plane").normal = [0.0, 1.0, 0.0];
-    assert_eq!(thicken_plane_offset_with_service(&transitions, &planes, &rows), None);
+    assert_eq!(
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
+        None
+    );
 
     planes.get_mut(&202).expect("plane").normal = [1.0, 0.0, 0.0];
     rows[3].reversed = false;
-    assert_eq!(thicken_plane_offset_with_service(&transitions, &planes, &rows), None);
+    assert_eq!(
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
+        None
+    );
 }
 
 #[test]
@@ -1168,7 +1190,10 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         .definitions
         .push(scan.features.definitions[0].clone());
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| filled_surface_feature_definition(ctx, &scan, &ir, 822)).expect("filled surface admitted"),
+        crate::decode::with_test_decode_ctx(|ctx| filled_surface_feature_definition(
+            ctx, &scan, &ir, 822
+        ))
+        .expect("filled surface admitted"),
         IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             ..

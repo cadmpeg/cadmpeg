@@ -860,7 +860,8 @@ fn require_rectangular_grid<T>(field: &str, rows: &[Vec<T>]) -> Result<(), Nurbs
     for row in rows {
         if row.len() != width {
             return Err(NurbsError::Structure(format!(
-                "{field} row must contain {width} values, found {}", row.len(),
+                "{field} row must contain {width} values, found {}",
+                row.len(),
             )));
         }
     }
@@ -1012,8 +1013,10 @@ impl NurbsSurface {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let u_knots = ctx.try_collection(self.u_knots.len(), operation, || self.u_knots.try_clone())?;
-        let v_knots = ctx.try_collection(self.v_knots.len(), operation, || self.v_knots.try_clone())?;
+        let u_knots =
+            ctx.try_collection(self.u_knots.len(), operation, || self.u_knots.try_clone())?;
+        let v_knots =
+            ctx.try_collection(self.v_knots.len(), operation, || self.v_knots.try_clone())?;
         let poles = match &self.poles {
             NurbsPoleGrid::Polynomial { rows } => {
                 let mut copy = Vec::new();
@@ -1348,16 +1351,26 @@ fn validate_surface_structure<P, U: KnotValue, V: KnotValue>(
     let v_count = poles.v_count();
     if u_count <= u.degree as usize {
         return Err(NurbsError::Structure(format!(
-            "u_count must exceed u_degree {}, found {u_count}", u.degree
+            "u_count must exceed u_degree {}, found {u_count}",
+            u.degree
         )));
     }
     if v_count <= v.degree as usize {
         return Err(NurbsError::Structure(format!(
-            "v_count must exceed v_degree {}, found {v_count}", v.degree
+            "v_count must exceed v_degree {}, found {v_count}",
+            v.degree
         )));
     }
-    require_length("u_knots", u.knots.knot_count(), checked_knot_count("u", u_count, u.degree)?)?;
-    require_length("v_knots", v.knots.knot_count(), checked_knot_count("v", v_count, v.degree)?)?;
+    require_length(
+        "u_knots",
+        u.knots.knot_count(),
+        checked_knot_count("u", u_count, u.degree)?,
+    )?;
+    require_length(
+        "v_knots",
+        v.knots.knot_count(),
+        checked_knot_count("v", v_count, v.degree)?,
+    )?;
     match poles {
         NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
         NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,

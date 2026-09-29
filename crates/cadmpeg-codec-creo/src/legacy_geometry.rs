@@ -129,8 +129,10 @@ pub(crate) fn scan(
 ) -> Result<LegacyGeometryScan, CodecError> {
     let object_ids = object_id_index(ctx, &persistence.objects)?;
     let children = child_index(ctx, &persistence.objects)?;
-    let integer_fields = value_index(ctx, &persistence.integer_values.rows)?;
-    let real_fields = value_index(ctx, &persistence.real_values.rows)?;
+    let mut integer_fields = BTreeMap::new();
+    value_index(ctx, &persistence.integer_values.rows, &mut integer_fields)?;
+    let mut real_fields = BTreeMap::new();
+    value_index(ctx, &persistence.real_values.rows, &mut real_fields)?;
     let (rows, mut carriers) = namespace(
         ctx,
         &persistence.objects,
@@ -159,7 +161,12 @@ pub(crate) fn scan(
         "creo legacy nonvisible carrier aggregation",
     )?;
     carriers.append(&mut nonvisible_carriers);
-    crate::sort::stable_sort_by_key(ctx, carriers.as_mut_slice(), |carrier| carrier.offset, "creo scan carriers ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        carriers.as_mut_slice(),
+        |carrier| carrier.offset,
+        "creo scan carriers ordering",
+    )?;
     let (topology_rows, pcurves) = curve_namespace(
         ctx,
         &persistence.objects,
@@ -190,7 +197,8 @@ fn curve_namespace(
         "Sld_VisGeom",
         "active_geom",
         "crv_array",
-    )? else {
+    )?
+    else {
         return Ok((Vec::new(), Vec::new()));
     };
     let mut topology_rows = Vec::new();
@@ -206,9 +214,19 @@ fn curve_namespace(
         ctx.try_reserve_items(&mut topology_rows, 1, "creo legacy topology rows")?;
         topology_rows.push(row);
     }
-    crate::sort::stable_sort_by_key(ctx, topology_rows.as_mut_slice(), |row| row.offset, "creo curve namespace topology rows ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        topology_rows.as_mut_slice(),
+        |row| row.offset,
+        "creo curve namespace topology rows ordering",
+    )?;
     topology_rows.dedup_by_key(|row| row.offset);
-    crate::sort::stable_sort_by_key(ctx, pcurves.as_mut_slice(), |pcurve| pcurve.offset, "creo curve namespace pcurves ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        pcurves.as_mut_slice(),
+        |pcurve| pcurve.offset,
+        "creo curve namespace pcurves ordering",
+    )?;
     pcurves.dedup_by_key(|pcurve| pcurve.offset);
     Ok((topology_rows, pcurves))
 }
@@ -258,7 +276,11 @@ fn geometry_array_elements<'a>(
     }
 
     let mut rows = Vec::new();
-    ctx.try_reserve_items(&mut rows, elements.len(), "creo legacy geometry array elements")?;
+    ctx.try_reserve_items(
+        &mut rows,
+        elements.len(),
+        "creo legacy geometry array elements",
+    )?;
     for element_id in elements {
         let Some(element) = object_ids.get(element_id.as_str()).copied() else {
             return Ok(None);
@@ -281,7 +303,10 @@ fn curve_topology_row(
         u32::try_from(integer_field(integers, curve_object.offset, "feat_id")?).ok()?;
     let [first_direction, second_direction] =
         integer_pair(integers, curve_object.offset, "crv_pnt_dir")?;
-    let directions = [legacy_direction(first_direction)?, legacy_direction(second_direction)?];
+    let directions = [
+        legacy_direction(first_direction)?,
+        legacy_direction(second_direction)?,
+    ];
     let faces = [
         u32::try_from(integer_field(
             integers,
@@ -338,13 +363,24 @@ fn curve_pcurve(
     }
     // One element per declared element, so the four-element window at each end
     // of the expansion is the first and the last of the `sample_count` samples.
-    let mut values = array.runs().iter().flat_map(|run| {
-        std::iter::repeat_n(run.value.value(), index_from_u32(run.count))
-    });
-    let first = [values.next()?, values.next()?, values.next()?, values.next()?];
+    let mut values = array
+        .runs()
+        .iter()
+        .flat_map(|run| std::iter::repeat_n(run.value.value(), index_from_u32(run.count)));
+    let first = [
+        values.next()?,
+        values.next()?,
+        values.next()?,
+        values.next()?,
+    ];
     let mut last = first;
     for _ in 1..*sample_count {
-        last = [values.next()?, values.next()?, values.next()?, values.next()?];
+        last = [
+            values.next()?,
+            values.next()?,
+            values.next()?,
+            values.next()?,
+        ];
     }
     Some(PcurveEndpoints {
         curve_id: topology.id,
@@ -375,8 +411,14 @@ fn namespace(
     branch_name: &str,
     namespace: LegacySurfaceNamespace,
 ) -> Result<(Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>), CodecError> {
-    let Some(elements) =
-        geometry_array_elements(ctx, objects, object_ids, root_name, branch_name, "srf_array")?
+    let Some(elements) = geometry_array_elements(
+        ctx,
+        objects,
+        object_ids,
+        root_name,
+        branch_name,
+        "srf_array",
+    )?
     else {
         return Ok((Vec::new(), Vec::new()));
     };
@@ -399,8 +441,18 @@ fn namespace(
         ctx.try_reserve_items(&mut rows, 1, "creo legacy surface rows")?;
         rows.push(row);
     }
-    crate::sort::stable_sort_by_key(ctx, rows.as_mut_slice(), |row| row.offset, "creo namespace rows ordering")?;
-    crate::sort::stable_sort_by_key(ctx, carriers.as_mut_slice(), |carrier| carrier.offset, "creo namespace carriers ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        rows.as_mut_slice(),
+        |row| row.offset,
+        "creo namespace rows ordering",
+    )?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        carriers.as_mut_slice(),
+        |carrier| carrier.offset,
+        "creo namespace carriers ordering",
+    )?;
     Ok((rows, carriers))
 }
 
@@ -433,7 +485,8 @@ fn spline_surface_carrier(
     let Some(v_tangents) = real_vector_array(ctx, reals, primitive.offset, "v_tangts")? else {
         return Ok(None);
     };
-    let Some(mixed_derivatives) = real_vector_array(ctx, reals, primitive.offset, "uv_deriv")? else {
+    let Some(mixed_derivatives) = real_vector_array(ctx, reals, primitive.offset, "uv_deriv")?
+    else {
         return Ok(None);
     };
     let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
@@ -650,7 +703,11 @@ fn real_vector_array(
         return Ok(None);
     };
     let mut vectors = Vec::new();
-    ctx.try_reserve_items(&mut vectors, values.len() / 3, "creo legacy real vector array")?;
+    ctx.try_reserve_items(
+        &mut vectors,
+        values.len() / 3,
+        "creo legacy real vector array",
+    )?;
     vectors.extend(values.as_chunks::<3>().0.iter().copied());
     Ok(Some(vectors))
 }
@@ -691,9 +748,12 @@ fn real_array_values(
         record.payload.element_count(),
         "creo legacy real array expansion",
     )?;
-    values.extend(array.runs().iter().flat_map(|run| {
-        std::iter::repeat_n(run.value.value(), index_from_u32(run.count))
-    }));
+    values.extend(
+        array
+            .runs()
+            .iter()
+            .flat_map(|run| std::iter::repeat_n(run.value.value(), index_from_u32(run.count))),
+    );
     Ok(Some(values))
 }
 
@@ -703,7 +763,8 @@ fn object_id_index<'a>(
 ) -> Result<ObjectIdIndex<'a>, CodecError> {
     let mut index = BTreeMap::new();
     for object in objects {
-        let id = legacy::checked_object_node_id(ctx, object.offset, "creo legacy object index IDs")?;
+        let id =
+            legacy::checked_object_node_id(ctx, object.offset, "creo legacy object index IDs")?;
         match index.entry(id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "creo legacy object index nodes")?;
@@ -803,9 +864,10 @@ fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
     };
     (array.dimensions() == [4, 3]).then_some(())?;
     let mut slots = [0.0; 12];
-    let values = array.runs().iter().flat_map(|run| {
-        std::iter::repeat_n(run.value.value(), index_from_u32(run.count))
-    });
+    let values = array
+        .runs()
+        .iter()
+        .flat_map(|run| std::iter::repeat_n(run.value.value(), index_from_u32(run.count)));
     for (slot, value) in slots.iter_mut().zip(values) {
         *slot = value;
     }
@@ -867,10 +929,13 @@ mod tests {
             };
             (refusal.operation == operation).then_some(refusal)
         });
-        assert!(matches!(
-            refusal,
-            Some(limit) if limit.dimension == ResourceDimension::CollectionItems
-        ), "missing collection refusal for {operation}");
+        assert!(
+            matches!(
+                refusal,
+                Some(limit) if limit.dimension == ResourceDimension::CollectionItems
+            ),
+            "missing collection refusal for {operation}"
+        );
     }
     use cadmpeg_ir::scalar::PositiveLength;
 
@@ -1216,7 +1281,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     #[test]
     fn extracts_row_major_cylinder_carrier_from_active_namespace() {
         let data = fixture(2.0, false);
-        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))) else {
+        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))
+        }) else {
             panic!("the fixture states a persistence scope past its own end");
         };
         let result = scan(&persistence);
@@ -1240,7 +1307,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     #[test]
     fn conflicting_complete_scalar_fields_withhold_legacy_carrier() {
         let data = fixture(2.0, true);
-        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))) else {
+        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))
+        }) else {
             panic!("the fixture states a persistence scope past its own end");
         };
         let result = scan(&persistence);
@@ -1258,7 +1327,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 "$3FF,0,0,0,3FF,0,0,0,3FF,7FF,0,0",
             )
             .into_bytes();
-        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))) else {
+        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))
+        }) else {
             panic!("the fixture states a persistence scope past its own end");
         };
 
@@ -1284,7 +1355,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 "$3FF,0,0,0,BFF,0,0,0,3FF,0,0,0",
             )
             .into_bytes();
-        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))) else {
+        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))
+        }) else {
             panic!("the fixture states a persistence scope past its own end");
         };
 
@@ -1308,7 +1381,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .replace("Sld_VisGeom", "Sld_NonVisGeom")
             .replace("active_geom", "inactive_geom")
             .into_bytes();
-        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))) else {
+        let Ok(persistence) = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))
+        }) else {
             panic!("the fixture states a persistence scope past its own end");
         };
         let result = scan(&persistence);
@@ -1708,8 +1783,10 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         } else {
             fixture(2.0, false)
         };
-        crate::decode::with_test_decode_ctx(|ctx| crate::legacy::scan(ctx, &data, std::iter::once(0..data.len())))
-            .expect("fixture states a complete persistence scope")
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::legacy::scan(ctx, &data, std::iter::once(0..data.len()))
+        })
+        .expect("fixture states a complete persistence scope")
     }
 
     #[test]

@@ -1,30 +1,28 @@
+
+
 use crate::decode::analytic::carriers::transfer_topology_bound_planes;
-use crate::decode::analytic::equations::{CylinderEquation, PlaneEquation};
-use crate::decode::analytic::planes::{
-    agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
-    analytic_curve_plane, envelope_reconciled_plane_candidate, fc05_cylinder_branch_witnesses,
-    fc05_cylinder_model_witness,
-    frame_bound_outline_plane_candidate, held_coordinate_plane,
-    native_positional_cylinder_carriers,
-    plane_candidate_pcurve_lies_on_carrier, plane_candidates, reconciled_model_plane,
-    round_edge_envelopes_for_plane, stored_parameter_normal_candidates,
-    select_stored_frame_branches, select_stored_frame_carrier_pcurve_branches,
-    topology_bound_line_plane, topology_bound_plane,
-    unique_round_edge_origin_candidate, BoundaryLine, PlaneCandidate, PlaneChart,
-};
+use crate::decode::analytic::equations::{PlaneEquation, CylinderEquation};
+use crate::decode::analytic::planes::{agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line, analytic_curve_plane, envelope_reconciled_plane_candidate, frame_bound_outline_plane_candidate, held_coordinate_plane, plane_candidates, reconciled_model_plane, topology_bound_line_plane, topology_bound_plane, BoundaryLine, PlaneCandidate, PlaneChart, fc05_cylinder_branch_witnesses, fc05_cylinder_model_witness, native_positional_cylinder_carriers, plane_candidate_pcurve_lies_on_carrier, round_edge_envelopes_for_plane, select_stored_frame_branches, select_stored_frame_carrier_pcurve_branches, stored_parameter_normal_candidates, unique_round_edge_origin_candidate};
 use crate::decode::surfaces::fc05_cap_pair_model_frame;
-use crate::surface::{
-    LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
-};
+use crate::surface::{LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem};
 use crate::vecmath::dot;
-use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, SurfaceId};
-use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::math::{Point3, Vector3};
+
+
+
+
+
+
+
+
+
+
+
 
 fn topology_bound_plane_service(
     points: impl IntoIterator<Item = [f64; 3]>,
@@ -55,16 +53,14 @@ fn positional_plane_limit_error(limit: u64, surface: bool) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     if surface {
         crate::decode::analytic::planes::placed_plane_surfaces(&ctx, &scan)
-            .err()
-            .expect("plane surface exceeds collection limit")
+            .expect_err("plane surface exceeds collection limit")
     } else {
         crate::decode::analytic::planes::placed_planes(&ctx, &scan)
-            .err()
-            .expect("plane exceeds collection limit")
+            .expect_err("plane exceeds collection limit")
     }
 }
 
@@ -72,8 +68,8 @@ fn candidate_limit_error(scan: &crate::container::ContainerScan<'_>, limit: u64)
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     plane_candidates(&ctx, scan)
         .err()
         .expect("plane candidates exceed collection limit")
@@ -228,8 +224,14 @@ fn positional_plane_admission_preserves_service_geometry() {
         crate::decode::analytic::planes::placed_planes(ctx, &scan)
     })
     .expect("service plane admitted");
-    assert_eq!(plane.get(&7).map(|plane| plane.origin), Some([0.0, 0.0, 1.0]));
-    assert_eq!(plane.get(&7).map(|plane| plane.normal), Some([0.0, 0.0, 1.0]));
+    assert_eq!(
+        plane.get(&7).map(|plane| plane.origin),
+        Some([0.0, 0.0, 1.0])
+    );
+    assert_eq!(
+        plane.get(&7).map(|plane| plane.normal),
+        Some([0.0, 0.0, 1.0])
+    );
 }
 
 #[test]
@@ -238,8 +240,9 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    crate::decode::with_test_decode_ctx(|ctx| source_carriers
-        .admit_surface(ctx,
+    crate::decode::with_test_decode_ctx(|ctx| {
+        source_carriers.admit_surface(
+            ctx,
             &mut ir,
             Surface {
                 id: SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 7),
@@ -253,8 +256,9 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
                 )),
                 source_object: None,
             },
-        ))
-        .expect("surface admission");
+        )
+    })
+    .expect("surface admission");
     let local = std::collections::BTreeMap::from([(
         7,
         PlaneEquation {
@@ -315,12 +319,10 @@ fn topology_bound_plane_refuses_candidate_point_vector() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = match topology_bound_plane(
-        &ctx,
-        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-    ) {
-        Ok(_) => panic!("one topology point exceeds collection limit"),
-        Err(error) => error,
+    let Err(error) =
+        topology_bound_plane(&ctx, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    else {
+        panic!("one topology point exceeds collection limit")
     };
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -423,9 +425,8 @@ fn analytic_nurbs_plane_refuses_control_point_vector() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = match analytic_curve_plane(&ctx, &geometry) {
-        Ok(_) => panic!("one NURBS control point exceeds collection limit"),
-        Err(error) => error,
+    let Err(error) = analytic_curve_plane(&ctx, &geometry) else {
+        panic!("one NURBS control point exceeds collection limit")
     };
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -890,8 +891,14 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
         row_offset: 10,
         offset: 30,
     });
-    scan.planes.outlines =
-        crate::decode::with_test_decode_ctx(|ctx| crate::surface::placed_outline_planes(ctx, &scan.planes.envelopes, &scan.planes.local_systems)).expect("service outline planes");
+    scan.planes.outlines = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::surface::placed_outline_planes(
+            ctx,
+            &scan.planes.envelopes,
+            &scan.planes.local_systems,
+        )
+    })
+    .expect("service outline planes");
 
     let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
         .expect("service plane candidates admitted");
@@ -953,8 +960,14 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
         row_offset: 10,
         offset: 30,
     });
-    scan.planes.outlines =
-        crate::decode::with_test_decode_ctx(|ctx| crate::surface::placed_outline_planes(ctx, &scan.planes.envelopes, &scan.planes.local_systems)).expect("service outline planes");
+    scan.planes.outlines = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::surface::placed_outline_planes(
+            ctx,
+            &scan.planes.envelopes,
+            &scan.planes.local_systems,
+        )
+    })
+    .expect("service outline planes");
 
     let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
         .expect("service plane candidates admitted");
@@ -1427,14 +1440,19 @@ fn fc05_witness_limit_error(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    fc05_cylinder_model_witness(&ctx, &scan, 2, CylinderEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 1.0, 0.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 1.0,
-    })
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    fc05_cylinder_model_witness(
+        &ctx,
+        &scan,
+        2,
+        CylinderEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 1.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 1.0,
+        },
+    )
     .err()
     .expect("FC05 witness exceeds collection limit")
 }
@@ -1480,8 +1498,8 @@ fn fc05_branch_limit_error(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     fc05_cylinder_branch_witnesses(&ctx, &scan)
         .err()
         .expect("FC05 branch witnesses exceed collection limit")
@@ -1514,10 +1532,9 @@ fn fc05_cylinder_witness_vector_refuses_collection_limit() {
 #[test]
 fn fc05_branch_witnesses_keep_plane_and_cylinder_identity() {
     let scan = fc05_branch_scan();
-    let witnesses = crate::decode::with_test_decode_ctx(|ctx| {
-        fc05_cylinder_branch_witnesses(ctx, &scan)
-    })
-    .expect("service FC05 branch witnesses admitted");
+    let witnesses =
+        crate::decode::with_test_decode_ctx(|ctx| fc05_cylinder_branch_witnesses(ctx, &scan))
+            .expect("service FC05 branch witnesses admitted");
     assert_eq!(witnesses.len(), 1);
     assert_eq!(witnesses.get(&1).map(Vec::len), Some(1));
     assert_eq!(witnesses[&1][0].radius, 1.0);
@@ -1529,11 +1546,10 @@ fn fc05_branch_selection_limit_error(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     select_stored_frame_branches(&ctx, &scan, &mut candidates)
-        .err()
-        .expect("FC05 branch selection exceeds collection limit")
+        .expect_err("FC05 branch selection exceeds collection limit")
 }
 
 #[test]
@@ -1563,23 +1579,31 @@ fn fc05_origin_plane_branch_refuses_collection_limit() {
 #[test]
 fn fc05_tangent_plane_branch_refuses_collection_limit() {
     let error = fc05_branch_selection_limit_error(20);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo FC05 tangent plane branch"), "{error:?}");
+            && resource.operation == "creo FC05 tangent plane branch"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
     let scan = fc05_witness_scan();
-    let witness = crate::decode::with_test_decode_ctx(|ctx| fc05_cylinder_model_witness(
-        ctx, &scan, 2,
-        CylinderEquation {
-            origin: [0.0, 0.0, 0.0],
-            axis: [0.0, 1.0, 0.0],
-            ref_direction: [1.0, 0.0, 0.0],
-            radius: 1.0,
-        },
-    )).expect("service FC05 witness admitted");
+    let witness = crate::decode::with_test_decode_ctx(|ctx| {
+        fc05_cylinder_model_witness(
+            ctx,
+            &scan,
+            2,
+            CylinderEquation {
+                origin: [0.0, 0.0, 0.0],
+                axis: [0.0, 1.0, 0.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                radius: 1.0,
+            },
+        )
+    })
+    .expect("service FC05 witness admitted");
 
     assert_eq!(witness.origin, [1.0, 0.0, 0.5]);
     assert_eq!(witness.axis, [0.0, 1.0, 0.0]);
@@ -1639,20 +1663,26 @@ fn stored_branch_limit_error(limit: u64, with_pcurve: bool) -> CodecError {
         let origin = frame.origin.expect("complete fixed frame origin");
         let normal = frame.normal().expect("complete fixed frame normal");
         let u_axis = frame.u_axis().expect("complete fixed frame U axis");
-        candidates.insert(2, vec![PlaneCandidate {
-            equation: PlaneEquation { origin, normal },
-            chart: Some(PlaneChart { origin, normal, u_axis }),
-            offset: 20,
-        }]);
+        candidates.insert(
+            2,
+            vec![PlaneCandidate {
+                equation: PlaneEquation { origin, normal },
+                chart: Some(PlaneChart {
+                    origin,
+                    normal,
+                    u_axis,
+                }),
+                offset: 20,
+            }],
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     select_stored_frame_branches(&ctx, &scan, &mut candidates)
-        .err()
-        .expect("stored branch selection exceeds collection limit")
+        .expect_err("stored branch selection exceeds collection limit")
 }
 
 #[test]
@@ -1757,8 +1787,8 @@ fn plane_branch_constraint_work_refuses_work_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = plane_candidates(&ctx, &scan)
         .err()
         .expect("constraint work exceeds work limit");
@@ -1771,21 +1801,31 @@ fn carrier_pcurve_branch_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = stored_frame_branch_scan(false);
     scan.surfaces.rows[1].kind = crate::surface::SurfaceKind::Cylinder;
     let frame = crate::surface::PositionalCylinderFrame::new(
-        [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], 1.0, None,
-    ).expect("valid cylinder frame");
-    scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
-        surface_id: 2,
-        body: Vec::new(),
-        scalar_tokens: Vec::new(),
-        opaque_spans: Vec::new(),
-        scalar_frames: Vec::new(),
-        carrier: crate::surface::SurfaceParameterCarrier::Resolved(
-            crate::surface::InlineSurfaceCarrier::Cylinder { frame, split_bounds: None },
-        ),
-        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: 2,
-        body_offset: 2,
-    });
+        [0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        1.0,
+        None,
+    )
+    .expect("valid cylinder frame");
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 2,
+            body: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                crate::surface::InlineSurfaceCarrier::Cylinder {
+                    frame,
+                    split_bounds: None,
+                },
+            ),
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 2,
+            body_offset: 2,
+        });
     scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
         curve_id: 7,
         faces: [1, 2].map(std::num::NonZeroU32::new),
@@ -1798,15 +1838,21 @@ fn carrier_pcurve_branch_scan() -> crate::container::ContainerScan<'static> {
 
 fn carrier_branch_domains() -> std::collections::BTreeMap<u32, Vec<PlaneCandidate>> {
     let candidate = |origin| PlaneCandidate {
-        equation: PlaneEquation { origin, normal: [0.0, 1.0, 0.0] },
+        equation: PlaneEquation {
+            origin,
+            normal: [0.0, 1.0, 0.0],
+        },
         chart: Some(PlaneChart {
-            origin, normal: [0.0, 1.0, 0.0], u_axis: [1.0, 0.0, 0.0],
+            origin,
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
         }),
         offset: 1,
     };
-    std::collections::BTreeMap::from([(1, vec![
-        candidate([0.0, 0.0, 0.0]), candidate([10.0, 0.0, 0.0]),
-    ])])
+    std::collections::BTreeMap::from([(
+        1,
+        vec![candidate([0.0, 0.0, 0.0]), candidate([10.0, 0.0, 0.0])],
+    )])
 }
 
 #[test]
@@ -1815,10 +1861,11 @@ fn plane_branch_cylinder_carrier_node_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = native_positional_cylinder_carriers(&ctx, &scan)
-        .err().expect("cylinder carrier node exceeds collection limit");
+        .err()
+        .expect("cylinder carrier node exceeds collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo plane branch cylinder carrier nodes"));
@@ -1832,11 +1879,10 @@ fn carrier_pcurve_plane_branch_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = select_stored_frame_carrier_pcurve_branches(
-        &ctx, &scan, &domains, &mut selected,
-    ).expect_err("carrier pcurve branch exceeds collection limit");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let error = select_stored_frame_carrier_pcurve_branches(&ctx, &scan, &domains, &mut selected)
+        .expect_err("carrier pcurve branch exceeds collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo carrier pcurve plane branch"));
@@ -1849,16 +1895,16 @@ fn carrier_pcurve_branch_selects_incident_cylinder() {
     let mut selected = domains.clone();
     crate::decode::with_test_decode_ctx(|ctx| {
         select_stored_frame_carrier_pcurve_branches(ctx, &scan, &domains, &mut selected)
-    }).expect("service carrier branch admitted");
+    })
+    .expect("service carrier branch admitted");
     assert_eq!(selected[&1].len(), 1);
     assert_eq!(selected[&1][0].equation.origin, [0.0, 0.0, 0.0]);
 }
 
 fn two_variable_plane_branch_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = stored_frame_branch_scan(true);
-    scan.planes.local_systems[1].slots = [
-        0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 0.0, 0.8, -0.6, 0.0, 0.0, 0.0,
-    ].map(Some);
+    scan.planes.local_systems[1].slots =
+        [0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 0.0, 0.8, -0.6, 0.0, 0.0, 0.0].map(Some);
     scan.planes.local_systems[1].classification = LocalSystemClassification::Unclassified;
     scan.curves.pcurves[0].face_0_endpoints = [[0.0, 0.0], [0.8, -0.48]];
     scan.curves.pcurves[0].face_1_endpoints = [[0.0, 0.0], [0.8, 0.48]];
@@ -1871,7 +1917,8 @@ fn two_variable_plane_branches_keep_mirror_ambiguity() {
     let mut candidates = std::collections::BTreeMap::new();
     crate::decode::with_test_decode_ctx(|ctx| {
         select_stored_frame_branches(ctx, &scan, &mut candidates)
-    }).expect("service two-plane branches admitted");
+    })
+    .expect("service two-plane branches admitted");
     assert!(candidates.is_empty());
 }
 
@@ -1882,13 +1929,16 @@ fn filtered_second_plane_candidate_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 19;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = select_stored_frame_branches(&ctx, &scan, &mut candidates)
         .expect_err("second plane filter exceeds collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo filtered second plane candidates"), "{error:?}");
+            && resource.operation == "creo filtered second plane candidates"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -1908,7 +1958,8 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
 
     let mut nonzero_origin = frame.clone();
     nonzero_origin.slots[11] = Some(2.0);
-    let (candidates, count) = stored_parameter_normal_candidates(&nonzero_origin).expect("ambiguous frame");
+    let (candidates, count) =
+        stored_parameter_normal_candidates(&nonzero_origin).expect("ambiguous frame");
     assert_eq!(count, 2);
     assert!(candidates[..count]
         .iter()
@@ -2060,25 +2111,39 @@ fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
 
 fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    for (id, kind) in [(1, crate::surface::SurfaceKind::Plane),
-        (2, crate::surface::SurfaceKind::Cylinder)] {
+    for (id, kind) in [
+        (1, crate::surface::SurfaceKind::Plane),
+        (2, crate::surface::SurfaceKind::Cylinder),
+    ] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
-            id, kind, feature_id: 4, reversed: false,
+            id,
+            kind,
+            feature_id: 4,
+            reversed: false,
             boundary_type: crate::surface::BoundaryType::Code01,
-            next_surface: 0, offset: id as usize,
+            next_surface: 0,
+            offset: id as usize,
         });
     }
-    scan.features.legacy_rounds.push(crate::legacy_feature::LegacyRoundFeature {
-        feature_id: 4,
-        radius: crate::legacy_feature::LegacyRoundRadius::NotPresent,
-        edge_ids: None,
-        offset: 3,
-    });
-    scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
-        id: 7, type_byte: 5, feature_id: 4, directions: [0; 2],
-        faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
-        next_edges: [0; 2], offset: 7,
-    });
+    scan.features
+        .legacy_rounds
+        .push(crate::legacy_feature::LegacyRoundFeature {
+            feature_id: 4,
+            radius: crate::legacy_feature::LegacyRoundRadius::NotPresent,
+            edge_ids: None,
+            offset: 3,
+        });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 7,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
+            next_edges: [0; 2],
+            offset: 7,
+        });
     let mut body = vec![0x34, 0xe0, 0x00];
     body.extend_from_slice(&[0x56, 0, 0, 0, 0, 0, 0]);
     body.extend_from_slice(&[0x00, 0x12, 0x68]);
@@ -2086,14 +2151,21 @@ fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
     body.extend_from_slice(&[0x0f, 0xe4, 0x2f, 0x00, 0x00]);
     body.extend_from_slice(&[0x0d, 0x2f, 0x00, 0x00, 0x0f]);
     body.extend_from_slice(&[0xf7, 0x17]);
-    scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
-        surface_id: 2, body, scalar_tokens: Vec::new(), opaque_spans: Vec::new(),
-        scalar_frames: Vec::new(),
-        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
-            crate::surface::SurfaceKind::Cylinder),
-        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: 2, body_offset: 2,
-    });
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 2,
+            body,
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::Cylinder,
+            ),
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 2,
+            body_offset: 2,
+        });
     scan
 }
 
@@ -2102,11 +2174,10 @@ fn round_edge_envelope_limit_error(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     round_edge_envelopes_for_plane(&ctx, &scan, 1)
-        .err()
-        .expect("round-edge envelopes exceed collection limit")
+        .expect_err("round-edge envelopes exceed collection limit")
 }
 
 #[test]
@@ -2160,15 +2231,15 @@ fn round_edge_plane_envelope_refuses_collection_limit() {
 #[test]
 fn round_edge_plane_envelope_preserves_type24_geometry() {
     let scan = round_edge_envelope_scan();
-    let envelopes = crate::decode::with_test_decode_ctx(|ctx| {
-        round_edge_envelopes_for_plane(ctx, &scan, 1)
-    })
-    .expect("service round-edge envelopes admitted");
+    let envelopes =
+        crate::decode::with_test_decode_ctx(|ctx| round_edge_envelopes_for_plane(ctx, &scan, 1))
+            .expect("service round-edge envelopes admitted");
     assert_eq!(envelopes.len(), 1);
     assert_eq!(envelopes[0].vertices, [[0.0, 1.0, 2.0], [-1.0, 2.0, 0.0]]);
 }
 
 const SMALL_TANGENT_SPHERE_RADIUS: f64 = 1.0e-10;
+
 #[test]
 fn numerical_seventh_sphere_tangency_and_membership_preserve_scale() {
     use super::{point_on_carrier, tangent_plane_sphere_point, tangent_sphere_point};

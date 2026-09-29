@@ -190,7 +190,7 @@ pub(crate) struct ScannedSection<'a> {
     region: &'a [u8],
 }
 
-impl<'a> ScannedSection<'a> {
+impl ScannedSection<'_> {
     fn copy_retained(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             section: Section {
@@ -831,7 +831,12 @@ fn toc_sections<'a>(
             ));
         }
     }
-    crate::sort::stable_sort_by_key(ctx, sections.as_mut_slice(), |section| section.section.offset(), "creo toc sections sections ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        sections.as_mut_slice(),
+        |section| section.section.offset(),
+        "creo toc sections sections ordering",
+    )?;
     sections.dedup_by_key(|section| section.section.offset());
     Ok(sections)
 }
@@ -875,8 +880,8 @@ fn legacy_toc_sections<'a>(
     else {
         return Ok(Vec::new());
     };
-    let Some((entry_id, _, _)) = legacy::parse_declaration(entry_declaration)
-        .filter(|(_, name, type_code)| {
+    let Some((entry_id, _, _)) =
+        legacy::parse_declaration(entry_declaration).filter(|(_, name, type_code)| {
             *name == "entry" && matches!(type_code, LegacyTypeCode::String)
         })
     else {
@@ -968,7 +973,12 @@ fn legacy_toc_sections<'a>(
         ctx.try_reserve_items(&mut sections, 1, "creo legacy TOC sections")?;
         sections.extend(Section::scan(raw_name, offset, end, None, data));
     }
-    crate::sort::stable_sort_by_key(ctx, sections.as_mut_slice(), |section| section.section.offset(), "creo legacy toc sections sections ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        sections.as_mut_slice(),
+        |section| section.section.offset(),
+        "creo legacy toc sections sections ordering",
+    )?;
     sections.dedup_by_key(|section| section.section.offset());
     Ok(sections)
 }
@@ -1271,7 +1281,10 @@ fn read_array_count(
 }
 
 /// Read the visible-geometry namespace census from the `VisibGeom` section body.
-fn geom_census(ctx: &DecodeContext<'_>, sections: &[ScannedSection<'_>]) -> Result<GeomCensus, CodecError> {
+fn geom_census(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<GeomCensus, CodecError> {
     let Some(vg) = sections
         .iter()
         .find(|s| s.section.name() == VISIBGEOM)
@@ -1470,7 +1483,12 @@ fn loop_array_sections<'a>(
             selected.push(section.copy_retained(ctx)?);
         }
     }
-    crate::sort::stable_sort_by_key(ctx, selected.as_mut_slice(), |section| section.section.offset(), "creo loop array sections selected ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        selected.as_mut_slice(),
+        |section| section.section.offset(),
+        "creo loop array sections selected ordering",
+    )?;
     selected.dedup_by_key(|section| section.section.offset());
     Ok(selected)
 }
@@ -1605,7 +1623,11 @@ fn loop_array_scan(
     for section in sections {
         let payload = section.region;
         let scan = loop_array::scan(ctx, payload)?;
-        ctx.try_reserve_items(&mut frames, scan.frames.len(), "creo loop array aggregate frames")?;
+        ctx.try_reserve_items(
+            &mut frames,
+            scan.frames.len(),
+            "creo loop array aggregate frames",
+        )?;
         frames.extend(scan.frames.into_iter().map(|mut frame| {
             frame.offset += section.section.offset();
             frame.prototype_end += section.section.offset();
@@ -1624,8 +1646,18 @@ fn loop_array_scan(
             record
         }));
     }
-    crate::sort::stable_sort_by_key(ctx, frames.as_mut_slice(), |frame: &LoopArrayFrame| frame.offset, "creo loop array scan frames ordering")?;
-    crate::sort::stable_sort_by_key(ctx, records.as_mut_slice(), |record: &LoopArrayRecord| record.offset, "creo loop array scan records ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        frames.as_mut_slice(),
+        |frame: &LoopArrayFrame| frame.offset,
+        "creo loop array scan frames ordering",
+    )?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        records.as_mut_slice(),
+        |record: &LoopArrayRecord| record.offset,
+        "creo loop array scan records ordering",
+    )?;
     Ok(LoopArrayScan { frames, records })
 }
 
@@ -2136,7 +2168,12 @@ fn feature_rows(
         ctx.try_reserve_items(&mut rows, decoded.len(), "creo feature row aggregation")?;
         rows.extend(decoded);
     }
-    crate::sort::stable_sort_by_key(ctx, rows.as_mut_slice(), |row| row.offset, "creo feature rows rows ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        rows.as_mut_slice(),
+        |row| row.offset,
+        "creo feature rows rows ordering",
+    )?;
     Ok(rows)
 }
 
@@ -2300,7 +2337,12 @@ fn feature_definitions(
             }
         }
     }
-    crate::sort::stable_sort_by_key(ctx, definitions.as_mut_slice(), |definition| definition.offset, "creo feature definitions definitions ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        definitions.as_mut_slice(),
+        |definition| definition.offset,
+        "creo feature definitions definitions ordering",
+    )?;
     Ok(definitions)
 }
 
@@ -2310,7 +2352,8 @@ fn feature_row_definitions(
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
     for row in rows {
-        let Some(mut definition) = feature::definitions::depdb_section_definition(ctx, &row.body, None)?
+        let Some(mut definition) =
+            feature::definitions::depdb_section_definition(ctx, &row.body, None)?
         else {
             continue;
         };
@@ -2318,7 +2361,12 @@ fn feature_row_definitions(
         ctx.try_reserve_items(&mut definitions, 1, "creo feature row definitions")?;
         definitions.push(definition);
     }
-    crate::sort::stable_sort_by_key(ctx, definitions.as_mut_slice(), |definition| definition.offset, "creo feature row definitions definitions ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        definitions.as_mut_slice(),
+        |definition| definition.offset,
+        "creo feature row definitions definitions ordering",
+    )?;
     Ok(definitions)
 }
 
@@ -2363,7 +2411,12 @@ fn feature_geometry_tables(
         "creo feature geometry table aggregation",
     )?;
     tables.extend(depdb_tables);
-    crate::sort::stable_sort_by_key(ctx, tables.as_mut_slice(), |table| table.offset, "creo feature geometry tables tables ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        tables.as_mut_slice(),
+        |table| table.offset,
+        "creo feature geometry tables tables ordering",
+    )?;
     Ok(tables)
 }
 
@@ -2380,7 +2433,12 @@ fn feature_affected_ids(
         "creo affected-id aggregation",
     )?;
     records.extend(depdb_records);
-    crate::sort::stable_sort_by_key(ctx, records.as_mut_slice(), |record| record.offset, "creo feature affected ids records ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        records.as_mut_slice(),
+        |record| record.offset,
+        "creo feature affected ids records ordering",
+    )?;
     Ok(records)
 }
 
@@ -2399,7 +2457,12 @@ fn feature_revolution_extents(
         "creo revolution extent aggregation",
     )?;
     extents.extend(definition_extents);
-    crate::sort::stable_sort_by_key(ctx, extents.as_mut_slice(), |record| record.offset, "creo feature revolution extents extents ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        extents.as_mut_slice(),
+        |record| record.offset,
+        "creo feature revolution extents extents ordering",
+    )?;
     Ok(extents)
 }
 
@@ -2481,7 +2544,12 @@ fn feature_operations(
         "creo current feature operation order",
     )?;
     current.extend(by_feature.into_values());
-    crate::sort::stable_sort_by_key(ctx, current.as_mut_slice(), |record| record.offset, "creo feature operations current ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        current.as_mut_slice(),
+        |record| record.offset,
+        "creo feature operations current ordering",
+    )?;
     Ok(current)
 }
 
@@ -2578,7 +2646,12 @@ fn depdb_recipe_rows(
             body_start = body_end;
         }
     }
-    crate::sort::stable_sort_by_key(ctx, rows.as_mut_slice(), |row| row.offset, "creo depdb recipe rows rows ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        rows.as_mut_slice(),
+        |row| row.offset,
+        "creo depdb recipe rows rows ordering",
+    )?;
     Ok(rows)
 }
 
@@ -2695,7 +2768,12 @@ fn append_topology_rows(
 ) -> Result<(), CodecError> {
     ctx.try_reserve_items(rows, additional.len(), operation)?;
     rows.extend(additional);
-    crate::sort::stable_sort_by_key(ctx, rows.as_mut_slice(), |row| row.offset, "creo append topology rows rows ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        rows.as_mut_slice(),
+        |row| row.offset,
+        "creo append topology rows rows ordering",
+    )?;
     rows.dedup_by_key(|row| row.offset);
     Ok(())
 }
@@ -2719,7 +2797,12 @@ fn append_legacy_curve_witnesses(
         "creo legacy pcurve aggregation",
     )?;
     pcurves.extend(legacy_pcurves.iter().cloned());
-    crate::sort::stable_sort_by_key(ctx, pcurves.as_mut_slice(), |pcurve| pcurve.offset, "creo append legacy curve witnesses pcurves ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        pcurves.as_mut_slice(),
+        |pcurve| pcurve.offset,
+        "creo append legacy curve witnesses pcurves ordering",
+    )?;
     pcurves.dedup_by_key(|pcurve| pcurve.offset);
     Ok(())
 }
@@ -2831,7 +2914,12 @@ pub(crate) fn scan_bytes<'a>(
         "creo legacy nonvisible surface row aggregation",
     )?;
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
-    crate::sort::stable_sort_by_key(ctx, nonvisible_surface_rows.as_mut_slice(), |row| row.offset, "creo scan bytes nonvisible surface rows ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        nonvisible_surface_rows.as_mut_slice(),
+        |row| row.offset,
+        "creo scan bytes nonvisible surface rows ordering",
+    )?;
     let mut surface_rows = surface_rows(ctx, &model_geometry_sections)?;
     ctx.try_reserve_items(
         &mut surface_rows,
@@ -2839,7 +2927,12 @@ pub(crate) fn scan_bytes<'a>(
         "creo legacy surface row aggregation",
     )?;
     surface_rows.extend(legacy_geometry.rows);
-    crate::sort::stable_sort_by_key(ctx, surface_rows.as_mut_slice(), |row| row.offset, "creo scan bytes surface rows ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        surface_rows.as_mut_slice(),
+        |row| row.offset,
+        "creo scan bytes surface rows ordering",
+    )?;
     let cross_section_surface_rows = cross_section_surface_rows(ctx, &sections)?;
     let nonvisible_surface_parameters = surface_parameters(ctx, &nonvisible_geometry_sections)?;
     let surface_parameters = surface_parameters(ctx, &model_geometry_sections)?;
@@ -2853,7 +2946,8 @@ pub(crate) fn scan_bytes<'a>(
     let cross_section_plane_local_systems = cross_section_plane_local_systems(ctx, &sections)?;
     let plane_envelopes = plane_envelopes(ctx, &model_geometry_sections)?;
     let cross_section_plane_envelopes = cross_section_plane_envelopes(ctx, &sections)?;
-    let outline_planes = surface::placed_outline_planes(ctx, &plane_envelopes, &plane_local_systems)?;
+    let outline_planes =
+        surface::placed_outline_planes(ctx, &plane_envelopes, &plane_local_systems)?;
     let positional_frame_planes =
         surface::positional_frame_planes(ctx, &surface_parameters, &surface_rows)?;
     let placement_outline_planes =
@@ -2997,7 +3091,12 @@ pub(crate) fn scan_bytes<'a>(
         feature_row_definitions(ctx, &feature_rows)?,
         "creo feature row definition aggregation",
     )?;
-    crate::sort::stable_sort_by_key(ctx, feature_definitions.as_mut_slice(), |definition| definition.offset, "creo scan bytes feature definitions ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        feature_definitions.as_mut_slice(),
+        |definition| definition.offset,
+        "creo scan bytes feature definitions ordering",
+    )?;
     let claimed_definition_owners = claimed_definition_owners(ctx, &feature_definitions)?;
     let replay_definitions = feature::definitions::bind_replay_definition_owners(
         ctx,
@@ -3011,7 +3110,12 @@ pub(crate) fn scan_bytes<'a>(
         replay_definitions,
         "creo replay definition aggregation",
     )?;
-    crate::sort::stable_sort_by_key(ctx, feature_definitions.as_mut_slice(), |definition| definition.offset, "creo scan bytes feature definitions ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        feature_definitions.as_mut_slice(),
+        |definition| definition.offset,
+        "creo scan bytes feature definitions ordering",
+    )?;
     let section_owner_ranges = section_owner_ranges(ctx, &sections, &feature_rows)?;
     let feature_definitions = feature::definitions::bind_section_owners(
         ctx,
@@ -3120,7 +3224,8 @@ pub(crate) fn scan_bytes<'a>(
             prototype_records: surface_prototype_records,
             nonvisible_prototype_records: nonvisible_surface_prototype_records,
             prototype_field_refusals: prototype_refusals.take_records_checked()?,
-            nonvisible_prototype_field_refusals: nonvisible_prototype_refusals.take_records_checked()?,
+            nonvisible_prototype_field_refusals: nonvisible_prototype_refusals
+                .take_records_checked()?,
             legacy_carriers: legacy_geometry.carriers,
         },
         planes: PlaneScan {
@@ -3270,7 +3375,12 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
             record
         }));
     }
-    crate::sort::stable_sort_by_key(ctx, records.as_mut_slice(), offset, "creo collect section records result records ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        records.as_mut_slice(),
+        offset,
+        "creo collect section records result records ordering",
+    )?;
     Ok(records)
 }
 
@@ -3330,42 +3440,42 @@ pub(crate) fn summarize(
 ) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
     for s in &scan.framing.sections {
-            let mut attributes = BTreeMap::new();
+        let mut attributes = BTreeMap::new();
+        ctx.charge_collection_items(1, "creo summary attribute nodes")?;
+        attributes.insert(
+            ctx.copy_retained_text("offset", "creo summary attribute key")?,
+            ctx.format_retained(s.offset(), "creo summary offset")?,
+        );
+        if s.raw_name != s.name() {
             ctx.charge_collection_items(1, "creo summary attribute nodes")?;
             attributes.insert(
-                ctx.copy_retained_text("offset", "creo summary attribute key")?,
-                ctx.format_retained(s.offset(), "creo summary offset")?,
+                ctx.copy_retained_text("raw_name", "creo summary attribute key")?,
+                ctx.copy_retained_text(&s.raw_name, "creo summary raw name")?,
             );
-            if s.raw_name != s.name() {
-                ctx.charge_collection_items(1, "creo summary attribute nodes")?;
-                attributes.insert(
-                    ctx.copy_retained_text("raw_name", "creo summary attribute key")?,
-                    ctx.copy_retained_text(&s.raw_name, "creo summary raw name")?,
-                );
-            }
-            let expanded = expanded_section_for(scan, s);
-            if let Some(expanded) = expanded {
-                ctx.charge_collection_items(1, "creo summary attribute nodes")?;
-                attributes.insert(
-                    ctx.copy_retained_text("expanded_payload_size", "creo summary attribute key")?,
-                    ctx.format_retained(expanded.data.len(), "creo summary expanded size")?,
-                );
-            }
-            let name = ctx.copy_retained_text(s.name(), "creo summary entry name")?;
-            ctx.try_reserve_items(&mut entries, 1, "creo summary entries")?;
-            entries.push(ContainerEntry {
-                name,
-                role: s.role().into(),
-                storage: expanded.map_or_else(
-                    || EntryStorage::verbatim(VerbatimLabel::None, s.length() as u64),
-                    |expanded| EntryStorage::Compressed {
-                        method: CompressionMethod::UnixCompress,
-                        stored: Some(s.length() as u64),
-                        expanded: Some((expanded.data.len() + s.raw_name.len() + 2) as u64),
-                    },
-                ),
-                attributes,
-            });
+        }
+        let expanded = expanded_section_for(scan, s);
+        if let Some(expanded) = expanded {
+            ctx.charge_collection_items(1, "creo summary attribute nodes")?;
+            attributes.insert(
+                ctx.copy_retained_text("expanded_payload_size", "creo summary attribute key")?,
+                ctx.format_retained(expanded.data.len(), "creo summary expanded size")?,
+            );
+        }
+        let name = ctx.copy_retained_text(s.name(), "creo summary entry name")?;
+        ctx.try_reserve_items(&mut entries, 1, "creo summary entries")?;
+        entries.push(ContainerEntry {
+            name,
+            role: s.role().into(),
+            storage: expanded.map_or_else(
+                || EntryStorage::verbatim(VerbatimLabel::None, s.length() as u64),
+                |expanded| EntryStorage::Compressed {
+                    method: CompressionMethod::UnixCompress,
+                    stored: Some(s.length() as u64),
+                    expanded: Some((expanded.data.len() + s.raw_name.len() + 2) as u64),
+                },
+            ),
+            attributes,
+        });
     }
 
     let notes = notes(ctx, scan)?;
@@ -3385,7 +3495,10 @@ pub(crate) fn summarize(
 }
 
 /// Build the diagnostic notes shared by inspection and decode reports.
-pub(crate) fn notes(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Vec<String>, CodecError> {
+pub(crate) fn notes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<String>, CodecError> {
     fn push_note(
         ctx: &DecodeContext<'_>,
         notes: &mut Vec<String>,
@@ -3406,34 +3519,54 @@ pub(crate) fn notes(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Vec
         }
     }
     let mut notes = Vec::new();
-    push_note(ctx, &mut notes, format_args!("PSB container: {}", scan.framing.version_line))?;
-    push_note(ctx, &mut notes, format_args!(
+    push_note(
+        ctx,
+        &mut notes,
+        format_args!("PSB container: {}", scan.framing.version_line),
+    )?;
+    push_note(
+        ctx,
+        &mut notes,
+        format_args!(
             "layout: {}; {} section(s) enumerated",
             scan.framing.layout.token(),
             scan.framing.sections.len()
-        ))?;
+        ),
+    )?;
     if let Some(name) = &scan.framing.model_name {
-        push_note(ctx, &mut notes, format_args!("native model name: {}", name.name))?;
+        push_note(
+            ctx,
+            &mut notes,
+            format_args!("native model name: {}", name.name),
+        )?;
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         let release = legacy.product_release.as_deref().unwrap_or("unspecified");
         let continuation_count = legacy.persistence.continuation_count();
-        push_note(ctx, &mut notes, format_args!(
-            "legacy ASCII persistence: schema {}; product release {release}; {} attribute \
+        push_note(
+            ctx,
+            &mut notes,
+            format_args!(
+                "legacy ASCII persistence: schema {}; product release {release}; {} attribute \
              declarations, {} resolved values, {continuation_count} continuation rows in {} scopes",
-            legacy.schema,
-            legacy.persistence.declaration_count(),
-            legacy.persistence.value_count(),
-            legacy.persistence.scopes.len(),
-        ))?;
+                legacy.schema,
+                legacy.persistence.declaration_count(),
+                legacy.persistence.value_count(),
+                legacy.persistence.scopes.len(),
+            ),
+        )?;
         if legacy.persistence.unresolved_value_count() != 0
             || legacy.persistence.conflicting_declaration_count() != 0
         {
-            push_note(ctx, &mut notes, format_args!(
+            push_note(
+                ctx,
+                &mut notes,
+                format_args!(
                 "legacy ASCII structural gaps: {} unresolved values, {} conflicting declarations",
                 legacy.persistence.unresolved_value_count(),
                 legacy.persistence.conflicting_declaration_count(),
-            ))?;
+            ),
+            )?;
         }
     }
 
@@ -3442,31 +3575,49 @@ pub(crate) fn notes(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Vec
         scan.framing.census.crv_array_count,
     ) {
         (None, None) => {
-            push_note(ctx, &mut notes, "no VisibGeom srf_array/crv_array count header was located")?;
+            push_note(
+                ctx,
+                &mut notes,
+                "no VisibGeom srf_array/crv_array count header was located",
+            )?;
         }
         (srf, crv) => {
-            push_note(ctx, &mut notes, format_args!(
-                "VisibGeom namespace census: srf_array={}, crv_array={} (byte-backed count \
+            push_note(
+                ctx,
+                &mut notes,
+                format_args!(
+                    "VisibGeom namespace census: srf_array={}, crv_array={} (byte-backed count \
                  headers; per-instance row geometry is not decoded)",
-                OptionalCount(srf),
-                OptionalCount(crv),
-            ))?;
+                    OptionalCount(srf),
+                    OptionalCount(crv),
+                ),
+            )?;
         }
     }
 
     if has_thumbnail(scan) {
-        push_note(ctx, &mut notes, "THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)")?;
+        push_note(
+            ctx,
+            &mut notes,
+            "THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)",
+        )?;
     }
     if !scan.framing.expanded_sections.is_empty() {
-        push_note(ctx, &mut notes, format_args!(
-            "expanded {} Unix-compress section payload(s) with TOC-validated output lengths",
-            scan.framing.expanded_sections.len()
-        ))?;
+        push_note(
+            ctx,
+            &mut notes,
+            format_args!(
+                "expanded {} Unix-compress section payload(s) with TOC-validated output lengths",
+                scan.framing.expanded_sections.len()
+            ),
+        )?;
     }
 
-    push_note(ctx, &mut notes,
+    push_note(
+        ctx,
+        &mut notes,
         "container-level enumeration; `decode` preserves PSB geometry sections as unknown records \
-         and transfers only carriers whose model-space placement is complete"
+         and transfers only carriers whose model-space placement is complete",
     )?;
 
     Ok(notes)

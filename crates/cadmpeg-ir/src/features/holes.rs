@@ -161,7 +161,8 @@ impl HoleShape {
     }
 
     /// Map lengths of an owned shape without copying retained thread operands.
-    pub fn try_map_lengths_owned<E>(self,
+    pub fn try_map_lengths_owned<E>(
+        self,
         map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
         map_length: &mut impl FnMut(Length) -> Result<Length, E>,
     ) -> Result<Self, HoleLengthEditError<E>> {

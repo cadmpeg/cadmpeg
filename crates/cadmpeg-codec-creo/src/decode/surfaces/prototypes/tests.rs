@@ -19,8 +19,18 @@ fn prototype_loss_refuses_text_and_row_below_limits() {
     use cadmpeg_core::CodecError;
     let records = ["first".to_owned(), "second".to_owned()];
     for (bytes, items, dimension, operation) in [
-        (0, u64::MAX, ResourceDimension::RetainedBytes, "creo prototype loss text"),
-        (u64::MAX, 0, ResourceDimension::CollectionItems, "creo prototype losses"),
+        (
+            0,
+            u64::MAX,
+            ResourceDimension::RetainedBytes,
+            "creo prototype loss text",
+        ),
+        (
+            u64::MAX,
+            0,
+            ResourceDimension::CollectionItems,
+            "creo prototype losses",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -32,7 +42,8 @@ fn prototype_loss_refuses_text_and_row_below_limits() {
             &mut Vec::new(),
             crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
             format_args!("Prototype rejected: {}", super::JoinedLaneRecords(&records)),
-        ).expect_err("below-need loss cap");
+        )
+        .expect_err("below-need loss cap");
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == dimension && resource.operation == operation));
     }
@@ -45,7 +56,8 @@ fn prototype_loss_refuses_text_and_row_below_limits() {
         &mut losses,
         crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
         format_args!("Prototype rejected: {}", super::JoinedLaneRecords(&records)),
-    ).expect("service loss");
+    )
+    .expect("service loss");
     assert_eq!(losses[0].message, "Prototype rejected: first; second");
 }
 
@@ -58,8 +70,8 @@ fn legacy_carrier_count_node_refuses_before_first_insert() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = super::legacy_carrier_counts(&ctx, [42, 42])
-        .expect_err("first count node exceeds limit");
+    let error =
+        super::legacy_carrier_counts(&ctx, [42, 42]).expect_err("first count node exceeds limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo legacy carrier count nodes"));
@@ -829,56 +841,60 @@ fn in_range_section_extent_states_its_declared_end() {
     assert_eq!(section.end(), 48);
     crate::decode::with_test_decode_ctx(|ctx| {
         assert_eq!(super::frame_bound(ctx, &section, 8)?, 40);
-        let error = super::frame_bound(ctx, &section, usize::MAX)
-            .expect_err("overrun bound is refused");
+        let error =
+            super::frame_bound(ctx, &section, usize::MAX).expect_err("overrun bound is refused");
         assert!(error.to_string().contains("VisibGeom"));
         Ok::<(), cadmpeg_core::CodecError>(())
-    }).expect("service frame-bound text admitted");
+    })
+    .expect("service frame-bound text admitted");
 }
 
 #[test]
 fn surface_prototype_frame_address_error_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let section = crate::container::Section::scan(
-        "ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48],
-    )
-    .expect("section extent")
-    .section;
+    let section =
+        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
+            .expect("section extent")
+            .section;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = super::frame_bound(&ctx, &section, usize::MAX)
         .expect_err("error text exceeds retained limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo surface prototype frame address error"));
+            && resource.operation == "creo surface prototype frame address error")
+    );
 }
 
 #[test]
 fn surface_prototype_frame_bounds_error_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let section = crate::container::Section::scan(
-        "ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48],
-    )
-    .expect("section extent")
-    .section;
+    let section =
+        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
+            .expect("section extent")
+            .section;
     let scan = crate::container::scan_bytes_ok(vec![0u8; 16]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = super::surface_prototype_frame_bounds(&ctx, &scan, &section, 32)
         .expect_err("bounds error text exceeds retained limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo surface prototype frame bounds error"));
+            && resource.operation == "creo surface prototype frame bounds error")
+    );
     crate::decode::with_test_decode_ctx(|ctx| {
         let error = super::surface_prototype_frame_bounds(ctx, &scan, &section, 32)
             .expect_err("declared section exceeds scanned bytes");
         assert!(error.to_string().contains("VisibGeom"));
         Ok::<(), cadmpeg_core::CodecError>(())
-    }).expect("service error text admitted");
+    })
+    .expect("service error text admitted");
 }

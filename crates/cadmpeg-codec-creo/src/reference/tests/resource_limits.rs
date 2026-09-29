@@ -44,13 +44,13 @@ fn run<T>(
     parse(&ctx)
 }
 
-fn assert_item(error: CodecError, operation: &'static str) {
+fn assert_item(error: &CodecError, operation: &'static str) {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == operation));
 }
 
-fn assert_retained(error: CodecError, operation: &'static str) {
+fn assert_retained(error: &CodecError, operation: &'static str) {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == operation));
@@ -63,7 +63,7 @@ fn cache_case(parse: impl FnOnce(&DecodeContext<'_>) -> Result<(), CodecError>) 
 #[test]
 fn named_conic_scalar_cache_refuses_before_hashset_growth() {
     assert_item(
-        cache_case(|ctx| super::super::named_conics(ctx, SCALAR_IMAGE).map(|_| ())),
+        &cache_case(|ctx| super::super::named_conics(ctx, SCALAR_IMAGE).map(|_| ())),
         "creo scalar cache unique images",
     );
 }
@@ -71,7 +71,7 @@ fn named_conic_scalar_cache_refuses_before_hashset_growth() {
 #[test]
 fn positional_conic_scalar_cache_refuses_before_hashset_growth() {
     assert_item(
-        cache_case(|ctx| super::super::positional_conics(ctx, SCALAR_IMAGE).map(|_| ())),
+        &cache_case(|ctx| super::super::positional_conics(ctx, SCALAR_IMAGE).map(|_| ())),
         "creo scalar cache unique images",
     );
 }
@@ -79,7 +79,7 @@ fn positional_conic_scalar_cache_refuses_before_hashset_growth() {
 #[test]
 fn line_scalar_cache_refuses_before_hashset_growth() {
     assert_item(
-        cache_case(|ctx| super::super::lines(ctx, SCALAR_IMAGE).map(|_| ())),
+        &cache_case(|ctx| super::super::lines(ctx, SCALAR_IMAGE).map(|_| ())),
         "creo scalar cache unique images",
     );
 }
@@ -87,7 +87,7 @@ fn line_scalar_cache_refuses_before_hashset_growth() {
 #[test]
 fn line3d_scalar_cache_refuses_before_hashset_growth() {
     assert_item(
-        cache_case(|ctx| super::super::line3d_lines(ctx, SCALAR_IMAGE).map(|_| ())),
+        &cache_case(|ctx| super::super::line3d_lines(ctx, SCALAR_IMAGE).map(|_| ())),
         "creo scalar cache unique images",
     );
 }
@@ -95,7 +95,7 @@ fn line3d_scalar_cache_refuses_before_hashset_growth() {
 #[test]
 fn arc_z_scalar_cache_refuses_before_hashset_growth() {
     assert_item(
-        cache_case(|ctx| super::super::arc_z_circles(ctx, SCALAR_IMAGE).map(|_| ())),
+        &cache_case(|ctx| super::super::arc_z_circles(ctx, SCALAR_IMAGE).map(|_| ())),
         "creo scalar cache unique images",
     );
 }
@@ -112,7 +112,7 @@ fn named_conic_refuses_before_vec_growth() {
         1
     );
     assert_item(
-        run(NAMED_CONIC, 0, u64::MAX, |ctx| {
+        &run(NAMED_CONIC, 0, u64::MAX, |ctx| {
             super::super::named_conics(ctx, NAMED_CONIC)
         })
         .expect_err("one conic needs a Vec item"),
@@ -123,7 +123,7 @@ fn named_conic_refuses_before_vec_growth() {
 #[test]
 fn named_conic_body_refuses_before_retained_copy() {
     assert_retained(
-        run(NAMED_CONIC, 1, 0, |ctx| {
+        &run(NAMED_CONIC, 1, 0, |ctx| {
             super::super::named_conics(ctx, NAMED_CONIC)
         })
         .expect_err("conic body needs retained bytes"),
@@ -142,7 +142,7 @@ fn positional_conic_header_refuses_before_vec_growth() {
         1
     );
     assert_item(
-        run(POSITIONAL_CONIC, 0, u64::MAX, |ctx| {
+        &run(POSITIONAL_CONIC, 0, u64::MAX, |ctx| {
             super::super::positional_conics(ctx, POSITIONAL_CONIC)
         })
         .expect_err("header needs a Vec item"),
@@ -153,7 +153,7 @@ fn positional_conic_header_refuses_before_vec_growth() {
 #[test]
 fn positional_conic_refuses_before_vec_growth() {
     assert_item(
-        run(POSITIONAL_CONIC, 1, u64::MAX, |ctx| {
+        &run(POSITIONAL_CONIC, 1, u64::MAX, |ctx| {
             super::super::positional_conics(ctx, POSITIONAL_CONIC)
         })
         .expect_err("result needs a Vec item"),
@@ -164,7 +164,7 @@ fn positional_conic_refuses_before_vec_growth() {
 #[test]
 fn positional_conic_body_refuses_before_retained_copy() {
     assert_retained(
-        run(POSITIONAL_CONIC, 2, 0, |ctx| {
+        &run(POSITIONAL_CONIC, 2, 0, |ctx| {
             super::super::positional_conics(ctx, POSITIONAL_CONIC)
         })
         .expect_err("body needs retained bytes"),
@@ -181,7 +181,7 @@ fn reference_line_start_refuses_before_vec_growth() {
         1
     );
     assert_item(
-        run(LINE, 0, u64::MAX, |ctx| super::super::lines(ctx, LINE))
+        &run(LINE, 0, u64::MAX, |ctx| super::super::lines(ctx, LINE))
             .expect_err("start needs a Vec item"),
         "creo reference line starts",
     );
@@ -190,7 +190,7 @@ fn reference_line_start_refuses_before_vec_growth() {
 #[test]
 fn reference_line_result_refuses_before_vec_growth() {
     assert_item(
-        run(LINE, 1, u64::MAX, |ctx| super::super::lines(ctx, LINE))
+        &run(LINE, 1, u64::MAX, |ctx| super::super::lines(ctx, LINE))
             .expect_err("line needs a Vec item"),
         "creo reference lines",
     );
@@ -207,7 +207,7 @@ fn line3d_header_refuses_before_vec_growth() {
         1
     );
     assert_item(
-        run(LINE3D, 0, u64::MAX, |ctx| {
+        &run(LINE3D, 0, u64::MAX, |ctx| {
             super::super::line3d_lines(ctx, LINE3D)
         })
         .expect_err("header needs a Vec item"),
@@ -218,7 +218,7 @@ fn line3d_header_refuses_before_vec_growth() {
 #[test]
 fn line3d_result_refuses_before_vec_growth() {
     assert_item(
-        run(LINE3D, 1, u64::MAX, |ctx| {
+        &run(LINE3D, 1, u64::MAX, |ctx| {
             super::super::line3d_lines(ctx, LINE3D)
         })
         .expect_err("line needs a Vec item"),
@@ -237,7 +237,7 @@ fn arc_z_header_refuses_before_vec_growth() {
         1
     );
     assert_item(
-        run(ARC_Z, 0, u64::MAX, |ctx| {
+        &run(ARC_Z, 0, u64::MAX, |ctx| {
             super::super::arc_z_circles(ctx, ARC_Z)
         })
         .expect_err("header needs a Vec item"),
@@ -248,7 +248,7 @@ fn arc_z_header_refuses_before_vec_growth() {
 #[test]
 fn arc_z_result_refuses_before_vec_growth() {
     assert_item(
-        run(ARC_Z, 1, u64::MAX, |ctx| {
+        &run(ARC_Z, 1, u64::MAX, |ctx| {
             super::super::arc_z_circles(ctx, ARC_Z)
         })
         .expect_err("circle needs a Vec item"),
@@ -285,7 +285,7 @@ fn reference_ellipse_refuses_before_vec_growth() {
         1
     );
     assert_item(
-        run(&[], 0, u64::MAX, |ctx| {
+        &run(&[], 0, u64::MAX, |ctx| {
             super::super::ellipse_carriers(ctx, &conics)
         })
         .expect_err("ellipse needs a Vec item"),

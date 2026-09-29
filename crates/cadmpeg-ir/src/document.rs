@@ -13,8 +13,8 @@ use serde::{
     de::DeserializeOwned, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
 use cadmpeg_core::CodecError;
 
 use crate::appearance::{Appearance, AppearanceBinding};
@@ -958,7 +958,11 @@ impl Model {
         owner: &SurfaceId,
         procedural: &ProceduralSurface,
     ) -> Result<usize, ProceduralCarrierError> {
-        if self.procedural_surfaces.iter().any(|existing| existing.id == procedural.id) {
+        if self
+            .procedural_surfaces
+            .iter()
+            .any(|existing| existing.id == procedural.id)
+        {
             return Err(ProceduralCarrierError::new(format!(
                 "procedural surface construction {} already exists",
                 procedural.id
@@ -973,13 +977,21 @@ impl Model {
                 procedural.id, existing_owner.id
             )));
         }
-        let slot = self.surfaces.iter().position(|surface| surface.id == *owner)
-            .ok_or_else(|| ProceduralCarrierError::new(format!(
-                "procedural surface {} references missing surface {owner}", procedural.id
-            )))?;
+        let slot = self
+            .surfaces
+            .iter()
+            .position(|surface| surface.id == *owner)
+            .ok_or_else(|| {
+                ProceduralCarrierError::new(format!(
+                    "procedural surface {} references missing surface {owner}",
+                    procedural.id
+                ))
+            })?;
         match &self.surfaces[slot].geometry {
-            SurfaceGeometry::Procedural { construction, cache: None }
-                if *construction == procedural.id => {
+            SurfaceGeometry::Procedural {
+                construction,
+                cache: None,
+            } if *construction == procedural.id => {
                 if procedural.cache_fit_tolerance().is_some() {
                     return Err(ProceduralCarrierError::new(format!(
                         "direct procedural surface {owner} cannot carry a solved-cache tolerance"
@@ -1025,14 +1037,17 @@ impl Model {
         owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<(), CodecError> {
-        let slot = self.procedural_surface_slot(owner, &procedural)
+        let slot = self
+            .procedural_surface_slot(owner, &procedural)
             .map_err(CodecError::malformed)?;
         let replacement = match &self.surfaces[slot].geometry {
             SurfaceGeometry::Procedural { .. } => None,
             SurfaceGeometry::Solved(geometry) => Some(SurfaceGeometry::Procedural {
                 construction: ProceduralSurfaceId::mint(ctx.copy_retained_text(
-                    procedural.id.as_str(), "procedural surface owner identity",
-                )?).map_err(CodecError::malformed)?,
+                    procedural.id.as_str(),
+                    "procedural surface owner identity",
+                )?)
+                .map_err(CodecError::malformed)?,
                 cache: Some(geometry.copy_admitted(ctx, "procedural surface solved cache")?),
             }),
         };
@@ -1050,7 +1065,11 @@ impl Model {
         owner: &CurveId,
         procedural: &ProceduralCurve,
     ) -> Result<usize, ProceduralCarrierError> {
-        if self.procedural_curves.iter().any(|existing| existing.id == procedural.id) {
+        if self
+            .procedural_curves
+            .iter()
+            .any(|existing| existing.id == procedural.id)
+        {
             return Err(ProceduralCarrierError::new(format!(
                 "procedural curve construction {} already exists",
                 procedural.id
@@ -1064,13 +1083,21 @@ impl Model {
                 procedural.id, existing_owner.id
             )));
         }
-        let slot = self.curves.iter().position(|curve| curve.id == *owner)
-            .ok_or_else(|| ProceduralCarrierError::new(format!(
-                "procedural curve {} references missing curve {owner}", procedural.id
-            )))?;
+        let slot = self
+            .curves
+            .iter()
+            .position(|curve| curve.id == *owner)
+            .ok_or_else(|| {
+                ProceduralCarrierError::new(format!(
+                    "procedural curve {} references missing curve {owner}",
+                    procedural.id
+                ))
+            })?;
         match &self.curves[slot].geometry {
-            CurveGeometry::Procedural { construction, cache: None }
-                if *construction == procedural.id => {
+            CurveGeometry::Procedural {
+                construction,
+                cache: None,
+            } if *construction == procedural.id => {
                 if procedural.cache_fit_tolerance().is_some() {
                     return Err(ProceduralCarrierError::new(format!(
                         "direct procedural curve {owner} cannot carry a solved-cache tolerance"
@@ -1116,14 +1143,17 @@ impl Model {
         owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<(), CodecError> {
-        let slot = self.procedural_curve_slot(owner, &procedural)
+        let slot = self
+            .procedural_curve_slot(owner, &procedural)
             .map_err(CodecError::malformed)?;
         let replacement = match &self.curves[slot].geometry {
             CurveGeometry::Procedural { .. } => None,
             CurveGeometry::Solved(geometry) => Some(CurveGeometry::Procedural {
                 construction: ProceduralCurveId::mint(ctx.copy_retained_text(
-                    procedural.id.as_str(), "procedural curve owner identity",
-                )?).map_err(CodecError::malformed)?,
+                    procedural.id.as_str(),
+                    "procedural curve owner identity",
+                )?)
+                .map_err(CodecError::malformed)?,
                 cache: Some(geometry.copy_admitted(ctx, "procedural curve solved cache")?),
             }),
         };

@@ -856,9 +856,27 @@ fn serialize_cap_edges<S: serde::Serializer>(
 ) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeMap;
     let mut map = serializer.serialize_map(Some(3))?;
-    map.serialize_entry("curve_ids", &CapEdgeValues { edges, value: |edge| edge.curve_id })?;
-    map.serialize_entry("cap_plane_ids", &CapEdgeValues { edges, value: |edge| edge.cap_plane_id })?;
-    map.serialize_entry("curve_cap_ordinates_row_frame", &CapEdgeValues { edges, value: |edge| edge.cap_ordinate_row_frame })?;
+    map.serialize_entry(
+        "curve_ids",
+        &CapEdgeValues {
+            edges,
+            value: |edge| edge.curve_id,
+        },
+    )?;
+    map.serialize_entry(
+        "cap_plane_ids",
+        &CapEdgeValues {
+            edges,
+            value: |edge| edge.cap_plane_id,
+        },
+    )?;
+    map.serialize_entry(
+        "curve_cap_ordinates_row_frame",
+        &CapEdgeValues {
+            edges,
+            value: |edge| edge.cap_ordinate_row_frame,
+        },
+    )?;
     map.end()
 }
 

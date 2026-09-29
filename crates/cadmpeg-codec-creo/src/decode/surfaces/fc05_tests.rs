@@ -30,23 +30,26 @@ fn one_fc05_cap_scan() -> crate::container::ContainerScan<'static> {
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 1,
     });
-    scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
-        id: 7,
-        type_byte: 5,
-        feature_id: 4,
-        directions: [0; 2],
-        faces: [1, 2].map(std::num::NonZeroU32::new),
-        next_edges: [0; 2],
-        offset: 7,
-    });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 7,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [1, 2].map(std::num::NonZeroU32::new),
+            next_edges: [0; 2],
+            offset: 7,
+        });
     scan.curves.fc05_circles.push(crate::curve::Fc05Circle {
         curve_id: 7,
         center_row_frame: [0.0, 0.0],
         radius_mm: 1.0,
-        sample_direction_row_frame:
-            cadmpeg_ir::units::HypotDirection2::normalized_with_length([1.0, 0.0])
-                .expect("unit sample direction")
-                .0,
+        sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+            1.0, 0.0,
+        ])
+        .expect("unit sample direction")
+        .0,
         angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
             sense: crate::curve::ParameterSense::Increasing,
             reference_direction_row_frame: [1.0, 0.0],
@@ -64,11 +67,13 @@ fn transfer_with_retained_limit(limit: u64, existing_curve: bool) -> Result<CadI
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let mut ir = CadIr::empty();
     if existing_curve {
-        ir.model.curves.push(service_fc05_ir().model.curves[0].clone());
+        ir.model
+            .curves
+            .push(service_fc05_ir().model.curves[0].clone());
     }
     transfer_fc05_cap_circles(
         &ctx,
@@ -101,14 +106,20 @@ fn fc05_cap_transfer_preserves_curve_and_surface_geometry() {
     let ir = service_fc05_ir();
     assert_eq!(ir.model.curves.len(), 1);
     assert_eq!(ir.model.surfaces.len(), 1);
-    assert_eq!(ir.model.curves[0].id, CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 7));
-    assert_eq!(ir.model.surfaces[0].id, SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 2));
+    assert_eq!(
+        ir.model.curves[0].id,
+        CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 7)
+    );
+    assert_eq!(
+        ir.model.surfaces[0].id,
+        SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 2)
+    );
 }
 
 #[test]
 fn fc05_cap_curve_identity_refuses_retained_limit() {
-    let error = transfer_with_retained_limit(0, false)
-        .expect_err("curve identity exceeds retained limit");
+    let error =
+        transfer_with_retained_limit(0, false).expect_err("curve identity exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo FC05 cap circle identity"));
@@ -117,7 +128,7 @@ fn fc05_cap_curve_identity_refuses_retained_limit() {
 #[test]
 fn fc05_cap_curve_source_object_refuses_retained_limit() {
     let curve_id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 7);
-    let error = transfer_with_retained_limit(curve_id.as_str().len() as u64, false)
+    let error = transfer_with_retained_limit((curve_id.as_str().len() + 84 - 1) as u64, false)
         .expect_err("curve source ID exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -138,7 +149,7 @@ fn fc05_axis_cylinder_identity_refuses_retained_limit() {
 fn fc05_axis_cylinder_source_object_refuses_retained_limit() {
     let curve_id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 7);
     let surface_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 2);
-    let limit = curve_id.as_str().len() + surface_id.as_str().len();
+    let limit = curve_id.as_str().len() + surface_id.as_str().len() + 91 - 1;
     let error = transfer_with_retained_limit(limit as u64, true)
         .expect_err("axis cylinder source ID exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)

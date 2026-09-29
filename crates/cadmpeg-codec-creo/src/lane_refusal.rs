@@ -72,13 +72,12 @@ impl LaneRefusals {
         if self.resource_error.is_some() {
             return;
         }
-        let admitted = ctx.format_retained(
-            format_args!("{record}: {reason}"),
-            "creo lane refusal text",
-        ).and_then(|record| {
-            ctx.try_reserve_items(&mut self.records, 1, "creo lane refusal records")?;
-            Ok(record)
-        });
+        let admitted = ctx
+            .format_retained(format_args!("{record}: {reason}"), "creo lane refusal text")
+            .and_then(|record| {
+                ctx.try_reserve_items(&mut self.records, 1, "creo lane refusal records")?;
+                Ok(record)
+            });
         match admitted {
             Ok(record) => self.records.push(record),
             Err(error) => self.resource_error = Some(error),
@@ -112,11 +111,13 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("test decode context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
         let mut refusals = LaneRefusals::new();
         refusals.note_checked(&ctx, "record 7", &"invalid lane");
-        let error = refusals.take_records_checked().expect_err("one record exceeds limit");
+        let error = refusals
+            .take_records_checked()
+            .expect_err("one record exceeds limit");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)

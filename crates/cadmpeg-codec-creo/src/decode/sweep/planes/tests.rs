@@ -27,7 +27,14 @@ fn service_feature_plane_equations(
     feature_id: u32,
 ) -> Option<Vec<([f64; 3], [f64; 3])>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        super::feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)
+        super::feature_plane_equations(ctx, scan, ir, source_carriers, feature_id).map(|result| {
+            result.map(|planes| {
+                planes
+                    .into_iter()
+                    .map(|plane| (plane.origin, plane.normal))
+                    .collect::<Vec<_>>()
+            })
+        })
     })
     .expect("service resources")
 }
@@ -113,6 +120,14 @@ fn feature_plane_limit_error(limit: u64) -> cadmpeg_core::CodecError {
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         917,
     )
+    .map(|result| {
+        result.map(|planes| {
+            planes
+                .into_iter()
+                .map(|plane| (plane.origin, plane.normal))
+                .collect::<Vec<_>>()
+        })
+    })
     .expect_err("next plane collection exceeds limit")
 }
 
@@ -126,11 +141,13 @@ fn feature_outline_planes_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = super::feature_outline_planes(&ctx, &scan, 917)
-        .expect_err("outline plane exceeds limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    let error =
+        super::feature_outline_planes(&ctx, &scan, 917).expect_err("outline plane exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo feature outline planes"));
+            && resource.operation == "creo feature outline planes")
+    );
 }
 
 #[test]
@@ -211,7 +228,9 @@ fn generated_arc_cylinder_id_nodes_refuse_collection_limit() {
                     body: Vec::new(),
                     offset: 0,
                 },
-            )].into_iter().collect(),
+            )]
+            .into_iter()
+            .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -224,8 +243,14 @@ fn generated_arc_cylinder_id_nodes_refuse_collection_limit() {
         offset: 0,
     };
     let transform = crate::placement::FeatureSectionTransform::new(
-        7, Some(7), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0], 0,
-    ).expect("section transform");
+        7,
+        Some(7),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        0,
+    )
+    .expect("section transform");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -240,16 +265,23 @@ fn generated_arc_cylinder_id_nodes_refuse_collection_limit() {
         &transform,
     )
     .expect_err("source ID node exceeds limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo generated arc cylinder ID nodes"));
+            && resource.operation == "creo generated arc cylinder ID nodes")
+    );
 }
 
 #[test]
 fn available_positional_cylinder_frames_refuse_collection_limit() {
     let frame = crate::surface::PositionalCylinderFrame::new(
-        [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 0.75, Some(2.0),
-    ).expect("cylinder frame");
+        [0.0; 3],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        0.75,
+        Some(2.0),
+    )
+    .expect("cylinder frame");
     let parameters = [crate::surface::SurfaceParameterRecord {
         surface_id: 1,
         body: Vec::new(),
@@ -257,7 +289,10 @@ fn available_positional_cylinder_frames_refuse_collection_limit() {
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
-            crate::surface::InlineSurfaceCarrier::Cylinder { frame, split_bounds: None },
+            crate::surface::InlineSurfaceCarrier::Cylinder {
+                frame,
+                split_bounds: None,
+            },
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: 0,
@@ -271,9 +306,11 @@ fn available_positional_cylinder_frames_refuse_collection_limit() {
         .expect("empty root admitted");
     let error = super::unique_available_positional_cylinder_frame_records(&ctx, &ids, &parameters)
         .expect_err("frame item exceeds limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo available positional cylinder frames"));
+            && resource.operation == "creo available positional cylinder frames")
+    );
 }
 
 fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {

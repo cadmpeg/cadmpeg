@@ -1,44 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{admit_constraint_row, available_parameter_ids, emitted_entity_views, insert_set, insert_tree};
+use super::{
+    admit_constraint_row, available_parameter_ids, emitted_entity_views, insert_set, insert_tree,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
     SketchConstraintId, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
 };
-use cadmpeg_ir::features::ParameterId;
 use std::collections::BTreeSet;
 
 fn empty_section_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.definitions.push(crate::feature::definitions::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(7),
-            owner_feature_id: None,
-        },
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
-            entities: Vec::new(),
+    scan.features
+        .definitions
+        .push(crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+                entities: Vec::new(),
+                offset: 0,
+            }),
             offset: 0,
-        }),
-        offset: 0,
-    });
+        });
     scan
 }
 
-fn transfer_empty_section(policy: &DecodePolicy) -> Result<cadmpeg_ir::document::CadIr, CodecError> {
+fn transfer_empty_section(
+    policy: &DecodePolicy,
+) -> Result<cadmpeg_ir::document::CadIr, CodecError> {
     let scan = empty_section_scan();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -75,9 +81,12 @@ fn segment_table_underflow_error_refuses_retained_text_limit() {
     crate::decode::with_test_decode_ctx(|ctx| {
         let error = super::expected_segment_rows(ctx, 7, &table)
             .expect_err("negative ordinary row count is malformed");
-        assert!(error.to_string().contains("feature 7 states segment table count 0 and 1 elided prototype row(s)"));
+        assert!(error
+            .to_string()
+            .contains("feature 7 states segment table count 0 and 1 elided prototype row(s)"));
         Ok::<(), CodecError>(())
-    }).expect("service error text admitted");
+    })
+    .expect("service error text admitted");
 }
 
 #[test]
@@ -103,8 +112,11 @@ fn sketch_native_reference_refuses_below_retained_limit() {
             && resource.operation == "creo sketch native reference"));
     policy.limits.max_retained_bytes = need;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert_eq!(crate::decode::sketch_ids::sketch_native_ref_admitted(&ctx, &sketch)
-        .expect("exact cap admits reference"), "creo:featdefs:sketch#7");
+    assert_eq!(
+        crate::decode::sketch_ids::sketch_native_ref_admitted(&ctx, &sketch)
+            .expect("exact cap admits reference"),
+        "creo:featdefs:sketch#7"
+    );
 }
 
 fn disabled_constraint() -> SketchConstraint {
@@ -113,7 +125,8 @@ fn disabled_constraint() -> SketchConstraint {
         sketch: SketchId::mint("creo:model:sketch#1").expect("sketch id"),
         definition: SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Disabled {},
-        ).expect("disabled constraint"),
+        )
+        .expect("disabled constraint"),
         name: None,
         driving: None,
         active: None,
@@ -156,9 +169,7 @@ fn fixture() -> SketchEntity {
     )
 }
 
-fn views_with_policy(
-    policy: &DecodePolicy,
-) -> Result<usize, CodecError> {
+fn views_with_policy(policy: &DecodePolicy) -> Result<usize, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let (_, geometry) = emitted_entity_views(&ctx, &[fixture()])?;
@@ -178,7 +189,10 @@ fn emitted_entity_views_refuse_each_tree_node() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo emitted sketch geometry nodes"));
-    assert_eq!(views_with_policy(&DecodePolicy::service()).expect("service views"), 1);
+    assert_eq!(
+        views_with_policy(&DecodePolicy::service()).expect("service views"),
+        1
+    );
 }
 
 #[test]
@@ -189,12 +203,16 @@ fn emitted_entity_views_refuse_nested_identity_and_geometry_copies() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo emitted sketch entity IDs"));
-    policy.limits.max_retained_bytes = ("creo:model:sketch_entity#1".len() * 2 + "native".len() - 1) as u64;
+    policy.limits.max_retained_bytes =
+        ("creo:model:sketch_entity#1".len() * 2 + "native".len() - 1) as u64;
     let error = views_with_policy(&policy).expect_err("native text exceeds remaining cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo emitted sketch geometry"));
-    assert_eq!(views_with_policy(&DecodePolicy::service()).expect("service views"), 1);
+    assert_eq!(
+        views_with_policy(&DecodePolicy::service()).expect("service views"),
+        1
+    );
 }
 
 #[test]
@@ -219,7 +237,8 @@ fn available_parameter_ids_refuse_existing_node_and_identity_copy() {
             && resource.operation == "creo available parameter identities"));
     let ids = crate::decode::with_test_decode_ctx(|ctx| {
         available_parameter_ids(ctx, [&id], BTreeSet::new())
-    }).expect("service IDs admitted");
+    })
+    .expect("service IDs admitted");
     assert_eq!(ids, BTreeSet::from([id]));
 }
 
@@ -237,7 +256,8 @@ fn available_parameter_ids_refuse_planned_tree_node() {
             && resource.operation == "creo available planned parameter ID nodes"));
     let ids = crate::decode::with_test_decode_ctx(|ctx| {
         available_parameter_ids(ctx, std::iter::empty(), BTreeSet::from([id.clone()]))
-    }).expect("service IDs admitted");
+    })
+    .expect("service IDs admitted");
     assert_eq!(ids, BTreeSet::from([id]));
 }
 
@@ -287,16 +307,55 @@ macro_rules! set_node_test {
     };
 }
 
-map_node_test!(resolved_sketch_point_node_refuses_limit, "creo resolved sketch point nodes");
-map_node_test!(resolved_section_geometry_node_refuses_limit, "creo resolved section geometry nodes");
-map_node_test!(section_geometry_node_refuses_limit, "creo section geometry nodes");
-map_node_test!(section_circle_geometry_node_refuses_limit, "creo section circle geometry nodes");
-map_node_test!(section_point_geometry_node_refuses_limit, "creo section point geometry nodes");
-map_node_test!(section_centered_line_geometry_node_refuses_limit, "creo section centered-line geometry nodes");
-map_node_test!(section_reference_line_geometry_node_refuses_limit, "creo section reference-line geometry nodes");
-set_node_test!(solved_section_segment_node_refuses_limit, "creo solved section segment ID nodes");
-set_node_test!(emitted_section_segment_node_refuses_limit, "creo emitted section segment ID nodes");
-set_node_test!(resolved_section_offset_node_refuses_limit, "creo resolved section offset nodes");
-set_node_test!(equation_offset_node_refuses_limit, "creo equation offset nodes");
-set_node_test!(rejected_equation_offset_node_refuses_limit, "creo rejected equation offset nodes");
-set_node_test!(typed_equation_offset_node_refuses_limit, "creo typed equation offset nodes");
+map_node_test!(
+    resolved_sketch_point_node_refuses_limit,
+    "creo resolved sketch point nodes"
+);
+map_node_test!(
+    resolved_section_geometry_node_refuses_limit,
+    "creo resolved section geometry nodes"
+);
+map_node_test!(
+    section_geometry_node_refuses_limit,
+    "creo section geometry nodes"
+);
+map_node_test!(
+    section_circle_geometry_node_refuses_limit,
+    "creo section circle geometry nodes"
+);
+map_node_test!(
+    section_point_geometry_node_refuses_limit,
+    "creo section point geometry nodes"
+);
+map_node_test!(
+    section_centered_line_geometry_node_refuses_limit,
+    "creo section centered-line geometry nodes"
+);
+map_node_test!(
+    section_reference_line_geometry_node_refuses_limit,
+    "creo section reference-line geometry nodes"
+);
+set_node_test!(
+    solved_section_segment_node_refuses_limit,
+    "creo solved section segment ID nodes"
+);
+set_node_test!(
+    emitted_section_segment_node_refuses_limit,
+    "creo emitted section segment ID nodes"
+);
+set_node_test!(
+    resolved_section_offset_node_refuses_limit,
+    "creo resolved section offset nodes"
+);
+set_node_test!(
+    equation_offset_node_refuses_limit,
+    "creo equation offset nodes"
+);
+set_node_test!(
+    rejected_equation_offset_node_refuses_limit,
+    "creo rejected equation offset nodes"
+);
+set_node_test!(
+    typed_equation_offset_node_refuses_limit,
+    "creo typed equation offset nodes"
+);

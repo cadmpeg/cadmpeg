@@ -96,7 +96,7 @@ fn limited_rows(items: u64, bytes: u64) -> Result<Vec<FeatureRow>, CodecError> {
     rows(&ctx, SINGLE_ROW, &BTreeSet::from([40]), 0)
 }
 
-fn assert_row_item_refusal(error: CodecError, operation: &'static str) {
+fn assert_row_item_refusal(error: &CodecError, operation: &'static str) {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == operation));
@@ -106,7 +106,7 @@ fn assert_row_item_refusal(error: CodecError, operation: &'static str) {
 fn feature_row_start_refuses_before_vec_growth() {
     assert_eq!(limited_row_spans(5).expect("span admitted").len(), 1);
     assert_row_item_refusal(
-        limited_row_spans(0).expect_err("start item"),
+        &limited_row_spans(0).expect_err("start item"),
         "creo feature row starts",
     );
 }
@@ -114,7 +114,7 @@ fn feature_row_start_refuses_before_vec_growth() {
 #[test]
 fn feature_row_seen_id_refuses_before_btree_insert() {
     assert_row_item_refusal(
-        limited_row_spans(1).expect_err("seen id node"),
+        &limited_row_spans(1).expect_err("seen id node"),
         "creo feature row seen ids",
     );
 }
@@ -122,7 +122,7 @@ fn feature_row_seen_id_refuses_before_btree_insert() {
 #[test]
 fn feature_row_schema_class_refuses_before_btree_insert() {
     assert_row_item_refusal(
-        limited_row_spans(2).expect_err("schema class node"),
+        &limited_row_spans(2).expect_err("schema class node"),
         "creo feature row schema classes",
     );
 }
@@ -130,7 +130,7 @@ fn feature_row_schema_class_refuses_before_btree_insert() {
 #[test]
 fn feature_row_retained_start_refuses_before_vec_growth() {
     assert_row_item_refusal(
-        limited_row_spans(3).expect_err("retained start item"),
+        &limited_row_spans(3).expect_err("retained start item"),
         "creo feature retained starts",
     );
 }
@@ -138,7 +138,7 @@ fn feature_row_retained_start_refuses_before_vec_growth() {
 #[test]
 fn feature_row_span_refuses_before_vec_growth() {
     assert_row_item_refusal(
-        limited_row_spans(4).expect_err("span item"),
+        &limited_row_spans(4).expect_err("span item"),
         "creo feature row spans",
     );
 }
@@ -147,7 +147,7 @@ fn feature_row_span_refuses_before_vec_growth() {
 fn feature_row_output_refuses_before_vec_growth() {
     assert_eq!(limited_rows(6, u64::MAX).expect("row admitted").len(), 1);
     assert_row_item_refusal(
-        limited_rows(5, u64::MAX).expect_err("row item"),
+        &limited_rows(5, u64::MAX).expect_err("row item"),
         "creo feature rows",
     );
 }

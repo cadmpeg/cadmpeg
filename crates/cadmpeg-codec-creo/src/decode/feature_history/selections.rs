@@ -361,10 +361,7 @@ mod tests {
         let scan = one_generated_edge();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = (
-            "creo:allfeatur:edgs_affected#10:59".len()
-                + "creo:visibgeom:edge#59".len()
-        ) as u64;
+        policy.limits.max_retained_bytes = 139;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty source is admitted");
         let error = feature_edge_selection(&ctx, &scan, &cadmpeg_ir::document::CadIr::empty(), 10)

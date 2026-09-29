@@ -333,17 +333,16 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         .contains_key(&(crate::feature::definitions::VariableType::Dimension, 0))
     );
 
-    let equation_id =
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())
-        })
-            .expect("equation table admitted")
-            .expect("equation table")
-            .rows
-            .iter()
-            .find(|equation| equation.function_id == 3)
-            .expect("function-three equation")
-            .equation_id;
+    let equation_id = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())
+    })
+    .expect("equation table admitted")
+    .expect("equation table")
+    .rows
+    .iter()
+    .find(|equation| equation.function_id == 3)
+    .expect("function-three equation")
+    .equation_id;
     let mut disabled_equation = definition.clone();
     disabled_equation.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,

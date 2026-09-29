@@ -238,8 +238,9 @@ pub(super) fn real_roots(
         + EPS_QUADRATIC_CANCELLATION * (b * b + product.abs());
     if discriminant.abs() <= error {
         return multiply_divide(linear_value.negated(), FiniteReal::HALF, quadratic_value)
-            .map(|root| QuadraticRoots::one(root.get()))
-            .unwrap_or_else(QuadraticRoots::empty);
+            .map_or_else(QuadraticRoots::empty, |root| {
+                QuadraticRoots::one(root.get())
+            });
     }
     if discriminant < 0.0 {
         return QuadraticRoots::empty();
@@ -286,7 +287,8 @@ mod tests {
                     Coefficient::single(scale),
                     Coefficient::single(0.0),
                     Coefficient::single(-scale)
-                ).as_slice(),
+                )
+                .as_slice(),
                 [-1.0, 1.0]
             );
             assert!(super::real_roots(
@@ -300,7 +302,8 @@ mod tests {
                     Coefficient::single(0.0),
                     Coefficient::single(scale),
                     Coefficient::single(-scale)
-                ).as_slice(),
+                )
+                .as_slice(),
                 [1.0]
             );
         }

@@ -93,7 +93,8 @@ impl CompositeStages for CompositePattern {
         self.clone().try_map_stage_lengths_owned(edit)
     }
 
-    fn try_map_stage_lengths_owned<E>(mut self,
+    fn try_map_stage_lengths_owned<E>(
+        mut self,
         edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
     ) -> Result<Self, PatternLengthEditError<E>> {
         for stage in &mut self.0 {
@@ -119,12 +120,12 @@ impl CompositeStages for NoNestedComposite {
     ) -> Result<Self, PatternLengthEditError<E>> {
         match *self {}
     }
-    fn try_map_stage_lengths_owned<E>(self,
+    fn try_map_stage_lengths_owned<E>(
+        self,
         _edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
     ) -> Result<Self, PatternLengthEditError<E>> {
         match self {}
     }
-
 }
 
 /// An admitted pattern with valid geometry, repetition counts, and stage composition.
@@ -168,7 +169,8 @@ impl<C: CompositeStages + Clone> PatternKind<C> {
 
 impl<C: CompositeStages> PatternKind<C> {
     /// Edit an owned pattern without copying retained operands or offset rows.
-    pub fn try_map_lengths_owned<E>(self,
+    pub fn try_map_lengths_owned<E>(
+        self,
         edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
     ) -> Result<Self, PatternLengthEditError<E>> {
         let mut transform = self.0;
@@ -209,9 +211,11 @@ impl<C: CompositeStages> PatternKind<C> {
             }
             PatternTransform::Composite { .. } => {
                 return match transform {
-                    PatternTransform::Composite { stages } => Ok(Self(PatternTransform::Composite {
-                        stages: stages.try_map_stage_lengths_owned(edit)?,
-                    })),
+                    PatternTransform::Composite { stages } => {
+                        Ok(Self(PatternTransform::Composite {
+                            stages: stages.try_map_stage_lengths_owned(edit)?,
+                        }))
+                    }
                     other => Ok(Self(other)),
                 };
             }

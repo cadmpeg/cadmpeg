@@ -14,9 +14,9 @@ use crate::decode::sketch_transfer::loci::{
 };
 use crate::feature::definitions::FeatureRelationTable;
 use crate::feature::segment_rows::SegmentRow;
-use cadmpeg_ir::sketches::{SketchEntityUse, SketchId};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::sketches::{SketchEntityUse, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn resolved_profile_chains(
@@ -115,11 +115,17 @@ pub(in super::super) fn resolved_profile_chains(
         let mut unused = component;
         let mut profile = Vec::new();
         while !unused.is_empty() {
-            let mut candidates = incident[&vertex].iter().filter(|index| unused.contains(index)).copied();
+            let mut candidates = incident[&vertex]
+                .iter()
+                .filter(|index| unused.contains(index))
+                .copied();
             let first_candidate = candidates.next();
             let second_candidate = candidates.next();
             let index = if profile.is_empty() && endpoint_count == 0 {
-                if incident[&vertex].iter().any(|candidate| *candidate == first_row && unused.contains(candidate)) {
+                if incident[&vertex]
+                    .iter()
+                    .any(|candidate| *candidate == first_row && unused.contains(candidate))
+                {
                     first_row
                 } else {
                     break;
@@ -144,10 +150,9 @@ pub(in super::super) fn resolved_profile_chains(
                         crate::feature::definitions::FeatureSegmentKind::Arc(_)
                     ) && segment.arc_orientation == Some(0)
                 });
-            let entity = match sketch_entity_id_admitted(ctx, sketch, external_id)? {
-                    Some(id) => id,
-                    None => continue,
-                };
+            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, external_id)? else {
+                continue;
+            };
             ctx.try_reserve_items(&mut profile, 1, "creo trim profile entity uses")?;
             profile.push(SketchEntityUse {
                 entity,
@@ -188,13 +193,13 @@ fn resolved_segment_profile_chains(
     };
     let mut rows = Vec::new();
     for segment in table.rows.ordinary().filter(|segment| {
-            emitted.contains(&segment.external_id)
-                && matches!(
-                    segment.kind,
-                    crate::feature::definitions::FeatureSegmentKind::Line(_)
-                        | crate::feature::definitions::FeatureSegmentKind::Arc(_)
-                )
-        }) {
+        emitted.contains(&segment.external_id)
+            && matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Line(_)
+                    | crate::feature::definitions::FeatureSegmentKind::Arc(_)
+            )
+    }) {
         ctx.try_reserve_items(&mut rows, 1, "creo segment profile rows")?;
         rows.push(segment);
     }
@@ -255,10 +260,17 @@ fn resolved_segment_profile_chains(
         let mut unused = component;
         let mut profile = Vec::new();
         while !unused.is_empty() {
-            let mut candidates = incident[&point].iter().filter(|index| unused.contains(index)).copied();
+            let mut candidates = incident[&point]
+                .iter()
+                .filter(|index| unused.contains(index))
+                .copied();
             let first_candidate = candidates.next();
             let second_candidate = candidates.next();
-            let index = if profile.is_empty() && incident[&point].iter().any(|candidate| *candidate == first && unused.contains(candidate)) {
+            let index = if profile.is_empty()
+                && incident[&point]
+                    .iter()
+                    .any(|candidate| *candidate == first && unused.contains(candidate))
+            {
                 first
             } else if let (Some(index), None) = (first_candidate, second_candidate) {
                 index
@@ -274,10 +286,9 @@ fn resolved_segment_profile_chains(
                 segment.kind,
                 crate::feature::definitions::FeatureSegmentKind::Arc(_)
             ) && segment.arc_orientation == Some(0);
-            let entity = match sketch_entity_id_admitted(ctx, sketch, segment.external_id)? {
-                    Some(id) => id,
-                    None => continue,
-                };
+            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, segment.external_id)? else {
+                continue;
+            };
             ctx.try_reserve_items(&mut profile, 1, "creo segment profile entity uses")?;
             profile.push(SketchEntityUse {
                 entity,
@@ -314,7 +325,10 @@ pub(in super::super) fn solver_only_section_entities(
                 .map(move |item| (item.entity_id, skamp.offset))
         })
     {
-        if definition.segments.iter().flat_map(|table| table.rows.ids())
+        if definition
+            .segments
+            .iter()
+            .flat_map(|table| table.rows.ids())
             .any(|segment_id| segment_id == id)
         {
             continue;
@@ -333,12 +347,18 @@ pub(in super::super) fn solver_only_section_entity_offset(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Option<usize> {
-    if definition.segments.iter().flat_map(|table| table.rows.ids())
+    if definition
+        .segments
+        .iter()
+        .flat_map(|table| table.rows.ids())
         .any(|segment_id| segment_id == entity_id)
     {
         return None;
     }
-    definition.relations.iter().flat_map(FeatureRelationTable::skamps)
+    definition
+        .relations
+        .iter()
+        .flat_map(FeatureRelationTable::skamps)
         .filter(|skamp| skamp.items.iter().any(|item| item.entity_id == entity_id))
         .map(|skamp| skamp.offset)
         .min()
@@ -374,15 +394,15 @@ impl IncidenceEvidence {
         self.0[Self::slot(family)] = true;
     }
 
-    fn remove(&mut self, family: &SectionEntityIncidenceFamily) {
-        self.0[Self::slot(*family)] = false;
+    fn remove(&mut self, family: SectionEntityIncidenceFamily) {
+        self.0[Self::slot(family)] = false;
     }
 
-    fn contains(&self, family: &SectionEntityIncidenceFamily) -> bool {
-        self.0[Self::slot(*family)]
+    fn contains(self, family: SectionEntityIncidenceFamily) -> bool {
+        self.0[Self::slot(family)]
     }
 
-    pub(in super::super) fn len(&self) -> usize {
+    pub(in super::super) fn len(self) -> usize {
         self.0.iter().filter(|present| **present).count()
     }
 
@@ -396,7 +416,7 @@ impl IncidenceEvidence {
             SectionEntityIncidenceFamily::Circular,
         ]
         .into_iter()
-        .filter(move |family| self.contains(family))
+        .filter(move |family| self.contains(*family))
     }
 }
 
@@ -426,12 +446,12 @@ fn section_skamp_has_proven_point_locus(
     let solver_family =
         section_incidence_curve_family_evidence_without_type35(definition, item.entity_id);
     if solver_family.len() == 1
-        && ((solver_family.contains(&SectionEntityIncidenceFamily::BoundedCurve)
-            || solver_family.contains(&SectionEntityIncidenceFamily::Line)
-            || solver_family.contains(&SectionEntityIncidenceFamily::Arc))
+        && ((solver_family.contains(SectionEntityIncidenceFamily::BoundedCurve)
+            || solver_family.contains(SectionEntityIncidenceFamily::Line)
+            || solver_family.contains(SectionEntityIncidenceFamily::Arc))
             && matches!(item.sense, 2 | 3)
-            || (solver_family.contains(&SectionEntityIncidenceFamily::Arc)
-                || solver_family.contains(&SectionEntityIncidenceFamily::Circular))
+            || (solver_family.contains(SectionEntityIncidenceFamily::Arc)
+                || solver_family.contains(SectionEntityIncidenceFamily::Circular))
                 && matches!(item.sense, 2..=4))
     {
         return true;
@@ -654,19 +674,19 @@ pub(in super::super) fn unique_section_incidence_curve_family_without_type35_tar
 pub(in super::super) fn normalize_section_incidence_curve_family_evidence(
     evidence: &mut IncidenceEvidence,
 ) {
-    if evidence.contains(&SectionEntityIncidenceFamily::Line) {
-        evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve);
-        evidence.remove(&SectionEntityIncidenceFamily::LineOrArc);
-    } else if evidence.contains(&SectionEntityIncidenceFamily::Circular)
-        && (evidence.contains(&SectionEntityIncidenceFamily::BoundedCurve)
-            || evidence.contains(&SectionEntityIncidenceFamily::LineOrArc))
+    if evidence.contains(SectionEntityIncidenceFamily::Line) {
+        evidence.remove(SectionEntityIncidenceFamily::BoundedCurve);
+        evidence.remove(SectionEntityIncidenceFamily::LineOrArc);
+    } else if evidence.contains(SectionEntityIncidenceFamily::Circular)
+        && (evidence.contains(SectionEntityIncidenceFamily::BoundedCurve)
+            || evidence.contains(SectionEntityIncidenceFamily::LineOrArc))
     {
-        evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve);
-        evidence.remove(&SectionEntityIncidenceFamily::LineOrArc);
-        evidence.remove(&SectionEntityIncidenceFamily::Circular);
+        evidence.remove(SectionEntityIncidenceFamily::BoundedCurve);
+        evidence.remove(SectionEntityIncidenceFamily::LineOrArc);
+        evidence.remove(SectionEntityIncidenceFamily::Circular);
         evidence.insert(SectionEntityIncidenceFamily::Arc);
-    } else if evidence.contains(&SectionEntityIncidenceFamily::LineOrArc) {
-        evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve);
+    } else if evidence.contains(SectionEntityIncidenceFamily::LineOrArc) {
+        evidence.remove(SectionEntityIncidenceFamily::BoundedCurve);
     }
 }
 
@@ -676,7 +696,7 @@ pub(in super::super) fn solver_only_section_entity_family(
 ) -> Option<SectionEntityIncidenceFamily> {
     solver_only_section_entity_offset(definition, entity_id)?;
     let mut evidence = section_incidence_curve_family_evidence(definition, entity_id);
-    if !evidence.contains(&SectionEntityIncidenceFamily::Arc)
+    if !evidence.contains(SectionEntityIncidenceFamily::Arc)
         && complete_section_skamps(definition).any(|skamp| {
             skamp
                 .items
@@ -687,8 +707,8 @@ pub(in super::super) fn solver_only_section_entity_family(
         evidence.insert(SectionEntityIncidenceFamily::Circular);
         normalize_section_incidence_curve_family_evidence(&mut evidence);
     }
-    if !evidence.contains(&SectionEntityIncidenceFamily::Line)
-        && !evidence.contains(&SectionEntityIncidenceFamily::LineOrArc)
+    if !evidence.contains(SectionEntityIncidenceFamily::Line)
+        && !evidence.contains(SectionEntityIncidenceFamily::LineOrArc)
         && complete_section_skamps(definition).any(|skamp| {
             let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
                 return false;
@@ -705,7 +725,7 @@ pub(in super::super) fn solver_only_section_entity_family(
     {
         evidence.insert(SectionEntityIncidenceFamily::Point);
     }
-    if !evidence.contains(&SectionEntityIncidenceFamily::Point) {
+    if !evidence.contains(SectionEntityIncidenceFamily::Point) {
         let solver_only_point_from_midpoint = complete_section_skamps(definition).any(|skamp| {
             let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
                 return false;
@@ -753,8 +773,8 @@ pub(in super::super) fn solver_only_section_entity_family(
 #[cfg(test)]
 mod tests {
     use super::{
-        resolved_profile_chains, solver_only_section_entities, solver_only_section_entity_family, unique_section_incidence_curve_family,
-        SectionEntityIncidenceFamily,
+        resolved_profile_chains, solver_only_section_entities, solver_only_section_entity_family,
+        unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
     };
     use crate::decode::tests::opaque;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -783,8 +803,8 @@ mod tests {
     #[test]
     fn trim_profile_rows_refuse_before_growth() {
         let definition = single_trim_profile();
-        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917")
-            .expect("sketch ID");
+        let sketch =
+            cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
         let emitted = std::collections::BTreeSet::from([42]);
         let arena = DecodeArena::new();
         let operations = [
@@ -802,28 +822,37 @@ mod tests {
         for (cap, operation) in operations.into_iter().enumerate() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap as u64;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
                 .expect_err("profile needs the next collection item");
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation), "cap {cap}: {error}");
+                    && resource.operation == operation),
+                "cap {cap}: {error}"
+            );
         }
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = "creo:featdefs:sketch_entity#917:42".len() as u64 - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
             .expect_err("profile entity ID exceeds retained cap");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo sketch entity identity"));
+                && resource.operation == "creo sketch entity identity")
+        );
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
         let profiles = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
             .expect("service trim profile");
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].len(), 1);
-        assert_eq!(profiles[0][0].entity.as_str(), "creo:featdefs:sketch_entity#917:42");
+        assert_eq!(
+            profiles[0][0].entity.as_str(),
+            "creo:featdefs:sketch_entity#917:42"
+        );
     }
 
     #[test]
@@ -845,12 +874,14 @@ mod tests {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: [segment(10), segment(11)].into_iter()
-                .map(crate::feature::segment_rows::SegmentRow::Ordinary).collect(),
+            rows: [segment(10), segment(11)]
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
             offset: 0,
         });
-        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917")
-            .expect("sketch ID");
+        let sketch =
+            cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
         let emitted = std::collections::BTreeSet::from([10, 11]);
         let arena = DecodeArena::new();
         let operations = [
@@ -875,12 +906,16 @@ mod tests {
         for (cap, operation) in operations.into_iter().enumerate() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap as u64;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
                 .expect_err("segment profile needs the next collection item");
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation), "cap {cap}: {error}");
+                    && resource.operation == operation),
+                "cap {cap}: {error}"
+            );
         }
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
@@ -888,7 +923,10 @@ mod tests {
             .expect("service segment profile");
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].len(), 2);
-        assert_eq!(profiles[0][0].entity.as_str(), "creo:featdefs:sketch_entity#917:10");
+        assert_eq!(
+            profiles[0][0].entity.as_str(),
+            "creo:featdefs:sketch_entity#917:10"
+        );
     }
 
     #[test]
@@ -900,13 +938,19 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = solver_only_section_entities(&ctx, &definition)
             .expect_err("one solver-only node exceeds zero items");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo solver-only entity nodes"));
+                && resource.operation == "creo solver-only entity nodes")
+        );
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-        assert_eq!(solver_only_section_entities(&ctx, &definition).expect("service entities")
-            .get(&201), Some(&201));
+        assert_eq!(
+            solver_only_section_entities(&ctx, &definition)
+                .expect("service entities")
+                .get(&201),
+            Some(&201)
+        );
     }
 
     fn midpoint(target: u32, point: u32) -> crate::feature::definitions::FeatureSkamp {
@@ -1094,12 +1138,16 @@ mod tests {
                 &definition,
                 &item
             ));
-            assert!(
-                super::super::loci::with_test_locus(|ctx, refusal| {
-                    super::super::loci::section_skamp_curve_entity(ctx, refusal, &definition, &sketch, &item)
-                })
-                    .is_some()
-            );
+            assert!(super::super::loci::with_test_locus(|ctx, refusal| {
+                super::super::loci::section_skamp_curve_entity(
+                    ctx,
+                    refusal,
+                    &definition,
+                    &sketch,
+                    &item,
+                )
+            })
+            .is_some());
         }
     }
 

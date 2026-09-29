@@ -9,6 +9,8 @@ use crate::decode::sketch_transfer::profiles::{
     SectionEntityIncidenceFamily,
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -20,17 +22,17 @@ use cadmpeg_ir::sketches::{
     SketchGeometry, SketchId, SketchLocus,
 };
 use cadmpeg_ir::SourceObjectAssociation;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
-fn assert_collection_refusal<T>(result: Result<T, CodecError>, operation: &'static str) {
+fn assert_collection_refusal<T>(result: &Result<T, CodecError>, operation: &'static str) {
     assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
         if refusal.dimension == ResourceDimension::CollectionItems
             && refusal.operation == operation));
 }
 
-fn curve_coverage_with_limit(limit: u64) -> Result<crate::decode::coverage::CurveTransferCoverage, CodecError> {
+fn curve_coverage_with_limit(
+    limit: u64,
+) -> Result<crate::decode::coverage::CurveTransferCoverage, CodecError> {
     let row = |id, type_byte| crate::curve::CurveTopologyRow {
         id,
         type_byte,
@@ -78,35 +80,46 @@ fn curve_coverage_with_limit(limit: u64) -> Result<crate::decode::coverage::Curv
 
 #[test]
 fn curve_coverage_refuses_unique_count_node() {
-    assert_collection_refusal(curve_coverage_with_limit(0), "creo unique-row count nodes");
+    assert_collection_refusal(&curve_coverage_with_limit(0), "creo unique-row count nodes");
 }
 
 #[test]
 fn curve_coverage_refuses_unique_projection() {
-    assert_collection_refusal(curve_coverage_with_limit(2), "creo unique-row projection");
+    assert_collection_refusal(&curve_coverage_with_limit(2), "creo unique-row projection");
 }
 
 #[test]
 fn curve_coverage_refuses_transferred_id_node() {
-    assert_collection_refusal(curve_coverage_with_limit(4), "creo transferred curve ID nodes");
+    assert_collection_refusal(
+        &curve_coverage_with_limit(4),
+        "creo transferred curve ID nodes",
+    );
 }
 
 #[test]
 fn curve_coverage_refuses_unknown_id_node() {
-    assert_collection_refusal(curve_coverage_with_limit(5), "creo unknown curve ID nodes");
+    assert_collection_refusal(&curve_coverage_with_limit(5), "creo unknown curve ID nodes");
 }
 
 #[test]
 fn curve_coverage_refuses_type_node() {
-    assert_collection_refusal(curve_coverage_with_limit(6), "creo curve coverage type nodes");
+    assert_collection_refusal(
+        &curve_coverage_with_limit(6),
+        "creo curve coverage type nodes",
+    );
 }
 
 #[test]
 fn curve_coverage_refuses_unknown_type_node() {
-    assert_collection_refusal(curve_coverage_with_limit(7), "creo curve coverage unknown type nodes");
+    assert_collection_refusal(
+        &curve_coverage_with_limit(7),
+        "creo curve coverage unknown type nodes",
+    );
 }
 
-fn surface_coverage_with_limit(limit: u64) -> Result<crate::decode::coverage::SurfaceTransferCoverage, CodecError> {
+fn surface_coverage_with_limit(
+    limit: u64,
+) -> Result<crate::decode::coverage::SurfaceTransferCoverage, CodecError> {
     let row = |id, kind| crate::surface::SurfaceRow {
         id,
         kind,
@@ -117,11 +130,15 @@ fn surface_coverage_with_limit(limit: u64) -> Result<crate::decode::coverage::Su
         offset: 0,
     };
     let rows = [
-        row(44, crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear)),
+        row(
+            44,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+        ),
         row(45, crate::surface::SurfaceKind::Plane),
     ];
-    let construction_id = ProceduralSurfaceId::mint("test:model:entity#coverage-construction".to_string())
-        .expect("construction identity");
+    let construction_id =
+        ProceduralSurfaceId::mint("test:model:entity#coverage-construction".to_string())
+            .expect("construction identity");
     let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
@@ -179,37 +196,57 @@ fn surface_coverage_with_limit(limit: u64) -> Result<crate::decode::coverage::Su
 
 #[test]
 fn surface_coverage_refuses_unique_count_node() {
-    assert_collection_refusal(surface_coverage_with_limit(0), "creo unique-row count nodes");
+    assert_collection_refusal(
+        &surface_coverage_with_limit(0),
+        "creo unique-row count nodes",
+    );
 }
 
 #[test]
 fn surface_coverage_refuses_unique_projection() {
-    assert_collection_refusal(surface_coverage_with_limit(2), "creo unique-row projection");
+    assert_collection_refusal(
+        &surface_coverage_with_limit(2),
+        "creo unique-row projection",
+    );
 }
 
 #[test]
 fn surface_coverage_refuses_extrusion_construction_node() {
-    assert_collection_refusal(surface_coverage_with_limit(4), "creo extrusion construction nodes");
+    assert_collection_refusal(
+        &surface_coverage_with_limit(4),
+        "creo extrusion construction nodes",
+    );
 }
 
 #[test]
 fn surface_coverage_refuses_extrusion_surface_node() {
-    assert_collection_refusal(surface_coverage_with_limit(5), "creo extrusion surface nodes");
+    assert_collection_refusal(
+        &surface_coverage_with_limit(5),
+        "creo extrusion surface nodes",
+    );
 }
 
 #[test]
 fn surface_coverage_refuses_transferred_row() {
-    assert_collection_refusal(surface_coverage_with_limit(6), "creo transferred surface rows");
+    assert_collection_refusal(
+        &surface_coverage_with_limit(6),
+        "creo transferred surface rows",
+    );
 }
 
 #[test]
 fn surface_coverage_refuses_unknown_id_node() {
-    assert_collection_refusal(surface_coverage_with_limit(7), "creo unknown surface ID nodes");
+    assert_collection_refusal(
+        &surface_coverage_with_limit(7),
+        "creo unknown surface ID nodes",
+    );
 }
 
-fn constraint_coverage_with_limit(limit: u64) -> Result<crate::decode::coverage::DesignConstraintTransferCoverage, CodecError> {
-    let sketch = SketchId::mint("synthetic:test:id#coverage-sketch".to_string())
-        .expect("sketch identity");
+fn constraint_coverage_with_limit(
+    limit: u64,
+) -> Result<crate::decode::coverage::DesignConstraintTransferCoverage, CodecError> {
+    let sketch =
+        SketchId::mint("synthetic:test:id#coverage-sketch".to_string()).expect("sketch identity");
     let entity = SketchEntityId::mint("synthetic:test:id#coverage-entity".to_string())
         .expect("entity identity");
     let constraint = SketchConstraint {
@@ -249,12 +286,18 @@ fn constraint_coverage_with_limit(limit: u64) -> Result<crate::decode::coverage:
 
 #[test]
 fn constraint_coverage_refuses_native_kind_node() {
-    assert_collection_refusal(constraint_coverage_with_limit(0), "creo native constraint kind nodes");
+    assert_collection_refusal(
+        &constraint_coverage_with_limit(0),
+        "creo native constraint kind nodes",
+    );
 }
 
 #[test]
 fn constraint_coverage_refuses_active_native_kind_node() {
-    assert_collection_refusal(constraint_coverage_with_limit(1), "creo active native constraint kind nodes");
+    assert_collection_refusal(
+        &constraint_coverage_with_limit(1),
+        "creo active native constraint kind nodes",
+    );
 }
 
 #[test]
@@ -393,10 +436,9 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
         },
     ];
 
-    let coverage = crate::decode::with_test_decode_ctx(|ctx| {
-        curve_transfer_coverage(ctx, &rows, &curves)
-    })
-    .expect("service curve coverage");
+    let coverage =
+        crate::decode::with_test_decode_ctx(|ctx| curve_transfer_coverage(ctx, &rows, &curves))
+            .expect("service curve coverage");
 
     assert_eq!(coverage.unique_rows(), 2);
     assert_eq!(coverage.transferred_rows(), 1);
@@ -487,7 +529,8 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         4,
     );
     assert_eq!(
-        constraint_kind_breakdown(&report_coverage, "active_native_feature_relation_type_",).to_string(),
+        constraint_kind_breakdown(&report_coverage, "active_native_feature_relation_type_",)
+            .to_string(),
         "type 1=2, type 9=1"
     );
 }
@@ -578,21 +621,33 @@ fn incidence_family_lattice_narrows_endpoint_evidence() {
     let mut line: IncidenceEvidence = [
         SectionEntityIncidenceFamily::BoundedCurve,
         SectionEntityIncidenceFamily::Line,
-    ].into_iter().collect();
+    ]
+    .into_iter()
+    .collect();
     normalize_section_incidence_curve_family_evidence(&mut line);
-    assert_eq!(line, [SectionEntityIncidenceFamily::Line].into_iter().collect());
+    assert_eq!(
+        line,
+        [SectionEntityIncidenceFamily::Line].into_iter().collect()
+    );
 
     let mut arc: IncidenceEvidence = [
         SectionEntityIncidenceFamily::BoundedCurve,
         SectionEntityIncidenceFamily::Circular,
-    ].into_iter().collect();
+    ]
+    .into_iter()
+    .collect();
     normalize_section_incidence_curve_family_evidence(&mut arc);
-    assert_eq!(arc, [SectionEntityIncidenceFamily::Arc].into_iter().collect());
+    assert_eq!(
+        arc,
+        [SectionEntityIncidenceFamily::Arc].into_iter().collect()
+    );
 
     let mut conflicting: IncidenceEvidence = [
         SectionEntityIncidenceFamily::Line,
         SectionEntityIncidenceFamily::Circular,
-    ].into_iter().collect();
+    ]
+    .into_iter()
+    .collect();
     normalize_section_incidence_curve_family_evidence(&mut conflicting);
     assert_eq!(conflicting.len(), 2);
 }

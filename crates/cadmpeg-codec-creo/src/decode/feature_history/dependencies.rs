@@ -29,10 +29,12 @@ pub(in super::super) fn feature_dependencies(
         &scan.features.entity_tables,
         &scan.features.surface_merge_replay_affected_ids,
         &scan.surfaces.rows,
-        feature_id,
-        prototype_dependencies
-            .get(&feature_id)
-            .map_or(&[], Vec::as_slice),
+        (
+            feature_id,
+            prototype_dependencies
+                .get(&feature_id)
+                .map_or(&[], Vec::as_slice),
+        ),
     )?;
     let mut dependencies = Vec::new();
     for dependency in native {
@@ -42,11 +44,7 @@ pub(in super::super) fn feature_dependencies(
         )?;
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
-        if ir.model
-            .features
-            .iter()
-            .any(|feature| feature.id == id)
-        {
+        if ir.model.features.iter().any(|feature| feature.id == id) {
             ctx.try_reserve_items(&mut dependencies, 1, "creo feature dependencies")?;
             dependencies.push(id);
         }
@@ -61,15 +59,12 @@ pub(in super::super) fn native_feature_dependency_ids(
     entity_tables: &[crate::feature::entity::FeatureEntityTable],
     surface_merge_replay_affected_ids: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     surface_rows: &[crate::surface::SurfaceRow],
-    feature_id: u32,
-    prototype_dependencies: &[u32],
+    feature: (u32, &[u32]),
 ) -> Result<Vec<u32>, CodecError> {
-    let transition_dependencies = surface_transition_dependencies(
-        ctx,
-        feature_id,
-        entity_tables,
-        surface_rows,
-    )?;
+    let (feature_id, prototype_dependencies) = feature;
+
+    let transition_dependencies =
+        surface_transition_dependencies(ctx, feature_id, entity_tables, surface_rows)?;
     let parents = agreed_feature_parent_ids(ctx, affected_ids, feature_id)?;
     let merged = surface_merge_entity_dependencies(
         ctx,
@@ -460,10 +455,9 @@ pub(in super::super) fn reconcile_feature_links(
         if emitted.contains(&feature.id) {
             continue;
         }
-        let id = IrFeatureId::mint(ctx.copy_retained_text(
-            feature.id.as_str(),
-            "creo emitted feature identity text",
-        )?)
+        let id = IrFeatureId::mint(
+            ctx.copy_retained_text(feature.id.as_str(), "creo emitted feature identity text")?,
+        )
         .map_err(cadmpeg_core::CodecError::malformed)?;
         ctx.charge_collection_items(1, "creo emitted feature identity nodes")?;
         emitted.insert(id);
@@ -480,7 +474,10 @@ pub(in super::super) fn reconcile_feature_links(
         else {
             continue;
         };
-        if pending.as_ref().is_some_and(|(update_index, _)| *update_index == index) {
+        if pending
+            .as_ref()
+            .is_some_and(|(update_index, _)| *update_index == index)
+        {
             if let Some((_, outputs)) = pending.take() {
                 feature.evaluation.set_outputs(outputs);
             }
@@ -494,17 +491,18 @@ pub(in super::super) fn reconcile_feature_links(
             &scan.features.entity_tables,
             &scan.features.surface_merge_replay_affected_ids,
             &scan.surfaces.rows,
-            feature_id,
-            prototype_dependencies
-                .get(&feature_id)
-                .map_or(&[], Vec::as_slice),
+            (
+                feature_id,
+                prototype_dependencies
+                    .get(&feature_id)
+                    .map_or(&[], Vec::as_slice),
+            ),
         )? {
             let text = ctx.format_retained(
                 format_args!("creo:model:feature#{dependency}"),
                 "creo reconciled native dependency IDs",
             )?;
-            let id = IrFeatureId::mint(text)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let id = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             if emitted.contains(&id) && id != feature.id {
                 ctx.try_reserve_items(
                     &mut native_dependencies,
@@ -530,27 +528,27 @@ pub(in super::super) fn reconcile_feature_links(
             )?;
             generated_ids.push(id);
         }
-        feature.dependencies = cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
-            reconciled_dependencies(
-            ctx,
-            &feature.id,
-            &feature.dependencies,
-            native_dependencies.into_iter().chain(generated_ids),
-            &emitted,
-        )?)
-        .map_err(cadmpeg_core::CodecError::malformed)?;
-        if let Some(parent_id) = current_feature_recipe_parent(&scan.features.operations, feature_id) {
+        feature.dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(reconciled_dependencies(
+                ctx,
+                &feature.id,
+                &feature.dependencies,
+                native_dependencies.into_iter().chain(generated_ids),
+                &emitted,
+            )?)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        if let Some(parent_id) =
+            current_feature_recipe_parent(&scan.features.operations, feature_id)
+        {
             let text = ctx.format_retained(
                 format_args!("creo:model:feature#{parent_id}"),
                 "creo regeneration parent IDs",
             )?;
-            let parent = IrFeatureId::mint(text)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let parent = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             if parent != feature.id && emitted.contains(&parent) {
-                let child = IrFeatureId::mint(ctx.copy_retained_text(
-                    feature.id.as_str(),
-                    "creo regeneration child IDs",
-                )?)
+                let child = IrFeatureId::mint(
+                    ctx.copy_retained_text(feature.id.as_str(), "creo regeneration child IDs")?,
+                )
                 .map_err(cadmpeg_core::CodecError::malformed)?;
                 ctx.try_reserve_items(&mut regeneration_edges, 1, "creo regeneration edges")?;
                 regeneration_edges.push((child, parent));
@@ -566,10 +564,18 @@ pub(in super::super) fn reconcile_feature_links(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut remaining = Vec::new();
-    ctx.try_reserve_items(&mut remaining, ir.model.features.len(), "creo remaining feature order")?;
+    ctx.try_reserve_items(
+        &mut remaining,
+        ir.model.features.len(),
+        "creo remaining feature order",
+    )?;
     remaining.extend(0..ir.model.features.len());
     let mut ordered = Vec::new();
-    ctx.try_reserve_items(&mut ordered, remaining.len(), "creo ordered feature indices")?;
+    ctx.try_reserve_items(
+        &mut ordered,
+        remaining.len(),
+        "creo ordered feature indices",
+    )?;
     let mut preceding = BTreeSet::new();
     while !remaining.is_empty() {
         let Some(position) = remaining.iter().position(|index| {
@@ -623,14 +629,15 @@ pub(in super::super) fn feature_generated_dependencies<'a>(
             push_unique(&face.feature)?;
         }
     }
-    let mut visit_selection = |selection: &'a EdgeSelection| -> Result<(), cadmpeg_core::CodecError> {
-        if let EdgeSelection::Generated { edges, .. } = selection {
-            for edge in edges {
-                push_unique(&edge.feature)?;
+    let mut visit_selection =
+        |selection: &'a EdgeSelection| -> Result<(), cadmpeg_core::CodecError> {
+            if let EdgeSelection::Generated { edges, .. } = selection {
+                for edge in edges {
+                    push_unique(&edge.feature)?;
+                }
             }
-        }
-        Ok(())
-    };
+            Ok(())
+        };
     match definition {
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet { groups }) => {
             for group in groups {
@@ -662,10 +669,9 @@ pub(in super::super) fn reconciled_dependencies(
         {
             continue;
         }
-        let id = IrFeatureId::mint(ctx.copy_retained_text(
-            dependency.as_str(),
-            "creo established dependency IDs",
-        )?)
+        let id = IrFeatureId::mint(
+            ctx.copy_retained_text(dependency.as_str(), "creo established dependency IDs")?,
+        )
         .map_err(CodecError::malformed)?;
         ctx.try_reserve_items(&mut dependencies, 1, "creo reconciled dependencies")?;
         dependencies.push(id);

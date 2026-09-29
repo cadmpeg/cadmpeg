@@ -30,8 +30,8 @@ fn topology_result(limit: u64, two_faces: bool) -> Result<BrepComponentTopology,
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     BrepComponentTopology::from_component(
         &ctx,
         &BTreeSet::from([10, 11]),
@@ -46,9 +46,12 @@ fn assert_refusal(limit: u64, two_faces: bool, operation: &'static str) {
     let error = topology_result(limit, two_faces)
         .err()
         .expect("topology node refused");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation), "{error:?}");
+            && resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]

@@ -276,7 +276,8 @@ impl VariableRadii {
     }
     /// Map owned radii in place through the caller's work budget.
     /// Refused candidates are consumed; no sample collection is copied.
-    pub fn try_map_radii_owned_admitted<E>(mut self,
+    pub fn try_map_radii_owned_admitted<E>(
+        mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
     ) -> Result<Result<Self, VariableRadiiMapError<E>>, cadmpeg_core::CodecError> {
@@ -289,9 +290,12 @@ impl VariableRadii {
             };
             positive |= point.radius.get() > 0.0;
         }
-        Ok(if positive { Ok(self) } else { Err(VariableRadiiMapError::Admission(INVALID_VARIABLE_RADII)) })
+        Ok(if positive {
+            Ok(self)
+        } else {
+            Err(VariableRadiiMapError::Admission(INVALID_VARIABLE_RADII))
+        })
     }
-
 }
 
 impl TryFrom<Vec<VariableRadius>> for VariableRadii {

@@ -12,7 +12,10 @@ use crate::decode::sketch::geometry::{section_line_geometry, section_point_geome
 use crate::decode::sketch::intersect::{
     intersect_section_line_arc, intersect_section_lines, intersect_tangent_section_arcs,
 };
-use crate::decode::sketch::radii::{resolved_section_radii, section_axis_reference_line_geometry as section_axis_reference_line_geometry_admitted};
+use crate::decode::sketch::radii::{
+    resolved_section_radii,
+    section_axis_reference_line_geometry as section_axis_reference_line_geometry_admitted,
+};
 use crate::decode::sketch_transfer::constraints::{
     reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
     section_equation_same_coordinate_constraints,
@@ -36,8 +39,10 @@ fn section_axis_reference_line_geometry(
     variable_points: &std::collections::BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<cadmpeg_ir::sketches::SketchGeometry> {
-    crate::decode::with_test_decode_ctx(|ctx| section_axis_reference_line_geometry_admitted(ctx, definition, variable_points, segment))
-        .expect("test axis reference line")
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_axis_reference_line_geometry_admitted(ctx, definition, variable_points, segment)
+    })
+    .expect("test axis reference line")
 }
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
@@ -55,138 +60,155 @@ use std::collections::{BTreeMap, BTreeSet};
 #[test]
 fn generated_nurbs_translations_define_a_blind_extrusion() {
     crate::decode::with_test_decode_ctx(|ctx| {
-    let translated_surface = |last_z| {
-        NurbsSurface::from_lanes(
+        let translated_surface = |last_z| {
+            NurbsSurface::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                    vec![
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 2.0)],
+                        vec![Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
+                        vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, last_z)],
+                    ],
+                    None,
+                ),
+                false,
+            )
+            .expect("valid translated surface")
+        };
+        let span = nurbs_translation_span(ctx, &translated_surface(2.0))
+            .expect("admitted extent")
+            .expect("translation");
+        assert_eq!(span.vector, [0.0, 0.0, 2.0]);
+        assert_eq!(
+            span.starts,
+            vec![[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 0.0]]
+        );
+        assert!(nurbs_translation_span(ctx, &translated_surface(3.0))
+            .expect("admitted extent")
+            .is_none());
+
+        let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+            id,
+            kind,
+            feature_id: 7,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: id as usize,
+        };
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.surfaces.rows.extend([
+            row(
+                31,
+                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+            ),
+            row(32, crate::surface::SurfaceKind::Plane),
+            row(33, crate::surface::SurfaceKind::Plane),
+            row(
+                34,
+                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+            ),
+            row(35, crate::surface::SurfaceKind::Plane),
+        ]);
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.extend([
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#31".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                    translated_surface(2.0),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#32".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#33".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 2.0),
+                        Vector3::new(0.0, 0.0, -1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#34".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#35".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            },
+        ]);
+        assert_eq!(
+            generated_nurbs_translation_extent(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                7,
+                None
+            )
+            .expect("admitted extent"),
+            Some((
+                ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
+                                .expect("nonzero length fixture"),
+                        },
+                        draft: None,
+                    },
+                },
+                [0.0, 0.0, 1.0],
+            ))
+        );
+
+        let ambiguous = NurbsSurface::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                2,
-                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                translated_surface(2.0).v_degree(),
+                translated_surface(2.0).v_knots().to_vec(),
                 false,
             ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                vec![
-                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 2.0)],
-                    vec![Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
-                    vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, last_z)],
-                ],
+                translated_surface(2.0).pole_grid().raw_points()[..2].to_vec(),
                 None,
             ),
             false,
         )
-        .expect("valid translated surface")
-    };
-    let span = nurbs_translation_span(ctx, &translated_surface(2.0)).expect("admitted extent").expect("translation");
-    assert_eq!(span.vector, [0.0, 0.0, 2.0]);
-    assert_eq!(
-        span.starts,
-        vec![[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 0.0]]
-    );
-    assert!(nurbs_translation_span(ctx, &translated_surface(3.0)).expect("admitted extent").is_none());
-
-    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
-        id,
-        kind,
-        feature_id: 7,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: id as usize,
-    };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.surfaces.rows.extend([
-        row(
-            31,
-            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
-        ),
-        row(32, crate::surface::SurfaceKind::Plane),
-        row(33, crate::surface::SurfaceKind::Plane),
-        row(
-            34,
-            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
-        ),
-        row(35, crate::surface::SurfaceKind::Plane),
-    ]);
-    let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(translated_surface(
-                2.0,
-            ))),
-            source_object: None,
-        },
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid PlaneSurface fixture"),
-            )),
-            source_object: None,
-        },
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 2.0),
-                    Vector3::new(0.0, 0.0, -1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid PlaneSurface fixture"),
-            )),
-            source_object: None,
-        },
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        },
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        },
-    ]);
-    assert_eq!(
-        generated_nurbs_translation_extent(ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            None
-        ).expect("admitted extent"),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
-                            .expect("nonzero length fixture"),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, 0.0, 1.0],
-        ))
-    );
-
-    let ambiguous = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            translated_surface(2.0).v_degree(),
-            translated_surface(2.0).v_knots().to_vec(),
-            false,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-            translated_surface(2.0).pole_grid().raw_points()[..2].to_vec(),
-            None,
-        ),
-        false,
-    )
-    .expect("valid ambiguous translation surface");
-    assert!(nurbs_translation_span(ctx, &ambiguous).expect("admitted extent").is_none());
+        .expect("valid ambiguous translation surface");
+        assert!(nurbs_translation_span(ctx, &ambiguous)
+            .expect("admitted extent")
+            .is_none());
     });
 }
 
@@ -1046,7 +1068,10 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
     );
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = crate::decode::with_test_decode_ctx(|ctx| section_equation_same_coordinate_constraints(ctx, &definition, &sketch)).expect("section_equation_same_coordinate_constraints admitted");
+    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        section_equation_same_coordinate_constraints(ctx, &definition, &sketch)
+    })
+    .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
@@ -1085,8 +1110,10 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         .as_mut()
         .expect("variables")
         .declared_count = 5;
-    let function_two_constraints =
-        crate::decode::with_test_decode_ctx(|ctx| section_equation_same_coordinate_constraints(ctx, &function_two, &sketch)).expect("section_equation_same_coordinate_constraints admitted");
+    let function_two_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        section_equation_same_coordinate_constraints(ctx, &function_two, &sketch)
+    })
+    .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(function_two_constraints.len(), 2);
     assert_eq!(
         *(function_two_constraints[0].0.definition).kind(),

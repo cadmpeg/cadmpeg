@@ -59,7 +59,10 @@ struct Index<'a> {
 }
 
 impl<'a> Index<'a> {
-    fn build(ctx: &DecodeContext<'_>, persistence: &'a Persistence) -> Result<Option<Self>, CodecError> {
+    fn build(
+        ctx: &DecodeContext<'_>,
+        persistence: &'a Persistence,
+    ) -> Result<Option<Self>, CodecError> {
         let mut objects = BTreeMap::new();
         let mut children = BTreeMap::new();
         for object in &persistence.objects {
@@ -80,7 +83,11 @@ impl<'a> Index<'a> {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         ctx.charge_collection_items(1, "creo legacy feature child index nodes")?;
                         let mut rows = Vec::new();
-                        ctx.try_reserve_items(&mut rows, 1, "creo legacy feature child index rows")?;
+                        ctx.try_reserve_items(
+                            &mut rows,
+                            1,
+                            "creo legacy feature child index rows",
+                        )?;
                         rows.push(object);
                         entry.insert(rows);
                     }
@@ -92,16 +99,22 @@ impl<'a> Index<'a> {
                 }
             }
         }
+        let mut integers = BTreeMap::new();
+        value_index(ctx, &persistence.integer_values.rows, &mut integers)?;
+        let mut reals = BTreeMap::new();
+        value_index(ctx, &persistence.real_values.rows, &mut reals)?;
         Ok(Some(Self {
             objects,
             children,
-            integers: value_index(ctx, &persistence.integer_values.rows)?,
-            reals: value_index(ctx, &persistence.real_values.rows)?,
+            integers,
+            reals,
         }))
     }
 
     fn children(&self, parent: usize, name: &'static str) -> &[&'a ObjectRecord] {
-        self.children.get(&(parent, name)).map_or(&[], Vec::as_slice)
+        self.children
+            .get(&(parent, name))
+            .map_or(&[], Vec::as_slice)
     }
 
     fn unique_child(&self, parent: usize, name: &'static str) -> Option<&ObjectRecord> {
@@ -384,10 +397,13 @@ mod tests {
             };
             (refusal.operation == operation).then_some(refusal)
         });
-        assert!(matches!(
-            refusal,
-            Some(limit) if limit.dimension == ResourceDimension::CollectionItems
-        ), "missing collection refusal for {operation}");
+        assert!(
+            matches!(
+                refusal,
+                Some(limit) if limit.dimension == ResourceDimension::CollectionItems
+            ),
+            "missing collection refusal for {operation}"
+        );
     }
 
     fn integer(

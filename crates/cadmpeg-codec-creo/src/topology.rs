@@ -251,12 +251,12 @@ pub(crate) fn edge_vertex_pairs(
         let (Some(forward), Some(reverse)) = (sides[0].sole(), sides[1].sole()) else {
             continue;
         };
-        if !forward
+        if forward
             .end_vertex_id
-            .is_none_or(|end| end == reverse.start_vertex_id)
-            || !reverse
+            .is_some_and(|end| end != reverse.start_vertex_id)
+            || reverse
                 .end_vertex_id
-                .is_none_or(|end| end == forward.start_vertex_id)
+                .is_some_and(|end| end != forward.start_vertex_id)
             || (forward.end_vertex_id.is_none() && reverse.end_vertex_id.is_none())
         {
             continue;
@@ -382,11 +382,7 @@ pub(crate) fn vertex_orbits(
         else {
             // `start` is the half-edge the orbit was grown from, so it names
             // the orbit no identifier could be stated for.
-            ctx.try_reserve_items(
-                &mut unstatable_orbits,
-                1,
-                "creo unstatable vertex orbits",
-            )?;
+            ctx.try_reserve_items(&mut unstatable_orbits, 1, "creo unstatable vertex orbits")?;
             unstatable_orbits.push(start);
             continue;
         };
@@ -394,10 +390,7 @@ pub(crate) fn vertex_orbits(
         ctx.try_reserve_items(&mut half_edges, orbit.len(), "creo vertex orbit half-edges")?;
         half_edges.extend(orbit);
         ctx.try_reserve_items(&mut vertices, 1, "creo topological vertices")?;
-        vertices.push(TopologicalVertex {
-            id,
-            half_edges,
-        });
+        vertices.push(TopologicalVertex { id, half_edges });
     }
     let mut start_vertex = BTreeMap::new();
     for vertex in &vertices {
@@ -468,12 +461,8 @@ pub(crate) fn face_components(
         }
         if let (Some(left), Some(right)) = (left, right) {
             if left != right {
-                let neighbors = face_set(
-                    ctx,
-                    &mut adjacency,
-                    left.get(),
-                    "creo face adjacency nodes",
-                )?;
+                let neighbors =
+                    face_set(ctx, &mut adjacency, left.get(), "creo face adjacency nodes")?;
                 if !neighbors.contains(&right.get()) {
                     ctx.charge_collection_items(1, "creo face adjacency links")?;
                     neighbors.insert(right.get());
@@ -622,7 +611,12 @@ pub(crate) fn build(
             });
         }
     }
-    crate::sort::stable_sort_by_key(ctx, edges.as_mut_slice(), |edge| edge.id, "creo build edges ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        edges.as_mut_slice(),
+        |edge| edge.id,
+        "creo build edges ordering",
+    )?;
     let by_id = |id: HalfEdgeId| {
         edges
             .binary_search_by_key(&id, |edge| edge.id)
@@ -662,9 +656,7 @@ pub(crate) fn build(
             let Some(next) = by_id(current).and_then(|entry| entry.next) else {
                 break;
             };
-            if by_id(next)
-                .is_none_or(|entry| entry.face_id != edge.face_id)
-            {
+            if by_id(next).is_none_or(|entry| entry.face_id != edge.face_id) {
                 break;
             }
             current = next;

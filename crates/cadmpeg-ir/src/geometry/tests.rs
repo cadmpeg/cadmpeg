@@ -38,15 +38,18 @@ fn admitted_nurbs_geometry_copy_refuses_each_nested_vector() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(curve.copy_admitted(&ctx, "curve copy").unwrap(), curve);
-    assert_eq!(surface.copy_admitted(&ctx, "surface copy").unwrap(), surface);
+    assert_eq!(
+        surface.copy_admitted(&ctx, "surface copy").unwrap(),
+        surface
+    );
 }
 
 #[test]
 fn admitted_sampled_geometry_copy_refuses_both_polygon_lanes_and_polyline_rows() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
     use crate::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
     use crate::math::Point3;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
 
     let points = vec![
         Point3::new(0.0, 0.0, 0.0),
@@ -56,13 +59,16 @@ fn admitted_sampled_geometry_copy_refuses_both_polygon_lanes_and_polyline_rows()
     let polygon = SurfaceGeometry::Solved(crate::geometry::SolvedSurfaceGeometry::Polygonal(
         PolygonalSurface::new(points.clone(), vec![[0, 1, 2]], 0.0).unwrap(),
     ));
-    let polyline = crate::geometry::CurveGeometry::Solved(
-        crate::geometry::SolvedCurveGeometry::Polyline(
-            PolylineCurve::new(PolylineSamples::Unparameterized {
-                points: points.try_into().unwrap(),
-            }, 0.0).unwrap(),
-        ),
-    );
+    let polyline =
+        crate::geometry::CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Polyline(
+            PolylineCurve::new(
+                PolylineSamples::Unparameterized {
+                    points: points.try_into().unwrap(),
+                },
+                0.0,
+            )
+            .unwrap(),
+        ));
     let arena = DecodeArena::new();
     for limit in [0, 3] {
         let mut policy = DecodePolicy::service();
@@ -78,19 +84,25 @@ fn admitted_sampled_geometry_copy_refuses_both_polygon_lanes_and_polyline_rows()
         Err(CodecError::ResourceLimit(resource)) if resource.operation == "polyline copy"));
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(polygon.copy_admitted(&ctx, "polygon copy").unwrap(), polygon);
-    assert_eq!(polyline.copy_admitted(&ctx, "polyline copy").unwrap(), polyline);
+    assert_eq!(
+        polygon.copy_admitted(&ctx, "polygon copy").unwrap(),
+        polygon
+    );
+    assert_eq!(
+        polyline.copy_admitted(&ctx, "polyline copy").unwrap(),
+        polyline
+    );
 }
 
 #[test]
 fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
     use crate::geometry::{
         CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, CurveGeometry,
         PlacedCurve, SolvedCurveGeometry,
     };
     use crate::ids::CurveId;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
 
     let record = UnknownId::mint("test:geometry:unknown#1").unwrap();
     let unknown = CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -107,7 +119,8 @@ fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
             curve: CurveId::mint("test:geometry:curve#1").unwrap(),
             same_sense: true,
             transition: CompositeCurveTransition::Continuous,
-        }]).unwrap(),
+        }])
+        .unwrap(),
         self_intersect: None,
     });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -115,9 +128,12 @@ fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
         Err(CodecError::ResourceLimit(resource)) if resource.operation == "composite copy"));
     let transformed = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
         PlacedCurve::try_new(
-            Box::new(SolvedCurveGeometry::Nurbs(crate::test_support::nurbs::curve())),
+            Box::new(SolvedCurveGeometry::Nurbs(
+                crate::test_support::nurbs::curve(),
+            )),
             crate::transform::Transform::identity(),
-        ).unwrap(),
+        )
+        .unwrap(),
     ));
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 6;
@@ -126,9 +142,18 @@ fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
         Err(CodecError::ResourceLimit(resource)) if resource.operation == "inline copy"));
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(unknown.copy_admitted(&ctx, "unknown copy").unwrap(), unknown);
-    assert_eq!(composite.copy_admitted(&ctx, "composite copy").unwrap(), composite);
-    assert_eq!(transformed.copy_admitted(&ctx, "inline copy").unwrap(), transformed);
+    assert_eq!(
+        unknown.copy_admitted(&ctx, "unknown copy").unwrap(),
+        unknown
+    );
+    assert_eq!(
+        composite.copy_admitted(&ctx, "composite copy").unwrap(),
+        composite
+    );
+    assert_eq!(
+        transformed.copy_admitted(&ctx, "inline copy").unwrap(),
+        transformed
+    );
 }
 
 #[test]

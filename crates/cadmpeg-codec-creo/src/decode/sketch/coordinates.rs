@@ -73,18 +73,21 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
                 .all(|point_id| !ambiguous_point_ids.contains(point_id))
         })
         .filter_map(|segment| saved_section_segment_point_coordinates(definition, segment))
-        .flatten()
         .flatten();
     let circles = definition
-            .segments
-            .iter()
-            .flat_map(|table| table.rows.circles())
-            .filter_map(|segment| {
-                (!ambiguous_point_ids.contains(&segment.center_id)).then_some(())?;
-                let (center, _) = saved_section_circle_values(definition, segment)?;
-                Some((segment.center_id, center))
-            });
-    crate::decode::collect_items(ctx, ordinary.chain(circles), "creo saved section coordinate witnesses")
+        .segments
+        .iter()
+        .flat_map(|table| table.rows.circles())
+        .filter_map(|segment| {
+            (!ambiguous_point_ids.contains(&segment.center_id)).then_some(())?;
+            let (center, _) = saved_section_circle_values(definition, segment)?;
+            Some((segment.center_id, center))
+        });
+    crate::decode::collect_items(
+        ctx,
+        ordinary.chain(circles),
+        "creo saved section coordinate witnesses",
+    )
 }
 
 fn append_point_on_line_equations(
@@ -147,7 +150,8 @@ fn append_equal_length_coordinate_values(
     equations: &mut Vec<SectionCoordinateEquation>,
 ) -> Result<bool, CodecError> {
     let mut appended = false;
-    for (variable, value) in section_equal_length_coordinate_values(ctx, constraints, coordinates)? {
+    for (variable, value) in section_equal_length_coordinate_values(ctx, constraints, coordinates)?
+    {
         let Some(value) = value else {
             continue;
         };
@@ -219,8 +223,12 @@ fn solve_section_coordinates_with_derived_constraints(
         .saturating_add(1);
     for _ in 0..max_passes {
         let mut appended = false;
-        if append_point_on_line_equations(ctx, point_on_line_constraints, &solved_coordinates, equations)?
-        {
+        if append_point_on_line_equations(
+            ctx,
+            point_on_line_constraints,
+            &solved_coordinates,
+            equations,
+        )? {
             appended = true;
             solved_coordinates =
                 solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
@@ -245,7 +253,11 @@ fn solve_section_coordinates_with_derived_constraints(
         {
             merge_scalar_value_candidate(ctx, auxiliary_scalar_values, variable, value)?;
         }
-        propagate_section_equation_scalar_equality_values(ctx, definition, auxiliary_scalar_values)?;
+        propagate_section_equation_scalar_equality_values(
+            ctx,
+            definition,
+            auxiliary_scalar_values,
+        )?;
         if *auxiliary_scalar_values != previous_scalar_values
             && append_unique_auxiliary_coordinate_constraints(
                 ctx,
@@ -270,10 +282,15 @@ pub(in crate::decode) fn resolved_section_coordinates(
     ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
-    let (points, ambiguous_point_ids) = match &definition.variables {
+    let crate::feature::definitions::ReconciledPoints {
+        points,
+        ambiguous: ambiguous_point_ids,
+    } = match &definition.variables {
         Some(variables) if variables.is_complete() => variables.reconciled_points(ctx)?,
-        Some(_) => (BTreeMap::new(), BTreeSet::new()),
-        None => (BTreeMap::new(), BTreeSet::new()),
+        Some(_) | None => crate::feature::definitions::ReconciledPoints {
+            points: BTreeMap::new(),
+            ambiguous: BTreeSet::new(),
+        },
     };
     let mut segment_counts = BTreeMap::new();
     for segment in definition
@@ -286,26 +303,32 @@ pub(in crate::decode) fn resolved_section_coordinates(
         }
         *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
     }
-    let saved_segment_points = saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
-    let segments = crate::decode::collect_items(ctx, definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.ordinary())
-        .filter(|segment| {
-            matches!(
-                segment.kind,
-                crate::feature::definitions::FeatureSegmentKind::Line(_)
-            )
-        })
-        .filter(|segment| segment_counts[&segment.external_id] == 1)
-        .filter(|segment| {
-            segment
-                .point_ids()
-                .iter()
-                .all(|point_id| !ambiguous_point_ids.contains(point_id))
-        }), "creo section line segments")?;
-    let coincident_points = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
-        .filter_map(|skamp| {
+    let saved_segment_points =
+        saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
+    let segments = crate::decode::collect_items(
+        ctx,
+        definition
+            .segments
+            .iter()
+            .flat_map(|table| table.rows.ordinary())
+            .filter(|segment| {
+                matches!(
+                    segment.kind,
+                    crate::feature::definitions::FeatureSegmentKind::Line(_)
+                )
+            })
+            .filter(|segment| segment_counts[&segment.external_id] == 1)
+            .filter(|segment| {
+                segment
+                    .point_ids()
+                    .iter()
+                    .all(|point_id| !ambiguous_point_ids.contains(point_id))
+            }),
+        "creo section line segments",
+    )?;
+    let coincident_points = crate::decode::collect_items(
+        ctx,
+        active_complete_section_skamps(definition).filter_map(|skamp| {
             let [first, second] = skamp.items.as_slice() else {
                 return None;
             };
@@ -343,79 +366,118 @@ pub(in crate::decode) fn resolved_section_coordinates(
                     SectionPointSource::Value(_) => true,
                 }))
             .then_some(pair)
-        }), "creo section coincident point pairs")?;
-    let same_coordinate_points = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
-        .filter_map(|skamp| section_skamp_same_coordinate_sources(definition, skamp))
-        .filter(|(pair, _)| {
-            pair.iter()
-                .any(|point| matches!(point, SectionPointSource::Point(_)))
-                && pair.iter().all(|point| match point {
-                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-                    SectionPointSource::Value(_) => true,
-                })
-        }), "creo section same-coordinate pairs")?;
+        }),
+        "creo section coincident point pairs",
+    )?;
+    let same_coordinate_points = crate::decode::collect_items(
+        ctx,
+        active_complete_section_skamps(definition)
+            .filter_map(|skamp| section_skamp_same_coordinate_sources(definition, skamp))
+            .filter(|(pair, _)| {
+                pair.iter()
+                    .any(|point| matches!(point, SectionPointSource::Point(_)))
+                    && pair.iter().all(|point| match point {
+                        SectionPointSource::Point(point_id) => {
+                            !ambiguous_point_ids.contains(point_id)
+                        }
+                        SectionPointSource::Value(_) => true,
+                    })
+            }),
+        "creo section same-coordinate pairs",
+    )?;
     let mut point_on_line_coordinates = Vec::new();
     let mut saved_point_on_line_coordinates = Vec::new();
     for skamp in active_complete_section_skamps(definition) {
-        if let Some((first, second, coordinate)) = section_skamp_point_on_line(ctx, definition, skamp)? {
+        if let Some((first, second, coordinate)) =
+            section_skamp_point_on_line(ctx, definition, skamp)?
+        {
             if !ambiguous_point_ids.contains(&first) && !ambiguous_point_ids.contains(&second) {
-                ctx.try_reserve_items(&mut point_on_line_coordinates, 1, "creo section point-on-line coordinates")?;
+                ctx.try_reserve_items(
+                    &mut point_on_line_coordinates,
+                    1,
+                    "creo section point-on-line coordinates",
+                )?;
                 point_on_line_coordinates.push((first, second, coordinate));
             }
         }
-        if let Some((point_id, coordinate, value)) = section_skamp_saved_point_on_line(ctx, definition, skamp)? {
+        if let Some((point_id, coordinate, value)) =
+            section_skamp_saved_point_on_line(ctx, definition, skamp)?
+        {
             if !ambiguous_point_ids.contains(&point_id) {
-                ctx.try_reserve_items(&mut saved_point_on_line_coordinates, 1, "creo section saved point-on-line coordinates")?;
+                ctx.try_reserve_items(
+                    &mut saved_point_on_line_coordinates,
+                    1,
+                    "creo section saved point-on-line coordinates",
+                )?;
                 saved_point_on_line_coordinates.push((point_id, coordinate, value));
             }
         }
     }
-    let line_midpoint_constraints = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
-        .filter_map(|skamp| section_skamp_line_midpoint_sources(definition, skamp))
-        .filter(|(point_sources, point)| {
-            point_sources.iter().all(|source| match source {
-                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-                SectionPointSource::Value(_) => true,
-            }) && match point {
-                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-                SectionPointSource::Value(_) => true,
-            }
-        }), "creo section line midpoint constraints")?;
+    let line_midpoint_constraints = crate::decode::collect_items(
+        ctx,
+        active_complete_section_skamps(definition)
+            .filter_map(|skamp| section_skamp_line_midpoint_sources(definition, skamp))
+            .filter(|(point_sources, point)| {
+                point_sources.iter().all(|source| match source {
+                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionPointSource::Value(_) => true,
+                }) && match point {
+                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionPointSource::Value(_) => true,
+                }
+            }),
+        "creo section line midpoint constraints",
+    )?;
     let mut symmetric_point_constraints = Vec::new();
     for skamp in active_complete_section_skamps(definition) {
-        let Some((axis, first, second, coordinate)) = section_skamp_axis_symmetry(ctx, definition, skamp)? else {
+        let Some((axis, first, second, coordinate)) =
+            section_skamp_axis_symmetry(ctx, definition, skamp)?
+        else {
             continue;
         };
-        if
-            [first, second]
-                .into_iter()
-                .any(|point| matches!(point, SectionPointSource::Point(_)))
-                && [first, second].into_iter().all(|point| match point {
-                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
-                    SectionPointSource::Value(_) => true,
-                })
-                && match axis {
-                    SectionSymmetryAxis::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
-                    SectionSymmetryAxis::Value(_) => true,
-                }
+        if [first, second]
+            .into_iter()
+            .any(|point| matches!(point, SectionPointSource::Point(_)))
+            && [first, second].into_iter().all(|point| match point {
+                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
+                SectionPointSource::Value(_) => true,
+            })
+            && match axis {
+                SectionSymmetryAxis::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
+                SectionSymmetryAxis::Value(_) => true,
+            }
         {
-            ctx.try_reserve_items(&mut symmetric_point_constraints, 1, "creo section axis symmetry constraints")?;
+            ctx.try_reserve_items(
+                &mut symmetric_point_constraints,
+                1,
+                "creo section axis symmetry constraints",
+            )?;
             symmetric_point_constraints.push((axis, first, second, coordinate));
         }
     }
-    let point_symmetric_constraints = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
-        .filter_map(|skamp| section_skamp_point_symmetry(definition, skamp))
-        .filter(|(center, first, second)| {
-            !ambiguous_point_ids.contains(center)
-                && [first, second].into_iter().all(|point| match point {
-                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-                    SectionPointSource::Value(_) => true,
-                })
-        }), "creo section point symmetry constraints")?;
+    let point_symmetric_constraints = crate::decode::collect_items(
+        ctx,
+        active_complete_section_skamps(definition)
+            .filter_map(|skamp| section_skamp_point_symmetry(definition, skamp))
+            .filter(|(center, first, second)| {
+                !ambiguous_point_ids.contains(center)
+                    && [first, second].into_iter().all(|point| match point {
+                        SectionPointSource::Point(point_id) => {
+                            !ambiguous_point_ids.contains(point_id)
+                        }
+                        SectionPointSource::Value(_) => true,
+                    })
+            }),
+        "creo section point symmetry constraints",
+    )?;
     let auxiliary_constraints =
         section_equation_auxiliary_constraints(ctx, definition, &ambiguous_point_ids)?;
     let mut auxiliary_scalar_values = section_equation_scalar_seed_values(ctx, definition)?;
-    propagate_section_equation_scalar_equality_values(ctx, definition, &mut auxiliary_scalar_values)?;
+    propagate_section_equation_scalar_equality_values(
+        ctx,
+        definition,
+        &mut auxiliary_scalar_values,
+    )?;
     let mut linear_dimension_candidates = Vec::new();
     for relation in definition
         .relations
@@ -438,54 +500,80 @@ pub(in crate::decode) fn resolved_section_coordinates(
                 return None;
             };
             Some((first, second))
-        })() else { continue; };
+        })() else {
+            continue;
+        };
         let Some(coordinate) = section_linear_distance_coordinate(
-                ctx, definition,
-                &segments,
-                first,
-                second,
-                &points,
-                &saved_segment_points,
-                &ambiguous_point_ids,
-            )? else { continue; };
-        let Some(magnitude) = section_relation_length_dimension(definition, relation)
-            .and_then(|dimension| dimension
-                .value
-                .resolved()
-                .filter(|value| value.is_finite() && *value >= 0.0)) else { continue; };
+            ctx,
+            definition,
+            &segments,
+            [first, second],
+            &points,
+            &saved_segment_points,
+            &ambiguous_point_ids,
+        )?
+        else {
+            continue;
+        };
+        let Some(magnitude) =
+            section_relation_length_dimension(definition, relation).and_then(|dimension| {
+                dimension
+                    .value
+                    .resolved()
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+            })
+        else {
+            continue;
+        };
         if matches!(relation.sign, 0 | 1 | 0xf6) {
-            ctx.try_reserve_items(&mut linear_dimension_candidates, 1, "creo section linear dimension candidates")?;
-            linear_dimension_candidates.push((
-                first,
-                second,
-                coordinate,
-                magnitude,
-                relation.sign,
-            ));
+            ctx.try_reserve_items(
+                &mut linear_dimension_candidates,
+                1,
+                "creo section linear dimension candidates",
+            )?;
+            linear_dimension_candidates.push((first, second, coordinate, magnitude, relation.sign));
         }
     }
-    let signed_dimension_candidates = crate::decode::collect_items(ctx, linear_dimension_candidates
-        .iter()
-        .filter_map(|&(first, second, coordinate, magnitude, sign)| {
-            let delta = match sign {
-                1 => magnitude,
-                0xf6 => -magnitude,
-                _ => return None,
-            };
-            Some((first, second, coordinate, delta))
-        }), "creo section signed dimension candidates")?;
-    let mut unsigned_dimension_candidates = crate::decode::collect_items(ctx, linear_dimension_candidates
-        .iter()
-        .filter_map(|&(first, second, coordinate, magnitude, sign)| {
-            (sign == 0).then_some((first, second, coordinate, magnitude))
-        }), "creo section unsigned dimension candidates")?;
+    let signed_dimension_candidates = crate::decode::collect_items(
+        ctx,
+        linear_dimension_candidates.iter().filter_map(
+            |&(first, second, coordinate, magnitude, sign)| {
+                let delta = match sign {
+                    1 => magnitude,
+                    0xf6 => -magnitude,
+                    _ => return None,
+                };
+                Some((first, second, coordinate, delta))
+            },
+        ),
+        "creo section signed dimension candidates",
+    )?;
+    let mut unsigned_dimension_candidates = crate::decode::collect_items(
+        ctx,
+        linear_dimension_candidates.iter().filter_map(
+            |&(first, second, coordinate, magnitude, sign)| {
+                (sign == 0).then_some((first, second, coordinate, magnitude))
+            },
+        ),
+        "creo section unsigned dimension candidates",
+    )?;
     let unsigned_equation_distances =
         section_equation_unsigned_coordinate_distances(ctx, definition, &ambiguous_point_ids)?;
-    ctx.try_reserve_items(&mut unsigned_dimension_candidates, unsigned_equation_distances.len(),
-        "creo section unsigned dimension candidates")?;
-    unsigned_dimension_candidates.extend(unsigned_equation_distances.into_iter().map(|constraint| {
-        (constraint.first, constraint.second, constraint.coordinate, constraint.value)
-    }));
+    ctx.try_reserve_items(
+        &mut unsigned_dimension_candidates,
+        unsigned_equation_distances.len(),
+        "creo section unsigned dimension candidates",
+    )?;
+    unsigned_dimension_candidates.extend(unsigned_equation_distances.into_iter().map(
+        |constraint| {
+            (
+                constraint.first,
+                constraint.second,
+                constraint.coordinate,
+                constraint.value,
+            )
+        },
+    ));
     let radial_constraints =
         section_equation_radial_constraints(ctx, definition, &points, &ambiguous_point_ids)?;
     let equal_length_constraints =
@@ -509,11 +597,15 @@ pub(in crate::decode) fn resolved_section_coordinates(
             })
             .or_insert(Some(canonical_delta));
     }
-    let signed_dimensions = crate::decode::collect_items(ctx, signed_dimensions
-        .into_iter()
-        .filter_map(|((first, second, coordinate), delta)| {
-            Some((first, second, coordinate, delta?))
-        }), "creo section canonical signed dimensions")?;
+    let signed_dimensions = crate::decode::collect_items(
+        ctx,
+        signed_dimensions
+            .into_iter()
+            .filter_map(|((first, second, coordinate), delta)| {
+                Some((first, second, coordinate, delta?))
+            }),
+        "creo section canonical signed dimensions",
+    )?;
     let mut equations = Vec::new();
     for (&point_id, coordinates) in &points {
         for (coordinate, value) in SectionAxis::ALL
@@ -521,80 +613,111 @@ pub(in crate::decode) fn resolved_section_coordinates(
             .zip(coordinates.iter().copied())
         {
             if let Some(value) = value {
-                push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_value(ctx,
-                    point_id, coordinate, value,
-                )?)?;
+                push_coordinate_equation(
+                    ctx,
+                    &mut equations,
+                    SectionCoordinateEquation::point_value(ctx, point_id, coordinate, value)?,
+                )?;
             }
         }
     }
     for &(point_id, coordinates) in &saved_segment_points {
         for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates) {
-            push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_value(ctx,
-                point_id, coordinate, value,
-            )?)?;
+            push_coordinate_equation(
+                ctx,
+                &mut equations,
+                SectionCoordinateEquation::point_value(ctx, point_id, coordinate, value)?,
+            )?;
         }
     }
     for segment in &segments {
         if let Some(coordinate) = section_line_fixed_coordinate(ctx, definition, segment)? {
-            push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_difference(ctx,
-                segment.point_ids()[0],
-                segment.point_ids()[1],
-                coordinate,
-                0.0,
-            )?)?;
+            push_coordinate_equation(
+                ctx,
+                &mut equations,
+                SectionCoordinateEquation::point_difference(
+                    ctx,
+                    segment.point_ids()[0],
+                    segment.point_ids()[1],
+                    coordinate,
+                    0.0,
+                )?,
+            )?;
         }
     }
     for &(first, second, coordinate, delta) in &signed_dimensions {
-        push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_difference(ctx,
-            first, second, coordinate, delta,
-        )?)?;
+        push_coordinate_equation(
+            ctx,
+            &mut equations,
+            SectionCoordinateEquation::point_difference(ctx, first, second, coordinate, delta)?,
+        )?;
     }
     for &[first, second] in &coincident_points {
         for coordinate in SectionAxis::ALL {
-            push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::source_difference(ctx,
-                first, second, coordinate, 0.0,
-            )?)?;
+            push_coordinate_equation(
+                ctx,
+                &mut equations,
+                SectionCoordinateEquation::source_difference(ctx, first, second, coordinate, 0.0)?,
+            )?;
         }
     }
     for (first, second, coordinate) in
         section_equation_coordinate_equalities(ctx, definition, &ambiguous_point_ids)?
     {
-        push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_difference(ctx,
-            first, second, coordinate, 0.0,
-        )?)?;
+        push_coordinate_equation(
+            ctx,
+            &mut equations,
+            SectionCoordinateEquation::point_difference(ctx, first, second, coordinate, 0.0)?,
+        )?;
     }
     let point_on_line_constraints =
         section_equation_point_on_line_constraints(ctx, definition, &ambiguous_point_ids)?;
     for constraint in &radial_constraints {
         if let Some(offset) = constraint.offset() {
-            push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_difference(ctx,
-                constraint.first,
-                constraint.second,
-                SectionAxis::U,
-                offset[0],
-            )?)?;
-            push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_difference(ctx,
-                constraint.first,
-                constraint.second,
-                SectionAxis::V,
-                offset[1],
-            )?)?;
+            push_coordinate_equation(
+                ctx,
+                &mut equations,
+                SectionCoordinateEquation::point_difference(
+                    ctx,
+                    constraint.first,
+                    constraint.second,
+                    SectionAxis::U,
+                    offset[0],
+                )?,
+            )?;
+            push_coordinate_equation(
+                ctx,
+                &mut equations,
+                SectionCoordinateEquation::point_difference(
+                    ctx,
+                    constraint.first,
+                    constraint.second,
+                    SectionAxis::V,
+                    offset[1],
+                )?,
+            )?;
         }
     }
     for &([first, second], coordinate) in &same_coordinate_points {
-        push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::source_difference(ctx,
-            first, second, coordinate, 0.0,
-        )?)?;
+        push_coordinate_equation(
+            ctx,
+            &mut equations,
+            SectionCoordinateEquation::source_difference(ctx, first, second, coordinate, 0.0)?,
+        )?;
     }
     for &(first, second, coordinate) in &point_on_line_coordinates {
-        push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_difference(ctx,
-            first, second, coordinate, 0.0,
-        )?)?;
+        push_coordinate_equation(
+            ctx,
+            &mut equations,
+            SectionCoordinateEquation::point_difference(ctx, first, second, coordinate, 0.0)?,
+        )?;
     }
     for &(point, coordinate, value) in &saved_point_on_line_coordinates {
-        push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_value(ctx,
-            point, coordinate, value,
-        )?)?;
+        push_coordinate_equation(
+            ctx,
+            &mut equations,
+            SectionCoordinateEquation::point_value(ctx, point, coordinate, value)?,
+        )?;
     }
     for &(point_sources, point) in &line_midpoint_constraints {
         for coordinate in SectionAxis::ALL {
@@ -607,12 +730,17 @@ pub(in crate::decode) fn resolved_section_coordinates(
     }
     for &(axis, first, second, fixed_coordinate) in &symmetric_point_constraints {
         let parallel_coordinate = fixed_coordinate.other();
-        push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::source_difference(ctx,
-            first,
-            second,
-            parallel_coordinate,
-            0.0,
-        )?)?;
+        push_coordinate_equation(
+            ctx,
+            &mut equations,
+            SectionCoordinateEquation::source_difference(
+                ctx,
+                first,
+                second,
+                parallel_coordinate,
+                0.0,
+            )?,
+        )?;
         let mut equation = SectionCoordinateEquation::default();
         equation.add_source(ctx, first, fixed_coordinate, 1.0)?;
         equation.add_source(ctx, second, fixed_coordinate, 1.0)?;
@@ -635,7 +763,10 @@ pub(in crate::decode) fn resolved_section_coordinates(
     }
     let mut stored_coordinates = BTreeMap::new();
     for (&point, coordinates) in &points {
-        for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates.iter().copied()) {
+        for (coordinate, value) in SectionAxis::ALL
+            .into_iter()
+            .zip(coordinates.iter().copied())
+        {
             if let Some(value) = value {
                 ctx.charge_collection_items(1, "creo section stored coordinate nodes")?;
                 stored_coordinates.insert((point, coordinate), value);
@@ -656,9 +787,11 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &unsigned_dimension_candidates,
     )?;
     for ((point, coordinate), value) in unsigned_coordinates {
-        push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_value(ctx,
-            point, coordinate, value,
-        )?)?;
+        push_coordinate_equation(
+            ctx,
+            &mut equations,
+            SectionCoordinateEquation::point_value(ctx, point, coordinate, value)?,
+        )?;
     }
     let solved_coordinates = solve_section_coordinates_with_derived_constraints(
         ctx,
@@ -677,18 +810,28 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &auxiliary_scalar_values,
     )? {
         if let Some(offset) = constraint.offset() {
-            push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_difference(ctx,
-                constraint.first,
-                constraint.second,
-                SectionAxis::U,
-                offset[0],
-            )?)?;
-            push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_difference(ctx,
-                constraint.first,
-                constraint.second,
-                SectionAxis::V,
-                offset[1],
-            )?)?;
+            push_coordinate_equation(
+                ctx,
+                &mut equations,
+                SectionCoordinateEquation::point_difference(
+                    ctx,
+                    constraint.first,
+                    constraint.second,
+                    SectionAxis::U,
+                    offset[0],
+                )?,
+            )?;
+            push_coordinate_equation(
+                ctx,
+                &mut equations,
+                SectionCoordinateEquation::point_difference(
+                    ctx,
+                    constraint.first,
+                    constraint.second,
+                    SectionAxis::V,
+                    offset[1],
+                )?,
+            )?;
         }
     }
     let second_unsigned_coordinates = solve_unsigned_dimension_coordinates(
@@ -698,9 +841,11 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &unsigned_dimension_candidates,
     )?;
     for ((point, coordinate), value) in second_unsigned_coordinates {
-        push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_value(ctx,
-            point, coordinate, value,
-        )?)?;
+        push_coordinate_equation(
+            ctx,
+            &mut equations,
+            SectionCoordinateEquation::point_value(ctx, point, coordinate, value)?,
+        )?;
     }
     let solved_coordinates = solve_section_coordinates_with_derived_constraints(
         ctx,
@@ -711,21 +856,27 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &auxiliary_constraints,
         &mut auxiliary_scalar_values,
     )?;
-    let arc_midpoint_constraints = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
-        .filter_map(|skamp| {
-            section_skamp_arc_midpoint_source(definition, skamp, &solved_coordinates)
-        })
-        .filter_map(|(point, midpoint)| match point {
-            SectionPointSource::Point(point_id) if !ambiguous_point_ids.contains(&point_id) => {
-                Some((point_id, midpoint))
-            }
-            SectionPointSource::Point(_) | SectionPointSource::Value(_) => None,
-        }), "creo section arc midpoint constraints")?;
+    let arc_midpoint_constraints = crate::decode::collect_items(
+        ctx,
+        active_complete_section_skamps(definition)
+            .filter_map(|skamp| {
+                section_skamp_arc_midpoint_source(definition, skamp, &solved_coordinates)
+            })
+            .filter_map(|(point, midpoint)| match point {
+                SectionPointSource::Point(point_id) if !ambiguous_point_ids.contains(&point_id) => {
+                    Some((point_id, midpoint))
+                }
+                SectionPointSource::Point(_) | SectionPointSource::Value(_) => None,
+            }),
+        "creo section arc midpoint constraints",
+    )?;
     for &(point_id, midpoint) in &arc_midpoint_constraints {
         for (coordinate, value) in SectionAxis::ALL.into_iter().zip(midpoint) {
-            push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_value(ctx,
-                point_id, coordinate, value,
-            )?)?;
+            push_coordinate_equation(
+                ctx,
+                &mut equations,
+                SectionCoordinateEquation::point_value(ctx, point_id, coordinate, value)?,
+            )?;
         }
     }
     solve_section_coordinate_equations(ctx, &equations, &stored_coordinates)
@@ -735,35 +886,41 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
     ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segments: &[&crate::feature::definitions::FeatureSegment],
-    first: u32,
-    second: u32,
+    point_ids: [u32; 2],
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     saved_segment_points: &[(u32, [f64; 2])],
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Option<SectionAxis>, CodecError> {
-    let mut matching_segments = segments
-        .iter()
-        .copied()
-        .filter(|segment| {
-            segment.point_ids() == [first, second] || segment.point_ids() == [second, first]
-        });
+    let [first, second] = point_ids;
+
+    let mut matching_segments = segments.iter().copied().filter(|segment| {
+        segment.point_ids() == [first, second] || segment.point_ids() == [second, first]
+    });
     let unique_segment = matching_segments.next();
     let duplicate_segment = matching_segments.next().is_some();
     let point_coordinate = |point_id: u32, coordinate: SectionAxis| -> Result<Option<f64>, ()> {
         if ambiguous_point_ids.contains(&point_id) {
             return Err(());
         }
-        let values = || coordinates.get(&point_id)
-            .and_then(|point| point[coordinate.index()])
-            .into_iter()
-            .chain(saved_segment_points.iter()
-                .filter(move |(saved_point_id, _)| *saved_point_id == point_id)
-                .map(move |(_, point)| point[coordinate.index()]));
+        let values = || {
+            coordinates
+                .get(&point_id)
+                .and_then(|point| point[coordinate.index()])
+                .into_iter()
+                .chain(
+                    saved_segment_points
+                        .iter()
+                        .filter(move |(saved_point_id, _)| *saved_point_id == point_id)
+                        .map(move |(_, point)| point[coordinate.index()]),
+                )
+        };
         let mut first = None;
         let mut scale = 1.0_f64;
         for value in values() {
             value.is_finite().then_some(()).ok_or(())?;
-            if first.is_none() { first = Some(value); }
+            if first.is_none() {
+                first = Some(value);
+            }
             scale = scale.max(value.abs());
         }
         let Some(first) = first else {
@@ -775,9 +932,11 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
             .ok_or(())
     };
     if let Some(segment) = unique_segment.filter(|_| !duplicate_segment) {
-        if let Some(fixed_coordinate) =
-            section_line_entity_fixed_coordinate_with_unique_rows(ctx, definition, segment.external_id)?
-        {
+        if let Some(fixed_coordinate) = section_line_entity_fixed_coordinate_with_unique_rows(
+            ctx,
+            definition,
+            segment.external_id,
+        )? {
             let Ok(first_coordinate) = point_coordinate(first, fixed_coordinate) else {
                 return Ok(None);
             };
@@ -797,54 +956,55 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
         return Ok(None);
     }
     Ok((|| {
-    let table = definition.segments.as_ref()?;
-    // Only decoded point-bearing families establish that a dimension operand
-    // is a section endpoint. Opaque rows retain native identity but do not
-    // prove an endpoint role.
-    let has_unique_incident_entity = |point_id| {
-        table.rows.ordinary().any(|segment| {
-            segment.point_ids().contains(&point_id) && table.rows.get(segment.external_id).is_some()
-        }) || table.rows.points().any(|segment| {
-            segment.point_id == point_id && table.rows.get(segment.external_id).is_some()
-        }) || table.rows.ordinary().any(|segment| {
-            matches!(
-                segment.kind,
-                crate::feature::definitions::FeatureSegmentKind::Arc(_)
-            ) && segment.center_id == Some(point_id)
-                && table.rows.get(segment.external_id).is_some()
-        }) || table.rows.circles().any(|segment| {
-            segment.center_id == point_id && table.rows.get(segment.external_id).is_some()
-        }) || (matches!(point_id, 0 | 1)
-            && table
-                .rows
-                .centered_lines()
-                .any(|segment| table.rows.get(segment.external_id).is_some()))
-            || table.rows.reference_lines().any(|segment| {
-                segment.point_ids.contains(&Some(point_id))
+        let table = definition.segments.as_ref()?;
+        // Only decoded point-bearing families establish that a dimension operand
+        // is a section endpoint. Opaque rows retain native identity but do not
+        // prove an endpoint role.
+        let has_unique_incident_entity = |point_id| {
+            table.rows.ordinary().any(|segment| {
+                segment.point_ids().contains(&point_id)
                     && table.rows.get(segment.external_id).is_some()
-            })
-            || table.rows.bounded_curves().any(|segment| {
-                segment.point_ids.contains(&point_id)
+            }) || table.rows.points().any(|segment| {
+                segment.point_id == point_id && table.rows.get(segment.external_id).is_some()
+            }) || table.rows.ordinary().any(|segment| {
+                matches!(
+                    segment.kind,
+                    crate::feature::definitions::FeatureSegmentKind::Arc(_)
+                ) && segment.center_id == Some(point_id)
                     && table.rows.get(segment.external_id).is_some()
-            })
-    };
-    has_unique_incident_entity(first).then_some(())?;
-    has_unique_incident_entity(second).then_some(())?;
-    let equal_coordinate = |coordinate: SectionAxis| -> Option<bool> {
-        let first = point_coordinate(first, coordinate).ok().flatten()?;
-        let second = point_coordinate(second, coordinate).ok().flatten()?;
-        let scale = first.abs().max(second.abs()).max(1.0);
-        Some((first - second).abs() <= EPS_SECTION_COORDINATE * scale)
-    };
-    let equal_u = equal_coordinate(SectionAxis::U);
-    let equal_v = equal_coordinate(SectionAxis::V);
-    if equal_u == Some(true) && equal_v != Some(true) {
-        return Some(SectionAxis::V);
-    }
-    if equal_v == Some(true) && equal_u != Some(true) {
-        return Some(SectionAxis::U);
-    }
-    None
+            }) || table.rows.circles().any(|segment| {
+                segment.center_id == point_id && table.rows.get(segment.external_id).is_some()
+            }) || (matches!(point_id, 0 | 1)
+                && table
+                    .rows
+                    .centered_lines()
+                    .any(|segment| table.rows.get(segment.external_id).is_some()))
+                || table.rows.reference_lines().any(|segment| {
+                    segment.point_ids.contains(&Some(point_id))
+                        && table.rows.get(segment.external_id).is_some()
+                })
+                || table.rows.bounded_curves().any(|segment| {
+                    segment.point_ids.contains(&point_id)
+                        && table.rows.get(segment.external_id).is_some()
+                })
+        };
+        has_unique_incident_entity(first).then_some(())?;
+        has_unique_incident_entity(second).then_some(())?;
+        let equal_coordinate = |coordinate: SectionAxis| -> Option<bool> {
+            let first = point_coordinate(first, coordinate).ok().flatten()?;
+            let second = point_coordinate(second, coordinate).ok().flatten()?;
+            let scale = first.abs().max(second.abs()).max(1.0);
+            Some((first - second).abs() <= EPS_SECTION_COORDINATE * scale)
+        };
+        let equal_u = equal_coordinate(SectionAxis::U);
+        let equal_v = equal_coordinate(SectionAxis::V);
+        if equal_u == Some(true) && equal_v != Some(true) {
+            return Some(SectionAxis::V);
+        }
+        if equal_v == Some(true) && equal_u != Some(true) {
+            return Some(SectionAxis::U);
+        }
+        None
     })())
 }
 
@@ -868,7 +1028,10 @@ mod tests {
 
     use super::super::equations_scalar::resolved_section_scalar_values;
     use super::resolved_section_points;
-    use super::{append_point_on_line_equations as append_point_on_line_equations_checked, SectionAxis, SectionCoordinateEquation};
+    use super::{
+        append_point_on_line_equations as append_point_on_line_equations_checked, SectionAxis,
+        SectionCoordinateEquation,
+    };
     use crate::feature::definitions::FeatureSolverTableHeader;
     use crate::feature::definitions::FeatureVariableTable;
     use crate::feature::definitions::{
@@ -887,9 +1050,18 @@ mod tests {
         saved_segment_points: &[(u32, [f64; 2])],
         ambiguous_point_ids: &BTreeSet<u32>,
     ) -> Option<SectionAxis> {
-        crate::decode::with_test_decode_ctx(|ctx| super::section_linear_distance_coordinate(
-            ctx, definition, segments, first, second, coordinates, saved_segment_points, ambiguous_point_ids,
-        )).expect("test linear distance coordinate")
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::section_linear_distance_coordinate(
+                ctx,
+                definition,
+                segments,
+                [first, second],
+                coordinates,
+                saved_segment_points,
+                ambiguous_point_ids,
+            )
+        })
+        .expect("test linear distance coordinate")
     }
 
     fn append_point_on_line_equations(
@@ -899,7 +1071,8 @@ mod tests {
     ) -> bool {
         crate::decode::with_test_decode_ctx(|ctx| {
             append_point_on_line_equations_checked(ctx, constraints, coordinates, equations)
-        }).expect("test coordinate equations")
+        })
+        .expect("test coordinate equations")
     }
 
     #[test]
@@ -910,14 +1083,21 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("test input admitted");
         let mut equations = Vec::new();
-        assert!(matches!(super::push_coordinate_equation(&ctx, &mut equations,
+        assert!(
+            matches!(super::push_coordinate_equation(&ctx, &mut equations,
             SectionCoordinateEquation::default()),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "creo section coordinate equations"));
+                if limit.operation == "creo section coordinate equations")
+        );
         assert!(equations.is_empty());
         crate::decode::with_test_decode_ctx(|ctx| {
-            super::push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::default())
-        }).expect("test equation append");
+            super::push_coordinate_equation(
+                ctx,
+                &mut equations,
+                SectionCoordinateEquation::default(),
+            )
+        })
+        .expect("test equation append");
         assert_eq!(equations.len(), 1);
     }
 
@@ -948,7 +1128,8 @@ mod tests {
         crate::decode::with_test_decode_ctx(|ctx| {
             existing.add_point(ctx, 3, SectionAxis::U, 0.0)?;
             existing.add_point(ctx, 3, SectionAxis::V, 1.0)
-        }).expect("test equation terms");
+        })
+        .expect("test equation terms");
         existing.rhs = f64::INFINITY;
         let mut equations = vec![existing];
         assert!(append_point_on_line_equations(
@@ -1088,11 +1269,17 @@ mod tests {
         policy.limits.max_collection_items = 4;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("test input admitted");
-        assert!(matches!(super::resolved_section_coordinates(&ctx, &definition),
+        assert!(
+            matches!(super::resolved_section_coordinates(&ctx, &definition),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "creo section segment count nodes"));
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
-            .expect("test section solve").get(&2), Some(&[2.0, 3.0]));
+                if limit.operation == "creo section segment count nodes")
+        );
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+                .expect("test section solve")
+                .get(&2),
+            Some(&[2.0, 3.0])
+        );
     }
 
     #[test]

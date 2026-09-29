@@ -15,17 +15,32 @@ use crate::CreoCodec;
 fn tabulated_cylinder_refusals_charge_text_and_loss_rows() {
     let records = ["missing chart".to_string()];
     for (retained_limit, item_limit, dimension, operation) in [
-        (0, u64::MAX, ResourceDimension::RetainedBytes, "creo tabulated cylinder refusal text"),
-        (u64::MAX, 0, ResourceDimension::CollectionItems, "creo tabulated cylinder losses"),
+        (
+            0,
+            u64::MAX,
+            ResourceDimension::RetainedBytes,
+            "creo tabulated cylinder refusal text",
+        ),
+        (
+            u64::MAX,
+            0,
+            ResourceDimension::CollectionItems,
+            "creo tabulated cylinder losses",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = retained_limit;
         policy.limits.max_collection_items = item_limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let error = super::note_tabulated_cylinder_refusals(
-            &ctx, 7, 42, "directrix", &records, &mut Vec::new(),
+            &ctx,
+            7,
+            42,
+            "directrix",
+            &records,
+            &mut Vec::new(),
         )
         .expect_err("one refusal exceeds the limit");
         assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -35,10 +50,8 @@ fn tabulated_cylinder_refusals_charge_text_and_loss_rows() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service root admitted");
     let mut losses = Vec::new();
-    super::note_tabulated_cylinder_refusals(
-        &ctx, 7, 42, "directrix", &records, &mut losses,
-    )
-    .expect("service refusal admitted");
+    super::note_tabulated_cylinder_refusals(&ctx, 7, 42, "directrix", &records, &mut losses)
+        .expect("service refusal admitted");
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].message,
         "VisibGeom surface row 7 states a tabulated-cylinder replay at offset 42 whose directrix lane forms no carrier: missing chart");
@@ -219,8 +232,8 @@ fn paired_sphere_association_copy_refuses_before_vec_growth() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(3).expect("service limit admits the association"), 0);
-    let error = run(2).expect_err("the copied association follows two discovery charges");
+    assert_eq!(run(37).expect("service limit admits the association"), 0);
+    let error = run(36).expect_err("the copied association follows two discovery charges");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -495,26 +508,61 @@ fn paired_envelope_spheres_do_not_join_rows_from_two_prototypes_in_one_frame() {
 fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'static> {
     let mut scan = scan_with_tabulated_replay();
     if tabulated {
-        scan.curves.tabulated_cylinder_replays[0].control_points = [Some([1.0, 2.0]), Some([2.0, 2.5]), Some([3.0, 3.5]), Some([4.0, 4.0])];
-    } else { scan.curves.tabulated_cylinder_replays.clear(); }
-    scan.surfaces.rows.push(crate::decode::tests::surface_row(7, 1,
-        crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder)));
+        scan.curves.tabulated_cylinder_replays[0].control_points = [
+            Some([1.0, 2.0]),
+            Some([2.0, 2.5]),
+            Some([3.0, 3.5]),
+            Some([4.0, 4.0]),
+        ];
+    } else {
+        scan.curves.tabulated_cylinder_replays.clear();
+    }
+    scan.surfaces.rows.push(crate::decode::tests::surface_row(
+        7,
+        1,
+        crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
+    ));
     scan.surfaces.rows[0].offset = 0;
     let frame = |offset, values: &[f64]| crate::surface::SurfaceParameterScalarFrame {
-        offset, slots: values.iter().enumerate().map(|(index, value)| crate::surface::SurfaceParameterScalar {
-            value: Some(*value), raw: vec![0], offset: offset + index,
-        }).collect(),
+        offset,
+        slots: values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| crate::surface::SurfaceParameterScalar {
+                value: Some(*value),
+                raw: vec![0],
+                offset: offset + index,
+            })
+            .collect(),
     };
-    scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
-        surface_id: 7, body: Vec::new(), scalar_tokens: Vec::new(),
-        opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan { raw: vec![0x00, 0x0c, 0x9a], offset: 3 }],
-        scalar_frames: vec![frame(0, &[0.0, 0.0, 1.0]), frame(6, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0])],
-        carrier: crate::surface::SurfaceParameterCarrier::Resolved(crate::surface::InlineSurfaceCarrier::Tabulated {
-            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame::new([1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
-                [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a]).expect("finite frame"),
-        }), boundary: crate::surface::SurfaceBodyBoundary::CompoundClose, offset: 0, body_offset: 0,
-    });
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 7,
+            body: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
+                raw: vec![0x00, 0x0c, 0x9a],
+                offset: 3,
+            }],
+            scalar_frames: vec![
+                frame(0, &[0.0, 0.0, 1.0]),
+                frame(6, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+            ],
+            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                crate::surface::InlineSurfaceCarrier::Tabulated {
+                    variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
+                    frame: crate::surface::TabulatedCylinderFrame::new(
+                        [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
+                        [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
+                    )
+                    .expect("finite frame"),
+                },
+            ),
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 0,
+            body_offset: 0,
+        });
     scan
 }
 
@@ -522,10 +570,20 @@ fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'s
 fn positional_line_extrusion_refuses_construction_identity_copies() {
     let scan = construction_copy_scan(false);
     let count = crate::test_support::assert_retained_boundaries(
-        &["creo construction curve identity copy", "creo construction surface identity copy"], |ctx| {
-            super::transfer_positional_line_extrusion_planes(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(), &mut crate::decode::source_carriers::SourceUnitCarriers::default())
-        });
+        &[
+            "creo construction curve identity copy",
+            "creo construction surface identity copy",
+        ],
+        |ctx| {
+            super::transfer_positional_line_extrusion_planes(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     assert_eq!(count, 1);
 }
 
@@ -533,10 +591,20 @@ fn positional_line_extrusion_refuses_construction_identity_copies() {
 fn tabulated_extrusion_refuses_construction_identity_copies() {
     let scan = construction_copy_scan(true);
     let count = crate::test_support::assert_retained_boundaries(
-        &["creo construction curve identity copy", "creo construction surface identity copy"], |ctx| {
-            super::transfer_tabulated_cylinder_spline_extrusions(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new(), &mut Vec::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default())
-        });
+        &[
+            "creo construction curve identity copy",
+            "creo construction surface identity copy",
+        ],
+        |ctx| {
+            super::transfer_tabulated_cylinder_spline_extrusions(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     assert_eq!(count, 1);
 }

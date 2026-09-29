@@ -21,7 +21,10 @@ use cadmpeg_ir::topology::BodyKind;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(in super::super) fn copy_body_id(ctx: &DecodeContext<'_>, body: &BodyId) -> Result<BodyId, CodecError> {
+pub(in super::super) fn copy_body_id(
+    ctx: &DecodeContext<'_>,
+    body: &BodyId,
+) -> Result<BodyId, CodecError> {
     BodyId::mint(ctx.copy_retained_text(body.as_str(), "creo feature output body IDs")?)
         .map_err(CodecError::malformed)
 }
@@ -75,13 +78,19 @@ fn feature_output_bodies_with_history(
         }
         _ => Vec::new(),
     };
-    let generated_input_outputs = generated_input_output_bodies(ctx, scan, ir, feature_id, visiting)?;
+    let generated_input_outputs =
+        generated_input_output_bodies(ctx, scan, ir, feature_id, visiting)?;
     for surface_id in generated_surfaces {
         let (surface, _reservation) = ctx.format_scoped(
             format_args!("creo:visibgeom:surface#{surface_id}"),
             "creo generated surface lookup",
         )?;
-        for face in ir.model.faces.iter().filter(|face| face.surface.as_str() == surface) {
+        for face in ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| face.surface.as_str() == surface)
+        {
             let Some(shell) = exactly_one(
                 ir.model
                     .shells
@@ -195,23 +204,33 @@ fn bodies_containing_edges(
         }
     }
     let mut shell_ids = BTreeSet::new();
-    for coedge in ir.model.coedges.iter().filter(|coedge| selected.contains(&coedge.edge)) {
-            let lp = exactly_one(
-                ir.model
-                    .loops
-                    .iter()
-                    .filter(|lp| lp.id == coedge.owner_loop),
-            );
-            let Some(face) = lp.and_then(|lp| exactly_one(ir.model.faces.iter().filter(|face| face.id == lp.face))) else {
-                continue;
-            };
-            if !shell_ids.contains(&face.shell) {
-                ctx.charge_collection_items(1, "creo selected shell nodes")?;
-                shell_ids.insert(&face.shell);
-            }
+    for coedge in ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| selected.contains(&coedge.edge))
+    {
+        let lp = exactly_one(
+            ir.model
+                .loops
+                .iter()
+                .filter(|lp| lp.id == coedge.owner_loop),
+        );
+        let Some(face) =
+            lp.and_then(|lp| exactly_one(ir.model.faces.iter().filter(|face| face.id == lp.face)))
+        else {
+            continue;
+        };
+        if !shell_ids.contains(&face.shell) {
+            ctx.charge_collection_items(1, "creo selected shell nodes")?;
+            shell_ids.insert(&face.shell);
+        }
     }
     for shell in ir.model.shells.iter().filter(|shell| {
-        shell.wire_edges().iter().any(|edge| selected.contains(edge))
+        shell
+            .wire_edges()
+            .iter()
+            .any(|edge| selected.contains(edge))
     }) {
         if !shell_ids.contains(&shell.id) {
             ctx.charge_collection_items(1, "creo selected shell nodes")?;
@@ -220,23 +239,26 @@ fn bodies_containing_edges(
     }
     let mut bodies = Vec::new();
     for shell_id in shell_ids {
-            let Some(shell) = exactly_one(ir.model.shells.iter().filter(|shell| shell.id == *shell_id)) else {
-                continue;
-            };
-            let region = exactly_one(
-                ir.model
-                    .regions
-                    .iter()
-                    .filter(|region| region.id == shell.region),
-            );
-            let Some(region) = region.filter(|region| exactly_one(ir.model.bodies.iter().filter(|body| body.id == region.body)).is_some()) else {
-                continue;
-            };
-            let body = copy_body_id(ctx, &region.body)?;
-            if !bodies.contains(&body) {
-                ctx.try_reserve_items(&mut bodies, 1, "creo bodies containing selected edges")?;
-                bodies.push(body);
-            }
+        let Some(shell) = exactly_one(ir.model.shells.iter().filter(|shell| shell.id == *shell_id))
+        else {
+            continue;
+        };
+        let region = exactly_one(
+            ir.model
+                .regions
+                .iter()
+                .filter(|region| region.id == shell.region),
+        );
+        let Some(region) = region.filter(|region| {
+            exactly_one(ir.model.bodies.iter().filter(|body| body.id == region.body)).is_some()
+        }) else {
+            continue;
+        };
+        let body = copy_body_id(ctx, &region.body)?;
+        if !bodies.contains(&body) {
+            ctx.try_reserve_items(&mut bodies, 1, "creo bodies containing selected edges")?;
+            bodies.push(body);
+        }
     }
     Ok(bodies)
 }
@@ -260,7 +282,14 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
             ),
             "creo evaluated sweep body candidate",
         )?;
-        if exactly_one(ir.model.bodies.iter().filter(|body| body.id.as_str() == candidate)).is_some() {
+        if exactly_one(
+            ir.model
+                .bodies
+                .iter()
+                .filter(|body| body.id.as_str() == candidate),
+        )
+        .is_some()
+        {
             ctx.charge_retained(candidate.len() as u64, "creo evaluated sweep body IDs")?;
             let body = BodyId::mint(candidate).map_err(CodecError::malformed)?;
             ctx.try_reserve_items(&mut outputs, 1, "creo evaluated sweep output bodies")?;
@@ -281,9 +310,12 @@ pub(in super::super) fn evaluated_sweep_body_kind(
         _ => return None,
     };
     exactly_one(ir.model.bodies.iter().filter(|body| {
-        body.id.as_str().strip_suffix(":body").is_some_and(|candidate| {
-            crate::identity::matches_numbered_identity(candidate, prefix, feature_id)
-        })
+        body.id
+            .as_str()
+            .strip_suffix(":body")
+            .is_some_and(|candidate| {
+                crate::identity::matches_numbered_identity(candidate, prefix, feature_id)
+            })
     }))
     .map(|body| body.kind)
 }
@@ -386,11 +418,17 @@ impl std::fmt::Display for FeatureFieldText<'_> {
     }
 }
 
-fn feature_field_text(value: &crate::feature::rows::FeatureFieldValue) -> Option<FeatureFieldText<'_>> {
+fn feature_field_text(
+    value: &crate::feature::rows::FeatureFieldValue,
+) -> Option<FeatureFieldText<'_>> {
     match value {
         crate::feature::rows::FeatureFieldValue::Empty => Some(FeatureFieldText::Empty),
-        crate::feature::rows::FeatureFieldValue::CompactInt(value) => Some(FeatureFieldText::CompactInt(*value)),
-        crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => Some(FeatureFieldText::CompactIntArray(values)),
+        crate::feature::rows::FeatureFieldValue::CompactInt(value) => {
+            Some(FeatureFieldText::CompactInt(*value))
+        }
+        crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => {
+            Some(FeatureFieldText::CompactIntArray(values))
+        }
         crate::feature::rows::FeatureFieldValue::EntityReference {
             entity_id,
             terminated,
@@ -414,7 +452,8 @@ fn insert_feature_parameter(
     value: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
     let value = ctx.format_retained(value, "creo feature parameter value")?;
-    let (base, base_reservation) = ctx.format_scoped(base, "creo feature parameter key candidate")?;
+    let (base, base_reservation) =
+        ctx.format_scoped(base, "creo feature parameter key candidate")?;
     let (key, key_reservation) = if parameters.contains_key(&base) {
         let mut occurrence = 2usize;
         loop {
@@ -490,12 +529,7 @@ pub(in super::super) fn feature_parameters(
             crate::feature::rows::AffectedIdKind::Contours => "contour_ids",
             crate::feature::rows::AffectedIdKind::Quilts => "affected_quilt_ids",
         };
-        insert_feature_parameter(
-            ctx,
-            &mut parameters,
-            name,
-            CommaList(&affected.ids),
-        )?;
+        insert_feature_parameter(ctx, &mut parameters, name, CommaList(&affected.ids))?;
     }
     for affected in scan
         .features
@@ -551,12 +585,7 @@ pub(in super::super) fn feature_parameters(
                 &affected.quilt_ids,
             ),
         ] {
-            insert_feature_parameter(
-                ctx,
-                &mut parameters,
-                name,
-                CommaList(ids),
-            )?;
+            insert_feature_parameter(ctx, &mut parameters, name, CommaList(ids))?;
         }
         for (name, extent) in [
             (
@@ -625,20 +654,28 @@ pub(in super::super) fn feature_parameters(
         }
     }
     if let Some(definition) = exactly_one(
-        scan.features.definitions.iter()
+        scan.features
+            .definitions
+            .iter()
             .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)),
     ) {
         replace_feature_parameter(
             ctx,
             &mut parameters,
             "sketch_segment_count",
-            definition.segments.as_ref().map_or(0, |segments| segments.rows.ordinary().count()),
+            definition
+                .segments
+                .as_ref()
+                .map_or(0, |segments| segments.rows.ordinary().count()),
         )?;
         replace_feature_parameter(
             ctx,
             &mut parameters,
             "dimension_count",
-            definition.dimensions.as_ref().map_or(0, |dimensions| dimensions.rows.len()),
+            definition
+                .dimensions
+                .as_ref()
+                .map_or(0, |dimensions| dimensions.rows.len()),
         )?;
     }
     for transform in scan
@@ -721,20 +758,17 @@ pub(in super::super) fn owned_section_feature_id(
     scan: &ContainerScan,
     definition_id: u32,
 ) -> Option<u32> {
-    let definition = exactly_one(scan
-        .features
-        .definitions
-        .iter()
-        .filter(|definition| definition.identity.id() == definition_id))?;
-    let row = exactly_one(scan
-        .features
-        .rows
-        .iter()
-        .filter(|row| {
-            row.root_schema_class == Some(SchemaClass::Section)
-                && definition.offset >= row.body_offset
-                && definition.offset < row.body_offset.saturating_add(row.body.len())
-        }))?;
+    let definition = exactly_one(
+        scan.features
+            .definitions
+            .iter()
+            .filter(|definition| definition.identity.id() == definition_id),
+    )?;
+    let row = exactly_one(scan.features.rows.iter().filter(|row| {
+        row.root_schema_class == Some(SchemaClass::Section)
+            && definition.offset >= row.body_offset
+            && definition.offset < row.body_offset.saturating_add(row.body.len())
+    }))?;
     Some(row.feature_id)
 }
 
@@ -742,21 +776,13 @@ pub(super) fn section_definition_for_history_feature<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<&'a crate::feature::definitions::FeatureDefinition> {
-    let row = exactly_one(scan
-        .features
-        .rows
-        .iter()
-        .filter(|row| {
-            row.feature_id == feature_id && row.root_schema_class == Some(SchemaClass::Section)
-        }))?;
-    let definition = exactly_one(scan
-        .features
-        .definitions
-        .iter()
-        .filter(|definition| {
-            definition.offset >= row.body_offset
-                && definition.offset < row.body_offset.saturating_add(row.body.len())
-        }))?;
+    let row = exactly_one(scan.features.rows.iter().filter(|row| {
+        row.feature_id == feature_id && row.root_schema_class == Some(SchemaClass::Section)
+    }))?;
+    let definition = exactly_one(scan.features.definitions.iter().filter(|definition| {
+        definition.offset >= row.body_offset
+            && definition.offset < row.body_offset.saturating_add(row.body.len())
+    }))?;
     Some(definition)
 }
 
@@ -771,11 +797,21 @@ pub(in super::super) fn feature_source_properties(
     }
     let schema_class = feature_schema_class(scan, feature_id);
     if let Some(schema_class) = schema_class {
-        insert_feature_source_property(ctx, &mut properties, "featdefs_schema_class", schema_class)?;
+        insert_feature_source_property(
+            ctx,
+            &mut properties,
+            "featdefs_schema_class",
+            schema_class,
+        )?;
     }
     let row_schema_classes = feature_row_schema_classes(ctx, scan, feature_id)?;
     if !row_schema_classes.is_empty() {
-        insert_feature_source_property(ctx, &mut properties, "featdefs_row_schema_classes", SchemaClassList(&row_schema_classes))?;
+        insert_feature_source_property(
+            ctx,
+            &mut properties,
+            "featdefs_row_schema_classes",
+            SchemaClassList(&row_schema_classes),
+        )?;
     }
     if schema_class.is_none() && !row_schema_classes.is_empty() {
         insert_feature_source_property(ctx, &mut properties, "featdefs_schema_state", "ambiguous")?;

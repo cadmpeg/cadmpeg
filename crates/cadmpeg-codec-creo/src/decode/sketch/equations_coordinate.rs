@@ -68,10 +68,18 @@ pub(super) fn section_equation_function_six_distance_values(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
-    crate::decode::collect_items(ctx, section_equation_function_six_distance_rows(ctx, definition, coordinates, ambiguous_point_ids)?
+    crate::decode::collect_items(
+        ctx,
+        section_equation_function_six_distance_rows(
+            ctx,
+            definition,
+            coordinates,
+            ambiguous_point_ids,
+        )?
         .into_iter()
-        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance()?)))
-        , "creo section equation six distance values")
+        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance()?))),
+        "creo section equation six distance values",
+    )
 }
 
 pub(in crate::decode) fn section_equation_function_six_distance_rows(
@@ -87,8 +95,12 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
     else {
         return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
         return Ok(Vec::new());
     };
@@ -104,11 +116,9 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
-    crate::decode::collect_items(ctx,
-    equations
-        .rows
-        .iter()
-        .filter_map(|equation| {
+    crate::decode::collect_items(
+        ctx,
+        equations.rows.iter().filter_map(|equation| {
             if equation.function_id != 6 {
                 return None;
             }
@@ -189,8 +199,9 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
                 equation_id: equation.equation_id,
                 offset: equation.offset,
             })
-        })
-        , "creo section equation function six distance rows")
+        }),
+        "creo section equation function six distance rows",
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -251,10 +262,13 @@ pub(super) fn section_equation_unsigned_coordinate_distances(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<SectionUnsignedCoordinateDistance>, CodecError> {
-    crate::decode::collect_items(ctx, section_equation_unsigned_coordinate_distance_rows(ctx, definition, ambiguous_point_ids)?
-        .into_iter()
-        .filter(|constraint| constraint.active)
-        , "creo section unsigned coordinate distances")
+    crate::decode::collect_items(
+        ctx,
+        section_equation_unsigned_coordinate_distance_rows(ctx, definition, ambiguous_point_ids)?
+            .into_iter()
+            .filter(|constraint| constraint.active),
+        "creo section unsigned coordinate distances",
+    )
 }
 
 pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
@@ -276,8 +290,12 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
     else {
         return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
         return Ok(Vec::new());
     };
@@ -288,54 +306,57 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    crate::decode::collect_items(ctx,
-    equations
-        .rows
-        .iter()
-        .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
-        .filter_map(|equation| {
-            let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice() else {
-                return None;
-            };
-            let first = variables.rows.get(usize::try_from(*first).ok()?)?;
-            let second = variables.rows.get(usize::try_from(*second).ok()?)?;
-            let dimension = variables.rows.get(usize::try_from(*dimension).ok()?)?;
-            if first.variable_type != second.variable_type
-                || !matches!(first.variable_type, VariableType::U | VariableType::V)
-                || dimension.variable_type != VariableType::Dimension
-                || ambiguous_point_ids.contains(&first.key)
-                || ambiguous_point_ids.contains(&second.key)
-                || first.key == second.key
-            {
-                return None;
-            }
-            let dimension_row = dimensions.rows.get(usize::try_from(dimension.key).ok()?)?;
-            if !matches!(dimension_row.dimension_type, 1..=5) {
-                return None;
-            }
-            let equality_value = scalar_equality_values
-                .get(&(dimension.variable_type, dimension.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let value = section_equation_dimension_scalar_value(
-                dimension,
-                equality_value,
-                dimension_row.value.resolved()?.abs(),
-                false,
-            )?;
-            Some(SectionUnsignedCoordinateDistance {
-                first: first.key,
-                second: second.key,
-                coordinate: SectionAxis::from_variable(first.variable_type)?,
-                scalar: (dimension.variable_type, dimension.key),
-                value,
-                equation_id: equation.equation_id,
-                offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
-            })
-        })
-        , "creo section equation unsigned coordinate distance rows")
+    crate::decode::collect_items(
+        ctx,
+        equations
+            .rows
+            .iter()
+            .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
+            .filter_map(|equation| {
+                let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice()
+                else {
+                    return None;
+                };
+                let first = variables.rows.get(usize::try_from(*first).ok()?)?;
+                let second = variables.rows.get(usize::try_from(*second).ok()?)?;
+                let dimension = variables.rows.get(usize::try_from(*dimension).ok()?)?;
+                if first.variable_type != second.variable_type
+                    || !matches!(first.variable_type, VariableType::U | VariableType::V)
+                    || dimension.variable_type != VariableType::Dimension
+                    || ambiguous_point_ids.contains(&first.key)
+                    || ambiguous_point_ids.contains(&second.key)
+                    || first.key == second.key
+                {
+                    return None;
+                }
+                let dimension_row = dimensions.rows.get(usize::try_from(dimension.key).ok()?)?;
+                if !matches!(dimension_row.dimension_type, 1..=5) {
+                    return None;
+                }
+                let equality_value = scalar_equality_values
+                    .get(&(dimension.variable_type, dimension.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let value = section_equation_dimension_scalar_value(
+                    dimension,
+                    equality_value,
+                    dimension_row.value.resolved()?.abs(),
+                    false,
+                )?;
+                Some(SectionUnsignedCoordinateDistance {
+                    first: first.key,
+                    second: second.key,
+                    coordinate: SectionAxis::from_variable(first.variable_type)?,
+                    scalar: (dimension.variable_type, dimension.key),
+                    value,
+                    equation_id: equation.equation_id,
+                    offset: equation.offset,
+                    active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                })
+            }),
+        "creo section equation unsigned coordinate distance rows",
+    )
 }
 
 pub(in crate::decode) fn section_equation_radius_dimensions(
@@ -356,8 +377,12 @@ pub(in crate::decode) fn section_equation_radius_dimensions(
     else {
         return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
         return Ok(Vec::new());
     };
@@ -368,64 +393,66 @@ pub(in crate::decode) fn section_equation_radius_dimensions(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    crate::decode::collect_items(ctx,
-    equations
-        .rows
-        .iter()
-        .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
-        .filter_map(|equation| {
-            let [Some(first), Some(second)] = equation.arguments.as_slice() else {
-                return None;
-            };
-            let first = variables.rows.get(usize::try_from(*first).ok()?)?;
-            let second = variables.rows.get(usize::try_from(*second).ok()?)?;
-            let (radius, scalar) = match (first.variable_type, second.variable_type) {
-                (VariableType::Radius, VariableType::Dimension) => (first, second),
-                (VariableType::Dimension, VariableType::Radius) => (second, first),
-                _ => return None,
-            };
-            let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
-            let dimension_value = dimension.value.resolved()?;
-            let radius_equality = scalar_equality_values
-                .get(&(radius.variable_type, radius.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let radius_value =
-                reconcile_equation_value(radius.value.value(), radius_equality).ok()?;
-            if dimension.dimension_type != 3
-                || radius_value.is_some_and(|value| {
-                    !value.is_finite()
-                        || value <= 0.0
-                        || (value - dimension_value).abs()
-                            > EPS_DIMENSION_BINDING
-                                * value.abs().max(dimension_value.abs()).max(1.0)
+    crate::decode::collect_items(
+        ctx,
+        equations
+            .rows
+            .iter()
+            .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
+            .filter_map(|equation| {
+                let [Some(first), Some(second)] = equation.arguments.as_slice() else {
+                    return None;
+                };
+                let first = variables.rows.get(usize::try_from(*first).ok()?)?;
+                let second = variables.rows.get(usize::try_from(*second).ok()?)?;
+                let (radius, scalar) = match (first.variable_type, second.variable_type) {
+                    (VariableType::Radius, VariableType::Dimension) => (first, second),
+                    (VariableType::Dimension, VariableType::Radius) => (second, first),
+                    _ => return None,
+                };
+                let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
+                let dimension_value = dimension.value.resolved()?;
+                let radius_equality = scalar_equality_values
+                    .get(&(radius.variable_type, radius.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let radius_value =
+                    reconcile_equation_value(radius.value.value(), radius_equality).ok()?;
+                if dimension.dimension_type != 3
+                    || radius_value.is_some_and(|value| {
+                        !value.is_finite()
+                            || value <= 0.0
+                            || (value - dimension_value).abs()
+                                > EPS_DIMENSION_BINDING
+                                    * value.abs().max(dimension_value.abs()).max(1.0)
+                    })
+                {
+                    return None;
+                }
+                let equality_value = scalar_equality_values
+                    .get(&(scalar.variable_type, scalar.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                let value = section_equation_dimension_scalar_value(
+                    scalar,
+                    equality_value,
+                    dimension_value,
+                    true,
+                )?;
+                Some(SectionRadiusDimension {
+                    radius_variable: (radius.variable_type, radius.key),
+                    radius: radius.key,
+                    scalar: (scalar.variable_type, scalar.key),
+                    value: PositiveLength::new(value)?,
+                    equation_id: equation.equation_id,
+                    offset: equation.offset,
+                    active: !section_solver_equation_is_disabled(definition, equation.equation_id),
                 })
-            {
-                return None;
-            }
-            let equality_value = scalar_equality_values
-                .get(&(scalar.variable_type, scalar.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()?;
-            let value = section_equation_dimension_scalar_value(
-                scalar,
-                equality_value,
-                dimension_value,
-                true,
-            )?;
-            Some(SectionRadiusDimension {
-                radius_variable: (radius.variable_type, radius.key),
-                radius: radius.key,
-                scalar: (scalar.variable_type, scalar.key),
-                value: PositiveLength::new(value)?,
-                equation_id: equation.equation_id,
-                offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
-            })
-        })
-        , "creo section equation radius dimensions")
+            }),
+        "creo section equation radius dimensions",
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -443,11 +470,14 @@ pub(super) fn section_equation_point_on_line_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(u32, u32, u32)>, CodecError> {
-    crate::decode::collect_items(ctx, section_equation_point_on_line_constraint_rows(ctx, definition, ambiguous_point_ids)?
-        .into_iter()
-        .filter(|constraint| constraint.active)
-        .map(|constraint| (constraint.target, constraint.first, constraint.second))
-        , "creo section point on line constraints")
+    crate::decode::collect_items(
+        ctx,
+        section_equation_point_on_line_constraint_rows(ctx, definition, ambiguous_point_ids)?
+            .into_iter()
+            .filter(|constraint| constraint.active)
+            .map(|constraint| (constraint.target, constraint.first, constraint.second)),
+        "creo section point on line constraints",
+    )
 }
 
 pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
@@ -462,8 +492,12 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
     else {
         return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
         return Ok(Vec::new());
     };
@@ -563,10 +597,13 @@ pub(super) fn section_equation_equal_length_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<SectionEqualLengthConstraint>, CodecError> {
-    crate::decode::collect_items(ctx, section_equation_equal_length_constraint_rows(ctx, definition, ambiguous_point_ids)?
-        .into_iter()
-        .filter(|constraint| constraint.active)
-        , "creo section equal length constraints")
+    crate::decode::collect_items(
+        ctx,
+        section_equation_equal_length_constraint_rows(ctx, definition, ambiguous_point_ids)?
+            .into_iter()
+            .filter(|constraint| constraint.active),
+        "creo section equal length constraints",
+    )
 }
 
 pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
@@ -581,8 +618,12 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
     else {
         return Ok(Vec::new());
     };
-    let Some(equations) =
-        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
+    let Some(equations) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
     else {
         return Ok(Vec::new());
     };
@@ -678,7 +719,12 @@ impl SectionCoordinateEquation {
         delta: f64,
     ) -> Result<Self, CodecError> {
         Self::point_difference_with_operation(
-            ctx, first, second, coordinate, delta, "creo coordinate equation term nodes",
+            ctx,
+            first,
+            second,
+            coordinate,
+            delta,
+            "creo coordinate equation term nodes",
         )
     }
 
@@ -693,7 +739,9 @@ impl SectionCoordinateEquation {
         let mut equation = Self::default();
         ctx.charge_collection_items(1, operation)?;
         equation.terms.insert((first, coordinate), -1.0);
-        if first != second { ctx.charge_collection_items(1, operation)?; }
+        if first != second {
+            ctx.charge_collection_items(1, operation)?;
+        }
         *equation.terms.entry((second, coordinate)).or_default() += 1.0;
         equation.rhs = delta;
         Ok(equation)
@@ -735,7 +783,9 @@ impl SectionCoordinateEquation {
         coefficient: f64,
     ) -> Result<(), CodecError> {
         match source {
-            SectionPointSource::Point(point) => self.add_point(ctx, point, coordinate, coefficient)?,
+            SectionPointSource::Point(point) => {
+                self.add_point(ctx, point, coordinate, coefficient)?;
+            }
             SectionPointSource::Value(value) => self.rhs -= coefficient * value[coordinate.index()],
         }
         Ok(())
@@ -932,7 +982,10 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     ctx.charge_collection_items(1, "creo section component equation terms")?;
                     terms.insert(*variable, *coefficient);
                 }
-                component_equations.push(SectionCoordinateEquation { terms, rhs: equation.rhs });
+                component_equations.push(SectionCoordinateEquation {
+                    terms,
+                    rhs: equation.rhs,
+                });
             }
         }
         let mut solutions = Vec::new();
@@ -950,7 +1003,10 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     ctx.charge_collection_items(1, "creo section branch equation terms")?;
                     terms.insert(*variable, *coefficient);
                 }
-                branched.push(SectionCoordinateEquation { terms, rhs: equation.rhs });
+                branched.push(SectionCoordinateEquation {
+                    terms,
+                    rhs: equation.rhs,
+                });
             }
             for (index, &(first, second, coordinate, magnitude)) in
                 component_distances.iter().enumerate()
@@ -961,8 +1017,13 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     -magnitude
                 };
                 ctx.try_reserve_items(&mut branched, 1, "creo section signed equation rows")?;
-                branched.push(SectionCoordinateEquation::point_difference_with_operation(ctx,
-                    first, second, coordinate, delta, "creo section signed equation terms",
+                branched.push(SectionCoordinateEquation::point_difference_with_operation(
+                    ctx,
+                    first,
+                    second,
+                    coordinate,
+                    delta,
+                    "creo section signed equation terms",
                 )?);
             }
             let candidate = solve_section_coordinate_equations(ctx, &branched, stored_coordinates)?;
@@ -1443,19 +1504,39 @@ pub(in crate::decode) struct SectionEquationFixture;
 
 #[cfg(test)]
 impl SectionEquationFixture {
-    pub(in crate::decode) fn point_value(point: u32, coordinate: SectionAxis, value: f64) -> SectionCoordinateEquation {
-        crate::decode::with_test_decode_ctx(|ctx| SectionCoordinateEquation::point_value(ctx, point, coordinate, value))
-            .expect("test coordinate equation")
+    pub(in crate::decode) fn point_value(
+        point: u32,
+        coordinate: SectionAxis,
+        value: f64,
+    ) -> SectionCoordinateEquation {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            SectionCoordinateEquation::point_value(ctx, point, coordinate, value)
+        })
+        .expect("test coordinate equation")
     }
 
-    pub(in crate::decode) fn point_difference(first: u32, second: u32, coordinate: SectionAxis, delta: f64) -> SectionCoordinateEquation {
-        crate::decode::with_test_decode_ctx(|ctx| SectionCoordinateEquation::point_difference(ctx, first, second, coordinate, delta))
-            .expect("test coordinate equation")
+    pub(in crate::decode) fn point_difference(
+        first: u32,
+        second: u32,
+        coordinate: SectionAxis,
+        delta: f64,
+    ) -> SectionCoordinateEquation {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            SectionCoordinateEquation::point_difference(ctx, first, second, coordinate, delta)
+        })
+        .expect("test coordinate equation")
     }
 
-    pub(in crate::decode) fn add_point(equation: &mut SectionCoordinateEquation, point: u32, coordinate: SectionAxis, coefficient: f64) {
-        crate::decode::with_test_decode_ctx(|ctx| equation.add_point(ctx, point, coordinate, coefficient))
-            .expect("test coordinate equation term");
+    pub(in crate::decode) fn add_point(
+        equation: &mut SectionCoordinateEquation,
+        point: u32,
+        coordinate: SectionAxis,
+        coefficient: f64,
+    ) {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            equation.add_point(ctx, point, coordinate, coefficient)
+        })
+        .expect("test coordinate equation term");
     }
 }
 
