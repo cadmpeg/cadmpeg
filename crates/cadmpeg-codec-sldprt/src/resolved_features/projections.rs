@@ -872,6 +872,14 @@ fn variable_fillet_radius_groups<'a>(
     selections: &[&'a FeatureInputEdgeSelection],
 ) -> Result<Option<Vec<(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>)>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "project SLDPRT variable fillet radii";
+    let charge_sort = |len: usize| {
+        let levels = if len > 1 { len.ilog2() + 1 } else { 1 };
+        let count = u64::try_from(len)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        let units = count.checked_mul(u64::from(levels))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(units, OPERATION)
+    };
     let Some(history) = histories.iter().find(|history| {
         history
             .features
@@ -937,7 +945,7 @@ fn variable_fillet_radius_groups<'a>(
             };
             ordered_parameters.push(parameter);
         }
-        ctx.charge_work(ordered_parameters.len() as u64, OPERATION)?;
+        charge_sort(ordered_parameters.len())?;
         ordered_parameters.sort_unstable_by_key(|(index, _)| *index);
         if ordered_parameters
             .iter()
@@ -948,7 +956,7 @@ fn variable_fillet_radius_groups<'a>(
             ctx.reserve_collection_vec(&mut selections_copy, selections.len(), OPERATION)?;
             selections_copy.extend_from_slice(selections);
             let mut selections = selections_copy;
-            ctx.charge_work(selections.len() as u64, OPERATION)?;
+            charge_sort(selections.len())?;
             selections.sort_unstable_by_key(|selection| selection.ordinal);
             let points = ordered_parameters
                 .into_iter()
@@ -975,17 +983,21 @@ fn variable_fillet_radius_groups<'a>(
         }
     }
 
-    let result = (|| -> Option<Vec<(RadiusSpec, Vec<&FeatureInputEdgeSelection>)>> {
     let mut vertex_radii = HashMap::<[u8; 12], PositiveLength>::new();
     let mut control_names = HashSet::<String>::new();
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
     for lane in lanes {
-        let mut objects = history
-            .features
-            .iter()
-            .filter_map(|candidate| Some((feature_object_name(candidate, lane)?.offset, candidate)))
-            .collect::<Vec<_>>();
+        let mut objects = Vec::new();
+        for candidate in &history.features {
+            ctx.charge_work(lane.names.len() as u64, OPERATION)?;
+            ctx.charge_work(lane.names.len() as u64, OPERATION)?;
+            if let Some(name) = feature_object_name(candidate, lane) {
+                ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+                objects.push((name.offset, candidate));
+            }
+        }
+        charge_sort(objects.len())?;
         objects.sort_unstable_by_key(|(offset, _)| *offset);
         let Some(index) = objects
             .iter()
@@ -1001,19 +1013,34 @@ fn variable_fillet_radius_groups<'a>(
             continue;
         };
         for (name, references) in controls {
-            let vertices = references
+            let mut vertices = references
                 .iter()
                 .flat_map(|reference| reference.iter())
-                .filter(|component| component.instance == Some(0x8083))
-                .collect::<Vec<_>>();
-            match vertices.as_slice() {
-                [vertex] => {
-                    if !control_names.insert(name.clone()) {
-                        return None;
+                .filter(|component| component.instance == Some(0x8083));
+            match (vertices.next(), vertices.next()) {
+                (Some(vertex), None) => {
+                    if control_names.contains(&name) {
+                        return Ok(None);
                     }
-                    let radius = feature.parameters.get(name.as_str()).and_then(|value| {
-                        crate::history::literals::parse_positive_dimension_length_mm(value)
+                    ctx.charge_collection_items(1, OPERATION)?;
+                    control_names.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
                     })?;
+                    let mut retained_name = String::new();
+                    ctx.reserve_retained_string(&mut retained_name, name.len(), OPERATION)?;
+                    retained_name.push_str(&name);
+                    control_names.insert(retained_name);
+                    let Some(radius) = feature.parameters.get(name.as_str()).and_then(|value| {
+                        crate::history::literals::parse_positive_dimension_length_mm(value)
+                    }) else {
+                        return Ok(None);
+                    };
+                    if !vertex_radii.contains_key(&vertex.type_signature) {
+                        ctx.charge_collection_items(1, OPERATION)?;
+                        vertex_radii.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                        })?;
+                    }
                     match vertex_radii.entry(vertex.type_signature) {
                         std::collections::hash_map::Entry::Vacant(entry) => {
                             entry.insert(radius);
@@ -1021,18 +1048,24 @@ fn variable_fillet_radius_groups<'a>(
                         std::collections::hash_map::Entry::Occupied(entry)
                             if !same_dimension_length(entry.get().get(), radius.get()) =>
                         {
-                            return None;
+                            return Ok(None);
                         }
                         std::collections::hash_map::Entry::Occupied(_) => {}
                     }
                 }
-                [] => {
-                    if !non_vertex_control_names.insert(name) {
-                        return None;
+                (None, None) => {
+                    if non_vertex_control_names.contains(&name) {
+                        return Ok(None);
                     }
+                    ctx.charge_collection_items(1, OPERATION)?;
+                    non_vertex_control_names.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                    })?;
+                    non_vertex_control_names.insert(name);
+                    ctx.reserve_collection_vec(&mut non_vertex_control_references, references.len(), OPERATION)?;
                     non_vertex_control_references.extend(references);
                 }
-                _ => return None,
+                _ => return Ok(None),
             }
         }
     }
@@ -1045,18 +1078,21 @@ fn variable_fillet_radius_groups<'a>(
                 .all(|name| non_vertex_control_names.contains(name.as_str()))
             || non_vertex_control_references.is_empty()
         {
-            return None;
+            return Ok(None);
         }
-        let mut ordered_parameters = parameter_names
-            .iter()
-            .map(|name| {
-                variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
-                    feature.parameters.get(*name).and_then(|value| {
-                        crate::history::literals::parse_positive_dimension_length_mm(value)
-                    }),
-                )
-            })
-            .collect::<Option<Vec<_>>>()?;
+        let mut ordered_parameters = Vec::new();
+        ctx.reserve_collection_vec(&mut ordered_parameters, parameter_names.len(), OPERATION)?;
+        for name in &parameter_names {
+            let Some(parameter) = variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
+                feature.parameters.get(*name).and_then(|value| {
+                    crate::history::literals::parse_positive_dimension_length_mm(value)
+                }),
+            ) else {
+                return Ok(None);
+            };
+            ordered_parameters.push(parameter);
+        }
+        charge_sort(ordered_parameters.len())?;
         ordered_parameters.sort_unstable_by_key(|(index, _)| *index);
         if ordered_parameters
             .iter()
@@ -1070,19 +1106,26 @@ fn variable_fillet_radius_groups<'a>(
                     .any(|component| component.instance == Some(0x8083))
             })
         {
-            return None;
+            return Ok(None);
         }
-        let selected_references = selections
-            .iter()
-            .flat_map(|selection| selection.references.iter())
-            .collect::<Vec<_>>();
-        if non_vertex_control_references
-            .iter()
-            .any(|reference| !selected_references.contains(&reference))
-        {
-            return None;
+        for reference in &non_vertex_control_references {
+            let mut present = false;
+            for selected in selections.iter().flat_map(|selection| selection.references.iter()) {
+                ctx.charge_work(1, OPERATION)?;
+                if selected == reference {
+                    present = true;
+                    break;
+                }
+            }
+            if !present {
+                return Ok(None);
+            }
         }
-        let mut selections = selections.to_vec();
+        let mut selections_copy = Vec::new();
+        ctx.reserve_collection_vec(&mut selections_copy, selections.len(), OPERATION)?;
+        selections_copy.extend_from_slice(selections);
+        let mut selections = selections_copy;
+        charge_sort(selections.len())?;
         selections.sort_unstable_by_key(|selection| selection.ordinal);
         let points = ordered_parameters
             .into_iter()
@@ -1093,40 +1136,44 @@ fn variable_fillet_radius_groups<'a>(
                     radius: Length::from(radius),
                 })
             })
-            .collect::<Option<Vec<_>>>()?;
-        return Some(vec![(
+            .collect::<Option<Vec<_>>>();
+        let Some(points) = points else {
+            return Ok(None);
+        };
+        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok() else {
+            return Ok(None);
+        };
+        return Ok(Some(vec![(
             RadiusSpec::Variable {
-                points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()?,
+                points,
             },
             selections,
-        )]);
+        )]));
     }
     if control_names.len() != parameter_names.len()
         || !parameter_names
             .iter()
             .all(|name| control_names.contains(name.as_str()))
     {
-        return None;
+        return Ok(None);
     }
 
-    let endpoint_signatures = |selection: &FeatureInputEdgeSelection| {
-        selection
-            .references
+    for signature in vertex_radii.keys() {
+        let mut found = false;
+        for component in selections
             .iter()
+            .flat_map(|selection| selection.references.iter())
             .flat_map(|reference| reference.iter())
-            .filter(|component| component.instance == Some(0x8083))
-            .map(|component| component.type_signature)
-            .collect::<Vec<_>>()
-    };
-    let roster_vertices = selections
-        .iter()
-        .flat_map(|selection| endpoint_signatures(selection))
-        .collect::<HashSet<_>>();
-    if vertex_radii
-        .keys()
-        .any(|signature| !roster_vertices.contains(signature))
-    {
-        return None;
+        {
+            ctx.charge_work(1, OPERATION)?;
+            if component.instance == Some(0x8083) && component.type_signature == *signature {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return Ok(None);
+        }
     }
 
     let mut groups = Vec::<(
@@ -1135,56 +1182,69 @@ fn variable_fillet_radius_groups<'a>(
     )>::new();
     let mut unassigned = Vec::new();
     for &selection in selections {
-        let endpoints = endpoint_signatures(selection);
-        match endpoints.as_slice() {
-            [first, second] => {
-                let pair = (*vertex_radii.get(first)?, *vertex_radii.get(second)?);
+        let mut endpoints = selection
+            .references
+            .iter()
+            .flat_map(|reference| reference.iter())
+            .filter(|component| component.instance == Some(0x8083))
+            .map(|component| component.type_signature);
+        let first = endpoints.next();
+        let second = endpoints.next();
+        let third = endpoints.next();
+        match (first, second, third) {
+            (Some(first), Some(second), None) => {
+                let (Some(first_radius), Some(second_radius)) =
+                    (vertex_radii.get(&first), vertex_radii.get(&second))
+                else {
+                    return Ok(None);
+                };
+                let pair = (*first_radius, *second_radius);
+                ctx.charge_work(groups.len() as u64, OPERATION)?;
                 if let Some((_, grouped)) =
                     groups.iter_mut().find(|(candidate, _)| *candidate == pair)
                 {
+                    ctx.reserve_collection_vec(grouped, 1, OPERATION)?;
                     grouped.push(selection);
                 } else {
-                    groups.push((pair, vec![selection]));
+                    let mut grouped = Vec::new();
+                    ctx.reserve_collection_vec(&mut grouped, 1, OPERATION)?;
+                    grouped.push(selection);
+                    ctx.reserve_collection_vec(&mut groups, 1, OPERATION)?;
+                    groups.push((pair, grouped));
                 }
             }
-            [] => unassigned.push(selection),
-            _ => return None,
+            (None, None, None) => {
+                ctx.reserve_collection_vec(&mut unassigned, 1, OPERATION)?;
+                unassigned.push(selection);
+            }
+            _ => return Ok(None),
         }
     }
     if groups.len() == 1 {
+        ctx.reserve_precharged_vec(&mut groups[0].1, unassigned.len(), OPERATION)?;
         groups[0].1.append(&mut unassigned);
+        charge_sort(groups[0].1.len())?;
         groups[0]
             .1
             .sort_unstable_by_key(|selection| selection.ordinal);
     } else if !unassigned.is_empty() {
-        return None;
+        return Ok(None);
     }
     if groups.is_empty() {
-        return None;
+        return Ok(None);
     }
-    groups
-        .into_iter()
-        .map(|((first, second), selections)| {
-            Some((
-                RadiusSpec::Variable {
-                    points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(vec![
-                        VariableRadius {
-                            parameter: 0.0,
-                            radius: Length::from(first),
-                        },
-                        VariableRadius {
-                            parameter: 1.0,
-                            radius: Length::from(second),
-                        },
-                    ])
-                    .ok()?,
-                },
-                selections,
-            ))
-        })
-        .collect()
-    })();
-    Ok(result)
+    let mut result = Vec::new();
+    ctx.reserve_collection_vec(&mut result, groups.len(), OPERATION)?;
+    for ((first, second), selections) in groups {
+        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(vec![
+            VariableRadius { parameter: 0.0, radius: Length::from(first) },
+            VariableRadius { parameter: 1.0, radius: Length::from(second) },
+        ]).ok() else {
+            return Ok(None);
+        };
+        result.push((RadiusSpec::Variable { points }, selections));
+    }
+    Ok(Some(result))
 }
 
 pub(crate) fn project_compact_surface_selections(
