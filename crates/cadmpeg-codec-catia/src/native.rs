@@ -9819,17 +9819,20 @@ impl CatiaNative {
                     .iter()
                     .find(|catalog| catalog.byte_offset == offset)
             });
-            graph.catalog = catalog.map(|catalog| catalog.id.clone());
+            graph.catalog = catalog.map(|catalog| crate::resource::copy_retained_str(
+                ctx, &catalog.id, "catia_native_graph_catalog_id")).transpose()?;
             for record in &mut graph.records {
                 if let Some(class) = &mut record.class {
                     class.class_entry = usize::try_from(class.class_ref)
                         .ok()
                         .and_then(|ordinal| catalog?.entries.get(ordinal))
-                        .map(|entry| entry.id.clone());
+                        .map(|entry| crate::resource::copy_retained_str(ctx, &entry.id,
+                            "catia_native_class_entry_id")).transpose()?;
                     class.class_name = usize::try_from(class.class_ref)
                         .ok()
                         .and_then(|ordinal| catalog?.entries.get(ordinal))
-                        .map(|entry| entry.value.clone());
+                        .map(|entry| crate::resource::copy_retained_str(ctx, &entry.value,
+                            "catia_native_class_name")).transpose()?;
                 }
                 record.repeated_reference_schema_selection = repeated_reference_schema_selection(
                     ctx,
@@ -9957,9 +9960,13 @@ impl CatiaNative {
                 let Some(record) = graph.records.get(index) else {
                     continue;
                 };
-                row.object_graph = Some(graph.id.clone());
-                row.object_record = Some(record.id.clone());
-                row.design_object.clone_from(&record.design_object);
+                row.object_graph = Some(crate::resource::copy_retained_str(ctx, &graph.id,
+                    "catia_native_alias_object_graph_id")?);
+                row.object_record = Some(crate::resource::copy_retained_str(ctx, &record.id,
+                    "catia_native_alias_object_record_id")?);
+                row.design_object = record.design_object.as_ref()
+                    .map(|id| crate::resource::copy_retained_str(ctx, id,
+                        "catia_native_alias_design_object_id")).transpose()?;
             }
         }
         let mut value_blocks = Vec::new();

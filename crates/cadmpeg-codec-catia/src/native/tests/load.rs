@@ -1055,6 +1055,33 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
 }
 
 #[test]
+fn native_graph_catalog_link_refuses_retained_limit() {
+    let bytes = standard_catpart_with_value_block();
+    let mut found = false;
+    for cap in 0..=4096 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes, &arena, &policy).expect("fixture fits input limit");
+        match super::super::CatiaNative::decode_with_record_sources(
+            &ctx, &bytes, &[], &mut crate::nurbs::LaneRefusals::new()) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_native_graph_catalog_id" => {
+                    found = true;
+                    break;
+                }
+            Ok(native) => {
+                assert!(native.object_graphs[0].catalog.is_some());
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(found, "retained sweep must reach the graph catalog link");
+}
+
+#[test]
 fn native_load_rejects_invalid_source_identities_and_extents() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
