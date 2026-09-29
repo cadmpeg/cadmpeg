@@ -288,13 +288,14 @@ enum ImplicitNominal {
 
 /// Decode the unique GDT-analysis root carried by a SWIFT schema stream.
 pub(crate) fn annotations(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
     topology: Option<&TopologyIdentityIndex>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
-) -> Vec<PmiAnnotation> {
-    let Some((stream, root, rendered_dimensions)) = scan_root(scan) else {
-        return Vec::new();
+) -> Result<Vec<PmiAnnotation>, CodecError> {
+    let Some((stream, root, rendered_dimensions)) = scan_root(ctx, scan)? else {
+        return Ok(Vec::new());
     };
     let projected =
         project_with_topology(&root, topology, &rendered_dimensions, pattern_hole_nominals);
@@ -325,7 +326,7 @@ pub(crate) fn annotations(
             );
         }
     }
-    projected
+    Ok(projected)
 }
 
 /// Build the native-history join used when a SWIFT hole-pattern graph omits all
@@ -434,7 +435,7 @@ pub(crate) fn unsupported_annotation_classes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<BTreeMap<String, usize>, CodecError> {
-    let Some((_, root, _)) = scan_root(scan) else {
+    let Some((_, root, _)) = scan_root(ctx, scan)? else {
         let mut classes = BTreeMap::new();
         if has_root_marker(scan) {
             ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
@@ -504,22 +505,31 @@ fn has_root_marker(scan: &ContainerScan<'_>) -> bool {
 }
 
 fn scan_root(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-) -> Option<(cadmpeg_ir::StreamName, Entity, Vec<RenderedDimension>)> {
-    let mut roots = scan
-        .sections()
-        .filter(|section| {
-            section
-                .name()
-                .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
-        })
-        .filter_map(|section| {
-            let source_name = section.source_stream().clone();
-            let root = parse_unique_root(section.payload())?;
-            Some((source_name, root, rendered_dimensions(section.payload())))
-        });
-    let root = roots.next()?;
-    roots.next().is_none().then_some(root)
+) -> Result<Option<(cadmpeg_ir::StreamName, Entity, Vec<RenderedDimension>)>, CodecError> {
+    let mut root = None;
+    for section in scan.sections().filter(|section| {
+        section
+            .name()
+            .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
+    }) {
+        ctx.charge_work(1, "scan SWIFT schema sections")?;
+        let Some(entity) = parse_unique_root(section.payload()) else {
+            continue;
+        };
+        let source_name = ctx.format_retained(
+            format_args!("{}", section.source_stream().as_str()),
+            "copy SWIFT source stream name",
+        )?;
+        let source_name = cadmpeg_ir::StreamName::try_from(source_name)
+            .map_err(|_| CodecError::malformed("invalid SWIFT source stream name"))?;
+        let rendered = rendered_dimensions(ctx, section.payload())?;
+        if root.replace((source_name, entity, rendered)).is_some() {
+            return Ok(None);
+        }
+    }
+    Ok(root)
 }
 
 fn parse_unique_root(payload: &[u8]) -> Option<Entity> {
@@ -1760,27 +1770,87 @@ fn rendered_nominal(
     if ambiguous { None } else { candidate }
 }
 
-fn rendered_dimensions(payload: &[u8]) -> Vec<RenderedDimension> {
+fn rendered_dimensions(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<RenderedDimension>, CodecError> {
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
-    payload
-        .windows(STRING_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == STRING_MARKER).then_some(offset))
-        .filter_map(|offset| {
-            let length_offset = offset.checked_add(STRING_MARKER.len())?;
-            let units = usize::from(*payload.get(length_offset)?);
-            if !(1..=128).contains(&units) {
-                return None;
-            }
-            let start = length_offset.checked_add(1)?;
-            let text = View::utf16le_at(payload, start, units)?.0;
-            Some(rendered_dimension_literals(&text))
-        })
-        .flatten()
-        .collect()
+    ctx.charge_work(u64_from_index(payload.len()), "scan SWIFT rendered literals")?;
+    let mut dimensions = Vec::new();
+    for (offset, bytes) in payload.windows(STRING_MARKER.len()).enumerate() {
+        if bytes != STRING_MARKER {
+            continue;
+        }
+        let Some(length_offset) = offset.checked_add(STRING_MARKER.len()) else {
+            continue;
+        };
+        let Some(units) = payload.get(length_offset).map(|count| usize::from(*count)) else {
+            continue;
+        };
+        if !(1..=128).contains(&units) {
+            continue;
+        }
+        let Some(start) = length_offset.checked_add(1) else {
+            continue;
+        };
+        let Some(bytes) = units.checked_mul(4) else {
+            continue;
+        };
+        let (mut text, _text_reservation) =
+            ctx.reserve_scoped_string(bytes, "decode SWIFT rendered literal text")?;
+        if decode_rendered_utf16(payload, start, units, &mut text).is_none() {
+            continue;
+        }
+        let parsed = rendered_dimension_literals(ctx, &text)?;
+        ctx.reserve_collection_vec(
+            &mut dimensions,
+            parsed.len(),
+            "collect SWIFT rendered dimensions",
+        )?;
+        dimensions.extend(parsed);
+    }
+    Ok(dimensions)
 }
 
-fn rendered_dimension_literals(text: &str) -> Vec<RenderedDimension> {
+fn decode_rendered_utf16(
+    payload: &[u8],
+    start: usize,
+    units: usize,
+    text: &mut String,
+) -> Option<()> {
+    let mut view = View::over_retained(payload);
+    view.seek(start)?;
+    let mut remaining = units;
+    while remaining > 0 {
+        let unit = view.u16_le()?;
+        remaining = remaining.checked_sub(1)?;
+        let codepoint = if (0xd800..=0xdbff).contains(&unit) {
+            if remaining == 0 {
+                return None;
+            }
+            let low = view.u16_le()?;
+            remaining = remaining.checked_sub(1)?;
+            if !(0xdc00..=0xdfff).contains(&low) {
+                return None;
+            }
+            let upper = u32::from(unit & 0x03ff).checked_shl(10)?;
+            0x10000u32
+                .checked_add(upper)?
+                .checked_add(u32::from(low & 0x03ff))?
+        } else if (0xdc00..=0xdfff).contains(&unit) {
+            return None;
+        } else {
+            u32::from(unit)
+        };
+        text.push(char::from_u32(codepoint)?);
+    }
+    Some(())
+}
+
+fn rendered_dimension_literals(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+) -> Result<Vec<RenderedDimension>, CodecError> {
     const TOKENS: &[(&str, RenderedDimensionKind)] = &[
         ("<MOD-DIAM>", RenderedDimensionKind::Diameter),
         ("&lt;MOD-DIAM&gt;", RenderedDimensionKind::Diameter),
@@ -1789,6 +1859,7 @@ fn rendered_dimension_literals(text: &str) -> Vec<RenderedDimension> {
     ];
     let mut values = Vec::new();
     for (token, kind) in TOKENS {
+        ctx.charge_work(u64_from_index(text.len()), "scan SWIFT rendered dimension tokens")?;
         let mut remainder = text;
         while let Some((_, tail)) = remainder.split_once(token) {
             let literal = tail.trim_start();
@@ -1803,6 +1874,11 @@ fn rendered_dimension_literals(text: &str) -> Vec<RenderedDimension> {
                 if !fractional.is_empty() && fractional.bytes().all(|byte| byte.is_ascii_digit()) {
                     if let (Some(value), Some(decimal_places)) = (parsed, places) {
                         if let Some(value) = PositiveReal::new(value) {
+                            ctx.reserve_collection_vec(
+                                &mut values,
+                                1,
+                                "collect SWIFT rendered literal values",
+                            )?;
                             values.push(RenderedDimension {
                                 kind: *kind,
                                 value,
@@ -1815,7 +1891,7 @@ fn rendered_dimension_literals(text: &str) -> Vec<RenderedDimension> {
             remainder = tail;
         }
     }
-    values
+    Ok(values)
 }
 
 fn depth_for_feature(

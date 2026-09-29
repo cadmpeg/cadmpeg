@@ -3137,11 +3137,12 @@ fn build_geometry_ir(
     let pattern_hole_nominals =
         crate::swift::pattern_hole_nominal_context(ctx, &ir.model.features)?;
     ir.model.pmi = crate::swift::annotations(
+        ctx,
         scan,
         &mut annotations,
         Some(&topology_index),
         Some(&pattern_hole_nominals),
-    );
+    )?;
     stamp_feature_baseline(&mut ir)?;
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
@@ -3941,7 +3942,7 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     );
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    ir.model.pmi = crate::swift::annotations(scan, &mut annotations, None, None);
+    ir.model.pmi = crate::swift::annotations(ctx, scan, &mut annotations, None, None)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         sketches,
         entities: sketch_entities,

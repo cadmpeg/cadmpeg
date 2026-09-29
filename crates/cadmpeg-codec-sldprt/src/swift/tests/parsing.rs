@@ -8,6 +8,8 @@ use crate::swift::project_lower_profile_tier;
 use crate::swift::Entity;
 use crate::swift::ObjectSection;
 use crate::swift::Reference;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiQuantity;
 use cadmpeg_ir::pmi::PmiTarget;
@@ -112,6 +114,78 @@ fn encoded_root() -> Vec<u8> {
     let mut bytes = vec![0x11, 0x22, 0x33];
     encode_entity(&semantic_root(), &mut bytes);
     bytes
+}
+
+#[test]
+fn swift_annotations_refuse_retained_stream_limit() {
+    let mut source = crate::test_support::container::synthetic_sldprt();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &encoded_root(),
+    ));
+    let scan = crate::container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+        .expect("source fits policy");
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let Err(CodecError::ResourceLimit(limit)) =
+        crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
+    else { panic!("expected retained refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+}
+
+fn swift_rendered_annotation_limit_error(
+    set_limit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
+) -> CodecError {
+    let mut payload = encoded_root();
+    let literal = "<MOD-DIAM> .156";
+    payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
+    payload.push(u8::try_from(literal.len()).expect("fixture length"));
+    for unit in literal.encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    let mut source = crate::test_support::container::synthetic_sldprt();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &payload,
+    ));
+    let scan = crate::container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    set_limit(&mut policy.limits);
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+        .expect("source fits policy");
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
+        .expect_err("SWIFT annotations must refuse")
+}
+
+#[test]
+fn swift_annotations_refuse_work_limit() {
+    let CodecError::ResourceLimit(limit) =
+        swift_rendered_annotation_limit_error(|limits| limits.max_work_units = 0)
+    else { panic!("expected work refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn swift_annotations_refuse_scoped_limit() {
+    let CodecError::ResourceLimit(limit) =
+        swift_rendered_annotation_limit_error(|limits| limits.max_materialized_bytes = 0)
+    else { panic!("expected scoped refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+}
+
+#[test]
+fn swift_annotations_refuse_collection_limit() {
+    let CodecError::ResourceLimit(limit) =
+        swift_rendered_annotation_limit_error(|limits| limits.max_collection_items = 0)
+    else { panic!("expected collection refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }
 
 #[test]
