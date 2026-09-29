@@ -1119,7 +1119,7 @@ pub(crate) fn finalize_lane_bindings(
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    normalize_indexed_curve_entities(lane);
+    normalize_indexed_curve_entities(ctx, lane)?;
     let mut marker_ids = HashMap::<String, HashMap<u32, Vec<(String, bool)>>>::new();
     for entity in &lane.sketch_entities {
         if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id()) {
@@ -1162,7 +1162,7 @@ pub(crate) fn finalize_lane_bindings(
             entity.links = Some(links);
         }
     }
-    bind_resolved_curve_vertices(lane);
+    bind_resolved_curve_vertices(ctx, lane)?;
     let mut entities_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
     for entity in &lane.sketch_entities {
         if let Some(feature) = entity.feature_ref.as_deref() {
@@ -1294,7 +1294,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
             || u64_from_index(lane.native_payload.len()),
             |class| class.offset,
         );
-    let relation_bindings = bind_detached_spatial_relation_objects(histories, represented, lane);
+    let relation_bindings = bind_detached_spatial_relation_objects(ctx, histories, represented, lane)?;
     let markers = collect_binding_vec(ctx, lane
         .sketch_entities
         .iter()
@@ -1365,13 +1365,6 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     Ok(())
 }
 
-pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u64, u64)> {
-    let mut ranges = spatial_relation_manager_candidates(lane).collect::<Vec<_>>();
-    ranges.sort_unstable();
-    ranges.dedup();
-    ranges
-}
-
 pub(super) fn spatial_relation_manager_ranges_charged(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
@@ -1420,216 +1413,195 @@ fn spatial_relation_manager_candidates(
 }
 
 fn bind_detached_spatial_relation_objects(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
-) -> Vec<(u64, u64, String)> {
-    let ranges = spatial_relation_manager_ranges(lane);
+) -> Result<Vec<(u64, u64, String)>, cadmpeg_core::CodecError> {
+    let ranges = spatial_relation_manager_ranges_charged(ctx, lane)?;
     if ranges.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let names = lane
-        .names
-        .iter()
-        .map(|name| (name.id.as_str(), name.value.as_str()))
-        .collect::<HashMap<_, _>>();
+    let mut names = HashMap::new();
+    for name in &lane.names {
+        reserve_binding_map(ctx, &mut names)?;
+        names.insert(name.id.as_str(), name.value.as_str());
+    }
     let is_dimension_name = |name: &str| {
         name.strip_prefix('D').is_some_and(|suffix| {
             !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
         })
     };
-    let owners = histories
-        .iter()
-        .flat_map(|history| &history.features)
+    let mut owners = Vec::new();
+    'owner: for feature in histories.iter().flat_map(|history| &history.features)
         .filter(|feature| feature.input_class.as_deref() == Some("mo3DProfileFeature_c"))
         .filter(|feature| !represented.contains(&feature.id))
-        .filter_map(|feature| {
-            let dimensions = feature
-                .parameters
-                .iter()
-                .filter(|(name, _)| is_dimension_name(name.as_str()))
-                .map(|(name, value)| {
-                    Some((
-                        name.as_str(),
-                        crate::history::literals::parse_dimension_length_mm(value)?,
-                    ))
-                })
-                .collect::<Option<Vec<_>>>()?;
-            (dimensions.len() >= 3).then_some((feature, dimensions))
-        })
-        .collect::<Vec<_>>();
+    {
+        ctx.charge_work(1, "scan SLDPRT spatial sketch owners")?;
+        let mut dimensions = Vec::new();
+        for (name, value) in feature.parameters.iter().filter(|(name, _)| is_dimension_name(name.as_str())) {
+            let Some(value) = crate::history::literals::parse_dimension_length_mm(value) else {
+                continue 'owner;
+            };
+            ctx.reserve_collection_vec(&mut dimensions, 1, "collect SLDPRT spatial sketch dimensions")?;
+            dimensions.push((name.as_str(), value));
+        }
+        if dimensions.len() >= 3 {
+            ctx.reserve_collection_vec(&mut owners, 1, "collect SLDPRT spatial sketch owners")?;
+            owners.push((feature, dimensions));
+        }
+    }
     let mut candidates = Vec::new();
     for &(start, end) in &ranges {
-        let scalars = lane
-            .scalars
-            .iter()
+        let scalars = collect_binding_vec(ctx, lane.scalars.iter()
             .filter(|scalar| scalar.offset > start && scalar.offset < end)
             .filter(|scalar| scalar.role != crate::records::FeatureInputScalarRole::Display)
-            .filter_map(|scalar| {
-                Some((
-                    names.get(scalar.name.as_str()).copied()?,
-                    scalar.value.get(),
-                ))
-            })
-            .filter(|(name, _)| is_dimension_name(name))
-            .collect::<Vec<_>>();
-        let scalar_names = scalars
-            .iter()
-            .map(|(name, _)| *name)
-            .collect::<HashSet<_>>();
+            .filter_map(|scalar| Some((names.get(scalar.name.as_str()).copied()?, scalar.value.get())))
+            .filter(|(name, _)| is_dimension_name(name)))?;
         for (owner, dimensions) in &owners {
-            let dimension_names = dimensions
-                .iter()
-                .map(|(name, _)| *name)
-                .collect::<HashSet<_>>();
-            if scalar_names != dimension_names {
+            ctx.charge_work(1, "match SLDPRT spatial sketch owners")?;
+            let steps = dimensions.len().checked_mul(scalars.len()).and_then(|count| count.checked_mul(2))
+                .ok_or_else(|| ctx.refuse_codec_limit("match SLDPRT spatial sketch names", u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(u64_from_index(steps), "match SLDPRT spatial sketch names")?;
+            if !scalars.iter().all(|(name, _)| dimensions.iter().any(|(candidate, _)| candidate == name))
+                || !dimensions.iter().all(|(name, _)| scalars.iter().any(|(candidate, _)| candidate == name)) {
                 continue;
             }
-            let exact = dimensions.iter().all(|(name, expected_mm)| {
-                scalars.iter().any(|(candidate, value_m)| {
-                    candidate == name
-                        && (value_m * 1000.0 - expected_mm.get()).abs()
-                            <= expected_mm.get().abs().max(1.0)
-                                * EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9
-                })
-            });
+            let mut exact = true;
+            for (name, expected_mm) in dimensions {
+                ctx.charge_work(u64_from_index(scalars.len()), "match SLDPRT spatial sketch dimensions")?;
+                if !scalars.iter().any(|(candidate, value_m)| candidate == name
+                    && (value_m * 1000.0 - expected_mm.get()).abs()
+                        <= expected_mm.get().abs().max(1.0) * EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9) {
+                    exact = false;
+                    break;
+                }
+            }
             if exact {
-                candidates.push((start, end, owner.id.clone()));
+                ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT spatial sketch candidates")?;
+                candidates.push((start, end, owner.id.as_str()));
             }
         }
     }
-    let bound = candidates
-        .iter()
-        .filter(|(start, end, owner)| {
-            candidates
-                .iter()
-                .filter(|(candidate_start, candidate_end, _)| {
-                    candidate_start == start && candidate_end == end
-                })
-                .count()
-                == 1
-                && candidates
-                    .iter()
-                    .filter(|(_, _, candidate_owner)| candidate_owner == owner)
-                    .count()
-                    == 1
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    for (start, end, owner) in &bound {
-        for entity in lane
-            .sketch_entities
-            .iter_mut()
-            .filter(|entity| entity.offset() > *start && entity.offset() < *end)
-        {
-            entity.feature_ref = Some(owner.clone());
+    let mut bound = Vec::new();
+    for &(start, end, owner) in &candidates {
+        ctx.charge_work(u64_from_index(candidates.len()), "disambiguate SLDPRT spatial sketch ranges")?;
+        if candidates.iter().filter(|(candidate_start, candidate_end, _)| *candidate_start == start && *candidate_end == end).count() != 1 {
+            continue;
         }
-        for reference in lane
-            .references
-            .iter_mut()
-            .filter(|reference| reference.offset > *start && reference.offset < *end)
-        {
-            reference.feature_ref = Some(owner.clone());
-        }
-        for scalar in lane
-            .scalars
-            .iter_mut()
-            .filter(|scalar| scalar.offset > *start && scalar.offset < *end)
-        {
-            scalar.feature_ref = Some(owner.clone());
+        ctx.charge_work(u64_from_index(candidates.len()), "disambiguate SLDPRT spatial sketch owners")?;
+        if candidates.iter().filter(|(_, _, candidate_owner)| *candidate_owner == owner).count() == 1 {
+            ctx.reserve_collection_vec(&mut bound, 1, "collect SLDPRT spatial sketch bindings")?;
+            bound.push((start, end, copy_binding_text(ctx, owner)?));
         }
     }
-    bound
+    for (start, end, owner) in &bound {
+        for entity in lane.sketch_entities.iter_mut().filter(|entity| entity.offset() > *start && entity.offset() < *end) {
+            entity.feature_ref = Some(copy_binding_text(ctx, owner)?);
+        }
+        for reference in lane.references.iter_mut().filter(|reference| reference.offset > *start && reference.offset < *end) {
+            reference.feature_ref = Some(copy_binding_text(ctx, owner)?);
+        }
+        for scalar in lane.scalars.iter_mut().filter(|scalar| scalar.offset > *start && scalar.offset < *end) {
+            scalar.feature_ref = Some(copy_binding_text(ctx, owner)?);
+        }
+    }
+    Ok(bound)
 }
 
-pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
+pub(super) fn normalize_indexed_curve_entities(
+    ctx: &DecodeContext<'_>,
+    lane: &mut FeatureInputLane,
+) -> Result<(), cadmpeg_core::CodecError> {
     let terminal_lines = {
-        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
-        markers
-            .iter()
-            .copied()
-            .filter(|curve| {
-                legacy_terminal_indexed_profile_line(&lane.native_payload, curve, &markers)
-            })
-            .map(|curve| curve.id().to_string())
-            .collect::<HashSet<_>>()
+        let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let mut terminal = HashSet::new();
+        for curve in &markers {
+            ctx.charge_work(u64_from_index(markers.len()), "scan SLDPRT terminal profile lines")?;
+            if legacy_terminal_indexed_profile_line(&lane.native_payload, curve, &markers) {
+                reserve_binding_set(ctx, &mut terminal)?;
+                terminal.insert(copy_binding_text(ctx, curve.id())?);
+            }
+        }
+        terminal
     };
     for marker in &mut lane.sketch_entities {
         if terminal_lines.contains(marker.id()) {
             marker.reclassify(SketchInputKind::LineOrCircle);
         }
     }
-    let endpoints = lane
-        .sketch_entities
-        .iter()
-        .filter_map(|curve| {
-            let feature = curve.feature_ref.as_ref()?;
-            let offset = index_from_u64(curve.offset())?;
-            let indices = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
-                .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
-                .or_else(|| {
-                    extended_compact_indexed_curve_endpoint_indices(&lane.native_payload, offset)
-                })
-                .or_else(|| compact_legacy_curve_endpoint_indices(&lane.native_payload, offset))
-                .or_else(|| {
-                    alternate_current_indexed_curve_endpoint_indices(&lane.native_payload, offset)
-                })?;
-            Some(indices.map(|index| (feature.clone(), index)))
-        })
-        .flatten()
-        .collect::<HashSet<_>>();
+    let mut endpoints = HashMap::<String, HashSet<u32>>::new();
+    for curve in &lane.sketch_entities {
+        ctx.charge_work(1, "scan SLDPRT indexed curve endpoints")?;
+        let Some(feature) = curve.feature_ref.as_deref() else { continue; };
+        let Some(offset) = index_from_u64(curve.offset()) else { continue; };
+        let Some(indices) = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
+            .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
+            .or_else(|| extended_compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
+            .or_else(|| compact_legacy_curve_endpoint_indices(&lane.native_payload, offset))
+            .or_else(|| alternate_current_indexed_curve_endpoint_indices(&lane.native_payload, offset)) else { continue; };
+        if !endpoints.contains_key(feature) {
+            reserve_binding_map(ctx, &mut endpoints)?;
+            endpoints.insert(copy_binding_text(ctx, feature)?, HashSet::new());
+        }
+        if let Some(by_index) = endpoints.get_mut(feature) {
+            for index in indices {
+                reserve_binding_set(ctx, by_index)?;
+                by_index.insert(index);
+            }
+        }
+    }
     let linked_endpoint_coordinates = {
-        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
-        lane.sketch_entities
-            .iter()
-            .filter_map(|curve| {
-                current_reverse_incidence_endpoint_offsets(&lane.native_payload, curve, &markers)
-            })
-            .flatten()
-            .filter_map(|offset| {
-                let native_offset = usize::try_from(offset).ok()?;
-                let (coordinates, _) = linked_profile_point(&lane.native_payload, native_offset)?;
-                Some((offset, coordinates))
-            })
-            .collect::<HashMap<_, _>>()
+        let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let mut coordinates = HashMap::new();
+        for curve in &lane.sketch_entities {
+            ctx.charge_work(u64_from_index(markers.len()), "scan SLDPRT reverse incidence endpoints")?;
+            let Some(offsets) = current_reverse_incidence_endpoint_offsets(&lane.native_payload, curve, &markers) else { continue; };
+            for offset in offsets {
+                let Ok(native_offset) = usize::try_from(offset) else { continue; };
+                let Some((point, _)) = linked_profile_point(&lane.native_payload, native_offset) else { continue; };
+                reserve_binding_map(ctx, &mut coordinates)?;
+                coordinates.insert(offset, point);
+            }
+        }
+        coordinates
     };
     for marker in &mut lane.sketch_entities {
-        let Some(key) = marker.feature_ref.clone().zip(marker.object_index()) else {
-            continue;
-        };
+        let Some((feature, index)) = marker.feature_ref.as_deref().zip(marker.object_index()) else { continue; };
         if marker.coordinates_m.is_none() {
             marker.coordinates_m = linked_endpoint_coordinates.get(&marker.offset()).copied();
         }
-        if (endpoints.contains(&key) || linked_endpoint_coordinates.contains_key(&marker.offset()))
-            && marker.coordinates_m.is_some()
-        {
+        if (endpoints.get(feature).is_some_and(|indices| indices.contains(&index))
+            || linked_endpoint_coordinates.contains_key(&marker.offset())) && marker.coordinates_m.is_some() {
             marker.reclassify(SketchInputKind::Point);
         }
     }
+    Ok(())
 }
 
-fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
+fn bind_resolved_curve_vertices(
+    ctx: &DecodeContext<'_>,
+    lane: &mut FeatureInputLane,
+) -> Result<(), cadmpeg_core::CodecError> {
     let selected_axis_endpoints = {
-        let markers_by_id = lane
-            .sketch_entities
-            .iter()
-            .map(|marker| (marker.id(), marker))
-            .collect::<HashMap<_, _>>();
-        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
-        markers
-            .iter()
-            .copied()
-            .filter(|curve| {
-                index_from_u64(curve.offset()).is_some_and(|offset| {
-                    marker_is_selected_construction_line(&lane.native_payload, offset)
-                })
-            })
-            .flat_map(|curve| {
-                marker_curve_endpoint_markers(&lane.native_payload, curve, &markers_by_id, &markers)
-            })
-            .filter(|marker| marker.coordinates_m.is_some())
-            .map(|marker| marker.id().to_string())
-            .collect::<HashSet<_>>()
+        let mut markers_by_id = HashMap::new();
+        for marker in &lane.sketch_entities {
+            reserve_binding_map(ctx, &mut markers_by_id)?;
+            markers_by_id.insert(marker.id(), marker);
+        }
+        let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let mut selected = HashSet::new();
+        for curve in markers.iter().copied().filter(|curve| {
+            index_from_u64(curve.offset()).is_some_and(|offset| marker_is_selected_construction_line(&lane.native_payload, offset))
+        }) {
+            ctx.charge_work(u64_from_index(markers.len()), "scan SLDPRT selected curve endpoints")?;
+            for marker in marker_curve_endpoint_markers(&lane.native_payload, curve, &markers_by_id, &markers)
+                .into_iter().filter(|marker| marker.coordinates_m.is_some()) {
+                reserve_binding_set(ctx, &mut selected)?;
+                selected.insert(copy_binding_text(ctx, marker.id())?);
+            }
+        }
+        selected
     };
     for marker in &mut lane.sketch_entities {
         if selected_axis_endpoints.contains(marker.id()) {
@@ -1637,50 +1609,36 @@ fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
         }
     }
     loop {
-        let markers_by_id = lane
-            .sketch_entities
-            .iter()
-            .map(|marker| (marker.id(), marker))
-            .collect::<HashMap<_, _>>();
-        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+        let mut markers_by_id = HashMap::new();
+        for marker in &lane.sketch_entities {
+            reserve_binding_map(ctx, &mut markers_by_id)?;
+            markers_by_id.insert(marker.id(), marker);
+        }
+        let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
         let mut resolved_curves = HashSet::new();
         let mut resolved_endpoints = HashSet::new();
-        for curve in markers.iter().copied().filter(|marker| {
-            matches!(
-                marker.kind(),
-                SketchInputKind::LineOrCircle | SketchInputKind::Arc
-            )
-        }) {
-            let endpoints = marker_curve_endpoint_markers(
-                &lane.native_payload,
-                curve,
-                &markers_by_id,
-                &markers,
-            );
+        for curve in markers.iter().copied().filter(|marker| matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc)) {
+            ctx.charge_work(u64_from_index(markers.len()), "resolve SLDPRT curve endpoints")?;
+            let endpoints = marker_curve_endpoint_markers(&lane.native_payload, curve, &markers_by_id, &markers);
             if endpoints.len() == 2 {
-                resolved_curves.insert(curve.id().to_string());
+                reserve_binding_set(ctx, &mut resolved_curves)?;
+                resolved_curves.insert(copy_binding_text(ctx, curve.id())?);
             }
-            resolved_endpoints.extend(
-                endpoints
-                    .into_iter()
-                    .filter(|marker| marker.coordinates_m.is_some())
-                    .map(|marker| marker.id().to_string()),
-            );
+            for marker in endpoints.into_iter().filter(|marker| marker.coordinates_m.is_some()) {
+                reserve_binding_set(ctx, &mut resolved_endpoints)?;
+                resolved_endpoints.insert(copy_binding_text(ctx, marker.id())?);
+            }
         }
         let mut changed = false;
         for marker in &mut lane.sketch_entities {
-            if marker.kind() != SketchInputKind::Point
-                && resolved_endpoints.contains(marker.id())
-                && !resolved_curves.contains(marker.id())
-            {
+            if marker.kind() != SketchInputKind::Point && resolved_endpoints.contains(marker.id()) && !resolved_curves.contains(marker.id()) {
                 marker.reclassify(SketchInputKind::Point);
                 changed = true;
             }
         }
-        if !changed {
-            break;
-        }
+        if !changed { break; }
     }
+    Ok(())
 }
 
 fn copy_binding_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, cadmpeg_core::CodecError> {

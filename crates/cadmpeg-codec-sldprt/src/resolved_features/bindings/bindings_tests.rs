@@ -735,8 +735,8 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         ],
     };
 
-    normalize_indexed_curve_entities(&mut lane);
-    bind_resolved_curve_vertices(&mut lane);
+    normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane).unwrap();
+    bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane).unwrap();
 
     assert_eq!(lane.sketch_entities[4].kind(), SketchInputKind::Point);
 }
@@ -804,7 +804,7 @@ fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
         ],
     };
 
-    bind_resolved_curve_vertices(&mut lane);
+    bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane).unwrap();
 
     assert_eq!(
         lane.sketch_entities[0].kind(),
