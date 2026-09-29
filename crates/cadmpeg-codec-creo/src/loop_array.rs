@@ -8,7 +8,8 @@
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_core::bytes::find_from as find;
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, DecodeContext};
+use cadmpeg_core::CodecError;
 
 use crate::psb;
 
@@ -158,7 +159,7 @@ fn named_prototype_end(data: &[u8], start: usize, end: usize, class_id: u32) -> 
     let mut cursor = start;
     for field in PROTOTYPE_FIELDS {
         cursor = find_named_field(data, cursor, close_end, field)?
-            .checked_add(field.len().saturating_add(3))?;
+            .checked_add(field.len().checked_add(3)?)?;
     }
     Some(close_end)
 }
@@ -211,40 +212,50 @@ fn row_end(data: &[u8], body_start: usize, end: usize) -> Option<usize> {
 }
 
 fn parse_frame(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     offset: usize,
     section_end: usize,
-) -> Option<(LoopArrayFrame, Vec<LoopArrayRecord>)> {
-    let mut cursor = offset.checked_add(LO_ARRAY_LABEL.len())?;
-    let variant = match *data.get(cursor)? {
+) -> Result<Option<(LoopArrayFrame, Vec<LoopArrayRecord>)>, CodecError> {
+    let Some(mut cursor) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
+        return Ok(None);
+    };
+    let Some(&marker) = data.get(cursor) else {
+        return Ok(None);
+    };
+    let variant = match marker {
         0xf2 => Some(LayoutMarker::F2),
         0xf3 => Some(LayoutMarker::F3),
         0xf8 => None,
-        _ => return None,
+        _ => return Ok(None),
     };
     cursor += usize::from(variant.is_some());
     if data.get(cursor) != Some(&0xf8) {
-        return None;
+        return Ok(None);
     }
-    let (declared_count, after_count) = compact_at(data, cursor + 1, section_end)?;
+    let Some((declared_count, after_count)) = compact_at(data, cursor + 1, section_end) else {
+        return Ok(None);
+    };
     cursor = after_count;
     if data.get(cursor) != Some(&0xf7) {
-        return None;
+        return Ok(None);
     }
-    let (class_id, after_class) = psb::reference_id(data, cursor + 1).ok()?;
+    let Ok((class_id, after_class)) = psb::reference_id(data, cursor + 1) else {
+        return Ok(None);
+    };
     if class_id == 0 || data.get(after_class..after_class + 2) != Some(&[0xfb, 0xe3]) {
-        return None;
+        return Ok(None);
     }
     let header_end = after_class + 2;
     let end = frame_end(data, header_end, section_end);
-    let prototype_end = named_prototype_end(data, header_end, end, class_id)?;
+    let Some(prototype_end) = named_prototype_end(data, header_end, end, class_id) else {
+        return Ok(None);
+    };
 
-    let max_records = bounded_len(
-        u64::from(declared_count),
-        1,
-        end.saturating_sub(prototype_end),
-    )
-    .unwrap_or(0);
+    let Some(remaining) = end.checked_sub(prototype_end) else {
+        return Ok(None);
+    };
+    let max_records = bounded_len(u64::from(declared_count), 1, remaining).unwrap_or(0);
     let mut cursor = prototype_end;
     let mut records = Vec::new();
     while cursor < end && records.len() < max_records {
@@ -254,6 +265,11 @@ fn parse_frame(
         let Some(close) = row_end(data, prefix.body_offset, end) else {
             break;
         };
+        ctx.try_reserve_items(&mut records, 1, "creo loop array frame records")?;
+        let body = ctx.copy_retained(
+            &data[prefix.body_offset..=close],
+            "creo loop array record body",
+        )?;
         records.push(LoopArrayRecord {
             frame_offset: offset,
             lo_id: prefix.lo_id,
@@ -263,7 +279,7 @@ fn parse_frame(
             attributes: prefix.attributes,
             direction: prefix.direction,
             next_lo_ptr: prefix.next_lo_ptr,
-            body: data[prefix.body_offset..=close].to_vec(),
+            body,
             offset: cursor,
             body_offset: prefix.body_offset,
         });
@@ -273,7 +289,7 @@ fn parse_frame(
     if overfull {
         records.clear();
     }
-    Some((
+    Ok(Some((
         LoopArrayFrame {
             offset,
             variant,
@@ -284,25 +300,34 @@ fn parse_frame(
             overfull,
         },
         records,
-    ))
+    )))
 }
 
 /// Retain structurally complete `lo_array` frames and positional rows.
-pub(crate) fn scan(data: &[u8]) -> LoopArrayScan {
+pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan, CodecError> {
     let mut result = LoopArrayScan::default();
     let mut search = 0;
     while let Some(offset) = find(data, LO_ARRAY_LABEL, search) {
-        search = offset.saturating_add(LO_ARRAY_LABEL.len());
-        let Some((frame, records)) = parse_frame(data, offset, data.len()) else {
+        let Some(next_search) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
+            break;
+        };
+        search = next_search;
+        let Some((frame, records)) = parse_frame(ctx, data, offset, data.len())? else {
             continue;
         };
+        ctx.try_reserve_items(&mut result.frames, 1, "creo loop array frames")?;
         result.frames.push(frame);
+        ctx.try_reserve_items(
+            &mut result.records,
+            records.len(),
+            "creo loop array section records",
+        )?;
         result.records.extend(records);
         search = search.max(result.frames.last().map_or(search, |frame| frame.end));
     }
     result.frames.sort_by_key(|frame| frame.offset);
     result.records.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 #[cfg(test)]

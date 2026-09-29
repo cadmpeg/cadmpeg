@@ -2299,6 +2299,66 @@ fn loop_array_section_sources_refuse_before_vec_growth() {
     }
 }
 
+fn loop_array_aggregate_fixture() -> Vec<u8> {
+    let mut payload = b"lo_array\0\xf3\xf8\x01\xf7\x2a\xfb\xe3".to_vec();
+    for (name, value) in [
+        (b"lo_id".as_slice(), 1),
+        (b"lo_type".as_slice(), 2),
+        (b"lo_subtype".as_slice(), 3),
+        (b"feat_id".as_slice(), 4),
+        (b"attributes".as_slice(), 5),
+        (b"direction".as_slice(), 6),
+        (b"next_lo_ptr".as_slice(), 7),
+        (b"object_data".as_slice(), 8),
+    ] {
+        payload.extend_from_slice(&[0xe0, 0x01]);
+        payload.extend_from_slice(name);
+        payload.extend_from_slice(&[0, value]);
+    }
+    payload.extend_from_slice(&[0xf1, 0xf7, 0x2a, 0xe3]);
+    payload.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 0xe2, 0x10, 0xe3]);
+    payload.extend_from_slice(b"srf_array\0");
+    payload
+}
+
+fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = loop_array_aggregate_fixture();
+    let scanned = container::Section::scan(
+        "VisibGeom".to_string(),
+        0,
+        payload.len(),
+        None,
+        &payload,
+    )
+    .expect("loop array section extent");
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("loop array input admitted");
+        super::loop_array_scan(&ctx, std::slice::from_ref(&scanned))
+    };
+    assert_eq!(run(u64::MAX).expect("service loop array aggregate").records.len(), 1);
+    let error = run(limit).expect_err("loop array aggregate exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn loop_array_aggregate_frame_refuses_before_growth() {
+    assert_loop_array_aggregate_refusal(3, "creo loop array aggregate frames");
+}
+
+#[test]
+fn loop_array_aggregate_record_refuses_before_growth() {
+    assert_loop_array_aggregate_refusal(4, "creo loop array aggregate records");
+}
+
 #[test]
 fn a_section_contains_its_own_offset_and_every_byte_before_its_end() {
     let data = b"0123#Geomlists\n0123";

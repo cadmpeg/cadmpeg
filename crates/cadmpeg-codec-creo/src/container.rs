@@ -1584,18 +1584,27 @@ fn cross_section_surface_contours(
     )
 }
 
-fn loop_array_scan(sections: &[ScannedSection<'_>]) -> LoopArrayScan {
+fn loop_array_scan(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<LoopArrayScan, CodecError> {
     let mut frames = Vec::new();
     let mut records = Vec::new();
     for section in sections {
         let payload = section.region;
-        let scan = loop_array::scan(payload);
+        let scan = loop_array::scan(ctx, payload)?;
+        ctx.try_reserve_items(&mut frames, scan.frames.len(), "creo loop array aggregate frames")?;
         frames.extend(scan.frames.into_iter().map(|mut frame| {
             frame.offset += section.section.offset();
             frame.prototype_end += section.section.offset();
             frame.end += section.section.offset();
             frame
         }));
+        ctx.try_reserve_items(
+            &mut records,
+            scan.records.len(),
+            "creo loop array aggregate records",
+        )?;
         records.extend(scan.records.into_iter().map(|mut record| {
             record.frame_offset += section.section.offset();
             record.offset += section.section.offset();
@@ -1605,7 +1614,7 @@ fn loop_array_scan(sections: &[ScannedSection<'_>]) -> LoopArrayScan {
     }
     frames.sort_by_key(|frame: &LoopArrayFrame| frame.offset);
     records.sort_by_key(|record: &LoopArrayRecord| record.offset);
-    LoopArrayScan { frames, records }
+    Ok(LoopArrayScan { frames, records })
 }
 
 fn tabulated_cylinder_curve_replays(
@@ -2803,7 +2812,7 @@ pub(crate) fn scan_bytes<'a>(
         &nonvisible_geometry_sections,
         &sections,
     )?;
-    let loop_arrays = loop_array_scan(&loop_array_sections);
+    let loop_arrays = loop_array_scan(ctx, &loop_array_sections)?;
     let mut nonvisible_surface_rows = surface_rows(ctx, &nonvisible_geometry_sections)?;
     ctx.try_reserve_items(
         &mut nonvisible_surface_rows,
