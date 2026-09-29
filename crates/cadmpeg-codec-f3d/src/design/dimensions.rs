@@ -1985,34 +1985,28 @@ fn unique_point_line_dimension_definition(
     if !evaluated_mm.is_finite() {
         return None;
     }
-    let points = entities
-        .iter()
-        .filter(|entity| {
+    let points = entities.iter().filter(|entity| {
             &entity.sketch == sketch
                 && matches!(
                     *entity.geometry.definition(),
                     SketchGeometryDefinition::Point { .. }
                 )
-        })
-        .collect::<Vec<_>>();
-    let lines = entities
-        .iter()
-        .filter(|entity| {
+        });
+    let lines = || entities.iter().filter(|entity| {
             &entity.sketch == sketch
                 && matches!(
                     *entity.geometry.definition(),
                     SketchGeometryDefinition::Line { .. }
                 )
-        })
-        .collect::<Vec<_>>();
+        });
     let mut matched = None;
     for point in points {
-        for line in &lines {
+        for line in lines() {
             if point_line_separation(point, line, evaluated_mm, linear_tolerance) {
                 if matched.is_some() {
                     return None;
                 }
-                matched = Some((point, *line));
+                matched = Some((point, line));
             }
         }
     }
@@ -2044,25 +2038,22 @@ fn unique_parallel_line_dimension_definition(
     if !evaluated_mm.is_finite() {
         return None;
     }
-    let lines = entities
-        .iter()
-        .filter(|entity| {
+    let lines = || entities.iter().filter(|entity| {
             &entity.sketch == sketch
                 && matches!(
                     *entity.geometry.definition(),
                     SketchGeometryDefinition::Line { .. }
                 )
-        })
-        .collect::<Vec<_>>();
+        });
     let mut matched = None;
-    for first in 0..lines.len() {
-        for second in first + 1..lines.len() {
-            if parallel_line_separation(lines[first], lines[second], evaluated_mm, linear_tolerance)
+    for (first_ordinal, first) in lines().enumerate() {
+        for second in lines().skip(first_ordinal + 1) {
+            if parallel_line_separation(first, second, evaluated_mm, linear_tolerance)
             {
                 if matched.is_some() {
                     return None;
                 }
-                matched = Some((lines[first], lines[second]));
+                matched = Some((first, second));
             }
         }
     }
