@@ -769,3 +769,36 @@ fn geometry_pattern_inputs_refuses_retained_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
             && limit.operation == "retain SLDPRT pattern native identity"));
 }
+
+fn configuration_lane_source() -> Vec<u8> {
+    let mut source = sweep_binding_source();
+    source.extend(make_block(0x43, "Contents/ConfigurationDefinitions",
+        br#"<Keywords><Configuration Name="Default" id="0" SourceIndex="0"/></Keywords>"#));
+    source
+}
+
+#[test]
+fn metadata_configuration_lanes_refuse_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(&configuration_lane_source(), options, "index SLDPRT configuration lane identities");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn geometry_configuration_lanes_refuse_collection_limit() {
+    let refusal = collection_refusal_with_options(&configuration_lane_source(), DecodeOptions::default(), "index SLDPRT configuration lane identities");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn metadata_configuration_lanes_refuse_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(&configuration_lane_source(), options, "scan SLDPRT configuration lane identities");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn geometry_configuration_lanes_refuse_work_limit() {
+    let refusal = work_refusal_with_options(&configuration_lane_source(), DecodeOptions::default(), "scan SLDPRT configuration lane identities");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}

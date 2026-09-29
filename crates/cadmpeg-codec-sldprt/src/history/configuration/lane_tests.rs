@@ -46,23 +46,25 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 
     assert_eq!(
         unresolved_configuration_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             &configurations,
             &[
                 feature_input_lane("first", Some("1")),
                 feature_input_lane("second", Some("2")),
             ],
-        ),
+        ).unwrap(),
         0
     );
     assert_eq!(
         unresolved_configuration_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             &configurations,
             &[
                 feature_input_lane("duplicate-first", Some("1")),
                 feature_input_lane("duplicate-second", Some("1")),
                 feature_input_lane("unmatched", Some("3")),
             ],
-        ),
+        ).unwrap(),
         3
     );
 }

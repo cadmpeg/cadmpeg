@@ -506,7 +506,7 @@ fn stored_configuration_id_precedes_ordinal_fallback() {
     let lanes = [feature_input_lane("lane", Some("1"))];
 
     assert_eq!(
-        configuration_lane_assignments(&configurations, &lanes),
+        configuration_lane_assignments(&cadmpeg_test_support::service_decode_context(), &configurations, &lanes).unwrap(),
         [(0, 0)]
     );
 }
