@@ -123,6 +123,32 @@ fn revolution_history_enrichment_refuses_work_limit() {
 }
 
 #[test]
+fn revolution_axis_binding_refuses_collection_limit() {
+    let histories = single_revolution_history();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits service policy");
+    let error = super::bind_profile_revolution_axes(&ctx, &mut [], &histories, &[], &[], &[])
+        .expect_err("native feature index needs one item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn revolution_axis_binding_refuses_work_limit() {
+    let histories = single_revolution_history();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits service policy");
+    let error = super::bind_profile_revolution_axes(&ctx, &mut [], &histories, &[], &[], &[])
+        .expect_err("native feature index needs work");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
 fn declared_line_reference_directions_refuse_collection_limit() {
     let mut payload = vec![0; 240];
     payload[136..144].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);

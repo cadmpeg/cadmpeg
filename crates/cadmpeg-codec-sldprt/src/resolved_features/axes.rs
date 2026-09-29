@@ -1069,26 +1069,46 @@ pub(crate) fn enrich_history_revolution_inputs(
 
 /// Bind revolution axes from profile records or complete coaxial generated geometry.
 pub(crate) fn bind_profile_revolution_axes(
+    ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     sketches: &[Sketch],
     surfaces: &[Surface],
-) {
-    let native_by_id = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let model_by_id = model_features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (&feature.id, index))
-        .collect::<HashMap<_, _>>();
-    let sketch_by_id = sketches
-        .iter()
-        .map(|sketch| (&sketch.id, sketch))
-        .collect::<HashMap<_, _>>();
+) -> Result<(), CodecError> {
+    let mut native_by_id = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, "index SLDPRT native revolution features")?;
+        if !native_by_id.contains_key(feature.id.as_str()) {
+            ctx.charge_collection_items(1, "index SLDPRT native revolution features")?;
+            native_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT native revolution features", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        native_by_id.insert(feature.id.as_str(), feature);
+    }
+    let mut model_by_id = HashMap::new();
+    for (index, feature) in model_features.iter().enumerate() {
+        ctx.charge_work(1, "index SLDPRT model revolution features")?;
+        if !model_by_id.contains_key(&feature.id) {
+            ctx.charge_collection_items(1, "index SLDPRT model revolution features")?;
+            model_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT model revolution features", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        model_by_id.insert(&feature.id, index);
+    }
+    let mut sketch_by_id = HashMap::new();
+    for sketch in sketches {
+        ctx.charge_work(1, "index SLDPRT revolution sketches")?;
+        if !sketch_by_id.contains_key(&sketch.id) {
+            ctx.charge_collection_items(1, "index SLDPRT revolution sketches")?;
+            sketch_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT revolution sketches", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        sketch_by_id.insert(&sketch.id, sketch);
+    }
     let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
 
     for (feature_index, feature) in model_features.iter().enumerate() {
@@ -1169,17 +1189,16 @@ pub(crate) fn bind_profile_revolution_axes(
         } else {
             &[]
         };
-        let mut candidates = lanes
-            .iter()
-            .filter_map(|lane| {
-                profile_roster_construction_axis(
-                    lane,
-                    profile_native,
-                    sketch,
-                    generated_axis_surfaces,
-                )
-            })
-            .collect::<Vec<_>>();
+        let mut candidates = Vec::new();
+        for lane in lanes {
+            ctx.charge_work(1, "scan SLDPRT revolution axis lanes")?;
+            if let Some(axis) = profile_roster_construction_axis(
+                lane, profile_native, sketch, generated_axis_surfaces,
+            ) {
+                ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT revolution axis candidates")?;
+                candidates.push(axis);
+            }
+        }
         candidates.sort_by_key(|axis| {
             [
                 axis.origin.x.to_bits(),
@@ -1192,6 +1211,7 @@ pub(crate) fn bind_profile_revolution_axes(
         });
         candidates.dedup();
         if let [axis] = candidates.as_slice() {
+            ctx.reserve_collection_vec(&mut assignments, 1, "collect SLDPRT revolution axis assignments")?;
             assignments.push((feature_index, axis.clone()));
         }
     }
@@ -1207,6 +1227,7 @@ pub(crate) fn bind_profile_revolution_axes(
         }
         model_features[index].evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 fn profile_roster_construction_axis(

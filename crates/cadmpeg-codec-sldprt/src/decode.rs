@@ -2795,12 +2795,13 @@ fn build_geometry_ir(
         &histories,
     );
     crate::resolved_features::axes::bind_profile_revolution_axes(
+        ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
         &sketches,
         &brep.surfaces,
-    );
+    )?;
     crate::resolved_features::bindings::bind_pattern_inputs(
         ctx,
         &mut ir.model.features,
@@ -4117,12 +4118,13 @@ fn build_metadata_ir(
         &histories,
     );
     crate::resolved_features::axes::bind_profile_revolution_axes(
+        ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
         &ir.model.sketches,
         &ir.model.surfaces,
-    );
+    )?;
     crate::resolved_features::bindings::bind_pattern_inputs(
         ctx,
         &mut ir.model.features,
