@@ -281,23 +281,7 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
 /// each knot reflected about the range. A knot whose reflection overflows
 /// leaves the curve unchanged.
 fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, [start, end]: [FiniteReal; 2]) -> Option<()> {
-    let knots = nurbs
-        .knots()
-        .finite_knots()
-        .rev()
-        .map(|knot| cadmpeg_ir::math::reflect_parameter(knot, start, end).map(FiniteReal::get))
-        .collect::<Option<Vec<_>>>()?;
-    let mut reversed = nurbs.clone();
-    reversed.reverse_parameterization();
-    reversed
-        .edit_knots(|reversed_knots| {
-            for (knot, value) in reversed_knots.iter_mut().zip(&knots) {
-                *knot = *value;
-            }
-        })
-        .ok()?;
-    *nurbs = reversed;
-    Some(())
+    nurbs.reverse_parameterization_in_range(start, end)
 }
 
 pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
