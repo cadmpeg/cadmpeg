@@ -19,7 +19,9 @@ fn drawing_refuses_source(source: &[u8], operation: &str) {
 }
 
 fn drawing_refuses_source_with_typed(source: &[u8], operation: &str, typed: &[u64]) {
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid drawing exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid drawing exchange");
     let known_typed = typed.iter().copied().collect::<HashSet<_>>();
     let refused = (0..=256).any(|limit| {
         let arena = DecodeArena::new();
@@ -45,7 +47,9 @@ fn drawing_refuses_source_with_typed(source: &[u8], operation: &str, typed: &[u6
 
 fn drawing_retained_refuses_with_typed(records: &str, operation: &str, typed: &[u64]) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid drawing exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid drawing exchange");
     let known_typed = typed.iter().copied().collect::<HashSet<_>>();
     let refused = (0..=4096).any(|limit| {
         let arena = DecodeArena::new();
@@ -315,7 +319,9 @@ fn drawing_association_claims_refuse_collection_limit() {
 
 fn wrapper_refuses_collection(operation: &str) {
     let source = format!("{HEADER}#1=ANNOTATION_PLANE('','',#2);#2=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid wrapper exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid wrapper exchange");
     let targets = BTreeMap::from([(2, ["target".to_owned()].into_iter().collect())]);
     let refused = (0..=16).any(|limit| {
         let arena = DecodeArena::new();
@@ -356,7 +362,9 @@ fn drawing_wrapper_identities_refuse_collection_limit() {
 #[test]
 fn drawing_wrapper_identity_text_refuses_retained_limit() {
     let source = format!("{HEADER}#1=ANNOTATION_PLANE('','',#2);#2=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid wrapper exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid wrapper exchange");
     let targets = BTreeMap::from([(2, ["target".to_owned()].into_iter().collect())]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -374,7 +382,9 @@ fn drawing_wrapper_identity_text_refuses_retained_limit() {
 #[test]
 fn drawing_ambiguous_identity_copy_refuses_collection_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid target exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid target exchange");
     let targets = BTreeMap::from([(
         1,
         ["first".to_owned(), "second".to_owned()]
@@ -397,7 +407,9 @@ fn drawing_ambiguous_identity_copy_refuses_collection_limit() {
 #[test]
 fn drawing_ambiguous_identity_text_refuses_retained_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid target exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid target exchange");
     let targets = BTreeMap::from([(
         1,
         ["first".to_owned(), "second".to_owned()]
@@ -420,7 +432,9 @@ fn drawing_ambiguous_identity_text_refuses_retained_limit() {
 #[test]
 fn drawing_local_target_text_refuses_retained_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid target exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid target exchange");
     let targets = BTreeMap::from([(1, ["local-target".to_owned()].into_iter().collect())]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -438,7 +452,9 @@ fn drawing_local_target_text_refuses_retained_limit() {
 #[test]
 fn drawing_external_target_text_refuses_retained_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid target exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid target exchange");
     let documents = BTreeMap::from([(1, "long-external-uri")]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -456,7 +472,9 @@ fn drawing_external_target_text_refuses_retained_limit() {
 #[test]
 fn drawing_untyped_relationship_loss_refuses_collection_limit() {
     let source = format!("{HEADER}#1=REPRESENTATION_CONTEXT('','');#2=PRESENTATION_VIEW('Front',(#3),#1);#3=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid drawing exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid drawing exchange");
     let record = exchange.records().get(&2).expect("view record");
     let parameters = super::super::source_parameters(record, "PRESENTATION_VIEW");
     let refused = (0..=128).any(|limit| {
@@ -519,7 +537,9 @@ fn decoded_drawings(
 
 fn sheet_usage_loss_refuses(typed_id: u64) {
     let source = format!("{HEADER}#1=DRAWING_DEFINITION('Main','detail');#2=DRAWING_REVISION('A',#1,'revision');#3=REPRESENTATION_CONTEXT('','');#4=DRAWING_SHEET_REVISION('Sheet',(),#3,#2);#5=DRAWING_SHEET_REVISION_USAGE(#4,#2,'one');{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid sheet exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid sheet exchange");
     let baseline = decoded_drawings(source.as_bytes(), &exchange);
     let refused = (0..=128).any(|limit| {
         let arena = DecodeArena::new();
@@ -559,7 +579,9 @@ fn drawing_revision_unresolved_loss_refuses_collection_limit() {
 
 fn association_loss_refuses(typed_id: u64) {
     let source = format!("{HEADER}#1=REPRESENTATION_CONTEXT('','');#2=DRAUGHTING_MODEL('Model',(),#1);#3=ITEM('semantic');#4=DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER('','',#3,#2,(#5),#6);#5=ITEM('associated');#6=ANNOTATION_PLACEHOLDER_OCCURRENCE('placeholder',(),#5,.GPS_DATA.,$);{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid association exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid association exchange");
     let baseline = decoded_drawings(source.as_bytes(), &exchange);
     let refused = (0..=128).any(|limit| {
         let arena = DecodeArena::new();

@@ -50,7 +50,9 @@ fn typed_value_copy_refuses_nested_slot_limit() {
 #[test]
 fn header_string_validation_refuses_retained_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("valid header");
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid header");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
@@ -89,7 +91,9 @@ fn header_string_refusal_reaches_parse_caller() {
 #[test]
 fn section_language_string_validation_refuses_retained_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SECTION_LANGUAGE($,'ENG');ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("valid section language");
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid section language");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
@@ -145,7 +149,9 @@ fn validation_refuses(
         &DecodeContext<'_>,
     ) -> Result<(), super::super::ValidationError>,
 ) {
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid header source");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid header source");
     let refused = (0..=1024).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -267,8 +273,11 @@ fn implementation_level_diagnostic_text_refuses_retained_limit() {
 
 #[test]
 fn schema_oid_diagnostic_text_refuses_retained_limit() {
-    let (exchange, _) = crate::test_support::with_service_context(SCHEMA_DIAGNOSTIC_SOURCE, crate::parse::parse_inner)
-        .expect("valid out-of-range schema identifier");
+    let (exchange, _) = crate::test_support::with_service_context(
+        SCHEMA_DIAGNOSTIC_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid out-of-range schema identifier");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -304,7 +313,11 @@ fn schema_name_matching_refuses_retained_limit() {
 
 #[test]
 fn matching_schema_names_refuse_collection_limit() {
-    let (exchange, _) = crate::test_support::with_service_context(EXTENDED_HEADER_SOURCE, crate::parse::parse_inner).expect("valid schema header");
+    let (exchange, _) = crate::test_support::with_service_context(
+        EXTENDED_HEADER_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid schema header");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -320,7 +333,11 @@ fn matching_schema_names_refuse_collection_limit() {
 
 #[test]
 fn matching_schema_name_text_refuses_retained_limit() {
-    let (exchange, _) = crate::test_support::with_service_context(EXTENDED_HEADER_SOURCE, crate::parse::parse_inner).expect("valid schema header");
+    let (exchange, _) = crate::test_support::with_service_context(
+        EXTENDED_HEADER_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid schema header");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4;
@@ -717,8 +734,7 @@ fn reference_bindings_are_admitted_before_map_allocation() {
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
         .expect("root fits service profile");
-    ReferenceResolver::new(&references, &anchors, &ctx)
-        .expect("service admits the binding map");
+    ReferenceResolver::new(&references, &anchors, &ctx).expect("service admits the binding map");
     let mut limited = service;
     limited.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
@@ -945,7 +961,8 @@ fn parser_accounts_for_record_table_storage() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
-    crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("record-table fixture must parse");
+    crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+        .expect("record-table fixture must parse");
     let mut record_table_limit = None;
     for max_retained_bytes in (1..=131_072).step_by(64) {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -979,7 +996,8 @@ fn parser_accounts_for_record_table_storage() {
 #[test]
 fn parser_accounts_for_anchor_tag_collection_storage() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=1 {tag:2};ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("anchor-tag fixture must parse");
+    crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("anchor-tag fixture must parse");
     let mut tag_limit = None;
     for max_retained_bytes in 1..=8192 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1039,7 +1057,8 @@ fn anchor_materialization_uses_the_decode_session_budget() {
 #[test]
 fn local_reference_materialization_uses_the_decode_session_budget() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;REFERENCE;@2=<#a>;ENDSEC;DATA;#1=ITEM(@2);ENDSEC;END-ISO-10303-21;";
-    crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("local-reference fixture must parse");
+    crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("local-reference fixture must parse");
     let mut materialization_limit = None;
     for max_work_units in 1..=2048 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1077,7 +1096,9 @@ fn parser_bounds_exponential_anchor_expansion() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
     );
-    let error = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).unwrap_err();
+    let error =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .unwrap_err();
     assert!(matches!(
         error,
         crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
@@ -1101,7 +1122,9 @@ fn parser_bounds_aggregate_anchor_materialization() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
-    let error = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).unwrap_err();
+    let error =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .unwrap_err();
     assert!(matches!(
         error,
         crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))

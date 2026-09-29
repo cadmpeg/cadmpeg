@@ -66,7 +66,6 @@ impl Annotations {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -84,14 +83,19 @@ mod tests {
             DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
         let mut ir = CadIr::empty();
         Annotations::default()
-            .push(&ctx, &mut ir, 1, AnnotationDraft {
+            .push(
+                &ctx,
+                &mut ir,
+                1,
+                AnnotationDraft {
                     name: None,
                     targets: Vec::new(),
                     visible: None,
                     definition: PmiDefinition::Datum {
                         identification: String::new(),
                     },
-                })
+                },
+            )
             .expect_err("limit must refuse one annotation")
     }
 

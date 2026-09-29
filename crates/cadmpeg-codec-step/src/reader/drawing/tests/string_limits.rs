@@ -14,7 +14,9 @@ const TAIL: &str = "ENDSEC;END-ISO-10303-21;";
 
 fn exchange(records: &str) -> (String, crate::parse::Exchange) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid drawing exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid drawing exchange");
     (source, exchange)
 }
 

@@ -950,7 +950,10 @@ mod tests {
         super::decode_detailed(&ctx, protein_view, instance_view)
     }
 
-    fn with_service_context<T>(bytes: &[u8], use_context: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    fn with_service_context<T>(
+        bytes: &[u8],
+        use_context: impl FnOnce(&DecodeContext<'_>) -> T,
+    ) -> T {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("fixture fits service profile");
@@ -1053,8 +1056,9 @@ mod tests {
                 .expect("fixture framing is valid")
         }
 
-        let normal = super::decode_frames_for_edit(&archive_with_depth(1), &frames_for_schema("Schema0"))
-            .expect("one schema fits the default policy");
+        let normal =
+            super::decode_frames_for_edit(&archive_with_depth(1), &frames_for_schema("Schema0"))
+                .expect("one schema fits the default policy");
         assert_eq!(normal.records.len(), 1, "{:?}", normal.rejected);
         assert!(matches!(
             super::decode_frames_for_edit(&archive_with_depth(257), &frames_for_schema("Schema256")),

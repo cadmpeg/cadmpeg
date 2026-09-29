@@ -70,7 +70,15 @@ pub(super) fn decode(
             .parameters
             .first()
             .map(|value| {
-                decode_text_charged(exchange, value, &mut losses, id, "validation property name", StepLossCode::MetadataStringInvalid, ctx)
+                decode_text_charged(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "validation property name",
+                    StepLossCode::MetadataStringInvalid,
+                    ctx,
+                )
             })
             .transpose()?
             .flatten();
@@ -82,7 +90,15 @@ pub(super) fn decode(
                 .parameters
                 .get(1)
                 .map(|value| {
-                    decode_text_charged(exchange, value, &mut losses, id, "validation property description", StepLossCode::MetadataStringInvalid, ctx)
+                    decode_text_charged(
+                        exchange,
+                        value,
+                        &mut losses,
+                        id,
+                        "validation property description",
+                        StepLossCode::MetadataStringInvalid,
+                        ctx,
+                    )
                 })
                 .transpose()?
                 .flatten()

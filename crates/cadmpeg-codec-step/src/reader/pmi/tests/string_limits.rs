@@ -13,7 +13,9 @@ fn source(records: &str) -> String {
 
 fn pmi_result(records: &str, retained_limit: u64) -> Result<(), CodecError> {
     let source = source(records);
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid PMI exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid PMI exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = retained_limit;
@@ -111,7 +113,9 @@ pmi_string_limit_test!(
 #[test]
 fn annotation_text_refuses_retained_limit() {
     let source = source("#1=TEXT_LITERAL('annotation text',$,'left',.RIGHT.,$);");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid text exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid text exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
@@ -131,7 +135,9 @@ fn annotation_text_refuses_retained_limit() {
 #[test]
 fn measure_item_name_refuses_retained_limit() {
     let source = source("#1=(MEASURE_REPRESENTATION_ITEM() REPRESENTATION_ITEM('measure name'));");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid measure exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid measure exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
@@ -148,7 +154,9 @@ fn measure_item_name_refuses_retained_limit() {
 
 fn annotation_collection_result(limit: u64, consume_text: bool) -> Result<(), CodecError> {
     let source = source("#1=TEXT_LITERAL('annotation text',$,'left',.RIGHT.,$);");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid text exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid text exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -157,9 +165,25 @@ fn annotation_collection_result(limit: u64, consume_text: bool) -> Result<(), Co
     let mut visited = BTreeSet::new();
     let mut losses = Vec::new();
     if consume_text {
-        super::super::find_annotation_text(1, &exchange, &mut visited, &mut BTreeSet::new(), &mut losses, 0, &ctx)?;
+        super::super::find_annotation_text(
+            1,
+            &exchange,
+            &mut visited,
+            &mut BTreeSet::new(),
+            &mut losses,
+            0,
+            &ctx,
+        )?;
     } else {
-        super::super::collect_annotation_text(1, &exchange, &mut visited, &mut BTreeMap::new(), &mut losses, 0, &ctx)?;
+        super::super::collect_annotation_text(
+            1,
+            &exchange,
+            &mut visited,
+            &mut BTreeMap::new(),
+            &mut losses,
+            0,
+            &ctx,
+        )?;
     }
     Ok(())
 }
@@ -200,7 +224,9 @@ annotation_collection_limit_test!(
 #[test]
 fn characteristic_measure_values_refuse_collection_limit() {
     let source = source("#1=ITEM();");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -227,7 +253,8 @@ fn characteristic_value_map_refuses_collection_limit() {
     const RECORDS: &str = "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);#6=SHAPE_ASPECT('feature','',#5,.T.);#10=DIMENSIONAL_SIZE(#6,'width');#13=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(5.0),#1) REPRESENTATION_ITEM('nominal value'));#14=SHAPE_DIMENSION_REPRESENTATION('value',(#13),#2);#15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);#99=ITEM();";
     let source = source(RECORDS);
     let (exchange, _) =
-        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid characteristic exchange");
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid characteristic exchange");
     let arena = DecodeArena::new();
     let refused = (0..512).any(|limit| {
         let mut policy = DecodePolicy::service();

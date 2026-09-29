@@ -31,17 +31,21 @@ fn record_display_name_refuses_retained_byte_limit() {
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(ALPHA() BETA());ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid complex record");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid complex record");
     let record = exchange.records().get(&1).expect("record one");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 9;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
-    assert!(matches!(ctx.join_display_retained(record.partials.iter().map(|partial| partial.name.as_str()), "+", "step_record_display_name"),
+    assert!(
+        matches!(ctx.join_display_retained(record.partials.iter().map(|partial| partial.name.as_str()), "+", "step_record_display_name"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_record_display_name"));
+                && refusal.operation == "step_record_display_name")
+    );
 }
 
 #[test]
@@ -49,8 +53,11 @@ fn inspect_opaque_offsets_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, _) =
-        crate::test_support::with_service_context(DIAGNOSTIC_LOSS_LIMIT_SOURCE, crate::parse::parse_inner).expect("valid exchange with one record");
+    let (exchange, _) = crate::test_support::with_service_context(
+        DIAGNOSTIC_LOSS_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid exchange with one record");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -69,8 +76,11 @@ fn decode_loss_notes_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) =
-        crate::test_support::with_service_context(DIAGNOSTIC_LOSS_LIMIT_SOURCE, crate::parse::parse_inner).expect("valid exchange with diagnostic");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(
+        DIAGNOSTIC_LOSS_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid exchange with diagnostic");
     assert!(!diagnostics.is_empty());
     let arena = DecodeArena::new();
     let refused = (0..64).any(|limit| {
@@ -93,8 +103,11 @@ fn decode_diagnostic_message_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) =
-        crate::test_support::with_service_context(DIAGNOSTIC_LOSS_LIMIT_SOURCE, crate::parse::parse_inner).expect("valid exchange with diagnostic");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(
+        DIAGNOSTIC_LOSS_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid exchange with diagnostic");
     assert!(!diagnostics.is_empty());
     let arena = DecodeArena::new();
     let refused = (0..512).any(|limit| {
@@ -120,8 +133,11 @@ fn decode_reference_notes_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) =
-        crate::test_support::with_service_context(REFERENCE_NOTE_LIMIT_SOURCE, crate::parse::parse_inner).expect("valid reference exchange");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(
+        REFERENCE_NOTE_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid reference exchange");
     let arena = DecodeArena::new();
     let refused = (0..64).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -143,8 +159,11 @@ fn decode_reference_note_text_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) =
-        crate::test_support::with_service_context(REFERENCE_NOTE_LIMIT_SOURCE, crate::parse::parse_inner).expect("valid reference exchange");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(
+        REFERENCE_NOTE_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid reference exchange");
     let arena = DecodeArena::new();
     let refused = (0..512).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -164,7 +183,9 @@ fn decode_reference_note_text_refuses_retained_limit() {
 #[test]
 fn byte_accounting_reports_an_unrecognized_suffix() {
     let input = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
-    let (mut exchange, _) = crate::test_support::with_service_context(input, crate::parse::parse_inner).expect("parse accounting fixture");
+    let (mut exchange, _) =
+        crate::test_support::with_service_context(input, crate::parse::parse_inner)
+            .expect("parse accounting fixture");
     let mut extended = input.to_vec();
     extended.push(0xc3);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -213,7 +234,9 @@ fn byte_accounting_claims_controls_inside_print_directives() {
 #[test]
 fn byte_accounting_propagates_binary_lexeme_resource_refusal() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(\"0A1F2\");ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("test exchange parses");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("test exchange parses");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = 4;
@@ -230,8 +253,12 @@ fn byte_accounting_propagates_binary_lexeme_resource_refusal() {
 fn semantic_work_counts_nested_source_graph_nodes() {
     let simple = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let nested = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(((1,2),TYPE((3,4))));ENDSEC;END-ISO-10303-21;";
-    let (simple_exchange, _) = crate::test_support::with_service_context(simple, crate::parse::parse_inner).expect("simple exchange");
-    let (nested_exchange, _) = crate::test_support::with_service_context(nested, crate::parse::parse_inner).expect("nested exchange");
+    let (simple_exchange, _) =
+        crate::test_support::with_service_context(simple, crate::parse::parse_inner)
+            .expect("simple exchange");
+    let (nested_exchange, _) =
+        crate::test_support::with_service_context(nested, crate::parse::parse_inner)
+            .expect("nested exchange");
 
     assert!(
         semantic_input_work(&nested_exchange).expect("nested work fits")
@@ -242,7 +269,9 @@ fn semantic_work_counts_nested_source_graph_nodes() {
 #[test]
 fn implicit_face_plane_work_scales_with_point_count() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POLY_LOOP('',(#2,#3,#4,#5));#2=ITEM();#3=ITEM();#4=ITEM();#5=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("polygon exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("polygon exchange");
 
     assert_eq!(implicit_face_plane_work(&exchange).expect("work fits"), 4);
 }
@@ -1167,7 +1196,9 @@ fn record_closure_pending_refuses_collection_limit() {
     use std::collections::BTreeSet;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1187,7 +1218,9 @@ fn record_closure_ids_refuse_collection_limit() {
     use std::collections::BTreeSet;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
@@ -1206,7 +1239,9 @@ fn opaque_kind_name_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 3;
@@ -1225,7 +1260,9 @@ fn opaque_identity_text_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4;
@@ -1265,7 +1302,9 @@ fn opaque_kind_count_refuses_collection_limit() {
     use std::collections::BTreeMap;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1319,7 +1358,9 @@ fn opaque_record_collections_refuse_caller_limits() {
     use std::collections::BTreeSet;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=EXAMPLE_RECORD(#2);#2=EXAMPLE_RECORD();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid opaque exchange");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid opaque exchange");
     let arena = DecodeArena::new();
     let mut observed = BTreeSet::new();
     for limit in 0..1024 {
@@ -1371,7 +1412,9 @@ fn stage_refuses_at_collection_limit(
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     for limit in 0..128 {
         let mut policy = DecodePolicy::service();
@@ -1444,7 +1487,9 @@ fn byte_accounting_note_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=EXAMPLE_RECORD();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let refused = (0..1024).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -1473,7 +1518,9 @@ fn opaque_preservation_loss_text_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=EXAMPLE_RECORD();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let refused = (0..8192).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -1503,7 +1550,9 @@ fn dialect_match_copy_refuses_collection_limit() {
     use std::collections::BTreeSet;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let refused = (0..256).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -1535,7 +1584,9 @@ fn dialect_match_copy_refuses_retained_limit() {
     use std::collections::BTreeSet;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let refused = (0..1024).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -1605,7 +1656,9 @@ fn unowned_pcurve_set_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PCURVE('',#2,#3);#2=ITEM();#3=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1644,7 +1697,9 @@ fn unowned_direct_carriers_refuse_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1669,7 +1724,9 @@ fn protected_roots_refuse_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=PCURVE('',#3,#4);#3=ITEM();#4=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 3;
@@ -1694,7 +1751,9 @@ fn protected_root_copy_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=PCURVE('',#3,#4);#3=ITEM();#4=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 4;

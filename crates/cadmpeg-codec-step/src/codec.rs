@@ -807,7 +807,8 @@ mod tests {
         let mut limit = 0u64;
         for _ in 0..512 {
             let (mut exchange, diagnostics) =
-                crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid inspect source");
+                crate::test_support::with_service_context(source, crate::parse::parse_inner)
+                    .expect("valid inspect source");
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
@@ -873,7 +874,8 @@ mod tests {
         let mut limit = 0u64;
         for _ in 0..512 {
             let (mut exchange, diagnostics) =
-                crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("valid inspect source");
+                crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+                    .expect("valid inspect source");
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = limit;

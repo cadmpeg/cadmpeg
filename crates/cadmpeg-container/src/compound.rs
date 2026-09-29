@@ -1104,10 +1104,11 @@ impl CompoundPrefixProbe {
     /// Parses only complete structures available in `prefix`.
     pub fn inspect(prefix: &[u8]) -> Self {
         let arena = DecodeArena::new();
-        let (ctx, _) = match DecodeContext::from_root_bytes(prefix, &arena, &DecodePolicy::default()) {
-            Ok(session) => session,
-            Err(error) => return Self::Malformed(error.to_string()),
-        };
+        let (ctx, _) =
+            match DecodeContext::from_root_bytes(prefix, &arena, &DecodePolicy::default()) {
+                Ok(session) => session,
+                Err(error) => return Self::Malformed(error.to_string()),
+            };
         Self::inspect_with_context(&ctx, prefix)
     }
 
@@ -1855,7 +1856,10 @@ mod tests {
 
     const SECTOR_SIZE: usize = 512;
 
-    fn with_service_context<T>(bytes: &[u8], use_context: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    fn with_service_context<T>(
+        bytes: &[u8],
+        use_context: impl FnOnce(&DecodeContext<'_>) -> T,
+    ) -> T {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("fixture fits service profile");
@@ -2168,14 +2172,24 @@ mod tests {
             0x1_0000_0001,
         );
         assert_eq!(
-            with_service_context(&directory, |ctx| parse_directory(ctx, &directory, CompoundVersion::V4)).expect("v4 directory parses")[0]
+            with_service_context(&directory, |ctx| parse_directory(
+                ctx,
+                &directory,
+                CompoundVersion::V4
+            ))
+            .expect("v4 directory parses")[0]
                 .live()
                 .expect("live root")
                 .size,
             0x1_0000_0001
         );
         assert_eq!(
-            with_service_context(&directory, |ctx| parse_directory(ctx, &directory, CompoundVersion::V3)).expect("v3 directory parses")[0]
+            with_service_context(&directory, |ctx| parse_directory(
+                ctx,
+                &directory,
+                CompoundVersion::V3
+            ))
+            .expect("v3 directory parses")[0]
                 .live()
                 .expect("live root")
                 .size,
@@ -2270,8 +2284,10 @@ mod tests {
         let mut directory = vec![0_u8; 128];
         directory[68..80].fill(0xff);
         directory[8] = 1;
-        let entries = with_service_context(&directory, |ctx| parse_directory(ctx, &directory, CompoundVersion::V3))
-            .expect("unallocated slot is skipped");
+        let entries = with_service_context(&directory, |ctx| {
+            parse_directory(ctx, &directory, CompoundVersion::V3)
+        })
+        .expect("unallocated slot is skipped");
         assert_eq!(entries.len(), 1);
         assert!(matches!(entries[0], DirectorySlot::Free));
     }

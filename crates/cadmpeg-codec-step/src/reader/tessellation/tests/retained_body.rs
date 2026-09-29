@@ -15,7 +15,9 @@ fn decode_with_body(policy: DecodePolicy) -> Result<CadIr, CodecError> {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;{BODY_LINKED_TRIANGLE}ENDSEC;END-ISO-10303-21;"
     );
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("test exchange parses");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("test exchange parses");
     let mut ir = CadIr::empty();
     let topology_arena = DecodeArena::new();
     let (topology_ctx, _) = DecodeContext::from_root_bytes(

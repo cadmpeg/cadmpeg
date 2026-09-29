@@ -32,8 +32,7 @@ fn index_refuses(operation: &'static str, retained: bool) {
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let result =
-        super::super::collect_identity_indices(["step:model:item#1"], &ctx, operation);
+    let result = super::super::collect_identity_indices(["step:model:item#1"], &ctx, operation);
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(refusal))
@@ -49,7 +48,9 @@ fn ordered_set_refuses(operation: &'static str) {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let mut values = BTreeSet::new();
-    let result = ctx.insert_btree_set(&mut values, 1_u64, operation).map(|_| ());
+    let result = ctx
+        .insert_btree_set(&mut values, 1_u64, operation)
+        .map(|_| ());
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(refusal))
@@ -76,7 +77,9 @@ fn vector_refuses(operation: &'static str) {
 
 fn style_target_refuses(operation: &str, depth_limit: bool) {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=GEOMETRIC_SET('',(#2));#2=CARTESIAN_POINT('',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("style set exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("style set exchange");
     let refused = (0..=8).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -204,7 +207,9 @@ fn presentation_typed_claims_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let result = ctx.insert_hash_set(&mut HashSet::new(), 1, "step_presentation_typed_claims").map(|_| ());
+    let result = ctx
+        .insert_hash_set(&mut HashSet::new(), 1, "step_presentation_typed_claims")
+        .map(|_| ());
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(refusal))
@@ -235,7 +240,9 @@ fn presentation_losses_refuse_collection_limit() {
 
 fn transparency_refuses(operation: &str, retained: bool) {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SURFACE_STYLE_RENDERING_WITH_PROPERTIES($,(#2,#3));#2=SURFACE_STYLE_TRANSPARENT(0.2);#3=SURFACE_STYLE_TRANSPARENT(0.5);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("transparency exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("transparency exchange");
     let record = exchange.records().get(&1).expect("rendering record");
     let refused = (0..=4).any(|limit| {
         let arena = DecodeArena::new();
@@ -267,7 +274,9 @@ fn presentation_transparency_conflict_text_refuses_retained_limit() {
 
 fn invalid_side_refuses(operation: &str, retained: bool) {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SURFACE_STYLE_USAGE(.UNKNOWN.,#2);#2=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("surface side exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("surface side exchange");
     let record = exchange.records().get(&1).expect("style usage record");
     let refused = (0..=2).any(|limit| {
         let arena = DecodeArena::new();
@@ -303,7 +312,9 @@ fn style_graph_refuses(
     run: impl Fn(&crate::parse::Exchange, &DecodeContext<'_>) -> Result<(), CodecError>,
 ) {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OVER_RIDING_STYLED_ITEM('',(),#2,#3);#2=CARTESIAN_POINT('',(0.,0.,0.));#3=STYLED_ITEM('',(),#2);#4=GEOMETRIC_SET('',(#2));#5=NULL_STYLE();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("style graph exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("style graph exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     if depth {
@@ -324,11 +335,8 @@ fn presentation_style_depth_active_refuses_collection_limit() {
     style_graph_refuses(
         "step_presentation_style_depth_active",
         false,
-        |exchange, ctx| {
-            super::super::style_application_order(1, exchange, 128, ctx).map(|_| ())
-        },
+        |exchange, ctx| super::super::style_application_order(1, exchange, 128, ctx).map(|_| ()),
     );
-
 }
 
 #[test]
@@ -336,11 +344,8 @@ fn presentation_style_depth_walk_refuses_depth_limit() {
     style_graph_refuses(
         "step_presentation_style_depth_walk",
         true,
-        |exchange, ctx| {
-            super::super::style_application_order(1, exchange, 128, ctx).map(|_| ())
-        },
+        |exchange, ctx| super::super::style_application_order(1, exchange, 128, ctx).map(|_| ()),
     );
-
 }
 
 #[test]
@@ -350,7 +355,6 @@ fn presentation_style_domain_active_refuses_collection_limit() {
         false,
         |exchange, ctx| super::super::style_domain(4, exchange, ctx).map(|_| ()),
     );
-
 }
 
 #[test]
@@ -360,7 +364,6 @@ fn presentation_style_domain_walk_refuses_depth_limit() {
         true,
         |exchange, ctx| super::super::style_domain(4, exchange, ctx).map(|_| ()),
     );
-
 }
 
 #[test]
@@ -370,10 +373,9 @@ fn presentation_hidden_style_active_refuses_collection_limit() {
         false,
         |exchange, ctx| {
             super::super::style_is_hidden(1, &BTreeSet::new(), exchange, &mut BTreeSet::new(), ctx)
-            .map(|_| ())
+                .map(|_| ())
         },
     );
-
 }
 
 #[test]
@@ -383,10 +385,9 @@ fn presentation_hidden_style_walk_refuses_depth_limit() {
         true,
         |exchange, ctx| {
             super::super::style_is_hidden(1, &BTreeSet::new(), exchange, &mut BTreeSet::new(), ctx)
-            .map(|_| ())
+                .map(|_| ())
         },
     );
-
 }
 
 #[test]
@@ -395,11 +396,9 @@ fn presentation_style_inheritance_active_refuses_collection_limit() {
         "step_presentation_style_inheritance_active",
         false,
         |exchange, ctx| {
-            super::super::style_inherits_from(1, 3, exchange, &mut BTreeSet::new(), ctx)
-                .map(|_| ())
+            super::super::style_inherits_from(1, 3, exchange, &mut BTreeSet::new(), ctx).map(|_| ())
         },
     );
-
 }
 
 #[test]
@@ -408,11 +407,9 @@ fn presentation_style_inheritance_walk_refuses_depth_limit() {
         "step_presentation_style_inheritance_walk",
         true,
         |exchange, ctx| {
-            super::super::style_inherits_from(1, 3, exchange, &mut BTreeSet::new(), ctx)
-                .map(|_| ())
+            super::super::style_inherits_from(1, 3, exchange, &mut BTreeSet::new(), ctx).map(|_| ())
         },
     );
-
 }
 
 #[test]
@@ -421,11 +418,16 @@ fn presentation_null_style_visited_refuses_collection_limit() {
         "step_presentation_null_style_visited",
         false,
         |exchange, ctx| {
-            super::super::contains_null_style(&crate::parse::Value::Reference(5), exchange, &mut BTreeSet::new(), 0, ctx)
+            super::super::contains_null_style(
+                &crate::parse::Value::Reference(5),
+                exchange,
+                &mut BTreeSet::new(),
+                0,
+                ctx,
+            )
             .map(|_| ())
         },
     );
-
 }
 
 #[test]
@@ -434,11 +436,16 @@ fn presentation_null_style_walk_refuses_depth_limit() {
         "step_presentation_null_style_walk",
         true,
         |exchange, ctx| {
-            super::super::contains_null_style(&crate::parse::Value::Reference(5), exchange, &mut BTreeSet::new(), 0, ctx)
+            super::super::contains_null_style(
+                &crate::parse::Value::Reference(5),
+                exchange,
+                &mut BTreeSet::new(),
+                0,
+                ctx,
+            )
             .map(|_| ())
         },
     );
-
 }
 
 #[test]
@@ -475,7 +482,14 @@ fn presentation_deferred_invisibility_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let result = ctx.insert_btree_map(&mut std::collections::BTreeMap::new(), 1_u64, true, "step_presentation_deferred_invisibility").map(|_| ());
+    let result = ctx
+        .insert_btree_map(
+            &mut std::collections::BTreeMap::new(),
+            1_u64,
+            true,
+            "step_presentation_deferred_invisibility",
+        )
+        .map(|_| ());
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(refusal))
@@ -521,7 +535,9 @@ fn presentation_layer_product_identity_refuses_retained_limit() {
 
 fn invisible_body_refuses(operation: &str, depth: bool) {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("invisibility exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("invisibility exchange");
     let setup_arena = DecodeArena::new();
     let (setup_ctx, _) =
         DecodeContext::from_root_bytes(source, &setup_arena, &DecodePolicy::default())
@@ -602,7 +618,14 @@ fn presentation_appearance_ids_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let result = ctx.insert_btree_map(&mut std::collections::BTreeMap::new(), 1_u64, true, "step_presentation_appearance_ids").map(|_| ());
+    let result = ctx
+        .insert_btree_map(
+            &mut std::collections::BTreeMap::new(),
+            1_u64,
+            true,
+            "step_presentation_appearance_ids",
+        )
+        .map(|_| ());
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(refusal))
@@ -665,7 +688,9 @@ fn presentation_distinct_colors_refuse_collection_limit() {
 #[test]
 fn presentation_context_style_text_refuses_retained_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PRESENTATION_STYLE_BY_CONTEXT(#2);#2=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("context style exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("context style exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
@@ -677,11 +702,11 @@ fn presentation_context_style_text_refuses_retained_limit() {
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_presentation_context_style_text"
     ));
-    assert!(
-        crate::test_support::with_service_context(b"", |_, ctx| super::super::context_style_message(3, &BTreeSet::from([1]), &exchange, ctx))
-            .expect("local context text")
-            .contains("#1 in #2")
-    );
+    assert!(crate::test_support::with_service_context(b"", |_, ctx| {
+        super::super::context_style_message(3, &BTreeSet::from([1]), &exchange, ctx)
+    })
+    .expect("local context text")
+    .contains("#1 in #2"));
 }
 
 #[test]
@@ -702,11 +727,11 @@ fn presentation_scalar_conflict_text_refuses_retained_limit() {
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_presentation_scalar_conflict_text"
     ));
-    assert!(
-        crate::test_support::with_service_context(b"", |_, ctx| super::super::scalar_conflict_message(&candidates, &target, ctx))
-            .expect("local conflict text")
-            .contains("#2, #3")
-    );
+    assert!(crate::test_support::with_service_context(b"", |_, ctx| {
+        super::super::scalar_conflict_message(&candidates, &target, ctx)
+    })
+    .expect("local conflict text")
+    .contains("#2, #3"));
 }
 
 fn color_search_refuses(
@@ -716,7 +741,9 @@ fn color_search_refuses(
     depth_limit: u64,
 ) {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('red',1.,0.,0.);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("colour exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("colour exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -753,7 +780,9 @@ fn presentation_color_cache_value_refuses_retained_limit() {
 #[test]
 fn presentation_color_cache_copy_refuses_retained_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("cache exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("cache exchange");
     let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
     let mut cache = std::collections::BTreeMap::new();
     cache.insert(

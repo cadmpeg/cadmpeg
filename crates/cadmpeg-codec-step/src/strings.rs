@@ -23,26 +23,6 @@ pub(crate) enum StringDecodeFailure {
     Resource(CodecError),
 }
 
-/// Decode the bytes between a Part 21 string token's apostrophe delimiters.
-#[cfg(test)]
-pub(crate) fn decode(input: &[u8]) -> Result<String, StringError> {
-    decode_with_level(input, ImplementationLevel::LegacyEdition1)
-}
-
-pub(crate) fn decode_with_level(
-    input: &[u8],
-    level: ImplementationLevel,
-) -> Result<String, StringError> {
-    let len = decoded_len(input, level)?;
-    let mut output = String::new();
-    output.try_reserve_exact(len).map_err(|_| StringError {
-        offset: 0,
-        message: "string allocation refused".into(),
-    })?;
-    decode_chars(input, level, |character| output.push(character))?;
-    Ok(output)
-}
-
 pub(crate) fn decode_with_context(
     input: &[u8],
     level: ImplementationLevel,

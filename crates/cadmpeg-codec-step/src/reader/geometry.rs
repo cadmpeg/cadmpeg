@@ -688,7 +688,15 @@ pub(super) fn decode(
                     insert_geometry_map(&mut points, id, position, ctx, "step_geometry_points")?;
                     let source_name = representation_item_name(record)
                         .map(|value| {
-                            super::decode_text_charged(exchange, value, &mut losses, id, "APLL point name", StepLossCode::MetadataStringInvalid, ctx)
+                            super::decode_text_charged(
+                                exchange,
+                                value,
+                                &mut losses,
+                                id,
+                                "APLL point name",
+                                StepLossCode::MetadataStringInvalid,
+                                ctx,
+                            )
                         })
                         .transpose()?
                         .flatten()
@@ -3083,7 +3091,15 @@ fn decode_tessellated_curve_sets(
         };
         let source_name = representation_item_name(record)
             .map(|value| {
-                super::decode_text_charged(exchange, value, losses, id, "tessellated curve name", StepLossCode::MetadataStringInvalid, ctx)
+                super::decode_text_charged(
+                    exchange,
+                    value,
+                    losses,
+                    id,
+                    "tessellated curve name",
+                    StepLossCode::MetadataStringInvalid,
+                    ctx,
+                )
             })
             .transpose()?
             .flatten()
@@ -3214,7 +3230,15 @@ pub(super) fn associate_free_geometric_set_members(
                 .get(&member)
                 .and_then(representation_item_name)
                 .map(|value| {
-                    super::decode_text_charged(exchange, value, losses, member, "geometric-set member name", StepLossCode::MetadataStringInvalid, ctx)
+                    super::decode_text_charged(
+                        exchange,
+                        value,
+                        losses,
+                        member,
+                        "geometric-set member name",
+                        StepLossCode::MetadataStringInvalid,
+                        ctx,
+                    )
                 })
                 .transpose()?
                 .flatten()
@@ -3288,7 +3312,15 @@ pub(super) fn associate_free_representation_members(
                 .get(&member)
                 .and_then(representation_item_name)
                 .map(|value| {
-                    super::decode_text_charged(exchange, value, losses, member, "representation member name", StepLossCode::MetadataStringInvalid, ctx)
+                    super::decode_text_charged(
+                        exchange,
+                        value,
+                        losses,
+                        member,
+                        "representation member name",
+                        StepLossCode::MetadataStringInvalid,
+                        ctx,
+                    )
                 })
                 .transpose()?
                 .flatten()
@@ -3394,7 +3426,15 @@ fn associate_presentation_carrier(
         .get(&target)
         .and_then(representation_item_name)
         .map(|value| {
-            super::decode_text_charged(exchange, value, losses, target, "presentation carrier name", StepLossCode::MetadataStringInvalid, ctx)
+            super::decode_text_charged(
+                exchange,
+                value,
+                losses,
+                target,
+                "presentation carrier name",
+                StepLossCode::MetadataStringInvalid,
+                ctx,
+            )
         })
         .transpose()?
         .flatten()

@@ -51,10 +51,7 @@ pub fn record_frames_admitted(
     frame_records(bytes, ctx)
 }
 
-fn frame_records(
-    bytes: &[u8],
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<RecordFrame>, CodecError> {
+fn frame_records(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<RecordFrame>, CodecError> {
     if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
         return Err(CodecError::Malformed(
             "Protein page stream is shorter than its header and one page".into(),

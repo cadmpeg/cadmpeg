@@ -44,7 +44,9 @@ fn shape_relationship_members_refuse_collection_limit() {
 #[test]
 fn shape_relationship_graph_preserves_bidirectional_edges() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SHAPE_REPRESENTATION('',(),$);#2=SHAPE_REPRESENTATION('',(),$);#3=SHAPE_REPRESENTATION_RELATIONSHIP('','',#1,#2);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid relationship graph");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid relationship graph");
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) =
@@ -120,7 +122,9 @@ fn decoded_topology_pcurves_refuse_collection_limit() {
 #[test]
 fn associated_pcurves_refuse_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SURFACE_CURVE('',#4,(#2),.PCURVE_S1.);#2=PCURVE('',#3,#5);#3=DUMMY();#4=DUMMY();#5=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid surface curve references");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid surface curve references");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -364,7 +368,9 @@ fn topology_admissions_refuse_collection_limit() {
 #[test]
 fn geometric_set_omissions_refuse_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#2),#3);#2=GEOMETRIC_SET('',(#4));#3=DUMMY();#4=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid geometric set references");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid geometric set references");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -421,7 +427,9 @@ fn built_outcome_refuses_collection_limit() {
 #[test]
 fn connected_wire_typed_claims_refuse_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CONNECTED_EDGE_SET('',(#2));#2=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid connected set");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid connected set");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -445,7 +453,9 @@ fn connected_wire_typed_claims_refuse_collection_limit() {
 #[test]
 fn shell_wire_typed_claims_refuse_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=WIRE_SHELL('',(#2));#2=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid wire shell");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid wire shell");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -469,7 +479,9 @@ fn shell_wire_typed_claims_refuse_collection_limit() {
 #[test]
 fn subset_parent_loss_refuses_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CONNECTED_EDGE_SUB_SET('',(),$);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid subset syntax");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid subset syntax");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -486,7 +498,9 @@ fn subset_parent_loss_refuses_collection_limit() {
 #[test]
 fn curve_less_wire_edge_loss_refuses_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid empty exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid empty exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -504,7 +518,9 @@ fn curve_less_wire_edge_loss_refuses_collection_limit() {
 #[test]
 fn vertex_definitions_refuse_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=VERTEX_POINT('',#2);#2=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid vertex reference");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid vertex reference");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -521,7 +537,9 @@ fn vertex_definitions_refuse_collection_limit() {
 #[test]
 fn oriented_edge_definitions_refuse_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ORIENTED_EDGE('',*,*,#2,.T.);#2=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid oriented edge reference");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid oriented edge reference");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -541,7 +559,9 @@ fn edge_definition_refusal(
     depth_limit: u64,
 ) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=EDGE('',#1,#2);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid edge reference");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid edge reference");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -589,7 +609,9 @@ fn edge_definition_node_refuses_retained_limit() {
 #[test]
 fn edge_definition_recursion_refuses_depth_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=SUBEDGE('',#1,#2,#4);#4=EDGE('',#1,#2);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid subedge reference");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid subedge reference");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1;
@@ -603,7 +625,9 @@ fn edge_definition_recursion_refuses_depth_limit() {
 
 fn shell_definition_refusal(collection_limit: u64) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OPEN_SHELL('',());ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid shell reference");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid shell reference");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -680,7 +704,9 @@ fn shell_definition_claims_refuse_collection_limit() {
 #[test]
 fn shell_definition_recursion_refuses_depth_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OPEN_SHELL('',());#2=ORIENTED_OPEN_SHELL('',*,#1,.T.);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid oriented shell reference");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid oriented shell reference");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1;
@@ -696,7 +722,9 @@ fn shell_definition_recursion_refuses_depth_limit() {
 
 fn topology_root_refusal(collection_limit: u64, include_distinct: bool) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OPEN_SHELL('',());#2=SHELL_BASED_SURFACE_MODEL('',(#1));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid shell model reference");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid shell model reference");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -752,7 +780,9 @@ fn topology_distinct_roots_refuse_collection_limit() {
 
 fn geometric_set_refusal(collection_limit: u64, has_surface: bool) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#2),#3);#2=GEOMETRIC_SET('',(#4));#3=DUMMY();#4=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid geometric set references");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid geometric set references");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -899,7 +929,9 @@ fn staged_bodies_refuse_collection_limit() {
 
 fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OPEN_SHELL('',(#2));#2=FACE('',());#3=SHELL_BASED_SURFACE_MODEL('',(#1));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid shell model references");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid shell model references");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -982,7 +1014,9 @@ fn brep_used_faces_refuse_collection_limit() {
 
 fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=FACE('',(#2));#2=FACE_BOUND('',#3,.T.);#3=EDGE_LOOP('',());#4=ORIENTED_FACE('',*,#1,.T.);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid face references");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid face references");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -1034,7 +1068,9 @@ fn face_attribute_recursion_refuses_depth_limit() {
 
 fn implicit_face_refusal(collection_limit: u64, plane: bool) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=FACE_BOUND('',#2,.T.);#2=POLY_LOOP('',(#3,#4,#5));#3=DUMMY();#4=DUMMY();#5=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid polygon loop references");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid polygon loop references");
     let mut ir = cadmpeg_ir::CadIr::empty();
     for (id, position) in [
         (3, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)),
@@ -1170,7 +1206,9 @@ fn pcurve_selection_fractions_refuse_collection_limit() {
 #[test]
 fn selected_pcurve_id_refuses_retained_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid empty exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid empty exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;

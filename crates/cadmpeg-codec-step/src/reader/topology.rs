@@ -315,13 +315,13 @@ fn admitted_body_clone<'a>(
     values.try_reserve_exact(bodies.len()).map_err(|_| {
         let requested = u64_from_index(bodies.len());
         cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    requested,
-                    operation,
-                ),
-            )
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                requested,
+                operation,
+            ),
+        )
     })?;
     values.extend_from_slice(bodies);
     Ok(AdmittedRepresentationBodies {
@@ -338,10 +338,12 @@ fn cache_representation_bodies<'a>(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut admitted = admitted_body_clone(bodies, ctx, "step_representation_body_cache_values")?;
     ctx.charge_collection_items(1, "step_representation_body_cache_entries")?;
-    admitted.reservation.grow(u64_from_index(std::mem::size_of::<(
-        u64,
-        AdmittedRepresentationBodies<'_>,
-    )>()))?;
+    admitted
+        .reservation
+        .grow(u64_from_index(std::mem::size_of::<(
+            u64,
+            AdmittedRepresentationBodies<'_>,
+        )>()))?;
     cache.insert(representation, admitted);
     Ok(())
 }
@@ -423,7 +425,14 @@ pub(super) fn representation_bodies<'a>(
             let Some(mapped_representation) = mapped_representation(record, exchange) else {
                 continue;
             };
-            let nested = representation_bodies(mapped_representation, exchange, topology, cache, active, ctx)?;
+            let nested = representation_bodies(
+                mapped_representation,
+                exchange,
+                topology,
+                cache,
+                active,
+                ctx,
+            )?;
             for body in nested.iter() {
                 insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
             }
@@ -436,8 +445,7 @@ pub(super) fn representation_bodies<'a>(
         .flatten()
         .copied()
     {
-        let nested =
-            representation_bodies(related, exchange, topology, cache, active, ctx)?;
+        let nested = representation_bodies(related, exchange, topology, cache, active, ctx)?;
         for body in nested.iter() {
             insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
         }
@@ -450,11 +458,7 @@ pub(super) fn representation_bodies<'a>(
         u64_from_index(body_ids.len())
             .checked_mul(u64_from_index(std::mem::size_of::<BodyId>()))
             .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "step_representation_body_output",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
+                ctx.refuse_codec_limit("step_representation_body_output", u64::MAX - 1, u64::MAX)
             })?,
     )?;
     let mut bodies = Vec::new();
@@ -1181,7 +1185,14 @@ pub(super) fn decode(
         {
             continue;
         }
-        let has_body = !representation_bodies(id, exchange, &result, &mut representation_cache, &mut BTreeSet::new(), ctx)?
+        let has_body = !representation_bodies(
+            id,
+            exchange,
+            &result,
+            &mut representation_cache,
+            &mut BTreeSet::new(),
+            ctx,
+        )?
         .is_empty();
         if has_body {
             insert_topology_hash_set(&mut result.claims, id, ctx, "step_topology_claims")?;
@@ -3371,7 +3382,15 @@ fn build_one(
                 .name
                 .as_ref()
                 .map(|value| {
-                    super::decode_text_charged(exchange, value, losses, face_step, "face name", StepLossCode::MetadataStringInvalid, ctx)
+                    super::decode_text_charged(
+                        exchange,
+                        value,
+                        losses,
+                        face_step,
+                        "face name",
+                        StepLossCode::MetadataStringInvalid,
+                        ctx,
+                    )
                 })
                 .transpose()?
                 .flatten();
