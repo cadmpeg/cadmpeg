@@ -442,13 +442,22 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
-        .into_iter()
-        .map(|row| (row.id, row))
-        .collect::<BTreeMap<_, _>>();
+    let mut rows = BTreeMap::new();
+    for row in crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.surfaces.rows,
+        |row| row.id,
+    )? {
+        ctx.charge_collection_items(1, "creo split cylinder row nodes")?;
+        rows.insert(row.id, row);
+    }
     let local_planes = placed_planes(scan);
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
-    for edge in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+    for edge in crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )? {
         if edge.type_byte != 0 {
             continue;
         }
@@ -472,26 +481,34 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             _ => None,
         };
         if let Some((plane_and_feature, cylinder)) = pair {
-            cylinders_by_plane
-                .entry(plane_and_feature)
-                .or_default()
-                .insert(cylinder);
+            let cylinder_ids = match cylinders_by_plane.entry(plane_and_feature) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo split cylinder plane nodes")?;
+                    entry.insert(BTreeSet::new())
+                }
+            };
+            if !cylinder_ids.contains(&cylinder) {
+                ctx.charge_collection_items(1, "creo split cylinder ID nodes")?;
+                cylinder_ids.insert(cylinder);
+            }
         }
     }
 
     let mut transferred = 0;
     for ((plane_id, _), cylinder_ids) in cylinders_by_plane {
-        let cylinder_ids = cylinder_ids.into_iter().collect::<Vec<_>>();
-        let [first_id, second_id] = cylinder_ids.as_slice() else {
+        let mut cylinder_ids = cylinder_ids.into_iter();
+        let (Some(first_id), Some(second_id), None) =
+            (cylinder_ids.next(), cylinder_ids.next(), cylinder_ids.next()) else {
             continue;
         };
         let Some(first) =
-            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, *first_id)
+            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, first_id)
         else {
             continue;
         };
         let Some(second) =
-            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, *second_id)
+            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, second_id)
         else {
             continue;
         };
@@ -521,8 +538,13 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         else {
             continue;
         };
-        for cylinder_id in [*first_id, *second_id] {
-            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
+        for cylinder_id in [first_id, second_id] {
+            let id = crate::identity::compose_checked::<SurfaceId>(
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE,
+                cylinder_id,
+                "creo split cylinder identities",
+            )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -541,12 +563,13 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 ir,
                 Surface {
                     id,
-                    geometry: geometry.clone(),
+                    geometry: geometry.copy_admitted(ctx, "creo split cylinder geometry")?,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "VisibGeom:{cylinder_id}"
-                        ))
+                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                            format_args!("VisibGeom:{cylinder_id}"),
+                            "creo split cylinder source object IDs",
+                        )?)
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
