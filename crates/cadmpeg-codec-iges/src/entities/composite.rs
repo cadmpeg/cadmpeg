@@ -2292,12 +2292,12 @@ fn project_degraded_composite(
         sequences,
     )?;
     if edge.is_some() {
-        super::push_optional_attributed_loss(
+        super::push_attributed_loss(
             ctx, losses, carrier.entry, IgesLossCode::CompositeCarrierDegraded,
             format_args!("IGES Type 102 entity D{} has no admitted concatenated carrier because {reason}; the ordered native composite carrier was retained", carrier.entry.sequence),
         )?;
     } else {
-        super::push_optional_entity_loss(
+        super::push_entity_loss(
             ctx,
             losses,
             carrier.entry,
@@ -2405,7 +2405,7 @@ fn project_with_type_130_policy(
             .use_flag(global.global_table())
             .filter(|use_flag| composite_use_flag_valid(*use_flag, global.global_table()))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2418,7 +2418,7 @@ fn project_with_type_130_policy(
             entry.status.hierarchy(),
             global.global_table(),
         ) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2430,7 +2430,7 @@ fn project_with_type_130_policy(
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2439,7 +2439,7 @@ fn project_with_type_130_policy(
             continue;
         };
         let Some(raw_child_count) = record.integer(1) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2462,7 +2462,7 @@ fn project_with_type_130_policy(
             .ok()
             .filter(|count| *count >= minimum_child_count)
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2488,7 +2488,7 @@ fn project_with_type_130_policy(
             child_sequences.push(sequence);
         }
         if !valid_child_pointers {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2507,11 +2507,11 @@ fn project_with_type_130_policy(
             is_logical_connector,
             global.global_table(),
         ) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later"))?;
             continue;
         }
         if entry.transform != 0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2528,7 +2528,7 @@ fn project_with_type_130_policy(
                     || !child.status.is_physically_dependent()
             })
         }) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "composite child is missing, outside the effective specification family, or is not physically dependent"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "composite child is missing, outside the effective specification family, or is not physically dependent"))?;
             continue;
         }
         let point_context = CompositePointContext {
@@ -2561,7 +2561,7 @@ fn project_with_type_130_policy(
             &curve_carriers,
             &point_context,
         )? {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2576,7 +2576,7 @@ fn project_with_type_130_policy(
         let mut curve_sequences = ctx.collection_vec(curve_count, "iges composite curve child sequences")?;
         curve_sequences.extend(child_sequences.iter().copied().filter(is_curve_sequence));
         if curve_sequences.is_empty() {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2597,7 +2597,7 @@ fn project_with_type_130_policy(
                 .push(curve.try_clone_for_decode(ctx, "iges composite child curve ID copies")?);
         }
         if missing_curve {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,

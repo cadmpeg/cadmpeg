@@ -1501,7 +1501,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1516,7 +1516,7 @@ pub(super) fn project(
             record.number(4),
         ];
         let [Some(a), Some(b), Some(c), Some(d)] = coefficients else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1525,7 +1525,7 @@ pub(super) fn project(
             continue;
         };
         let [Some(a), Some(b), Some(c), Some(d)] = [a, b, c, d].map(FiniteReal::new) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1536,7 +1536,7 @@ pub(super) fn project(
         let finite_coefficients = [a, b, c, d];
         let [a, b, c, d] = finite_coefficients.map(FiniteReal::get);
         let Some(boundary) = record.integer(5) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1549,13 +1549,13 @@ pub(super) fn project(
             .filter(|sequence| sequence % 2 == 1)
             .filter(|sequence| entries.contains_key(sequence));
         if (entry.form == 0 && boundary != 0) || (entry.form != 0 && boundary_sequence.is_none()) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane form and boundary pointer are inconsistent or the boundary target is missing"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane form and boundary pointer are inconsistent or the boundary target is missing"))?;
             continue;
         }
         let local_normal = Vector3::new(a, b, c);
         let normal_squared = a * a + b * b + c * c;
         if !normal_squared.is_finite() || normal_squared <= 0.0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1564,7 +1564,7 @@ pub(super) fn project(
             continue;
         }
         let Some(local_normal_unit) = UnitVector3::normalized_by_reciprocal(local_normal) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1591,7 +1591,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1604,7 +1604,7 @@ pub(super) fn project(
             .apply_vector(*local_u.as_raw())
             .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1616,7 +1616,7 @@ pub(super) fn project(
             .apply_vector(local_v)
             .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1627,7 +1627,7 @@ pub(super) fn project(
         let Some(normal) =
             UnitVector3::normalized_by_reciprocal(u_axis.as_raw().cross(*v_axis.as_raw()))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1671,7 +1671,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1683,7 +1683,7 @@ pub(super) fn project(
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1695,7 +1695,7 @@ pub(super) fn project(
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1705,7 +1705,7 @@ pub(super) fn project(
         };
         let (Some(direction_flag), Some(developable_flag)) = (record.integer(3), record.integer(4))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1714,7 +1714,7 @@ pub(super) fn project(
             continue;
         };
         if !matches!(direction_flag, 0 | 1) || !matches!(developable_flag, 0 | 1) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1723,7 +1723,7 @@ pub(super) fn project(
             continue;
         }
         if entry.transform != 0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1770,7 +1770,7 @@ pub(super) fn project(
             (Ok(first), Ok(second)) => (first, second),
             (Err(error), _) | (_, Err(error)) => {
                 let error = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1780,7 +1780,7 @@ pub(super) fn project(
             }
         };
         let (Some((first, first_interval)), Some((mut second, second_interval))) = rails else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1802,7 +1802,7 @@ pub(super) fn project(
                 ctx,
             )?
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1824,7 +1824,7 @@ pub(super) fn project(
                 })
                 .is_err()
             {
-                super::push_optional_attributed_loss(
+                super::push_attributed_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1837,7 +1837,7 @@ pub(super) fn project(
         let surface = match ruled_surface_carrier(&first, &second, ctx) {
             Ok(Some(surface)) => surface,
             Ok(None) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1846,7 +1846,7 @@ pub(super) fn project(
                 continue;
             }
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1904,7 +1904,7 @@ pub(super) fn project(
                 ),
             ),
         );
-        super::push_optional_attributed_loss(
+        super::push_attributed_loss(
             ctx,
             &mut losses,
             entry,
@@ -1927,7 +1927,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1939,7 +1939,7 @@ pub(super) fn project(
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1948,7 +1948,7 @@ pub(super) fn project(
             continue;
         };
         let Some(directrix_entry) = entries.get(&directrix_sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1961,7 +1961,7 @@ pub(super) fn project(
             directrix_entry.form,
             global.global_table(),
         ) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1974,7 +1974,7 @@ pub(super) fn project(
         }
         let coordinates = [record.number(2), record.number(3), record.number(4)];
         let [Some(x), Some(y), Some(z)] = coordinates else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1994,7 +1994,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2005,7 +2005,7 @@ pub(super) fn project(
         };
         let Some(directrix_id) = curve_carrier_id(directrix_sequence, &entries, &records, ctx)?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2017,7 +2017,7 @@ pub(super) fn project(
             Ok(carrier) => carrier,
             Err(error) => {
                 let error = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2035,7 +2035,7 @@ pub(super) fn project(
                 ctx,
             )?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2055,7 +2055,7 @@ pub(super) fn project(
                 carrier_interval[0],
             ))?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2064,7 +2064,7 @@ pub(super) fn project(
                 continue;
             };
             let Some(start) = transform.apply_point(start.get()) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2075,7 +2075,7 @@ pub(super) fn project(
             let Some(target) =
                 transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2089,7 +2089,7 @@ pub(super) fn project(
                     length.is_finite() && length > 0.0
                 })
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2098,7 +2098,7 @@ pub(super) fn project(
                 continue;
             };
             let placed_solved = (entry.transform != 0)
-                .then(|| super::geometry_copy::copy_solved_curve(directrix_solved, ctx))
+                .then(|| directrix_solved.try_clone_for_decode(ctx, "iges solved curve copy"))
                 .transpose()?;
             let procedural_directrix = if let Some(placed_solved) = placed_solved {
                 {
@@ -2219,7 +2219,7 @@ pub(super) fn project(
             {
                 Ok(()) => directrix,
                 Err(()) => {
-                    super::push_optional_attributed_loss(
+                    super::push_attributed_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2235,7 +2235,7 @@ pub(super) fn project(
             cached_interval[0],
         ))?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2245,7 +2245,7 @@ pub(super) fn project(
         };
         let Some(target) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2259,7 +2259,7 @@ pub(super) fn project(
                 length.is_finite() && length > 0.0
             })
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2269,7 +2269,7 @@ pub(super) fn project(
         };
         let pole_count = placed_directrix.pole_count();
         let Ok(_) = u32::try_from(pole_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2300,7 +2300,7 @@ pub(super) fn project(
             pole_rows.push(row);
         }
         if !finite_poles {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2379,7 +2379,7 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2469,7 +2469,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2481,7 +2481,7 @@ pub(super) fn project(
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2493,7 +2493,7 @@ pub(super) fn project(
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2502,7 +2502,7 @@ pub(super) fn project(
             continue;
         };
         let (Some(start_angle), Some(end_angle)) = (record.number(3), record.number(4)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2515,7 +2515,7 @@ pub(super) fn project(
             controls: angular_controls,
         }) = angular_basis(start_angle, end_angle, ctx)?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2535,7 +2535,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2546,7 +2546,7 @@ pub(super) fn project(
         };
         let axis_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(axis_sequence), ctx)?;
         let Some(axis_curve) = ir.model.curves.iter().find(|curve| curve.id == axis_id) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2555,7 +2555,7 @@ pub(super) fn project(
             continue;
         };
         let Some(SolvedCurveGeometry::Line(line_curve)) = axis_curve.geometry.solved() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2568,7 +2568,7 @@ pub(super) fn project(
         let axis_direction = *admitted_axis.1.as_raw();
         let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records, ctx)?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2580,7 +2580,7 @@ pub(super) fn project(
             Ok(carrier) => carrier,
             Err(error) => {
                 let error = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2598,7 +2598,7 @@ pub(super) fn project(
                 ctx,
             )?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2617,14 +2617,14 @@ pub(super) fn project(
                 generatrix_id.try_clone_for_decode(ctx, "iges surface identity copy")?;
             let mut procedural_axis = admitted_axis;
             let placed_solved = (entry.transform != 0)
-                .then(|| super::geometry_copy::copy_solved_curve(directrix_solved, ctx))
+                .then(|| directrix_solved.try_clone_for_decode(ctx, "iges solved curve copy"))
                 .transpose()?;
             if let Some(placed_solved) = placed_solved {
                 {
                     ctx.charge_collection_items(1, "iges exact placed curve box")?;
                 }
                 let Some(orientation) = similarity_orientation(transform) else {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2672,7 +2672,7 @@ pub(super) fn project(
                     .and_then(|direction| unit_vector(direction.get()))
                     .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
                 else {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2763,7 +2763,7 @@ pub(super) fn project(
             });
         let generatrix_count = generatrix.pole_count();
         let Ok(_) = u32::try_from(generatrix_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2772,7 +2772,7 @@ pub(super) fn project(
             continue;
         };
         let Ok(_) = u32::try_from(angular_controls.len()) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2879,7 +2879,7 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2914,7 +2914,7 @@ pub(super) fn project(
             let Ok(()) = placed_generatrix
                 .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             else {
-                super::push_optional_attributed_loss(
+                super::push_attributed_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2950,7 +2950,7 @@ pub(super) fn project(
                 .and_then(|direction| unit_vector(direction.get()))
                 .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3018,7 +3018,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3029,7 +3029,7 @@ pub(super) fn project(
         let indices = [record.integer(1), record.integer(2)];
         let degrees = [record.integer(3), record.integer(4)];
         let [Some(raw_k1), Some(raw_k2)] = indices else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3038,7 +3038,7 @@ pub(super) fn project(
             continue;
         };
         let [Some(k1), Some(k2)] = [raw_k1, raw_k2].map(|value| usize::try_from(value).ok()) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3049,7 +3049,7 @@ pub(super) fn project(
         let [Some(u_degree), Some(v_degree)] =
             degrees.map(|value| value.and_then(|v| u32::try_from(v).ok()))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3060,7 +3060,7 @@ pub(super) fn project(
         let [u_degree_usize, v_degree_usize] =
             [u_degree, v_degree].map(cadmpeg_core::decode::index_from_u32);
         if k1 < u_degree_usize || k2 < v_degree_usize {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3101,7 +3101,7 @@ pub(super) fn project(
         }
         let flags: [Option<i64>; 5] = std::array::from_fn(|offset| record.integer(5 + offset));
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3110,7 +3110,7 @@ pub(super) fn project(
             continue;
         }
         let (Some(u_count), Some(v_count)) = (k1.checked_add(1), k2.checked_add(1)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3119,7 +3119,7 @@ pub(super) fn project(
             continue;
         };
         let (Ok(_), Ok(_)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3128,7 +3128,7 @@ pub(super) fn project(
             continue;
         };
         let Some(pole_count) = u_count.checked_mul(v_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3147,7 +3147,7 @@ pub(super) fn project(
             .checked_add(u_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3159,7 +3159,7 @@ pub(super) fn project(
             .checked_add(v_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3169,7 +3169,7 @@ pub(super) fn project(
         };
         let u_knot_start = 10_usize;
         let Some(v_knot_start) = u_knot_start.checked_add(u_knot_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3178,7 +3178,7 @@ pub(super) fn project(
             continue;
         };
         let Some(weight_start) = v_knot_start.checked_add(v_knot_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3187,7 +3187,7 @@ pub(super) fn project(
             continue;
         };
         let Some(pole_start) = weight_start.checked_add(pole_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3196,7 +3196,7 @@ pub(super) fn project(
             continue;
         };
         let Some(pole_value_count) = pole_count.checked_mul(3) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3205,7 +3205,7 @@ pub(super) fn project(
             continue;
         };
         let Some(range_start) = pole_start.checked_add(pole_value_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3236,7 +3236,7 @@ pub(super) fn project(
             "iges NURBS surface source u knots",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3250,7 +3250,7 @@ pub(super) fn project(
             "iges NURBS surface source v knots",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3273,7 +3273,7 @@ pub(super) fn project(
         let (Ok(u_knots), Ok(v_knots)) =
             (KnotVector::new(raw_u_knots), KnotVector::new(raw_v_knots))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3287,7 +3287,7 @@ pub(super) fn project(
             "iges NURBS surface source weights",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3308,7 +3308,7 @@ pub(super) fn project(
             positive_weights.push(weight);
         }
         if !valid_weights {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3337,7 +3337,7 @@ pub(super) fn project(
         });
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3346,7 +3346,7 @@ pub(super) fn project(
             continue;
         }
         if !polynomial && equal_weights {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3363,7 +3363,7 @@ pub(super) fn project(
             "iges NURBS surface source poles",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3373,7 +3373,7 @@ pub(super) fn project(
         };
         let Some(ranges) = collect_numbers(range_start, 4, "iges NURBS surface source ranges")?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3406,7 +3406,7 @@ pub(super) fn project(
             })
         };
         let Some(u_range) = clamp_range(range_start, [ranges[0], ranges[1]], u_domain) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3418,7 +3418,7 @@ pub(super) fn project(
             continue;
         };
         let Some(v_range) = clamp_range(range_start + 2, [ranges[2], ranges[3]], v_domain) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3441,7 +3441,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3530,7 +3530,7 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3564,7 +3564,7 @@ pub(super) fn project(
                 global.minimum_resolution_mm(),
             )?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3573,7 +3573,7 @@ pub(super) fn project(
                 continue 'surface;
             };
             if actual != declared {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3635,7 +3635,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3645,7 +3645,7 @@ pub(super) fn project(
         };
         let components = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = components else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3656,7 +3656,7 @@ pub(super) fn project(
         let indicator = Vector3::new(x, y, z);
         let Some(indicator) = declared_unit_vector(record, 1, indicator, global.real_precision())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3668,7 +3668,7 @@ pub(super) fn project(
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3680,7 +3680,7 @@ pub(super) fn project(
             .integer(5)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3689,7 +3689,7 @@ pub(super) fn project(
             continue;
         };
         if entry.transform != 0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3708,7 +3708,7 @@ pub(super) fn project(
             .iter()
             .find(|surface| surface.id == support_id)
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3718,7 +3718,7 @@ pub(super) fn project(
         };
         let distance = distance * factor;
         let Some(normal) = indicator_normal(ir, &support_id, ctx)? else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3730,7 +3730,7 @@ pub(super) fn project(
             continue;
         };
         let Some(orientation) = indicator_orientation(record, indicator, normal, global) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3743,7 +3743,7 @@ pub(super) fn project(
         };
         let signed_distance = distance * orientation;
         let Some(geometry) = offset_analytic(&support.geometry, signed_distance) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3774,7 +3774,7 @@ pub(super) fn project(
             | SurfaceGeometry::Procedural { .. } => false,
         };
         if !regular {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,

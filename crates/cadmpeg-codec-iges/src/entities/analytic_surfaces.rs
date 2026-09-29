@@ -5,7 +5,7 @@ use super::geometry::{
     resolve_transform, source_object, ProjectionOutcome, TransformResolutionError,
 };
 use super::pointer;
-use super::push_optional_entity_loss;
+use super::push_entity_loss;
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -32,7 +32,7 @@ fn admit_analytic<T>(
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
-            push_optional_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
+            push_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
             Ok(None)
         }
     }
@@ -297,7 +297,7 @@ pub(super) fn project(
     }) {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -309,13 +309,13 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
         let location_index = pointer(record, 1);
         let Some(location) = location_index.and_then(|sequence| point(ir, sequence)) else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -324,7 +324,7 @@ pub(super) fn project(
             continue;
         };
         let Some(location) = transform.apply_point(location) else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -344,7 +344,7 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -364,7 +364,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -401,7 +401,7 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -411,7 +411,7 @@ pub(super) fn project(
                     }
                 };
                 let Some(radius) = record.number(3).map(|radius| radius * factor) else {
-                    push_optional_entity_loss(
+                    push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -430,7 +430,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -478,7 +478,7 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -488,7 +488,7 @@ pub(super) fn project(
                     }
                 };
                 let Some(radius) = record.number(3).map(|radius| radius * factor) else {
-                    push_optional_entity_loss(
+                    push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -502,7 +502,7 @@ pub(super) fn project(
                     .and_then(Angle::new)
                     .filter(|angle| angle.get() > 0.0 && angle.get() < std::f64::consts::FRAC_PI_2)
                 else {
-                    push_optional_entity_loss(
+                    push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -521,7 +521,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -569,7 +569,7 @@ pub(super) fn project(
                     .map(|radius| radius * factor)
                     .and_then(cadmpeg_ir::scalar::PositiveLength::new)
                 else {
-                    push_optional_entity_loss(
+                    push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -588,7 +588,7 @@ pub(super) fn project(
                 let axis = match axis {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -608,7 +608,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -649,7 +649,7 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -660,7 +660,7 @@ pub(super) fn project(
                 };
                 let radii = [record.number(3), record.number(4)];
                 let [Some(major_radius), Some(minor_radius)] = radii else {
-                    push_optional_entity_loss(
+                    push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -670,7 +670,7 @@ pub(super) fn project(
                 };
                 let (major_radius, minor_radius) = (major_radius * factor, minor_radius * factor);
                 if minor_radius <= 0.0 || minor_radius >= major_radius {
-                    push_optional_entity_loss(
+                    push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -689,7 +689,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(
+                        push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -741,7 +741,7 @@ pub(super) fn project(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(payload))
             }
             _ => {
-                push_optional_entity_loss(
+                push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -768,7 +768,7 @@ pub(super) fn project(
                 Ok(source) => source,
                 Err(error) => {
                     let message = super::non_resource_error(error, ctx)?;
-                    push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                    push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                     continue;
                 }
             }),

@@ -10,6 +10,7 @@ use super::face_outer_loop;
 use super::generated_global;
 use super::generated_minimum_resolution;
 use super::generation_timestamp;
+use super::encode_file;
 use super::hyperbola_point;
 use super::isoparametric_flag;
 use super::number;
@@ -878,6 +879,47 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
     assert!(error.to_string().contains("field exceeds one card"));
 
     })
+}
+
+#[test]
+fn generated_file_parameter_layout_obeys_default_decode_limits() {
+    let ordinary = super::Entity {
+        type_code: 110,
+        form: 0,
+        label: "TEST",
+        status: super::EntityStatus::Independent,
+        parameter_body: b"0,0,0,1,0,0;".to_vec(),
+        transform: None,
+    };
+    assert!(encode_file(
+        std::slice::from_ref(&ordinary),
+        &std::collections::BTreeMap::new(),
+        IgesVersion::V5_3,
+        0.001,
+    )
+    .is_ok());
+
+    let payload_len = 20 * 1024 * 1024;
+    let mut parameter_body = format!("{payload_len}H").into_bytes();
+    parameter_body.extend(std::iter::repeat_n(b'A', payload_len));
+    parameter_body.push(b';');
+    let oversized = super::Entity {
+        parameter_body,
+        ..ordinary
+    };
+    let error = encode_file(
+        &[oversized],
+        &std::collections::BTreeMap::new(),
+        IgesVersion::V5_3,
+        0.001,
+    )
+    .expect_err("default policy must refuse the oversized parameter stream");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && refusal.operation == "iges parameter layout card bytes"
+    ));
 }
 
 #[test]

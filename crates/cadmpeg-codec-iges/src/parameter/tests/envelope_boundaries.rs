@@ -1,7 +1,7 @@
 use super::token_parameter_record;
 use crate::loss::IgesLossCode;
 use crate::parameter::{
-    analyze_trailing_pointer_groups, entity_primary_end, entity_primary_end_with_records,
+    analyze_trailing_pointer_groups_for_global_table_with_context, entity_primary_end, entity_primary_end_with_records,
     ParameterRecord, Token, TokenValue,
 };
 use crate::test_support::directory_target;
@@ -298,7 +298,7 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
         comment: Vec::new(),
     };
 
-    let analysis = analyze_trailing_pointer_groups(&record, &BTreeMap::new());
+    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &BTreeMap::new(), crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
     assert!(analysis.groups().is_none());
 }
 
@@ -343,7 +343,7 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
         comment: Vec::new(),
     };
 
-    let analysis = analyze_trailing_pointer_groups(&record, &BTreeMap::new());
+    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &BTreeMap::new(), crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &BTreeMap::new())),
         1
@@ -378,7 +378,7 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
         comment: Vec::new(),
     };
 
-    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1

@@ -281,7 +281,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -292,7 +292,7 @@ pub(super) fn project(
         let (Some(curve_type), Some(continuity), Some(dimensions)) =
             (record.integer(1), record.integer(2), record.integer(3))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -304,7 +304,7 @@ pub(super) fn project(
             || !(0..=2).contains(&continuity)
             || !matches!(dimensions, 2 | 3)
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -313,7 +313,7 @@ pub(super) fn project(
             continue;
         }
         let Some(raw_segment_count) = record.integer(4) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -335,7 +335,7 @@ pub(super) fn project(
             .ok()
             .filter(|count| *count > 0)
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -344,7 +344,7 @@ pub(super) fn project(
             continue;
         };
         let Some(breakpoint_count) = segment_count.checked_add(1) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -357,7 +357,7 @@ pub(super) fn project(
             "iges spline curve breakpoints",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -369,7 +369,7 @@ pub(super) fn project(
             .windows(2)
             .any(|pair| pair[0].get() >= pair[1].get())
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -379,7 +379,7 @@ pub(super) fn project(
         }
         let coefficient_start = 6 + segment_count;
         let Some(coefficient_count) = segment_count.checked_mul(12) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -393,7 +393,7 @@ pub(super) fn project(
             "iges spline curve coefficients",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -413,7 +413,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -609,7 +609,7 @@ pub(super) fn project(
             previous_terminal_point = Some(end_point);
         }
         if !continuous {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -627,7 +627,7 @@ pub(super) fn project(
             "iges spline curve terminal derivatives",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -665,7 +665,7 @@ pub(super) fn project(
             !declared_interval(record, tail_start + offset, actual.get(), precision)
                 .overlaps(expected_tail[offset / 4][offset % 4])
         }) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -689,7 +689,7 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -707,7 +707,7 @@ pub(super) fn project(
             ctx,
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -732,7 +732,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -741,7 +741,7 @@ pub(super) fn project(
             continue;
         };
         let (Some(curve_type), Some(patch_type)) = (record.integer(1), record.integer(2)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -750,7 +750,7 @@ pub(super) fn project(
             continue;
         };
         if !(1..=6).contains(&curve_type) || !matches!(patch_type, 0 | 1) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -760,7 +760,7 @@ pub(super) fn project(
         }
         let dimensions = [record.integer(3), record.integer(4)];
         let [Some(raw_u_segments), Some(raw_v_segments)] = dimensions else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -804,7 +804,7 @@ pub(super) fn project(
         let [Some(u_segments), Some(v_segments)] = [raw_u_segments, raw_v_segments]
             .map(|value| usize::try_from(value).ok().filter(|count| *count > 0))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -820,7 +820,7 @@ pub(super) fn project(
                 .checked_mul(3)
                 .and_then(|value| value.checked_add(1)),
         ) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -843,7 +843,7 @@ pub(super) fn project(
             ));
         }
         let Some(u_breakpoint_count) = u_segments.checked_add(1) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -852,7 +852,7 @@ pub(super) fn project(
             continue;
         };
         let Some(v_breakpoint_count) = v_segments.checked_add(1) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -865,7 +865,7 @@ pub(super) fn project(
             "iges spline surface u breakpoints",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -880,7 +880,7 @@ pub(super) fn project(
             "iges spline surface v breakpoints",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -895,7 +895,7 @@ pub(super) fn project(
                 .windows(2)
                 .any(|pair| pair[0].get() >= pair[1].get())
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -915,7 +915,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -926,7 +926,7 @@ pub(super) fn project(
         };
         let coefficient_start = v_breakpoint_start + v_breakpoint_count;
         let Some(block_columns) = v_segments.checked_add(1) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -938,7 +938,7 @@ pub(super) fn project(
             .checked_add(1)
             .and_then(|rows| rows.checked_mul(block_columns))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -950,7 +950,7 @@ pub(super) fn project(
             .checked_mul(48)
             .and_then(|count| coefficient_start.checked_add(count))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -959,7 +959,7 @@ pub(super) fn project(
             continue;
         };
         if record.parameter_end() < required_parameter_count {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1027,7 +1027,7 @@ pub(super) fn project(
             }
         }
         if !valid {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1041,7 +1041,7 @@ pub(super) fn project(
         let Some(control_points) =
             ctx.collect_options(grid, "iges spline surface completed controls")?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1062,7 +1062,7 @@ pub(super) fn project(
         }
         v_knots.extend([v_breakpoints[v_segments]; 4]);
         let (Ok(_u_count), Ok(_v_count)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1097,7 +1097,7 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
