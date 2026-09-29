@@ -2811,11 +2811,10 @@ fn angled_reference_plane_frame_candidates(
 }
 
 fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
-    let frames = matrix_reference_plane_frames(payload);
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+    let candidates = matrix_reference_plane_frame_candidates(payload);
+    let mut frames = candidates.iter().map(|(_, frame)| *frame);
+    let frame = frames.next()?;
+    frames.all(|candidate| candidate == frame).then_some(frame)
 }
 
 fn matrix_reference_plane_frames(payload: &[u8]) -> Vec<ReferencePlaneFrame> {
@@ -2927,25 +2926,16 @@ fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vec
                 normal,
                 Vector3::new(1.0, 0.0, 0.0),
             ))
-        })
-        .collect::<Vec<_>>();
-    frames
-        .sort_by_key(|(origin, _, _)| [origin.x.to_bits(), origin.y.to_bits(), origin.z.to_bits()]);
-    frames.dedup();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+        });
+    let frame = frames.next()?;
+    frames.all(|candidate| candidate == frame).then_some(frame)
 }
 
 fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
-    let mut frames = compact_reference_plane_frame_candidates(payload)
-        .into_iter()
-        .map(|(_, frame)| frame)
-        .collect::<Vec<_>>();
-    frames.sort_by_key(reference_plane_frame_key);
-    frames.dedup();
-    let [frame] = frames.as_slice() else {
+    let mut candidates = compact_reference_plane_frame_candidates(payload);
+    candidates.sort_by_key(|(_, frame)| reference_plane_frame_key(frame));
+    candidates.dedup_by(|left, right| left.1 == right.1);
+    let [(_, frame)] = candidates.as_slice() else {
         return None;
     };
     Some(*frame)
