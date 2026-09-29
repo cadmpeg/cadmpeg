@@ -3587,25 +3587,27 @@ fn attach_feature_operations(
                 insert_source_property(ctx, &mut source_properties, format_args!("blend_result_surface.{surface_ordinal}"), format_args!("{}", surface.as_str()))?;
             }
         }
-        let extrude_projection = (label.value == "EXTRUDE").then(|| {
-            let output_kinds = outputs
-                .iter()
-                .map(|output| {
-                    ir.model
-                        .bodies
-                        .iter()
-                        .find(|body| body.id == *output)
-                        .map(|body| body.kind)
-                })
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or_default();
+        let extrude_projection = if label.value == "EXTRUDE" {
+            let mut output_kinds = Vec::new();
+            let mut output_kind_reservation = ctx.reserve_scoped(0, "NX extrude output body kinds")?;
+            for output in &outputs {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()), "NX extrude output body lookup")?;
+                let Some(body) = ir.model.bodies.iter().find(|body| body.id == *output) else {
+                    output_kinds.clear();
+                    break;
+                };
+                ctx.charge_collection_items(1, "NX extrude output body kinds")?;
+                output_kind_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<BodyKind>()))?;
+                output_kinds.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX extrude output body kinds", 0, 1))?;
+                output_kinds.push(body.kind);
+            }
             let op = extrude_boolean_op(
                 &body_writer_history,
                 native_primary_body,
                 offset_store_primary_body,
                 &output_kinds,
             );
-            extrude_feature_definition(
+            Some(extrude_feature_definition(
                 extrude_construction_profiles_by_operation
                     .get(label.id.as_str())
                     .map(|profile| profile.id.as_str()),
@@ -3614,8 +3616,10 @@ fn attach_feature_operations(
                     .map(|construction| construction.id.as_str()),
                 op,
                 &output_kinds,
-            )
-        });
+            ))
+        } else {
+            None
+        };
         let delete_projection = deletes_body
             .then(|| {
                 let field = body_references
