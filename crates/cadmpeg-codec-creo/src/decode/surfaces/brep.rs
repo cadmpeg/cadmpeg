@@ -1836,13 +1836,14 @@ fn native_loop_ring(
         Vec::new(),
         "creo native loop ring validation nodes",
     )
-    .map_err(|error| match error {
-        cadmpeg_core::CodecError::Malformed(message) => {
-            cadmpeg_core::CodecError::malformed(format!(
-                "VisibGeom face {face_id} loop ring: {message}"
-            ))
-        }
-        other => other,
+    .or_else(|error| match error {
+        cadmpeg_core::CodecError::Malformed(message) => Err(
+            cadmpeg_core::CodecError::malformed(ctx.format_retained(
+                format_args!("VisibGeom face {face_id} loop ring: {message}"),
+                "creo B-rep loop ring error text",
+            )?),
+        ),
+        other => Err(other),
     })
 }
 
