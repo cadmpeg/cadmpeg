@@ -882,14 +882,7 @@ fn copy_rows<T: Clone>(
     let bytes = cadmpeg_core::decode::u64_from_index(bytes);
     ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(item_count), operation)?;
     ctx.charge_retained(bytes, operation)?;
-    let mut rows = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut rows, row_count, operation)?;
-    for source in values.chunks(row_len) {
-        let mut row = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut row, source.len(), operation)?;
-        row.extend_from_slice(source);
-        rows.push(row);
-    }
+    let rows = DecodeContext::copy_admitted_rows(values, row_len, operation)?;
     Ok(rows)
 }
 

@@ -121,26 +121,6 @@ impl fmt::Display for SubdError {
 
 impl std::error::Error for SubdError {}
 
-fn charged_subd_map<K: Eq + std::hash::Hash, V>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<HashMap<K, V>, SubdError> {
-    let mut values = HashMap::new();
-    ctx.reserve_map(&mut values, count, operation)?;
-    Ok(values)
-}
-
-fn charged_subd_set<T: Eq + std::hash::Hash>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<HashSet<T>, SubdError> {
-    let mut values = HashSet::new();
-    ctx.reserve_set(&mut values, count, operation)?;
-    Ok(values)
-}
-
 fn insert_incidence(
     ctx: &DecodeContext<'_>,
     incidence: &mut HashMap<u32, HashSet<u32>>,
@@ -1014,7 +994,8 @@ fn validate_level(
         .checked_add(level.edges.len())
         .and_then(|value| value.checked_add(level.faces.len()))
         .ok_or_else(|| malformed(level.source_offset, "SubD map size overflow"))?;
-    let mut types = charged_subd_map(ctx, component_count, "Rhino SubD component types")?;
+    let mut types = HashMap::new();
+    ctx.reserve_map(&mut types, component_count, "Rhino SubD component types").map_err(SubdError::from)?;
     for vertex in &level.vertices {
         types.insert(vertex.base.archive_id, ComponentType::Vertex);
     }
@@ -1097,7 +1078,8 @@ fn incidence_from_edges(
     ctx: &DecodeContext<'_>,
     level: &RawLevel,
 ) -> Result<HashMap<u32, HashSet<u32>>, SubdError> {
-    let mut result = charged_subd_map(ctx, level.vertices.len(), "Rhino SubD vertex-edge map")?;
+    let mut result = HashMap::new();
+    ctx.reserve_map(&mut result, level.vertices.len(), "Rhino SubD vertex-edge map").map_err(SubdError::from)?;
     for edge in &level.edges {
         for vertex in edge.vertices {
             insert_incidence(ctx, &mut result, vertex.archive_id, edge.base.archive_id)?;
@@ -1110,11 +1092,13 @@ fn incidence_from_faces(
     ctx: &DecodeContext<'_>,
     level: &RawLevel,
 ) -> Result<HashMap<u32, HashSet<u32>>, SubdError> {
-    let mut edges = charged_subd_map(ctx, level.edges.len(), "Rhino SubD face edge lookup")?;
+    let mut edges = HashMap::new();
+    ctx.reserve_map(&mut edges, level.edges.len(), "Rhino SubD face edge lookup").map_err(SubdError::from)?;
     for edge in &level.edges {
         edges.insert(edge.base.archive_id, edge);
     }
-    let mut result = charged_subd_map(ctx, level.vertices.len(), "Rhino SubD vertex-face map")?;
+    let mut result = HashMap::new();
+    ctx.reserve_map(&mut result, level.vertices.len(), "Rhino SubD vertex-face map").map_err(SubdError::from)?;
     for face in &level.faces {
         let mut first = None;
         let mut previous_end = None;
@@ -1153,7 +1137,8 @@ fn edge_face_incidence(
     ctx: &DecodeContext<'_>,
     level: &RawLevel,
 ) -> Result<HashMap<u32, HashSet<u32>>, SubdError> {
-    let mut result = charged_subd_map(ctx, level.edges.len(), "Rhino SubD edge-face map")?;
+    let mut result = HashMap::new();
+    ctx.reserve_map(&mut result, level.edges.len(), "Rhino SubD edge-face map").map_err(SubdError::from)?;
     for face in &level.faces {
         for edge in &face.edges {
             if !insert_incidence(ctx, &mut result, edge.archive_id, face.base.archive_id)? {
@@ -1173,8 +1158,8 @@ fn compare_incidence(
     derived: Option<&HashSet<u32>>,
     label: &str,
 ) -> Result<(), SubdError> {
-    let mut serialized_ids =
-        charged_subd_set(ctx, serialized.len(), "Rhino SubD serialized incidence")?;
+    let mut serialized_ids = HashSet::new();
+    ctx.reserve_set(&mut serialized_ids, serialized.len(), "Rhino SubD serialized incidence").map_err(SubdError::from)?;
     for pointer in serialized {
         serialized_ids.insert(pointer.archive_id);
     }
@@ -1208,14 +1193,15 @@ fn materialize(
     scale: MillimeterScale,
     id: cadmpeg_ir::ids::SubdId,
 ) -> Result<SubdSurface, SubdError> {
-    let mut vertex_indices =
-        charged_subd_map(ctx, level.vertices.len(), "Rhino SubD vertex indices")?;
+    let mut vertex_indices = HashMap::new();
+    ctx.reserve_map(&mut vertex_indices, level.vertices.len(), "Rhino SubD vertex indices").map_err(SubdError::from)?;
     for (index, vertex) in level.vertices.iter().enumerate() {
         let index = u32::try_from(index)
             .map_err(|_| malformed(vertex.base.source_offset, "SubD vertex index overflow"))?;
         vertex_indices.insert(vertex.base.archive_id, index);
     }
-    let mut edge_indices = charged_subd_map(ctx, level.edges.len(), "Rhino SubD edge indices")?;
+    let mut edge_indices = HashMap::new();
+    ctx.reserve_map(&mut edge_indices, level.edges.len(), "Rhino SubD edge indices").map_err(SubdError::from)?;
     for (index, edge) in level.edges.iter().enumerate() {
         let index = u32::try_from(index)
             .map_err(|_| malformed(edge.base.source_offset, "SubD edge index overflow"))?;
