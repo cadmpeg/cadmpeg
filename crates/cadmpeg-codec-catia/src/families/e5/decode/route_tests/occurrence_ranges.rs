@@ -55,6 +55,28 @@ fn e5_boundary_nurbs_cache_refuses_before_copy() {
 }
 
 #[test]
+fn e5_intersection_context_copy_refuses_retained_limit() {
+    let sides = ["left", "right"].map(|name| cadmpeg_ir::geometry::IntcurveSupportSide {
+        surface: Some(SurfaceId::mint(format!("catia:test:surface#{name}"))
+            .expect("valid surface identity")),
+        pcurve: None,
+    });
+    let context = cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+        sides, [0.0, 1.0], std::array::from_fn(|_| Vec::new()),
+    ).expect("valid support context");
+    let refused = crate::test_support::with_retained_limit(0, |ctx|
+        crate::resource::copy_intcurve_support_context(ctx, &context,
+            "catia_e5_intersection_context"));
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_e5_intersection_context"));
+    let copied = crate::test_support::with_service_context(|ctx|
+        crate::resource::copy_intcurve_support_context(ctx, &context,
+            "catia_e5_intersection_context"))
+        .expect("service budget admits context copy");
+    assert_eq!(copied, context);
+}
+
+#[test]
 fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
     let range = [-f64::MAX, f64::MAX];
     assert!(parameter_range_agreement_tolerance(range, range).is_some());
