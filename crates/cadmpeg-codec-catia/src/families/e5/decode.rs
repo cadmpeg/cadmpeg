@@ -227,7 +227,7 @@ pub(in crate::families) fn try_decode_e5(
                 &mut annotations,
                 &id,
                 "e5_0d_03",
-                circle.pos as u64,
+                cadmpeg_core::decode::u64_from_index(circle.pos),
                 "circle_carrier",
                 Exactness::ByteExact));
             if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_e5_model_curves") {
@@ -248,7 +248,7 @@ pub(in crate::families) fn try_decode_e5(
                 &mut annotations,
                 &id,
                 "e5_0d_03",
-                surface.pos as u64,
+                cadmpeg_core::decode::u64_from_index(surface.pos),
                 "analytic_surface",
                 if matches!(
                     surface.geometry,
@@ -285,7 +285,7 @@ pub(in crate::families) fn try_decode_e5(
                 &mut annotations,
                 &surface_id,
                 "e5_0d_03",
-                jet.pos as u64,
+                cadmpeg_core::decode::u64_from_index(jet.pos),
                 "rolling_ball_jet_carrier",
                 Exactness::ByteExact));
             admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &surface_id, "geometry", "catia_annotation_field"));
@@ -305,7 +305,7 @@ pub(in crate::families) fn try_decode_e5(
                 &mut annotations,
                 &procedural_id,
                 "e5_0d_03",
-                jet.pos as u64,
+                cadmpeg_core::decode::u64_from_index(jet.pos),
                 "rolling_ball_jet_definition",
                 Exactness::ByteExact));
             admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &procedural_id, "surface", "catia_annotation_field"));

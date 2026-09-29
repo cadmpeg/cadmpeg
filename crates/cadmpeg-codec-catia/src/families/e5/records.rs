@@ -1001,10 +1001,10 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, PositiveLength,
 fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     match *bytes.get(at)? {
         0x38 => Some((u32_le_24(bytes, at + 1)?, at + 4)),
-        0x18 => Some((View::u16_le_at(bytes, at + 1)? as u32, at + 3)),
+        0x18 => Some((u32::from(View::u16_le_at(bytes, at + 1)?), at + 3)),
         0x10 => Some((u32::from(*bytes.get(at + 1)?) << 8, at + 2)),
-        0x08 => Some((*bytes.get(at + 1)? as u32, at + 2)),
-        byte if byte >= 0x80 => Some(((byte - 0x80) as u32, at + 1)),
+        0x08 => Some((u32::from(*bytes.get(at + 1)?), at + 2)),
+        byte if byte >= 0x80 => Some((u32::from(byte - 0x80), at + 1)),
         _ => None,
     }
 }
