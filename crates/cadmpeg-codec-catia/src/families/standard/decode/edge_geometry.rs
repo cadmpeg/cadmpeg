@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard carrier curves, pcurves, and analytic geometry.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::{
     annotate, cgm_source, circle_parameter_range_from_surface_branch, face_surface, ordered_range,
     point_on_nurbs_surface, rational_pcurve_arc, standard_id,
@@ -1345,7 +1347,7 @@ let BuildStandardEdgeCurveInputs { ir, annotations, bindings, surface_indices, b
         annotations,
         &id,
         "MainDataStream+SurfacicReps",
-        cadmpeg_core::decode::u64_from_index(support.pos),
+        u64_from_index(support.pos),
         "curve_support_60",
         match (&support.geometry, &geometry) {
             (_, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })) => Exactness::Unknown,
@@ -1551,7 +1553,7 @@ let BuildStandardEdgeCurveInputs { ir, annotations, bindings, surface_indices, b
                     annotations,
                     &procedural_id,
                     "MainDataStream+SurfacicReps",
-                    cadmpeg_core::decode::u64_from_index(support.pos),
+                    u64_from_index(support.pos),
                     "standard_surface_intersection",
                     Exactness::Derived,
                 )?;
@@ -2088,7 +2090,7 @@ pub(super) fn attach_standard_circles(
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
-            cadmpeg_core::decode::u64_from_index(support.pos),
+            u64_from_index(support.pos),
             "curve_support_60_circle",
             Exactness::ByteExact,
         )?;
@@ -2323,7 +2325,7 @@ pub(super) fn attach_standard_lines(
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
-            cadmpeg_core::decode::u64_from_index(support.pos),
+            u64_from_index(support.pos),
             "curve_support_60_line",
             Exactness::ByteExact,
         )?;

@@ -1,5 +1,7 @@
 //! Lower complete zero-entity endpoint relations into neutral B-rep topology.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::WorkBudget;
@@ -625,7 +627,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &point_ids[index],
                 "zero_entity_a9_03",
-                cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
+                u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
                 "endpoint_locus_point",
                 Exactness::Inferred
             ));
@@ -655,7 +657,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &vertex_ids[index],
                 "zero_entity_a9_03",
-                cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
+                u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
                 "endpoint_locus_vertex",
                 Exactness::Inferred
             ));
@@ -1237,7 +1239,7 @@ pub(super) fn transfer_closed_face_topology(
             annotations,
             &body_id,
             "zero_entity_a9_03",
-            cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.body_pos)),
+            u64_from_index(ownership_root.map_or(first_face.pos, |root| root.body_pos)),
             "topology_body",
             Exactness::Derived
         ));
@@ -1287,7 +1289,7 @@ pub(super) fn transfer_closed_face_topology(
             annotations,
             &region_id,
             "zero_entity_a9_03",
-            cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
+            u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
             "topology_region",
             Exactness::Derived
         ));
@@ -1333,7 +1335,7 @@ pub(super) fn transfer_closed_face_topology(
             annotations,
             &shell_id,
             "zero_entity_a9_03",
-            cadmpeg_core::decode::u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
+            u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
             "topology_shell",
             Exactness::Derived
         ));

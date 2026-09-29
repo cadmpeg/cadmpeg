@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of complete, typed CATIA formula programs to neutral parameters.
 
+use cadmpeg_core::decode::{u64_from_index};
+
+use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i32, truncate_f64_to_i64};
+
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -12,6 +16,9 @@ use cadmpeg_ir::{AnnotationBuilder, Annotations};
 
 use crate::native::CatiaNative;
 use crate::resource;
+
+const FORMULA_INTEGER_LOWER: f64 = -9_223_372_036_854_775_808.0;
+const FORMULA_INTEGER_UPPER: f64 = 9_223_372_036_854_775_808.0;
 
 pub(crate) fn transfer_parameters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -375,8 +382,8 @@ pub(crate) fn transfer_parameters(
                                                 cadmpeg_core::decode::ResourceDimension::Codec(
                                                     "catia_formula_output_dependencies",
                                                 ),
-                                                cadmpeg_core::decode::u64_from_index(0),
-                                                cadmpeg_core::decode::u64_from_index(1),
+                                                u64_from_index(0),
+                                                u64_from_index(1),
                                                 "catia_formula_output_dependencies",
                                             ),
                                         )
@@ -1200,8 +1207,8 @@ fn collect_legacy_parameters(
                                 cadmpeg_core::decode::ResourceDimension::Codec(
                                     "catia_legacy_formula_dependencies",
                                 ),
-                                cadmpeg_core::decode::u64_from_index(0),
-                                cadmpeg_core::decode::u64_from_index(1),
+                                u64_from_index(0),
+                                u64_from_index(1),
                                 "catia_legacy_formula_dependencies",
                             ),
                         )
@@ -1801,8 +1808,8 @@ fn relation_program_output_candidate(
                         cadmpeg_core::decode::ResourceDimension::Codec(
                             "catia_relation_program_output_dependencies",
                         ),
-                        cadmpeg_core::decode::u64_from_index(0),
-                        cadmpeg_core::decode::u64_from_index(1),
+                        u64_from_index(0),
+                        u64_from_index(1),
                         "catia_relation_program_output_dependencies",
                     ),
                 )
@@ -1975,15 +1982,15 @@ fn copy_design_parameter(
         .transpose()?;
     let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
     if !source.dependencies.is_empty() {
-        ctx.charge_collection_items(source.dependencies.len() as u64, operation)?;
+        ctx.charge_collection_items(u64_from_index(source.dependencies.len()), operation)?;
         dependencies
             .try_reserve(source.dependencies.len())
             .map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
                         cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                        cadmpeg_core::decode::u64_from_index(0),
-                        cadmpeg_core::decode::u64_from_index(source.dependencies.len()),
+                        u64_from_index(0),
+                        u64_from_index(source.dependencies.len()),
                         operation,
                     ),
                 )
@@ -2246,10 +2253,10 @@ impl EvaluatedFormulaScalar {
                     && self.integral() == Some(true)
                     && self
                         .known_value()
-                        .is_none_or(|value| value >= i64::MIN as f64)
+                        .is_none_or(|value| value >= FORMULA_INTEGER_LOWER)
                     && self
                         .known_value()
-                        .is_none_or(|value| value < -(i64::MIN as f64))
+                        .is_none_or(|value| value < FORMULA_INTEGER_UPPER)
             }
             FormulaParameterType::Boolean | FormulaParameterType::String => false,
         }
@@ -2412,12 +2419,10 @@ impl EvaluatedFormulaValue {
                 Some(value.get().fract() == 0.0),
                 Some(value.get()),
             )),
-            ParameterValue::Integer(value) => Self::Scalar(EvaluatedFormulaScalar::from_parts(
-                *value as f64,
-                FormulaDimension::SCALAR,
-                Some(true),
-                Some(*value as f64),
-            )),
+            ParameterValue::Integer(value) => Self::Scalar(match f64_from_i64(*value) {
+                Some(value) => EvaluatedFormulaScalar::from_parts(value, FormulaDimension::SCALAR, Some(true), Some(value)),
+                None => static_integral_result(0.0, FormulaDimension::SCALAR),
+            }),
             ParameterValue::Boolean(value) => Self::Boolean(EvaluatedFormulaBoolean::known(*value)),
             ParameterValue::String(_) => Self::String(EvaluatedFormulaString::unknown()),
         }
@@ -3142,7 +3147,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             {
                 return None;
             }
-            base.dimension().power(exponent_value as i32)?
+            base.dimension().power(truncate_f64_to_i32(exponent_value)?)?
         };
         let value = base.value().powf(exponent.value());
         let known_value = if self.evaluate {
@@ -3273,7 +3278,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                     if self.evaluate || (self.static_check && value.is_known() && needle.is_known())
                     {
                         let index = Self::search_string(value.value(), needle.value(), 0, true)?;
-                        finite_scalar(index as f64)?
+                        finite_scalar(f64_from_i64(index)?)?
                     } else {
                         static_integral_result(0.0, FormulaDimension::SCALAR)
                     },
@@ -3292,7 +3297,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                         if self.evaluate || (self.static_check && known) {
                             let index =
                                 Self::search_string(value.value(), needle.value(), start, true)?;
-                            finite_scalar(index as f64)?
+                            finite_scalar(f64_from_i64(index)?)?
                         } else {
                             static_integral_result(0.0, FormulaDimension::SCALAR)
                         },
@@ -3311,7 +3316,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                             start,
                             forward.value(),
                         )?;
-                        finite_scalar(index as f64)?
+                        finite_scalar(f64_from_i64(index)?)?
                     } else {
                         static_integral_result(0.0, FormulaDimension::SCALAR)
                     })
@@ -3370,12 +3375,12 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             return None;
         }
         if !self.evaluate {
-            return value
-                .known_value()
-                .and_then(|value| usize::try_from(value as i64).ok())
+            return value.known_value()
+                .and_then(truncate_f64_to_i64)
+                .and_then(|value| usize::try_from(value).ok())
                 .or(Some(0));
         }
-        usize::try_from(value.value() as i64).ok()
+        usize::try_from(truncate_f64_to_i64(value.value())?).ok()
     }
 
     fn string_boundary(value: &str, index: usize) -> Option<usize> {
@@ -3568,7 +3573,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             if digits.value() < 0.0 || digits.value() > f64::from(i32::MAX) {
                 return None;
             }
-            let quantum = unit_scale * 10.0_f64.powi(-(digits.value() as i32));
+            let quantum = unit_scale * 10.0_f64.powi(-(truncate_f64_to_i32(digits.value())?));
             let rounded = if quantum == 0.0 {
                 value.value()
             } else {
@@ -4090,7 +4095,7 @@ fn evaluate_formula_expression_with_mode_charged<'a>(
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
     evaluate: bool,
 ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
-    let source_bytes = cadmpeg_core::decode::u64_from_index(source.len());
+    let source_bytes = u64_from_index(source.len());
     ctx.charge_work(source_bytes, "catia_formula_expression_scan")?;
     FormulaExpressionParser {
         source,
@@ -4172,10 +4177,10 @@ fn typed_parameter_evaluation(
             ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(value)?)
         }
         FormulaParameterType::Integer => {
-            if value.fract() != 0.0 || value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
+            if value.fract() != 0.0 || value < FORMULA_INTEGER_LOWER || value >= FORMULA_INTEGER_UPPER {
                 return None;
             }
-            ParameterValue::Integer(value as i64)
+            ParameterValue::Integer(truncate_f64_to_i64(value)?)
         }
         FormulaParameterType::Boolean | FormulaParameterType::String => return None,
     };

@@ -2,6 +2,8 @@
 //!
 //! Recovers unmatched edge-row placements against serialized face coverage.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 type MissingEdgeDomainsOutput =
     Result<Option<(Vec<MeshFaceAssignmentDomain>, Vec<MeshEdgeRun>)>, CodecError>;
 
@@ -25,7 +27,7 @@ fn charge_collection_items(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(count);
+    let count = u64_from_index(count);
     ctx.charge_collection_items(count, operation)
 }
 
@@ -1049,10 +1051,10 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    let trim_count = cadmpeg_core::decode::u64_from_index(trims.len());
+    let trim_count = u64_from_index(trims.len());
     ctx.charge_collection_items(trim_count, "catia repeated edge face handles")?;
     for trim in &trims {
-        let handle_count = cadmpeg_core::decode::u64_from_index(trim.packet.handles().len());
+        let handle_count = u64_from_index(trim.packet.handles().len());
         ctx.charge_collection_items(handle_count, "catia repeated edge face handle set")?;
     }
     let mut face_handles = Vec::new();
@@ -2146,7 +2148,7 @@ pub(crate) fn bounded_oriented_trail_orders(
         if orders.len() > limit {
             return Ok(false);
         }
-        if used.count_ones() as usize == trails.len() {
+        if index_from_u32(used.count_ones()) == trails.len() {
             let order = ctx.copy_retained_slice(edges, "catia_oriented_trail_order_copy")?;
             ctx.push_vec(orders, order, "catia_oriented_trail_orders")?;
             return Ok(orders.len() <= limit);
@@ -2174,7 +2176,7 @@ pub(crate) fn bounded_oriented_trail_orders(
         Ok(true)
     }
 
-    if trails.len() > u64::BITS as usize {
+    if trails.len() > index_from_u32(u64::BITS) {
         return Ok(None);
     }
     let Some(edge_count) = trails
@@ -2254,7 +2256,7 @@ pub(crate) fn bounded_endpoint_cycle_orders(
     }
 
     if missing.is_empty()
-        || missing.len() > u64::BITS as usize
+        || missing.len() > index_from_u32(u64::BITS)
         || missing
             .iter()
             .any(|&edge| edge_candidates.get(edge).is_none_or(Vec::is_empty))
@@ -2445,7 +2447,7 @@ let GapSearchState { gap, offset, used, current_port, current_points, gap_placed
                         .4
                         .len()
                         .checked_mul(std::mem::size_of::<usize>())
-                        .map(cadmpeg_core::decode::u64_from_index)
+                        .map(u64_from_index)
                         .ok_or_else(|| {
                             self.ctx.refuse_codec_limit(
                                 "catia_gap_dead_state_points",
@@ -2485,7 +2487,7 @@ let GapWalkState { gap, offset, used, current_port, current_points, gap_placed_s
                     return Ok(None);
                 }
                 if gap == self.gaps.len() {
-                    if used.count_ones() as usize == self.missing.len() {
+                    if index_from_u32(used.count_ones()) == self.missing.len() {
                         self.assignments += 1;
                         let copy = self
                             .ctx
@@ -2647,7 +2649,7 @@ let GapWalkState { gap, offset, used, current_port, current_points, gap_placed_s
                                                     for &point in points.iter() {
                                                         if !next.contains(&point) {
                                                             let bytes =
-                                                            cadmpeg_core::decode::u64_from_index(
+                                                            u64_from_index(
                                                                 std::mem::size_of::<usize>(),
                                                             );
                                                             self.ctx.charge_retained(
@@ -2664,7 +2666,7 @@ let GapWalkState { gap, offset, used, current_port, current_points, gap_placed_s
                                                 }
                                             }
                                         }
-                                        let bytes = cadmpeg_core::decode::u64_from_index(
+                                        let bytes = u64_from_index(
                                             std::mem::size_of::<HashSet<usize>>(),
                                         );
                                         self.ctx
@@ -2709,7 +2711,7 @@ let EnumerateFaceInputs { face, gaps, cycle_lengths, missing, rows, fixed_comple
 
 
         let (edge_ports, corner_ports, endpoint_constraints, corner_points) = constraints;
-        if missing.len() > u64::BITS as usize {
+        if missing.len() > index_from_u32(u64::BITS) {
             return Ok(None);
         }
         let (edge_points, point_transitions) = endpoint_constraints.unzip();
@@ -2966,7 +2968,7 @@ let EnumerateFaceInputs { face, gaps, cycle_lengths, missing, rows, fixed_comple
             {
                 return None;
             }
-            if trails.len() > u64::BITS as usize {
+            if trails.len() > index_from_u32(u64::BITS) {
                 return None;
             }
             let mut trail_edges = Vec::new();
@@ -3098,7 +3100,7 @@ let EnumerateFaceInputs { face, gaps, cycle_lengths, missing, rows, fixed_comple
             .len()
             .checked_mul(std::mem::size_of::<usize>())
             .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
-            .map(cadmpeg_core::decode::u64_from_index)
+            .map(u64_from_index)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         ctx.charge_retained(bytes, operation)
     };

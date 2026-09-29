@@ -13,3 +13,5 @@ fn checked_circle(
         radius: cadmpeg_ir::scalar::PositiveLength::new(radius).expect("positive circle radius"),
     }
 }
+
+mod numeric_conversions;

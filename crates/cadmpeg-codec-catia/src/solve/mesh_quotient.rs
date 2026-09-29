@@ -2,6 +2,8 @@
 //!
 //! Closes vertex-coordinate quotients and enumerates face endpoint configurations.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 #[cfg(test)]
 use std::num::NonZeroUsize;
 
@@ -1955,7 +1957,7 @@ impl MeshQuotient {
                 }
                 if supported != *self.domains[start] {
                     ctx.charge_collection_items(
-                        supported.len() as u64,
+                        u64_from_index(supported.len()),
                         "catia_quotient_domain_update",
                     )?;
                     self.domains[start] = Arc::new(supported);
@@ -1998,7 +2000,7 @@ impl MeshQuotient {
             }
             if supported_starts != *self.domains[start] {
                 ctx.charge_collection_items(
-                    supported_starts.len() as u64,
+                    u64_from_index(supported_starts.len()),
                     "catia_quotient_domain_update",
                 )?;
                 self.domains[start] = Arc::new(supported_starts);
@@ -2011,7 +2013,7 @@ impl MeshQuotient {
             }
             if supported_ends != *self.domains[end] {
                 ctx.charge_collection_items(
-                    supported_ends.len() as u64,
+                    u64_from_index(supported_ends.len()),
                     "catia_quotient_domain_update",
                 )?;
                 self.domains[end] = Arc::new(supported_ends);
@@ -3361,7 +3363,7 @@ fn quotient_clone_refuses_retained_domains_and_member_nodes() {
     );
     for (limit, operation) in [
         (
-            std::mem::size_of::<usize>() as u64,
+            u64_from_index(std::mem::size_of::<usize>()),
             "catia_quotient_clone_domains",
         ),
         (
@@ -3463,7 +3465,7 @@ let DeferredGapFill { gaps, gap, at, target, used, previous_end, missing_edges, 
             walk_gaps(ctx, DeferredGapWalk { gaps, gap: gap + 1, used, missing_edges, missing_nodes, edge_candidates, quotient: &quotient, base_quotient, base_nodes, output, limit, budget })?;
             return Ok(());
         }
-        let Some(options) = (missing_edges.len() - used.count_ones() as usize).checked_mul(2)
+        let Some(options) = (missing_edges.len() - index_from_u32(used.count_ones())).checked_mul(2)
         else {
             return Ok(());
         };
@@ -3523,7 +3525,7 @@ let DeferredGapWalk { gaps, gap, used, missing_edges, missing_nodes, edge_candid
             return Ok(());
         }
         if gap == gaps.len() {
-            if used.count_ones() as usize != missing_edges.len() {
+            if index_from_u32(used.count_ones()) != missing_edges.len() {
                 return Ok(());
             }
             let mut affected_edges = HashSet::new();
@@ -3555,7 +3557,7 @@ let DeferredGapWalk { gaps, gap, used, missing_edges, missing_nodes, edge_candid
             }
             return Ok(());
         }
-        let remaining_edges = missing_edges.len() - used.count_ones() as usize;
+        let remaining_edges = missing_edges.len() - index_from_u32(used.count_ones());
         let remaining_gaps = gaps.len() - gap - 1;
         let minimum = 1;
         let Some(available_edges) = remaining_edges.checked_sub(remaining_gaps) else {
@@ -3577,7 +3579,7 @@ let DeferredGapWalk { gaps, gap, used, missing_edges, missing_nodes, edge_candid
         Ok(())
     }
 
-    if domain.missing_edges.len() > u64::BITS as usize {
+    if domain.missing_edges.len() > index_from_u32(u64::BITS) {
         return Ok(None);
     }
     let mut gaps = Vec::new();
@@ -4446,7 +4448,7 @@ pub(super) fn bounded_unordered_cycle_assignments(
         }
     }
 
-    if edges.is_empty() || edges.len() > u64::BITS as usize {
+    if edges.is_empty() || edges.len() > index_from_u32(u64::BITS) {
         return Ok(None);
     }
     let edge_count = edges.len();
@@ -4951,7 +4953,7 @@ fn admit_orientation_option(
     directions: &[Vec<bool>],
     quotient: &MeshQuotient,
 ) -> Result<bool, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(quotient.union.len());
+    let work = u64_from_index(quotient.union.len());
     ctx.charge_work(work, "catia_orientation_dedup_work")?;
     let fingerprint = orientation_fingerprint(quotient, directions);
     if let Some(indices) = seen.get(&fingerprint) {
@@ -5334,7 +5336,7 @@ fn deduplicate_mesh_quotient_assignments(
         let mut best = None;
         for values in [&forward, &reversed] {
             for start in 0..values.len() {
-                let work = cadmpeg_core::decode::u64_from_index(values.len());
+                let work = u64_from_index(values.len());
                 ctx.charge_work(work, "catia_mesh_quotient_cycle_compare")?;
                 let candidate = values[start..].iter().chain(&values[..start]);
                 if best.is_none_or(|(best_values, best_start): (&Vec<_>, usize)| {
@@ -8853,7 +8855,7 @@ let ResolveSingletonMeshEndpointCandidatesInputs { edge_rows, vertex_points, edg
                 .try_fold(row_bytes, |total, row| {
                     total.checked_add(row.len().checked_mul(std::mem::size_of::<usize>())?)
                 })
-                .map(cadmpeg_core::decode::u64_from_index)
+                .map(u64_from_index)
             else {
                 return Err(ctx.refuse_codec_limit(
                     "catia_singleton_signature_retained",

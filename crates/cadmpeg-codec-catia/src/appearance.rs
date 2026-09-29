@@ -553,7 +553,7 @@ mod tests {
                 let ValueField::Inline { bytes, .. } = field else {
                     panic!("appearance fixture requires inline fields");
                 };
-                [0x8e, bytes.code(), 0x84]
+                [0x8e, bytes.code().expect("validated inline bytes"), 0x84]
                     .into_iter()
                     .chain(bytes.as_slice().iter().copied())
             })

@@ -1,5 +1,7 @@
 //! Evidence-preserving gauge quotient for standard mesh candidates.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -1202,7 +1204,7 @@ fn mesh_topology_gauge_key(
     let mut key = Vec::new();
     ctx.push_vec(
         &mut key,
-        cadmpeg_core::decode::u64_from_index(topology.vertex_points.len()),
+        u64_from_index(topology.vertex_points.len()),
         "catia_gauge_topology_key",
     )?;
     for point in &topology.vertex_points {
@@ -1212,24 +1214,24 @@ fn mesh_topology_gauge_key(
     }
     ctx.push_vec(
         &mut key,
-        cadmpeg_core::decode::u64_from_index(topology.logical_vertex_count),
+        u64_from_index(topology.logical_vertex_count),
         "catia_gauge_topology_key",
     )?;
     ctx.push_vec(
         &mut key,
-        cadmpeg_core::decode::u64_from_index(topology.edge_rows.len()),
+        u64_from_index(topology.edge_rows.len()),
         "catia_gauge_topology_key",
     )?;
     for row in &topology.edge_rows {
         ctx.push_vec(&mut key, u64::from(row.kind), "catia_gauge_topology_key")?;
         ctx.push_vec(
             &mut key,
-            row.boundary_layout as u64,
+            u64::from(row.boundary_layout),
             "catia_gauge_topology_key",
         )?;
         ctx.push_vec(
             &mut key,
-            cadmpeg_core::decode::u64_from_index(row.handles.len()),
+            u64_from_index(row.handles.len()),
             "catia_gauge_topology_key",
         )?;
         for &handle in &row.handles {
@@ -1238,25 +1240,25 @@ fn mesh_topology_gauge_key(
     }
     ctx.push_vec(
         &mut key,
-        cadmpeg_core::decode::u64_from_index(topology.faces.len()),
+        u64_from_index(topology.faces.len()),
         "catia_gauge_topology_key",
     )?;
     for face in &topology.faces {
         ctx.push_vec(
             &mut key,
-            cadmpeg_core::decode::u64_from_index(face.boundaries.len()),
+            u64_from_index(face.boundaries.len()),
             "catia_gauge_topology_key",
         )?;
         for boundary in &face.boundaries {
             ctx.push_vec(
                 &mut key,
-                cadmpeg_core::decode::u64_from_index(boundary.coedges.len()),
+                u64_from_index(boundary.coedges.len()),
                 "catia_gauge_topology_key",
             )?;
             for coedge in &boundary.coedges {
                 ctx.push_vec(
                     &mut key,
-                    cadmpeg_core::decode::u64_from_index(coedge.edge_row),
+                    u64_from_index(coedge.edge_row),
                     "catia_gauge_topology_key",
                 )?;
                 ctx.push_vec(
@@ -1266,12 +1268,12 @@ fn mesh_topology_gauge_key(
                 )?;
                 ctx.push_vec(
                     &mut key,
-                    cadmpeg_core::decode::u64_from_index(coedge.start_vertex),
+                    u64_from_index(coedge.start_vertex),
                     "catia_gauge_topology_key",
                 )?;
                 ctx.push_vec(
                     &mut key,
-                    cadmpeg_core::decode::u64_from_index(coedge.end_vertex),
+                    u64_from_index(coedge.end_vertex),
                     "catia_gauge_topology_key",
                 )?;
             }

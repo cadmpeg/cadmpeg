@@ -2,6 +2,8 @@
 //!
 //! Reconstructs face/edge incidence from serialized boundary domains.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 
@@ -38,7 +40,7 @@ fn charge_collection_items(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(count);
+    let count = u64_from_index(count);
     ctx.charge_collection_items(count, operation)
 }
 
@@ -993,12 +995,12 @@ struct PreparedFaceFactors {
 
 fn full_configuration_mask(ctx: &DecodeContext<'_>, len: usize) -> Result<Vec<u64>, CodecError> {
     let mut mask = ctx.alloc_filled(
-        len.div_ceil(u64::BITS as usize),
+        len.div_ceil(index_from_u32(u64::BITS)),
         u64::MAX,
         "catia_face_config_full_mask",
     )?;
     if let Some(last) = mask.last_mut() {
-        let remainder = len % u64::BITS as usize;
+        let remainder = len % index_from_u32(u64::BITS);
         if remainder != 0 {
             *last = (1 << remainder) - 1;
         }
@@ -1026,8 +1028,8 @@ fn set_mask_bit<K: Eq + std::hash::Hash>(
 }
 
 fn configuration_mask_contains(mask: &[u64], index: usize) -> bool {
-    mask.get(index / u64::BITS as usize)
-        .is_some_and(|word| word & (1 << (index % u64::BITS as usize)) != 0)
+    mask.get(index / index_from_u32(u64::BITS))
+        .is_some_and(|word| word & (1 << (index % index_from_u32(u64::BITS))) != 0)
 }
 
 impl FaceFactorGraph {
@@ -1058,15 +1060,15 @@ impl FaceFactorGraph {
             "catia face factor right indexes",
         )?;
         for domain in domains {
-            let word_count = domain.len().div_ceil(u64::BITS as usize);
+            let word_count = domain.len().div_ceil(index_from_u32(u64::BITS));
             let mut present = HashMap::<usize, Vec<u64>>::new();
             let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
             for (configuration, candidate) in domain.iter().enumerate() {
                 if !budget.charge_by(work_units(candidate.len())) {
                     return Ok(None);
                 }
-                let word = configuration / u64::BITS as usize;
-                let bit = 1 << (configuration % u64::BITS as usize);
+                let word = configuration / index_from_u32(u64::BITS);
+                let bit = 1 << (configuration % index_from_u32(u64::BITS));
                 for &(edge, pair) in candidate {
                     set_mask_bit(
                         ctx,
@@ -1098,7 +1100,7 @@ impl FaceFactorGraph {
                 if left == right || edge_sets[left].is_disjoint(&edge_sets[right]) {
                     continue;
                 }
-                let word_count = domains[right].len().div_ceil(u64::BITS as usize);
+                let word_count = domains[right].len().div_ceil(index_from_u32(u64::BITS));
                 let (present, matching) = &right_indexes[right];
                 let mut supports = Vec::new();
                 ctx.reserve_vec(
@@ -1194,8 +1196,8 @@ impl FaceFactorGraph {
                 {
                     continue;
                 }
-                active[arc.left][configuration / u64::BITS as usize] &=
-                    !(1 << (configuration % u64::BITS as usize));
+                active[arc.left][configuration / index_from_u32(u64::BITS)] &=
+                    !(1 << (configuration % index_from_u32(u64::BITS)));
                 changed = true;
             }
             if !changed {
@@ -1270,8 +1272,8 @@ impl PreparedFaceFactors {
                     {
                         continue;
                     }
-                    active[factor][configuration / u64::BITS as usize] &=
-                        !(1 << (configuration % u64::BITS as usize));
+                    active[factor][configuration / index_from_u32(u64::BITS)] &=
+                        !(1 << (configuration % index_from_u32(u64::BITS)));
                 }
                 if active[factor].iter().all(|word| *word == 0) {
                     self.active = Some(checkpoint.active);
@@ -1366,15 +1368,15 @@ fn prune_face_configuration_support(
         }
     }
     while let Some((left, right)) = queue.pop_front() {
-        let word_count = domains[right].len().div_ceil(u64::BITS as usize);
+        let word_count = domains[right].len().div_ceil(index_from_u32(u64::BITS));
         let mut present = HashMap::<usize, Vec<u64>>::new();
         let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
         for (configuration, candidate) in domains[right].iter().enumerate() {
             if !budget.charge_by(work_units(candidate.len())) {
                 return Ok(true);
             }
-            let word = configuration / u64::BITS as usize;
-            let bit = 1 << (configuration % u64::BITS as usize);
+            let word = configuration / index_from_u32(u64::BITS);
+            let bit = 1 << (configuration % index_from_u32(u64::BITS));
             for &(edge, pair) in candidate {
                 set_mask_bit(
                     ctx,
@@ -1416,7 +1418,7 @@ fn prune_face_configuration_support(
             }
             let mut viable = ctx.alloc_filled(word_count, u64::MAX, "catia_face_config_viable")?;
             if let Some(last) = viable.last_mut() {
-                let remainder = domains[right].len() % u64::BITS as usize;
+                let remainder = domains[right].len() % index_from_u32(u64::BITS);
                 if remainder != 0 {
                     *last = (1 << remainder) - 1;
                 }
@@ -1492,14 +1494,14 @@ fn prune_face_configuration_singleton_support(
         order.sort_unstable_by_key(|domain| {
             active[*domain]
                 .iter()
-                .map(|word| word.count_ones() as usize)
+                .map(|word| index_from_u32(word.count_ones()))
                 .sum::<usize>()
         });
         for domain in order {
             let mut domain_changed = false;
             let active_count = active[domain]
                 .iter()
-                .map(|word| word.count_ones() as usize)
+                .map(|word| index_from_u32(word.count_ones()))
                 .sum::<usize>();
             if active_count <= 1 {
                 continue;
@@ -1522,13 +1524,13 @@ fn prune_face_configuration_singleton_support(
                     trial.push(ctx.copy_slice(mask, "catia face configuration trial masks")?);
                 }
                 trial[domain].fill(0);
-                trial[domain][configuration / u64::BITS as usize] =
-                    1 << (configuration % u64::BITS as usize);
+                trial[domain][configuration / index_from_u32(u64::BITS)] =
+                    1 << (configuration % index_from_u32(u64::BITS));
                 match graph.propagate_from(ctx, domain, &mut trial, budget)? {
                     Some(true) => {}
                     Some(false) => {
-                        active[domain][configuration / u64::BITS as usize] &=
-                            !(1 << (configuration % u64::BITS as usize));
+                        active[domain][configuration / index_from_u32(u64::BITS)] &=
+                            !(1 << (configuration % index_from_u32(u64::BITS)));
                         changed = true;
                         domain_changed = true;
                     }

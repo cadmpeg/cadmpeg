@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! E5-stream decode route: analytic carriers, plane fitting, and topology transfer.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 type E5PcurveLiftOutput =
     Result<Option<(PcurveGeometry, [f64; 2], [Point3; 2])>, cadmpeg_core::CodecError>;
 type E5CurvePlans<'a> = (
@@ -227,7 +229,7 @@ pub(in crate::families) fn try_decode_e5(
                 &mut annotations,
                 &id,
                 "e5_0d_03",
-                cadmpeg_core::decode::u64_from_index(circle.pos),
+                u64_from_index(circle.pos),
                 "circle_carrier",
                 Exactness::ByteExact));
             if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_e5_model_curves") {
@@ -248,7 +250,7 @@ pub(in crate::families) fn try_decode_e5(
                 &mut annotations,
                 &id,
                 "e5_0d_03",
-                cadmpeg_core::decode::u64_from_index(surface.pos),
+                u64_from_index(surface.pos),
                 "analytic_surface",
                 if matches!(
                     surface.geometry,
@@ -285,7 +287,7 @@ pub(in crate::families) fn try_decode_e5(
                 &mut annotations,
                 &surface_id,
                 "e5_0d_03",
-                cadmpeg_core::decode::u64_from_index(jet.pos),
+                u64_from_index(jet.pos),
                 "rolling_ball_jet_carrier",
                 Exactness::ByteExact));
             admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &surface_id, "geometry", "catia_annotation_field"));
@@ -305,7 +307,7 @@ pub(in crate::families) fn try_decode_e5(
                 &mut annotations,
                 &procedural_id,
                 "e5_0d_03",
-                cadmpeg_core::decode::u64_from_index(jet.pos),
+                u64_from_index(jet.pos),
                 "rolling_ball_jet_definition",
                 Exactness::ByteExact));
             admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &procedural_id, "surface", "catia_annotation_field"));
@@ -3020,7 +3022,7 @@ fn e5_lift_plane_nurbs(
             let bytes = points
                 .len()
                 .checked_mul(std::mem::size_of::<FinitePoint3>())
-                .map(cadmpeg_core::decode::u64_from_index)
+                .map(u64_from_index)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             ctx.charge_retained(bytes, operation)?;
             let Some(points) = ctx.collect_options(points.iter().copied().map(lift), operation)?
@@ -3033,7 +3035,7 @@ fn e5_lift_plane_nurbs(
             let bytes = points
                 .len()
                 .checked_mul(std::mem::size_of::<WeightedPole3<FinitePoint3>>())
-                .map(cadmpeg_core::decode::u64_from_index)
+                .map(u64_from_index)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             ctx.charge_retained(bytes, operation)?;
             let Some(points) = ctx.collect_options(

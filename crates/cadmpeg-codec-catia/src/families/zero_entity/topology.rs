@@ -1,5 +1,7 @@
 //! Endpoint relations derived from resolved zero-entity support occurrences.
 
+use cadmpeg_core::convert::{truncate_f64_to_i64};
+
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
@@ -521,9 +523,9 @@ fn selected_radial_matches(
 
 fn endpoint_cell(point: FinitePoint3) -> Option<[i64; 3]> {
     Some([
-        cadmpeg_core::convert::truncate_f64_to_i64((point.x / MODEL_POINT_TOLERANCE).floor())?,
-        cadmpeg_core::convert::truncate_f64_to_i64((point.y / MODEL_POINT_TOLERANCE).floor())?,
-        cadmpeg_core::convert::truncate_f64_to_i64((point.z / MODEL_POINT_TOLERANCE).floor())?,
+        truncate_f64_to_i64((point.x / MODEL_POINT_TOLERANCE).floor())?,
+        truncate_f64_to_i64((point.y / MODEL_POINT_TOLERANCE).floor())?,
+        truncate_f64_to_i64((point.z / MODEL_POINT_TOLERANCE).floor())?,
     ])
 }
 
@@ -579,6 +581,28 @@ mod tests {
         let endpoints = [Point3::new(-f64::MAX, 0.0, 0.0); 2];
         let occurrences = [occurrence(1, 1, endpoints, endpoints[0])];
         let result = crate::test_support::with_service_context(|ctx| super::endpoint_match_graph(ctx, &occurrences, None)).expect("service budget");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn endpoint_locus_refuses_positive_spatial_overflow() {
+        let endpoints = [finite(Point3::new(f64::MAX, 0.0, 0.0)); 2];
+        let pairs = [super::ZeroEntityEndpointPairCandidate {
+            face_record_ordinals: [1, 2], support_record_ordinals: [1, 2],
+            model_endpoints: endpoints, model_midpoint: endpoints[0],
+        }];
+        let result = crate::test_support::with_service_context(|ctx| super::endpoint_locus_candidates_inner(ctx, &pairs, None)).expect("service budget");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn endpoint_locus_refuses_negative_spatial_overflow() {
+        let endpoints = [finite(Point3::new(-f64::MAX, 0.0, 0.0)); 2];
+        let pairs = [super::ZeroEntityEndpointPairCandidate {
+            face_record_ordinals: [1, 2], support_record_ordinals: [1, 2],
+            model_endpoints: endpoints, model_midpoint: endpoints[0],
+        }];
+        let result = crate::test_support::with_service_context(|ctx| super::endpoint_locus_candidates_inner(ctx, &pairs, None)).expect("service budget");
         assert!(result.is_none());
     }
 
