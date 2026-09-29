@@ -139,6 +139,133 @@ fn depdb_curve_scalar_cache_refuses_before_unique_image_growth() {
     ));
 }
 
+fn scalar_lane_with_limits(
+    body: &[u8],
+    type_byte: u8,
+    max_collection_items: u64,
+    max_retained_bytes: u64,
+) -> Result<super::super::CurveScalarLane, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    policy.limits.max_retained_bytes = max_retained_bytes;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(body, &arena, &policy).expect("root input is admitted");
+    super::super::curve_scalar_lane(&ctx, body, type_byte, &crate::scalar::ScalarCache::default())
+}
+
+#[test]
+fn curve_parameter_references_refuse_before_vector_growth() {
+    let body = [0xf7, 1];
+    assert_eq!(
+        scalar_lane_with_limits(&body, 0, 3, 100)
+            .expect("service limits admit reference")
+            .references.len(),
+        1
+    );
+    let error = scalar_lane_with_limits(&body, 0, 2, 100)
+        .expect_err("reference follows two claim slots");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo curve parameter references"));
+}
+
+#[test]
+fn curve_parameter_scalars_refuse_before_vector_growth() {
+    assert_eq!(
+        scalar_lane_with_limits(&[0x0e], 8, 2, 100)
+            .expect("service limits admit scalar")
+            .scalar_tokens.len(),
+        1
+    );
+    let error = scalar_lane_with_limits(&[0x0e], 8, 1, 100)
+        .expect_err("scalar follows one claim slot");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo curve parameter scalars"));
+}
+
+#[test]
+fn curve_scalar_raw_token_refuses_before_copy() {
+    assert_eq!(
+        scalar_lane_with_limits(&[0x0e], 8, 2, 1)
+            .expect("one raw byte is admitted")
+            .scalar_tokens[0].raw,
+        [0x0e]
+    );
+    let error = scalar_lane_with_limits(&[0x0e], 8, 2, 0)
+        .expect_err("one raw byte needs retained admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo curve scalar raw token"));
+}
+
+#[test]
+fn curve_zero_raw_token_refuses_before_copy() {
+    assert_eq!(
+        scalar_lane_with_limits(&[0x18], 0, 2, 1)
+            .expect("one zero byte is admitted")
+            .scalar_tokens[0].raw,
+        [0x18]
+    );
+    let error = scalar_lane_with_limits(&[0x18], 0, 2, 0)
+        .expect_err("one zero byte needs retained admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo curve zero raw token"));
+}
+
+#[test]
+fn curve_opaque_spans_refuse_before_vector_growth() {
+    assert_eq!(
+        scalar_lane_with_limits(&[0xff], 0, 2, 1)
+            .expect("one opaque span is admitted")
+            .opaque_spans.len(),
+        1
+    );
+    let error = scalar_lane_with_limits(&[0xff], 0, 1, 1)
+        .expect_err("opaque span follows one claim slot");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo curve opaque spans"));
+}
+
+#[test]
+fn curve_opaque_raw_span_refuses_before_copy() {
+    assert_eq!(
+        scalar_lane_with_limits(&[0xff], 0, 2, 1)
+            .expect("one opaque byte is admitted")
+            .opaque_spans[0].raw,
+        [0xff]
+    );
+    let error = scalar_lane_with_limits(&[0xff], 0, 2, 0)
+        .expect_err("one opaque byte needs retained admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo curve opaque raw span"));
+}
+
+#[test]
+fn curve_parameter_records_refuse_before_vector_growth() {
+    let payload = b"topol_ref_data\0\x07\x08\x04\x01\xf6\xff\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3";
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("root input is admitted");
+        super::super::parameter_records_with_face_ids(&ctx, payload, None)
+    };
+    let admitted = (1..100)
+        .find(|&limit| run(limit).is_ok())
+        .expect("service profile admits one row");
+    assert_eq!(run(admitted).expect("row is admitted").len(), 1);
+    let error = run(admitted - 1).expect_err("last collection item is the record");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo curve parameter records"));
+}
+
 const ONE_DEPDB_CURVE_ROW: &[u8] = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
 
 fn depdb_rows_with_limit(limit: u64) -> Result<Vec<super::super::DepdbCurveRow>, CodecError> {

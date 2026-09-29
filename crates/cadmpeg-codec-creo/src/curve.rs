@@ -6254,6 +6254,7 @@ fn curve_scalar_lane(
     while cursor < body.len() {
         if body[cursor] == psb::token::ENTITY_REF {
             if let Ok((reference, next)) = reference_id(body, cursor + 1) {
+                ctx.try_reserve_items(&mut references, 1, "creo curve parameter references")?;
                 references.push(CurveParameterReference {
                     entity_id: reference,
                     offset: cursor,
@@ -6269,9 +6270,11 @@ fn curve_scalar_lane(
             && matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08)
             && scalars.len() < 8
         {
+            let raw = ctx.copy_retained(&body[cursor..cursor + 1], "creo curve zero raw token")?;
+            ctx.try_reserve_items(&mut scalars, 1, "creo curve parameter scalars")?;
             scalars.push(CurveParameterScalar {
                 value: 0.0,
-                raw: vec![0x18],
+                raw,
                 offset: cursor,
             });
             claimed[cursor] = true;
@@ -6284,9 +6287,11 @@ fn curve_scalar_lane(
             scalar::decode_in_row_lane(body, cursor, cache)
         };
         if let Some((value, next)) = decoded {
+            let raw = ctx.copy_retained(&body[cursor..next], "creo curve scalar raw token")?;
+            ctx.try_reserve_items(&mut scalars, 1, "creo curve parameter scalars")?;
             scalars.push(CurveParameterScalar {
                 value,
-                raw: body[cursor..next].to_vec(),
+                raw,
                 offset: cursor,
             });
             claimed[cursor..next].fill(true);
@@ -6306,8 +6311,10 @@ fn curve_scalar_lane(
         while cursor < body.len() && !claimed[cursor] {
             cursor += 1;
         }
+        let raw = ctx.copy_retained(&body[start..cursor], "creo curve opaque raw span")?;
+        ctx.try_reserve_items(&mut opaque_spans, 1, "creo curve opaque spans")?;
         opaque_spans.push(CurveParameterOpaqueSpan {
-            raw: body[start..cursor].to_vec(),
+            raw,
             offset: start,
         });
     }
@@ -6361,6 +6368,7 @@ pub(crate) fn parameter_records_with_face_ids(
             references,
             opaque_spans,
         } = curve_scalar_lane(ctx, &body, type_byte, &cache)?;
+        ctx.try_reserve_items(&mut records, 1, "creo curve parameter records")?;
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,
