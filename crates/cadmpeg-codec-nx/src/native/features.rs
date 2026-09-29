@@ -5775,47 +5775,64 @@ pub(super) fn feature_datum_csys_constructions(
     let indexed = container.indexed_om_sections(ctx)?;
     let inputs = feature_input_blocks(ctx, container)?;
     let mut constructions = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(field) = crate::om::datum_csys::datum_csys_references(record.payload_view())
             else {
                 return;
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let input_prefixes = inputs
-                .iter()
-                .filter(|input| input.operation_label == operation_label)
-                .filter_map(|input| {
-                    input
-                        .data_block
-                        .rsplit_once(":block#")
-                        .map(|(prefix, _)| prefix)
-                })
-                .collect::<BTreeSet<_>>();
-            let mut input_prefixes = input_prefixes.into_iter();
-            let (Some(input_prefix), None) = (input_prefixes.next(), input_prefixes.next()) else {
-                return;
-            };
-            let Some(frame) = field.relocate(entry_offset).and_then(|field| {
-                field.resolve(|index| {
-                    let data_block = unique_offset_data_block(&indexed, index)?;
-                    (data_block.rsplit_once(":block#")?.0 == input_prefix).then_some(data_block)
-                })
-            }) else {
-                return;
-            };
-            constructions.push(FeatureDatumCsysConstruction {
-                id: format!(
-                    "nx:feature-history:datum-csys-construction#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label,
-                frame,
-            });
+            let result = (|| -> Result<(), CodecError> {
+                let operation_label = format_feature_history_id(
+                    ctx, "operation-label", section_key, operation_ordinal, None)?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(inputs.len()),
+                    "resolve NX datum CSYS input prefix")?;
+                let mut input_prefix = None;
+                for input in &inputs {
+                    if input.operation_label != operation_label {
+                        continue;
+                    }
+                    let Some((prefix, _)) = input.data_block.rsplit_once(":block#") else {
+                        continue;
+                    };
+                    match input_prefix {
+                        None => input_prefix = Some(prefix),
+                        Some(existing) if existing == prefix => {},
+                        Some(_) => return Ok(()),
+                    }
+                }
+                let Some(input_prefix) = input_prefix else { return Ok(()); };
+                let Some(field) = field.relocate(entry_offset) else { return Ok(()); };
+                let Some(frame) = field.resolve(|index| {
+                    let Some(data_block) = charged_unique_offset_data_block(ctx, &indexed, index)?
+                    else { return Ok(None); };
+                    Ok((data_block.rsplit_once(":block#").map(|(prefix, _)| prefix)
+                        == Some(input_prefix)).then_some(data_block))
+                })? else { return Ok(()); };
+                let id = format_feature_history_id(ctx, "datum-csys-construction",
+                    section_key, operation_ordinal, None)?;
+                ctx.charge_collection_items(1, "NX datum CSYS constructions")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureDatumCsysConstruction>()),
+                    "NX datum CSYS constructions")?;
+                constructions.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX datum CSYS constructions", 0, 1))?;
+                constructions.push(FeatureDatumCsysConstruction { id, operation_label, frame });
+                Ok(())
+            })();
+            if let Err(error) = result {
+                failure = Some(error);
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(constructions)
 }
 
