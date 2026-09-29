@@ -118,7 +118,7 @@ fn resolve_uri<'a>(
         let mut member = String::new();
         member
             .try_reserve_exact(base_member.len())
-            .map_err(|_| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_zip_uri_member"), 0, 1, "step_zip_uri_member")))?;
         member.push_str(base_member);
         return Ok(ReferenceTarget::Internal {
             member,
@@ -160,7 +160,7 @@ fn resolve_uri<'a>(
     let mut member = String::new();
     member
         .try_reserve_exact(member_len)
-        .map_err(|_| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_zip_uri_member"), 0, 1, "step_zip_uri_member")))?;
     for (index, component) in components.iter().enumerate() {
         if index != 0 {
             member.push('/');
@@ -184,7 +184,7 @@ fn push_component<'a>(
     bytes.grow(u64_from_index(std::mem::size_of::<&str>()))?;
     components
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_zip_uri_components", 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_zip_uri_components"), 0, 1, "step_zip_uri_components")))?;
     components.push(component);
     Ok(())
 }
@@ -266,10 +266,10 @@ fn push_reference_note(
     ctx.charge_retained(u64_from_index(len), "step_zip_reference_note")?;
     notes
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_zip_reference_notes", 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_zip_reference_notes"), 0, 1, "step_zip_reference_notes")))?;
     let mut note = String::new();
     note.try_reserve_exact(len)
-        .map_err(|_| ctx.refuse_codec_limit("step_zip_reference_note", 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_zip_reference_note"), 0, 1, "step_zip_reference_note")))?;
     note.push_str(prefix);
     note.push(marker);
     let id = match name {

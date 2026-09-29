@@ -25,7 +25,7 @@ fn copy_decode_grid<T: Copy>(
     let mut copied = Vec::new();
     copied
         .try_reserve_exact(rows.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(rows.len())))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(rows.len()), operation)))?;
     for row in rows {
         copied.push(super::copy_decode_slice(row, ctx, operation)?);
     }

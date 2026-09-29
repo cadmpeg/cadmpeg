@@ -640,8 +640,7 @@ pub(super) fn nurbs_isocurve(
             .and_then(|total| total.checked_add(rational_count))
             .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_items", u64::MAX, u64::MAX))?;
     ctx.charge_collection_items(
-        u64::try_from(items)
-            .map_err(|_| ctx.refuse_codec_limit("catia_b5_isocurve_items", u64::MAX, u64::MAX))?,
+        cadmpeg_core::decode::u64_from_index(items),
         "catia_b5_isocurve_items",
     )?;
     let retained_bytes = knots
@@ -654,7 +653,7 @@ pub(super) fn nurbs_isocurve(
         .and_then(|bytes| {
             bytes.checked_add(rational_count.checked_mul(std::mem::size_of::<f64>())?)
         })
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_retained", u64::MAX, u64::MAX))?;
     ctx.charge_retained(retained_bytes, "catia_b5_isocurve_retained")?;
     let temporary_items = fixed_basis
@@ -662,7 +661,7 @@ pub(super) fn nurbs_isocurve(
         .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_temporary", u64::MAX, u64::MAX))?;
     let temporary_bytes = temporary_items
         .checked_mul(std::mem::size_of::<[f64; 4]>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_temporary", u64::MAX, u64::MAX))?;
     let _temporary = ctx.reserve_scoped(temporary_bytes, "catia_b5_isocurve_temporary")?;
     cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed.0, fixed.1).map_err(Into::into)

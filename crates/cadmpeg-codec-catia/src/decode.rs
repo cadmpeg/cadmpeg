@@ -229,9 +229,7 @@ fn finish_decode(
         resource::push(ctx, &mut report.losses, note, "catia_lane_refusal_loss")?;
     }
     ctx.admit_entities(
-        u64::try_from(ir.model.entity_count()).map_err(|_| {
-            ctx.refuse_codec_limit("count CATIA route entities", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;

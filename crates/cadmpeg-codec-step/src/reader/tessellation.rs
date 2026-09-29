@@ -759,7 +759,7 @@ pub(super) fn decode(
         ir.model
             .tessellations
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_tessellation_mesh_list", 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_mesh_list"), 0, 1, "step_tessellation_mesh_list")))?;
         ir.model
             .tessellations
             .push(mesh.with_body(body).with_source_object(source_object));
@@ -1071,7 +1071,7 @@ fn insert_claim(
         )?;
         claims
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_tessellation_claims", 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_claims"), 0, 1, "step_tessellation_claims")))?;
         claims.insert(id);
     }
     Ok(())
@@ -1136,7 +1136,7 @@ fn push_placement(
     let values = placements.entry(item).or_default();
     values
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_tessellation_placements", 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_placements"), 0, 1, "step_tessellation_placements")))?;
     values.push(placement);
     Ok(())
 }
@@ -1266,11 +1266,7 @@ fn product_linked_representations<'a>(
         temporary_collection::<u64>(ctx, linked.len(), "step_tessellation_product_pending")?;
     let mut pending = Vec::new();
     pending.try_reserve_exact(linked.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "step_tessellation_product_pending",
-            0,
-            u64_from_index(linked.len()),
-        )
+        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_product_pending"), 0, u64_from_index(linked.len()), "step_tessellation_product_pending"))
     })?;
     pending.extend(linked.iter().copied());
     while let Some(representation) = pending.pop() {
@@ -1289,7 +1285,7 @@ fn product_linked_representations<'a>(
                     "step_tessellation_product_pending",
                 )?)?;
                 pending.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("step_tessellation_product_pending", 0, 1)
+                    cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_product_pending"), 0, 1, "step_tessellation_product_pending"))
                 })?;
                 pending.push(related);
             }
@@ -1644,13 +1640,13 @@ fn push_loss(
     ctx.charge_retained(retained_bytes, "step_tessellation_loss_notes")?;
     losses
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_loss_notes"), 0, 1, "step_tessellation_loss_notes")))?;
     let message_len = usize::try_from(message_bytes).map_err(|_| {
         ctx.refuse_codec_limit("step_tessellation_loss_notes", u64::MAX - 1, u64::MAX)
     })?;
     let mut text = String::new();
     text.try_reserve_exact(message_len)
-        .map_err(|_| ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, message_bytes))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_loss_notes"), 0, message_bytes, "step_tessellation_loss_notes")))?;
     std::fmt::write(&mut text, message)
         .map_err(|_| ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, message_bytes))?;
     losses.push(code.note(text));
@@ -1667,14 +1663,14 @@ fn temporary_collection<'a, T>(
 }
 
 fn checked_vec<T>(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     count: usize,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
     let mut values = Vec::new();
     values
         .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(count)))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(count), operation)))?;
     Ok(values)
 }
 
@@ -1823,11 +1819,7 @@ fn complex_triangles<'a>(
     )?;
     let mut triangles = Vec::new();
     triangles.try_reserve_exact(triangle_count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "step_complex_tessellation_triangles",
-            0,
-            u64_from_index(triangle_count),
-        )
+        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_complex_tessellation_triangles"), 0, u64_from_index(triangle_count), "step_complex_tessellation_triangles"))
     })?;
     for strip in strips {
         for index in 0..strip.len() - 2 {

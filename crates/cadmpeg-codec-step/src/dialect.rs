@@ -319,8 +319,8 @@ fn copy_declared(text: &str, ctx: Option<&DecodeContext<'_>>) -> Result<String, 
     }
     let mut copy = String::new();
     copy.try_reserve_exact(text.len()).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, u64_from_index(text.len())),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(text.len())),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(text.len()), operation)),
+        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(text.len()), operation)),
     })?;
     copy.push_str(text);
     Ok(copy)

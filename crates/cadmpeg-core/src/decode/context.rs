@@ -498,8 +498,7 @@ impl<'a> DecodeContext<'a> {
                 CodecError::NotImplemented("retained concatenation exceeds usize".into())
             })
         })?;
-        let total_bytes = u64::try_from(total)
-            .map_err(|_| CodecError::NotImplemented("retained concatenation exceeds u64".into()))?;
+        let total_bytes = crate::decode::u64_from_index(total);
         let reservation = self.reserve_scoped(total_bytes, operation)?;
         self.charge_retained(total_bytes, operation)?;
         let mut buffer = Vec::new();

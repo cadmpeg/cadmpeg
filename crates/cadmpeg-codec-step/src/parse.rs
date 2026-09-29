@@ -661,8 +661,8 @@ fn push_charged<T>(
     }
     values.try_reserve(1).map_err(|_| {
         ParseError::Resource(match budget {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
+            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
         })
     })?;
     values.push(value);
@@ -2772,9 +2772,9 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 let mut resolved = Vec::new();
                 resolved.try_reserve_exact(values.len()).map_err(|_| {
                     ResolveError::Resource(match self.budget {
-                        Some(ctx) => ctx.refuse_codec_limit("step_anchor_list_items", 0, 1),
+                        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_anchor_list_items"), 0, 1, "step_anchor_list_items")),
                         None => {
-                            cadmpeg_core::decode::refuse_local_limit("step_anchor_list_items", 0, 1)
+                            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_anchor_list_items"), 0, 1, "step_anchor_list_items"))
                         }
                     })
                 })?;
@@ -2920,12 +2920,8 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 let mut resolved = Vec::new();
                 resolved.try_reserve_exact(values.len()).map_err(|_| {
                     ResolveError::Resource(match self.budget {
-                        Some(ctx) => ctx.refuse_codec_limit("step_reference_list_items", 0, 1),
-                        None => cadmpeg_core::decode::refuse_local_limit(
-                            "step_reference_list_items",
-                            0,
-                            1,
-                        ),
+                        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_reference_list_items"), 0, 1, "step_reference_list_items")),
+                        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_reference_list_items"), 0, 1, "step_reference_list_items")),
                     })
                 })?;
                 for value in values {

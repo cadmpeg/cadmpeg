@@ -421,7 +421,7 @@ impl DialectLayers {
         let mut extra = Vec::new();
         extra
             .try_reserve_exact(self.extra.len())
-            .map_err(|_| ctx.refuse_codec_limit("dialect layer copies", 0, count))?;
+            .map_err(|_| crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(crate::decode::ResourceDimension::Codec("dialect layer copies"), 0, count, "dialect layer copies")))?;
         for layer in &self.extra {
             extra.push(layer.try_clone_for_decode(ctx)?);
         }
@@ -474,7 +474,7 @@ impl DialectLayers {
         ctx.charge_collection_items(1, operation)?;
         self.extra
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            .map_err(|_| crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(crate::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
         self.extra.push(layer);
         Ok(Ok(()))
     }

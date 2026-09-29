@@ -607,13 +607,12 @@ impl Annotations {
         let mut targets = std::collections::BTreeSet::new();
         let mut remapping = Vec::new();
         ctx.charge_collection_items(
-            u64::try_from(ids.len())
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+            cadmpeg_core::decode::u64_from_index(ids.len()),
             operation,
         )?;
         remapping
             .try_reserve(ids.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), u64::MAX, u64::MAX, operation)))?;
         for id in ids {
             let target = map(id)?;
             if targets.contains(&target) {
@@ -700,7 +699,7 @@ impl Annotations {
             .provenance
             .len()
             .checked_add(other.exactness.len())
-            .and_then(|count| u64::try_from(count).ok())
+            .map(cadmpeg_core::decode::u64_from_index)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         ctx.charge_collection_items(count, operation)?;
         self.provenance.append(&mut other.provenance);

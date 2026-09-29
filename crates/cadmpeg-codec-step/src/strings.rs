@@ -54,7 +54,7 @@ pub(crate) fn decode_with_context(
         .map_err(StringDecodeFailure::Resource)?;
     let mut output = String::new();
     output.try_reserve_exact(len).map_err(|_| {
-        StringDecodeFailure::Resource(ctx.refuse_codec_limit(operation, 0, u64_from_index(len)))
+        StringDecodeFailure::Resource(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(len), operation)))
     })?;
     decode_chars(input, level, |character| output.push(character))
         .map_err(StringDecodeFailure::Invalid)?;

@@ -502,11 +502,7 @@ fn quarantine(
     }
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(bytes_len).map_err(|_| {
-        refuse_local_limit(
-            "iges quarantined directory bytes",
-            u64_from_index(bytes_len),
-            u64_from_index(bytes_len),
-        )
+        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges quarantined directory bytes"), u64_from_index(bytes_len), u64_from_index(bytes_len), "iges quarantined directory bytes"))
     })?;
     for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
         bytes.extend_from_slice(&line.payload);
@@ -532,11 +528,7 @@ pub(crate) fn parse(
     };
     if ctx.is_none() {
         lines.try_reserve_exact(line_count).map_err(|_| {
-            refuse_local_limit(
-                "iges directory lines",
-                u64_from_index(line_count),
-                u64_from_index(line_count),
-            )
+            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges directory lines"), u64_from_index(line_count), u64_from_index(line_count), "iges directory lines"))
         })?;
     }
     lines.extend(scan.section(Section::Directory));

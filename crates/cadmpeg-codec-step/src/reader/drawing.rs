@@ -96,7 +96,7 @@ fn reserve_drawing_items<T>(
     ctx.charge_collection_items(u64_from_index(count), operation)?;
     values
         .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))
 }
 
 fn insert_drawing_set<T: Ord>(
@@ -134,7 +134,7 @@ fn claim_drawing_typed(
         ctx.charge_collection_items(1, OPERATION)?;
         values
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(OPERATION), 0, 1, OPERATION)))?;
         values.insert(id);
     }
     Ok(())
@@ -292,7 +292,7 @@ pub(super) fn decode(
         let targets = target_identities.entry(candidate.id).or_default();
         insert_drawing_set(
             targets,
-            candidate.identity.as_str().to_owned(),
+            ctx.copy_retained_text(candidate.identity.as_str(), "step_drawing_target_member_text")?,
             ctx,
             "step_drawing_target_members",
         )?;
@@ -310,7 +310,7 @@ pub(super) fn decode(
         let targets = target_identities.entry(shape_id).or_default();
         insert_drawing_set(
             targets,
-            product_definition_id.as_str().to_owned(),
+            ctx.copy_retained_text(product_definition_id.as_str(), "step_drawing_target_member_text")?,
             ctx,
             "step_drawing_target_members",
         )?;
@@ -402,8 +402,8 @@ pub(super) fn decode(
         drawings.insert(
             id,
             Drawing {
-                id: DrawingId::from(identity.clone()),
-                object: identity.as_str().to_owned(),
+                id: DrawingId::from(identity.try_clone_for_decode(ctx, "step_drawing_identity_copy")?),
+                object: ctx.copy_retained_text(identity.as_str(), "step_drawing_object_copy")?,
                 kind: drawing_kind(name),
                 runtime_type: name.into(),
                 order,
@@ -1259,9 +1259,9 @@ fn value_text(
                     ctx.charge_retained(2, "step_drawing_value_text")?;
                 }
                 text.try_reserve(2).map_err(|_| match ctx {
-                    Some(ctx) => ctx.refuse_codec_limit("step_drawing_value_text", 0, 2),
+                    Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"), 0, 2, "step_drawing_value_text")),
                     None => {
-                        cadmpeg_core::decode::refuse_local_limit("step_drawing_value_text", 0, 2)
+                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"), 0, 2, "step_drawing_value_text"))
                     }
                 })?;
                 text.push(char::from(HEX[usize::from(byte >> 4)]));
@@ -1315,14 +1315,10 @@ fn append_value_text(
         ctx.charge_retained(u64_from_index(text.len()), "step_drawing_value_text")?;
     }
     output.try_reserve(text.len()).map_err(|_| match ctx {
-        Some(ctx) => {
-            ctx.refuse_codec_limit("step_drawing_value_text", 0, u64_from_index(text.len()))
+        Some(_ctx) => {
+            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"), 0, u64_from_index(text.len()), "step_drawing_value_text"))
         }
-        None => cadmpeg_core::decode::refuse_local_limit(
-            "step_drawing_value_text",
-            0,
-            u64_from_index(text.len()),
-        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"), 0, u64_from_index(text.len()), "step_drawing_value_text")),
     })?;
     output.push_str(text);
     Ok(())

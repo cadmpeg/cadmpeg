@@ -435,9 +435,7 @@ fn assign_feature_parameter_ordinals(
     let mut parameter_ordinals = HashMap::new();
     for parameters in parameters_by_feature.values_mut() {
         ctx.charge_work(
-            u64::try_from(parameters.len()).map_err(|_| {
-                ctx.refuse_codec_limit("catia_feature_parameter_sort", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(parameters.len()),
             "catia_feature_parameter_sort",
         )?;
         parameters.sort_unstable_by(|left, right| {
@@ -505,9 +503,7 @@ fn assign_document_parameter_ordinals(
         )?;
     }
     ctx.charge_work(
-        u64::try_from(parameters.len()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_document_parameter_sort", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(parameters.len()),
         "catia_document_parameter_sort",
     )?;
     parameters.sort_unstable_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));

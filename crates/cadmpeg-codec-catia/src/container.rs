@@ -1220,8 +1220,7 @@ fn parse_extents(
     file_len: usize,
 ) -> Result<Option<(Vec<Extent>, usize)>, CodecError> {
     ctx.charge_work(
-        u64::try_from(k)
-            .map_err(|_| ctx.refuse_codec_limit("catia_extent_validation", u64::MAX, u64::MAX))?,
+        cadmpeg_core::decode::u64_from_index(k),
         "catia_extent_validation",
     )?;
     let Some(cum) = validate_extents(dirbuf, o, k, physical_base, file_len) else {
@@ -1378,8 +1377,7 @@ fn reconstruct_logical_stream(
     else {
         return Ok(Vec::new());
     };
-    let bytes = u64::try_from(logical_length)
-        .map_err(|_| ctx.refuse_codec_limit("catia_logical_stream_bytes", u64::MAX, u64::MAX))?;
+    let bytes = cadmpeg_core::decode::u64_from_index(logical_length);
     ctx.charge_retained(bytes, "catia_logical_stream_bytes")?;
     let mut out = Vec::new();
     crate::resource::reserve_vec(ctx, &mut out, logical_length, "catia_logical_stream_bytes")?;
@@ -1421,7 +1419,7 @@ pub(crate) fn outer_container_for_extent<'a>(
     byte_len: u64,
 ) -> Option<&'a OuterContainerDeclaration> {
     let byte_end = byte_offset.checked_add(byte_len)?;
-    let physical_base = u64::try_from(outer.inner).ok()?;
+    let physical_base = cadmpeg_core::decode::u64_from_index(outer.inner);
     let mut containing = declarations.iter().filter(|declaration| {
         outer
             .descriptors

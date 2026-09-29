@@ -344,7 +344,7 @@ fn insert_adjacency(
         ctx.charge_collection_items(1, "ASM adjacency owners")?;
         let key = ctx.copy_retained_text(owner, "ASM adjacency owner")?;
         out.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("ASM adjacency owners", 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("ASM adjacency owners"), 0, 1, "ASM adjacency owners")))?;
         out.insert(key, HashSet::new());
     }
     if let Some(references) = out.get_mut(owner) {
@@ -582,11 +582,9 @@ pub fn decode_with_header(
     let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
-    let record_slots = u64::try_from(records.len())
-        .map_err(|_| ctx.refuse_codec_limit("ASM record index", u64::MAX, u64::MAX))?;
+    let record_slots = cadmpeg_core::decode::u64_from_index(records.len());
     ctx.charge_collection_items(record_slots, "index ASM records")?;
-    let record_slot_bytes = u64::try_from(std::mem::size_of::<(i64, &Record)>())
-        .map_err(|_| ctx.refuse_codec_limit("ASM record index bytes", u64::MAX, u64::MAX))?;
+    let record_slot_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(i64, &Record)>());
     let record_index_bytes = record_slots
         .checked_mul(record_slot_bytes)
         .ok_or_else(|| ctx.refuse_codec_limit("ASM record index bytes", u64::MAX, u64::MAX))?;
@@ -594,14 +592,13 @@ pub fn decode_with_header(
     let mut by_index: HashMap<i64, &Record> = HashMap::new();
     by_index
         .try_reserve(records.len())
-        .map_err(|_| ctx.refuse_codec_limit("index ASM records", 0, record_slots))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("index ASM records"), 0, record_slots, "index ASM records")))?;
     for record in records {
         by_index.insert(record.index as i64, record);
     }
     // Subtype-definition positions, built once for every carrier resolution.
     let token_count = records.iter().try_fold(0_u64, |count, record| {
-        let record_tokens = u64::try_from(record.tokens.len())
-            .map_err(|_| ctx.refuse_codec_limit("ASM subtype scan work", u64::MAX, u64::MAX))?;
+        let record_tokens = cadmpeg_core::decode::u64_from_index(record.tokens.len());
         count
             .checked_add(record_tokens)
             .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype scan work", u64::MAX, u64::MAX))
@@ -627,13 +624,11 @@ pub fn decode_with_header(
                 })
         })
         .count();
-    let definition_slots = u64::try_from(definition_count)
-        .map_err(|_| ctx.refuse_codec_limit("ASM subtype index", u64::MAX, u64::MAX))?;
-    let definition_slot_bytes = u64::try_from(std::mem::size_of::<(
+    let definition_slots = cadmpeg_core::decode::u64_from_index(definition_count);
+    let definition_slot_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
         std::sync::Arc<[crate::sab::Token]>,
         usize,
-    )>())
-    .map_err(|_| ctx.refuse_codec_limit("ASM subtype index bytes", u64::MAX, u64::MAX))?;
+    )>());
     let definition_bytes = definition_slots
         .checked_mul(definition_slot_bytes)
         .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype index bytes", u64::MAX, u64::MAX))?;

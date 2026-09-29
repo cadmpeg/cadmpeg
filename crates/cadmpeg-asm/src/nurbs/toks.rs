@@ -696,7 +696,7 @@ impl SubtypeTable {
                         if name != "ref" {
                             ctx.charge_collection_items(1, "index ASM subtype definitions")?;
                             defs.try_reserve(1).map_err(|_| {
-                                ctx.refuse_codec_limit("ASM subtype definitions", 0, 1)
+                                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("ASM subtype definitions"), 0, 1, "ASM subtype definitions"))
                             })?;
                             defs.push((record.tokens.clone(), pos));
                         }
@@ -745,7 +745,7 @@ pub(crate) fn admit_subtype_references(
         ctx.charge_collection_items(1, "walk ASM subtype stack")?;
         scratch.grow(std::mem::size_of_val(&root) as u64)?;
         pending.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("ASM subtype stack allocation", u64::MAX, u64::MAX)
+            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("ASM subtype stack allocation"), u64::MAX, u64::MAX, "ASM subtype stack allocation"))
         })?;
         pending.push(root);
         while let Some((references, _guard)) = pending.last_mut() {
@@ -758,12 +758,10 @@ pub(crate) fn admit_subtype_references(
                 continue;
             }
             ctx.charge_collection_items(1, "visit ASM subtype reference")?;
-            let visited_slot_bytes = u64::try_from(std::mem::size_of::<usize>()).map_err(|_| {
-                ctx.refuse_codec_limit("ASM subtype visited bytes", u64::MAX, u64::MAX)
-            })?;
+            let visited_slot_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
             scratch.grow(visited_slot_bytes)?;
             visited.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("ASM subtype visited allocation", u64::MAX, u64::MAX)
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("ASM subtype visited allocation"), u64::MAX, u64::MAX, "ASM subtype visited allocation"))
             })?;
             visited.insert(index);
             let Some((tokens, _)) = table.defs.get(index) else {
@@ -778,7 +776,7 @@ pub(crate) fn admit_subtype_references(
             ctx.charge_collection_items(1, "walk ASM subtype stack")?;
             scratch.grow(std::mem::size_of_val(&frame) as u64)?;
             pending.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("ASM subtype stack allocation", u64::MAX, u64::MAX)
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("ASM subtype stack allocation"), u64::MAX, u64::MAX, "ASM subtype stack allocation"))
             })?;
             pending.push(frame);
         }

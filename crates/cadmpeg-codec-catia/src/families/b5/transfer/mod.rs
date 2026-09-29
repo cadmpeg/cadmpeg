@@ -1757,9 +1757,7 @@ fn annotate(
     let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let stream_bytes =
-        u64::try_from(std::mem::size_of::<cadmpeg_ir::StreamName>()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_b5_annotation_stream_handle", u64::MAX, u64::MAX)
-        })?;
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
     ctx.charge_retained(stream_bytes, "catia_b5_annotation_stream_handle")?;
     let tag = ctx.copy_retained_text(tag, "catia_b5_annotation_tag")?;
     ctx.charge_collection_items(1, "catia_b5_annotation_provenance")?;

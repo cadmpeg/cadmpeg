@@ -5572,7 +5572,7 @@ pub(super) fn emit_passthrough_unknowns(
             ctx.charge_collection_items(1, "retain ASM unknown record")?;
             out.unknowns
                 .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("retain ASM unknown record", 0, 1))?;
+                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("retain ASM unknown record"), 0, 1, "retain ASM unknown record")))?;
             out.unknowns.push(UnknownRecord::retained(
                 unknown_record_id(ctx, r, format)?,
                 r.offset as u64,

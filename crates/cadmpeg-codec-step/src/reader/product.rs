@@ -58,8 +58,8 @@ fn reserve_product_items<T>(
         ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
     }
     values.try_reserve(count).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
+        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
     })
 }
 
@@ -113,8 +113,8 @@ fn join_product_references(
             ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
         }
         text.try_reserve(additional).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
+            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
         })?;
         text.push_str(separator);
         text.push_str(&numbered);
@@ -135,8 +135,8 @@ fn join_product_texts<'a>(
             ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
         }
         text.try_reserve(additional).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
+            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
         })?;
         text.push_str(separator);
         text.push_str(value);
@@ -168,8 +168,8 @@ fn claim_product_typed(
         ctx.charge_collection_items(1, OPERATION)?;
     }
     typed.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(OPERATION, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(OPERATION, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(OPERATION), 0, 1, OPERATION)),
+        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(OPERATION), 0, 1, OPERATION)),
     })?;
     typed.insert(id);
     Ok(())
@@ -226,12 +226,8 @@ pub(super) fn decode(
             ctx.charge_collection_items(1, "step_product_definition_group_members")?;
         }
         grouped.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit("step_product_definition_group_members", 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(
-                "step_product_definition_group_members",
-                0,
-                1,
-            ),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_product_definition_group_members"), 0, 1, "step_product_definition_group_members")),
+            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_product_definition_group_members"), 0, 1, "step_product_definition_group_members")),
         })?;
         grouped.push(definition);
     }
@@ -654,9 +650,9 @@ pub(super) fn decode(
             ctx.charge_collection_items(1, "step_product_usage_parent_members")?;
         }
         grouped.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit("step_product_usage_parent_members", 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_product_usage_parent_members"), 0, 1, "step_product_usage_parent_members")),
             None => {
-                cadmpeg_core::decode::refuse_local_limit("step_product_usage_parent_members", 0, 1)
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_product_usage_parent_members"), 0, 1, "step_product_usage_parent_members"))
             }
         })?;
         grouped.push(usage_id);
@@ -862,8 +858,8 @@ fn enqueue_occurrence(
         ctx.charge_collection_items(1, OPERATION)?;
     }
     pending.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(OPERATION, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(OPERATION, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(OPERATION), 0, 1, OPERATION)),
+        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(OPERATION), 0, 1, OPERATION)),
     })?;
     pending.push_back((definition, id));
     Ok(())
@@ -1122,8 +1118,8 @@ fn push_drawing_reference(
         ctx.charge_collection_items(1, OPERATION)?;
     }
     references.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(OPERATION, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(OPERATION, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(OPERATION), 0, 1, OPERATION)),
+        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(OPERATION), 0, 1, OPERATION)),
     })?;
     references.push(id);
     Ok(())

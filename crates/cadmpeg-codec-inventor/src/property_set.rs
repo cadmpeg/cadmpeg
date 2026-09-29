@@ -118,9 +118,7 @@ impl PropertyValue<'_> {
             Self::Filetime { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
             Self::String { value, .. } => {
                 ctx.charge_retained(
-                    u64::try_from(value.len()).map_err(|_| {
-                        ctx.refuse_codec_limit("OLE scalar length", u64::MAX - 1, u64::MAX)
-                    })?,
+                    cadmpeg_core::decode::u64_from_index(value.len()),
                     "retain OLE scalar text",
                 )?;
                 value.clone()
@@ -154,8 +152,7 @@ fn charge_retained_len(
     len: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let len = u64::try_from(len)
-        .map_err(|_| ctx.refuse_codec_limit("OLE retained byte count", u64::MAX - 1, u64::MAX))?;
+    let len = cadmpeg_core::decode::u64_from_index(len);
     ctx.charge_retained(len, operation)
 }
 
@@ -765,9 +762,7 @@ fn decode_code_page(
         let utf8_len = crate::reader::utf16_utf8_len(view, bytes.len() / 2)
             .ok_or_else(|| CodecError::Malformed("OLE code-page string is not UTF-16".into()))?;
         let _units = ctx.reserve_scoped(
-            u64::try_from(bytes.len()).map_err(|_| {
-                ctx.refuse_codec_limit("OLE UTF-16 unit byte count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
             "decode OLE code-page UTF-16 units",
         )?;
         charge_retained_len(ctx, utf8_len, "retain OLE property string")?;
@@ -795,8 +790,7 @@ fn decode_code_page(
         return Err(CodecError::NotImplemented(message.to_string()));
     };
     ctx.charge_work(
-        u64::try_from(content.len())
-            .map_err(|_| ctx.refuse_codec_limit("OLE code-page work", u64::MAX - 1, u64::MAX))?,
+        cadmpeg_core::decode::u64_from_index(content.len()),
         "decode OLE code-page string",
     )?;
     let (selected_encoding, source) = encoding_rs::Encoding::for_bom(content)
@@ -990,9 +984,7 @@ impl<'a> Cursor<'a> {
             CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
         })?;
         let _units = ctx.reserve_scoped(
-            u64::try_from(byte_len).map_err(|_| {
-                ctx.refuse_codec_limit("OLE Unicode unit byte count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(byte_len),
             "decode OLE Unicode property units",
         )?;
         charge_retained_len(ctx, utf8_len, "retain OLE Unicode property string")?;

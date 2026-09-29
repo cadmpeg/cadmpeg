@@ -359,7 +359,7 @@ impl<'a> View<'a> {
     /// `None`. Does not advance on failure.
     pub fn utf16_le(&mut self, count: usize) -> Option<String> {
         let mut candidate = *self;
-        let units = candidate.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
+        let units = candidate.read_counted(crate::decode::u64_from_index(count), 2, View::u16_le)?;
         let value = String::from_utf16(&units).ok()?;
         *self = candidate;
         Some(value)
@@ -373,7 +373,7 @@ impl<'a> View<'a> {
     pub fn utf16le_at(bytes: &[u8], offset: usize, count: usize) -> Option<(String, usize)> {
         let mut view = View::over_retained(bytes);
         view.seek(offset)?;
-        let units = view.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
+        let units = view.read_counted(crate::decode::u64_from_index(count), 2, View::u16_le)?;
         Some((String::from_utf16(&units).ok()?, view.position()))
     }
 

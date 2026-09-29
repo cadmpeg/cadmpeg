@@ -3,7 +3,7 @@
 
 use super::{
     append_link_to_record, append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join,
-    coedge_sense, commit_curve_tree, copy_retained_link, edge_param_range, edge_vertices,
+    coedge_sense, commit_curve_tree, edge_param_range, edge_vertices,
     face_components, face_sense, hatch_loop_ids, hatch_plane_transform, hatch_source_links,
     region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
     set_exactness, snapshot_instance_links, snapshot_instance_statuses, stage_brep,
@@ -1643,7 +1643,7 @@ fn unknown_record_link_copy_refuses_retained_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is admitted");
     let refusal =
-        copy_retained_link(&ctx, "curve").expect_err("five retained bytes exceed the limit");
+        ctx.copy_retained_text("curve", "Rhino unknown record link copy").expect_err("five retained bytes exceed the limit");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)

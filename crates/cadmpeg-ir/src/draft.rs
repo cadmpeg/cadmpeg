@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
 use crate::annotations::{AnnotationBuilder, Annotations};
@@ -137,13 +137,13 @@ fn insert_admitted_identity<T>(
         ctx.charge_collection_items(1, operation)?;
         index
             .try_reserve(1)
-            .map_err(|_| refuse_local_limit(operation, 1, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 1, 1, operation)))?;
     }
     ctx.charge_collection_items(1, operation)?;
     let slots = index.entry(hash).or_default();
     slots
         .try_reserve(1)
-        .map_err(|_| refuse_local_limit(operation, 1, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 1, 1, operation)))?;
     slots.push(value);
     Ok(())
 }
@@ -754,7 +754,7 @@ impl<'a> CommitSession<'a> {
                     let count = draft.model.$field.len();
                     ctx.charge_collection_items(u64_from_index(count), "committed model arena slots")?;
                     self.base.model.$field.try_reserve(count).map_err(|_| {
-                        refuse_local_limit("committed model arena slots", u64_from_index(count), u64_from_index(count))
+                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("committed model arena slots"), u64_from_index(count), u64_from_index(count), "committed model arena slots"))
                     })?;
                 })*
             };

@@ -348,7 +348,7 @@ fn push_validation_loss(
     ctx.charge_collection_items(1, "step_validation_losses")?;
     losses
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_validation_losses", 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_validation_losses"), 0, 1, "step_validation_losses")))?;
     losses.push(code.note(message));
     Ok(())
 }
@@ -362,7 +362,7 @@ fn push_validation_note(
     ctx.charge_collection_items(1, "step_validation_notes")?;
     notes
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_validation_notes", 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_validation_notes"), 0, 1, "step_validation_notes")))?;
     notes.push(note);
     Ok(())
 }
@@ -650,7 +650,7 @@ fn insert_hash(
         ctx.charge_collection_items(1, operation)?;
         values
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(values.len() + 1)))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(values.len() + 1), operation)))?;
         values.insert(id);
     }
     Ok(())

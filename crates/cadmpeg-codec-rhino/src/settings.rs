@@ -1066,9 +1066,7 @@ fn parse_layer_extensions(
         outer_reader.position(),
     )?;
     let parent_is_nil = parent_id.is_none_or(Uuid::is_nil);
-    let count_u64 = u64::try_from(count).map_err(|_| FramingError::Overflow {
-        offset: outer_reader.position(),
-    })?;
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, "Rhino layer extension entries")
         .map_err(|error| match error {
             CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
@@ -1076,11 +1074,7 @@ fn parse_layer_extensions(
         })?;
     let retained_bytes = count_u64
         .checked_mul(
-            u64::try_from(std::mem::size_of::<LayerPerViewportSettings>()).map_err(|_| {
-                FramingError::Overflow {
-                    offset: outer_reader.position(),
-                }
-            })?,
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<LayerPerViewportSettings>()),
         )
         .ok_or(FramingError::Overflow {
             offset: outer_reader.position(),
