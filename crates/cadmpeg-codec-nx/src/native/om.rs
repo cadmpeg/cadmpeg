@@ -7115,7 +7115,8 @@ mod tests {
             .iter()
             .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
             .collect();
-        let dependencies = crate::native::attach::parameter_owner_dependencies(
+        let dependencies = crate::test_support::with_decode_context(|ctx| crate::native::attach::parameter_owner_dependencies(
+            ctx,
             &parameter_owners,
             &[
                 cadmpeg_ir::features::ParameterId::mint("nx:test:parameter#20")
@@ -7123,7 +7124,7 @@ mod tests {
                 cadmpeg_ir::features::ParameterId::mint("nx:test:parameter#20")
                     .expect("identity grammar"),
             ],
-        );
+        )).unwrap();
 
         assert_eq!(ir.model.features[0].ordinal, 0);
         assert_eq!(

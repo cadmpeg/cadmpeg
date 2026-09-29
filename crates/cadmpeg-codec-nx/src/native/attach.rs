@@ -4127,7 +4127,7 @@ fn attach_feature_operations(
                     .filter_map(|dimension| expression_parameter_id(&dimension.expression)),
             );
         }
-        for owner in parameter_owner_dependencies(&parameter_owners, &referenced_parameters) {
+        for owner in parameter_owner_dependencies(ctx, &parameter_owners, &referenced_parameters)? {
             if !dependencies.contains(&owner) {
                 dependencies.push(owner);
             }
@@ -5779,19 +5779,28 @@ fn text_semantic_annotation(
 }
 
 pub(super) fn parameter_owner_dependencies(
+    ctx: &DecodeContext<'_>,
     parameter_owners: &BTreeMap<ParameterId, Option<FeatureId>>,
     parameter_references: &[ParameterId],
-) -> Vec<FeatureId> {
+) -> Result<Vec<FeatureId>, CodecError> {
     let mut dependencies = Vec::new();
     for parameter_id in parameter_references {
+        let work = parameter_owners.len().checked_add(dependencies.len()).and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX parameter owner dependency scan", 0, cadmpeg_core::decode::u64_from_index(parameter_owners.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX parameter owner dependency scan")?;
         let Some(owner) = parameter_owners.get(parameter_id).and_then(Option::as_ref) else {
             continue;
         };
         if !dependencies.contains(owner) {
+            let bytes = std::mem::size_of::<FeatureId>().checked_add(owner.as_str().len())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX parameter owner dependency", 0, cadmpeg_core::decode::u64_from_index(owner.as_str().len())))?;
+            ctx.charge_collection_items(1, "NX parameter owner dependencies")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX parameter owner dependency")?;
+            reserve_attach_vec(ctx, &mut dependencies, 1, "NX parameter owner dependencies")?;
             dependencies.push(owner.clone());
         }
     }
-    dependencies
+    Ok(dependencies)
 }
 
 fn extrude_feature_definition(
