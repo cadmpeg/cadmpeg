@@ -24,6 +24,25 @@ use super::{
 };
 
 #[test]
+fn serialized_offset_ids_preserve_legacy_wire_text() {
+    for (id, expected) in [
+        (super::serialized_object_node_id(123), "\"creo:legacy_ascii:object#123\""),
+        (super::SerializedOffsetId {
+            namespace: "legacy_ascii",
+            kind: "integer",
+            offset: 123,
+        }, "\"creo:legacy_ascii:integer#123\""),
+        (super::SerializedOffsetId {
+            namespace: "legacy_family",
+            kind: "driver_table",
+            offset: 123,
+        }, "\"creo:legacy_family:driver_table#123\""),
+    ] {
+        assert_eq!(serde_json::to_string(&id).expect("serialize offset identity"), expected);
+    }
+}
+
+#[test]
 fn legacy_scope_bounds_error_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
