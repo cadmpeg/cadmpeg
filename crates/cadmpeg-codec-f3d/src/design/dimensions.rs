@@ -100,6 +100,18 @@ fn copy_spatial_sketch_id(
     cadmpeg_ir::sketches::SpatialSketchId::try_from(text).map_err(CodecError::malformed)
 }
 
+fn copy_spatial_entity_id(
+    ctx: Option<&DecodeContext<'_>>,
+    id: &cadmpeg_ir::sketches::SpatialSketchEntityId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::sketches::SpatialSketchEntityId, CodecError> {
+    let Some(ctx) = ctx else { return Ok(id.clone()); };
+    let bytes = ctx.copy_retained(id.as_str().as_bytes(), operation)?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| CodecError::malformed("validated spatial entity ID is not UTF-8"))?;
+    cadmpeg_ir::sketches::SpatialSketchEntityId::try_from(text).map_err(CodecError::malformed)
+}
+
 fn copy_dimension_parameter_id(
     ctx: Option<&DecodeContext<'_>>,
     id: &cadmpeg_ir::features::ParameterId,
@@ -2827,25 +2839,27 @@ pub(crate) fn project_spatial_dimension_constraints(
                             None
                         }
                     });
-                    let owner_scoped = (operands.len() == 1
-                        && operands[0].native_kind == "dimension_companion"
-                        && operand_field(&operands[0]).is_some_and(|field| {
-                            field == "companion" || field == "companion_payload"
-                        }))
-                    .then_some(())
-                    .and(parameter.as_ref())
-                    .filter(|parameter_id| {
-                        parameter_constraint_counts.get(*parameter_id) == Some(&1)
-                    })
-                    .and_then(|parameter_id| {
-                        let parameter = parameters_by_id.get(parameter_id)?;
-                        owner_scoped_spatial_line_length_dimension_definition(
+                    let owner_scoped = (|| -> Result<Option<SpatialSketchConstraintDefinitionInput>, CodecError> {
+                        if operands.len() != 1
+                            || operands[0].native_kind != "dimension_companion"
+                            || !operand_field(&operands[0]).is_some_and(|field| {
+                                field == "companion" || field == "companion_payload"
+                            })
+                        { return Ok(None); }
+                        let Some(parameter_id) = parameter.as_ref() else { return Ok(None); };
+                        if parameter_constraint_counts.get(parameter_id) != Some(&1) {
+                            return Ok(None);
+                        }
+                        let Some(parameter) = parameters_by_id.get(parameter_id) else { return Ok(None); };
+                        let line_length = owner_scoped_spatial_line_length_dimension_definition(
+                            ctx,
                             spatial_entities,
                             &sketch,
                             parameter,
                             parameter_id,
                             linear_tolerance,
-                        )
+                        )?;
+                        Ok(line_length
                         .or_else(|| {
                             unique_spatial_parallel_line_dimension_definition(
                                 spatial_entities,
@@ -2871,8 +2885,8 @@ pub(crate) fn project_spatial_dimension_constraints(
                                 parameter_id,
                                 linear_tolerance,
                             )
-                        })
-                    });
+                        }))
+                    })()?;
                     symmetry.or(offset).or(distance).or(owner_scoped).unwrap_or(
                         SpatialSketchConstraintDefinitionInput::Native {
                             native_kind,
@@ -3003,12 +3017,13 @@ pub(crate) fn project_spatial_dimension_constraints(
 }
 
 fn owner_scoped_spatial_line_length_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
+) -> Result<Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput>, CodecError> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
@@ -3018,16 +3033,14 @@ fn owner_scoped_spatial_line_length_dimension_definition(
         || !linear_tolerance.is_finite()
         || linear_tolerance < 0.0
     {
-        return None;
+        return Ok(None);
     }
     let expected = (parameter.evaluated_value().get() * 10.0).abs();
     if !expected.is_finite() {
-        return None;
+        return Ok(None);
     }
-    let matches = entities
-        .iter()
-        .filter(|entity| &entity.sketch == sketch)
-        .filter(|entity| {
+    let mut matches = Vec::new();
+    for entity in entities.iter().filter(|entity| &entity.sketch == sketch).filter(|entity| {
             let SpatialSketchGeometryDefinition::Line { start, end } =
                 *entity.geometry.definition()
             else {
@@ -3042,19 +3055,24 @@ fn owner_scoped_spatial_line_length_dimension_definition(
                     * (1.0 + measured.abs().max(expected.abs())),
             );
             (measured - expected).abs() <= tolerance
-        })
-        .map(|entity| entity.id().clone())
-        .collect::<Vec<_>>();
-    match matches.as_slice() {
-        [] => None,
-        [entity] => Some(Definition::LineLength {
-            entity: entity.clone(),
-            parameter: parameter_id.clone(),
-        }),
-        _ => Some(Definition::RepeatedLineLength {
+        }) {
+        let id = copy_spatial_entity_id(ctx, entity.id(),
+            "f3d spatial line length entity id")?;
+        push_dimension_item(ctx, &mut matches, id,
+            "f3d spatial line length match")?;
+    }
+    match matches.len() {
+        0 => Ok(None),
+        1 => Ok(Some(Definition::LineLength {
+            entity: matches.remove(0),
+            parameter: copy_dimension_parameter_id(ctx, parameter_id,
+                "f3d spatial line length parameter id")?,
+        })),
+        _ => Ok(Some(Definition::RepeatedLineLength {
             entities: matches,
-            parameter: parameter_id.clone(),
-        }),
+            parameter: copy_dimension_parameter_id(ctx, parameter_id,
+                "f3d spatial line length parameter id")?,
+        })),
     }
 }
 

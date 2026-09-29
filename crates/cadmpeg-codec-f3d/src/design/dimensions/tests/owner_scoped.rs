@@ -66,12 +66,14 @@ fn spatial_dimension_matchers_refuse_infinite_measured_distances() {
     );
     assert!(
         crate::design::dimensions::owner_scoped_spatial_line_length_dimension_definition(
+            None,
             std::slice::from_ref(&diagonal),
             &sketch,
             &parameter,
             &parameter_id,
             0.0,
         )
+        .unwrap()
         .is_none()
     );
 
