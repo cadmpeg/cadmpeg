@@ -41,7 +41,7 @@ pub(crate) fn parse_with_context(
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     if let Some(ctx) = ctx {
         ctx.charge_work(
-            bytes.len() as u64,
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
             "FCStd persistence XML lexical admission",
         )?;
     }
@@ -69,7 +69,7 @@ fn charge_items(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     if let Some(ctx) = ctx {
-        ctx.charge_collection_items(count as u64, operation)?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
     }
     Ok(())
 }
@@ -356,7 +356,7 @@ fn parse_document(
                     crate::native::RetainedXml::from_source(
                         ctx,
                         &text[data.range()],
-                        data.range().start as u64,
+                        cadmpeg_core::decode::u64_from_index(data.range().start),
                         "FCStd object XML",
                     )
                 })
@@ -793,7 +793,7 @@ fn parse_properties(
             xml: crate::native::RetainedXml::from_source(
                 ctx,
                 &text[node.range()],
-                node.range().start as u64,
+                cadmpeg_core::decode::u64_from_index(node.range().start),
                 "FCStd transient property XML",
             )?,
         });
@@ -948,7 +948,7 @@ fn parse_properties(
             xml: crate::native::RetainedXml::from_source(
                 ctx,
                 &text[node.range()],
-                node.range().start as u64,
+                cadmpeg_core::decode::u64_from_index(node.range().start),
                 "FCStd persisted property XML",
             )?,
         });
