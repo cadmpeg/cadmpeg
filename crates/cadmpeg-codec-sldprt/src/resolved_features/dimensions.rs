@@ -560,11 +560,13 @@ struct DimensionedArcGeometry {
 }
 
 fn transformed_dimensioned_arc(
+    ctx: &DecodeContext<'_>,
     transform: super::transforms::MarkerTransform,
     arc: &DimensionedArcNative,
     native_to_ir: f64,
     quantum: f64,
-) -> Option<DimensionedArcGeometry> {
+) -> Result<Option<DimensionedArcGeometry>, cadmpeg_core::CodecError> {
+    let geometry = (|| {
     let transform_point = |[u, v]: [f64; 2]| {
         let point = transform.apply(quantize(
             Point2::new(u * native_to_ir, v * native_to_ir),
@@ -580,15 +582,11 @@ fn transformed_dimensioned_arc(
     let mut end = transform_point(arc.end)?;
     let radius = (start.u - center.u).hypot(start.v - center.v);
     let end_radius = (end.u - center.u).hypot(end.v - center.v);
-    let mut endpoints = arc.endpoints.clone();
     let start_angle = (start.v - center.v).atan2(start.u - center.u);
     let end_angle = (end.v - center.v).atan2(end.u - center.u);
     let (start_angle, end_angle, reversed) = minor_arc_angles(start_angle, end_angle);
     if reversed {
         std::mem::swap(&mut start, &mut end);
-        if let Some(pair) = &mut endpoints {
-            pair.swap(0, 1);
-        }
     }
     let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
     (radius.is_finite()
@@ -596,8 +594,8 @@ fn transformed_dimensioned_arc(
         && same_dimension_length(radius, end_radius)
         && sweep > SKETCH_ANGLE_TOLERANCE
         && sweep <= std::f64::consts::PI + SKETCH_ANGLE_TOLERANCE)
-        .then_some(DimensionedArcGeometry {
-            geometry: SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        .then_some((
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center,
                 radius: Length::new(radius)?,
                 start_angle: Angle::new(start_angle)?,
@@ -605,8 +603,21 @@ fn transformed_dimensioned_arc(
             })
             .ok()?,
             radius,
-            endpoint_refs: endpoints.map_or_else(Vec::new, Vec::from),
-        })
+            reversed,
+        ))
+    })();
+    let Some((geometry, radius, reversed)) = geometry else { return Ok(None); };
+    let mut endpoint_refs = Vec::new();
+    if let Some(endpoints) = &arc.endpoints {
+        let order = if reversed { [1, 0] } else { [0, 1] };
+        ctx.reserve_collection_vec(&mut endpoint_refs, 2, "collect SLDPRT dimensioned arc endpoints")?;
+        for index in order {
+            let text = ctx.format_retained(format_args!("{}", endpoints[index]),
+                "retain SLDPRT dimensioned arc endpoint")?;
+            endpoint_refs.push(text);
+        }
+    }
+    Ok(Some(DimensionedArcGeometry { geometry, radius, endpoint_refs }))
 }
 
 /// Materialize dimensioned circular sketch geometry omitted by a selected-profile stream.
@@ -806,7 +817,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             let (geometry, endpoint_refs) = if let Some(arc) =
                 carrier.curve().and_then(DimensionedCurveNative::arc)
             {
-                let Some(arc) = transformed_dimensioned_arc(*transform, arc, NATIVE_TO_IR, QUANTUM)
+                let Some(arc) = transformed_dimensioned_arc(ctx, *transform, arc, NATIVE_TO_IR, QUANTUM)?
                 else {
                     continue;
                 };
