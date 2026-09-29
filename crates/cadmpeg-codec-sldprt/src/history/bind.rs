@@ -230,6 +230,12 @@ pub(crate) fn bind_unique_sketch_feature(
                     "bind SLDPRT sketch alias dependency",
                 )?;
         }
+        ctx.charge_work(
+            u64::try_from(bindings.len()).map_err(|_| {
+                ctx.refuse_codec_limit("match SLDPRT bound sketch aliases", u64::MAX - 1, u64::MAX)
+            })?,
+            "match SLDPRT bound sketch aliases",
+        )?;
         let Some(binding) = bindings
             .iter()
             .find(|binding| binding.index == base_index)
@@ -249,6 +255,12 @@ pub(crate) fn bind_unique_sketch_feature(
     ctx.reserve_precharged_vec(&mut bindings, aliases.len(), "merge SLDPRT sketch aliases")?;
     bindings.extend(aliases);
     for feature in features {
+        ctx.charge_work(
+            u64::try_from(bindings.len()).map_err(|_| {
+                ctx.refuse_codec_limit("bind SLDPRT feature sketches", u64::MAX - 1, u64::MAX)
+            })?,
+            "bind SLDPRT feature sketches",
+        )?;
         let dependencies = &mut feature.dependencies;
         let mut result = Ok(());
         feature.evaluation.edit(|definition, _| {
@@ -453,7 +465,6 @@ pub(crate) fn order_model_features_for_regeneration(
     Ok(true)
 }
 
-/// Mutable references to every side an extrusion extent carries.
 /// Bind each decoded face to the body owning it.
 fn face_owner_bodies<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -538,11 +549,16 @@ pub(crate) fn derive_feature_outputs(
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
     for history in histories {
         let mut ordinal = 0_u32;
-        for record in history
-            .features
-            .iter()
-            .filter(|record| !is_history_metadata_record(record, &history.features))
-        {
+        for record in &history.features {
+            ctx.charge_work(
+                u64::try_from(history.features.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("classify SLDPRT body modifier ordinals", u64::MAX - 1, u64::MAX)
+                })?,
+                "classify SLDPRT body modifier ordinals",
+            )?;
+            if is_history_metadata_record(record, &history.features) {
+                continue;
+            }
             ctx.charge_work(1, "index SLDPRT body modifier ordinals")?;
             ordinal = ordinal.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit("index SLDPRT body modifier ordinals", u64::MAX - 1, u64::MAX)
@@ -567,6 +583,12 @@ pub(crate) fn derive_feature_outputs(
         let Some(Some(native_ref)) = feature_ids_by_ordinal.get(ordinal) else {
             continue;
         };
+        ctx.charge_work(
+            u64::try_from(features.len()).map_err(|_| {
+                ctx.refuse_codec_limit("match SLDPRT body modifiers", u64::MAX - 1, u64::MAX)
+            })?,
+            "match SLDPRT body modifiers",
+        )?;
         for feature in features
             .iter_mut()
             .filter(|feature| feature.native_ref.as_deref() == Some(native_ref))
@@ -622,17 +644,20 @@ pub(crate) fn derive_feature_outputs(
         if !feature.evaluation.outputs().is_empty() {
             continue;
         }
-        let Some(source_id) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| {
-                histories
-                    .iter()
-                    .flat_map(|history| &history.features)
-                    .find(|record| record.id == native_ref)
-            })
-            .and_then(crate::records::Feature::source_value)
-        else {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let mut source_id = None;
+        'histories: for history in histories {
+            for record in &history.features {
+                ctx.charge_work(1, "match SLDPRT feature output source")?;
+                if record.id == native_ref {
+                    source_id = record.source_value();
+                    break 'histories;
+                }
+            }
+        }
+        let Some(source_id) = source_id else {
             continue;
         };
         if let Some(bodies) = produced.get(&source_id) {
@@ -891,7 +916,7 @@ mod tests {
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "index SLDPRT body modifier ordinals"
+                    && limit.operation == "classify SLDPRT body modifier ordinals"
         ));
     }
 
