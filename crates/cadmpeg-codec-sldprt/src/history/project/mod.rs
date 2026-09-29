@@ -79,6 +79,30 @@ pub(crate) struct FeatureProjection {
     regeneration_parents: Vec<(FeatureId, FeatureId)>,
 }
 
+fn copy_projected_feature_text(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+) -> Result<String, CodecError> {
+    ctx.format_retained(format_args!("{text}"), "copy SLDPRT projected feature text")
+}
+
+fn copy_projected_feature_properties(
+    ctx: &DecodeContext<'_>,
+    properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
+    let mut copied = BTreeMap::new();
+    for (key, value) in properties {
+        ctx.charge_collection_items(1, "collect SLDPRT projected feature properties")?;
+        let key = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(
+            ctx,
+            key.as_str(),
+        )?)
+        .ok_or_else(|| CodecError::malformed("blank SLDPRT projected feature property"))?;
+        copied.insert(key, copy_projected_feature_text(ctx, value)?);
+    }
+    Ok(copied)
+}
+
 impl FeatureProjection {
     /// Install every projected feature and every regeneration edge the source
     /// states. An edge the model refuses is reported as a loss naming both
@@ -196,14 +220,23 @@ pub(crate) fn project_feature_model(
                                 .flatten()
                                 .filter(|source| *source > 0)
                                 .unwrap_or(u64::from(feature.ordinal)),
-                            name: (!feature.name.is_empty()).then(|| feature.name.clone()),
+                            name: (!feature.name.is_empty())
+                                .then(|| copy_projected_feature_text(ctx, &feature.name))
+                                .transpose()?,
                             suppressed: Some(feature.suppressed),
                             dependencies: (project_feature_dependencies(feature, &by_source))
                                 .into_iter()
                                 .collect(),
-                            source_properties: feature.properties.clone(),
-                            source_tag: Some(feature.xml_tag.clone()),
-                            source_text: feature.text.clone(),
+                            source_properties: copy_projected_feature_properties(
+                                ctx,
+                                &feature.properties,
+                            )?,
+                            source_tag: Some(copy_projected_feature_text(ctx, &feature.xml_tag)?),
+                            source_text: feature
+                                .text
+                                .as_deref()
+                                .map(|text| copy_projected_feature_text(ctx, text))
+                                .transpose()?,
                             source_content: project_feature_content(feature, &by_native)?,
 
                             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
@@ -216,7 +249,7 @@ pub(crate) fn project_feature_model(
                                     &history.features,
                                 )?,
                             ),
-                            native_ref: Some(feature.id.clone()),
+                            native_ref: Some(copy_projected_feature_text(ctx, &feature.id)?),
                         },
                         parent,
                     ))

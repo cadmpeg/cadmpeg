@@ -1981,3 +1981,25 @@ fn projected_tree_child_refuses_collection_limit() {
     let error = project_feature_model(&ctx, &[history]).err().unwrap();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
+
+#[test]
+fn projected_feature_text_refuses_retained_limit() {
+    let mut projected = feature("sldprt:history:feature#0:1", None, 0);
+    projected.name = "Named feature".to_owned();
+    let history = FeatureHistory {
+        id: "history".to_owned(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![projected],
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"feature", &arena, &policy,
+    ).unwrap();
+    let error = project_feature_model(&ctx, &[history]).err().unwrap();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
