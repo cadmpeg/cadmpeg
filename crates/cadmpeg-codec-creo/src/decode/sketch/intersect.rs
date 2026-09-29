@@ -227,7 +227,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
     let Some(segments) = &definition.segments else {
         return Ok(BTreeMap::new());
     };
-    let missing_line = saved_section_missing_line_geometry(definition);
+    let missing_line = saved_section_missing_line_geometry(ctx, definition)?;
     let variable_points = match definition.variables.as_ref() {
         Some(variables) => variables.reconciled_points(ctx)?.0,
         None => BTreeMap::new(),

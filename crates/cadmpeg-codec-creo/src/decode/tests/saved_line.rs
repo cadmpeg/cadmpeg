@@ -7,10 +7,10 @@ use super::{
 };
 use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points, saved_section_coordinate_witnesses};
 use crate::decode::sketch::geometry::{
-    is_full_circle_geometry, resolved_section_segment_geometry, saved_profile_chains,
+    is_full_circle_geometry, resolved_section_segment_geometry as resolved_section_segment_geometry_admitted, saved_profile_chains,
     saved_section_arc, saved_section_arc_carrier, saved_section_circle_values,
     saved_section_entity_geometry, saved_section_line_geometry,
-    saved_section_missing_line_geometry, saved_section_segment_point_coordinates,
+    saved_section_missing_line_geometry as saved_section_missing_line_geometry_admitted, saved_section_segment_point_coordinates,
     SectionArcCarrier,
 };
 use crate::decode::sketch::intersect::resolved_trim_vertex_coordinates;
@@ -42,6 +42,24 @@ use cadmpeg_ir::sketches::{
     SketchId,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+fn saved_section_missing_line_geometry(
+    definition: &crate::feature::definitions::FeatureDefinition,
+) -> Option<(usize, SketchGeometry)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        saved_section_missing_line_geometry_admitted(ctx, definition)
+    }).expect("test missing-line admission")
+}
+
+fn resolved_section_segment_geometry(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::definitions::FeatureSegment,
+) -> Option<SketchGeometry> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_section_segment_geometry_admitted(ctx, definition, points, segment)
+    }).expect("test segment admission")
+}
 
 #[test]
 fn saved_line_joins_through_order_table() {
