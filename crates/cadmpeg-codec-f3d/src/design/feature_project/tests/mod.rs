@@ -13,6 +13,7 @@ mod combine_limits;
 mod dispatcher;
 mod extrude;
 mod form;
+mod hole_limits;
 mod mirror;
 mod native_scope_definition_limits;
 mod parameter_cycles;

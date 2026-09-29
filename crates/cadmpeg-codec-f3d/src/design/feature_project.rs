@@ -8436,8 +8436,14 @@ fn project_hole(
             None,
         ),
     };
-    let face = resolved_direct_face_selection(ctx, scope, face_operands)?
-        .unwrap_or_else(|| FaceSelection::Native(scope.id.clone()));
+    let face = match resolved_direct_face_selection(ctx, scope, face_operands)? {
+        Some(face) => face,
+        None => FaceSelection::Native(copy_feature_text(
+            ctx,
+            &scope.id,
+            "f3d Hole fallback face id",
+        )?),
+    };
     let placements = if let Some(construction) = scope.hole_construction() {
         Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
             position: or_none!(cadmpeg_ir::features::FinitePoint3::new(Point3::new(
