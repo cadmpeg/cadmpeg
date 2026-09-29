@@ -141,62 +141,55 @@ fn map_two_chart_endpoint_sets(
     let surfaces = pcurve
         .faces
         .map(|face_id| unique_model_surface(&ir.model.surfaces, face_id));
-    let mut missing_surface_paths = 0;
+    let mut mapped = surfaces.map(|surface| surface.is_some());
+    let missing_surface_paths = usize::from(!mapped[0]) + usize::from(!mapped[1]);
     let mut unevaluable_paths = 0;
+    let mut mismatch = false;
     // A sample that leaves the finite range is a mapped sample; it agrees
     // with no sample on the other chart.
-    let mapped_samples: [Option<Vec<Result<FinitePoint3, Point3>>>; 2] =
-        std::array::from_fn(|face_index| {
+    for sample in &pcurve.samples {
+        let mut points: [Option<Result<FinitePoint3, Point3>>; 2] = [None, None];
+        for face_index in 0..2 {
+            if !mapped[face_index] {
+                continue;
+            }
             let Some(surface) = surfaces[face_index] else {
-                missing_surface_paths += 1;
-                return None;
+                continue;
             };
-            let Some(points) = pcurve
-                .samples
-                .iter()
-                .map(|sample| {
-                    match cadmpeg_ir::eval::surface_point(
-                        source_carriers.surface_geometry(surface),
-                        sample[face_index][0],
-                        sample[face_index][1],
-                    ) {
-                        Ok(point) => Some(Ok(point)),
-                        Err(failure) => failure.non_finite().map(Err),
-                    }
-                })
-                .collect::<Option<Vec<_>>>()
-            else {
+            points[face_index] = match cadmpeg_ir::eval::surface_point(
+                source_carriers.surface_geometry(surface),
+                sample[face_index][0],
+                sample[face_index][1],
+            ) {
+                Ok(point) => Some(Ok(point)),
+                Err(failure) => failure.non_finite().map(Err),
+            };
+            if points[face_index].is_none() {
+                mapped[face_index] = false;
                 unevaluable_paths += 1;
-                return None;
+            }
+        }
+        if let [Some(first), Some(second)] = &points {
+            mismatch |= match (first, second) {
+                (Ok(first), Ok(second)) => !model_points_agree(*first, *second),
+                _ => true,
             };
-            Some(points)
-        });
+        }
+    }
     let canonical = canonicalized_pcurve_endpoints(
         scan,
         pcurve.faces.map(NonZeroU32::new),
         [first[0], last[0]],
         [first[1], last[1]],
     );
-    let endpoint_sets =
-        std::array::from_fn(|index| mapped_samples[index].as_ref().map(|_| canonical[index]));
+    let endpoint_sets = std::array::from_fn(|index| mapped[index].then_some(canonical[index]));
     let endpoint_sets = match endpoint_sets {
         [Some(first), Some(second)] => Some(TwoChartEndpointSets::Both([first, second])),
         [Some(first), None] => Some(TwoChartEndpointSets::First(first)),
         [None, Some(second)] => Some(TwoChartEndpointSets::Second(second)),
         [None, None] => None,
     };
-    let surface_mismatch =
-        if let (Some(first_path), Some(second_path)) = (&mapped_samples[0], &mapped_samples[1]) {
-            !first_path
-                .iter()
-                .zip(second_path)
-                .all(|(first, second)| match (first, second) {
-                    (Ok(first), Ok(second)) => model_points_agree(*first, *second),
-                    _ => false,
-                })
-        } else {
-            false
-        };
+    let surface_mismatch = mapped[0] && mapped[1] && mismatch;
     TwoChartMapping::Mapped {
         endpoint_sets,
         missing_surface_paths,
