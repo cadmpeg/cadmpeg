@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged growth of collections owned by a decode session.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
+use std::fmt::{self, Write};
 use std::hash::Hash;
 
 use crate::CodecError;
@@ -13,6 +14,26 @@ impl DecodeContext<'_> {
         CodecError::ResourceLimit(ResourceLimit::allocation_failed(
             ResourceDimension::CollectionItems,
             self.policy().limits.max_collection_items,
+            u64_from_index(count),
+            operation,
+        ))
+    }
+
+    fn allocation_failed(
+        &self,
+        dimension: ResourceDimension,
+        count: usize,
+        operation: &'static str,
+    ) -> CodecError {
+        let limit = match dimension {
+            ResourceDimension::CollectionItems => self.policy().limits.max_collection_items,
+            ResourceDimension::RetainedBytes => self.policy().limits.max_retained_bytes,
+            ResourceDimension::MaterializedBytes => self.policy().limits.max_materialized_bytes,
+            _ => u64::MAX,
+        };
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            dimension,
+            limit,
             u64_from_index(count),
             operation,
         ))
@@ -93,14 +114,14 @@ impl DecodeContext<'_> {
     }
 
     /// Collects fallible iterator values with a charged slot for each success.
-    pub fn try_collect_vec<T, E: From<CodecError>>(
+    pub fn try_collect_vec<T, E: Into<CodecError>>(
         &self,
         values: impl IntoIterator<Item = Result<T, E>>,
         operation: &'static str,
-    ) -> Result<Vec<T>, E> {
+    ) -> Result<Vec<T>, CodecError> {
         let mut out = Vec::new();
         for value in values {
-            self.push_vec(&mut out, value?, operation)?;
+            self.push_vec(&mut out, value.map_err(Into::into)?, operation)?;
         }
         Ok(out)
     }
@@ -214,11 +235,398 @@ impl DecodeContext<'_> {
         copy.push_str(text);
         Ok(copy)
     }
+
+    /// Appends a deque item after charging its slot.
+    pub fn push_back<T>(
+        &self,
+        values: &mut VecDeque<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_collection_items(1, operation)?;
+        values
+            .try_reserve(1)
+            .map_err(|_| self.collection_allocation_failed(1, operation))?;
+        values.push_back(value);
+        Ok(())
+    }
+
+    /// Reserves slots in a binary heap after charging them.
+    pub fn reserve_heap<T: Ord>(
+        &self,
+        values: &mut BinaryHeap<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        values
+            .try_reserve(count)
+            .map_err(|_| self.collection_allocation_failed(count, operation))
+    }
+
+    /// Reserves a vector whose items were charged by aggregate admission.
+    pub fn reserve_admitted_vec<T>(
+        values: &mut Vec<T>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        values.try_reserve(additional).map_err(|_| {
+            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+                ResourceDimension::CollectionItems,
+                u64::MAX,
+                u64_from_index(additional),
+                operation,
+            ))
+        })
+    }
+
+    /// Reserves a hash map whose entries were charged by aggregate admission.
+    pub fn reserve_admitted_map<K: Eq + Hash, V>(
+        values: &mut HashMap<K, V>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        values.try_reserve(additional).map_err(|_| {
+            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+                ResourceDimension::CollectionItems,
+                u64::MAX,
+                u64_from_index(additional),
+                operation,
+            ))
+        })
+    }
+
+    /// Reserves a hash set whose entries were charged by aggregate admission.
+    pub fn reserve_admitted_set<T: Eq + Hash>(
+        values: &mut HashSet<T>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        values.try_reserve(additional).map_err(|_| {
+            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+                ResourceDimension::CollectionItems,
+                u64::MAX,
+                u64_from_index(additional),
+                operation,
+            ))
+        })
+    }
+
+    /// Copies items whose slots were charged by aggregate admission.
+    pub fn copy_admitted_slice<T: Clone>(
+        values: &[T],
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        let mut copy = Vec::new();
+        Self::reserve_admitted_vec(&mut copy, values.len(), operation)?;
+        copy.extend_from_slice(values);
+        Ok(copy)
+    }
+
+    /// Copies rows whose slots were charged by aggregate admission.
+    pub fn copy_admitted_rows<T: Clone>(
+        values: &[T],
+        row_len: usize,
+        operation: &'static str,
+    ) -> Result<Vec<Vec<T>>, CodecError> {
+        let mut rows = Vec::new();
+        Self::reserve_admitted_vec(&mut rows, values.len().div_ceil(row_len), operation)?;
+        for row in values.chunks(row_len) {
+            rows.push(Self::copy_admitted_slice(row, operation)?);
+        }
+        Ok(rows)
+    }
+
+    /// Copies a slice after charging its collection slots.
+    pub fn copy_slice<T: Clone>(
+        &self,
+        values: &[T],
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        let mut copy = self.collection_vec(values.len(), operation)?;
+        copy.extend_from_slice(values);
+        Ok(copy)
+    }
+
+    /// Collects optional values, stopping at the first absent value.
+    pub fn collect_options<T>(
+        &self,
+        values: impl IntoIterator<Item = Option<T>>,
+        operation: &'static str,
+    ) -> Result<Option<Vec<T>>, CodecError> {
+        let mut collected = Vec::new();
+        for value in values {
+            let Some(value) = value else { return Ok(None) };
+            self.push_vec(&mut collected, value, operation)?;
+        }
+        Ok(Some(collected))
+    }
+
+    /// Collects fallible optional values, stopping at the first absent value.
+    pub fn collect_fallible_options<T, E: Into<CodecError>>(
+        &self,
+        values: impl IntoIterator<Item = Result<Option<T>, E>>,
+        operation: &'static str,
+    ) -> Result<Option<Vec<T>>, CodecError> {
+        let mut collected = Vec::new();
+        for value in values {
+            let Some(value) = value.map_err(Into::into)? else { return Ok(None) };
+            self.push_vec(&mut collected, value, operation)?;
+        }
+        Ok(Some(collected))
+    }
+
+    /// Collects retained strings into a charged hash set.
+    pub fn collect_string_set<'a>(
+        &self,
+        values: impl IntoIterator<Item = &'a str>,
+        operation: &'static str,
+    ) -> Result<HashSet<String>, CodecError> {
+        let mut collected = HashSet::new();
+        for value in values {
+            self.insert_string_set(&mut collected, value, operation)?;
+        }
+        Ok(collected)
+    }
+
+    /// Copies retained items and charges both their slots and storage.
+    pub fn copy_retained_slice<T: Clone>(
+        &self,
+        values: &[T],
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        let bytes = values
+            .len()
+            .checked_mul(std::mem::size_of::<T>().max(1))
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.charge_retained(u64_from_index(bytes), operation)?;
+        self.copy_slice(values, operation)
+    }
+
+    /// Copies retained rows and charges row and item slots.
+    pub fn copy_retained_rows<T: Clone>(
+        &self,
+        rows: &[Vec<T>],
+        row_operation: &'static str,
+        item_operation: &'static str,
+    ) -> Result<Vec<Vec<T>>, CodecError> {
+        let bytes = rows
+            .len()
+            .checked_mul(std::mem::size_of::<Vec<T>>())
+            .ok_or_else(|| self.refuse_codec_limit(row_operation, u64::MAX, u64::MAX))?;
+        self.charge_retained(u64_from_index(bytes), row_operation)?;
+        let mut copy = self.collection_vec(rows.len(), row_operation)?;
+        for row in rows {
+            copy.push(self.copy_retained_slice(row, item_operation)?);
+        }
+        Ok(copy)
+    }
+
+    /// Copies a retained set after charging storage and entries.
+    pub fn copy_retained_set<T: Copy + Eq + Hash>(
+        &self,
+        values: &HashSet<T>,
+        operation: &'static str,
+    ) -> Result<HashSet<T>, CodecError> {
+        let bytes = values
+            .len()
+            .checked_mul(std::mem::size_of::<T>().max(1))
+            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<T>>()))
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.charge_retained(u64_from_index(bytes), operation)?;
+        let mut copy = HashSet::new();
+        self.reserve_set(&mut copy, values.len(), operation)?;
+        copy.extend(values.iter().copied());
+        Ok(copy)
+    }
+
+    /// Reserves hash set entries after charging their slots.
+    pub fn reserve_set<T: Eq + Hash>(
+        &self,
+        values: &mut HashSet<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        values
+            .try_reserve(count)
+            .map_err(|_| self.collection_allocation_failed(count, operation))
+    }
+
+    /// Reserves hash map entries after charging their slots.
+    pub fn reserve_map<K: Eq + Hash, V>(
+        &self,
+        values: &mut HashMap<K, V>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        values
+            .try_reserve(count)
+            .map_err(|_| self.collection_allocation_failed(count, operation))
+    }
+
+    /// Charges a new B-tree map key before insertion.
+    pub fn admit_btree_entry<K: Ord, V>(
+        &self,
+        values: &BTreeMap<K, V>,
+        key: &K,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if !values.contains_key(key) {
+            self.charge_collection_items(1, operation)?;
+        }
+        Ok(())
+    }
+
+    /// Inserts a B-tree map entry after charging a new key.
+    pub fn insert_btree_map<K: Ord, V>(
+        &self,
+        values: &mut BTreeMap<K, V>,
+        key: K,
+        value: V,
+        operation: &'static str,
+    ) -> Result<Option<V>, CodecError> {
+        self.admit_btree_entry(values, &key, operation)?;
+        Ok(values.insert(key, value))
+    }
+
+    /// Inserts a B-tree set item after charging a new value.
+    pub fn insert_btree_set<T: Ord>(
+        &self,
+        values: &mut BTreeSet<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if values.contains(&value) {
+            return Ok(false);
+        }
+        self.charge_collection_items(1, operation)?;
+        Ok(values.insert(value))
+    }
+
+    /// Extends retained bytes after charging both their slots and storage.
+    pub fn extend_retained_bytes(
+        &self,
+        target: &mut Vec<u8>,
+        source: &[u8],
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_retained(u64_from_index(source.len()), operation)?;
+        self.reserve_vec(target, source.len(), operation)?;
+        target.extend_from_slice(source);
+        Ok(())
+    }
+
+    /// Reserves a scoped vector and returns its live reservation.
+    pub fn temporary_vec<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(Vec<T>, ScopedReservation<'_>), CodecError> {
+        let bytes = count
+            .checked_mul(std::mem::size_of::<T>().max(1))
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let reservation = self.reserve_scoped(u64_from_index(bytes), operation)?;
+        let values = self.collection_vec(count, operation)?;
+        Ok((values, reservation))
+    }
+
+    fn temporary_hash_bytes<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        std::mem::size_of::<T>()
+            .max(1)
+            .checked_add(32)
+            .and_then(|size| size.checked_mul(count))
+            .map(u64_from_index)
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
+
+    /// Reserves a scoped hash set and returns its live reservation.
+    pub fn temporary_set<T: Eq + Hash>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(HashSet<T>, ScopedReservation<'_>), CodecError> {
+        let reservation = self.reserve_scoped(self.temporary_hash_bytes::<T>(count, operation)?, operation)?;
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        let mut values = HashSet::new();
+        values
+            .try_reserve(count)
+            .map_err(|_| self.allocation_failed(ResourceDimension::MaterializedBytes, count, operation))?;
+        Ok((values, reservation))
+    }
+
+    /// Reserves a scoped deque and returns its live reservation.
+    pub fn temporary_queue<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(VecDeque<T>, ScopedReservation<'_>), CodecError> {
+        let reservation = self.reserve_scoped(self.temporary_hash_bytes::<T>(count, operation)?, operation)?;
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        let mut values = VecDeque::new();
+        values
+            .try_reserve(count)
+            .map_err(|_| self.allocation_failed(ResourceDimension::MaterializedBytes, count, operation))?;
+        Ok((values, reservation))
+    }
+
+    /// Formats a retained string after charging its exact byte count.
+    pub fn format_retained(
+        &self,
+        args: fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        let length = self.formatted_length(args, operation)?;
+        self.charge_retained(u64_from_index(length), operation)?;
+        let mut text = String::new();
+        text.try_reserve_exact(length)
+            .map_err(|_| self.allocation_failed(ResourceDimension::RetainedBytes, length, operation))?;
+        fmt::write(&mut text, args).map_err(CodecError::malformed)?;
+        Ok(text)
+    }
+
+    /// Formats a temporary string and returns its live reservation.
+    pub fn format_scoped(
+        &self,
+        args: fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<(String, ScopedReservation<'_>), CodecError> {
+        let length = self.formatted_length(args, operation)?;
+        let reservation = self.reserve_scoped(u64_from_index(length), operation)?;
+        let mut text = String::new();
+        text.try_reserve_exact(length)
+            .map_err(|_| self.allocation_failed(ResourceDimension::MaterializedBytes, length, operation))?;
+        fmt::write(&mut text, args).map_err(CodecError::malformed)?;
+        Ok((text, reservation))
+    }
+
+    fn formatted_length(
+        &self,
+        args: fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<usize, CodecError> {
+        struct Count(Option<usize>);
+        impl Write for Count {
+            fn write_str(&mut self, value: &str) -> fmt::Result {
+                self.0 = self.0.and_then(|total| total.checked_add(value.len()));
+                self.0.map(|_| ()).ok_or(fmt::Error)
+            }
+        }
+        let mut count = Count(Some(0));
+        fmt::write(&mut count, args)
+            .map_err(|_| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        count.0.ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
     use super::super::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
@@ -288,6 +696,130 @@ mod tests {
     collection_case!(collect_hash_map_charges_before_growth, 2,
         |ctx: &DecodeContext<'_>| ctx.collect_hash_map([(1_u8, 2_u8), (3, 4)], "test collect map").map(|_| ()),
         |ctx: &DecodeContext<'_>| ctx.collect_hash_map([(1_u8, 2_u8), (3, 4)], "test collect map").map(|_| ()));
+    collection_case!(push_back_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.push_back(&mut VecDeque::new(), 1_u8, "test push back"),
+        |ctx: &DecodeContext<'_>| ctx.push_back(&mut VecDeque::new(), 1_u8, "test push back"));
+    collection_case!(reserve_heap_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.reserve_heap(&mut BinaryHeap::<u8>::new(), 1, "test reserve heap"),
+        |ctx: &DecodeContext<'_>| ctx.reserve_heap(&mut BinaryHeap::<u8>::new(), 1, "test reserve heap"));
+    collection_case!(copy_slice_charges_before_allocation, 2,
+        |ctx: &DecodeContext<'_>| ctx.copy_slice(&[1_u8, 2], "test copy slice").map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.copy_slice(&[1_u8, 2], "test copy slice").map(|_| ()));
+    collection_case!(collect_options_charges_before_growth, 2,
+        |ctx: &DecodeContext<'_>| ctx.collect_options([Some(1_u8), Some(2)], "test collect options").map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.collect_options([Some(1_u8), Some(2)], "test collect options").map(|_| ()));
+    collection_case!(collect_fallible_options_charges_before_growth, 2,
+        |ctx: &DecodeContext<'_>| ctx.collect_fallible_options([Ok::<Option<u8>, CodecError>(Some(1)), Ok(Some(2))], "test fallible options").map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.collect_fallible_options([Ok::<Option<u8>, CodecError>(Some(1)), Ok(Some(2))], "test fallible options").map(|_| ()));
+    collection_case!(collect_string_set_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.collect_string_set(["one"], "test string set").map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.collect_string_set(["one"], "test string set").map(|_| ()));
+    collection_case!(reserve_set_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.reserve_set(&mut HashSet::<u8>::new(), 1, "test reserve set"),
+        |ctx: &DecodeContext<'_>| ctx.reserve_set(&mut HashSet::<u8>::new(), 1, "test reserve set"));
+    collection_case!(reserve_map_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.reserve_map(&mut HashMap::<u8, u8>::new(), 1, "test reserve map"),
+        |ctx: &DecodeContext<'_>| ctx.reserve_map(&mut HashMap::<u8, u8>::new(), 1, "test reserve map"));
+    collection_case!(admit_btree_entry_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.admit_btree_entry(&BTreeMap::<u8, u8>::new(), &1, "test admit btree"),
+        |ctx: &DecodeContext<'_>| ctx.admit_btree_entry(&BTreeMap::<u8, u8>::new(), &1, "test admit btree"));
+    collection_case!(insert_btree_map_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.insert_btree_map(&mut BTreeMap::new(), 1_u8, 2_u8, "test insert btree map").map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.insert_btree_map(&mut BTreeMap::new(), 1_u8, 2_u8, "test insert btree map").map(|_| ()));
+    collection_case!(insert_btree_set_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.insert_btree_set(&mut BTreeSet::new(), 1_u8, "test insert btree set").map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.insert_btree_set(&mut BTreeSet::new(), 1_u8, "test insert btree set").map(|_| ()));
+    collection_case!(extend_retained_bytes_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.extend_retained_bytes(&mut Vec::new(), b"a", "test extend bytes"),
+        |ctx: &DecodeContext<'_>| ctx.extend_retained_bytes(&mut Vec::new(), b"a", "test extend bytes"));
+    collection_case!(temporary_vec_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.temporary_vec::<u8>(1, "test temporary vec").map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.temporary_vec::<u8>(1, "test temporary vec").map(|_| ()));
+
+    macro_rules! admitted_case {
+        ($name:ident, $body:expr) => {
+            #[test]
+            fn $name() {
+                let arena = DecodeArena::new();
+                let ctx = context(&arena, 1);
+                let result: Result<(), CodecError> = (|| {
+                    ctx.charge_collection_items(2, "test admitted")?;
+                    ($body)()
+                })();
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems));
+                let arena = DecodeArena::new();
+                let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+                ctx.charge_collection_items(2, "test admitted").expect("admission");
+                assert!(($body)().is_ok());
+            }
+        };
+    }
+    admitted_case!(reserve_admitted_vec_follows_prior_admission,
+        || DecodeContext::reserve_admitted_vec(&mut Vec::<u8>::new(), 2, "test admitted"));
+    admitted_case!(reserve_admitted_map_follows_prior_admission,
+        || DecodeContext::reserve_admitted_map(&mut HashMap::<u8, u8>::new(), 2, "test admitted"));
+    admitted_case!(reserve_admitted_set_follows_prior_admission,
+        || DecodeContext::reserve_admitted_set(&mut HashSet::<u8>::new(), 2, "test admitted"));
+    admitted_case!(copy_admitted_slice_follows_prior_admission,
+        || DecodeContext::copy_admitted_slice(&[1_u8, 2], "test admitted").map(|_| ()));
+    admitted_case!(copy_admitted_rows_follows_prior_admission,
+        || DecodeContext::copy_admitted_rows(&[1_u8, 2], 1, "test admitted").map(|_| ()));
+
+    macro_rules! retained_case {
+        ($name:ident, $need:expr, $body:expr) => {
+            #[test]
+            fn $name() {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = $need - 1;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("test context");
+                let result: Result<(), CodecError> = ($body)(&ctx);
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes));
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                    .expect("test context");
+                assert!(($body)(&ctx).is_ok());
+            }
+        };
+    }
+    retained_case!(copy_retained_slice_charges_before_allocation, 2,
+        |ctx: &DecodeContext<'_>| ctx.copy_retained_slice(&[1_u8, 2], "test retained slice").map(|_| ()));
+    retained_case!(copy_retained_rows_charges_before_allocation, std::mem::size_of::<Vec<u8>>() as u64,
+        |ctx: &DecodeContext<'_>| ctx.copy_retained_rows(&[vec![1_u8]], "test retained rows", "test retained row items").map(|_| ()));
+    retained_case!(copy_retained_set_charges_before_allocation,
+        (std::mem::size_of::<HashSet<u8>>() + 1) as u64,
+        |ctx: &DecodeContext<'_>| ctx.copy_retained_set(&HashSet::from([1_u8]), "test retained set").map(|_| ()));
+    retained_case!(format_retained_charges_before_allocation, 3,
+        |ctx: &DecodeContext<'_>| ctx.format_retained(format_args!("abc"), "test format retained").map(|_| ()));
+
+    macro_rules! materialized_case {
+        ($name:ident, $need:expr, $body:expr) => {
+            #[test]
+            fn $name() {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = $need - 1;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("test context");
+                let result: Result<(), CodecError> = ($body)(&ctx);
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::MaterializedBytes));
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                    .expect("test context");
+                assert!(($body)(&ctx).is_ok());
+            }
+        };
+    }
+    materialized_case!(temporary_set_reserves_scoped_storage, 33,
+        |ctx: &DecodeContext<'_>| ctx.temporary_set::<u8>(1, "test temporary set").map(|_| ()));
+    materialized_case!(temporary_queue_reserves_scoped_storage, 33,
+        |ctx: &DecodeContext<'_>| ctx.temporary_queue::<u8>(1, "test temporary queue").map(|_| ()));
+    materialized_case!(format_scoped_charges_before_allocation, 3,
+        |ctx: &DecodeContext<'_>| ctx.format_scoped(format_args!("abc"), "test format scoped").map(|_| ()));
 
     #[test]
     fn copy_scoped_text_refuses_before_allocation_and_succeeds_under_service_profile() {

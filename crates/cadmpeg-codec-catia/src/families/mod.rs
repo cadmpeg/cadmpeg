@@ -55,7 +55,7 @@ impl<'a, 'b> FamilyEntityAdmission<'a, 'b> {
     ) -> Result<(), CodecError> {
         self.ctx
             .charge_entities(1, "admit CATIA family model entity")?;
-        crate::resource::reserve_vec(self.ctx, values, 1, operation)?;
+        self.ctx.reserve_vec(values, 1, operation)?;
         self.admitted += 1;
         Ok(())
     }

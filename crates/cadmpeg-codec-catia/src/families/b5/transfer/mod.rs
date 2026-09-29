@@ -125,18 +125,8 @@ impl OwnershipPlan {
     ) -> Result<BTreeMap<usize, Vec<usize>>, cadmpeg_core::CodecError> {
         let mut components = BTreeMap::<usize, Vec<usize>>::new();
         for (face, &component) in self.face_components.iter().enumerate() {
-            crate::resource::admit_btree_entry(
-                ctx,
-                &components,
-                &component,
-                "catia_b5_face_component_groups",
-            )?;
-            crate::resource::push(
-                ctx,
-                components.entry(component).or_default(),
-                face,
-                "catia_b5_face_component_members",
-            )?;
+            ctx.admit_btree_entry(&components, &component, "catia_b5_face_component_groups")?;
+            ctx.push_vec(components.entry(component).or_default(), face, "catia_b5_face_component_members")?;
         }
         Ok(components)
     }
@@ -236,12 +226,7 @@ pub(in crate::families) fn transfer(
         let mut referenced_loops = HashSet::new();
         for face in &graph.faces {
             for &loop_id in &face.loops {
-                crate::resource::insert_set(
-                    admission.ctx,
-                    &mut referenced_loops,
-                    loop_id,
-                    "catia_b5_transfer_referenced_loops",
-                )?;
+                admission.ctx.insert_hash_set(&mut referenced_loops, loop_id, "catia_b5_transfer_referenced_loops")?;
             }
         }
         graph
@@ -323,13 +308,8 @@ fn add_referenced_surface(
     pending: &mut Vec<u32>,
     surface_id: u32,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if crate::resource::insert_set(
-        ctx,
-        referenced,
-        surface_id,
-        "catia_b5_referenced_surface_ids",
-    )? {
-        crate::resource::push(ctx, pending, surface_id, "catia_b5_pending_surface_ids")?;
+    if ctx.insert_hash_set(referenced, surface_id, "catia_b5_referenced_surface_ids")? {
+        ctx.push_vec(pending, surface_id, "catia_b5_pending_surface_ids")?;
     }
     Ok(())
 }
@@ -421,13 +401,7 @@ fn build_plan(
                 Ok(plan) => plan,
                 Err(error) => return Some(Err(error)),
             };
-            admitted!(crate::resource::insert_btree_map(
-                ctx,
-                &mut surface_plan,
-                surface_id,
-                plan,
-                "catia_b5_transfer_surface_plan"
-            ));
+            admitted!(ctx.insert_btree_map(&mut surface_plan, surface_id, plan, "catia_b5_transfer_surface_plan"));
         }
 
         let mut pcurve_plan = BTreeMap::new();
@@ -452,13 +426,7 @@ fn build_plan(
                 Ok(senses) => senses,
                 Err(error) => return Some(Err(error)),
             };
-            if let Err(error) = crate::resource::insert_btree_map(
-                ctx,
-                &mut loop_senses,
-                loop_.object_id,
-                senses,
-                "catia_b5_transfer_loop_senses",
-            ) {
+            if let Err(error) = ctx.insert_btree_map(&mut loop_senses, loop_.object_id, senses, "catia_b5_transfer_loop_senses") {
                 return Some(Err(error));
             }
             for member in &loop_.members {
@@ -489,12 +457,7 @@ fn build_plan(
                                 circle_contains_points(geometry, &points)
                             })
                         {
-                            admitted!(crate::resource::admit_btree_entry(
-                                ctx,
-                                &pcurve_plan,
-                                &pcurve_id,
-                                "catia_b5_transfer_pcurve_plan"
-                            ));
+                            admitted!(ctx.admit_btree_entry(&pcurve_plan, &pcurve_id, "catia_b5_transfer_pcurve_plan"));
                             pcurve_plan.entry(pcurve_id).or_insert((
                                 pcurve_geometry,
                                 false,
@@ -505,24 +468,14 @@ fn build_plan(
                                     bounded_occurrence_range(parameters, parameter_range)
                                 })
                                 .unwrap_or(parameter_range);
-                            admitted!(crate::resource::admit_map_entry(
-                                ctx,
-                                &mut edge_support_plan,
-                                &edge_id,
-                                "catia_b5_edge_support_groups"
-                            ));
+                            admitted!(ctx.admit_hash_map_entry(&mut edge_support_plan, &edge_id, "catia_b5_edge_support_groups"));
                             let supports = edge_support_plan.entry(edge_id).or_default();
                             if !supports.iter().any(|(surface, pcurve, range)| {
                                 *surface == loop_.surface
                                     && *pcurve == pcurve_id
                                     && *range == support_range
                             }) {
-                                admitted!(crate::resource::push(
-                                    ctx,
-                                    supports,
-                                    (loop_.surface, pcurve_id, support_range),
-                                    "catia_b5_edge_supports"
-                                ));
+                                admitted!(ctx.push_vec(supports, (loop_.surface, pcurve_id, support_range), "catia_b5_edge_supports"));
                             }
                             if let Err(error) = merge_curve_plan(
                                 ctx,
@@ -539,21 +492,11 @@ fn build_plan(
                                 return Some(Err(error));
                             }
                         }
-                        admitted!(crate::resource::insert_btree_set(
-                            ctx,
-                            &mut edge_ids,
-                            edge_id,
-                            "catia_b5_transfer_edge_ids"
-                        ));
+                        admitted!(ctx.insert_btree_set(&mut edge_ids, edge_id, "catia_b5_transfer_edge_ids"));
                         continue;
                     }
                     if graph.implicit_pcurves.get(&pcurve_id) == Some(&loop_.surface) {
-                        admitted!(crate::resource::insert_btree_set(
-                            ctx,
-                            &mut edge_ids,
-                            edge_id,
-                            "catia_b5_transfer_edge_ids"
-                        ));
+                        admitted!(ctx.insert_btree_set(&mut edge_ids, edge_id, "catia_b5_transfer_edge_ids"));
                         continue;
                     }
                     return None;
@@ -567,31 +510,19 @@ fn build_plan(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                let knots = match crate::resource::collect_vec(
-                    ctx,
-                    knots.into_iter().map(FiniteReal::get),
-                    "catia_b5_transfer_pcurve_knots",
-                ) {
+                let knots = match ctx.collect_vec(knots.into_iter().map(FiniteReal::get), "catia_b5_transfer_pcurve_knots") {
                     Ok(knots) => knots,
                     Err(error) => return Some(Err(error)),
                 };
                 let parameter_range = pcurve_parameter_domain(pcurve)?;
                 let surface = graph.surfaces.get(&loop_.surface)?;
                 let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
-                let points = admitted!(crate::resource::collect_vec(
-                    ctx,
-                    pcurve
+                let points = admitted!(ctx.collect_vec(pcurve
                         .control_points
                         .iter()
-                        .map(|point| neutral_pcurve_point(point.get(), surface)),
-                    "catia_b5_transfer_pcurve_points"
-                ));
+                        .map(|point| neutral_pcurve_point(point.get(), surface)), "catia_b5_transfer_pcurve_points"));
                 let weights = match pcurve.weights.as_ref() {
-                    Some(weights) => Some(admitted!(crate::resource::collect_vec(
-                        ctx,
-                        weights.iter().copied().map(PositiveReal::get),
-                        "catia_b5_transfer_pcurve_weights"
-                    ))),
+                    Some(weights) => Some(admitted!(ctx.collect_vec(weights.iter().copied().map(PositiveReal::get), "catia_b5_transfer_pcurve_weights"))),
                     None => None,
                 };
                 let geometry = PcurveGeometry::Nurbs {
@@ -602,23 +533,13 @@ fn build_plan(
                         format_args!("b5 object-stream pcurve record #{}", pcurve.object_id),
                     ))?,
                 };
-                admitted!(crate::resource::admit_btree_entry(
-                    ctx,
-                    &pcurve_plan,
-                    &pcurve_id,
-                    "catia_b5_transfer_pcurve_plan"
-                ));
+                admitted!(ctx.admit_btree_entry(&pcurve_plan, &pcurve_id, "catia_b5_transfer_pcurve_plan"));
                 pcurve_plan.entry(pcurve_id).or_insert((
                     geometry,
                     cylinder_reparameterized,
                     parameter_range,
                 ));
-                admitted!(crate::resource::admit_map_entry(
-                    ctx,
-                    &mut edge_support_plan,
-                    &edge_id,
-                    "catia_b5_edge_support_groups"
-                ));
+                admitted!(ctx.admit_hash_map_entry(&mut edge_support_plan, &edge_id, "catia_b5_edge_support_groups"));
                 let supports = edge_support_plan.entry(edge_id).or_default();
                 let support_range = edge_pcurve_parameters(graph, edge_id, pcurve_id)
                     .and_then(|parameters| bounded_occurrence_range(parameters, parameter_range))
@@ -626,12 +547,7 @@ fn build_plan(
                 if !supports.iter().any(|(surface, pcurve, range)| {
                     *surface == loop_.surface && *pcurve == pcurve_id && *range == support_range
                 }) {
-                    admitted!(crate::resource::push(
-                        ctx,
-                        supports,
-                        (loop_.surface, pcurve_id, support_range),
-                        "catia_b5_edge_supports"
-                    ));
+                    admitted!(ctx.push_vec(supports, (loop_.surface, pcurve_id, support_range), "catia_b5_edge_supports"));
                 }
                 let lifted = match lifted_curve_geometry(ctx, pcurve, surface) {
                     Ok(lifted) => lifted,
@@ -736,12 +652,7 @@ fn build_plan(
                     let Some(endpoint_parameters) =
                         edge_pcurve_parameters(graph, edge_id, pcurve_id)
                     else {
-                        admitted!(crate::resource::insert_btree_set(
-                            ctx,
-                            &mut edge_ids,
-                            edge_id,
-                            "catia_b5_transfer_edge_ids"
-                        ));
+                        admitted!(ctx.insert_btree_set(&mut edge_ids, edge_id, "catia_b5_transfer_edge_ids"));
                         continue;
                     };
                     let helix = match cylinder_helix(
@@ -757,12 +668,7 @@ fn build_plan(
                         Err(error) => return Some(Err(error)),
                     };
                     let Some(helix) = helix else {
-                        admitted!(crate::resource::insert_btree_set(
-                            ctx,
-                            &mut edge_ids,
-                            edge_id,
-                            "catia_b5_transfer_edge_ids"
-                        ));
+                        admitted!(ctx.insert_btree_set(&mut edge_ids, edge_id, "catia_b5_transfer_edge_ids"));
                         continue;
                     };
                     if edge_helix_plan
@@ -796,21 +702,11 @@ fn build_plan(
                     if conflicting_edge_curves.contains(&edge_id) {
                         edge_helix_plan.remove(&edge_id);
                     } else {
-                        admitted!(crate::resource::admit_map_entry(
-                            ctx,
-                            &mut edge_helix_plan,
-                            &edge_id,
-                            "catia_b5_edge_helix_plans"
-                        ));
+                        admitted!(ctx.admit_hash_map_entry(&mut edge_helix_plan, &edge_id, "catia_b5_edge_helix_plans"));
                         edge_helix_plan.entry(edge_id).or_insert(helix);
                     }
                 }
-                admitted!(crate::resource::insert_btree_set(
-                    ctx,
-                    &mut edge_ids,
-                    edge_id,
-                    "catia_b5_transfer_edge_ids"
-                ));
+                admitted!(ctx.insert_btree_set(&mut edge_ids, edge_id, "catia_b5_transfer_edge_ids"));
             }
         }
         let loop_orientation = match orient_loop_members(ctx, graph, loop_senses) {
@@ -871,12 +767,7 @@ fn build_plan(
                 Err(limit) => return Some(Err(limit.into())),
             };
             if follows {
-                admitted!(crate::resource::insert_set(
-                    ctx,
-                    &mut exact_support_edges,
-                    edge,
-                    "catia_b5_exact_support_edges"
-                ));
+                admitted!(ctx.insert_hash_set(&mut exact_support_edges, edge, "catia_b5_exact_support_edges"));
             }
         }
         let mut exact_support_curves = HashSet::new();
@@ -889,24 +780,14 @@ fn build_plan(
                 Err(limit) => return Some(Err(limit.into())),
             };
             if follows {
-                admitted!(crate::resource::insert_set(
-                    ctx,
-                    &mut exact_support_curves,
-                    edge,
-                    "catia_b5_exact_support_curves"
-                ));
+                admitted!(ctx.insert_hash_set(&mut exact_support_curves, edge, "catia_b5_exact_support_curves"));
             }
         }
 
         let mut used_vertices = HashSet::new();
         for edge in &edge_ids {
             for vertex in graph.vertices.edges()[edge] {
-                admitted!(crate::resource::insert_set(
-                    ctx,
-                    &mut used_vertices,
-                    vertex.combined_index(graph.vertices.raw_points().len()),
-                    "catia_b5_used_vertices"
-                ));
+                admitted!(ctx.insert_hash_set(&mut used_vertices, vertex.combined_index(graph.vertices.raw_points().len()), "catia_b5_used_vertices"));
             }
         }
 
@@ -1107,13 +988,9 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
         PcurveNurbs::from_lanes(
             crate::families::a5a8::records::A8Pcurve::DEGREE,
             knots,
-            crate::resource::collect_vec(
-                ctx,
-                control_points
+            ctx.collect_vec(control_points
                     .into_iter()
-                    .map(|point| pcurves::neutral_pcurve_point(point.get(), surface)),
-                "catia_b5_object_stream_pcurve_points",
-            )?,
+                    .map(|point| pcurves::neutral_pcurve_point(point.get(), surface)), "catia_b5_object_stream_pcurve_points")?,
             None,
             false,
         ),
@@ -1382,24 +1259,16 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
-                    let knots = match crate::resource::collect_vec(
-                        ctx,
-                        knots.into_iter().map(FiniteReal::get),
-                        "catia_b5_extrusion_pcurve_knots",
-                    ) {
+                    let knots = match ctx.collect_vec(knots.into_iter().map(FiniteReal::get), "catia_b5_extrusion_pcurve_knots") {
                         Ok(knots) => knots,
                         Err(error) => return Some(Err(error)),
                     };
                     let domain = pcurve_parameter_domain(pcurve)?;
                     bounded_occurrence_range(pcurve_parameter_range, domain)?;
-                    let points = match crate::resource::collect_vec(
-                        ctx,
-                        pcurve
+                    let points = match ctx.collect_vec(pcurve
                             .control_points
                             .iter()
-                            .map(|point| neutral_pcurve_point(point.get(), source_surface)),
-                        "catia_b5_extrusion_pcurve_points",
-                    ) {
+                            .map(|point| neutral_pcurve_point(point.get(), source_surface)), "catia_b5_extrusion_pcurve_points") {
                         Ok(points) => points,
                         Err(error) => return Some(Err(error)),
                     };
@@ -1407,11 +1276,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         .weights
                         .as_ref()
                         .map(|weights| {
-                            crate::resource::collect_vec(
-                                ctx,
-                                weights.iter().copied().map(PositiveReal::get),
-                                "catia_b5_extrusion_pcurve_weights",
-                            )
+                            ctx.collect_vec(weights.iter().copied().map(PositiveReal::get), "catia_b5_extrusion_pcurve_weights")
                         })
                         .transpose()
                     {
@@ -1610,20 +1475,14 @@ fn curve_on_parameter_range(
     let source_per_target = source_span / target_span;
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut curve)) => {
-            let mapped = crate::resource::collect_vec(
-                ctx,
-                curve
+            let mapped = ctx.collect_vec(curve
                     .knots()
                     .iter()
-                    .map(|knot| target[0] + (*knot - source[0]) * target_per_source),
-                "catia_b5_reparameterized_curve_knots",
-            )?;
+                    .map(|knot| target[0] + (*knot - source[0]) * target_per_source), "catia_b5_reparameterized_curve_knots")?;
             let mapped = if mapped.iter().all(|knot| knot.is_finite()) {
                 mapped
             } else {
-                let mapped = crate::resource::collect_options(
-                    ctx,
-                    curve.knots().iter().map(|knot| {
+                let mapped = ctx.collect_options(curve.knots().iter().map(|knot| {
                         target_interval
                             .map_from(
                                 source_interval,
@@ -1632,9 +1491,7 @@ fn curve_on_parameter_range(
                             )
                             .ok()
                             .map(cadmpeg_ir::scalar::FiniteReal::get)
-                    }),
-                    "catia_b5_reparameterized_curve_fallback_knots",
-                )?;
+                    }), "catia_b5_reparameterized_curve_fallback_knots")?;
                 let Some(mapped) = mapped else {
                     return Ok(None);
                 };
@@ -1658,22 +1515,14 @@ fn curve_on_parameter_range(
                     ctx,
                     NurbsCurve::from_lanes(
                         1,
-                        crate::resource::collect_vec(
-                            ctx,
-                            [target[0], target[0], target[1], target[1]],
-                            "catia_b5_reparameterized_line_knots",
-                        )?,
-                        crate::resource::collect_vec(
-                            ctx,
-                            source.into_iter().map(|parameter| {
+                        ctx.collect_vec([target[0], target[0], target[1], target[1]], "catia_b5_reparameterized_line_knots")?,
+                        ctx.collect_vec(source.into_iter().map(|parameter| {
                                 Point3::new(
                                     origin.x + parameter * direction.x,
                                     origin.y + parameter * direction.y,
                                     origin.z + parameter * direction.z,
                                 )
-                            }),
-                            "catia_b5_reparameterized_line_points",
-                        )?,
+                            }), "catia_b5_reparameterized_line_points")?,
                         None,
                         false,
                     ),
@@ -1746,13 +1595,9 @@ fn annotate(
     tag: &str,
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let id = crate::resource::format_retained(ctx, format_args!("{id}"), "catia_b5_annotation_id")?;
+    let id = ctx.format_retained(format_args!("{id}"), "catia_b5_annotation_id")?;
     let exactness_id = ctx.copy_retained_text(&id, "catia_b5_annotation_exactness_id")?;
-    let stream_name = crate::resource::format_retained(
-        ctx,
-        format_args!("catia:{stream}"),
-        "catia_b5_annotation_stream",
-    )?;
+    let stream_name = ctx.format_retained(format_args!("catia:{stream}"), "catia_b5_annotation_stream")?;
     let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let stream_bytes =

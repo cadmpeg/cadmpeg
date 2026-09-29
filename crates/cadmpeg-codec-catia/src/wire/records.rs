@@ -78,7 +78,7 @@ pub(crate) fn family_pcurves_from_records(
         if let Some(pcurve) =
             parse_consolidated_pcurve(ctx, data, frame.pos, frame.payload, frame.end)?
         {
-            crate::resource::push(ctx, &mut pcurves, pcurve, "catia_consolidated_pcurves")?;
+            ctx.push_vec(&mut pcurves, pcurve, "catia_consolidated_pcurves")?;
         }
     }
     Ok(pcurves)
@@ -92,30 +92,10 @@ impl ConsolidatedPcurve {
         let mut points = Vec::new();
         let mut first = Vec::new();
         let mut second = Vec::new();
-        crate::resource::reserve_vec(
-            ctx,
-            &mut knots,
-            self.sites.len(),
-            "catia_native_pcurve_knots",
-        )?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut points,
-            self.sites.len(),
-            "catia_native_pcurve_points",
-        )?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut first,
-            self.sites.len(),
-            "catia_native_pcurve_first_derivatives",
-        )?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut second,
-            self.sites.len(),
-            "catia_native_pcurve_second_derivatives",
-        )?;
+        ctx.reserve_vec(&mut knots, self.sites.len(), "catia_native_pcurve_knots")?;
+        ctx.reserve_vec(&mut points, self.sites.len(), "catia_native_pcurve_points")?;
+        ctx.reserve_vec(&mut first, self.sites.len(), "catia_native_pcurve_first_derivatives")?;
+        ctx.reserve_vec(&mut second, self.sites.len(), "catia_native_pcurve_second_derivatives")?;
         for site in &self.sites {
             knots.push(site.knot);
             points.push(site.point);
@@ -157,7 +137,7 @@ fn parse_consolidated_pcurve(
         return Ok(None);
     };
     let mut sites = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_consolidated_pcurve_sites")?;
+    ctx.reserve_vec(&mut sites, count, "catia_consolidated_pcurve_sites")?;
     for index in 0..count {
         let offset = index * 8;
         let values = lanes.map(|lane| f64_le(data, lane + offset));
@@ -178,11 +158,7 @@ fn parse_consolidated_pcurve(
         extrapolation_sites,
         sites,
         range,
-        tail: crate::resource::copy_retained_slice(
-            ctx,
-            &data[tail_at..end],
-            "catia_consolidated_pcurve_tail",
-        )?,
+        tail: ctx.copy_retained_slice(&data[tail_at..end], "catia_consolidated_pcurve_tail")?,
     }))
 }
 
@@ -616,14 +592,10 @@ where
     for (source_index, extents) in sources.into_iter().enumerate() {
         // Every extent is inside the image by construction. An empty extent
         // holds no record, so it opens no logical source offset.
-        let source_ranges = crate::resource::collect_vec(
-            ctx,
-            extents
+        let source_ranges = ctx.collect_vec(extents
                 .into_iter()
                 .map(|extent| extent.borrow().range())
-                .filter(|range| range.start < range.end),
-            "catia_record_source_ranges",
-        )?;
+                .filter(|range| range.start < range.end), "catia_record_source_ranges")?;
         let mut source_records = Vec::new();
         let mut source_offset = 0usize;
         for range in &source_ranges {
@@ -648,7 +620,7 @@ where
                 };
                 pos = physical_range.end;
                 record.source_range = source_start..source_end;
-                crate::resource::push(ctx, &mut source_records, record, "catia_source_records")?;
+                ctx.push_vec(&mut source_records, record, "catia_source_records")?;
             }
             let Some(next_source_offset) = source_offset.checked_add(end - start) else {
                 return Ok(records);
@@ -658,29 +630,14 @@ where
         let mut record_starts = HashSet::new();
         let mut record_ranges = HashSet::new();
         for record in &source_records {
-            crate::resource::insert_set(
-                ctx,
-                &mut record_starts,
-                record.source_range.start,
-                "catia_record_starts",
-            )?;
-            crate::resource::insert_set(
-                ctx,
-                &mut record_ranges,
-                (record.source_range.start, record.source_range.end),
-                "catia_record_ranges",
-            )?;
+            ctx.insert_hash_set(&mut record_starts, record.source_range.start, "catia_record_starts")?;
+            ctx.insert_hash_set(&mut record_ranges, (record.source_range.start, record.source_range.end), "catia_record_ranges")?;
         }
         loop {
             let mut added = Vec::new();
             let mut source_ends = HashSet::new();
             for record in &source_records {
-                crate::resource::insert_set(
-                    ctx,
-                    &mut source_ends,
-                    record.source_range.end,
-                    "catia_record_source_ends",
-                )?;
+                ctx.insert_hash_set(&mut source_ends, record.source_range.end, "catia_record_source_ends")?;
             }
             for source_start in source_ends {
                 if record_starts.contains(&source_start) {
@@ -694,39 +651,19 @@ where
                 ) else {
                     continue;
                 };
-                if crate::resource::insert_set(
-                    ctx,
-                    &mut record_ranges,
-                    (record.source_range.start, record.source_range.end),
-                    "catia_record_ranges",
-                )? {
-                    crate::resource::insert_set(
-                        ctx,
-                        &mut record_starts,
-                        record.source_range.start,
-                        "catia_record_starts",
-                    )?;
-                    crate::resource::push(ctx, &mut added, record, "catia_spanning_records")?;
+                if ctx.insert_hash_set(&mut record_ranges, (record.source_range.start, record.source_range.end), "catia_record_ranges")? {
+                    ctx.insert_hash_set(&mut record_starts, record.source_range.start, "catia_record_starts")?;
+                    ctx.push_vec(&mut added, record, "catia_spanning_records")?;
                 }
             }
             if added.is_empty() {
                 break;
             }
-            crate::resource::reserve_vec(
-                ctx,
-                &mut source_records,
-                added.len(),
-                "catia_source_records",
-            )?;
+            ctx.reserve_vec(&mut source_records, added.len(), "catia_source_records")?;
             source_records.extend(added);
             source_records.sort_by_key(|record| record.source_range.start);
         }
-        crate::resource::reserve_vec(
-            ctx,
-            &mut records,
-            source_records.len(),
-            "catia_consolidated_records",
-        )?;
+        ctx.reserve_vec(&mut records, source_records.len(), "catia_consolidated_records")?;
         records.extend(source_records);
     }
     Ok(records)

@@ -414,31 +414,19 @@ pub(super) fn lifted_curve_geometry(
         ..
     } = surface
     {
-        let knots = crate::resource::collect_vec(
-            ctx,
-            native_knots.into_iter().map(FiniteReal::get),
-            "catia_b5_lifted_plane_knots",
-        )?;
+        let knots = ctx.collect_vec(native_knots.into_iter().map(FiniteReal::get), "catia_b5_lifted_plane_knots")?;
         let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
-        let points = crate::resource::collect_vec(
-            ctx,
-            pcurve.control_points.iter().map(|uv| {
+        let points = ctx.collect_vec(pcurve.control_points.iter().map(|uv| {
                 point3(add(
                     origin,
                     add(scale(direction_u, uv[0]), scale(direction_v.get(), uv[1])),
                 ))
-            }),
-            "catia_b5_lifted_plane_points",
-        )?;
+            }), "catia_b5_lifted_plane_points")?;
         let weights = pcurve
             .weights
             .as_ref()
             .map(|weights| {
-                crate::resource::collect_vec(
-                    ctx,
-                    weights.iter().copied().map(PositiveReal::get),
-                    "catia_b5_lifted_plane_weights",
-                )
+                ctx.collect_vec(weights.iter().copied().map(PositiveReal::get), "catia_b5_lifted_plane_weights")
             })
             .transpose()?;
         return Ok(
@@ -845,30 +833,15 @@ pub(super) fn emit_pcurves(
                         parameter
                     }
                 });
-            crate::resource::admit_btree_entry(
-                admission.context(),
-                &occurrence_groups,
-                &object_id,
-                "catia_b5_pcurve_occurrence_objects",
-            )?;
+            admission.context().admit_btree_entry(&occurrence_groups, &object_id, "catia_b5_pcurve_occurrence_objects")?;
             let ranges = occurrence_groups.entry(object_id).or_default();
             let key = parameter_range.map(|parameter| parameter.get().to_bits());
-            crate::resource::admit_btree_entry(
-                admission.context(),
-                ranges,
-                &key,
-                "catia_b5_pcurve_occurrence_ranges",
-            )?;
+            admission.context().admit_btree_entry(ranges, &key, "catia_b5_pcurve_occurrence_ranges")?;
             let occurrences = &mut ranges
                 .entry(key)
                 .or_insert_with(|| (parameter_range, Vec::new()))
                 .1;
-            crate::resource::push(
-                admission.context(),
-                occurrences,
-                (loop_.object_id, index),
-                "catia_b5_pcurve_occurrences",
-            )?;
+            admission.context().push_vec(occurrences, (loop_.object_id, index), "catia_b5_pcurve_occurrences")?;
         }
     }
     let mut pcurve_uses = HashMap::new();
@@ -877,17 +850,9 @@ pub(super) fn emit_pcurves(
         let range_count = ranges.len();
         for (rank, (parameter_range, occurrences)) in ranges.into_values().enumerate() {
             let id = if range_count == 1 {
-                crate::resource::format_retained(
-                    admission.context(),
-                    format_args!("catia:b5:pcurve#{object_id}"),
-                    "catia_b5_emitted_pcurve_id",
-                )?
+                admission.context().format_retained(format_args!("catia:b5:pcurve#{object_id}"), "catia_b5_emitted_pcurve_id")?
             } else {
-                crate::resource::format_retained(
-                    admission.context(),
-                    format_args!("catia:b5:pcurve#{object_id}@{rank}"),
-                    "catia_b5_emitted_pcurve_id",
-                )?
+                admission.context().format_retained(format_args!("catia:b5:pcurve#{object_id}@{rank}"), "catia_b5_emitted_pcurve_id")?
             };
             let id = PcurveId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
             annotate(
@@ -928,13 +893,7 @@ pub(super) fn emit_pcurves(
                     PcurveId::mint,
                     "catia_b5_pcurve_use_id",
                 )?;
-                crate::resource::insert_map(
-                    admission.context(),
-                    &mut pcurve_uses,
-                    occurrence,
-                    (use_id, parameter_range),
-                    "catia_b5_pcurve_uses",
-                )?;
+                admission.context().insert_hash_map(&mut pcurve_uses, occurrence, (use_id, parameter_range), "catia_b5_pcurve_uses")?;
             }
             let geometry = crate::resource::copy_pcurve_geometry(
                 admission.context(),

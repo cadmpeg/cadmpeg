@@ -444,12 +444,7 @@ impl A8Pcurve {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Vec<FiniteReal>, cadmpeg_core::CodecError> {
         let mut knots = Vec::new();
-        crate::resource::reserve_vec(
-            ctx,
-            &mut knots,
-            self.sites.len(),
-            "catia A8 pcurve distinct knots",
-        )?;
+        ctx.reserve_vec(&mut knots, self.sites.len(), "catia A8 pcurve distinct knots")?;
         knots.extend(self.sites.iter().map(|site| site.knot));
         Ok(knots)
     }
@@ -467,30 +462,10 @@ impl A8Pcurve {
         let mut points = Vec::new();
         let mut first = Vec::new();
         let mut second = Vec::new();
-        crate::resource::reserve_vec(
-            ctx,
-            &mut knots,
-            self.sites.len(),
-            "catia A8 pcurve jet knots",
-        )?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut points,
-            self.sites.len(),
-            "catia A8 pcurve jet points",
-        )?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut first,
-            self.sites.len(),
-            "catia A8 pcurve first jets",
-        )?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut second,
-            self.sites.len(),
-            "catia A8 pcurve second jets",
-        )?;
+        ctx.reserve_vec(&mut knots, self.sites.len(), "catia A8 pcurve jet knots")?;
+        ctx.reserve_vec(&mut points, self.sites.len(), "catia A8 pcurve jet points")?;
+        ctx.reserve_vec(&mut first, self.sites.len(), "catia A8 pcurve first jets")?;
+        ctx.reserve_vec(&mut second, self.sites.len(), "catia A8 pcurve second jets")?;
         for site in &self.sites {
             knots.push(site.knot.get());
             points.push(site.point.get());
@@ -570,12 +545,7 @@ impl A5FreeformCurve {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
         let mut knots = Vec::new();
-        crate::resource::reserve_vec(
-            ctx,
-            &mut knots,
-            self.sites.len(),
-            "catia A5 rolling ball knots",
-        )?;
+        ctx.reserve_vec(&mut knots, self.sites.len(), "catia A5 rolling ball knots")?;
         knots.extend(self.sites.iter().map(|site| site.knot.get()));
         Ok(knots)
     }
@@ -593,24 +563,9 @@ pub(in crate::families) fn rolling_ball_limit_curve(
     let mut positions = Vec::new();
     let mut first = Vec::new();
     let mut second = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut positions,
-        jet.sites.len(),
-        "catia A5 rolling ball positions",
-    )?;
-    crate::resource::reserve_vec(
-        ctx,
-        &mut first,
-        jet.sites.len(),
-        "catia A5 rolling ball first jets",
-    )?;
-    crate::resource::reserve_vec(
-        ctx,
-        &mut second,
-        jet.sites.len(),
-        "catia A5 rolling ball second jets",
-    )?;
+    ctx.reserve_vec(&mut positions, jet.sites.len(), "catia A5 rolling ball positions")?;
+    ctx.reserve_vec(&mut first, jet.sites.len(), "catia A5 rolling ball first jets")?;
+    ctx.reserve_vec(&mut second, jet.sites.len(), "catia A5 rolling ball second jets")?;
     for sample in &jet.sites {
         let limit = if second_limit {
             sample.site.limit2
@@ -644,12 +599,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         return Ok(None);
     };
     let mut poles = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut poles,
-        control_points.len(),
-        "catia A5 rolling ball poles",
-    )?;
+    ctx.reserve_vec(&mut poles, control_points.len(), "catia A5 rolling ball poles")?;
     poles.extend(
         control_points
             .into_iter()
@@ -698,7 +648,7 @@ impl A5GuideCurve {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
         let mut knots = Vec::new();
-        crate::resource::reserve_vec(ctx, &mut knots, self.sites.len(), "catia A5 guide knots")?;
+        ctx.reserve_vec(&mut knots, self.sites.len(), "catia A5 guide knots")?;
         knots.extend(self.sites.iter().map(|site| site.knot.get()));
         Ok(knots)
     }
@@ -743,7 +693,7 @@ pub(in crate::families) fn a5_nurbs_curves_from_records(
             header_token: record.header_token,
         };
         if let Some(curve) = parse_a5_nurbs_curve(ctx, data, frame, refusal)? {
-            crate::resource::push(ctx, &mut curves, curve, "catia_a5_nurbs_curves")?;
+            ctx.push_vec(&mut curves, curve, "catia_a5_nurbs_curves")?;
         }
     }
     Ok(curves)
@@ -811,12 +761,7 @@ fn parse_a5_nurbs_curve(
         return Ok(None);
     };
     let mut distinct_knots = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut distinct_knots,
-        knot_count,
-        "catia_a5_nurbs_distinct_knots",
-    )?;
+    ctx.reserve_vec(&mut distinct_knots, knot_count, "catia_a5_nurbs_distinct_knots")?;
     for index in 0..knot_count {
         let Some(at) = knot_start.checked_add(index * 8) else {
             return Ok(None);
@@ -827,12 +772,7 @@ fn parse_a5_nurbs_curve(
         distinct_knots.push(knot.get());
     }
     let mut control_points = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut control_points,
-        control_count,
-        "catia_a5_nurbs_control_points",
-    )?;
+    ctx.reserve_vec(&mut control_points, control_count, "catia_a5_nurbs_control_points")?;
     for index in 0..control_count {
         let Some(at) = control_start.checked_add(index * 24) else {
             return Ok(None);
@@ -850,19 +790,14 @@ fn parse_a5_nurbs_curve(
         return Ok(None);
     };
     let mut knots = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut knots,
-        expanded_count,
-        "catia_a5_nurbs_expanded_knots",
-    )?;
+    ctx.reserve_vec(&mut knots, expanded_count, "catia_a5_nurbs_expanded_knots")?;
     for (index, knot) in distinct_knots.into_iter().enumerate() {
         let multiplicity = if index == 0 || index + 1 == knot_count {
             6
         } else {
             3
         };
-        knots.extend(std::iter::repeat_n(knot, multiplicity));
+        knots.extend(std::iter::repeat(knot).take(multiplicity));
     }
     crate::nurbs::note_refusal(
         ctx,
@@ -906,7 +841,7 @@ pub(in crate::families) fn a5_guide_curves_from_records(
             header_token: record.header_token,
         };
         if let Some(curve) = parse_a5_guide_curve(ctx, data, frame)? {
-            crate::resource::push(ctx, &mut curves, curve, "catia_a5_guide_curves")?;
+            ctx.push_vec(&mut curves, curve, "catia_a5_guide_curves")?;
         }
     }
     Ok(curves)
@@ -983,7 +918,7 @@ fn parse_a5_guide_curve(
         previous = Some(knot.get());
     }
     let mut sites = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_a5_guide_sites")?;
+    ctx.reserve_vec(&mut sites, count, "catia_a5_guide_sites")?;
     for index in 0..count {
         let offset = index * 48;
         let (Some(value), Some(first_derivative), Some(second_derivative), Some(knot)) = (
@@ -1054,12 +989,7 @@ impl A8FreeformCurve {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<u32>, CodecError> {
         let mut multiplicities = Vec::new();
-        crate::resource::reserve_vec(
-            ctx,
-            &mut multiplicities,
-            self.sites.len(),
-            "catia_a8_jet_multiplicities",
-        )?;
+        ctx.reserve_vec(&mut multiplicities, self.sites.len(), "catia_a8_jet_multiplicities")?;
         multiplicities.extend(self.sites.iter().map(|site| site.multiplicity));
         Ok(multiplicities)
     }
@@ -1075,7 +1005,7 @@ pub(in crate::families) fn rolling_ball_jet_definition(
         return Ok(None);
     }
     let mut stations = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut stations, jet.sites.len(), "catia_a8_jet_stations")?;
+    ctx.reserve_vec(&mut stations, jet.sites.len(), "catia_a8_jet_stations")?;
     stations.extend(
         jet.sites
             .iter()
@@ -1133,7 +1063,7 @@ pub(in crate::families) fn a8_freeform_curves(
     let mut curves = Vec::new();
     for frame in a8_frames(data, 0x32) {
         if let Some(curve) = parse_a8_curve(ctx, data, frame)? {
-            crate::resource::push(ctx, &mut curves, curve, "catia_a8_freeform_curves")?;
+            ctx.push_vec(&mut curves, curve, "catia_a8_freeform_curves")?;
         }
     }
     Ok(curves)
@@ -1204,7 +1134,7 @@ fn parse_a8_curve(
         return Ok(None);
     };
     let mut sites = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_a8_freeform_sites")?;
+    ctx.reserve_vec(&mut sites, count, "catia_a8_freeform_sites")?;
     let mut multiplicity_at = multiplicity_start;
     for index in 0..count {
         let offset = index * 80;
@@ -1272,7 +1202,7 @@ pub(in crate::families) fn a5_freeform_curves_from_records(
             header_token: record.header_token,
         };
         if let Some(curve) = parse_a5_curve(ctx, data, frame)? {
-            crate::resource::push(ctx, &mut curves, curve, "catia_a5_freeform_curves")?;
+            ctx.push_vec(&mut curves, curve, "catia_a5_freeform_curves")?;
         }
     }
     Ok(curves)
@@ -1326,7 +1256,7 @@ fn parse_a5_curve(
         return Ok(None);
     };
     let mut sites = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_a5_freeform_sites")?;
+    ctx.reserve_vec(&mut sites, count, "catia_a5_freeform_sites")?;
     for index in 0..count {
         let offset = index * 80;
         let (Some(knot), Some(positions), Some(first_derivatives), Some(second_derivatives)) = (
@@ -1391,7 +1321,7 @@ fn a8_pcurves(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<A8Pcurve>, Cod
         if let Some(pcurve) =
             parse_object_stream_pcurve(ctx, data, frame.payload, frame.end, frame.object_id)?
         {
-            crate::resource::push(ctx, &mut pcurves, pcurve, "catia_a8_pcurves")?;
+            ctx.push_vec(&mut pcurves, pcurve, "catia_a8_pcurves")?;
         }
     }
     Ok(pcurves)
@@ -1407,7 +1337,7 @@ pub(in crate::families) fn object_stream_pcurves(
         if let Some(pcurve) =
             parse_object_stream_pcurve(ctx, data, frame.payload, frame.end, frame.object_id)?
         {
-            crate::resource::push(ctx, &mut pcurves, pcurve, "catia_object_stream_pcurves")?;
+            ctx.push_vec(&mut pcurves, pcurve, "catia_object_stream_pcurves")?;
         }
     }
     Ok(pcurves)
@@ -1505,7 +1435,7 @@ fn parse_object_stream_pcurve(
     let mode = parsed.1;
     let (support_id, _, count, knot_start, array_starts, range) = parsed;
     let mut sites = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_object_stream_pcurve_sites")?;
+    ctx.reserve_vec(&mut sites, count, "catia_object_stream_pcurve_sites")?;
     for index in 0..count {
         let offset = index * 8;
         let Some(knot) = f64_le(data, knot_start + offset) else {
@@ -1549,7 +1479,7 @@ pub(crate) fn a8_surfaces(
             continue;
         };
         if let Some(surface) = a8_surface_from_parsed(ctx, data, parsed, refusal)? {
-            crate::resource::push(ctx, &mut surfaces, surface, "catia_a8_inline_surfaces")?;
+            ctx.push_vec(&mut surfaces, surface, "catia_a8_inline_surfaces")?;
         }
     }
     Ok(surfaces)
@@ -1573,7 +1503,7 @@ pub(in crate::families) fn resolved_a8_surfaces(
             frame.object_id,
             refusal,
         )? {
-            crate::resource::push(ctx, &mut surfaces, surface, "catia_a8_resolved_surfaces")?;
+            ctx.push_vec(&mut surfaces, surface, "catia_a8_resolved_surfaces")?;
         }
     }
     Ok(surfaces)
@@ -1721,7 +1651,7 @@ pub(in crate::families) fn a8_external_grid_ranges(
             data,
             ExternalGridNeed::from_layout(frame.object_id, &layout),
         ) {
-            crate::resource::push(ctx, &mut ranges, range, "catia_a8_external_grid_ranges")?;
+            ctx.push_vec(&mut ranges, range, "catia_a8_external_grid_ranges")?;
         }
     }
     ranges.sort_unstable_by_key(|range| (range.start, range.end));
@@ -1830,7 +1760,7 @@ fn parse_external_grid_candidate(
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut control_points, poles, "catia_a8_external_poles")?;
+    ctx.reserve_vec(&mut control_points, poles, "catia_a8_external_poles")?;
     let mut at = range.start;
     for _ in 0..poles {
         let Some(point) = f64_point(data, at) else {
@@ -1841,7 +1771,7 @@ fn parse_external_grid_candidate(
     }
     let weights = if header.rational {
         let mut weights = Vec::new();
-        crate::resource::reserve_vec(ctx, &mut weights, poles, "catia_a8_external_weights")?;
+        ctx.reserve_vec(&mut weights, poles, "catia_a8_external_weights")?;
         for _ in 0..poles {
             let Some(weight) = f64_le(data, at).and_then(|value| NonZeroReal::new(value.get()))
             else {
@@ -1868,11 +1798,11 @@ fn grid_rows<T>(
 ) -> Result<Vec<Vec<T>>, CodecError> {
     let rows = values.len() / row_len;
     let mut result = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut result, rows, operation)?;
+    ctx.reserve_vec(&mut result, rows, operation)?;
     let mut values = values.into_iter();
     for _ in 0..rows {
         let mut row = Vec::new();
-        crate::resource::reserve_vec(ctx, &mut row, row_len, operation)?;
+        ctx.reserve_vec(&mut row, row_len, operation)?;
         row.extend(values.by_ref().take(row_len));
         result.push(row);
     }
@@ -1917,7 +1847,7 @@ pub(in crate::families) fn a5_surfaces_from_records(
             header_token: record.header_token,
         };
         if let Some(surface) = a5_surface(ctx, data, frame, refusal)? {
-            crate::resource::push(ctx, &mut surfaces, surface, "catia_a5_surfaces")?;
+            ctx.push_vec(&mut surfaces, surface, "catia_a5_surfaces")?;
         }
     }
     Ok(surfaces)
@@ -1998,7 +1928,7 @@ fn a5_surface(
         return Ok(None);
     }
     let mut control_points = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut control_points, poles, "catia_a5_surface_poles")?;
+    ctx.reserve_vec(&mut control_points, poles, "catia_a5_surface_poles")?;
     for _ in 0..poles {
         let Some(point) = f64_point(data, at) else {
             return Ok(None);
@@ -2192,7 +2122,7 @@ fn materialize_a8_lane(
     layout: A8LaneLayout,
 ) -> Result<Option<A8KnotLane>, CodecError> {
     let mut distinct = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut distinct, layout.count, "catia_a8_distinct_knots")?;
+    ctx.reserve_vec(&mut distinct, layout.count, "catia_a8_distinct_knots")?;
     let mut at = layout.distinct_start;
     for _ in 0..layout.count {
         let Some(value) = f64_le(data, at) else {
@@ -2202,12 +2132,7 @@ fn materialize_a8_lane(
         at += 8;
     }
     let mut multiplicities = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut multiplicities,
-        layout.count,
-        "catia_a8_multiplicities",
-    )?;
+    ctx.reserve_vec(&mut multiplicities, layout.count, "catia_a8_multiplicities")?;
     at = layout.multiplicity_start;
     for _ in 0..layout.count {
         let Some(value) = compact_int(data, &mut at) else {
@@ -2298,7 +2223,7 @@ fn a8_surface_from_parsed(
         return Ok(None);
     }
     let mut control_points = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut control_points, poles, "catia_a8_inline_poles")?;
+    ctx.reserve_vec(&mut control_points, poles, "catia_a8_inline_poles")?;
     for _ in 0..poles {
         let Some(point) = f64_point(data, pole_start) else {
             return Ok(None);
@@ -2315,7 +2240,7 @@ fn a8_surface_from_parsed(
             return Ok(None);
         }
         let mut weights = Vec::new();
-        crate::resource::reserve_vec(ctx, &mut weights, poles, "catia_a8_inline_weights")?;
+        ctx.reserve_vec(&mut weights, poles, "catia_a8_inline_weights")?;
         for _ in 0..poles {
             let Some(weight) =
                 f64_le(data, pole_start).and_then(|value| NonZeroReal::new(value.get()))
@@ -2420,7 +2345,7 @@ fn a5_distinct_values(
         return Ok(None);
     }
     let mut values = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut values, count, "catia_a5_distinct_knots")?;
+    ctx.reserve_vec(&mut values, count, "catia_a5_distinct_knots")?;
     for _ in 0..count {
         let Some(value) = f64_le(bytes, *at) else {
             return Ok(None);
@@ -2442,14 +2367,9 @@ fn a5_knots(
         _ => return Ok(None),
     };
     let mut multiplicities = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut multiplicities,
-        distinct.len(),
-        "catia_a5_knot_multiplicities",
-    )?;
+    ctx.reserve_vec(&mut multiplicities, distinct.len(), "catia_a5_knot_multiplicities")?;
     multiplicities.push(endpoint);
-    multiplicities.extend(std::iter::repeat_n(interior, distinct.len() - 2));
+    multiplicities.extend(std::iter::repeat(interior).take(distinct.len() - 2));
     multiplicities.push(endpoint);
     let Some(count) = pole_count(&multiplicities, degree) else {
         return Ok(None);
@@ -2460,12 +2380,12 @@ fn a5_knots(
         return Ok(None);
     };
     let mut knots = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut knots, expanded_count, "catia_a5_expanded_knots")?;
+    ctx.reserve_vec(&mut knots, expanded_count, "catia_a5_expanded_knots")?;
     for (&knot, &multiplicity) in distinct.iter().zip(&multiplicities) {
         let Some(repeats) = usize::try_from(multiplicity).ok() else {
             return Ok(None);
         };
-        knots.extend(std::iter::repeat_n(knot, repeats));
+        knots.extend(std::iter::repeat(knot).take(repeats));
     }
     Ok(Some((knots, count)))
 }
@@ -2491,7 +2411,7 @@ fn a5_weights(
             return Ok(None);
         }
         let mut weights = Vec::new();
-        crate::resource::reserve_vec(ctx, &mut weights, count, "catia_a5_explicit_weights")?;
+        ctx.reserve_vec(&mut weights, count, "catia_a5_explicit_weights")?;
         for _ in 0..count {
             let Some(weight) = f64_le(bytes, *at).and_then(|value| NonZeroReal::new(value.get()))
             else {
@@ -2507,7 +2427,7 @@ fn a5_weights(
     }
     let seed_count = cols.div_ceil(2);
     let mut weights = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut weights, count, "catia_a5_mirrored_weights")?;
+    ctx.reserve_vec(&mut weights, count, "catia_a5_mirrored_weights")?;
     for _ in 0..rows {
         if bytes.get(*at) == Some(&0x02) {
             *at += 1;

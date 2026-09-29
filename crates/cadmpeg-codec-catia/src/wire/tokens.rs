@@ -49,11 +49,7 @@ pub(crate) fn counted_refs(
         return Ok(None);
     };
     let mut position = 1;
-    let references = crate::resource::collect_options(
-        ctx,
-        (0..count).map(|_| object_ref(payload, &mut position, extended)),
-        "catia_wire_counted_references",
-    )?;
+    let references = ctx.collect_options((0..count).map(|_| object_ref(payload, &mut position, extended)), "catia_wire_counted_references")?;
     Ok(references.map(|references| (references, position)))
 }
 

@@ -12,7 +12,6 @@ use cadmpeg_ir::pmi::{
 use crate::entity_table::RangeIntervalSlot;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{CatiaNative, CatiaRangeInterval};
-use crate::resource;
 
 /// Transfer complete CATIA dimension productions.
 ///
@@ -49,18 +48,13 @@ pub(crate) fn transfer_dimensions(
             continue;
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
-        resource::push(
-            ctx,
-            &mut ir.model.pmi,
-            PmiAnnotation {
+        ctx.push_vec(&mut ir.model.pmi, PmiAnnotation {
                 id,
                 name: None,
                 visible: None,
                 targets: Vec::new(),
                 definition,
-            },
-            "catia_pmi_dimensions",
-        )?;
+            }, "catia_pmi_dimensions")?;
         transferred += 1;
     }
     Ok(transferred)
@@ -70,11 +64,7 @@ fn pmi_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source_offset: u64,
 ) -> Result<PmiId, cadmpeg_core::CodecError> {
-    let value = resource::format_retained(
-        ctx,
-        format_args!("catia:model:pmi#entity-record-{source_offset:010}"),
-        "catia_pmi_dimension_id",
-    )?;
+    let value = ctx.format_retained(format_args!("catia:model:pmi#entity-record-{source_offset:010}"), "catia_pmi_dimension_id")?;
     PmiId::mint(value).map_err(cadmpeg_core::CodecError::malformed)
 }
 

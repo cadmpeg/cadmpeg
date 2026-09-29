@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged fallible growth for CATIA decode collections.
 
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::BTreeMap;
 use std::fmt::Write;
-use std::hash::Hash;
 
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceLimit};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::decode::{Coverage, CoverageKey};
@@ -25,275 +24,33 @@ impl std::fmt::Display for HexBytes<'_> {
     }
 }
 
-pub(crate) fn push<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    values.try_reserve(1).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(1),
-            operation,
-        ))
-    })?;
-    values.push(value);
-    Ok(())
-}
-
-pub(crate) fn push_back<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut VecDeque<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    values.try_reserve(1).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(1),
-            operation,
-        ))
-    })?;
-    values.push_back(value);
-    Ok(())
-}
-
-pub(crate) fn reserve_vec<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(additional as u64, operation)?;
-    values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
-pub(crate) fn reserve_heap<T: Ord>(
-    ctx: &DecodeContext<'_>,
-    values: &mut BinaryHeap<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(additional as u64, operation)?;
-    values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
-/// Reserve storage for items already charged as one aggregate admission.
-pub(crate) fn reserve_admitted_vec<T>(
-    values: &mut Vec<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
-pub(crate) fn copy_admitted_slice<T: Clone>(
-    values: &[T],
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut copy = Vec::new();
-    reserve_admitted_vec(&mut copy, values.len(), operation)?;
-    copy.extend_from_slice(values);
-    Ok(copy)
-}
-
-pub(crate) fn copy_admitted_rows<T: Clone>(
-    values: &[T],
-    row_len: usize,
-    operation: &'static str,
-) -> Result<Vec<Vec<T>>, CodecError> {
-    let mut rows = Vec::new();
-    let row_count = values.len().div_ceil(row_len);
-    reserve_admitted_vec(&mut rows, row_count, operation)?;
-    for chunk in values.chunks(row_len) {
-        rows.push(copy_admitted_slice(chunk, operation)?);
-    }
-    Ok(rows)
-}
-
-pub(crate) fn reserve_admitted_map<K: Eq + Hash, V>(
-    values: &mut HashMap<K, V>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
-pub(crate) fn reserve_admitted_set<T: Eq + Hash>(
-    values: &mut HashSet<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
-pub(crate) fn copy_slice<T: Clone>(
-    ctx: &DecodeContext<'_>,
-    values: &[T],
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut copy = Vec::new();
-    reserve_vec(ctx, &mut copy, values.len(), operation)?;
-    copy.extend_from_slice(values);
-    Ok(copy)
-}
-
-pub(crate) fn collect_vec<T>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = T>,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut collected = Vec::new();
-    for value in values {
-        push(ctx, &mut collected, value, operation)?;
-    }
-    Ok(collected)
-}
-
-pub(crate) fn try_collect_vec<T>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = Result<T, CodecError>>,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut collected = Vec::new();
-    for value in values {
-        push(ctx, &mut collected, value?, operation)?;
-    }
-    Ok(collected)
-}
-
-pub(crate) fn collect_options<T>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = Option<T>>,
-    operation: &'static str,
-) -> Result<Option<Vec<T>>, CodecError> {
-    let mut collected = Vec::new();
-    for value in values {
-        let Some(value) = value else { return Ok(None) };
-        push(ctx, &mut collected, value, operation)?;
-    }
-    Ok(Some(collected))
-}
-
-pub(crate) fn collect_fallible_options<T>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = Result<Option<T>, cadmpeg_core::decode::ResourceLimit>>,
-    operation: &'static str,
-) -> Result<Option<Vec<T>>, CodecError> {
-    let mut collected = Vec::new();
-    for value in values {
-        let Some(value) = value? else { return Ok(None) };
-        push(ctx, &mut collected, value, operation)?;
-    }
-    Ok(Some(collected))
-}
-
-pub(crate) fn collect_set<T: Eq + Hash>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = T>,
-    operation: &'static str,
-) -> Result<HashSet<T>, CodecError> {
-    let mut collected = HashSet::new();
-    for value in values {
-        insert_set(ctx, &mut collected, value, operation)?;
-    }
-    Ok(collected)
-}
-
-pub(crate) fn collect_map<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = (K, V)>,
-    operation: &'static str,
-) -> Result<HashMap<K, V>, CodecError> {
-    let mut collected = HashMap::new();
-    for (key, value) in values {
-        insert_map(ctx, &mut collected, key, value, operation)?;
-    }
-    Ok(collected)
-}
-
-pub(crate) fn collect_string_set<'a>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = &'a str>,
-    operation: &'static str,
-) -> Result<HashSet<String>, CodecError> {
-    let mut collected = HashSet::new();
-    for value in values {
-        if !collected.contains(value) {
-            let owned = ctx.copy_retained_text(value, operation)?;
-            insert_set(ctx, &mut collected, owned, operation)?;
-        }
-    }
-    Ok(collected)
-}
-
 #[cfg(test)]
 mod collection_tests {
     #[test]
     fn report_index_collections_refuse_before_growth() {
         let set = crate::test_support::with_collection_limit(0, |ctx| {
-            super::collect_set(ctx, [7u32], "catia_report_set_test")
+            ctx.collect_hash_set([7u32], "catia_report_set_test")
         });
         assert!(
             matches!(set, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_report_set_test")
         );
         let map = crate::test_support::with_collection_limit(0, |ctx| {
-            super::collect_map(ctx, [(7u32, 9u32)], "catia_report_map_test")
+            ctx.collect_hash_map([(7u32, 9u32)], "catia_report_map_test")
         });
         assert!(
             matches!(map, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_report_map_test")
         );
         let owned = crate::test_support::with_retained_limit(0, |ctx| {
-            super::collect_string_set(ctx, ["entity"], "catia_report_owned_set_test")
+            ctx.collect_string_set(["entity"], "catia_report_owned_set_test")
         });
         assert!(
             matches!(owned, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_report_owned_set_test")
         );
         let service = crate::test_support::with_service_context(|ctx| {
-            super::collect_string_set(ctx, ["entity"], "catia_report_owned_set_test")
+            ctx.collect_string_set(["entity"], "catia_report_owned_set_test")
         })
         .expect("service profile admits one report key");
         assert!(service.contains("entity"));
@@ -387,22 +144,6 @@ mod collection_tests {
     }
 }
 
-pub(crate) fn copy_retained_slice<T: Clone>(
-    ctx: &DecodeContext<'_>,
-    values: &[T],
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let Some(bytes) = values
-        .len()
-        .checked_mul(std::mem::size_of::<T>().max(1))
-        .map(cadmpeg_core::decode::u64_from_index)
-    else {
-        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
-    };
-    ctx.charge_retained(bytes, operation)?;
-    copy_slice(ctx, values, operation)
-}
-
 pub(crate) fn copy_id<T>(
     ctx: &DecodeContext<'_>,
     value: &str,
@@ -435,11 +176,11 @@ pub(crate) fn source_attribute(
     value: std::fmt::Arguments<'_>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let key = format_retained(ctx, key, operation)?;
+    let key = ctx.format_retained(key, operation)?;
     let key = NonBlankString::new(key)
         .ok_or_else(|| CodecError::malformed("CATIA source attribute key is blank"))?;
-    let value = format_retained(ctx, value, operation)?;
-    insert_btree_map(ctx, attributes, key, value, operation)?;
+    let value = ctx.format_retained(value, operation)?;
+    ctx.insert_btree_map(attributes, key, value, operation)?;
     Ok(())
 }
 
@@ -451,8 +192,8 @@ pub(crate) fn string_attribute(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     let key = ctx.copy_retained_text(key, operation)?;
-    let value = format_retained(ctx, value, operation)?;
-    insert_btree_map(ctx, attributes, key, value, operation)?;
+    let value = ctx.format_retained(value, operation)?;
+    ctx.insert_btree_map(attributes, key, value, operation)?;
     Ok(())
 }
 
@@ -463,9 +204,9 @@ pub(crate) fn push_loss(
     args: std::fmt::Arguments<'_>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let message = format_retained(ctx, args, operation)?;
+    let message = ctx.format_retained(args, operation)?;
     let note = code.note_charged(ctx, message, operation)?;
-    push(ctx, losses, note, operation)
+    ctx.push_vec(losses, note, operation)
 }
 
 pub(crate) fn derived_annotation(
@@ -475,7 +216,7 @@ pub(crate) fn derived_annotation(
     field: &str,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let id = format_retained(ctx, format_args!("{id}"), operation)?;
+    let id = ctx.format_retained(format_args!("{id}"), operation)?;
     let (outer, inner) = annotations.derived_field_admission(&id, field);
     if outer {
         ctx.charge_collection_items(1, operation)?;
@@ -537,80 +278,12 @@ mod derived_annotation_tests {
     }
 }
 
-pub(crate) fn format_retained(
-    ctx: &DecodeContext<'_>,
-    args: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let length = formatted_length(ctx, args, operation)?;
-    let bytes = cadmpeg_core::decode::u64_from_index(length);
-    ctx.charge_retained(bytes, operation)?;
-    let mut text = String::new();
-    text.try_reserve(length).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(text.capacity()),
-            cadmpeg_core::decode::u64_from_index(length),
-            operation,
-        ))
-    })?;
-    std::fmt::write(&mut text, args).map_err(CodecError::malformed)?;
-    Ok(text)
-}
-
-pub(crate) fn format_scoped<'a>(
-    ctx: &'a DecodeContext<'_>,
-    args: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<(String, ScopedReservation<'a>), CodecError> {
-    let length = formatted_length(ctx, args, operation)?;
-    let bytes = cadmpeg_core::decode::u64_from_index(length);
-    let reservation = ctx.reserve_scoped(bytes, operation)?;
-    let mut text = String::new();
-    text.try_reserve(length).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(text.capacity()),
-            cadmpeg_core::decode::u64_from_index(length),
-            operation,
-        ))
-    })?;
-    std::fmt::write(&mut text, args).map_err(CodecError::malformed)?;
-    Ok((text, reservation))
-}
-
-fn formatted_length(
-    ctx: &DecodeContext<'_>,
-    args: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<usize, CodecError> {
-    struct ByteCount(Option<usize>);
-    impl Write for ByteCount {
-        fn write_str(&mut self, value: &str) -> std::fmt::Result {
-            self.0 = self.0.and_then(|bytes| bytes.checked_add(value.len()));
-            if self.0.is_some() {
-                Ok(())
-            } else {
-                Err(std::fmt::Error)
-            }
-        }
-    }
-    let mut count = ByteCount(Some(0));
-    if std::fmt::write(&mut count, args).is_err() {
-        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
-    }
-    let Some(length) = count.0 else {
-        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
-    };
-    Ok(length)
-}
-
 #[cfg(test)]
 mod scoped_format_tests {
     #[test]
     fn scoped_format_refuses_before_temporary_string_growth() {
         let refused = crate::test_support::with_materialized_limit(0, |ctx| {
-            super::format_scoped(ctx, format_args!("edge {}", 42), "catia_test_scoped_format")
+            ctx.format_scoped(format_args!("edge {}", 42), "catia_test_scoped_format")
                 .map(|(text, _reservation)| text)
         });
         assert!(
@@ -618,33 +291,12 @@ mod scoped_format_tests {
             if limit.operation == "catia_test_scoped_format")
         );
         let text = crate::test_support::with_service_context(|ctx| {
-            super::format_scoped(ctx, format_args!("edge {}", 42), "catia_test_scoped_format")
+            ctx.format_scoped(format_args!("edge {}", 42), "catia_test_scoped_format")
                 .map(|(text, _reservation)| text)
         })
         .expect("service budget admits temporary text");
         assert_eq!(text, "edge 42");
     }
-}
-
-pub(crate) fn extend_retained_bytes(
-    ctx: &DecodeContext<'_>,
-    target: &mut Vec<u8>,
-    source: &[u8],
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(source.len());
-    ctx.charge_collection_items(count, operation)?;
-    ctx.charge_retained(count, operation)?;
-    target.try_reserve(source.len()).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(target.capacity()),
-            cadmpeg_core::decode::u64_from_index(source.len()),
-            operation,
-        ))
-    })?;
-    target.extend_from_slice(source);
-    Ok(())
 }
 
 pub(crate) fn format_usize_id(
@@ -687,16 +339,12 @@ pub(crate) fn compose_index_id<T>(
     construct: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let id = format_retained(
-        ctx,
-        format_args!(
+    let id = ctx.format_retained(format_args!(
             "{}:{}:{}#{index}",
             namespace.format(),
             namespace.scope(),
             namespace.kind()
-        ),
-        operation,
-    )?;
+        ), operation)?;
     construct(id).map_err(CodecError::malformed)
 }
 
@@ -761,48 +409,6 @@ mod id_format_tests {
     }
 }
 
-pub(crate) fn copy_retained_rows<T: Clone>(
-    ctx: &DecodeContext<'_>,
-    rows: &[Vec<T>],
-    row_operation: &'static str,
-    item_operation: &'static str,
-) -> Result<Vec<Vec<T>>, CodecError> {
-    let Some(bytes) = rows
-        .len()
-        .checked_mul(std::mem::size_of::<Vec<T>>())
-        .map(cadmpeg_core::decode::u64_from_index)
-    else {
-        return Err(ctx.refuse_codec_limit(row_operation, u64::MAX, u64::MAX));
-    };
-    ctx.charge_retained(bytes, row_operation)?;
-    let mut copy = Vec::new();
-    reserve_vec(ctx, &mut copy, rows.len(), row_operation)?;
-    for row in rows {
-        copy.push(copy_retained_slice(ctx, row, item_operation)?);
-    }
-    Ok(copy)
-}
-
-pub(crate) fn copy_retained_set<T: Copy + Eq + Hash>(
-    ctx: &DecodeContext<'_>,
-    values: &HashSet<T>,
-    operation: &'static str,
-) -> Result<HashSet<T>, CodecError> {
-    let Some(bytes) = values
-        .len()
-        .checked_mul(std::mem::size_of::<T>().max(1))
-        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<T>>()))
-        .map(cadmpeg_core::decode::u64_from_index)
-    else {
-        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
-    };
-    ctx.charge_retained(bytes, operation)?;
-    let mut copy = HashSet::new();
-    reserve_set(ctx, &mut copy, values.len(), operation)?;
-    copy.extend(values.iter().copied());
-    Ok(copy)
-}
-
 pub(crate) fn copy_knot_vector(
     ctx: &DecodeContext<'_>,
     knots: &cadmpeg_ir::geometry::nurbs::KnotVector,
@@ -847,10 +453,10 @@ pub(crate) fn copy_pcurve_geometry(
             let knots = copy_knot_vector(ctx, nurbs.knots(), operation)?;
             let poles = match nurbs.pole_rows() {
                 PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
-                    points: copy_retained_slice(ctx, points, operation)?,
+                    points: ctx.copy_retained_slice(points, operation)?,
                 },
                 PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
-                    points: copy_retained_slice(ctx, points, operation)?,
+                    points: ctx.copy_retained_slice(points, operation)?,
                 },
             };
             PcurveGeometry::Nurbs {
@@ -867,10 +473,10 @@ pub(crate) fn copy_pcurve_geometry(
             let knots = copy_knot_vector(ctx, nurbs.knots(), operation)?;
             let poles = match nurbs.pole_rows() {
                 PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
-                    poles: copy_retained_slice(ctx, poles, operation)?,
+                    poles: ctx.copy_retained_slice(poles, operation)?,
                 },
                 PolarNurbsPoles::Rational { poles } => PolarNurbsPoles::Rational {
-                    poles: copy_retained_slice(ctx, poles, operation)?,
+                    poles: ctx.copy_retained_slice(poles, operation)?,
                 },
             };
             PcurveGeometry::PolarNurbs {
@@ -947,7 +553,7 @@ pub(crate) fn copy_intcurve_support_context(
     let [first, second, third] = context
         .discontinuities()
         .each_ref()
-        .map(|lane| copy_retained_slice(ctx, lane, operation));
+        .map(|lane| ctx.copy_retained_slice(lane, operation));
     IntcurveSupportContext::from_parts(
         [left?, right?],
         context.parameter_range(),
@@ -1070,210 +676,9 @@ mod nurbs_copy_tests {
     }
 }
 
-pub(crate) fn reserve_set<T: Eq + Hash>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashSet<T>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(count as u64, operation)?;
-    values.try_reserve(count).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(count),
-            operation,
-        ))
-    })
-}
-
-pub(crate) fn reserve_map<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashMap<K, V>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(count as u64, operation)?;
-    values.try_reserve(count).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(count),
-            operation,
-        ))
-    })
-}
-
-pub(crate) fn insert_set<T: Eq + Hash>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashSet<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<bool, CodecError> {
-    if values.contains(&value) {
-        return Ok(false);
-    }
-    ctx.charge_collection_items(1, operation)?;
-    values.try_reserve(1).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(1),
-            operation,
-        ))
-    })?;
-    Ok(values.insert(value))
-}
-
-pub(crate) fn insert_map<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashMap<K, V>,
-    key: K,
-    value: V,
-    operation: &'static str,
-) -> Result<Option<V>, CodecError> {
-    if !values.contains_key(&key) {
-        ctx.charge_collection_items(1, operation)?;
-        values.try_reserve(1).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::Codec(operation),
-                cadmpeg_core::decode::u64_from_index(values.capacity()),
-                cadmpeg_core::decode::u64_from_index(1),
-                operation,
-            ))
-        })?;
-    }
-    Ok(values.insert(key, value))
-}
-
-pub(crate) fn admit_map_entry<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashMap<K, V>,
-    key: &K,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains_key(key) {
-        ctx.charge_collection_items(1, operation)?;
-        values.try_reserve(1).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::Codec(operation),
-                cadmpeg_core::decode::u64_from_index(values.capacity()),
-                cadmpeg_core::decode::u64_from_index(1),
-                operation,
-            ))
-        })?;
-    }
-    Ok(())
-}
-
-pub(crate) fn admit_btree_entry<K: Ord, V>(
-    ctx: &DecodeContext<'_>,
-    values: &BTreeMap<K, V>,
-    key: &K,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains_key(key) {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    Ok(())
-}
-
-pub(crate) fn insert_btree_map<K: Ord, V>(
-    ctx: &DecodeContext<'_>,
-    values: &mut BTreeMap<K, V>,
-    key: K,
-    value: V,
-    operation: &'static str,
-) -> Result<Option<V>, CodecError> {
-    admit_btree_entry(ctx, values, &key, operation)?;
-    Ok(values.insert(key, value))
-}
-
-pub(crate) fn insert_btree_set<T: Ord>(
-    ctx: &DecodeContext<'_>,
-    values: &mut BTreeSet<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<bool, CodecError> {
-    if values.contains(&value) {
-        return Ok(false);
-    }
-    ctx.charge_collection_items(1, operation)?;
-    Ok(values.insert(value))
-}
-
-fn temporary_bytes<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<u64, CodecError> {
-    let item_bytes = std::mem::size_of::<T>().max(1);
-    let Some(bytes) = item_bytes
-        .checked_add(32)
-        .and_then(|size| size.checked_mul(count))
-        .map(cadmpeg_core::decode::u64_from_index)
-    else {
-        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
-    };
-    Ok(bytes)
-}
-
-pub(crate) fn temporary_vec<'a, T>(
-    ctx: &'a DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(Vec<T>, ScopedReservation<'a>), CodecError> {
-    let bytes = count
-        .checked_mul(std::mem::size_of::<T>().max(1))
-        .map(cadmpeg_core::decode::u64_from_index)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-    let reservation = ctx.reserve_scoped(bytes, operation)?;
-    let mut values = Vec::new();
-    reserve_vec(ctx, &mut values, count, operation)?;
-    Ok((values, reservation))
-}
-
-pub(crate) fn temporary_set<'a, T: Eq + Hash>(
-    ctx: &'a DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(HashSet<T>, ScopedReservation<'a>), CodecError> {
-    let reservation =
-        ctx.reserve_scoped(temporary_bytes::<T>(ctx, count, operation)?, operation)?;
-    let mut values = HashSet::new();
-    values.try_reserve(count).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(count),
-            operation,
-        ))
-    })?;
-    Ok((values, reservation))
-}
-
-pub(crate) fn temporary_queue<'a, T>(
-    ctx: &'a DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(VecDeque<T>, ScopedReservation<'a>), CodecError> {
-    let reservation =
-        ctx.reserve_scoped(temporary_bytes::<T>(ctx, count, operation)?, operation)?;
-    let mut values = VecDeque::new();
-    values.try_reserve(count).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(values.capacity()),
-            cadmpeg_core::decode::u64_from_index(count),
-            operation,
-        ))
-    })?;
-    Ok((values, reservation))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{admit_map_entry, copy_id};
+    use super::copy_id;
     use std::collections::HashMap;
 
     #[test]
@@ -1303,12 +708,7 @@ mod tests {
     fn zero_entity_source_cache_refuses_before_vacant_map_entry() {
         let mut limited_map = HashMap::<u32, u32>::new();
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            admit_map_entry(
-                ctx,
-                &mut limited_map,
-                &7,
-                "catia_zero_wire_source_geometries",
-            )
+            ctx.admit_hash_map_entry(&mut limited_map, &7, "catia_zero_wire_source_geometries")
         });
         assert!(matches!(
             limited,
@@ -1318,20 +718,10 @@ mod tests {
 
         crate::test_support::with_service_context(|ctx| {
             let mut admitted_map = HashMap::<u32, u32>::new();
-            admit_map_entry(
-                ctx,
-                &mut admitted_map,
-                &7,
-                "catia_zero_wire_source_geometries",
-            )
+            ctx.admit_hash_map_entry(&mut admitted_map, &7, "catia_zero_wire_source_geometries")
             .expect("service map entry budget");
             admitted_map.insert(7, 11);
-            admit_map_entry(
-                ctx,
-                &mut admitted_map,
-                &7,
-                "catia_zero_wire_source_geometries",
-            )
+            ctx.admit_hash_map_entry(&mut admitted_map, &7, "catia_zero_wire_source_geometries")
             .expect("existing entry needs no allocation");
             assert_eq!(admitted_map.get(&7), Some(&11));
         });

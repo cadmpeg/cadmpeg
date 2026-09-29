@@ -82,11 +82,7 @@ fn canonicalize_topology_boundary_gauges(
     for face in &mut topology.faces {
         for boundary in &mut face.boundaries {
             rotate_to_minimum(&mut boundary.coedges);
-            let reversed = crate::resource::copy_retained_slice(
-                ctx,
-                boundary.coedges.as_slice(),
-                "catia_mesh_gauge_reversed_coedges",
-            )?;
+            let reversed = ctx.copy_retained_slice(boundary.coedges.as_slice(), "catia_mesh_gauge_reversed_coedges")?;
             let mut reversed =
                 NonEmptyCoedges::try_from(reversed).map_err(cadmpeg_core::CodecError::malformed)?;
             reversed.reverse();
@@ -161,7 +157,7 @@ fn normalized_endpoint_options(
     for &mut_pair in options {
         let mut pair = mut_pair;
         pair.sort_unstable();
-        crate::resource::push(ctx, &mut normalized, pair, "catia_gauge_normalized_options")?;
+        ctx.push_vec(&mut normalized, pair, "catia_gauge_normalized_options")?;
     }
     normalized.sort_unstable();
     normalized.dedup();
@@ -197,12 +193,7 @@ fn mapped_normalized_endpoint_options(
         else {
             return Ok(None);
         };
-        crate::resource::push(
-            ctx,
-            &mut mapped,
-            [left, right],
-            "catia_gauge_mapped_options",
-        )?;
+        ctx.push_vec(&mut mapped, [left, right], "catia_gauge_mapped_options")?;
     }
     Ok(Some(normalized_endpoint_options(ctx, &mapped)?))
 }
@@ -245,8 +236,8 @@ fn enumerate_coordinate_permutations(
 ) -> Result<(), CodecError> {
     if index == points.len() {
         let copy =
-            crate::resource::copy_retained_slice(ctx, current, "catia_gauge_permutation_values")?;
-        crate::resource::push(ctx, output, copy, "catia_gauge_permutations")?;
+            ctx.copy_retained_slice(current, "catia_gauge_permutation_values")?;
+        ctx.push_vec(output, copy, "catia_gauge_permutations")?;
         return Ok(());
     }
     for target in 0..points.len() {
@@ -254,7 +245,7 @@ fn enumerate_coordinate_permutations(
             continue;
         }
         used[target] = true;
-        crate::resource::push(ctx, current, points[target], "catia_gauge_permutation_path")?;
+        ctx.push_vec(current, points[target], "catia_gauge_permutation_path")?;
         enumerate_coordinate_permutations(ctx, points, index + 1, current, used, output)?;
         current.pop();
         used[target] = false;
@@ -288,7 +279,7 @@ fn intern_gauge_signatures<T: Ord>(
             ids.insert(signature, id);
             id
         };
-        crate::resource::push(ctx, &mut colors, id, "catia_gauge_signature_colors")?;
+        ctx.push_vec(&mut colors, id, "catia_gauge_signature_colors")?;
     }
     Ok(colors)
 }
@@ -322,29 +313,19 @@ pub(super) fn build_mesh_coordinate_gauge(
         let Some(key) = mesh_edge_gauge_base_key(edge, edge_rows, edge_faces, edge_geometry) else {
             return identity();
         };
-        crate::resource::push(ctx, &mut edge_bases, key, "catia_gauge_edge_bases")?;
+        ctx.push_vec(&mut edge_bases, key, "catia_gauge_edge_bases")?;
         if !groups.contains_key(&key) {
             ctx.charge_collection_items(1, "catia_gauge_edge_groups")?;
         }
-        crate::resource::push(
-            ctx,
-            groups.entry(key).or_default(),
-            edge,
-            "catia_gauge_group_edges",
-        )?;
+        ctx.push_vec(groups.entry(key).or_default(), edge, "catia_gauge_group_edges")?;
     }
     let mut normalized_options = Vec::new();
     for options in edge_candidates {
         let normalized = normalized_endpoint_options(ctx, options)?;
-        crate::resource::push(
-            ctx,
-            &mut normalized_options,
-            normalized,
-            "catia_gauge_normalized_rows",
-        )?;
+        ctx.push_vec(&mut normalized_options, normalized, "catia_gauge_normalized_rows")?;
     }
     let mut parent = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut parent, point_count, "catia_gauge_parent")?;
+    ctx.reserve_vec(&mut parent, point_count, "catia_gauge_parent")?;
     parent.extend(0..point_count);
     let mut active = ctx.alloc_filled(point_count, false, "catia_coordinate_gauge_active")?;
     for edges in groups.values() {
@@ -356,12 +337,7 @@ pub(super) fn build_mesh_coordinate_gauge(
                 };
                 *active_point = true;
                 if !group_points.contains(&point) {
-                    crate::resource::push(
-                        ctx,
-                        &mut group_points,
-                        point,
-                        "catia_gauge_group_points",
-                    )?;
+                    ctx.push_vec(&mut group_points, point, "catia_gauge_group_points")?;
                 }
             }
         }
@@ -379,24 +355,14 @@ pub(super) fn build_mesh_coordinate_gauge(
                 if !components.contains_key(&root) {
                     ctx.charge_collection_items(1, "catia_gauge_component_keys")?;
                 }
-                crate::resource::push(
-                    ctx,
-                    components.entry(root).or_default(),
-                    point,
-                    "catia_gauge_component_points",
-                )?;
+                ctx.push_vec(components.entry(root).or_default(), point, "catia_gauge_component_points")?;
             }
         }
         components
     };
     let mut coordinate_components = Vec::new();
     for points in components_by_root.into_values() {
-        crate::resource::push(
-            ctx,
-            &mut coordinate_components,
-            points,
-            "catia_gauge_component_rows",
-        )?;
+        ctx.push_vec(&mut coordinate_components, points, "catia_gauge_component_rows")?;
     }
     let mut component_by_point = ctx.alloc_filled(
         point_count,
@@ -423,26 +389,16 @@ pub(super) fn build_mesh_coordinate_gauge(
         let mut indices = Vec::new();
         for &pair in options {
             let option = option_records.len();
-            crate::resource::push(
-                ctx,
-                &mut option_records,
-                (edge, pair),
-                "catia_gauge_option_records",
-            )?;
-            crate::resource::push(ctx, &mut indices, option, "catia_gauge_option_indices")?;
+            ctx.push_vec(&mut option_records, (edge, pair), "catia_gauge_option_records")?;
+            ctx.push_vec(&mut indices, option, "catia_gauge_option_indices")?;
             for point in pair {
                 let Some(neighbors) = option_neighbors.get_mut(point) else {
                     return identity();
                 };
-                crate::resource::push(ctx, neighbors, option, "catia_gauge_option_arcs")?;
+                ctx.push_vec(neighbors, option, "catia_gauge_option_arcs")?;
             }
         }
-        crate::resource::push(
-            ctx,
-            &mut option_indices_by_edge,
-            indices,
-            "catia_gauge_option_rows",
-        )?;
+        ctx.push_vec(&mut option_indices_by_edge, indices, "catia_gauge_option_rows")?;
     }
     let mut point_colors = intern_gauge_signatures(ctx, (0..point_count).map(|_| ()))?;
     let mut row_colors = intern_gauge_signatures(
@@ -482,46 +438,26 @@ pub(super) fn build_mesh_coordinate_gauge(
         for edge in 0..edge_rows.len() {
             let mut options = Vec::new();
             for &option in &option_indices_by_edge[edge] {
-                crate::resource::push(
-                    ctx,
-                    &mut options,
-                    next_option_colors[option],
-                    "catia_gauge_row_option_colors",
-                )?;
+                ctx.push_vec(&mut options, next_option_colors[option], "catia_gauge_row_option_colors")?;
             }
             options.sort_unstable();
-            crate::resource::push(
-                ctx,
-                &mut row_signatures,
-                (
+            ctx.push_vec(&mut row_signatures, (
                     row_colors[edge],
                     edge_bases[edge],
                     edge_identity_evidence[edge],
                     edge_identity_evidence[edge].then_some(edge),
                     options,
-                ),
-                "catia_gauge_row_signatures",
-            )?;
+                ), "catia_gauge_row_signatures")?;
         }
         let next_row_colors = intern_gauge_signatures(ctx, row_signatures)?;
         let mut point_signatures = Vec::new();
         for point in 0..point_count {
             let mut options = Vec::new();
             for &option in &option_neighbors[point] {
-                crate::resource::push(
-                    ctx,
-                    &mut options,
-                    next_option_colors[option],
-                    "catia_gauge_point_option_colors",
-                )?;
+                ctx.push_vec(&mut options, next_option_colors[option], "catia_gauge_point_option_colors")?;
             }
             options.sort_unstable();
-            crate::resource::push(
-                ctx,
-                &mut point_signatures,
-                (point_colors[point], options),
-                "catia_gauge_point_signatures",
-            )?;
+            ctx.push_vec(&mut point_signatures, (point_colors[point], options), "catia_gauge_point_signatures")?;
         }
         let next_point_colors = intern_gauge_signatures(ctx, point_signatures)?;
         let stable = next_point_colors == point_colors
@@ -545,26 +481,12 @@ pub(super) fn build_mesh_coordinate_gauge(
                 if edge_identity_evidence[edge] {
                     continue;
                 }
-                let original = crate::resource::copy_retained_slice(
-                    ctx,
-                    &normalized_options[edge],
-                    "catia_gauge_original_options",
-                )?;
-                crate::resource::push(
-                    ctx,
-                    &mut original_unbound,
-                    original,
-                    "catia_gauge_original_rows",
-                )?;
+                let original = ctx.copy_retained_slice(&normalized_options[edge], "catia_gauge_original_options")?;
+                ctx.push_vec(&mut original_unbound, original, "catia_gauge_original_rows")?;
                 if let Some(mapped) =
                     mapped_normalized_endpoint_options(ctx, &edge_candidates[edge], permutation)?
                 {
-                    crate::resource::push(
-                        ctx,
-                        &mut mapped_unbound,
-                        mapped,
-                        "catia_gauge_mapped_rows",
-                    )?;
+                    ctx.push_vec(&mut mapped_unbound, mapped, "catia_gauge_mapped_rows")?;
                 }
             }
             original_unbound.sort_unstable();
@@ -574,11 +496,7 @@ pub(super) fn build_mesh_coordinate_gauge(
             }
             for &edge in edges.iter().filter(|edge| edge_identity_evidence[**edge]) {
                 if mapped_normalized_endpoint_options(ctx, &edge_candidates[edge], permutation)?
-                    != Some(crate::resource::copy_retained_slice(
-                        ctx,
-                        &normalized_options[edge],
-                        "catia_gauge_identity_options",
-                    )?)
+                    != Some(ctx.copy_retained_slice(&normalized_options[edge], "catia_gauge_identity_options")?)
                 {
                     return Ok(false);
                 }
@@ -596,12 +514,7 @@ pub(super) fn build_mesh_coordinate_gauge(
                     component_by_point.get(*point).copied().flatten() == Some(component)
                 })
             }) {
-                crate::resource::push(
-                    ctx,
-                    &mut affected_groups,
-                    edges,
-                    "catia_gauge_affected_groups",
-                )?;
+                ctx.push_vec(&mut affected_groups, edges, "catia_gauge_affected_groups")?;
             }
         }
         let mut color_classes = BTreeMap::<usize, Vec<usize>>::new();
@@ -610,28 +523,13 @@ pub(super) fn build_mesh_coordinate_gauge(
             if !color_classes.contains_key(&color) {
                 ctx.charge_collection_items(1, "catia_gauge_color_classes")?;
             }
-            crate::resource::push(
-                ctx,
-                color_classes.entry(color).or_default(),
-                point,
-                "catia_gauge_color_points",
-            )?;
+            ctx.push_vec(color_classes.entry(color).or_default(), point, "catia_gauge_color_points")?;
         }
         let mut identity_order = Vec::new();
-        crate::resource::reserve_vec(
-            ctx,
-            &mut identity_order,
-            point_count,
-            "catia_gauge_identity_order",
-        )?;
+        ctx.reserve_vec(&mut identity_order, point_count, "catia_gauge_identity_order")?;
         identity_order.extend(0..point_count);
         let mut local_orders = Vec::new();
-        crate::resource::push(
-            ctx,
-            &mut local_orders,
-            identity_order,
-            "catia_gauge_local_orders",
-        )?;
+        ctx.push_vec(&mut local_orders, identity_order, "catia_gauge_local_orders")?;
         let mut bounded = true;
         for class in color_classes.values() {
             let remaining_limit = MAX_COORDINATE_GAUGE_PERMUTATIONS / local_orders.len();
@@ -651,14 +549,10 @@ pub(super) fn build_mesh_coordinate_gauge(
             )?;
             let next_len = local_orders.len() * class_order_count;
             let mut next = Vec::new();
-            crate::resource::reserve_vec(ctx, &mut next, next_len, "catia_gauge_next_orders")?;
+            ctx.reserve_vec(&mut next, next_len, "catia_gauge_next_orders")?;
             for permutation in &local_orders {
                 for order in &class_orders {
-                    let mut permutation = crate::resource::copy_retained_slice(
-                        ctx,
-                        permutation,
-                        "catia_gauge_order_copy",
-                    )?;
+                    let mut permutation = ctx.copy_retained_slice(permutation, "catia_gauge_order_copy")?;
                     for (&source, &target) in class.iter().zip(order) {
                         permutation[source] = target;
                     }
@@ -670,50 +564,25 @@ pub(super) fn build_mesh_coordinate_gauge(
         if !bounded {
             local_orders.clear();
             let mut identity = Vec::new();
-            crate::resource::reserve_vec(
-                ctx,
-                &mut identity,
-                point_count,
-                "catia_gauge_fallback_identity",
-            )?;
+            ctx.reserve_vec(&mut identity, point_count, "catia_gauge_fallback_identity")?;
             identity.extend(0..point_count);
-            crate::resource::push(
-                ctx,
-                &mut local_orders,
-                identity,
-                "catia_gauge_fallback_orders",
-            )?;
+            ctx.push_vec(&mut local_orders, identity, "catia_gauge_fallback_orders")?;
         }
         let mut permutations = Vec::new();
         for permutation in local_orders {
             if is_automorphism(&affected_groups, &permutation)? {
-                crate::resource::push(
-                    ctx,
-                    &mut permutations,
-                    permutation,
-                    "catia_gauge_kept_permutations",
-                )?;
+                ctx.push_vec(&mut permutations, permutation, "catia_gauge_kept_permutations")?;
             }
         }
         if permutations.is_empty() {
             let mut identity = Vec::new();
-            crate::resource::reserve_vec(
-                ctx,
-                &mut identity,
-                point_count,
-                "catia_gauge_empty_identity",
-            )?;
+            ctx.reserve_vec(&mut identity, point_count, "catia_gauge_empty_identity")?;
             identity.extend(0..point_count);
-            crate::resource::push(
-                ctx,
-                &mut permutations,
-                identity,
-                "catia_gauge_empty_permutations",
-            )?;
+            ctx.push_vec(&mut permutations, identity, "catia_gauge_empty_permutations")?;
         }
         permutations.sort_unstable();
         permutations.dedup();
-        crate::resource::push(ctx, &mut components, permutations, "catia_gauge_components")?;
+        ctx.push_vec(&mut components, permutations, "catia_gauge_components")?;
     }
     Ok(MeshCoordinateGauge { components })
 }
@@ -748,7 +617,7 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
             }
             None => None,
         };
-        crate::resource::push(ctx, &mut canonical, mapped, "catia_gauge_canonical_pairs")?;
+        ctx.push_vec(&mut canonical, mapped, "catia_gauge_canonical_pairs")?;
     }
     if gauge.edge_rows.len() != edge_count
         || gauge.edge_faces.len() != edge_count
@@ -783,32 +652,18 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
                 };
                 mapped
             }
-            None => crate::resource::copy_retained_slice(
-                ctx,
-                &source_options,
-                "catia_gauge_target_options",
-            )?,
+            None => ctx.copy_retained_slice(&source_options, "catia_gauge_target_options")?,
         };
         let source_key = (base, target_options);
         if !source_groups.contains_key(&source_key) {
             ctx.charge_collection_items(1, "catia_gauge_source_group_keys")?;
         }
-        crate::resource::push(
-            ctx,
-            source_groups.entry(source_key).or_default(),
-            edge,
-            "catia_gauge_source_group_edges",
-        )?;
+        ctx.push_vec(source_groups.entry(source_key).or_default(), edge, "catia_gauge_source_group_edges")?;
         let target_key = (base, source_options);
         if !target_groups.contains_key(&target_key) {
             ctx.charge_collection_items(1, "catia_gauge_target_group_keys")?;
         }
-        crate::resource::push(
-            ctx,
-            target_groups.entry(target_key).or_default(),
-            edge,
-            "catia_gauge_target_group_edges",
-        )?;
+        ctx.push_vec(target_groups.entry(target_key).or_default(), edge, "catia_gauge_target_group_edges")?;
     }
 
     for (key, group) in source_groups {
@@ -821,12 +676,7 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
         slots.sort_unstable();
         let mut ordered = Vec::new();
         for &edge in &group {
-            crate::resource::push(
-                ctx,
-                &mut ordered,
-                (canonical[edge], edge),
-                "catia_gauge_ordered_group",
-            )?;
+            ctx.push_vec(&mut ordered, (canonical[edge], edge), "catia_gauge_ordered_group")?;
         }
         ordered.sort_unstable();
         for (slot, (pair, _)) in slots.into_iter().zip(ordered) {
@@ -852,7 +702,7 @@ fn canonicalize_partial_endpoint_pair_gauge(
     if let Some(coordinate_gauge) = gauge.coordinate_gauge {
         for permutations in &coordinate_gauge.components {
             let mut best =
-                crate::resource::copy_retained_slice(ctx, &canonical, "catia_gauge_best_pairs")?;
+                ctx.copy_retained_slice(&canonical, "catia_gauge_best_pairs")?;
             for permutation in permutations {
                 let Some(candidate) = canonicalize_partial_endpoint_pair_gauge_with_permutation(
                     ctx,
@@ -880,7 +730,7 @@ pub(super) fn canonicalize_complete_endpoint_pairs(
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     let mut partial = Vec::new();
     for &pair in pairs {
-        crate::resource::push(ctx, &mut partial, Some(pair), "catia_gauge_input_pairs")?;
+        ctx.push_vec(&mut partial, Some(pair), "catia_gauge_input_pairs")?;
     }
     let Some(canonical) = canonicalize_partial_endpoint_pair_gauge(ctx, &partial, gauge)? else {
         return Ok(None);
@@ -890,7 +740,7 @@ pub(super) fn canonicalize_complete_endpoint_pairs(
         let Some(pair) = pair else {
             return Ok(None);
         };
-        crate::resource::push(ctx, &mut complete, pair, "catia_gauge_complete_pairs")?;
+        ctx.push_vec(&mut complete, pair, "catia_gauge_complete_pairs")?;
     }
     Ok(Some(complete))
 }
@@ -936,28 +786,18 @@ fn canonicalize_mesh_edge_row_gauges(
                 for (position, coedge) in boundary_topology.coedges.iter().enumerate() {
                     let faces = incident_faces.get_mut(coedge.edge_row)?;
                     if !faces.contains(&face) {
-                        if let Err(error) = crate::resource::push(
-                            ctx,
-                            faces,
-                            face,
-                            "catia_mesh_edge_gauge_incident_face_entries",
-                        ) {
+                        if let Err(error) = ctx.push_vec(faces, face, "catia_mesh_edge_gauge_incident_face_entries") {
                             return Some(Err(error));
                         }
                     }
-                    if let Err(error) = crate::resource::push(
-                        ctx,
-                        usage.get_mut(coedge.edge_row)?,
-                        (
+                    if let Err(error) = ctx.push_vec(usage.get_mut(coedge.edge_row)?, (
                             face,
                             boundary,
                             position,
                             coedge.reversed,
                             coedge.start_vertex,
                             coedge.end_vertex,
-                        ),
-                        "catia_mesh_edge_gauge_usage_entries",
-                    ) {
+                        ), "catia_mesh_edge_gauge_usage_entries") {
                         return Some(Err(error));
                     }
                 }
@@ -983,12 +823,7 @@ fn canonicalize_mesh_edge_row_gauges(
         let mut endpoint_keys = Vec::new();
         for mut pair in edge_vertices.iter().copied() {
             pair.sort_unstable();
-            if let Err(error) = crate::resource::push(
-                ctx,
-                &mut endpoint_keys,
-                pair,
-                "catia_mesh_edge_gauge_endpoint_keys",
-            ) {
+            if let Err(error) = ctx.push_vec(&mut endpoint_keys, pair, "catia_mesh_edge_gauge_endpoint_keys") {
                 return Some(Err(error));
             }
         }
@@ -998,12 +833,7 @@ fn canonicalize_mesh_edge_row_gauges(
                 Ok(key) => key,
                 Err(error) => return Some(Err(error)),
             };
-            if let Err(error) = crate::resource::push(
-                ctx,
-                &mut source_option_keys,
-                key,
-                "catia_mesh_gauge_option_keys",
-            ) {
+            if let Err(error) = ctx.push_vec(&mut source_option_keys, key, "catia_mesh_gauge_option_keys") {
                 return Some(Err(error));
             }
         }
@@ -1019,11 +849,7 @@ fn canonicalize_mesh_edge_row_gauges(
                 row.boundary_layout,
                 gauge.edge_geometry[edge],
                 row.handles.len(),
-                match crate::resource::copy_retained_slice(
-                    ctx,
-                    &incident_faces[edge],
-                    "catia_mesh_gauge_incident_copy",
-                ) {
+                match ctx.copy_retained_slice(&incident_faces[edge], "catia_mesh_gauge_incident_copy") {
                     Ok(faces) => faces,
                     Err(error) => return Some(Err(error)),
                 },
@@ -1038,20 +864,12 @@ fn canonicalize_mesh_edge_row_gauges(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 },
-                None => match crate::resource::copy_retained_slice(
-                    ctx,
-                    &source_option_keys[edge],
-                    "catia_mesh_gauge_target_options",
-                ) {
+                None => match ctx.copy_retained_slice(&source_option_keys[edge], "catia_mesh_gauge_target_options") {
                     Ok(options) => options,
                     Err(error) => return Some(Err(error)),
                 },
             };
-            let base_copy = match crate::resource::copy_retained_slice(
-                ctx,
-                &base.4,
-                "catia_mesh_gauge_base_faces_copy",
-            ) {
+            let base_copy = match ctx.copy_retained_slice(&base.4, "catia_mesh_gauge_base_faces_copy") {
                 Ok(faces) => (base.0, base.1, base.2, base.3, faces),
                 Err(error) => return Some(Err(error)),
             };
@@ -1061,19 +879,10 @@ fn canonicalize_mesh_edge_row_gauges(
                     return Some(Err(error));
                 }
             }
-            if let Err(error) = crate::resource::push(
-                ctx,
-                source_groups.entry(source_key).or_default(),
-                edge,
-                "catia_mesh_gauge_source_edges",
-            ) {
+            if let Err(error) = ctx.push_vec(source_groups.entry(source_key).or_default(), edge, "catia_mesh_gauge_source_edges") {
                 return Some(Err(error));
             }
-            let source_options = match crate::resource::copy_retained_slice(
-                ctx,
-                &source_option_keys[edge],
-                "catia_mesh_gauge_source_options",
-            ) {
+            let source_options = match ctx.copy_retained_slice(&source_option_keys[edge], "catia_mesh_gauge_source_options") {
                 Ok(options) => options,
                 Err(error) => return Some(Err(error)),
             };
@@ -1083,12 +892,7 @@ fn canonicalize_mesh_edge_row_gauges(
                     return Some(Err(error));
                 }
             }
-            if let Err(error) = crate::resource::push(
-                ctx,
-                target_groups.entry(target_key).or_default(),
-                edge,
-                "catia_mesh_gauge_target_edges",
-            ) {
+            if let Err(error) = ctx.push_vec(target_groups.entry(target_key).or_default(), edge, "catia_mesh_gauge_target_edges") {
                 return Some(Err(error));
             }
         }
@@ -1112,11 +916,7 @@ fn canonicalize_mesh_edge_row_gauges(
                 return None;
             }
             slots.sort_unstable();
-            let mut ordered = match crate::resource::copy_retained_slice(
-                ctx,
-                &group,
-                "catia_mesh_gauge_ordered_group",
-            ) {
+            let mut ordered = match ctx.copy_retained_slice(&group, "catia_mesh_gauge_ordered_group") {
                 Ok(group) => group,
                 Err(error) => return Some(Err(error)),
             };
@@ -1138,11 +938,7 @@ fn canonicalize_mesh_edge_row_gauges(
             return Some(Ok(topology));
         }
 
-        let mut permuting = match crate::resource::copy_retained_slice(
-            ctx,
-            &row_permutation,
-            "catia_mesh_gauge_row_permutation_copy",
-        ) {
+        let mut permuting = match ctx.copy_retained_slice(&row_permutation, "catia_mesh_gauge_row_permutation_copy") {
             Ok(permuting) => permuting,
             Err(error) => return Some(Err(error)),
         };
@@ -1293,102 +1089,32 @@ fn mesh_topology_gauge_key(
     topology: &StandardTopology,
 ) -> Result<Vec<u64>, CodecError> {
     let mut key = Vec::new();
-    crate::resource::push(
-        ctx,
-        &mut key,
-        cadmpeg_core::decode::u64_from_index(topology.vertex_points.len()),
-        "catia_gauge_topology_key",
-    )?;
+    ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(topology.vertex_points.len()), "catia_gauge_topology_key")?;
     for point in &topology.vertex_points {
         for coordinate in point {
-            crate::resource::push(
-                ctx,
-                &mut key,
-                coordinate.to_bits(),
-                "catia_gauge_topology_key",
-            )?;
+            ctx.push_vec(&mut key, coordinate.to_bits(), "catia_gauge_topology_key")?;
         }
     }
-    crate::resource::push(
-        ctx,
-        &mut key,
-        cadmpeg_core::decode::u64_from_index(topology.logical_vertex_count),
-        "catia_gauge_topology_key",
-    )?;
-    crate::resource::push(
-        ctx,
-        &mut key,
-        cadmpeg_core::decode::u64_from_index(topology.edge_rows.len()),
-        "catia_gauge_topology_key",
-    )?;
+    ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(topology.logical_vertex_count), "catia_gauge_topology_key")?;
+    ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(topology.edge_rows.len()), "catia_gauge_topology_key")?;
     for row in &topology.edge_rows {
-        crate::resource::push(
-            ctx,
-            &mut key,
-            u64::from(row.kind),
-            "catia_gauge_topology_key",
-        )?;
-        crate::resource::push(
-            ctx,
-            &mut key,
-            row.boundary_layout as u64,
-            "catia_gauge_topology_key",
-        )?;
-        crate::resource::push(
-            ctx,
-            &mut key,
-            cadmpeg_core::decode::u64_from_index(row.handles.len()),
-            "catia_gauge_topology_key",
-        )?;
+        ctx.push_vec(&mut key, u64::from(row.kind), "catia_gauge_topology_key")?;
+        ctx.push_vec(&mut key, row.boundary_layout as u64, "catia_gauge_topology_key")?;
+        ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(row.handles.len()), "catia_gauge_topology_key")?;
         for &handle in &row.handles {
-            crate::resource::push(ctx, &mut key, u64::from(handle), "catia_gauge_topology_key")?;
+            ctx.push_vec(&mut key, u64::from(handle), "catia_gauge_topology_key")?;
         }
     }
-    crate::resource::push(
-        ctx,
-        &mut key,
-        cadmpeg_core::decode::u64_from_index(topology.faces.len()),
-        "catia_gauge_topology_key",
-    )?;
+    ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(topology.faces.len()), "catia_gauge_topology_key")?;
     for face in &topology.faces {
-        crate::resource::push(
-            ctx,
-            &mut key,
-            cadmpeg_core::decode::u64_from_index(face.boundaries.len()),
-            "catia_gauge_topology_key",
-        )?;
+        ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(face.boundaries.len()), "catia_gauge_topology_key")?;
         for boundary in &face.boundaries {
-            crate::resource::push(
-                ctx,
-                &mut key,
-                cadmpeg_core::decode::u64_from_index(boundary.coedges.len()),
-                "catia_gauge_topology_key",
-            )?;
+            ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(boundary.coedges.len()), "catia_gauge_topology_key")?;
             for coedge in &boundary.coedges {
-                crate::resource::push(
-                    ctx,
-                    &mut key,
-                    cadmpeg_core::decode::u64_from_index(coedge.edge_row),
-                    "catia_gauge_topology_key",
-                )?;
-                crate::resource::push(
-                    ctx,
-                    &mut key,
-                    u64::from(coedge.reversed),
-                    "catia_gauge_topology_key",
-                )?;
-                crate::resource::push(
-                    ctx,
-                    &mut key,
-                    cadmpeg_core::decode::u64_from_index(coedge.start_vertex),
-                    "catia_gauge_topology_key",
-                )?;
-                crate::resource::push(
-                    ctx,
-                    &mut key,
-                    cadmpeg_core::decode::u64_from_index(coedge.end_vertex),
-                    "catia_gauge_topology_key",
-                )?;
+                ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(coedge.edge_row), "catia_gauge_topology_key")?;
+                ctx.push_vec(&mut key, u64::from(coedge.reversed), "catia_gauge_topology_key")?;
+                ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(coedge.start_vertex), "catia_gauge_topology_key")?;
+                ctx.push_vec(&mut key, cadmpeg_core::decode::u64_from_index(coedge.end_vertex), "catia_gauge_topology_key")?;
             }
         }
     }
@@ -1495,12 +1221,7 @@ fn canonicalize_mesh_candidate(
         }
         let mut reverse_edges = Vec::new();
         for vertices in edge_vertices {
-            if let Err(error) = crate::resource::push(
-                ctx,
-                &mut reverse_edges,
-                vertices.is_some_and(|vertices| vertices[0] > vertices[1]),
-                "catia_mesh_reverse_edges",
-            ) {
+            if let Err(error) = ctx.push_vec(&mut reverse_edges, vertices.is_some_and(|vertices| vertices[0] > vertices[1]), "catia_mesh_reverse_edges") {
                 return Some(Err(error));
             }
         }
@@ -1525,12 +1246,7 @@ fn canonicalize_mesh_candidate(
             };
         }
         let mut identity = Vec::new();
-        if let Err(error) = crate::resource::reserve_vec(
-            ctx,
-            &mut identity,
-            point_assignment.len(),
-            "catia_mesh_candidate_identity",
-        ) {
+        if let Err(error) = ctx.reserve_vec(&mut identity, point_assignment.len(), "catia_mesh_candidate_identity") {
             return Some(Err(error));
         }
         identity.extend(0..point_assignment.len());
@@ -1999,7 +1715,7 @@ pub(super) fn canonicalize_endpoint_relation_state(
         0
     };
     let mut identity = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut identity, point_count, "catia_relation_identity")?;
+    ctx.reserve_vec(&mut identity, point_count, "catia_relation_identity")?;
     identity.extend(0..point_count);
     let Some(mapped) = map_endpoint_relation_state(ctx, &state, gauge, &identity)? else {
         return Ok(None);
@@ -2031,7 +1747,7 @@ fn copy_endpoint_relation_state(
     state: &MeshEndpointRelationStateSignature,
 ) -> Result<MeshEndpointRelationStateSignature, CodecError> {
     let assigned =
-        crate::resource::copy_retained_slice(ctx, &state.0, "catia_relation_state_assigned_copy")?;
+        ctx.copy_retained_slice(&state.0, "catia_relation_state_assigned_copy")?;
     let mut domains = Vec::new();
     for row in &state.1 {
         let mut choices = Vec::new();
@@ -2042,31 +1758,13 @@ fn copy_endpoint_relation_state(
                     assignments,
                     edge_pairs,
                 } => MeshEndpointRelationSelection::Enumerated {
-                    assignments: crate::resource::copy_retained_slice(
-                        ctx,
-                        assignments,
-                        "catia_relation_state_assignment_copy",
-                    )?,
-                    edge_pairs: crate::resource::copy_retained_slice(
-                        ctx,
-                        edge_pairs,
-                        "catia_relation_state_pair_copy",
-                    )?,
+                    assignments: ctx.copy_retained_slice(assignments, "catia_relation_state_assignment_copy")?,
+                    edge_pairs: ctx.copy_retained_slice(edge_pairs, "catia_relation_state_pair_copy")?,
                 },
             };
-            crate::resource::push(
-                ctx,
-                &mut choices,
-                copied,
-                "catia_relation_state_choice_copy",
-            )?;
+            ctx.push_vec(&mut choices, copied, "catia_relation_state_choice_copy")?;
         }
-        crate::resource::push(
-            ctx,
-            &mut domains,
-            choices,
-            "catia_relation_state_domain_copy",
-        )?;
+        ctx.push_vec(&mut domains, choices, "catia_relation_state_domain_copy")?;
     }
     Ok((assigned, domains))
 }
@@ -2123,28 +1821,19 @@ fn map_endpoint_relation_state(
                         let Some(pair) = mapped_endpoint_pair(Some(pair), Some(permutation)) else {
                             return Ok(None);
                         };
-                        crate::resource::push(
-                            ctx,
-                            &mut mapped_pairs,
-                            (target, pair),
-                            "catia_relation_mapped_pairs",
-                        )?;
+                        ctx.push_vec(&mut mapped_pairs, (target, pair), "catia_relation_mapped_pairs")?;
                     }
                     mapped_pairs.sort_unstable();
                     MeshEndpointRelationSelection::Enumerated {
-                        assignments: crate::resource::copy_retained_slice(
-                            ctx,
-                            assignments,
-                            "catia_relation_mapped_assignments",
-                        )?,
+                        assignments: ctx.copy_retained_slice(assignments, "catia_relation_mapped_assignments")?,
                         edge_pairs: mapped_pairs,
                     }
                 }
             };
-            crate::resource::push(ctx, &mut choices, mapped, "catia_relation_mapped_choices")?;
+            ctx.push_vec(&mut choices, mapped, "catia_relation_mapped_choices")?;
         }
         choices.sort_unstable();
-        crate::resource::push(ctx, &mut domains, choices, "catia_relation_mapped_domains")?;
+        ctx.push_vec(&mut domains, choices, "catia_relation_mapped_domains")?;
     }
     Ok(Some((assigned, domains)))
 }
@@ -2158,7 +1847,7 @@ fn relation_row_gauge_mapping(
     let edge_count = state.0.len();
     let identity = || -> Result<Vec<usize>, CodecError> {
         let mut rows = Vec::new();
-        crate::resource::reserve_vec(ctx, &mut rows, edge_count, "catia_relation_row_identity")?;
+        ctx.reserve_vec(&mut rows, edge_count, "catia_relation_row_identity")?;
         rows.extend(0..edge_count);
         Ok(rows)
     };
@@ -2192,22 +1881,12 @@ fn relation_row_gauge_mapping(
         if !source_groups.contains_key(&source_key) {
             ctx.charge_collection_items(1, "catia_relation_source_keys")?;
         }
-        crate::resource::push(
-            ctx,
-            source_groups.entry(source_key).or_default(),
-            edge,
-            "catia_relation_source_edges",
-        )?;
+        ctx.push_vec(source_groups.entry(source_key).or_default(), edge, "catia_relation_source_edges")?;
         let target_key = (base, source_options);
         if !target_groups.contains_key(&target_key) {
             ctx.charge_collection_items(1, "catia_relation_target_keys")?;
         }
-        crate::resource::push(
-            ctx,
-            target_groups.entry(target_key).or_default(),
-            edge,
-            "catia_relation_target_edges",
-        )?;
+        ctx.push_vec(target_groups.entry(target_key).or_default(), edge, "catia_relation_target_edges")?;
     }
 
     let mut row_mapping = identity()?;
@@ -2234,12 +1913,7 @@ fn relation_row_gauge_mapping(
             let Some(signature) = relation_row_signature(ctx, state, edge, permutation)? else {
                 return Ok(None);
             };
-            crate::resource::push(
-                ctx,
-                &mut ordered,
-                (signature, edge),
-                "catia_relation_ordered_rows",
-            )?;
+            ctx.push_vec(&mut ordered, (signature, edge), "catia_relation_ordered_rows")?;
         }
         ordered.sort_unstable();
         for (target, (_, source)) in targets.into_iter().zip(ordered) {
@@ -2271,12 +1945,7 @@ fn relation_row_signature(
         }
         None => None,
     };
-    crate::resource::push(
-        ctx,
-        &mut signature,
-        assigned,
-        "catia_relation_row_signature",
-    )?;
+    ctx.push_vec(&mut signature, assigned, "catia_relation_row_signature")?;
     for choices in &state.1 {
         for selection in choices {
             let pairs = selection.edge_pairs();
@@ -2293,7 +1962,7 @@ fn relation_row_signature(
                 };
                 value = Some(mapped);
             }
-            crate::resource::push(ctx, &mut signature, value, "catia_relation_row_signature")?;
+            ctx.push_vec(&mut signature, value, "catia_relation_row_signature")?;
         }
     }
     Ok(Some(signature))

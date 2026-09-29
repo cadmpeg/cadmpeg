@@ -215,24 +215,16 @@ pub(crate) fn copy_fields_charged(
     for field in fields {
         let copy = match field {
             ValueField::Inline { bytes, offset } => ValueField::Inline {
-                bytes: InlineBytes(crate::resource::copy_retained_slice(
-                    ctx,
-                    &bytes.0,
-                    "catia_native_value_inline_bytes",
-                )?),
+                bytes: InlineBytes(ctx.copy_retained_slice(&bytes.0, "catia_native_value_inline_bytes")?),
                 offset: *offset,
             },
             ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-                bytes: crate::resource::copy_retained_slice(
-                    ctx,
-                    bytes,
-                    "catia_native_value_field_bytes",
-                )?,
+                bytes: ctx.copy_retained_slice(bytes, "catia_native_value_field_bytes")?,
                 offset: *offset,
             },
             other => other.clone(),
         };
-        crate::resource::push(ctx, &mut copied, copy, "catia_native_value_fields")?;
+        ctx.push_vec(&mut copied, copy, "catia_native_value_fields")?;
     }
     Ok(copied)
 }
@@ -263,7 +255,7 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<ValueBl
         if let Some(block_end) = block.pos.checked_add(block.total_len()) {
             enclosing_end = enclosing_end.max(block_end);
         }
-        crate::resource::push(ctx, &mut blocks, block, "catia_value_blocks")?;
+        ctx.push_vec(&mut blocks, block, "catia_value_blocks")?;
     }
     Ok(blocks)
 }
@@ -291,7 +283,7 @@ fn parse_candidate(
     };
     Ok(Some(ValueBlock {
         pos,
-        payload: crate::resource::copy_retained_slice(ctx, payload, "catia_value_block_payload")?,
+        payload: ctx.copy_retained_slice(payload, "catia_value_block_payload")?,
     }))
 }
 
@@ -318,8 +310,8 @@ pub(crate) fn tokenize_charged(
     let mut fields = Vec::new();
     tokenize_with(
         payload,
-        |field| crate::resource::push(ctx, &mut fields, field, "catia_value_fields"),
-        |bytes| crate::resource::copy_retained_slice(ctx, bytes, "catia_value_field_bytes"),
+        |field| ctx.push_vec(&mut fields, field, "catia_value_fields"),
+        |bytes| ctx.copy_retained_slice(bytes, "catia_value_field_bytes"),
     )?;
     Ok(fields)
 }
@@ -347,19 +339,11 @@ pub(crate) fn copy_field_charged(
         },
         ValueField::Separator { offset } => ValueField::Separator { offset: *offset },
         ValueField::Inline { bytes, offset } => ValueField::Inline {
-            bytes: InlineBytes(crate::resource::copy_retained_slice(
-                ctx,
-                bytes.as_slice(),
-                "catia_value_selection_inline_bytes",
-            )?),
+            bytes: InlineBytes(ctx.copy_retained_slice(bytes.as_slice(), "catia_value_selection_inline_bytes")?),
             offset: *offset,
         },
         ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-            bytes: crate::resource::copy_retained_slice(
-                ctx,
-                bytes,
-                "catia_value_selection_string_bytes",
-            )?,
+            bytes: ctx.copy_retained_slice(bytes, "catia_value_selection_string_bytes")?,
             offset: *offset,
         },
         ValueField::Atom {

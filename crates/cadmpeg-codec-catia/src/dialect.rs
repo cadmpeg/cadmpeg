@@ -123,18 +123,14 @@ pub(crate) fn dialect_loss(
     if !matches!(matched.admission(), Admission::Residual) {
         return Ok(None);
     }
-    let message = resource::format_retained(
-        ctx,
-        format_args!(
+    let message = ctx.format_retained(format_args!(
             "This container matched no CATIA V5 storage family's structural invariants, so it \
              is `{}`. No decode route declares a grammar for that row, and no declared \
              dialect grammar was substituted; the file was admitted under the metadata-IR \
              fallback, which enumerates the container and retains the source bytes without applying \
              any family's record grammar.",
             matched.dialect()
-        ),
-        "catia_dialect_unverified_message",
-    )?;
+        ), "catia_dialect_unverified_message")?;
     Ok(Some(CatiaLossCode::SourceDialectUnverified.note_charged(
         ctx,
         message,

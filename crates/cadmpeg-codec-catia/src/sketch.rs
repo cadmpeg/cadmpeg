@@ -49,16 +49,11 @@ pub(crate) fn transfer_native_sketch_entities(
         let Some(owner_record) = object.owner_record.as_deref() else {
             continue;
         };
-        resource::admit_map_entry(
-            ctx,
-            &mut design_objects_by_owner_record,
-            &owner_record,
-            "catia_sketch_owner_record_index",
-        )?;
+        ctx.admit_hash_map_entry(&mut design_objects_by_owner_record, &owner_record, "catia_sketch_owner_record_index")?;
         let members = design_objects_by_owner_record
             .entry(owner_record)
             .or_default();
-        resource::push(ctx, members, object, "catia_sketch_owner_record_members")?;
+        ctx.push_vec(members, object, "catia_sketch_owner_record_members")?;
     }
 
     let mut sketches = Vec::new();
@@ -73,12 +68,7 @@ pub(crate) fn transfer_native_sketch_entities(
             "catia_sketch_entity_sketch_id",
         )?;
         let native_ref = ctx.copy_retained_text(native_ref, "catia_sketch_entity_sketch_ref")?;
-        resource::push(
-            ctx,
-            &mut sketches,
-            (id, native_ref),
-            "catia_sketch_entity_sketches",
-        )?;
+        ctx.push_vec(&mut sketches, (id, native_ref), "catia_sketch_entity_sketches")?;
     }
     let mut transferred = HashSet::new();
 
@@ -124,12 +114,7 @@ pub(crate) fn transfer_native_sketch_entities(
             let [geometry_field] = geometry_fields.as_slice() else {
                 continue;
             };
-            if !resource::insert_set(
-                ctx,
-                &mut seen_fields,
-                geometry_field.id.as_str(),
-                "catia_sketch_entity_seen_fields",
-            )? {
+            if !ctx.insert_hash_set(&mut seen_fields, geometry_field.id.as_str(), "catia_sketch_entity_seen_fields")? {
                 continue;
             }
 
@@ -160,25 +145,15 @@ pub(crate) fn transfer_native_sketch_entities(
             )?;
             let field_copy =
                 ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_native_ref")?;
-            resource::push(
-                ctx,
-                &mut ir.model.sketch_entities,
-                SketchEntity::new(
+            ctx.push_vec(&mut ir.model.sketch_entities, SketchEntity::new(
                     entity_id,
                     sketch_copy,
                     SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
                 )
-                .with_native_ref(Some(field_copy)),
-                "catia_sketch_entities",
-            )?;
+                .with_native_ref(Some(field_copy)), "catia_sketch_entities")?;
             let transferred_id =
                 ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_transferred_id")?;
-            resource::insert_set(
-                ctx,
-                &mut transferred,
-                transferred_id,
-                "catia_sketch_entity_transferred",
-            )?;
+            ctx.insert_hash_set(&mut transferred, transferred_id, "catia_sketch_entity_transferred")?;
         }
     }
 
@@ -212,21 +187,11 @@ pub(crate) fn transfer_native_sketch_constraints(
         let Some(owner_record) = object.owner_record.as_deref() else {
             continue;
         };
-        resource::admit_map_entry(
-            ctx,
-            &mut design_objects_by_owner_record,
-            &owner_record,
-            "catia_sketch_constraint_owner_record_index",
-        )?;
+        ctx.admit_hash_map_entry(&mut design_objects_by_owner_record, &owner_record, "catia_sketch_constraint_owner_record_index")?;
         let members = design_objects_by_owner_record
             .entry(owner_record)
             .or_default();
-        resource::push(
-            ctx,
-            members,
-            object,
-            "catia_sketch_constraint_owner_record_members",
-        )?;
+        ctx.push_vec(members, object, "catia_sketch_constraint_owner_record_members")?;
     }
 
     let mut sketches = Vec::new();
@@ -242,12 +207,7 @@ pub(crate) fn transfer_native_sketch_constraints(
         )?;
         let native_ref =
             ctx.copy_retained_text(native_ref, "catia_sketch_constraint_sketch_ref")?;
-        resource::push(
-            ctx,
-            &mut sketches,
-            (id, native_ref),
-            "catia_sketch_constraint_sketches",
-        )?;
+        ctx.push_vec(&mut sketches, (id, native_ref), "catia_sketch_constraint_sketches")?;
     }
     let mut candidates = HashMap::<(SketchId, &str), NativeSketchConstraintCandidate<'_>>::new();
 
@@ -283,11 +243,7 @@ pub(crate) fn transfer_native_sketch_constraints(
             &design_objects_by_owner_record,
             &design_objects,
         )?;
-        let member_object_ids = resource::collect_set(
-            ctx,
-            member_objects.iter().map(|object| object.id.as_str()),
-            "catia_sketch_constraint_member_ids",
-        )?;
+        let member_object_ids = ctx.collect_hash_set(member_objects.iter().map(|object| object.id.as_str()), "catia_sketch_constraint_member_ids")?;
         let mut sketch_entities = UniqueIndex::new();
         for entity in ir
             .model
@@ -376,12 +332,7 @@ pub(crate) fn transfer_native_sketch_constraints(
                         "catia_sketch_candidate_key_id",
                     )?;
                     let key = (key_id, target_record.id.as_str());
-                    resource::admit_map_entry(
-                        ctx,
-                        &mut candidates,
-                        &key,
-                        "catia_sketch_constraint_candidates",
-                    )?;
+                    ctx.admit_hash_map_entry(&mut candidates, &key, "catia_sketch_constraint_candidates")?;
                     let candidate = match candidates.entry(key) {
                         std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                         std::collections::hash_map::Entry::Vacant(entry) => {
@@ -408,35 +359,21 @@ pub(crate) fn transfer_native_sketch_constraints(
                             SketchEntityId::mint,
                             "catia_sketch_candidate_entity_id",
                         )?;
-                        resource::push(
-                            ctx,
-                            &mut candidate.entities,
-                            id,
-                            "catia_sketch_candidate_entities",
-                        )?;
+                        ctx.push_vec(&mut candidate.entities, id, "catia_sketch_candidate_entities")?;
                     }
                     let field =
                         ctx.copy_retained_text(&geometry_field.id, "catia_sketch_candidate_field")?;
-                    resource::push(
-                        ctx,
-                        &mut candidate.incidences,
-                        NativeSketchConstraintIncidence {
+                    ctx.push_vec(&mut candidate.incidences, NativeSketchConstraintIncidence {
                             field,
                             field_offset: geometry_field.byte_offset,
                             reference_offset: reference.payload_offset(),
-                        },
-                        "catia_sketch_candidate_incidences",
-                    )?;
+                        }, "catia_sketch_candidate_incidences")?;
                 }
             }
         }
     }
 
-    let mut candidates = resource::collect_vec(
-        ctx,
-        candidates.into_values(),
-        "catia_sketch_constraint_candidate_order",
-    )?;
+    let mut candidates = ctx.collect_vec(candidates.into_values(), "catia_sketch_constraint_candidate_order")?;
     candidates.sort_by(|left, right| {
         left.target_record
             .byte_offset
@@ -561,10 +498,7 @@ pub(crate) fn transfer_native_sketch_constraints(
             &candidate.target_entity_record.id,
             "catia_sketch_constraint_native_ref",
         )?;
-        resource::push(
-            ctx,
-            &mut ir.model.sketch_constraints,
-            SketchConstraint {
+        ctx.push_vec(&mut ir.model.sketch_constraints, SketchConstraint {
                 id: constraint_id,
                 sketch: candidate.sketch,
                 definition,
@@ -578,19 +512,12 @@ pub(crate) fn transfer_native_sketch_constraints(
                 label_position: None,
                 metadata: None,
                 native_ref: Some(neutral_ref),
-            },
-            "catia_sketch_constraints",
-        )?;
+            }, "catia_sketch_constraints")?;
         let transferred_id = ctx.copy_retained_text(
             &candidate.target_record.id,
             "catia_sketch_constraint_transferred_id",
         )?;
-        resource::insert_set(
-            ctx,
-            &mut transferred,
-            transferred_id,
-            "catia_sketch_constraint_transferred",
-        )?;
+        ctx.insert_hash_set(&mut transferred, transferred_id, "catia_sketch_constraint_transferred")?;
     }
     Ok(transferred)
 }
@@ -726,9 +653,9 @@ fn insert_property(
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let operation = "catia_sketch_constraint_property";
-    let key = resource::format_retained(ctx, key, operation)?;
-    let value = resource::format_retained(ctx, value, operation)?;
-    resource::insert_btree_map(ctx, properties, key, value, operation)?;
+    let key = ctx.format_retained(key, operation)?;
+    let value = ctx.format_retained(value, operation)?;
+    ctx.insert_btree_map(properties, key, value, operation)?;
     Ok(())
 }
 
@@ -739,9 +666,7 @@ fn exact_sketch_member_objects<'a>(
     design_objects_by_owner_record: &HashMap<&'a str, Vec<&'a CatiaDesignObject>>,
     design_objects: &UniqueIndex<&'a str, &'a CatiaDesignObject>,
 ) -> Result<Vec<&'a CatiaDesignObject>, cadmpeg_core::CodecError> {
-    resource::collect_vec(
-        ctx,
-        owner_record.references.iter().filter_map(|reference| {
+    ctx.collect_vec(owner_record.references.iter().filter_map(|reference| {
             let target_id = reference.target()?;
             if reference.is_null() {
                 return None;
@@ -765,9 +690,7 @@ fn exact_sketch_member_objects<'a>(
                 return None;
             }
             Some(*child_object)
-        }),
-        "catia_sketch_member_objects",
-    )
+        }), "catia_sketch_member_objects")
 }
 
 fn admitted_sketch_geometry_fields<'a>(
@@ -776,9 +699,7 @@ fn admitted_sketch_geometry_fields<'a>(
     object_records: &UniqueIndex<&'a str, &'a CatiaObjectRecord>,
     entity_records: &UniqueIndex<&'a str, &'a CatiaEntityRecord>,
 ) -> Result<Vec<&'a CatiaObjectRecord>, cadmpeg_core::CodecError> {
-    resource::collect_vec(
-        ctx,
-        child_object
+    ctx.collect_vec(child_object
             .fields
             .iter()
             .filter_map(|field_id| object_records.get(field_id.as_str()).copied())
@@ -798,9 +719,7 @@ fn admitted_sketch_geometry_fields<'a>(
                     && Some(entity_record.entity_id) == field.entity_id()
                     && field.class_entry().is_some()
                     && field.class_name() == Some("2DPoint")
-            }),
-        "catia_sketch_geometry_fields",
-    )
+            }), "catia_sketch_geometry_fields")
 }
 
 /// Transfer complete constraint ranges whose structural owner is one
@@ -858,12 +777,7 @@ pub(crate) fn transfer_constraint_ranges(
         )?;
         let mut bound_entities = Vec::new();
         if let Some(entity_id) = binding.entity {
-            resource::push(
-                ctx,
-                &mut bound_entities,
-                entity_id,
-                "catia_sketch_range_bound_entities",
-            )?;
+            ctx.push_vec(&mut bound_entities, entity_id, "catia_sketch_range_bound_entities")?;
         }
         let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::native_with_operand(
             cadmpeg_core::text::NonBlankString::new(constraint_kind).ok_or_else(|| {
@@ -875,10 +789,7 @@ pub(crate) fn transfer_constraint_ranges(
         );
         ctx.charge_entities(1, "admit CATIA sketch constraint")?;
         let native_ref = ctx.copy_retained_text(&entity.id, "catia_sketch_range_native_ref")?;
-        resource::push(
-            ctx,
-            &mut ir.model.sketch_constraints,
-            SketchConstraint {
+        ctx.push_vec(&mut ir.model.sketch_constraints, SketchConstraint {
                 id: constraint_id,
                 sketch: binding.sketch,
                 definition,
@@ -892,23 +803,11 @@ pub(crate) fn transfer_constraint_ranges(
                 label_position: None,
                 metadata: None,
                 native_ref: Some(native_ref),
-            },
-            "catia_sketch_range_constraints",
-        )?;
+            }, "catia_sketch_range_constraints")?;
         let range_record =
             ctx.copy_retained_text(&entity.object_record, "catia_sketch_range_record_id")?;
-        resource::insert_set(
-            ctx,
-            &mut transferred,
-            range_record,
-            "catia_sketch_range_transferred",
-        )?;
-        resource::insert_set(
-            ctx,
-            &mut transferred,
-            binding.source_object_record,
-            "catia_sketch_range_transferred",
-        )?;
+        ctx.insert_hash_set(&mut transferred, range_record, "catia_sketch_range_transferred")?;
+        ctx.insert_hash_set(&mut transferred, binding.source_object_record, "catia_sketch_range_transferred")?;
     }
 
     Ok(transferred)

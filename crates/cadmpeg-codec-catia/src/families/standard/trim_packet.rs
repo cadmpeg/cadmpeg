@@ -60,21 +60,9 @@ impl TrimPacket {
     ) -> Result<Self, CodecError> {
         Ok(Self {
             independent_count: self.independent_count,
-            strip_lengths: crate::resource::copy_retained_slice(
-                ctx,
-                &self.strip_lengths,
-                "catia_trim_clone_strip_lengths",
-            )?,
-            fan_lengths: crate::resource::copy_retained_slice(
-                ctx,
-                &self.fan_lengths,
-                "catia_trim_clone_fan_lengths",
-            )?,
-            handles: crate::resource::copy_retained_slice(
-                ctx,
-                &self.handles,
-                "catia_trim_clone_handles",
-            )?,
+            strip_lengths: ctx.copy_retained_slice(&self.strip_lengths, "catia_trim_clone_strip_lengths")?,
+            fan_lengths: ctx.copy_retained_slice(&self.fan_lengths, "catia_trim_clone_fan_lengths")?,
+            handles: ctx.copy_retained_slice(&self.handles, "catia_trim_clone_handles")?,
             triangles: OnceLock::new(),
         })
     }
@@ -119,12 +107,7 @@ impl TrimPacket {
                 std::mem::size_of::<[u32; 3]>() as u64,
                 "catia_trim_triangles",
             )?;
-            crate::resource::push(
-                ctx,
-                &mut triangles,
-                [triple[0], triple[1], triple[2]],
-                "catia_trim_triangles",
-            )?;
+            ctx.push_vec(&mut triangles, [triple[0], triple[1], triple[2]], "catia_trim_triangles")?;
         }
         for &length in &self.strip_lengths {
             let (strip, tail) = remaining.split_at(length);
@@ -134,16 +117,11 @@ impl TrimPacket {
                     std::mem::size_of::<[u32; 3]>() as u64,
                     "catia_trim_triangles",
                 )?;
-                crate::resource::push(
-                    ctx,
-                    &mut triangles,
-                    if index % 2 == 0 {
+                ctx.push_vec(&mut triangles, if index % 2 == 0 {
                         [strip[index], strip[index + 1], strip[index + 2]]
                     } else {
                         [strip[index + 1], strip[index], strip[index + 2]]
-                    },
-                    "catia_trim_triangles",
-                )?;
+                    }, "catia_trim_triangles")?;
             }
         }
         for &length in &self.fan_lengths {
@@ -154,12 +132,7 @@ impl TrimPacket {
                     std::mem::size_of::<[u32; 3]>() as u64,
                     "catia_trim_triangles",
                 )?;
-                crate::resource::push(
-                    ctx,
-                    &mut triangles,
-                    [fan[0], fan[index], fan[index + 1]],
-                    "catia_trim_triangles",
-                )?;
+                ctx.push_vec(&mut triangles, [fan[0], fan[index], fan[index + 1]], "catia_trim_triangles")?;
             }
         }
         Ok(triangles)

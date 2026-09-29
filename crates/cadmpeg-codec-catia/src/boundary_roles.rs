@@ -158,7 +158,7 @@ pub(crate) fn classify_planar_boundaries(
                 LoopId::mint,
                 "catia_boundary_unspecified_id_copy",
             )?;
-            crate::resource::push(ctx, &mut ids, id, "catia_boundary_unspecified_ids")?;
+            ctx.push_vec(&mut ids, id, "catia_boundary_unspecified_ids")?;
         }
         Ok(FaceLoops::unspecified(ids))
     };
@@ -183,17 +183,12 @@ pub(crate) fn classify_planar_boundaries(
             return unspecified();
         }
         let mut polygon = Vec::new();
-        crate::resource::reserve_vec(
-            ctx,
-            &mut polygon,
-            boundary.len(),
-            "catia_boundary_polygon_points",
-        )?;
+        ctx.reserve_vec(&mut polygon, boundary.len(), "catia_boundary_polygon_points")?;
         for point in boundary {
             let offset = point.vector_from(origin);
             polygon.push(Point2::new(offset.dot(u_axis), offset.dot(v_axis)));
         }
-        crate::resource::push(ctx, &mut polygons, polygon, "catia_boundary_polygon_rows")?;
+        ctx.push_vec(&mut polygons, polygon, "catia_boundary_polygon_rows")?;
     }
     let coordinate_scale = polygons
         .iter()
@@ -210,7 +205,7 @@ pub(crate) fn classify_planar_boundaries(
             .map(|(left, right)| left.u * right.v - right.u * left.v)
             .sum::<f64>()
             * 0.5;
-        crate::resource::push(ctx, &mut areas, area, "catia_boundary_polygon_areas")?;
+        ctx.push_vec(&mut areas, area, "catia_boundary_polygon_areas")?;
     }
     if areas
         .iter()
@@ -274,7 +269,7 @@ pub(crate) fn classify_planar_boundaries(
                 LoopId::mint,
                 "catia_boundary_inner_id_copy",
             )?;
-            crate::resource::push(ctx, &mut inner, id, "catia_boundary_inner_ids")?;
+            ctx.push_vec(&mut inner, id, "catia_boundary_inner_ids")?;
         }
     }
     let outer_id = crate::resource::copy_id(

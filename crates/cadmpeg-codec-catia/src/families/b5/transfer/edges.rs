@@ -34,7 +34,7 @@ pub(super) fn merge_curve_plan(
         return Ok(());
     }
     let Some(existing) = plans.get_mut(&edge) else {
-        crate::resource::insert_map(ctx, plans, edge, candidate, "catia_b5_edge_curve_plans")?;
+        ctx.insert_hash_map(plans, edge, candidate, "catia_b5_edge_curve_plans")?;
         return Ok(());
     };
     let range_conflict = existing
@@ -54,7 +54,7 @@ pub(super) fn merge_curve_plan(
         || edge_tolerance_conflict
         || cache_tolerance_conflict
     {
-        crate::resource::insert_set(ctx, conflicts, edge, "catia_b5_conflicting_edge_curves")?;
+        ctx.insert_hash_set(conflicts, edge, "catia_b5_conflicting_edge_curves")?;
         plans.remove(&edge);
         return Ok(());
     }
@@ -553,13 +553,7 @@ pub(super) fn emit_edges(
             EdgeId::mint,
             "catia_b5_edge_map_id",
         )?;
-        crate::resource::insert_map(
-            admission.context(),
-            &mut edge_id_map,
-            edge_id,
-            map_id,
-            "catia_b5_emitted_edge_ids",
-        )?;
+        admission.context().insert_hash_map(&mut edge_id_map, edge_id, map_id, "catia_b5_emitted_edge_ids")?;
         let start = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),

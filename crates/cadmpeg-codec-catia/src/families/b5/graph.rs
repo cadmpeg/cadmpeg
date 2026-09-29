@@ -139,13 +139,7 @@ impl B5Graph {
         for loop_ in self.loops.values() {
             for member in &loop_.members {
                 if let Some(edge) = self.edges.get(&member.edge) {
-                    crate::resource::insert_btree_map(
-                        ctx,
-                        &mut referenced,
-                        member.edge,
-                        edge.vertices,
-                        "catia_b5_referenced_edge_vertices",
-                    )?;
+                    ctx.insert_btree_map(&mut referenced, member.edge, edge.vertices, "catia_b5_referenced_edge_vertices")?;
                 }
             }
         }
@@ -771,13 +765,7 @@ pub(super) fn face_loop_owner_counts(
             if let Some(count) = owners.get_mut(&loop_id) {
                 *count += 1;
             } else {
-                crate::resource::insert_map(
-                    ctx,
-                    &mut owners,
-                    loop_id,
-                    1,
-                    "catia_b5_face_loop_owners",
-                )?;
+                ctx.insert_hash_map(&mut owners, loop_id, 1, "catia_b5_face_loop_owners")?;
             }
         }
     }
@@ -844,19 +832,11 @@ pub(in crate::families) struct B5LoopMetadataExtension {
 
 impl B5Loop {
     pub(super) fn edge_senses(&self, ctx: &DecodeContext<'_>) -> Result<Vec<bool>, CodecError> {
-        crate::resource::collect_vec(
-            ctx,
-            self.members.iter().map(|member| member.controls[0] == -1),
-            "catia_b5_loop_edge_senses",
-        )
+        ctx.collect_vec(self.members.iter().map(|member| member.controls[0] == -1), "catia_b5_loop_edge_senses")
     }
 
     pub(super) fn pcurve_senses(&self, ctx: &DecodeContext<'_>) -> Result<Vec<bool>, CodecError> {
-        crate::resource::collect_vec(
-            ctx,
-            self.members.iter().map(|member| member.controls[2] == -1),
-            "catia_b5_loop_pcurve_senses",
-        )
+        ctx.collect_vec(self.members.iter().map(|member| member.controls[2] == -1), "catia_b5_loop_pcurve_senses")
     }
 }
 
@@ -891,7 +871,7 @@ fn topology_runs(
     for range in candidates {
         let population = owned_object_stream_population(ctx, bytes, range.clone())?;
         if let Some(graph) = parse_flat(ctx, &population, refusal)? {
-            crate::resource::push(ctx, &mut graphs, (range, graph), "catia B5 topology runs")?;
+            ctx.push_vec(&mut graphs, (range, graph), "catia B5 topology runs")?;
         }
     }
     Ok(graphs)
@@ -938,7 +918,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     let mut by_id = HashMap::new();
-    crate::resource::reserve_map(ctx, &mut by_id, records.len(), "catia B5 record index")?;
+    ctx.reserve_map(&mut by_id, records.len(), "catia B5 record index")?;
     for record in records {
         by_id.insert(record.object_id, record);
     }
@@ -951,12 +931,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
     let mut object_stream_pcurve_candidates = Vec::new();
     for jet in &object_stream_pcurve_jets {
         if let Some(candidate) = object_stream_pcurve_candidate(ctx, jet)? {
-            crate::resource::push(
-                ctx,
-                &mut object_stream_pcurve_candidates,
-                candidate,
-                "catia B5 object pcurve candidates",
-            )?;
+            ctx.push_vec(&mut object_stream_pcurve_candidates, candidate, "catia B5 object pcurve candidates")?;
         }
     }
     parse_from_records_with_class21(
@@ -998,12 +973,7 @@ fn parse_from_records_with_class21(
     let mut conflicting_object_stream_pcurves = HashSet::new();
     let mut object_stream_pcurve_classes = HashMap::<u32, Option<u8>>::new();
     for candidate in object_stream_candidates {
-        crate::resource::admit_map_entry(
-            ctx,
-            &mut object_stream_pcurve_classes,
-            &candidate.object_id,
-            "catia_b5_object_pcurve_classes",
-        )?;
+        ctx.admit_hash_map_entry(&mut object_stream_pcurve_classes, &candidate.object_id, "catia_b5_object_pcurve_classes")?;
         object_stream_pcurve_classes
             .entry(candidate.object_id)
             .and_modify(|class| {
@@ -1020,12 +990,7 @@ fn parse_from_records_with_class21(
         )?;
     }
     for candidate in class21_candidates {
-        crate::resource::admit_map_entry(
-            ctx,
-            &mut object_stream_pcurve_classes,
-            &candidate.object_id,
-            "catia_b5_object_pcurve_classes",
-        )?;
+        ctx.admit_hash_map_entry(&mut object_stream_pcurve_classes, &candidate.object_id, "catia_b5_object_pcurve_classes")?;
         object_stream_pcurve_classes
             .entry(candidate.object_id)
             .and_modify(|class| {
@@ -1043,13 +1008,7 @@ fn parse_from_records_with_class21(
     }
     let mut a8_pcurve_supports = HashMap::new();
     for (&object_id, pcurve) in &object_stream_pcurve_candidates {
-        crate::resource::insert_map(
-            ctx,
-            &mut a8_pcurve_supports,
-            object_id,
-            pcurve.surface,
-            "catia_b5_a8_pcurve_supports",
-        )?;
+        ctx.insert_hash_map(&mut a8_pcurve_supports, object_id, pcurve.surface, "catia_b5_a8_pcurve_supports")?;
     }
     let mut a8_headers = BTreeMap::new();
     for frame in frames {
@@ -1060,25 +1019,13 @@ fn parse_from_records_with_class21(
             frame.end,
             frame.object_id,
         )? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut a8_headers,
-                header.object_id,
-                header,
-                "catia_b5_a8_surface_headers",
-            )?;
+            ctx.insert_btree_map(&mut a8_headers, header.object_id, header, "catia_b5_a8_surface_headers")?;
         }
     }
     let mut surfaces = BTreeMap::new();
     for record in records {
         if let Some(surface) = surface_node(ctx, record, a8_headers.get(&record.object_id))? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut surfaces,
-                record.object_id,
-                surface,
-                "catia_b5_graph_surfaces",
-            )?;
+            ctx.insert_btree_map(&mut surfaces, record.object_id, surface, "catia_b5_graph_surfaces")?;
         }
     }
     let mut conflicting_surfaces = HashSet::new();
@@ -1092,22 +1039,12 @@ fn parse_from_records_with_class21(
         else {
             continue;
         };
-        let payload = crate::resource::copy_retained_slice(
-            ctx,
-            &record.payload,
-            "catia_b5_opaque_surface_payload",
-        )?;
-        crate::resource::insert_btree_map(
-            ctx,
-            &mut surfaces,
-            surface_id,
-            B5Surface::Unknown {
+        let payload = ctx.copy_retained_slice(&record.payload, "catia_b5_opaque_surface_payload")?;
+        ctx.insert_btree_map(&mut surfaces, surface_id, B5Surface::Unknown {
                 family: record.family,
                 class: record.class,
                 payload,
-            },
-            "catia_b5_opaque_surfaces",
-        )?;
+            }, "catia_b5_opaque_surfaces")?;
     }
     for frame in frames {
         let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
@@ -1157,30 +1094,16 @@ fn parse_from_records_with_class21(
         else {
             continue;
         };
-        let distinct_knots = crate::resource::copy_retained_slice(
-            ctx,
-            &pcurve.distinct_knots,
-            "catia_b5_object_pcurve_knots",
-        )?;
-        crate::resource::insert_btree_map(
-            ctx,
-            &mut object_stream_pcurves,
-            object_id,
-            B5ObjectStreamPcurve {
+        let distinct_knots = ctx.copy_retained_slice(&pcurve.distinct_knots, "catia_b5_object_pcurve_knots")?;
+        ctx.insert_btree_map(&mut object_stream_pcurves, object_id, B5ObjectStreamPcurve {
                 class,
                 surface: pcurve.surface,
                 parameter_range,
                 class_21_suffix_scalar: pcurve.class_21_suffix_scalar,
                 distinct_knots,
-            },
-            "catia_b5_object_pcurve_index",
-        )?;
+            }, "catia_b5_object_pcurve_index")?;
     }
-    let offset_constructions = crate::resource::collect_vec(
-        ctx,
-        records.iter().filter_map(parse_offset_surface_fields),
-        "catia_b5_offset_constructions",
-    )?;
+    let offset_constructions = ctx.collect_vec(records.iter().filter_map(parse_offset_surface_fields), "catia_b5_offset_constructions")?;
     let mut extrusion_surfaces = BTreeMap::<u32, B5ExtrusionSurface>::new();
     let has_extrusion_candidates = records
         .iter()
@@ -1206,13 +1129,7 @@ fn parse_from_records_with_class21(
                 else {
                     continue;
                 };
-                crate::resource::insert_btree_map(
-                    ctx,
-                    &mut extrusion_surfaces,
-                    record.object_id,
-                    extrusion,
-                    "catia_b5_extrusion_surfaces",
-                )?;
+                ctx.insert_btree_map(&mut extrusion_surfaces, record.object_id, extrusion, "catia_b5_extrusion_surfaces")?;
                 changed = true;
             }
             if !changed {
@@ -1223,12 +1140,7 @@ fn parse_from_records_with_class21(
     let mut extrusion_pcurves = HashSet::new();
     for extrusion in extrusion_surfaces.values() {
         for (_, pcurve, _) in extrusion.directrix.supports() {
-            crate::resource::insert_set(
-                ctx,
-                &mut extrusion_pcurves,
-                *pcurve,
-                "catia_b5_extrusion_pcurve_ids",
-            )?;
+            ctx.insert_hash_set(&mut extrusion_pcurves, *pcurve, "catia_b5_extrusion_pcurve_ids")?;
         }
     }
     let mut offset_surfaces = BTreeMap::new();
@@ -1264,11 +1176,7 @@ fn parse_from_records_with_class21(
                     B5Surface::Unknown {
                         family: record.family,
                         class: record.class,
-                        payload: crate::resource::copy_retained_slice(
-                            ctx,
-                            &record.payload,
-                            "catia_b5_offset_carrier_payload",
-                        )?,
+                        payload: ctx.copy_retained_slice(&record.payload, "catia_b5_offset_carrier_payload")?,
                     }
                 };
                 let surface_changed = surfaces.get(&record.object_id) != Some(&carrier);
@@ -1288,13 +1196,7 @@ fn parse_from_records_with_class21(
                     continue;
                 }
                 let metadata_changed = offset_surfaces.get(&record.object_id) != Some(&offset);
-                crate::resource::insert_btree_map(
-                    ctx,
-                    &mut offset_surfaces,
-                    record.object_id,
-                    offset,
-                    "catia_b5_offset_surfaces",
-                )?;
+                ctx.insert_btree_map(&mut offset_surfaces, record.object_id, offset, "catia_b5_offset_surfaces")?;
                 changed |= surface_changed || metadata_changed;
             }
             for record in records {
@@ -1323,13 +1225,7 @@ fn parse_from_records_with_class21(
                 {
                     let metadata_changed =
                         supported_surfaces.get(&record.object_id) != Some(&construction);
-                    crate::resource::insert_btree_map(
-                        ctx,
-                        &mut supported_surfaces,
-                        record.object_id,
-                        construction,
-                        "catia_b5_supported_surfaces",
-                    )?;
+                    ctx.insert_btree_map(&mut supported_surfaces, record.object_id, construction, "catia_b5_supported_surfaces")?;
                     changed |= surface_changed || metadata_changed;
                 }
             }
@@ -1354,13 +1250,7 @@ fn parse_from_records_with_class21(
     let mut profiles = BTreeMap::new();
     for record in records {
         if let Some(profile) = parse_profile(record) {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut profiles,
-                record.object_id,
-                profile,
-                "catia_b5_graph_profiles",
-            )?;
+            ctx.insert_btree_map(&mut profiles, record.object_id, profile, "catia_b5_graph_profiles")?;
         }
     }
     let mut pcurves = BTreeMap::new();
@@ -1373,31 +1263,15 @@ fn parse_from_records_with_class21(
             _ => None,
         };
         if let Some(pcurve) = pcurve {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut pcurves,
-                record.object_id,
-                pcurve,
-                "catia_b5_graph_pcurves",
-            )?;
+            ctx.insert_btree_map(&mut pcurves, record.object_id, pcurve, "catia_b5_graph_pcurves")?;
         }
     }
     let mut conflicting_pcurves = HashSet::new();
     let mut circle_candidates = BTreeMap::<u32, Vec<B5Pcurve>>::new();
     for pcurve in circle_pcurves_from_frames(ctx, bytes, frames)? {
         if surfaces.contains_key(&pcurve.surface) {
-            crate::resource::admit_btree_entry(
-                ctx,
-                &circle_candidates,
-                &pcurve.object_id,
-                "catia_b5_circle_candidate_groups",
-            )?;
-            crate::resource::push(
-                ctx,
-                circle_candidates.entry(pcurve.object_id).or_default(),
-                pcurve,
-                "catia_b5_circle_candidates",
-            )?;
+            ctx.admit_btree_entry(&circle_candidates, &pcurve.object_id, "catia_b5_circle_candidate_groups")?;
+            ctx.push_vec(circle_candidates.entry(pcurve.object_id).or_default(), pcurve, "catia_b5_circle_candidates")?;
         }
     }
     for (object_id, candidates) in circle_candidates {
@@ -1409,12 +1283,7 @@ fn parse_from_records_with_class21(
             merge_pcurve_candidate(ctx, &mut pcurves, &mut conflicting_pcurves, candidate)?;
         } else {
             pcurves.remove(&object_id);
-            crate::resource::insert_set(
-                ctx,
-                &mut conflicting_pcurves,
-                object_id,
-                "catia_b5_conflicting_circle_pcurves",
-            )?;
+            ctx.insert_hash_set(&mut conflicting_pcurves, object_id, "catia_b5_conflicting_circle_pcurves")?;
         }
     }
     for candidate in object_stream_pcurve_candidates.into_values() {
@@ -1431,13 +1300,7 @@ fn parse_from_records_with_class21(
     let mut opaque_pcurves = BTreeMap::new();
     for record in records {
         if let Some(pcurve) = parse_opaque_pcurve(ctx, record)? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut opaque_pcurves,
-                record.object_id,
-                pcurve,
-                "catia_b5_opaque_pcurves",
-            )?;
+            ctx.insert_btree_map(&mut opaque_pcurves, record.object_id, pcurve, "catia_b5_opaque_pcurves")?;
         }
     }
     for pcurve in opaque_pcurves.values_mut() {
@@ -1451,25 +1314,13 @@ fn parse_from_records_with_class21(
     let mut parameter_incidences = BTreeMap::new();
     for record in records {
         if let Some(incidence) = parameter_incidence(ctx, record)? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut parameter_incidences,
-                record.object_id,
-                incidence,
-                "catia_b5_graph_parameter_incidences",
-            )?;
+            ctx.insert_btree_map(&mut parameter_incidences, record.object_id, incidence, "catia_b5_graph_parameter_incidences")?;
         }
     }
     let mut edges = BTreeMap::new();
     for record in records.iter().filter(|record| record.class == 0x5e) {
         if let Some(edge) = parse_edge(record) {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut edges,
-                record.object_id,
-                edge,
-                "catia_b5_graph_edges",
-            )?;
+            ctx.insert_btree_map(&mut edges, record.object_id, edge, "catia_b5_graph_edges")?;
         }
     }
     let mut edge_parameter_incidences = BTreeMap::new();
@@ -1479,13 +1330,7 @@ fn parse_from_records_with_class21(
             .iter()
             .all(|parameter| parameter_incidences.contains_key(parameter))
         {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut edge_parameter_incidences,
-                object_id,
-                edge.parameter_incidences,
-                "catia_b5_edge_parameter_index",
-            )?;
+            ctx.insert_btree_map(&mut edge_parameter_incidences, object_id, edge.parameter_incidences, "catia_b5_edge_parameter_index")?;
         }
     }
     let implicit_pcurves =
@@ -1525,24 +1370,12 @@ fn parse_from_records_with_class21(
         ) else {
             continue;
         };
-        crate::resource::insert_btree_map(
-            ctx,
-            &mut loops,
-            record.object_id,
-            loop_,
-            "catia_b5_graph_loops",
-        )?;
+        ctx.insert_btree_map(&mut loops, record.object_id, loop_, "catia_b5_graph_loops")?;
     }
     let mut face_records = BTreeMap::new();
     for record in records.iter().filter(|record| record.class == 0x5f) {
         if let Some(face) = parse_face_record(ctx, record)? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut face_records,
-                record.object_id,
-                face,
-                "catia_b5_graph_face_records",
-            )?;
+            ctx.insert_btree_map(&mut face_records, record.object_id, face, "catia_b5_graph_face_records")?;
         }
     }
     let mut surface_aliases = BTreeMap::new();
@@ -1551,13 +1384,7 @@ fn parse_from_records_with_class21(
         .filter(|record| surfaces.contains_key(&record.object_id))
     {
         if let Some(target) = surface_alias_target(record) {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut surface_aliases,
-                record.object_id,
-                target,
-                "catia_b5_surface_aliases",
-            )?;
+            ctx.insert_btree_map(&mut surface_aliases, record.object_id, target, "catia_b5_surface_aliases")?;
         }
     }
     let mut faces = Vec::new();
@@ -1566,7 +1393,7 @@ fn parse_from_records_with_class21(
         .filter_map(|record| face_records.get(&record.object_id))
     {
         if let Some(face) = parse_face(ctx, record, &loops, &surfaces, &surface_aliases)? {
-            crate::resource::push(ctx, &mut faces, face, "catia_b5_graph_faces")?;
+            ctx.push_vec(&mut faces, face, "catia_b5_graph_faces")?;
         }
     }
     if require_topology && (faces.is_empty() || loops.is_empty()) {
@@ -1577,24 +1404,12 @@ fn parse_from_records_with_class21(
     let mut vertex_incidence_links = BTreeMap::new();
     for record in records.iter().filter(|record| record.class == 0x5d) {
         if let Some(link) = parse_vertex_incidence_link(record) {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut vertex_incidence_links,
-                record.object_id,
-                link,
-                "catia_b5_vertex_incidence_links",
-            )?;
+            ctx.insert_btree_map(&mut vertex_incidence_links, record.object_id, link, "catia_b5_vertex_incidence_links")?;
         }
     }
     let mut native_edge_vertices = BTreeMap::new();
     for (&object_id, edge) in &edges {
-        crate::resource::insert_btree_map(
-            ctx,
-            &mut native_edge_vertices,
-            object_id,
-            edge.vertices,
-            "catia_b5_native_edge_vertices",
-        )?;
+        ctx.insert_btree_map(&mut native_edge_vertices, object_id, edge.vertices, "catia_b5_native_edge_vertices")?;
     }
     let native_vertex_coordinates = incidence_vertex_coordinates(
         ctx,
@@ -1618,12 +1433,7 @@ fn parse_from_records_with_class21(
     let mut referenced_loops = HashSet::new();
     for face in &faces {
         for &loop_id in &face.loops {
-            crate::resource::insert_set(
-                ctx,
-                &mut referenced_loops,
-                loop_id,
-                "catia_b5_referenced_loops",
-            )?;
+            ctx.insert_hash_set(&mut referenced_loops, loop_id, "catia_b5_referenced_loops")?;
         }
     }
     loops.retain(|loop_id, _| referenced_loops.contains(loop_id));
@@ -1684,18 +1494,12 @@ fn merge_pcurve_candidate(
     }
     match pcurves.get(&object_id) {
         None => {
-            crate::resource::insert_btree_map(
-                ctx,
-                pcurves,
-                object_id,
-                candidate,
-                "catia_b5_pcurve_candidates",
-            )?;
+            ctx.insert_btree_map(pcurves, object_id, candidate, "catia_b5_pcurve_candidates")?;
         }
         Some(existing) if existing == &candidate => {}
         Some(_) => {
             pcurves.remove(&object_id);
-            crate::resource::insert_set(ctx, conflicts, object_id, "catia_b5_conflicting_pcurves")?;
+            ctx.insert_hash_set(conflicts, object_id, "catia_b5_conflicting_pcurves")?;
         }
     }
     Ok(())
@@ -1713,13 +1517,7 @@ fn merge_surface_candidate(
     }
     match surfaces.get(&object_id) {
         None => {
-            crate::resource::insert_btree_map(
-                ctx,
-                surfaces,
-                object_id,
-                candidate,
-                "catia_b5_surface_candidates",
-            )?;
+            ctx.insert_btree_map(surfaces, object_id, candidate, "catia_b5_surface_candidates")?;
         }
         Some(existing) if unresolved_surface_candidate(existing) => {
             surfaces.insert(object_id, candidate);
@@ -1727,12 +1525,7 @@ fn merge_surface_candidate(
         Some(existing) if unresolved_surface_candidate(&candidate) || existing == &candidate => {}
         Some(_) => {
             surfaces.remove(&object_id);
-            crate::resource::insert_set(
-                ctx,
-                conflicts,
-                object_id,
-                "catia_b5_conflicting_surfaces",
-            )?;
+            ctx.insert_hash_set(conflicts, object_id, "catia_b5_conflicting_surfaces")?;
             return Ok(false);
         }
     }
@@ -1750,11 +1543,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
     Ok(match surface {
         B5Surface::UnresolvedNurbs { header, payload } => B5Surface::UnresolvedNurbs {
             header: header.copy_charged(ctx)?,
-            payload: crate::resource::copy_retained_slice(
-                ctx,
-                payload,
-                "catia_b5_copied_unresolved_surface_payload",
-            )?,
+            payload: ctx.copy_retained_slice(payload, "catia_b5_copied_unresolved_surface_payload")?,
         },
         B5Surface::Unknown {
             family,
@@ -1763,11 +1552,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
         } => B5Surface::Unknown {
             family: *family,
             class: *class,
-            payload: crate::resource::copy_retained_slice(
-                ctx,
-                payload,
-                "catia_b5_copied_unknown_surface_payload",
-            )?,
+            payload: ctx.copy_retained_slice(payload, "catia_b5_copied_unknown_surface_payload")?,
         },
         B5Surface::Nurbs(nurbs) => B5Surface::Nurbs(crate::resource::copy_nurbs_surface(
             ctx,
@@ -1778,11 +1563,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
             carrier_object_id,
             definition: ProceduralSurfaceDefinition::RollingBallJet(jet),
         } => {
-            let stations = crate::resource::copy_retained_slice(
-                ctx,
-                jet.stations(),
-                "catia_b5_copied_rolling_ball_stations",
-            )?;
+            let stations = ctx.copy_retained_slice(jet.stations(), "catia_b5_copied_rolling_ball_stations")?;
             let jet =
                 cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(jet.degree(), stations)
                     .map_err(CodecError::malformed)?;
@@ -1828,12 +1609,7 @@ fn surface_alias_carrier(
 ) -> Result<Option<B5Surface>, CodecError> {
     let mut visited = HashSet::new();
     loop {
-        if !crate::resource::insert_set(
-            ctx,
-            &mut visited,
-            object_id,
-            "catia_b5_surface_alias_visits",
-        )? {
+        if !ctx.insert_hash_set(&mut visited, object_id, "catia_b5_surface_alias_visits")? {
             return Ok(None);
         }
         let Some(record) = by_id.get(&object_id) else {
@@ -1899,7 +1675,7 @@ fn a8_class21_pcurves_from_frames(
         if let Some(pcurve) =
             parse_a8_class21_pcurve(ctx, frame.object_id, &bytes[frame.start + 11..frame.end])?
         {
-            crate::resource::push(ctx, &mut pcurves, pcurve, "catia B5 class-21 pcurves")?;
+            ctx.push_vec(&mut pcurves, pcurve, "catia B5 class-21 pcurves")?;
         }
     }
     Ok(pcurves)
@@ -1952,11 +1728,7 @@ fn parse_a8_class21_pcurve(
             Some(())
         };
         let mut distinct_knots = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut distinct_knots,
-            knot_count,
-            "catia B5 pcurve distinct knots",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut distinct_knots, knot_count, "catia B5 pcurve distinct knots") {
             return Some(Err(error));
         }
         read_values(&mut position, &mut distinct_knots)?;
@@ -1964,11 +1736,7 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         let mut knot_values = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut knot_values,
-            knot_count,
-            "catia B5 pcurve knot values",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut knot_values, knot_count, "catia B5 pcurve knot values") {
             return Some(Err(error));
         }
         knot_values.extend(distinct_knots.iter().copied().map(FiniteReal::get));
@@ -1996,7 +1764,7 @@ fn parse_a8_class21_pcurve(
         }
         let mut u = Vec::new();
         if let Err(error) =
-            crate::resource::reserve_admitted_vec(&mut u, knot_count, "catia B5 pcurve u jet")
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut u, knot_count, "catia B5 pcurve u jet")
         {
             return Some(Err(error));
         }
@@ -2006,7 +1774,7 @@ fn parse_a8_class21_pcurve(
         }
         let mut v = Vec::new();
         if let Err(error) =
-            crate::resource::reserve_admitted_vec(&mut v, knot_count, "catia B5 pcurve v jet")
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut v, knot_count, "catia B5 pcurve v jet")
         {
             return Some(Err(error));
         }
@@ -2016,7 +1784,7 @@ fn parse_a8_class21_pcurve(
         }
         let mut du = Vec::new();
         if let Err(error) =
-            crate::resource::reserve_admitted_vec(&mut du, knot_count, "catia B5 pcurve du jet")
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut du, knot_count, "catia B5 pcurve du jet")
         {
             return Some(Err(error));
         }
@@ -2026,7 +1794,7 @@ fn parse_a8_class21_pcurve(
         }
         let mut dv = Vec::new();
         if let Err(error) =
-            crate::resource::reserve_admitted_vec(&mut dv, knot_count, "catia B5 pcurve dv jet")
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut dv, knot_count, "catia B5 pcurve dv jet")
         {
             return Some(Err(error));
         }
@@ -2036,7 +1804,7 @@ fn parse_a8_class21_pcurve(
         }
         let mut ddu = Vec::new();
         if let Err(error) =
-            crate::resource::reserve_admitted_vec(&mut ddu, knot_count, "catia B5 pcurve ddu jet")
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ddu, knot_count, "catia B5 pcurve ddu jet")
         {
             return Some(Err(error));
         }
@@ -2046,7 +1814,7 @@ fn parse_a8_class21_pcurve(
         }
         let mut ddv = Vec::new();
         if let Err(error) =
-            crate::resource::reserve_admitted_vec(&mut ddv, knot_count, "catia B5 pcurve ddv jet")
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ddv, knot_count, "catia B5 pcurve ddv jet")
         {
             return Some(Err(error));
         }
@@ -2055,11 +1823,7 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         let mut points = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut points,
-            knot_count,
-            "catia B5 pcurve point jets",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut points, knot_count, "catia B5 pcurve point jets") {
             return Some(Err(error));
         }
         points.extend(u.into_iter().zip(v).map(|(u, v)| [u, v]));
@@ -2067,11 +1831,7 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         let mut first = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut first,
-            knot_count,
-            "catia B5 pcurve first jets",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut first, knot_count, "catia B5 pcurve first jets") {
             return Some(Err(error));
         }
         first.extend(du.into_iter().zip(dv).map(|(u, v)| [u, v]));
@@ -2079,11 +1839,7 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         let mut second = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut second,
-            knot_count,
-            "catia B5 pcurve second jets",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut second, knot_count, "catia B5 pcurve second jets") {
             return Some(Err(error));
         }
         second.extend(ddu.into_iter().zip(ddv).map(|(u, v)| [u, v]));
@@ -2152,31 +1908,16 @@ pub(in crate::families) fn edge_vertex_references(
             family: 0xb5,
             class: 0x5e,
             object_id: frame.object_id,
-            payload: crate::resource::copy_retained_slice(
-                ctx,
-                &bytes[frame.start + 8..frame.end],
-                "catia_b5_edge_vertex_record_payload",
-            )?,
+            payload: ctx.copy_retained_slice(&bytes[frame.start + 8..frame.end], "catia_b5_edge_vertex_record_payload")?,
         };
         let Some(edge) = parse_edge(&record) else {
             continue;
         };
         let vertices = edge.vertices;
-        if crate::resource::insert_btree_map(
-            ctx,
-            &mut edges,
-            frame.object_id,
-            vertices,
-            "catia_b5_edge_vertex_references",
-        )?
+        if ctx.insert_btree_map(&mut edges, frame.object_id, vertices, "catia_b5_edge_vertex_references")?
         .is_some_and(|existing| existing != vertices)
         {
-            crate::resource::insert_set(
-                ctx,
-                &mut ambiguous,
-                frame.object_id,
-                "catia_b5_ambiguous_edge_vertices",
-            )?;
+            ctx.insert_hash_set(&mut ambiguous, frame.object_id, "catia_b5_ambiguous_edge_vertices")?;
         }
     }
     edges.retain(|object_id, _| !ambiguous.contains(object_id));
@@ -2218,22 +1959,13 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
             family: frame.family,
             class: frame.class,
             object_id: frame.object_id,
-            payload: crate::resource::copy_retained_slice(
-                ctx,
-                &bytes[frame.start + header..frame.end],
-                "catia_b5_edge_support_record_payload",
-            )?,
+            payload: ctx.copy_retained_slice(&bytes[frame.start + header..frame.end], "catia_b5_edge_support_record_payload")?,
         };
         if frame.class == 0x5e && edge_ids.contains(&frame.object_id) {
             let Some(wrapper) = parse_edge(&record).map(|edge| edge.support) else {
                 continue;
             };
-            crate::resource::admit_map_entry(
-                ctx,
-                &mut edge_wrappers,
-                &frame.object_id,
-                "catia_b5_edge_support_wrappers",
-            )?;
+            ctx.admit_hash_map_entry(&mut edge_wrappers, &frame.object_id, "catia_b5_edge_support_wrappers")?;
             edge_wrappers
                 .entry(frame.object_id)
                 .and_modify(|stored| {
@@ -2250,12 +1982,7 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
                 continue;
             };
             let references = [first, second];
-            crate::resource::admit_map_entry(
-                ctx,
-                &mut wrappers,
-                &frame.object_id,
-                "catia_b5_pcurve_support_wrappers",
-            )?;
+            ctx.admit_hash_map_entry(&mut wrappers, &frame.object_id, "catia_b5_pcurve_support_wrappers")?;
             wrappers
                 .entry(frame.object_id)
                 .and_modify(|stored| {
@@ -2272,13 +1999,7 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
             .and_then(|wrapper| wrappers.get(&wrapper))
             .and_then(Option::as_ref)
         {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut resolved,
-                edge,
-                *references,
-                "catia_b5_edge_support_pcurves",
-            )?;
+            ctx.insert_btree_map(&mut resolved, edge, *references, "catia_b5_edge_support_pcurves")?;
         }
     }
     Ok(resolved)
@@ -2323,13 +2044,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
             frame.end,
             frame.object_id,
         )? {
-            crate::resource::insert_map(
-                ctx,
-                &mut headers,
-                header.object_id,
-                header,
-                "catia_b5_targeted_a8_headers",
-            )?;
+            ctx.insert_hash_map(&mut headers, header.object_id, header, "catia_b5_targeted_a8_headers")?;
         }
     }
     let mut records = HashMap::<u32, Option<B5Record>>::new();
@@ -2340,12 +2055,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
         let Some(record) = record_from_frame(ctx, bytes, frame)? else {
             continue;
         };
-        crate::resource::admit_map_entry(
-            ctx,
-            &mut records,
-            &frame.object_id,
-            "catia_b5_targeted_surface_records",
-        )?;
+        ctx.admit_hash_map_entry(&mut records, &frame.object_id, "catia_b5_targeted_surface_records")?;
         records
             .entry(frame.object_id)
             .and_modify(|stored| {
@@ -2381,13 +2091,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
         if let Some(surface) =
             resolve_targeted_surface(ctx, object_id, &records, &headers, &resolved, &rolling)?
         {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut surfaces,
-                object_id,
-                surface,
-                "catia_b5_targeted_surfaces",
-            )?;
+            ctx.insert_btree_map(&mut surfaces, object_id, surface, "catia_b5_targeted_surfaces")?;
         }
     }
     Ok(surfaces)
@@ -2418,12 +2122,7 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
         let Some(record) = record_from_frame(ctx, bytes, frame)? else {
             continue;
         };
-        crate::resource::admit_map_entry(
-            ctx,
-            &mut candidates,
-            &frame.object_id,
-            "catia_b5_targeted_geometry_candidates",
-        )?;
+        ctx.admit_hash_map_entry(&mut candidates, &frame.object_id, "catia_b5_targeted_geometry_candidates")?;
         candidates
             .entry(frame.object_id)
             .and_modify(|stored| {
@@ -2439,12 +2138,7 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
     }
     let mut records = Vec::new();
     for record in candidates.into_values().flatten() {
-        crate::resource::push(
-            ctx,
-            &mut records,
-            record,
-            "catia_b5_targeted_geometry_records",
-        )?;
+        ctx.push_vec(&mut records, record, "catia_b5_targeted_geometry_records")?;
     }
     records.sort_by_key(|record| record.offset);
     parse_from_records(ctx, bytes, &records, frames, false, refusal)
@@ -2486,12 +2180,7 @@ fn merge_targeted_surface(
     object_id: u32,
     surface: B5Surface,
 ) -> Result<(), CodecError> {
-    crate::resource::admit_map_entry(
-        ctx,
-        candidates,
-        &object_id,
-        "catia_b5_targeted_surface_candidates",
-    )?;
+    ctx.admit_hash_map_entry(candidates, &object_id, "catia_b5_targeted_surface_candidates")?;
     candidates
         .entry(object_id)
         .and_modify(|stored| {
@@ -2533,12 +2222,7 @@ fn resolve_targeted_surface_inner(
 ) -> Result<Option<B5Surface>, CodecError> {
     let _depth = ctx.enter_nested("catia_b5_targeted_surface_resolution")?;
     loop {
-        if !crate::resource::insert_set(
-            ctx,
-            &mut visited,
-            object_id,
-            "catia_b5_targeted_surface_visited",
-        )? || records.get(&object_id).is_some_and(Option::is_none)
+        if !ctx.insert_hash_set(&mut visited, object_id, "catia_b5_targeted_surface_visited")? || records.get(&object_id).is_some_and(Option::is_none)
         {
             return Ok(None);
         }
@@ -2603,19 +2287,13 @@ fn resolve_targeted_analytic_offset(
         headers,
         resolved,
         rolling,
-        crate::resource::copy_retained_set(ctx, visited, "catia_b5_targeted_visited_copy")?,
+        ctx.copy_retained_set(visited, "catia_b5_targeted_visited_copy")?,
     )?
     else {
         return Ok(None);
     };
     let mut surfaces = BTreeMap::new();
-    crate::resource::insert_btree_map(
-        ctx,
-        &mut surfaces,
-        carrier_id,
-        copy_surface(ctx, &carrier)?,
-        "catia_b5_targeted_offset_carrier",
-    )?;
+    ctx.insert_btree_map(&mut surfaces, carrier_id, copy_surface(ctx, &carrier)?, "catia_b5_targeted_offset_carrier")?;
     if !matches!(carrier, B5Surface::RollingBall { .. }) {
         let Some(source) = resolve_targeted_surface_inner(
             ctx,
@@ -2624,18 +2302,12 @@ fn resolve_targeted_analytic_offset(
             headers,
             resolved,
             rolling,
-            crate::resource::copy_retained_set(ctx, visited, "catia_b5_targeted_visited_copy")?,
+            ctx.copy_retained_set(visited, "catia_b5_targeted_visited_copy")?,
         )?
         else {
             return Ok(None);
         };
-        crate::resource::insert_btree_map(
-            ctx,
-            &mut surfaces,
-            source_id,
-            source,
-            "catia_b5_targeted_offset_source",
-        )?;
+        ctx.insert_btree_map(&mut surfaces, source_id, source, "catia_b5_targeted_offset_source")?;
     }
     if parse_offset_surface(record, &surfaces, &BTreeMap::new(), &HashMap::new()).is_none() {
         return Ok(None);
@@ -2685,7 +2357,7 @@ fn incidence_vertex_coordinates(
     let mut seen = HashSet::new();
     let mut coordinates_by_vertex = BTreeMap::new();
     for vertex in native_edges.values().flatten().copied() {
-        if !crate::resource::insert_set(ctx, &mut seen, vertex, "catia_b5_incidence_vertex_seen")? {
+        if !ctx.insert_hash_set(&mut seen, vertex, "catia_b5_incidence_vertex_seen")? {
             continue;
         }
         let Some(link) = vertex_incidence_links.get(&vertex) else {
@@ -2733,13 +2405,7 @@ fn incidence_vertex_coordinates(
             }
         }
         if let (true, Some(point)) = (valid, first) {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut coordinates_by_vertex,
-                vertex,
-                point,
-                "catia_b5_incidence_vertex_coordinates",
-            )?;
+            ctx.insert_btree_map(&mut coordinates_by_vertex, vertex, point, "catia_b5_incidence_vertex_coordinates")?;
         }
     }
     Ok(coordinates_by_vertex)
@@ -2830,11 +2496,7 @@ fn parameter_incidence(
     };
     let count = usize::from(count);
     let mut position = 1;
-    let Some(references) = crate::resource::collect_options(
-        ctx,
-        (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
-        "catia_b5_parameter_incidence_references",
-    )?
+    let Some(references) = ctx.collect_options((0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)), "catia_b5_parameter_incidence_references")?
     else {
         return Ok(None);
     };
@@ -2860,16 +2522,11 @@ fn parameter_incidence(
         let Some(control) = wire::tokens::compact_uint(&record.payload, &mut position) else {
             return Ok(None);
         };
-        crate::resource::push(
-            ctx,
-            &mut lanes,
-            B5IncidenceLane {
+        ctx.push_vec(&mut lanes, B5IncidenceLane {
                 curve,
                 parameter,
                 control,
-            },
-            "catia_b5_parameter_incidence_lanes",
-        )?;
+            }, "catia_b5_parameter_incidence_lanes")?;
     }
     Ok(
         (position == record.payload.len()).then_some(B5ParameterIncidence {
@@ -2928,21 +2585,10 @@ fn implicit_pcurve_bindings(
             {
                 continue;
             }
-            if crate::resource::insert_btree_map(
-                ctx,
-                &mut bindings,
-                pcurve,
-                surface,
-                "catia_b5_implicit_pcurve_bindings",
-            )?
+            if ctx.insert_btree_map(&mut bindings, pcurve, surface, "catia_b5_implicit_pcurve_bindings")?
             .is_some_and(|existing| existing != surface)
             {
-                crate::resource::insert_set(
-                    ctx,
-                    &mut ambiguous,
-                    pcurve,
-                    "catia_b5_ambiguous_implicit_pcurves",
-                )?;
+                ctx.insert_hash_set(&mut ambiguous, pcurve, "catia_b5_ambiguous_implicit_pcurves")?;
             }
         }
     }
@@ -2958,28 +2604,16 @@ pub(super) fn evaluate_pcurve(
     let Some(knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
         return Ok(None);
     };
-    let knots = crate::resource::collect_vec(
-        ctx,
-        knots.into_iter().map(FiniteReal::get),
-        "catia_b5_evaluation_knots",
-    )?;
-    let control_points = crate::resource::collect_vec(
-        ctx,
-        pcurve
+    let knots = ctx.collect_vec(knots.into_iter().map(FiniteReal::get), "catia_b5_evaluation_knots")?;
+    let control_points = ctx.collect_vec(pcurve
             .control_points
             .iter()
-            .map(|point| Point2::new(point[0], point[1])),
-        "catia_b5_evaluation_points",
-    )?;
+            .map(|point| Point2::new(point[0], point[1])), "catia_b5_evaluation_points")?;
     let weights = pcurve
         .weights
         .as_ref()
         .map(|weights| {
-            crate::resource::collect_vec(
-                ctx,
-                weights.iter().copied().map(PositiveReal::get),
-                "catia_b5_evaluation_weights",
-            )
+            ctx.collect_vec(weights.iter().copied().map(PositiveReal::get), "catia_b5_evaluation_weights")
         })
         .transpose()?;
     let point = cadmpeg_ir::eval::finite_or_refusal(nurbs_pcurve_uv(
@@ -3010,12 +2644,12 @@ fn pcurve_knots(
         return Ok(None);
     };
     let mut knots = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut knots, count, "catia_b5_expanded_pcurve_knots")?;
+    ctx.reserve_vec(&mut knots, count, "catia_b5_expanded_pcurve_knots")?;
     for (&knot, &multiplicity) in pcurve.distinct_knots.iter().zip(&pcurve.multiplicities) {
         let Some(multiplicity) = usize::try_from(multiplicity).ok() else {
             return Ok(None);
         };
-        knots.extend(std::iter::repeat_n(knot, multiplicity));
+        knots.extend(std::iter::repeat(knot).take(multiplicity));
     }
     Ok(Some(knots))
 }
@@ -3131,50 +2765,23 @@ fn bind_native_vertices(
     let mut constraints = Vec::new();
     for (edge, vertices) in native_edges {
         if let Some(points) = geometric_edges.get(edge) {
-            crate::resource::push(
-                ctx,
-                &mut constraints,
-                (*vertices, *points),
-                "catia_b5_vertex_constraints",
-            )?;
+            ctx.push_vec(&mut constraints, (*vertices, *points), "catia_b5_vertex_constraints")?;
         }
     }
     let mut adjacency = HashMap::<u32, Vec<usize>>::new();
     for (index, (vertices, _)) in constraints.iter().enumerate() {
         for vertex in vertices {
-            crate::resource::admit_map_entry(
-                ctx,
-                &mut adjacency,
-                vertex,
-                "catia_b5_vertex_adjacency_groups",
-            )?;
-            crate::resource::push(
-                ctx,
-                adjacency.entry(*vertex).or_default(),
-                index,
-                "catia_b5_vertex_adjacency_links",
-            )?;
+            ctx.admit_hash_map_entry(&mut adjacency, vertex, "catia_b5_vertex_adjacency_groups")?;
+            ctx.push_vec(adjacency.entry(*vertex).or_default(), index, "catia_b5_vertex_adjacency_links")?;
         }
     }
     let vertex_points = propagate_vertex_points(ctx, &constraints, &adjacency, points)?;
     let mut logical_coordinates = HashMap::new();
     for (vertex, point) in vertex_points {
-        crate::resource::insert_map(
-            ctx,
-            &mut logical_coordinates,
-            vertex,
-            points[point],
-            "catia_b5_logical_coordinates",
-        )?;
+        ctx.insert_hash_map(&mut logical_coordinates, vertex, points[point], "catia_b5_logical_coordinates")?;
     }
     for (&vertex, &point) in native_coordinates {
-        crate::resource::insert_map(
-            ctx,
-            &mut logical_coordinates,
-            vertex,
-            point,
-            "catia_b5_logical_coordinates",
-        )?;
+        ctx.insert_hash_map(&mut logical_coordinates, vertex, point, "catia_b5_logical_coordinates")?;
     }
     // Native vertex identity fixes topology even when incident lifted endpoints
     // are separated. Keep the first deterministic finite lift as the logical
@@ -3188,12 +2795,7 @@ fn bind_native_vertices(
                 continue;
             };
             for lane in 0..2 {
-                crate::resource::admit_map_entry(
-                    ctx,
-                    &mut logical_coordinates,
-                    &vertices[lane],
-                    "catia_b5_logical_coordinates",
-                )?;
+                ctx.admit_hash_map_entry(&mut logical_coordinates, &vertices[lane], "catia_b5_logical_coordinates")?;
                 logical_coordinates
                     .entry(vertices[lane])
                     .or_insert(lifted[lane]);
@@ -3201,47 +2803,24 @@ fn bind_native_vertices(
         }
     }
     let mut ranked =
-        crate::resource::collect_vec(ctx, logical_coordinates, "catia_b5_ranked_logical_vertices")?;
+        ctx.collect_vec(logical_coordinates, "catia_b5_ranked_logical_vertices")?;
     ranked.sort_unstable_by_key(|(vertex, _)| *vertex);
     let mut logical_vertex_indices = HashMap::new();
     let mut logical_vertices = Vec::new();
     for (rank, (object_id, point)) in ranked.into_iter().enumerate() {
-        crate::resource::insert_map(
-            ctx,
-            &mut logical_vertex_indices,
-            object_id,
-            B5VertexRef::Logical(rank),
-            "catia_b5_logical_vertex_indices",
-        )?;
-        crate::resource::push(
-            ctx,
-            &mut logical_vertices,
-            B5LogicalVertex { object_id, point },
-            "catia_b5_logical_vertices",
-        )?;
+        ctx.insert_hash_map(&mut logical_vertex_indices, object_id, B5VertexRef::Logical(rank), "catia_b5_logical_vertex_indices")?;
+        ctx.push_vec(&mut logical_vertices, B5LogicalVertex { object_id, point }, "catia_b5_logical_vertices")?;
     }
     let mut edge_vertices = BTreeMap::new();
     for (&edge, vertices) in geometric_edges {
-        crate::resource::insert_btree_map(
-            ctx,
-            &mut edge_vertices,
-            edge,
-            vertices.map(B5VertexRef::Raw),
-            "catia_b5_bound_edge_vertices",
-        )?;
+        ctx.insert_btree_map(&mut edge_vertices, edge, vertices.map(B5VertexRef::Raw), "catia_b5_bound_edge_vertices")?;
     }
     for (&edge, vertices) in native_edges {
         if let (Some(&start), Some(&end)) = (
             logical_vertex_indices.get(&vertices[0]),
             logical_vertex_indices.get(&vertices[1]),
         ) {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut edge_vertices,
-                edge,
-                [start, end],
-                "catia_b5_bound_edge_vertices",
-            )?;
+            ctx.insert_btree_map(&mut edge_vertices, edge, [start, end], "catia_b5_bound_edge_vertices")?;
         }
     }
     let mut tolerances = BTreeMap::<usize, PositiveReal>::new();
@@ -3279,12 +2858,7 @@ fn bind_native_vertices(
                 let Some(candidate) = PositiveReal::new(residual + EPS_B5_GRAPH_GEOMETRY) else {
                     continue;
                 };
-                crate::resource::admit_btree_entry(
-                    ctx,
-                    &tolerances,
-                    &locus.combined_index(points.len()),
-                    "catia_b5_vertex_tolerances",
-                )?;
+                ctx.admit_btree_entry(&tolerances, &locus.combined_index(points.len()), "catia_b5_vertex_tolerances")?;
                 tolerances
                     .entry(locus.combined_index(points.len()))
                     .and_modify(|tolerance| {
@@ -3318,22 +2892,11 @@ fn propagate_vertex_points(
         let (component, members, consistent) =
             propagate_vertex_component(ctx, seed, constraints, adjacency, points)?;
         for member in members {
-            crate::resource::insert_set(
-                ctx,
-                &mut completed,
-                member,
-                "catia_b5_completed_vertex_constraints",
-            )?;
+            ctx.insert_hash_set(&mut completed, member, "catia_b5_completed_vertex_constraints")?;
         }
         if consistent {
             for (vertex, locus) in component {
-                crate::resource::insert_map(
-                    ctx,
-                    &mut mapping,
-                    vertex,
-                    locus,
-                    "catia_b5_propagated_vertex_points",
-                )?;
+                ctx.insert_hash_map(&mut mapping, vertex, locus, "catia_b5_propagated_vertex_points")?;
             }
         }
     }
@@ -3365,19 +2928,8 @@ fn propagate_vertex_component(
                 *consistent = false;
             }
         } else {
-            crate::resource::insert_map(
-                ctx,
-                mapping,
-                vertex,
-                locus,
-                "catia_b5_component_vertex_points",
-            )?;
-            crate::resource::push_back(
-                ctx,
-                pending,
-                vertex,
-                "catia_b5_component_pending_vertices",
-            )?;
+            ctx.insert_hash_map(mapping, vertex, locus, "catia_b5_component_vertex_points")?;
+            ctx.push_back(pending, vertex, "catia_b5_component_pending_vertices")?;
         }
         Ok(())
     };
@@ -3398,15 +2950,10 @@ fn propagate_vertex_component(
     )?;
     while let Some(vertex) = pending.pop_front() {
         for &index in adjacency.get(&vertex).into_iter().flatten() {
-            if !crate::resource::insert_set(
-                ctx,
-                &mut visited,
-                index,
-                "catia_b5_component_visited_constraints",
-            )? {
+            if !ctx.insert_hash_set(&mut visited, index, "catia_b5_component_visited_constraints")? {
                 continue;
             }
-            crate::resource::push(ctx, &mut members, index, "catia_b5_component_members")?;
+            ctx.push_vec(&mut members, index, "catia_b5_component_members")?;
             let (vertices, loci) = constraints[index];
             for lane in 0..2 {
                 assign(
@@ -3545,21 +3092,10 @@ fn bind_edge_vertices(
                 current_sorted.sort_unstable();
                 if previous_sorted != current_sorted {
                     edges.remove(&member.edge);
-                    crate::resource::insert_set(
-                        ctx,
-                        &mut conflicts,
-                        member.edge,
-                        "catia_b5_conflicting_edge_vertices",
-                    )?;
+                    ctx.insert_hash_set(&mut conflicts, member.edge, "catia_b5_conflicting_edge_vertices")?;
                 }
             } else {
-                crate::resource::insert_btree_map(
-                    ctx,
-                    &mut edges,
-                    member.edge,
-                    indices,
-                    "catia_b5_geometric_edge_vertices",
-                )?;
+                ctx.insert_btree_map(&mut edges, member.edge, indices, "catia_b5_geometric_edge_vertices")?;
             }
         }
     }
@@ -3639,13 +3175,8 @@ fn point_index(
     let mut index = HashMap::<[i64; 3], Vec<usize>>::new();
     for (point_index, point) in points.iter().enumerate() {
         let cell = point_cell(coordinates(*point));
-        crate::resource::admit_map_entry(ctx, &mut index, &cell, "catia_b5_point_index_cells")?;
-        crate::resource::push(
-            ctx,
-            index.entry(cell).or_default(),
-            point_index,
-            "catia_b5_point_index_members",
-        )?;
+        ctx.admit_hash_map_entry(&mut index, &cell, "catia_b5_point_index_cells")?;
+        ctx.push_vec(index.entry(cell).or_default(), point_index, "catia_b5_point_index_members")?;
     }
     Ok(index)
 }
@@ -4056,11 +3587,7 @@ fn surface_node(
     if record.family != 0xa8 || record.class != 0x34 {
         return Ok(None);
     }
-    let payload = crate::resource::copy_retained_slice(
-        ctx,
-        &record.payload,
-        "catia_b5_surface_node_payload",
-    )?;
+    let payload = ctx.copy_retained_slice(&record.payload, "catia_b5_surface_node_payload")?;
     Ok(Some(match header {
         Some(header) => B5Surface::UnresolvedNurbs {
             header: header.copy_charged(ctx)?,
@@ -5325,12 +4852,7 @@ fn parse_pcurve(
         let mut distinct_knots = Vec::new();
         for _ in 0..knot_count {
             let knot = FiniteReal::new(view.f64_le()?)?;
-            if let Err(error) = crate::resource::push(
-                ctx,
-                &mut distinct_knots,
-                knot,
-                "catia_b5_class21_distinct_knots",
-            ) {
+            if let Err(error) = ctx.push_vec(&mut distinct_knots, knot, "catia_b5_class21_distinct_knots") {
                 return Some(Err(error));
             }
         }
@@ -5341,12 +4863,7 @@ fn parse_pcurve(
         let mut multiplicities = Vec::new();
         for _ in 0..knot_count {
             let multiplicity = wire::tokens::compact_uint(&record.payload, &mut position)?;
-            if let Err(error) = crate::resource::push(
-                ctx,
-                &mut multiplicities,
-                multiplicity,
-                "catia_b5_class21_multiplicities",
-            ) {
+            if let Err(error) = ctx.push_vec(&mut multiplicities, multiplicity, "catia_b5_class21_multiplicities") {
                 return Some(Err(error));
             }
         }
@@ -5361,12 +4878,7 @@ fn parse_pcurve(
             let u = view.f64_le()?;
             let v = view.f64_le()?;
             let point = FiniteVector::new([u, v])?;
-            if let Err(error) = crate::resource::push(
-                ctx,
-                &mut control_points,
-                point,
-                "catia_b5_class21_control_points",
-            ) {
+            if let Err(error) = ctx.push_vec(&mut control_points, point, "catia_b5_class21_control_points") {
                 return Some(Err(error));
             }
         }
@@ -5555,25 +5067,10 @@ fn rational_arc_pcurve(
     let mut weights = Vec::new();
     let mut distinct_knots = Vec::new();
     let mut multiplicities = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut control_points,
-        control_count,
-        "catia_b5_arc_control_points",
-    )?;
-    crate::resource::reserve_vec(ctx, &mut weights, control_count, "catia_b5_arc_weights")?;
-    crate::resource::reserve_vec(
-        ctx,
-        &mut distinct_knots,
-        span_count + 1,
-        "catia_b5_arc_distinct_knots",
-    )?;
-    crate::resource::reserve_vec(
-        ctx,
-        &mut multiplicities,
-        span_count + 1,
-        "catia_b5_arc_multiplicities",
-    )?;
+    ctx.reserve_vec(&mut control_points, control_count, "catia_b5_arc_control_points")?;
+    ctx.reserve_vec(&mut weights, control_count, "catia_b5_arc_weights")?;
+    ctx.reserve_vec(&mut distinct_knots, span_count + 1, "catia_b5_arc_distinct_knots")?;
+    ctx.reserve_vec(&mut multiplicities, span_count + 1, "catia_b5_arc_multiplicities")?;
     distinct_knots.push(start);
     multiplicities.push(3);
     for span in 0..span_count {
@@ -5624,27 +5121,15 @@ fn rational_arc_pcurve(
     }
     distinct_knots.push(end);
     multiplicities.push(3);
-    let Some(distinct_knots) = crate::resource::collect_options(
-        ctx,
-        distinct_knots.into_iter().map(FiniteReal::new),
-        "catia_b5_arc_finite_knots",
-    )?
+    let Some(distinct_knots) = ctx.collect_options(distinct_knots.into_iter().map(FiniteReal::new), "catia_b5_arc_finite_knots")?
     else {
         return Ok(None);
     };
-    let Some(weights) = crate::resource::collect_options(
-        ctx,
-        weights.into_iter().map(PositiveReal::new),
-        "catia_b5_arc_positive_weights",
-    )?
+    let Some(weights) = ctx.collect_options(weights.into_iter().map(PositiveReal::new), "catia_b5_arc_positive_weights")?
     else {
         return Ok(None);
     };
-    let Some(control_points) = crate::resource::collect_options(
-        ctx,
-        control_points.into_iter().map(FiniteVector::new),
-        "catia_b5_arc_finite_points",
-    )?
+    let Some(control_points) = ctx.collect_options(control_points.into_iter().map(FiniteVector::new), "catia_b5_arc_finite_points")?
     else {
         return Ok(None);
     };
@@ -5677,11 +5162,7 @@ fn parse_opaque_pcurve(
         object_id: record.object_id,
         surface,
         class: record.class,
-        payload: crate::resource::copy_retained_slice(
-            ctx,
-            &record.payload,
-            "catia_b5_opaque_pcurve_payload",
-        )?,
+        payload: ctx.copy_retained_slice(&record.payload, "catia_b5_opaque_pcurve_payload")?,
         sphere_great_circle: None,
     }))
 }
@@ -5846,14 +5327,10 @@ fn circle_pcurves_from_frames(
             family: 0xb5,
             class: 0x19,
             object_id: frame.object_id,
-            payload: crate::resource::copy_retained_slice(
-                ctx,
-                &bytes[frame.start + 8..frame.end],
-                "catia_b5_circle_frame_payload",
-            )?,
+            payload: ctx.copy_retained_slice(&bytes[frame.start + 8..frame.end], "catia_b5_circle_frame_payload")?,
         };
         if let Some(pcurve) = parse_circle_pcurve(ctx, &record)? {
-            crate::resource::push(ctx, &mut pcurves, pcurve, "catia_b5_circle_frame_pcurves")?;
+            ctx.push_vec(&mut pcurves, pcurve, "catia_b5_circle_frame_pcurves")?;
         }
     }
     Ok(pcurves)
@@ -5872,21 +5349,9 @@ fn parse_line_pcurve(
         object_id: record.object_id,
         surface,
         degree: 1,
-        distinct_knots: crate::resource::collect_vec(
-            ctx,
-            [start, end],
-            "catia_b5_line_pcurve_knots",
-        )?,
-        multiplicities: crate::resource::collect_vec(
-            ctx,
-            [2, 2],
-            "catia_b5_line_pcurve_multiplicities",
-        )?,
-        control_points: crate::resource::collect_vec(
-            ctx,
-            [start_point, end_point],
-            "catia_b5_line_pcurve_points",
-        )?,
+        distinct_knots: ctx.collect_vec([start, end], "catia_b5_line_pcurve_knots")?,
+        multiplicities: ctx.collect_vec([2, 2], "catia_b5_line_pcurve_multiplicities")?,
+        control_points: ctx.collect_vec([start_point, end_point], "catia_b5_line_pcurve_points")?,
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -6017,20 +5482,10 @@ fn admit_dependency_records(
     let mut existing = HashSet::new();
     let mut pending = HashSet::new();
     for record in records.iter() {
-        crate::resource::insert_set(
-            ctx,
-            &mut existing,
-            record.object_id,
-            "catia_b5_existing_dependency_ids",
-        )?;
+        ctx.insert_hash_set(&mut existing, record.object_id, "catia_b5_existing_dependency_ids")?;
         for reference in record_references(record) {
             if candidates.get(&reference).is_some_and(Option::is_some) {
-                crate::resource::insert_set(
-                    ctx,
-                    &mut pending,
-                    reference,
-                    "catia_b5_pending_dependency_ids",
-                )?;
+                ctx.insert_hash_set(&mut pending, reference, "catia_b5_pending_dependency_ids")?;
             }
         }
     }
@@ -6047,12 +5502,7 @@ fn admit_dependency_records(
         for object_id in &pending {
             if let Some(frame) = candidates.get(object_id).and_then(Option::as_ref) {
                 if let Some(record) = record_from_frame(ctx, bytes, frame)? {
-                    crate::resource::push(
-                        ctx,
-                        &mut found,
-                        record,
-                        "catia_b5_found_dependency_records",
-                    )?;
+                    ctx.push_vec(&mut found, record, "catia_b5_found_dependency_records")?;
                 }
             }
         }
@@ -6062,28 +5512,13 @@ fn admit_dependency_records(
         found.sort_unstable_by_key(|record| record.offset);
         pending.clear();
         for candidate in found {
-            crate::resource::insert_set(
-                ctx,
-                &mut admitted,
-                candidate.object_id,
-                "catia_b5_admitted_dependency_ids",
-            )?;
+            ctx.insert_hash_set(&mut admitted, candidate.object_id, "catia_b5_admitted_dependency_ids")?;
             for reference in record_references(&candidate) {
                 if candidates.get(&reference).is_some_and(Option::is_some) {
-                    crate::resource::insert_set(
-                        ctx,
-                        &mut pending,
-                        reference,
-                        "catia_b5_pending_dependency_ids",
-                    )?;
+                    ctx.insert_hash_set(&mut pending, reference, "catia_b5_pending_dependency_ids")?;
                 }
             }
-            crate::resource::push(
-                ctx,
-                records,
-                candidate,
-                "catia_b5_admitted_dependency_records",
-            )?;
+            ctx.push_vec(records, candidate, "catia_b5_admitted_dependency_records")?;
         }
     }
     Ok(std::mem::take(records))
@@ -6117,13 +5552,7 @@ fn framed_records_and_dependency_candidates(
                     *slot = None;
                 }
             } else {
-                crate::resource::insert_map(
-                    ctx,
-                    &mut candidates,
-                    frame.object_id,
-                    Some(*frame),
-                    "catia_b5_dependency_candidates",
-                )?;
+                ctx.insert_hash_map(&mut candidates, frame.object_id, Some(*frame), "catia_b5_dependency_candidates")?;
             }
         }
         if !((frame.family == 0xb5 && is_topology_class(frame.class))
@@ -6142,24 +5571,9 @@ fn framed_records_and_dependency_candidates(
         {
             continue;
         }
-        let seen_payload = crate::resource::copy_retained_slice(
-            ctx,
-            &record.payload,
-            "catia_b5_seen_record_payload",
-        )?;
-        crate::resource::insert_map(
-            ctx,
-            &mut seen,
-            frame.object_id,
-            (record.class, seen_payload),
-            "catia_b5_seen_records",
-        )?;
-        crate::resource::push(
-            ctx,
-            &mut records,
-            (frame.end, record),
-            "catia_b5_framed_records",
-        )?;
+        let seen_payload = ctx.copy_retained_slice(&record.payload, "catia_b5_seen_record_payload")?;
+        ctx.insert_hash_map(&mut seen, frame.object_id, (record.class, seen_payload), "catia_b5_seen_records")?;
+        ctx.push_vec(&mut records, (frame.end, record), "catia_b5_framed_records")?;
     }
     records.sort_unstable_by(|(left_end, left), (right_end, right)| {
         left_end
@@ -6168,7 +5582,7 @@ fn framed_records_and_dependency_candidates(
     });
     let mut ordered = Vec::new();
     for (_, record) in records {
-        crate::resource::push(ctx, &mut ordered, record, "catia_b5_ordered_framed_records")?;
+        ctx.push_vec(&mut ordered, record, "catia_b5_ordered_framed_records")?;
     }
     Ok((ordered, candidates))
 }
@@ -6197,13 +5611,7 @@ fn indexed_topology_records_and_dependency_candidates(
                     *slot = None;
                 }
             } else {
-                crate::resource::insert_map(
-                    ctx,
-                    &mut candidates,
-                    frame.object_id,
-                    Some(*frame),
-                    "catia_b5_indexed_dependency_candidates",
-                )?;
+                ctx.insert_hash_map(&mut candidates, frame.object_id, Some(*frame), "catia_b5_indexed_dependency_candidates")?;
             }
         }
         if !((frame.family == 0xb5 && is_topology_class(frame.class))
@@ -6225,24 +5633,9 @@ fn indexed_topology_records_and_dependency_candidates(
         {
             continue;
         }
-        let seen_payload = crate::resource::copy_retained_slice(
-            ctx,
-            &record.payload,
-            "catia_b5_indexed_seen_payload",
-        )?;
-        crate::resource::insert_map(
-            ctx,
-            &mut seen,
-            frame.object_id,
-            (record.class, seen_payload),
-            "catia_b5_indexed_seen_records",
-        )?;
-        crate::resource::push(
-            ctx,
-            &mut records,
-            (frame.end, record),
-            "catia_b5_indexed_topology_records",
-        )?;
+        let seen_payload = ctx.copy_retained_slice(&record.payload, "catia_b5_indexed_seen_payload")?;
+        ctx.insert_hash_map(&mut seen, frame.object_id, (record.class, seen_payload), "catia_b5_indexed_seen_records")?;
+        ctx.push_vec(&mut records, (frame.end, record), "catia_b5_indexed_topology_records")?;
     }
     records.sort_unstable_by(|(left_end, left), (right_end, right)| {
         left_end
@@ -6251,12 +5644,7 @@ fn indexed_topology_records_and_dependency_candidates(
     });
     let mut ordered = Vec::new();
     for (_, record) in records {
-        crate::resource::push(
-            ctx,
-            &mut ordered,
-            record,
-            "catia_b5_ordered_indexed_records",
-        )?;
+        ctx.push_vec(&mut ordered, record, "catia_b5_ordered_indexed_records")?;
     }
     Ok(Some((ordered, candidates)))
 }
@@ -6288,7 +5676,7 @@ fn record_from_frame(
         family: frame.family,
         class: frame.class,
         object_id: frame.object_id,
-        payload: crate::resource::copy_retained_slice(ctx, payload, "catia_b5_record_payload")?,
+        payload: ctx.copy_retained_slice(payload, "catia_b5_record_payload")?,
     }))
 }
 
@@ -6438,7 +5826,7 @@ pub(in crate::families) fn collect_object_stream_frames(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<ObjectFrame>, CodecError> {
-    crate::resource::collect_vec(ctx, object_stream_frames(bytes), "catia_b5_object_frames")
+    ctx.collect_vec(object_stream_frames(bytes), "catia_b5_object_frames")
 }
 
 /// Return maximal contiguous top-level A8/B5 object-frame runs.
@@ -6479,12 +5867,7 @@ fn object_stream_run_ranges(
             };
             position = end;
         }
-        crate::resource::push(
-            ctx,
-            &mut ranges,
-            start..position,
-            "catia_b5_object_run_ranges",
-        )?;
+        ctx.push_vec(&mut ranges, start..position, "catia_b5_object_run_ranges")?;
     }
     Ok(ranges)
 }
@@ -6497,7 +5880,7 @@ fn topology_root_run_ranges(
     let mut roots = Vec::new();
     for range in object_stream_run_ranges(ctx, bytes)? {
         if object_stream_frames(&bytes[range.clone()]).any(is_topology_root_frame) {
-            crate::resource::push(ctx, &mut roots, range, "catia_b5_topology_run_ranges")?;
+            ctx.push_vec(&mut roots, range, "catia_b5_topology_run_ranges")?;
         }
     }
     Ok(roots)
@@ -6520,41 +5903,20 @@ pub(in crate::families) fn object_stream_populations(
     for range in &topology_runs {
         let mut root_ids = HashSet::new();
         for frame in object_stream_frames(&stream[range.clone()]) {
-            crate::resource::insert_set(
-                ctx,
-                &mut root_ids,
-                frame.object_id,
-                "catia_b5_population_root_ids",
-            )?;
+            ctx.insert_hash_set(&mut root_ids, frame.object_id, "catia_b5_population_root_ids")?;
         }
         let population = owned_object_stream_population(ctx, stream, range.clone())?;
         for frame in object_stream_frames(&population) {
             if !root_ids.contains(&frame.object_id) {
-                crate::resource::insert_set(
-                    ctx,
-                    &mut claimed_isolated_ids,
-                    frame.object_id,
-                    "catia_b5_claimed_isolated_ids",
-                )?;
+                ctx.insert_hash_set(&mut claimed_isolated_ids, frame.object_id, "catia_b5_claimed_isolated_ids")?;
             }
         }
-        crate::resource::insert_map(
-            ctx,
-            &mut owned_populations,
-            range.start,
-            population,
-            "catia_b5_owned_populations",
-        )?;
+        ctx.insert_hash_map(&mut owned_populations, range.start, population, "catia_b5_owned_populations")?;
     }
     let mut populations = Vec::new();
     for range in runs {
         if let Some(population) = owned_populations.remove(&range.start) {
-            crate::resource::push(
-                ctx,
-                &mut populations,
-                population,
-                "catia_b5_object_populations",
-            )?;
+            ctx.push_vec(&mut populations, population, "catia_b5_object_populations")?;
             continue;
         }
         let claimed =
@@ -6564,17 +5926,8 @@ pub(in crate::families) fn object_stream_populations(
                     && claimed_isolated_ids.contains(&object_id)
             });
         if !claimed {
-            let population = crate::resource::copy_retained_slice(
-                ctx,
-                &stream[range],
-                "catia_b5_unclaimed_population_bytes",
-            )?;
-            crate::resource::push(
-                ctx,
-                &mut populations,
-                population,
-                "catia_b5_object_populations",
-            )?;
+            let population = ctx.copy_retained_slice(&stream[range], "catia_b5_unclaimed_population_bytes")?;
+            ctx.push_vec(&mut populations, population, "catia_b5_object_populations")?;
         }
     }
     Ok(populations)
@@ -6667,22 +6020,12 @@ pub(in crate::families) fn select_object_stream_population(
 ) -> Result<ObjectStreamSelection, CodecError> {
     let mut stream_ranges = Vec::new();
     for stream in streams {
-        crate::resource::push(
-            ctx,
-            &mut stream_ranges,
-            object_stream_run_ranges(ctx, stream)?,
-            "catia_b5_selected_stream_ranges",
-        )?;
+        ctx.push_vec(&mut stream_ranges, object_stream_run_ranges(ctx, stream)?, "catia_b5_selected_stream_ranges")?;
     }
     let run_count = stream_ranges.iter().map(Vec::len).sum();
     let exhausted = || ObjectStreamSelection::Exhausted { run_count };
     let mut stream_frames = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut stream_frames,
-        streams.len(),
-        "catia_b5_selected_stream_frames",
-    )?;
+    ctx.reserve_vec(&mut stream_frames, streams.len(), "catia_b5_selected_stream_frames")?;
     let mut runs = Vec::new();
     for (stream_index, (stream, ranges)) in streams.iter().zip(stream_ranges).enumerate() {
         let frames = collect_object_stream_frames(ctx, stream)?;
@@ -6703,29 +6046,19 @@ pub(in crate::families) fn select_object_stream_population(
                 .iter()
                 .copied()
                 .any(is_topology_root_frame);
-            crate::resource::push(
-                ctx,
-                &mut runs,
-                IndexedObjectRun {
+            ctx.push_vec(&mut runs, IndexedObjectRun {
                     stream_index,
                     range,
                     frame_range,
                     topology,
-                },
-                "catia_b5_indexed_runs",
-            )?;
+                }, "catia_b5_indexed_runs")?;
         }
         stream_frames.push(frames);
     }
     let mut topology_runs = Vec::new();
     for (index, run) in runs.iter().enumerate() {
         if run.topology {
-            crate::resource::push(
-                ctx,
-                &mut topology_runs,
-                index,
-                "catia_b5_topology_run_indices",
-            )?;
+            ctx.push_vec(&mut topology_runs, index, "catia_b5_topology_run_indices")?;
         }
     }
     let selected_run = match topology_runs.as_slice() {
@@ -6742,12 +6075,7 @@ pub(in crate::families) fn select_object_stream_population(
             if budget.is_some_and(WorkBudget::exhausted) {
                 return Ok(exhausted());
             }
-            crate::resource::reserve_vec(
-                ctx,
-                &mut census_records,
-                records.len(),
-                "catia_b5_unselected_census_records",
-            )?;
+            ctx.reserve_vec(&mut census_records, records.len(), "catia_b5_unselected_census_records")?;
             census_records.extend(records);
         }
         return Ok(ObjectStreamSelection::Unselected {
@@ -6765,23 +6093,14 @@ pub(in crate::families) fn select_object_stream_population(
     };
     let mut census_records = Vec::new();
     for record in &selected_records {
-        let payload = crate::resource::copy_retained_slice(
-            ctx,
-            &record.payload,
-            "catia_b5_census_record_payload",
-        )?;
-        crate::resource::push(
-            ctx,
-            &mut census_records,
-            B5Record {
+        let payload = ctx.copy_retained_slice(&record.payload, "catia_b5_census_record_payload")?;
+        ctx.push_vec(&mut census_records, B5Record {
                 offset: record.offset,
                 family: record.family,
                 class: record.class,
                 object_id: record.object_id,
                 payload,
-            },
-            "catia_b5_census_records",
-        )?;
+            }, "catia_b5_census_records")?;
     }
     for (index, run) in runs.iter().enumerate() {
         if index == selected_index {
@@ -6793,25 +6112,16 @@ pub(in crate::families) fn select_object_stream_population(
         if budget.is_some_and(WorkBudget::exhausted) {
             return Ok(exhausted());
         }
-        crate::resource::reserve_vec(
-            ctx,
-            &mut census_records,
-            records.len(),
-            "catia_b5_census_records",
-        )?;
+        ctx.reserve_vec(&mut census_records, records.len(), "catia_b5_census_records")?;
         census_records.extend(records);
     }
-    let mut source = crate::resource::copy_retained_slice(
-        ctx,
-        &selected_stream[selected.range.clone()],
-        "catia_b5_selected_source_bytes",
-    )?;
+    let mut source = ctx.copy_retained_slice(&selected_stream[selected.range.clone()], "catia_b5_selected_source_bytes")?;
     let mut frames = Vec::new();
     for frame in selected_frames {
         let mut frame = *frame;
         frame.start -= selected.range.start;
         frame.end -= selected.range.start;
-        crate::resource::push(ctx, &mut frames, frame, "catia_b5_selected_frames")?;
+        ctx.push_vec(&mut frames, frame, "catia_b5_selected_frames")?;
     }
     let mut records = selected_records;
     for record in &mut records {
@@ -6821,12 +6131,7 @@ pub(in crate::families) fn select_object_stream_population(
         let referenced = topology_surface_references(ctx, &records)?;
         let mut owned_ids = HashSet::new();
         for record in &records {
-            crate::resource::insert_set(
-                ctx,
-                &mut owned_ids,
-                record.object_id,
-                "catia_b5_selected_owned_ids",
-            )?;
+            ctx.insert_hash_set(&mut owned_ids, record.object_id, "catia_b5_selected_owned_ids")?;
         }
         let mut isolated = HashMap::<u32, Option<usize>>::new();
         for (index, run) in runs.iter().enumerate() {
@@ -6845,12 +6150,7 @@ pub(in crate::families) fn select_object_stream_population(
             {
                 continue;
             }
-            crate::resource::admit_map_entry(
-                ctx,
-                &mut isolated,
-                &object_id,
-                "catia_b5_selected_isolated_candidates",
-            )?;
+            ctx.admit_hash_map_entry(&mut isolated, &object_id, "catia_b5_selected_isolated_candidates")?;
             isolated
                 .entry(object_id)
                 .and_modify(|stored| {
@@ -6866,12 +6166,7 @@ pub(in crate::families) fn select_object_stream_population(
         }
         let mut isolated_values = Vec::new();
         for value in isolated.into_values().flatten() {
-            crate::resource::push(
-                ctx,
-                &mut isolated_values,
-                value,
-                "catia_b5_selected_isolated_order",
-            )?;
+            ctx.push_vec(&mut isolated_values, value, "catia_b5_selected_isolated_order")?;
         }
         let mut isolated = isolated_values;
         isolated.sort_unstable_by_key(|index| {
@@ -6883,22 +6178,12 @@ pub(in crate::families) fn select_object_stream_population(
             let stream = &streams[run.stream_index];
             let run_frames = &stream_frames[run.stream_index][run.frame_range.clone()];
             let destination = source.len();
-            crate::resource::extend_retained_bytes(
-                ctx,
-                &mut source,
-                &stream[run.range.clone()],
-                "catia_b5_selected_isolated_bytes",
-            )?;
+            ctx.extend_retained_bytes(&mut source, &stream[run.range.clone()], "catia_b5_selected_isolated_bytes")?;
             for frame in run_frames {
                 let mut frame = *frame;
                 frame.start = destination + frame.start - run.range.start;
                 frame.end = destination + frame.end - run.range.start;
-                crate::resource::push(
-                    ctx,
-                    &mut frames,
-                    frame,
-                    "catia_b5_selected_isolated_frames",
-                )?;
+                ctx.push_vec(&mut frames, frame, "catia_b5_selected_isolated_frames")?;
             }
         }
         if source.len() != selected.range.len() {
@@ -6927,12 +6212,7 @@ fn owned_object_stream_population(
     let referenced = topology_surface_references(ctx, &run_records)?;
     let mut owned_ids = HashSet::new();
     for record in &run_records {
-        crate::resource::insert_set(
-            ctx,
-            &mut owned_ids,
-            record.object_id,
-            "catia_b5_population_owned_ids",
-        )?;
+        ctx.insert_hash_set(&mut owned_ids, record.object_id, "catia_b5_population_owned_ids")?;
     }
     let mut isolated = HashMap::<u32, Option<(usize, u8, u8, Vec<u8>)>>::new();
     for range in object_stream_run_ranges(ctx, stream)? {
@@ -6950,17 +6230,8 @@ fn owned_object_stream_population(
         {
             continue;
         }
-        let bytes = crate::resource::copy_retained_slice(
-            ctx,
-            &stream[range.clone()],
-            "catia_b5_population_isolated_bytes",
-        )?;
-        crate::resource::admit_map_entry(
-            ctx,
-            &mut isolated,
-            &object_id,
-            "catia_b5_population_isolated_frames",
-        )?;
+        let bytes = ctx.copy_retained_slice(&stream[range.clone()], "catia_b5_population_isolated_bytes")?;
+        ctx.admit_hash_map_entry(&mut isolated, &object_id, "catia_b5_population_isolated_frames")?;
         isolated
             .entry(object_id)
             .and_modify(|stored| {
@@ -6974,25 +6245,15 @@ fn owned_object_stream_population(
     }
     let mut isolated_values = Vec::new();
     for value in isolated.into_values().flatten() {
-        crate::resource::push(
-            ctx,
-            &mut isolated_values,
-            value,
-            "catia_b5_population_isolated_order",
-        )?;
+        ctx.push_vec(&mut isolated_values, value, "catia_b5_population_isolated_order")?;
     }
     let mut isolated = isolated_values;
     isolated.sort_by_key(|(offset, _, _, _)| *offset);
 
     let mut population =
-        crate::resource::copy_retained_slice(ctx, run, "catia_b5_topology_run_bytes")?;
+        ctx.copy_retained_slice(run, "catia_b5_topology_run_bytes")?;
     for (_, _, _, frame) in isolated {
-        crate::resource::extend_retained_bytes(
-            ctx,
-            &mut population,
-            &frame,
-            "catia_b5_attached_isolated_bytes",
-        )?;
+        ctx.extend_retained_bytes(&mut population, &frame, "catia_b5_attached_isolated_bytes")?;
     }
     Ok(population)
 }
@@ -7015,12 +6276,7 @@ fn topology_surface_references(
             _ => None,
         };
         if let Some(reference) = reference {
-            crate::resource::insert_set(
-                ctx,
-                &mut surfaces,
-                reference,
-                "catia_b5_topology_surface_references",
-            )?;
+            ctx.insert_hash_set(&mut surfaces, reference, "catia_b5_topology_surface_references")?;
         }
     }
     Ok(surfaces)
@@ -7109,7 +6365,7 @@ fn parse_face(
     let mut loop_ids = Vec::new();
     for &reference in &references[1..] {
         if loops.contains_key(&reference) {
-            crate::resource::push(ctx, &mut loop_ids, reference, "catia_b5_face_loop_ids")?;
+            ctx.push_vec(&mut loop_ids, reference, "catia_b5_face_loop_ids")?;
         } else {
             let repeats_carrier = surfaces.contains_key(&reference)
                 && canonical_surface_id(surface_aliases, reference) == Some(canonical_surface);
@@ -7150,11 +6406,7 @@ fn parse_face_record(
             return Ok(None);
         }
         let mut position = 1;
-        let Some(references) = crate::resource::collect_options(
-            ctx,
-            (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
-            "catia_b5_counted_face_references",
-        )?
+        let Some(references) = ctx.collect_options((0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)), "catia_b5_counted_face_references")?
         else {
             return Ok(None);
         };
@@ -7201,13 +6453,7 @@ pub(in crate::families) fn typed_face_records_from_records(
     let mut faces = BTreeMap::new();
     for record in records {
         if let Some(face) = parse_face_record(ctx, record)? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut faces,
-                record.object_id,
-                face,
-                "catia_b5_typed_face_records",
-            )?;
+            ctx.insert_btree_map(&mut faces, record.object_id, face, "catia_b5_typed_face_records")?;
         }
     }
     Ok(faces)
@@ -7233,13 +6479,7 @@ pub(in crate::families) fn typed_loop_records_from_records(
     let mut loops = BTreeMap::new();
     for record in records {
         if let Some(loop_) = parse_loop_record(ctx, record)? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut loops,
-                record.object_id,
-                loop_,
-                "catia_b5_typed_loop_records",
-            )?;
+            ctx.insert_btree_map(&mut loops, record.object_id, loop_, "catia_b5_typed_loop_records")?;
         }
     }
     Ok(loops)
@@ -7265,13 +6505,7 @@ pub(in crate::families) fn typed_edge_records_from_records(
     let mut edges = BTreeMap::new();
     for record in records {
         if let Some(edge) = parse_edge(record) {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut edges,
-                record.object_id,
-                edge,
-                "catia_b5_typed_edge_records",
-            )?;
+            ctx.insert_btree_map(&mut edges, record.object_id, edge, "catia_b5_typed_edge_records")?;
         }
     }
     Ok(edges)
@@ -7297,13 +6531,7 @@ pub(in crate::families) fn typed_vertex_incidence_links_from_records(
     let mut links = BTreeMap::new();
     for record in records {
         if let Some(link) = parse_vertex_incidence_link(record) {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut links,
-                record.object_id,
-                link,
-                "catia_b5_typed_vertex_incidence_links",
-            )?;
+            ctx.insert_btree_map(&mut links, record.object_id, link, "catia_b5_typed_vertex_incidence_links")?;
         }
     }
     Ok(links)
@@ -7330,13 +6558,7 @@ pub(in crate::families) fn typed_class_21_pcurves_from_records(
     let mut pcurves = BTreeMap::new();
     for record in records {
         if let Some(pcurve) = parse_pcurve(ctx, record)? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut pcurves,
-                record.object_id,
-                pcurve,
-                "catia_b5_typed_class21_pcurves",
-            )?;
+            ctx.insert_btree_map(&mut pcurves, record.object_id, pcurve, "catia_b5_typed_class21_pcurves")?;
         }
     }
     Ok(pcurves)
@@ -7362,13 +6584,7 @@ pub(in crate::families) fn typed_parameter_incidences_from_records(
     let mut incidences = BTreeMap::new();
     for record in records {
         if let Some(incidence) = parameter_incidence(ctx, record)? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut incidences,
-                record.object_id,
-                incidence,
-                "catia_b5_typed_parameter_incidences",
-            )?;
+            ctx.insert_btree_map(&mut incidences, record.object_id, incidence, "catia_b5_typed_parameter_incidences")?;
         }
     }
     Ok(incidences)
@@ -7394,13 +6610,7 @@ pub(in crate::families) fn typed_vertex_incidence_rosters_from_records(
     let mut rosters = BTreeMap::new();
     for record in records {
         if let Some(members) = counted_references(ctx, record, 0x05)? {
-            crate::resource::insert_btree_map(
-                ctx,
-                &mut rosters,
-                record.object_id,
-                members,
-                "catia_b5_typed_vertex_incidence_rosters",
-            )?;
+            ctx.insert_btree_map(&mut rosters, record.object_id, members, "catia_b5_typed_vertex_incidence_rosters")?;
         }
     }
     Ok(rosters)
@@ -7437,12 +6647,7 @@ pub(in crate::families) fn face_surface_references_from_frames(
         let Some(surface) = wire::tokens::object_ref(payload, &mut position, true) else {
             continue;
         };
-        crate::resource::push(
-            ctx,
-            &mut references,
-            (frame.object_id, surface),
-            "catia_b5_face_surface_references",
-        )?;
+        ctx.push_vec(&mut references, (frame.object_id, surface), "catia_b5_face_surface_references")?;
     }
     Ok(references)
 }
@@ -7461,12 +6666,7 @@ pub(in crate::families) fn edge_face_references_from_frames(
         .iter()
         .filter(|record| record.family == 0xb5 && record.class == 0x5e)
     {
-        crate::resource::insert_set(
-            ctx,
-            &mut edge_ids,
-            record.object_id,
-            "catia_b5_edge_face_edge_ids",
-        )?;
+        ctx.insert_hash_set(&mut edge_ids, record.object_id, "catia_b5_edge_face_edge_ids")?;
     }
     let loops = typed_loop_records_from_records(ctx, &records)?;
     let mut owners = HashMap::<u32, HashSet<u32>>::new();
@@ -7478,21 +6678,10 @@ pub(in crate::families) fn edge_face_references_from_frames(
             for member in &loop_record.members {
                 if edge_ids.contains(&member.edge) {
                     if !owners.contains_key(&member.edge) {
-                        crate::resource::insert_map(
-                            ctx,
-                            &mut owners,
-                            member.edge,
-                            HashSet::new(),
-                            "catia_b5_edge_face_owners",
-                        )?;
+                        ctx.insert_hash_map(&mut owners, member.edge, HashSet::new(), "catia_b5_edge_face_owners")?;
                     }
                     if let Some(row) = owners.get_mut(&member.edge) {
-                        crate::resource::insert_set(
-                            ctx,
-                            row,
-                            face,
-                            "catia_b5_edge_face_owner_entries",
-                        )?;
+                        ctx.insert_hash_set(row, face, "catia_b5_edge_face_owner_entries")?;
                     }
                 }
             }
@@ -7544,18 +6733,14 @@ fn parse_loop_record(
     if pairs.len() / 2 != edge_controls.len() {
         return Ok(None);
     }
-    let members = crate::resource::collect_vec(
-        ctx,
-        pairs
+    let members = ctx.collect_vec(pairs
             .chunks_exact(2)
             .zip(edge_controls)
             .map(|(pair, controls)| B5LoopMember {
                 pcurve: pair[0],
                 edge: pair[1],
                 controls,
-            }),
-        "catia_b5_loop_members",
-    )?;
+            }), "catia_b5_loop_members")?;
     Ok(Some(B5Loop {
         object_id: record.object_id,
         members,
@@ -7587,11 +6772,7 @@ fn loop_references_and_metadata(
     if count < 3 || count % 2 == 0 {
         return Ok(None);
     }
-    let Some(references) = crate::resource::collect_options(
-        ctx,
-        (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
-        "catia_b5_loop_references",
-    )?
+    let Some(references) = ctx.collect_options((0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)), "catia_b5_loop_references")?
     else {
         return Ok(None);
     };
@@ -7623,18 +6804,14 @@ fn loop_metadata(ctx: &DecodeContext<'_>, bytes: &[u8], edge_count: usize) -> Lo
     if bytes.get(2) != Some(&0x03) || controls_end > bytes.len() {
         return Ok(None);
     }
-    let Some(edge_controls) = crate::resource::collect_options(
-        ctx,
-        bytes[3..controls_end].chunks_exact(6).map(|controls| {
+    let Some(edge_controls) = ctx.collect_options(bytes[3..controls_end].chunks_exact(6).map(|controls| {
             let mut view = View::over_retained(controls);
             let controls = [view.i16_le()?, view.i16_le()?, view.i16_le()?];
             controls
                 .iter()
                 .all(|control| matches!(control, -1 | 1))
                 .then_some(controls)
-        }),
-        "catia_b5_loop_edge_controls",
-    )?
+        }), "catia_b5_loop_edge_controls")?
     else {
         return Ok(None);
     };
@@ -7709,12 +6886,7 @@ fn uncounted_references(
         let Some(reference) = wire::tokens::object_ref(bytes, &mut position, true) else {
             return Ok(None);
         };
-        crate::resource::push(
-            ctx,
-            &mut references,
-            reference,
-            "catia_b5_uncounted_face_references",
-        )?;
+        ctx.push_vec(&mut references, reference, "catia_b5_uncounted_face_references")?;
     }
     Ok(Some(references))
 }
