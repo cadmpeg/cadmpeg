@@ -754,7 +754,7 @@ fn property_value_attribute(
         .field("values")?
         .as_array()?
         .iter()
-        .find(|value| value.get("order").and_then(Value::as_u64) == Some(value_order as u64))?
+        .find(|value| value.get("order").and_then(Value::as_u64) == Some(cadmpeg_core::decode::u64_from_index(value_order)))?
         .get("attributes")?
         .get(attribute)?
         .as_str()

@@ -47,14 +47,14 @@ pub(crate) fn native_id_charged(
                 ),
             )
         })?;
-    ctx.charge_retained(len as u64, OPERATION)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), OPERATION)?;
     let mut id = String::new();
     id.try_reserve_exact(len).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 ctx.policy().limits.max_retained_bytes,
-                len as u64,
+                cadmpeg_core::decode::u64_from_index(len),
                 OPERATION,
             ),
         )
@@ -72,14 +72,14 @@ pub(crate) fn encoded_segment_charged(
     operation: &'static str,
 ) -> Result<IdentityKey, CodecError> {
     let len = encoded_segment_len(ctx, value, operation)?;
-    ctx.charge_retained(len as u64, operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), operation)?;
     let mut key = String::new();
     key.try_reserve_exact(len).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 ctx.policy().limits.max_retained_bytes,
-                len as u64,
+                cadmpeg_core::decode::u64_from_index(len),
                 operation,
             ),
         )
@@ -114,14 +114,14 @@ pub(crate) fn native_child_id_charged(
                 ),
             )
         })?;
-    ctx.charge_retained(len as u64, OPERATION)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), OPERATION)?;
     let mut id = String::new();
     id.try_reserve_exact(len).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 ctx.policy().limits.max_retained_bytes,
-                len as u64,
+                cadmpeg_core::decode::u64_from_index(len),
                 OPERATION,
             ),
         )
@@ -174,14 +174,14 @@ pub(crate) fn model_id_charged_at(
                 ),
             )
         })?;
-    ctx.charge_retained(len as u64, operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), operation)?;
     let mut id = String::new();
     id.try_reserve_exact(len).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 ctx.policy().limits.max_retained_bytes,
-                len as u64,
+                cadmpeg_core::decode::u64_from_index(len),
                 operation,
             ),
         )
@@ -1350,14 +1350,14 @@ pub(crate) struct RetainedXml {
 impl RetainedXml {
     fn try_new(text: String, start: u64, end: u64) -> Result<Self, String> {
         let span = ByteSpan::try_new(start, end)?;
-        if end - start != text.len() as u64 {
+        if end - start != cadmpeg_core::decode::u64_from_index(text.len()) {
             return Err("raw_xml length disagrees with byte_start and byte_end".to_owned());
         }
         Ok(Self { text, span })
     }
     pub(crate) fn from_text(text: String, start: u64) -> Result<Self, String> {
         let end = start
-            .checked_add(text.len() as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(text.len()))
             .ok_or("raw_xml byte_end overflow")?;
         Self::try_new(text, start, end)
     }
@@ -1902,10 +1902,10 @@ impl LinkArray {
         objects: Vec<String>,
     ) -> Result<Self, String> {
         let lengths = [
-            transforms.len() as u64,
-            scales.len() as u64,
-            visibility.len() as u64,
-            objects.len() as u64,
+            cadmpeg_core::decode::u64_from_index(transforms.len()),
+            cadmpeg_core::decode::u64_from_index(scales.len()),
+            cadmpeg_core::decode::u64_from_index(visibility.len()),
+            cadmpeg_core::decode::u64_from_index(objects.len()),
         ];
         // With no stated count the longest populated carrier establishes the
         // cardinality; every populated carrier must agree with it. A stated
@@ -1929,10 +1929,10 @@ impl LinkArray {
     /// Element cardinality: the stated count, else the one the carriers establish.
     fn cardinality(&self) -> LinkArrayCardinality {
         let elements = self.count.unwrap_or_else(|| {
-            (self.transforms.len() as u64)
-                .max(self.scales.len() as u64)
-                .max(self.visibility.len() as u64)
-                .max(self.objects.len() as u64)
+            (cadmpeg_core::decode::u64_from_index(self.transforms.len()))
+                .max(cadmpeg_core::decode::u64_from_index(self.scales.len()))
+                .max(cadmpeg_core::decode::u64_from_index(self.visibility.len()))
+                .max(cadmpeg_core::decode::u64_from_index(self.objects.len()))
         });
         match NonZeroU64::new(elements) {
             None => LinkArrayCardinality::Scalar,
@@ -3446,7 +3446,7 @@ pub(crate) fn is_safe_entry_name(name: &str) -> bool {
 impl EntryRecord {
     /// Logical byte length.
     pub(crate) fn byte_len(&self) -> u64 {
-        self.data.len() as u64
+        cadmpeg_core::decode::u64_from_index(self.data.len())
     }
 
     /// Lowercase SHA-256 of logical bytes.

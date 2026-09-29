@@ -131,13 +131,13 @@ pub(crate) fn transfer_neutral(
     drawings: &[DrawingRecord],
 ) -> Result<(), CodecError> {
     let mut drawing_ids = HashMap::new();
-    ctx.charge_collection_items(drawings.len() as u64, "fcstd annotation drawing index")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(drawings.len()), "fcstd annotation drawing index")?;
     drawing_ids.try_reserve(drawings.len()).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems,
                 ctx.policy().limits.max_collection_items,
-                drawings.len() as u64,
+                cadmpeg_core::decode::u64_from_index(drawings.len()),
                 "fcstd annotation drawing index",
             ),
         )
@@ -230,7 +230,7 @@ pub(crate) fn transfer_neutral(
             kind: schema.kind.clone(),
             runtime_type: ctx
                 .copy_retained_text(record.kind.as_str(), "fcstd annotation runtime type")?,
-            order: order as u32,
+            order: u32::try_from(order).map_err(|_| ctx.refuse_codec_limit("FreeCAD ordinal", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(order)))?,
             text: ctx.copy_retained_strings(&record.text, "fcstd annotation neutral text")?,
             references: crate::resource::named_entries_charged(
                 ctx,
