@@ -263,14 +263,11 @@ fn resolved_segment_profile_chains(
 }
 
 pub(in super::super) fn solver_only_section_entities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> BTreeMap<u32, usize> {
-    let declared_segment_ids = definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.ids())
-        .collect::<BTreeSet<_>>();
-    definition
+) -> Result<BTreeMap<u32, usize>, cadmpeg_core::CodecError> {
+    let mut entities = BTreeMap::<u32, usize>::new();
+    for (id, offset) in definition
         .relations
         .iter()
         .flat_map(FeatureRelationTable::skamps)
@@ -280,17 +277,35 @@ pub(in super::super) fn solver_only_section_entities(
                 .iter()
                 .map(move |item| (item.entity_id, skamp.offset))
         })
-        .filter(|(entity_id, _)| !declared_segment_ids.contains(entity_id))
-        .fold(
-            BTreeMap::<u32, usize>::new(),
-            |mut entities, (id, offset)| {
-                entities
-                    .entry(id)
-                    .and_modify(|first_offset| *first_offset = (*first_offset).min(offset))
-                    .or_insert(offset);
-                entities
-            },
-        )
+    {
+        if definition.segments.iter().flat_map(|table| table.rows.ids())
+            .any(|segment_id| segment_id == id)
+        {
+            continue;
+        }
+        if let Some(first_offset) = entities.get_mut(&id) {
+            *first_offset = (*first_offset).min(offset);
+        } else {
+            ctx.charge_collection_items(1, "creo solver-only entity nodes")?;
+            entities.insert(id, offset);
+        }
+    }
+    Ok(entities)
+}
+
+pub(in super::super) fn solver_only_section_entity_offset(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    entity_id: u32,
+) -> Option<usize> {
+    if definition.segments.iter().flat_map(|table| table.rows.ids())
+        .any(|segment_id| segment_id == entity_id)
+    {
+        return None;
+    }
+    definition.relations.iter().flat_map(FeatureRelationTable::skamps)
+        .filter(|skamp| skamp.items.iter().any(|item| item.entity_id == entity_id))
+        .map(|skamp| skamp.offset)
+        .min()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -452,7 +467,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                         return false;
                     }
                     unique_opaque_section_entity(definition, target.entity_id)
-                        || solver_only_section_entities(definition).contains_key(&target.entity_id)
+                        || solver_only_section_entity_offset(definition, target.entity_id).is_some()
                 };
             if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
                 if (first.entity_id == entity_id && type35_target_role(first, second))
@@ -472,8 +487,8 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                     target.sense == 0
                         && section_skamp_has_proven_point_locus(definition, point)
                         && (unique_opaque_section_entity(definition, target.entity_id)
-                            || solver_only_section_entities(definition)
-                                .contains_key(&target.entity_id))
+                            || solver_only_section_entity_offset(definition, target.entity_id)
+                                .is_some())
                 };
             if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
                 if (first.entity_id == entity_id && type_zero_point_role(first, second))
@@ -489,7 +504,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
             (5 | 7 | 8, [first, second])
                 if first.sense == 0
                     && second.sense == 0
-                    && solver_only_section_entities(definition).contains_key(&entity_id)
+                    && solver_only_section_entity_offset(definition, entity_id).is_some()
                     && (first.entity_id == entity_id || second.entity_id == entity_id) =>
             {
                 evidence.insert(SectionEntityIncidenceFamily::Line);
@@ -568,9 +583,7 @@ pub(in super::super) fn solver_only_section_entity_family(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Option<SectionEntityIncidenceFamily> {
-    solver_only_section_entities(definition)
-        .contains_key(&entity_id)
-        .then_some(())?;
+    solver_only_section_entity_offset(definition, entity_id)?;
     let mut evidence = section_incidence_curve_family_evidence(definition, entity_id);
     if !evidence.contains(&SectionEntityIncidenceFamily::Arc)
         && complete_section_skamps(definition).any(|skamp| {
@@ -649,10 +662,29 @@ pub(in super::super) fn solver_only_section_entity_family(
 #[cfg(test)]
 mod tests {
     use super::{
-        solver_only_section_entity_family, unique_section_incidence_curve_family,
+        solver_only_section_entities, solver_only_section_entity_family, unique_section_incidence_curve_family,
         SectionEntityIncidenceFamily,
     };
     use crate::decode::tests::opaque;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    #[test]
+    fn solver_only_entity_nodes_refuse_before_insertion() {
+        let definition = definition(201, false);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = solver_only_section_entities(&ctx, &definition)
+            .expect_err("one solver-only node exceeds zero items");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo solver-only entity nodes"));
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        assert_eq!(solver_only_section_entities(&ctx, &definition).expect("service entities")
+            .get(&201), Some(&201));
+    }
 
     fn midpoint(target: u32, point: u32) -> crate::feature::definitions::FeatureSkamp {
         crate::feature::definitions::FeatureSkamp {

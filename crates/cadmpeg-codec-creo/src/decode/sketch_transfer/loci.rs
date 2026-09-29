@@ -13,7 +13,7 @@ use crate::decode::sketch_transfer::identity::{
     saved_section_entity_fallback_allowed, semantic_saved_section_entities,
 };
 use crate::decode::sketch_transfer::profiles::{
-    solver_only_section_entities, solver_only_section_entity_family,
+    solver_only_section_entity_offset, solver_only_section_entity_family,
     unique_section_incidence_curve_family,
     unique_section_incidence_curve_family_without_type35_target, SectionEntityIncidenceFamily,
 };
@@ -541,7 +541,7 @@ pub(super) fn section_skamp_oriented_line(
     {
         return None;
     }
-    if solver_only_section_entities(definition).contains_key(&item.entity_id) {
+    if solver_only_section_entity_offset(definition, item.entity_id).is_some() {
         return Some(entity);
     }
     let line_role_evidence = complete_section_skamps(definition).any(|skamp| {
@@ -945,7 +945,7 @@ pub(in super::super) fn section_skamp_is_circular(
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> bool {
-    if solver_only_section_entities(definition).contains_key(&item.entity_id) {
+    if solver_only_section_entity_offset(definition, item.entity_id).is_some() {
         return solver_only_section_entity_family(definition, item.entity_id).is_some_and(
             |family| {
                 matches!(

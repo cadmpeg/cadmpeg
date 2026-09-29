@@ -510,7 +510,7 @@ pub(in super::super) fn transfer_sketches(
         )?;
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        for (external_id, offset) in solver_only_section_entities(definition) {
+        for (external_id, offset) in solver_only_section_entities(ctx, definition)? {
             let Some(id) = sketch_entity_id(&sketch_id, external_id) else {
                 continue;
             };
