@@ -1479,13 +1479,12 @@ fn curve_expression_solve_program(
                 }
             }
             if let Some(unknowns) = unknowns.filter(|_| block.valid && !equations.is_empty()) {
-                ctx.charge_collection_items(
-                    cadmpeg_core::decode::u64_from_index(assignment_line_indices.len()),
-                    "creo executable solve line index nodes",
-                )?;
-                program
-                    .executable_line_indices
-                    .extend(assignment_line_indices);
+                for index in assignment_line_indices {
+                    if !program.executable_line_indices.contains(&index) {
+                        ctx.charge_collection_items(1, "creo executable solve line index nodes")?;
+                        program.executable_line_indices.insert(index);
+                    }
+                }
                 ctx.try_reserve_items(&mut program.blocks, 1, "creo solve blocks")?;
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,

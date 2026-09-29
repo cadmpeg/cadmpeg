@@ -298,13 +298,17 @@ fn solve_assignments_refuse_before_growth() {
 fn executable_solve_line_nodes_refuse_before_insert() {
     let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 11;
+    policy.limits.max_collection_items = 12;
     let error = resource_error(with_expression_policy(policy, |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
     }));
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo executable solve line index nodes"));
+    let program = with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }).expect("service solve program");
+    assert_eq!(program.executable_line_indices.into_iter().collect::<Vec<_>>(), [2]);
 }
 
 #[test]

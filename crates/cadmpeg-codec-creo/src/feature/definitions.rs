@@ -3589,7 +3589,7 @@ fn trim_endpoint_radius(
     center: [f64; 2],
     points: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, ()> {
-    let mut radii = Vec::new();
+    let mut first: Option<cadmpeg_ir::scalar::PositiveReal> = None;
     for point_id in segment.point_ids() {
         let Some([Some(u), Some(v)]) = points.get(&point_id).copied() else {
             continue;
@@ -3599,21 +3599,16 @@ fn trim_endpoint_radius(
         if radius.get() <= TRIM_INTERSECTION_EPS {
             return Err(());
         }
-        radii.push(radius);
-    }
-    let Some(first) = radii.first().copied() else {
-        return Ok(None);
-    };
-    radii
-        .iter()
-        .copied()
-        .try_fold(first, |first, radius| {
+        if let Some(first) = first {
             let scale = first.get().max(radius.get()).max(1.0);
             ((radius.get() - first.get()).abs() <= TRIM_COORDINATE_EPS * scale)
-                .then_some(first)
-                .ok_or(())
-        })
-        .map(Some)
+                .then_some(())
+                .ok_or(())?;
+        } else {
+            first = Some(radius);
+        }
+    }
+    Ok(first)
 }
 
 fn trim_radius(
@@ -7863,6 +7858,28 @@ mod tables_tests;
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn trim_endpoint_radius_preserves_missing_agreement_and_refusal() {
+        let segment = super::FeatureSegment {
+            kind: super::FeatureSegmentKind::Arc([1, 2]),
+            directions: [None; 3], center_id: Some(3), arc_orientation: None,
+            vertical_horizontal: None, radius_ref: None, radius2_ref: None,
+            external_id: 7, body: Vec::new(), offset: 0,
+        };
+        for (points, expected) in [
+            (Vec::new(), Ok(None)),
+            (vec![(1, [Some(3.0), Some(4.0)])], Ok(Some(5.0))),
+            (vec![(1, [Some(3.0), Some(4.0)]), (2, [Some(0.0), Some(5.0)])], Ok(Some(5.0))),
+            (vec![(1, [Some(3.0), Some(4.0)]), (2, [Some(0.0), Some(6.0)])], Err(())),
+            (vec![(1, [Some(0.0), Some(0.0)])], Err(())),
+            (vec![(1, [Some(f64::NAN), Some(0.0)])], Err(())),
+        ] {
+            let points = points.into_iter().collect();
+            assert_eq!(super::trim_endpoint_radius(&segment, [0.0; 2], &points)
+                .map(|radius| radius.map(cadmpeg_ir::scalar::PositiveReal::get)), expected);
+        }
+    }
 
     #[test]
     fn resolved_trim_scalar_preserves_missing_duplicate_and_conflict_rules() {

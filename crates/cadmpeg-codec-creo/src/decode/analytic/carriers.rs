@@ -633,8 +633,7 @@ pub(in crate::decode) fn geometry_section_record(
         .find(|section| section.contains(offset)) else {
             return Ok(None);
         };
-    let Ok(namespace) =
-        cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section") else {
+    let Some(namespace) = crate::identity::section_namespace(section.name()) else {
         return Ok(None);
     };
     crate::identity::compose_checked(
