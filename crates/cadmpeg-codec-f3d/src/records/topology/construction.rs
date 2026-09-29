@@ -236,6 +236,7 @@ impl DesignConstructionOperandGroup {
     }
 
     /// Checked replacement of the operand-reference run.
+    #[cfg(test)]
     pub(crate) fn try_set_members(&mut self, members: Vec<Located<u32>>) -> Result<(), String> {
         Self::check_members(&members)?;
         self.members = members;

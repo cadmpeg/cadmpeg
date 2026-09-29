@@ -3,7 +3,6 @@
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::parameters::bind_parameter_companion_payloads;
 use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::parameter_record;
 use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
@@ -45,7 +44,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &loft_scope,
             &[],
         ),
@@ -400,7 +399,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
         ),
@@ -420,7 +419,7 @@ pub(super) fn fixed_kind_path_operations(
     {
         let value = exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
         );
@@ -746,7 +745,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &pipe_scope,
             &[],
         ),
@@ -840,7 +839,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &owner_pipe_owners,
         ),
@@ -869,7 +868,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &wrong_owner_class,
         ),
@@ -944,7 +943,7 @@ pub(super) fn fixed_kind_path_operations(
         assert_eq!(
             exact_path_feature_construction(
                 &bytes,
-                &IndexedRecordOffsets::build(&bytes),
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 &legacy_scope,
                 &[],
             ),
@@ -1001,13 +1000,15 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         companion_owned_interval(
+            &cadmpeg_test_support::service_decode_context(),
             &companion,
             std::iter::empty(),
             &[],
             &[scope.clone()],
             &[],
             100,
-        ),
+        )
+        .unwrap(),
         Some((58, 58))
     );
     scope
@@ -1023,13 +1024,15 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         companion_owned_interval(
+            &cadmpeg_test_support::service_decode_context(),
             &companion,
             std::iter::empty(),
             &[],
             &[scope.clone()],
             &[],
             100,
-        ),
+        )
+        .unwrap(),
         Some((58, 80))
     );
     scope
@@ -1051,25 +1054,38 @@ pub(super) fn fixed_kind_path_operations(
     };
     assert_eq!(
         companion_owned_interval(
+            &cadmpeg_test_support::service_decode_context(),
             &companion,
             std::iter::empty(),
             &[],
             &[scope.clone()],
             &[foreign_header],
             100,
-        ),
+        )
+        .unwrap(),
         Some((58, 70))
     );
 
     let mut parameter = crate::design::decode::parameters::parse_design_parameter(
+        &cadmpeg_test_support::service_decode_context(),
         &parameter_record(None, "1", "User Parameter", None, "p", 1.0),
     )
+    .unwrap()
     .expect("generated parameter")
     .into_record("Design/BulkStream.dat", 65)
     .expect("located parameter");
     parameter.id = "f3d:native:design-parameter#65".into();
     assert_eq!(
-        companion_owned_interval(&companion, std::iter::once(&parameter), &[], &[], &[], 100,),
+        companion_owned_interval(
+            &cadmpeg_test_support::service_decode_context(),
+            &companion,
+            std::iter::once(&parameter),
+            &[],
+            &[],
+            &[],
+            100,
+        )
+        .unwrap(),
         Some((58, 65))
     );
     let recipe = ConstructionRecipe {
@@ -1084,6 +1100,7 @@ pub(super) fn fixed_kind_path_operations(
         }),
     };
     let bound = bind_parameter_companion_payloads(
+        &cadmpeg_test_support::service_decode_context(),
         vec![companion.clone()],
         &crate::design::decode::parameters::ParameterCompanionInputs {
             parameters: std::slice::from_ref(&parameter),
@@ -1094,7 +1111,8 @@ pub(super) fn fixed_kind_path_operations(
             recipes: std::slice::from_ref(&recipe),
             stream_lengths: &HashMap::from([("f3d:native".into(), 100)]),
         },
-    );
+    )
+    .unwrap();
     let payload = bound[0].payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 58);
     assert_eq!(payload.byte_length(), 7);
@@ -1127,6 +1145,7 @@ pub(super) fn fixed_kind_path_operations(
         .expect("valid module registration"),
     };
     let bound = bind_parameter_companion_payloads(
+        &cadmpeg_test_support::service_decode_context(),
         vec![companion],
         &crate::design::decode::parameters::ParameterCompanionInputs {
             parameters: &[],
@@ -1137,7 +1156,8 @@ pub(super) fn fixed_kind_path_operations(
             recipes: &[],
             stream_lengths: &HashMap::from([("f3d:native".into(), 100)]),
         },
-    );
+    )
+    .unwrap();
     let payload = bound[0].payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 58);
     assert_eq!(payload.byte_length(), 12);

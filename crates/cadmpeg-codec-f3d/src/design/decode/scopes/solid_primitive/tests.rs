@@ -7,11 +7,37 @@
 )]
 
 use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::primitives::DesignSolidPrimitive;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
+
+#[test]
+fn fixed_guid_scan_matches_decoded_relaxed_guid_validation() {
+    for value in [
+        "00000000-0000-0000-0000-000000000000",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        "00000000-0000-0000-0000-00000000000!",
+        "é0000000-0000-0000-0000-000000000000",
+        "short",
+    ] {
+        let mut bytes = u32::try_from(value.encode_utf16().count())
+            .unwrap()
+            .to_le_bytes()
+            .to_vec();
+        for code_unit in value.encode_utf16() {
+            bytes.extend_from_slice(&code_unit.to_le_bytes());
+        }
+        let prior = crate::bytes::lp_utf16_bounded(&bytes, 0, 36..=36)
+            .and_then(|(guid, end)| crate::bytes::is_guid_relaxed(&guid).then_some(end));
+        assert_eq!(
+            crate::design::decode::text::fixed_guid_end(&bytes, 0),
+            prior
+        );
+        bytes.pop();
+        assert_eq!(crate::design::decode::text::fixed_guid_end(&bytes, 0), None);
+    }
+}
 
 #[test]
 fn named_solid_primitives_bind_ordered_parameter_owners() {
@@ -68,7 +94,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         owner(12, 23, 3, 0.5),
         owner(12, 24, 4, -0.25),
     ];
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
         Some(DesignSolidPrimitive::Box(
@@ -254,7 +280,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
     assert!(matches!(
         exact_solid_primitive(
             &compact,
-            &IndexedRecordOffsets::build(&compact),
+            &crate::design::test_support::indexed_record_offsets_for_test(&compact),
             &compact_scope,
             &compact_owners,
         ),
@@ -303,7 +329,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         assert!(matches!(
             exact_solid_primitive(
                 &expanded,
-                &IndexedRecordOffsets::build(&expanded),
+                &crate::design::test_support::indexed_record_offsets_for_test(&expanded),
                 &expanded_scope,
                 &expanded_owners,
             ),
@@ -323,7 +349,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         translated[72 + 3 * 8..72 + 4 * 8].copy_from_slice(&1.0f64.to_le_bytes());
         assert!(exact_solid_primitive(
             &translated,
-            &IndexedRecordOffsets::build(&translated),
+            &crate::design::test_support::indexed_record_offsets_for_test(&translated),
             &expanded_scope,
             &expanded_owners,
         )

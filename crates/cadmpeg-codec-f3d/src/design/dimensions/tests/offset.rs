@@ -86,11 +86,14 @@ fn counted_offset_return_run_pairs_sources_and_results() {
 
     let entities = HashMap::from([(1, &bottom), (2, &top), (3, &inset_top), (4, &inset_bottom)]);
     let definition = exact_counted_offset(
+        None,
         &offset_loci(&[(1, 3, 1), (2, 2, 4), (3, 0, 2), (4, 0, 3)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
     )
+    .transpose()
+    .unwrap()
     .expect("counted offset graph");
     let crate::design::dimensions::CountedOffset { pairs, distance } = definition;
     assert_eq!(&pairs[0].source, bottom.id());
@@ -120,12 +123,12 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
     let secondary_ids = HashMap::from([(1, 0), (2, 42)]);
 
     assert!(matches!(
-        exact_counted_offset(
+        exact_counted_offset(None,
             &offset_loci(&[(1, 4, 1), (2, 1, 2)]),
             &entities,
             &secondary_ids,
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -137,11 +140,14 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
 
     let ambiguous_ids = HashMap::from([(1, 0), (2, 0)]);
     assert!(exact_counted_offset(
+        None,
         &offset_loci(&[(1, 4, 1), (2, 1, 2)]),
         &entities,
         &ambiguous_ids,
         1.0e-6,
     )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -188,12 +194,12 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     );
     let entities = HashMap::from([(1, &source), (2, &result)]);
     assert!(matches!(
-        exact_counted_offset(
+        exact_counted_offset(None,
             &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
             &entities,
             &HashMap::new(),
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -229,11 +235,14 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
     assert!(exact_counted_offset(
+        None,
         &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
     )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -264,11 +273,14 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
     let definition = exact_counted_offset(
+        None,
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
     )
+    .transpose()
+    .unwrap()
     .expect("concentric arc offset");
     assert!(matches!(
         definition,
@@ -292,11 +304,14 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
     assert!(exact_counted_offset(
+        None,
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
     )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -318,12 +333,12 @@ fn counted_offset_accepts_concentric_full_circles() {
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
     assert!(matches!(
-        exact_counted_offset(
+        exact_counted_offset(None,
             &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
             &entities,
             &HashMap::new(),
             TEST_LINEAR_TOLERANCE,
-        ),
+        ).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -336,12 +351,12 @@ fn counted_offset_accepts_concentric_full_circles() {
 
     let reversed_entities = HashMap::from([(1, &result), (2, &source)]);
     assert!(matches!(
-        exact_counted_offset(
+        exact_counted_offset(None,
             &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
             &reversed_entities,
             &HashMap::new(),
             TEST_LINEAR_TOLERANCE,
-        ),
+        ).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -360,11 +375,14 @@ fn counted_offset_accepts_concentric_full_circles() {
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &displaced)]);
     assert!(exact_counted_offset(
+        None,
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         TEST_LINEAR_TOLERANCE,
     )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -525,16 +543,15 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     let parameter = ParameterId::mint("synthetic:test:parameter#offset").expect("identity grammar");
 
     let definition = spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &operands,
-        &parameter,
-        3.0,
-        -3.0,
+        None,
+        ("Linear Dimension-1", Some(0x20), &operands),
+        (&parameter, 3.0, -3.0),
         &sketch_id,
         std::slice::from_ref(&sketch),
         &by_record,
     )
+    .transpose()
+    .unwrap()
     .expect("counted spatial offset");
     assert!(matches!(
         definition,
@@ -553,28 +570,26 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
             && actual_parameter == parameter) && actual_distance.get() == 3.0
     ));
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0),
-        &operands,
-        &parameter,
-        3.0,
-        -3.0,
+        None,
+        ("Linear Dimension-1", Some(0), &operands),
+        (&parameter, 3.0, -3.0),
         &sketch_id,
         std::slice::from_ref(&sketch),
         &by_record,
     )
+    .transpose()
+    .unwrap()
     .is_none());
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &operands,
-        &parameter,
-        3.0,
-        -2.0,
+        None,
+        ("Linear Dimension-1", Some(0x20), &operands),
+        (&parameter, 3.0, -2.0),
         &sketch_id,
         std::slice::from_ref(&sketch),
         &by_record,
     )
+    .transpose()
+    .unwrap()
     .is_none());
     let outside_source = entity(
         99,
@@ -590,44 +605,41 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     non_permutation[first_return].object_index = Some(99);
     non_permutation[first_return].native_ref = outside_source.native_ref.clone();
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &non_permutation,
-        &parameter,
-        3.0,
-        -3.0,
+        None,
+        ("Linear Dimension-1", Some(0x20), &non_permutation),
+        (&parameter, 3.0, -3.0),
         &sketch_id,
         std::slice::from_ref(&sketch),
         &by_record,
     )
+    .transpose()
+    .unwrap()
     .is_none());
     let mut wrong_operand_kind = operands.clone();
     wrong_operand_kind[0].native_kind = cadmpeg_core::text::NonBlankString::new("point").unwrap();
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &wrong_operand_kind,
-        &parameter,
-        3.0,
-        -3.0,
+        None,
+        ("Linear Dimension-1", Some(0x20), &wrong_operand_kind),
+        (&parameter, 3.0, -3.0),
         &sketch_id,
         std::slice::from_ref(&sketch),
         &by_record,
     )
+    .transpose()
+    .unwrap()
     .is_none());
     let mut ambiguous_sketch = sketch.clone();
     ambiguous_sketch.profiles.push(sketch.profiles[0].clone());
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &operands,
-        &parameter,
-        3.0,
-        -3.0,
+        None,
+        ("Linear Dimension-1", Some(0x20), &operands),
+        (&parameter, 3.0, -3.0),
         &sketch_id,
         std::slice::from_ref(&ambiguous_sketch),
         &by_record,
     )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -753,11 +765,11 @@ fn counted_roles_require_matching_solved_geometry() {
         .unwrap(),
     );
     assert!(matches!(
-        crate::design::dimensions::counted_role_relation_at_tolerance(
+        crate::design::dimensions::counted_role_relation_at_tolerance(None,
             &[&tangent_circle, &rounded_tangent_arc],
             &[crate::records::sketch_relations::SketchConstraintKind::Tangent],
             TEST_LINEAR_TOLERANCE,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == tangent_circle.id() && &second == rounded_tangent_arc.id()
     ));
@@ -907,7 +919,12 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         point("B", 21),
     ];
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     bind_dimension_loci(
+        &ctx,
         &[placement("A", 100), placement("B", 200)],
         &[owner("A"), owner("B")],
         &[pair("A"), pair("B")],
@@ -926,3 +943,117 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         [Some(100), Some(100), Some(200), Some(200)]
     );
 }
+
+#[test]
+fn dimension_binding_scope_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut bindings = std::collections::HashMap::new();
+    assert!(matches!(
+        crate::design::dimensions::insert_dimension_binding(
+            &ctx, &mut bindings, "stream", 20, 100,
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d dimension binding scope"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_binding_record_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut bindings = std::collections::HashMap::new();
+    assert!(matches!(
+        crate::design::dimensions::insert_dimension_binding(
+            &ctx, &mut bindings, "stream", 20, 100,
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d dimension binding record"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_placement_scope_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let placement = DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            0,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
+        id: "f3d:test:placement#1".into(),
+        scope_record_index: Some(10),
+        entity_id: "0_100".to_owned().try_into().unwrap(),
+        visibility: None,
+        class_tag: "356".to_owned().try_into().unwrap(),
+        record_index: 11,
+        paired_class_tag: "259".to_owned().try_into().unwrap(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        bind_dimension_loci(
+            &ctx, &[placement], &[], &[], &[], &[], &[], &mut [], &mut [],
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d dimension placement scope"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_companion_scope_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: "f3d:test:owner#1".into(),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: "305".to_owned().try_into().unwrap(),
+            record_index: 10,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 11,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 12,
+        },
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        bind_dimension_loci(
+            &ctx, &[], &[owner], &[], &[], &[], &[], &mut [], &mut [],
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d dimension companion scope"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+mod refusal_spatial_counted_offset;
+
+mod refusal_counted_role_relation_at_tolerance;

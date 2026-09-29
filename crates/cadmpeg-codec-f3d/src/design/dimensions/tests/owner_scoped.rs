@@ -66,12 +66,14 @@ fn spatial_dimension_matchers_refuse_infinite_measured_distances() {
     );
     assert!(
         crate::design::dimensions::owner_scoped_spatial_line_length_dimension_definition(
+            None,
             std::slice::from_ref(&diagonal),
             &sketch,
             &parameter,
             &parameter_id,
             0.0,
         )
+        .unwrap()
         .is_none()
     );
 
@@ -95,12 +97,15 @@ fn spatial_dimension_matchers_refuse_infinite_measured_distances() {
     );
     assert!(
         crate::design::dimensions::owner_scoped_spatial_parallel_line_set_dimension_definition(
+            None,
             &entities,
             &sketch,
             &parameter,
             &parameter_id,
             0.0,
         )
+        .transpose()
+        .unwrap()
         .is_none()
     );
 }
@@ -174,22 +179,22 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
             .expect("identity grammar");
     assert!(matches!(
-        radial_dimension_definition(
+        radial_dimension_definition(None,
             &entity,
             "Radius Dimension-2",
             0.5,
             radius_parameter.clone(),
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &radius_parameter
     ));
     assert!(matches!(
-        radial_dimension_definition(
+        radial_dimension_definition(None,
             &entity,
             "Radial Dimension-3",
             0.5,
             radius_parameter.clone(),
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, .. })
             if actual == entity.id()
     ));
@@ -197,21 +202,24 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#diameter")
             .expect("identity grammar");
     assert!(matches!(
-        radial_dimension_definition(
+        radial_dimension_definition(None,
             &entity,
             "Diameter Dimension-2",
             1.0,
             diameter_parameter.clone(),
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
     assert!(radial_dimension_definition(
+        None,
         &entity,
         "Diameter Dimension-2",
         0.5,
         diameter_parameter.clone(),
     )
+    .transpose()
+    .unwrap()
     .is_none());
     let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
@@ -223,13 +231,13 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     ))
     .expect("diameter parameter");
     assert!(matches!(
-        owner_scoped_radial_dimension_definition(
+        owner_scoped_radial_dimension_definition(None,
             std::slice::from_ref(&entity),
             &entity.sketch,
             &parameter,
             &diameter_parameter,
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual,
             ..
@@ -260,13 +268,13 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     })
     .unwrap();
     assert!(matches!(
-        owner_scoped_radial_dimension_definition(
+        owner_scoped_radial_dimension_definition(None,
             &[entity.clone(), duplicate.clone()],
             &entity.sketch,
             &parameter,
             &diameter_parameter,
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter {
             entities,
             parameter,
@@ -284,13 +292,13 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     ))
     .expect("radial parameter");
     assert!(matches!(
-        owner_scoped_radial_dimension_definition(
+        owner_scoped_radial_dimension_definition(None,
             &[entity.clone(), duplicate.clone()],
             &entity.sketch,
             &radial_parameter,
             &radius_parameter,
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::RepeatedRadius {
             entities,
             parameter,
@@ -305,10 +313,16 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         end_angle: cadmpeg_ir::scalar::Angle::new(1.0).unwrap(),
     })
     .unwrap();
-    assert!(
-        radial_dimension_definition(&entity, "Diameter Dimension", 1.0, diameter_parameter,)
-            .is_some()
-    );
+    assert!(radial_dimension_definition(
+        None,
+        &entity,
+        "Diameter Dimension",
+        1.0,
+        diameter_parameter,
+    )
+    .transpose()
+    .unwrap()
+    .is_some());
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(2.0, 3.0),
         major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
@@ -319,10 +333,16 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         bounds: None,
     })
     .unwrap();
-    assert!(
-        radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter,)
-            .is_none()
-    );
+    assert!(radial_dimension_definition(
+        None,
+        &entity,
+        "Radius Dimension-2",
+        0.5,
+        radius_parameter,
+    )
+    .transpose()
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -355,13 +375,13 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             .expect("identity grammar");
 
     assert!(matches!(
-        owner_scoped_line_length_dimension_definition(
+        owner_scoped_line_length_dimension_definition(None,
             std::slice::from_ref(&first),
             &sketch,
             &parameter,
             &parameter_id,
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Start(ref entity),
             second: SketchLocus::End(ref other),
@@ -369,13 +389,13 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
         }) if entity == first.id() && other == first.id() && actual_parameter == &parameter_id
     ));
     assert!(matches!(
-        owner_scoped_line_length_dimension_definition(
+        owner_scoped_line_length_dimension_definition(None,
             &[first.clone(), second.clone()],
             &sketch,
             &parameter,
             &parameter_id,
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::RepeatedLength {
             entities,
             parameter,
@@ -414,12 +434,12 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
         .expect("identity grammar");
 
     assert!(matches!(
-        owner_scoped_angular_dimension_definition(
+        owner_scoped_angular_dimension_definition(None,
             &[horizontal.clone(), sloped.clone(), vertical.clone()],
             &sketch,
             &parameter,
             &parameter_id,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Angle {
             first,
             second,
@@ -429,11 +449,14 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
 
     let other_sloped = line("other-sloped", -std::f64::consts::FRAC_PI_6);
     assert!(owner_scoped_angular_dimension_definition(
+        None,
         &[horizontal, sloped, vertical, other_sloped],
         &sketch,
         &parameter,
         &parameter_id,
     )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -512,14 +535,18 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ((stream, 12), &entities[2]),
         ((stream, 13), &entities[3]),
     ]);
-    let parameter = crate::design::decode::parameters::parse_design_parameter(&parameter_record(
-        Some(1),
-        "135 deg",
-        "Angular Dimension-2",
-        Some("deg"),
-        "d1",
-        3.0 * std::f64::consts::FRAC_PI_4,
-    ))
+    let parameter = crate::design::decode::parameters::parse_design_parameter(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_record(
+            Some(1),
+            "135 deg",
+            "Angular Dimension-2",
+            Some("deg"),
+            "d1",
+            3.0 * std::f64::consts::FRAC_PI_4,
+        ),
+    )
+    .unwrap()
     .expect("angular parameter")
     .into_record("Design/BulkStream.dat", 100)
     .expect("located parameter");
@@ -527,21 +554,21 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 
     assert!(matches!(
-        preceding_incident_angular_dimension_definition(
-            stream,
-            &points,
-            &curves,
-            &projected,
-            &sketch,
-            &parameter,
-            &parameter_id,
-        ),
-        Some(SketchConstraintDefinitionInput::Angle {
-            first,
-            second,
-            parameter,
-        }) if first == entities[0].id().clone() && second == entities[1].id().clone() && parameter == parameter_id
-    ));
+            preceding_incident_angular_dimension_definition(
+    None,
+    stream,
+    &points,
+    &curves,
+    &projected,
+    &sketch,
+    (&parameter, &parameter_id),
+    ).transpose().unwrap(),
+            Some(SketchConstraintDefinitionInput::Angle {
+                first,
+                second,
+                parameter,
+            }) if first == entities[0].id().clone() && second == entities[1].id().clone() && parameter == parameter_id
+        ));
 }
 
 #[test]
@@ -574,13 +601,13 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
             .expect("identity grammar");
 
     assert!(matches!(
-        unique_point_class_dimension_definition(
+        unique_point_class_dimension_definition(None,
             &[lower.clone(), lower_duplicate, upper.clone()],
             &sketch,
             &parameter,
             &parameter_id,
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
@@ -590,12 +617,15 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
 
     let another_upper = point("another-upper", -40.0, -7.875);
     assert!(unique_point_class_dimension_definition(
+        None,
         &[lower, upper, another_upper],
         &sketch,
         &parameter,
         &parameter_id,
         1.0e-6,
     )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -639,35 +669,35 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
         .expect("identity grammar");
 
     assert!(matches!(
-        radial_locus_dimension_definition(
+        radial_locus_dimension_definition(None,
             &[&measured, &annotation],
             &all,
             "Radial Dimension-2",
             0.5,
             &parameter,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity, .. }) if entity == measured.id().clone()
     ));
     let repeated = circle("synthetic:test:id#repeated", 12.0, 3.0, 5.0);
     assert!(matches!(
-        radial_locus_dimension_definition(
+        radial_locus_dimension_definition(None,
             &[&measured, &annotation, &repeated],
             &all,
             "Diameter Dimension-3",
             1.0,
             &parameter,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter { entities, parameter: actual })
             if entities == vec![measured.id().clone(), repeated.id().clone()] && actual == parameter
     ));
     assert!(matches!(
-        radial_locus_dimension_definition(
+        radial_locus_dimension_definition(None,
             &[&center],
             &all,
             "Diameter Dimension-2",
             1.0,
             &parameter,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter { entity, .. }) if entity == measured.id().clone()
     ));
 }
@@ -769,13 +799,17 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
     ] {
         let geometry = SketchGeometry::try_from(definition).unwrap();
         assert!(!point_lies_on_sketch_geometry(
+            None,
             Point2::new(short_length / 2.0, 0.0001),
             &geometry
-        ).expect("resource allocation did not fail"));
+        )
+        .expect("resource allocation did not fail"));
         assert!(point_lies_on_sketch_geometry(
+            None,
             Point2::new(short_length / 2.0, 0.0),
             &geometry
-        ).expect("resource allocation did not fail"));
+        )
+        .expect("resource allocation did not fail"));
     }
     let ellipse = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(0.0, 0.0),
@@ -787,12 +821,26 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         bounds: None,
     })
     .unwrap();
-    assert!(!point_lies_on_sketch_geometry(
-        Point2::new(1e200, 0.0),
-        &ellipse
-    ).expect("resource allocation did not fail"));
-    assert!(point_lies_on_sketch_geometry(
-        Point2::new(1.0, 0.0),
-        &ellipse
-    ).expect("resource allocation did not fail"));
+    assert!(
+        !point_lies_on_sketch_geometry(None, Point2::new(1e200, 0.0), &ellipse)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        point_lies_on_sketch_geometry(None, Point2::new(1.0, 0.0), &ellipse)
+            .expect("resource allocation did not fail")
+    );
 }
+
+mod refusal_radial_dimension_definition_at_tolerance;
+
+mod refusal_owner_scoped_radial;
+
+mod refusal_owner_scoped_line_length;
+
+mod refusal_owner_scoped_angular;
+
+mod refusal_preceding_incident_angular;
+
+mod refusal_unique_point_class;
+
+mod refusal_radial_locus;

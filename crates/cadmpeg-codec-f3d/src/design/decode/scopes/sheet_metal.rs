@@ -26,7 +26,6 @@ use crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
-use std::collections::HashSet;
 
 pub(super) fn exact_base_flange_operation(
     bytes: &[u8],
@@ -441,14 +440,15 @@ fn legacy_edge_flange_operation_at(
     {
         return None;
     }
-    let mut result_record_indices = HashSet::new();
+    // Each static layout lists at most five result references.
+    let mut result_record_indices = [None; 5];
     for (ordinal, expected_trailer) in layout.result_trailers.iter().enumerate() {
         let result_offset = layout
             .result_reference_start
             .checked_add(ordinal.checked_mul(15)?)?;
         let result_record_index =
             marked_record_reference(bytes, start.checked_add(result_offset)?)?;
-        if !result_record_indices.insert(result_record_index)
+        if result_record_indices.contains(&Some(result_record_index))
             || View::u32_le_at(
                 bytes,
                 start.checked_add(
@@ -460,6 +460,7 @@ fn legacy_edge_flange_operation_at(
         {
             return None;
         }
+        *result_record_indices.get_mut(ordinal)? = Some(result_record_index);
     }
     let aggregate_group_record_index = claim(
         marked_record_reference(bytes, start.checked_add(layout.aggregate_group_offset)?)?,
@@ -548,7 +549,7 @@ fn edge_flange_operation_at(
     // names one edge group and one aggregate group in the same two slots, so
     // neither the further groups nor the order of their operands against the
     // aggregate operands is established, and such a frame is refused.
-    if references.len() < 8 {
+    if !(8..=8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS).contains(&references.len()) {
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
@@ -558,7 +559,9 @@ fn edge_flange_operation_at(
     }
     // Every reference the fixed section names is removed from this pool, so the
     // entries that remain at the end are exactly the unclaimed ones.
-    let mut unclaimed: Vec<u32> = references.to_vec();
+    // The three width modes share one fixed ten-slot allocation.
+    let mut unclaimed = Vec::with_capacity(8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS);
+    unclaimed.extend_from_slice(references);
     let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
         let at = pool.iter().position(|entry| *entry == index)?;
         pool.remove(at);
@@ -802,7 +805,7 @@ fn exact_hem_operation(
     start: usize,
     paired_at: usize,
     references: impl ExactSizeIterator<Item = u32> + Clone,
-    parameter_source_kinds: &[(u32, &str)],
+    has_kind: impl Fn(u32, &str) -> bool,
 ) -> Option<DesignHemOperation> {
     // The header shift and form are recovered by agreement, so all candidates
     // are evaluated and a frame that admits more than one is refused.
@@ -827,7 +830,7 @@ fn exact_hem_operation(
         ]
         .into_iter()
         .flatten()
-        .filter(|candidate| hem_parameter_kinds_match(candidate, parameter_source_kinds))
+        .filter(|candidate| hem_parameter_kinds_match(candidate, &has_kind))
         {
             if resolved.is_some() {
                 return None;
@@ -840,14 +843,8 @@ fn exact_hem_operation(
 
 fn hem_parameter_kinds_match(
     operation: &DesignHemOperation,
-    parameter_source_kinds: &[(u32, &str)],
+    has_kind: &impl Fn(u32, &str) -> bool,
 ) -> bool {
-    let has_kind = |record_index: u32, expected: &str| {
-        let mut matches = parameter_source_kinds
-            .iter()
-            .filter(|(owner, _)| *owner == record_index);
-        matches.next().is_some_and(|(_, kind)| *kind == expected) && matches.next().is_none()
-    };
     match operation.parameter_owners {
         DesignHemParameterOwners::GapLength {
             gap_owner_record_index,
@@ -887,26 +884,29 @@ pub(super) fn bind_hem_operation_from_parameters(
     let Some(stream) = native_stream(&scope.id) else {
         return;
     };
-    let parameter_source_kinds = parameter_owners
-        .iter()
-        .filter(|owner| {
-            native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|value| value == &owner.record_index())
-        })
-        .flat_map(|owner| {
-            parameters
-                .iter()
-                .filter(move |parameter| {
-                    native_stream(&parameter.id) == Some(stream)
-                        && parameter.record_index == owner.parameter_record_index()
-                })
-                .map(move |parameter| (owner.record_index(), parameter.source_kind()))
-        })
-        .collect::<Vec<_>>();
+    let has_kind = |record_index: u32, expected: &str| {
+        let mut matches = parameter_owners
+            .iter()
+            .filter(|owner| {
+                native_stream(owner.id()) == Some(stream)
+                    && owner.scope_record_index() == scope.record_index
+                    && owner.record_index() == record_index
+                    && scope
+                        .reference_members()
+                        .values()
+                        .any(|value| value == &owner.record_index())
+            })
+            .flat_map(|owner| {
+                parameters
+                    .iter()
+                    .filter(move |parameter| {
+                        native_stream(&parameter.id) == Some(stream)
+                            && parameter.record_index == owner.parameter_record_index()
+                    })
+                    .map(DesignParameter::source_kind)
+            });
+        matches.next().is_some_and(|kind| kind == expected) && matches.next().is_none()
+    };
     let Some(start) = usize::try_from(scope.byte_offset()).ok() else {
         return;
     };
@@ -919,7 +919,7 @@ pub(super) fn bind_hem_operation_from_parameters(
             start,
             paired_at,
             scope.reference_members().values().copied(),
-            &parameter_source_kinds,
+            has_kind,
         );
         if let crate::records::feature::scope::DesignScopePayloadMut::Hem(slot) =
             scope.payload_mut()

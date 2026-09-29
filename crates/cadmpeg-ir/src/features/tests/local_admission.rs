@@ -9,6 +9,25 @@ use crate::features::{
 };
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 
+#[test]
+fn charged_native_selections_refuse_uniqueness_index_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = crate::features::NativeSelections::try_from_charged(
+        vec!["first".into(), "second".into()],
+        &ctx,
+        "test native selection uniqueness",
+    );
+    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "test native selection uniqueness"));
+}
+
 fn feature_id(suffix: &str) -> FeatureId {
     FeatureId::mint(format!("test:model:feature#{suffix}")).unwrap()
 }
@@ -52,6 +71,25 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
         })
     }
     .unwrap();
+}
+
+#[test]
+fn charged_selection_members_refuse_uniqueness_index_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        SelectionMembers::try_from_charged(
+            vec!["first", "second"], &ctx, "selection uniqueness",
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "selection uniqueness"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
 }
 
 #[test]

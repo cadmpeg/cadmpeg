@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudeOperation;
@@ -157,12 +156,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             byte_offset: 0,
         };
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .unwrap()
     };
 
@@ -782,12 +783,14 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
             byte_offset: 0,
         };
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .unwrap()
     };
 
@@ -863,12 +866,14 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("compact shifted Extrude scope");
     assert_eq!(
         scope.reference_count_offset(),
@@ -947,12 +952,14 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("compact mixed Extrude scope");
     assert_eq!(
         scope.reference_count_offset(),
@@ -1065,12 +1072,14 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
             byte_offset: 0,
         };
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .expect("class-415 scope envelope")
     };
 
@@ -1225,12 +1234,14 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
             byte_offset: 0,
         };
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .expect("class-415 one-sided scope envelope")
     };
 
@@ -1373,12 +1384,14 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
             byte_offset: 0,
         };
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .expect("shifted reference-aware Extrude scope")
     };
 
@@ -1416,12 +1429,14 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     let mut invalid_class_397 = make_bytes(b"397", b"262", 2);
     invalid_class_397[135..139].copy_from_slice(&2u32.to_le_bytes());
     let invalid_scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &invalid_class_397,
-        &IndexedRecordOffsets::build(&invalid_class_397),
+        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_class_397),
         RECORD_INDEX,
         &crate::records::references::DesignClassTag::try_from("397".to_owned()).unwrap(),
         0,
     )
+    .unwrap()
     .expect("class-397 scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
 
@@ -1434,24 +1449,28 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         byte_offset: 0,
     };
     let invalid_scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &invalid_tail,
-        &IndexedRecordOffsets::build(&invalid_tail),
+        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_tail),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_class = make_bytes(b"349", b"266", 2);
     invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
     let invalid_scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &invalid_class,
-        &IndexedRecordOffsets::build(&invalid_class),
+        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_class),
         RECORD_INDEX,
         &crate::records::references::DesignClassTag::try_from("349".to_owned()).unwrap(),
         0,
     )
+    .unwrap()
     .expect("scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
 
@@ -1465,12 +1484,14 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         byte_offset: prefix_length as u64,
     };
     let nonzero_scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &nonzero_start,
-        &IndexedRecordOffsets::build(&nonzero_start),
+        &crate::design::test_support::indexed_record_offsets_for_test(&nonzero_start),
         nonzero_header.record_index,
         &nonzero_header.class_tag,
         nonzero_header.byte_offset,
     )
+    .unwrap()
     .expect("nonzero-start shifted reference-aware Extrude scope");
     assert_eq!(nonzero_scope.byte_offset(), prefix_length as u64);
     assert_eq!(
@@ -1575,12 +1596,14 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("shifted reference-aware class-323 Extrude scope");
     assert_eq!(scope.frame_length(), FRAME_LENGTH as u64);
     assert_eq!(
@@ -1614,24 +1637,28 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         [class_323_tail::TRAILING_REFERENCE + 1..class_323_tail::TRAILING_REFERENCE + 5]
         .copy_from_slice(&REFERENCE_MEMBERS[5].to_le_bytes());
     let invalid_scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &invalid_trailing_reference,
-        &IndexedRecordOffsets::build(&invalid_trailing_reference),
+        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_trailing_reference),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_class = bytes;
     invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
     let invalid_scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &invalid_class,
-        &IndexedRecordOffsets::build(&invalid_class),
+        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_class),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("scope envelope remains parseable");
     assert!(invalid_scope.extrude_prologue().is_none());
 }
@@ -1726,12 +1753,14 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
     };
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .expect("shifted reference-aware symmetric Extrude scope")
     };
     let scope = parse(&bytes);

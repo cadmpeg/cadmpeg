@@ -11,15 +11,16 @@
 )]
 
 use crate::history::{
-    active_brep_face_matches_source, selection::bind_edge_identity_history, bind_historical_entity_versions,
-    selection::bind_hole_selection_history, bind_profile_face_group_cardinality, bind_snapshot_revision_ids,
+    active_brep_face_matches_source, bind_historical_entity_versions,
+    bind_profile_face_group_cardinality, bind_snapshot_revision_ids,
     body_revision_without_topology_change, combine_recipe_family_tool_slots,
-    selection::complete_compact_edge_treatment_deletions, selection::entity_selection_face_candidates,
     grouped_reference_face_candidate, historical_body_slot, historical_record_archive,
     historical_transition, insert_only_active_record_count, materialize_record_table,
     pattern_combine_tool_slots, profile_face_group_cardinality_candidates,
-    singleton_body_revision_across_state_chain, singleton_revised_input_body_across_state_chain,
-    TopologyStableBodyRevision,
+    selection::bind_edge_identity_history, selection::bind_hole_selection_history,
+    selection::complete_compact_edge_treatment_deletions,
+    selection::entity_selection_face_candidates, singleton_body_revision_across_state_chain,
+    singleton_revised_input_body_across_state_chain, TopologyStableBodyRevision,
 };
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
@@ -1813,7 +1814,8 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
                 .expect("identity grammar"),
         ];
 
-    let roots = crate::design::face_resolve::extrude_profile_group_roots(&scope, &groups)
+    let roots = crate::design::face_resolve::extrude_profile_group_roots(None, &scope, &groups)
+        .unwrap()
         .expect("valid profile hierarchy");
     assert_eq!(
         roots
@@ -1824,8 +1826,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     );
     assert_eq!(
         crate::design::face_resolve::extrude_profile_group_operand_indices(
-            roots[0], &groups, &operands,
+            None, roots[0], &groups, &operands,
         )
+        .unwrap()
         .expect("one leaf operand per root member"),
         [0, 1]
     );
@@ -1840,9 +1843,13 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         }])
         .collect();
     repeated_child[0].try_set_members(repeated_members).unwrap();
-    assert!(
-        crate::design::face_resolve::extrude_profile_group_roots(&scope, &repeated_child).is_none()
-    );
+    assert!(crate::design::face_resolve::extrude_profile_group_roots(
+        None,
+        &scope,
+        &repeated_child
+    )
+    .unwrap()
+    .is_none());
 
     let previous_topology = AsmHistoricalTopology {
         faces: vec![10, 11, 20],
@@ -1925,8 +1932,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     assert_eq!(operands[0].resolved_face_slots, [10]);
     assert_eq!(operands[1].resolved_face_slots, [11]);
     let profile = crate::design::face_resolve::resolved_extrude_profile_face_group(
-        &scope, roots[0], &groups, &operands,
+        None, &scope, roots[0], &groups, &operands,
     )
+    .unwrap()
     .expect("resolved root profile");
     let feature = crate::ids::neutral_feature_id(&scope);
     let feature_key = feature.key();
@@ -1937,7 +1945,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             state,
             faces,
             native,
-        }) if state == crate::design::edge_resolve::feature_input_topology_id(&feature, 1)
+        }) if state == crate::ids::feature_input_topology_id(&feature, 1)
             && faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 10),
                 crate::ids::history_input_face_id(&prefix, 11),

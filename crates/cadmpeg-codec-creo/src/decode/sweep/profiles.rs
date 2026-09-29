@@ -722,7 +722,7 @@ pub(in super::super) fn arcs_intersect(
         second.1,
     )
     .is_some_and(|points| {
-        points.into_iter().any(|point| {
+        points.into_iter().flatten().any(|point| {
             point_on_profile_arc([point.u, point.v], first, tolerance)
                 && point_on_profile_arc([point.u, point.v], second, tolerance)
         })
