@@ -31,161 +31,75 @@ const EPS_LOCUS_COORDINATE: f64 = 1.0e-9;
 const EPS_LOCUS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_LOCUS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
+#[derive(Clone, Copy)]
+enum PointLocusKind {
+    Entity,
+    Start,
+    End,
+    Center,
+}
+
 pub(super) fn section_point_locus(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     point_id: u32,
-) -> Option<SketchLocus> {
-    let segments = definition.segments.as_ref()?;
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    let Some(segments) = definition.segments.as_ref() else {
+        return Ok(None);
+    };
     let unique_entities = |external_id| segments.rows.get(external_id).is_some();
-    let candidates = segments
-        .rows
-        .ordinary()
+    let candidates = segments.rows.ordinary()
         .filter(|segment| unique_entities(segment.external_id))
         .filter_map(|segment| {
-            let entity = sketch_entity_id(sketch, segment.external_id)?;
-            let locus = match segment.kind {
-                crate::feature::definitions::FeatureSegmentKind::Point(id) if id == point_id => {
-                    SketchLocus::Entity(entity)
-                }
-                crate::feature::definitions::FeatureSegmentKind::Line([start, _])
-                    if start == point_id =>
-                {
-                    SketchLocus::Start(entity)
-                }
-                crate::feature::definitions::FeatureSegmentKind::Line([_, end])
-                    if end == point_id =>
-                {
-                    SketchLocus::End(entity)
-                }
-                crate::feature::definitions::FeatureSegmentKind::Arc([end, _])
-                    if end == point_id =>
-                {
-                    SketchLocus::End(entity)
-                }
-                crate::feature::definitions::FeatureSegmentKind::Arc([_, start])
-                    if start == point_id =>
-                {
-                    SketchLocus::Start(entity)
-                }
+            let kind = match segment.kind {
+                crate::feature::definitions::FeatureSegmentKind::Point(id) if id == point_id => PointLocusKind::Entity,
+                crate::feature::definitions::FeatureSegmentKind::Line([start, _]) if start == point_id => PointLocusKind::Start,
+                crate::feature::definitions::FeatureSegmentKind::Line([_, end]) if end == point_id => PointLocusKind::End,
+                crate::feature::definitions::FeatureSegmentKind::Arc([end, _]) if end == point_id => PointLocusKind::End,
+                crate::feature::definitions::FeatureSegmentKind::Arc([_, start]) if start == point_id => PointLocusKind::Start,
                 _ => return None,
             };
-            Some((segment.offset, locus))
+            Some((segment.external_id, kind))
         })
-        .chain(
-        segments
-            .rows
-            .ordinary()
-            .filter(|segment| {
-                unique_entities(segment.external_id)
-                    && matches!(
-                        segment.kind,
-                        crate::feature::definitions::FeatureSegmentKind::Arc(_)
-                    )
-                    && segment.center_id == Some(point_id)
-            })
-            .filter_map(|segment| {
-                Some({
-                    (
-                        segment.offset,
-                        SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)?),
-                    )
-                })
-            }),
-        )
-        .chain(
-        segments
-            .rows
-            .circles()
-            .filter(|segment| {
-                unique_entities(segment.external_id) && segment.center_id == point_id
-            })
-            .filter_map(|segment| {
-                Some({
-                    (
-                        segment.offset,
-                        SketchLocus::Center(sketch_entity_id(sketch, segment.external_id)?),
-                    )
-                })
-            }),
-        )
-        .chain(
-        segments
-            .rows
-            .points()
-            .filter(|segment| {
-                segment.point_id == point_id && segments.rows.get(segment.external_id).is_some()
-            })
-            .filter_map(|segment| {
-                Some({
-                    (
-                        segment.offset,
-                        SketchLocus::Entity(sketch_entity_id(sketch, segment.external_id)?),
-                    )
-                })
-            }),
-        )
-        .chain(
-        segments
-            .rows
-            .centered_lines()
-            .filter(|segment| unique_entities(segment.external_id))
-            .filter_map(|segment| {
-                Some({
-                    let entity = sketch_entity_id(sketch, segment.external_id)?;
-                    [
-                        (0, SketchLocus::Start(entity.clone())),
-                        (1, SketchLocus::End(entity)),
-                    ]
-                    .into_iter()
-                    .filter_map(move |(candidate, locus)| {
-                        (candidate == point_id).then_some((segment.offset, locus))
-                    })
-                })
-            })
-            .flatten(),
-        )
-        .chain(
-        segments
-            .rows
-            .reference_lines()
-            .filter(|segment| unique_entities(segment.external_id))
-            .filter_map(|segment| {
-                Some({
-                    let entity = sketch_entity_id(sketch, segment.external_id)?;
-                    [
-                        (segment.point_ids[0], SketchLocus::Start(entity.clone())),
-                        (segment.point_ids[1], SketchLocus::End(entity)),
-                    ]
-                    .into_iter()
-                    .filter_map(move |(candidate, locus)| {
-                        (candidate == Some(point_id)).then_some((segment.offset, locus))
-                    })
-                })
-            })
-            .flatten(),
-        )
-        .chain(
-        segments
-            .rows
-            .bounded_curves()
-            .filter(|segment| unique_entities(segment.external_id))
-            .filter_map(|segment| {
-                Some({
-                    let entity = sketch_entity_id(sketch, segment.external_id)?;
-                    [
-                        (segment.point_ids[0], SketchLocus::Start(entity.clone())),
-                        (segment.point_ids[1], SketchLocus::End(entity)),
-                    ]
-                    .into_iter()
-                    .filter_map(move |(candidate, locus)| {
-                        (candidate == point_id).then_some((segment.offset, locus))
-                    })
-                })
-            })
-            .flatten(),
-        );
-    crate::decode::uniqueness::exactly_one(candidates).map(|(_, locus)| locus)
+        .chain(segments.rows.ordinary().filter(|segment| {
+            unique_entities(segment.external_id)
+                && matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Arc(_))
+                && segment.center_id == Some(point_id)
+        }).map(|segment| (segment.external_id, PointLocusKind::Center)))
+        .chain(segments.rows.circles().filter(|segment| {
+            unique_entities(segment.external_id) && segment.center_id == point_id
+        }).map(|segment| (segment.external_id, PointLocusKind::Center)))
+        .chain(segments.rows.points().filter(|segment| {
+            segment.point_id == point_id && unique_entities(segment.external_id)
+        }).map(|segment| (segment.external_id, PointLocusKind::Entity)))
+        .chain(segments.rows.centered_lines().filter(|segment| unique_entities(segment.external_id))
+            .flat_map(|segment| [
+                (0 == point_id).then_some((segment.external_id, PointLocusKind::Start)),
+                (1 == point_id).then_some((segment.external_id, PointLocusKind::End)),
+            ].into_iter().flatten()))
+        .chain(segments.rows.reference_lines().filter(|segment| unique_entities(segment.external_id))
+            .flat_map(|segment| [
+                (segment.point_ids[0] == Some(point_id)).then_some((segment.external_id, PointLocusKind::Start)),
+                (segment.point_ids[1] == Some(point_id)).then_some((segment.external_id, PointLocusKind::End)),
+            ].into_iter().flatten()))
+        .chain(segments.rows.bounded_curves().filter(|segment| unique_entities(segment.external_id))
+            .flat_map(|segment| [
+                (segment.point_ids[0] == point_id).then_some((segment.external_id, PointLocusKind::Start)),
+                (segment.point_ids[1] == point_id).then_some((segment.external_id, PointLocusKind::End)),
+            ].into_iter().flatten()));
+    let Some((external_id, kind)) = crate::decode::uniqueness::exactly_one(candidates) else {
+        return Ok(None);
+    };
+    let Some(entity) = super::super::sketch_ids::sketch_entity_id_admitted(ctx, sketch, external_id)? else {
+        return Ok(None);
+    };
+    Ok(Some(match kind {
+        PointLocusKind::Entity => SketchLocus::Entity(entity),
+        PointLocusKind::Start => SketchLocus::Start(entity),
+        PointLocusKind::End => SketchLocus::End(entity),
+        PointLocusKind::Center => SketchLocus::Center(entity),
+    }))
 }
 
 pub(in super::super) fn unique_circle_segment(
@@ -1180,7 +1094,7 @@ pub(in super::super) fn active_complete_section_skamps(
 #[cfg(test)]
 mod tests {
     use super::{
-        oriented_arc_midpoint, section_point_locus, section_skamp_arc_midpoint_source,
+        oriented_arc_midpoint, section_point_locus as section_point_locus_admitted, section_skamp_arc_midpoint_source,
         section_skamp_curve_entity, section_skamp_is_arc, section_skamp_is_line,
         section_skamp_is_point, section_skamp_line_midpoint_sources, section_skamp_locus,
         section_skamp_point_locus, section_skamp_same_coordinate_sources,
@@ -1193,6 +1107,17 @@ mod tests {
     use cadmpeg_ir::sketches::SketchEntityId;
     use cadmpeg_ir::sketches::{SketchId, SketchLocus};
     use std::collections::BTreeMap;
+
+    fn section_point_locus(
+        definition: &crate::feature::definitions::FeatureDefinition,
+        sketch: &SketchId,
+        point_id: u32,
+    ) -> Option<SketchLocus> {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            section_point_locus_admitted(ctx, definition, sketch, point_id)
+        })
+        .expect("point locus admission")
+    }
 
     #[test]
     fn arc_midpoint_overflow_is_not_a_coordinate_source() {
@@ -1251,6 +1176,60 @@ mod tests {
                     .expect("valid test fixture")
             ))
         );
+    }
+
+    #[test]
+    fn point_locus_identity_refuses_below_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::definitions::FeatureSegmentTable {
+                declared_count: 1,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: [crate::feature::segment_rows::SegmentRow::Point(
+                    crate::feature::definitions::FeaturePointSegment {
+                        point_id: 7,
+                        external_id: 12,
+                        offset: 20,
+                    },
+                )].into_iter().collect(),
+                offset: 10,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId::mint("creo:model:sketch#917").expect("valid test fixture");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        let need = "creo:featdefs:sketch_entity#917:12".len() as u64;
+        policy.limits.max_retained_bytes = need - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = section_point_locus_admitted(&ctx, &definition, &sketch, 7)
+            .expect_err("entity ID exceeds retained limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo sketch entity identity"));
+        policy.limits.max_retained_bytes = need;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert_eq!(section_point_locus_admitted(&ctx, &definition, &sketch, 7)
+            .expect("exact retained limit admits entity ID"),
+            Some(SketchLocus::Entity(SketchEntityId::mint(
+                "creo:featdefs:sketch_entity#917:12").expect("valid entity ID"))));
     }
 
     #[test]

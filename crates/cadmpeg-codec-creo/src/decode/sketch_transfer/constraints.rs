@@ -54,6 +54,55 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_POLAR_ZERO: f64 = 1.0e-12;
 
+fn collect_constraint_candidates<I, T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    candidates: I,
+    operation: &'static str,
+) -> Result<Vec<T>, cadmpeg_core::CodecError>
+where
+    I: IntoIterator<Item = Result<Option<T>, cadmpeg_core::CodecError>>,
+{
+    let mut collected = Vec::new();
+    for candidate in candidates {
+        if let Some(candidate) = candidate? {
+            ctx.try_reserve_items(&mut collected, 1, operation)?;
+            collected.push(candidate);
+        }
+    }
+    Ok(collected)
+}
+
+fn equation_constraint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    sketch: &SketchId,
+    equation_id: u32,
+    definition: SketchConstraintDefinitionInput,
+    active: bool,
+    offset: usize,
+) -> Result<Option<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let Some(id) = sketch_constraint_id_admitted(ctx, sketch, format_args!("equation:{equation_id}"))? else {
+        return Ok(None);
+    };
+    let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition) else {
+        return Ok(None);
+    };
+    Ok(Some((SketchConstraint {
+        id,
+        sketch: sketch.copy_admitted(ctx, "creo equation sketch identity")?,
+        definition,
+        name: None,
+        driving: None,
+        active: Some(active),
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: Some(sketch_native_ref_admitted(ctx, sketch)?),
+    }, offset)))
+}
+
 pub(in super::super) fn section_segment_verhor_definition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     segment: &crate::feature::definitions::FeatureSegment,
@@ -942,45 +991,28 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
         .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
         .transpose()?
         .unwrap_or_default();
-    crate::decode::collect_items(ctx, super::super::sketch::equations_coordinate::section_equation_equal_length_constraint_rows(
+    collect_constraint_candidates(ctx, super::super::sketch::equations_coordinate::section_equation_equal_length_constraint_rows(
         ctx,
         definition,
         &ambiguous_point_ids,
     )?
     .into_iter()
-    .filter_map(|equation| {
+    .map(|equation| {
+        let Some(first_start) = section_point_locus(ctx, definition, sketch, equation.first[0])? else { return Ok(None) };
+        let Some(first_end) = section_point_locus(ctx, definition, sketch, equation.first[1])? else { return Ok(None) };
+        let Some(second_start) = section_point_locus(ctx, definition, sketch, equation.second[0])? else { return Ok(None) };
+        let Some(second_end) = section_point_locus(ctx, definition, sketch, equation.second[1])? else { return Ok(None) };
         let first = SketchDistancePair {
-            first: section_point_locus(definition, sketch, equation.first[0])?,
-            second: section_point_locus(definition, sketch, equation.first[1])?,
+            first: first_start,
+            second: first_end,
         };
         let second = SketchDistancePair {
-            first: section_point_locus(definition, sketch, equation.second[0])?,
-            second: section_point_locus(definition, sketch, equation.second[1])?,
+            first: second_start,
+            second: second_end,
         };
-        Some((
-            SketchConstraint {
-                id: sketch_constraint_id(
-                    sketch,
-                    format_args!("equation:{}", equation.equation_id),
-                )?,
-                sketch: sketch.clone(),
-                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                    SketchConstraintDefinitionInput::EqualDistance { first, second },
-                )
-                .ok()?,
-                name: None,
-                driving: None,
-                active: Some(equation.active),
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(sketch_native_ref(sketch)),
-            },
-            equation.offset,
-        ))
+        equation_constraint(ctx, sketch, equation.equation_id,
+            SketchConstraintDefinitionInput::EqualDistance { first, second },
+            equation.active, equation.offset)
     })
     , "creo section equation equal distance constraints")
 }
@@ -1060,50 +1092,21 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
         .transpose()?
         .unwrap_or_default();
     let dimension_parameters = section_equation_radius_dimension_parameters(ctx, definition, sketch)?;
-    let constraints =
+    collect_constraint_candidates(ctx,
         section_equation_function_six_distance_rows(ctx, definition, &coordinates, &ambiguous_point_ids)?
             .into_iter()
-            .filter_map(|equation| {
-                let distance = equation.constraint_distance()?;
-                let first = section_point_locus(definition, sketch, equation.first)?;
-                let second = section_point_locus(definition, sketch, equation.second)?;
+            .map(|equation| {
+                let Some(distance) = equation.constraint_distance() else { return Ok(None) };
+                let Some(first) = section_point_locus(ctx, definition, sketch, equation.first)? else { return Ok(None) };
+                let Some(second) = section_point_locus(ctx, definition, sketch, equation.second)? else { return Ok(None) };
                 let parameter = section_equation_dimension_parameter(
-                    &dimension_parameters,
-                    equation.radius,
-                    distance.get(),
+                    &dimension_parameters, equation.radius, distance.get(),
                 );
-                Some((
-                    SketchConstraint {
-                        id: sketch_constraint_id(
-                            sketch,
-                            format_args!("equation:{}", equation.equation_id),
-                        )?,
-                        sketch: sketch.clone(),
-                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                            SketchConstraintDefinitionInput::DistanceLociValue {
-                                first,
-                                second,
-                                distance: Length::from(distance),
-                                parameter,
-                            },
-                        )
-                        .ok()?,
-                        name: None,
-                        driving: None,
-                        active: Some(equation.active()),
-                        virtual_space: None,
-                        visible: None,
-                        orientation: None,
-                        label_distance: None,
-                        label_position: None,
-                        metadata: None,
-                        native_ref: Some(sketch_native_ref(sketch)),
-                    },
-                    equation.offset,
-                ))
-            })
-            .collect();
-    Ok(constraints)
+                equation_constraint(ctx, sketch, equation.equation_id,
+                    SketchConstraintDefinitionInput::DistanceLociValue {
+                        first, second, distance: Length::from(distance), parameter,
+                    }, equation.active(), equation.offset)
+            }), "creo function six distance constraints")
 }
 
 pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_constraints(
@@ -1119,56 +1122,30 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
         .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
         .transpose()?
         .unwrap_or_default();
-    let constraints = section_equation_function_forty_two_midpoint_coordinate_rows(
+    collect_constraint_candidates(ctx, section_equation_function_forty_two_midpoint_coordinate_rows(
         ctx,
         definition,
         &coordinates,
         &ambiguous_point_ids,
     )?
     .into_iter()
-    .filter_map(|equation| {
-        let value = equation.value?;
+    .map(|equation| {
+        let Some(value) = equation.value else { return Ok(None) };
         if !value.is_finite() {
-            return None;
+            return Ok(None);
         }
-        let first = section_point_locus(definition, sketch, equation.first)?;
-        let second = section_point_locus(definition, sketch, equation.second)?;
+        let Some(first) = section_point_locus(ctx, definition, sketch, equation.first)? else { return Ok(None) };
+        let Some(second) = section_point_locus(ctx, definition, sketch, equation.second)? else { return Ok(None) };
         let axis = match equation.coordinate {
             SectionAxis::U => SketchCoordinateAxis::U,
             SectionAxis::V => SketchCoordinateAxis::V,
         };
-        Some((
-            SketchConstraint {
-                id: sketch_constraint_id(
-                    sketch,
-                    format_args!("equation:{}", equation.equation_id),
-                )?,
-                sketch: sketch.clone(),
-                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                    SketchConstraintDefinitionInput::MidpointCoordinate {
-                        first,
-                        second,
-                        axis,
-                        value: Length::new(value)?,
-                    },
-                )
-                .ok()?,
-                name: None,
-                driving: None,
-                active: Some(equation.active),
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(sketch_native_ref(sketch)),
-            },
-            equation.offset,
-        ))
+        let Some(value) = Length::new(value) else { return Ok(None) };
+        equation_constraint(ctx, sketch, equation.equation_id,
+            SketchConstraintDefinitionInput::MidpointCoordinate { first, second, axis, value },
+            equation.active, equation.offset)
     })
-    .collect();
-    Ok(constraints)
+    , "creo midpoint coordinate constraints")
 }
 
 pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_constraints(
@@ -1184,52 +1161,28 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
         .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
         .transpose()?
         .unwrap_or_default();
-    let constraints = section_equation_function_thirty_one_point_coordinate_rows(
+    collect_constraint_candidates(ctx, section_equation_function_thirty_one_point_coordinate_rows(
         ctx,
         definition,
         &coordinates,
         &ambiguous_point_ids,
     )?
     .into_iter()
-    .filter_map(|equation| {
+    .map(|equation| {
         let [u, v] = equation.values;
         let (Some(u), Some(v)) = (u, v) else {
-            return None;
+            return Ok(None);
         };
         if !u.is_finite() || !v.is_finite() {
-            return None;
+            return Ok(None);
         }
-        let point = section_point_locus(definition, sketch, equation.point)?;
-        Some((
-            SketchConstraint {
-                id: sketch_constraint_id(
-                    sketch,
-                    format_args!("equation:{}", equation.equation_id),
-                )?,
-                sketch: sketch.clone(),
-                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                    SketchConstraintDefinitionInput::PointCoordinateValues {
-                        point,
-                        values: [Length::new(u)?, Length::new(v)?],
-                    },
-                )
-                .ok()?,
-                name: None,
-                driving: None,
-                active: Some(equation.active),
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(sketch_native_ref(sketch)),
-            },
-            equation.offset,
-        ))
+        let Some(point) = section_point_locus(ctx, definition, sketch, equation.point)? else { return Ok(None) };
+        let (Some(u), Some(v)) = (Length::new(u), Length::new(v)) else { return Ok(None) };
+        equation_constraint(ctx, sketch, equation.equation_id,
+            SketchConstraintDefinitionInput::PointCoordinateValues { point, values: [u, v] },
+            equation.active, equation.offset)
     })
-    .collect();
-    Ok(constraints)
+    , "creo point coordinate constraints")
 }
 
 pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
@@ -1330,56 +1283,29 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
         .transpose()?
         .unwrap_or_default();
     let dimension_parameters = section_equation_radius_dimension_parameters(ctx, definition, sketch)?;
-    let constraints =
+    collect_constraint_candidates(ctx,
         section_equation_radial_constraint_rows(ctx, definition, &coordinates, &ambiguous_point_ids)?
             .into_iter()
-            .filter_map(|equation| {
-                let distance = equation.radius_value?;
+            .map(|equation| {
+                let Some(distance) = equation.radius_value else { return Ok(None) };
                 let angle = if distance.get() <= EPS_POLAR_ZERO {
                     None
                 } else {
-                    Some(equation.angle_value?)
+                    let Some(angle) = equation.angle_value else { return Ok(None) };
+                    Some(angle)
                 };
-                let first = section_point_locus(definition, sketch, equation.first)?;
-                let second = section_point_locus(definition, sketch, equation.second)?;
+                let Some(first) = section_point_locus(ctx, definition, sketch, equation.first)? else { return Ok(None) };
+                let Some(second) = section_point_locus(ctx, definition, sketch, equation.second)? else { return Ok(None) };
                 let distance_parameter = section_equation_dimension_parameter(
                     &dimension_parameters,
                     equation.radius,
                     distance.get(),
                 );
-                Some((
-                    SketchConstraint {
-                        id: sketch_constraint_id(
-                            sketch,
-                            format_args!("equation:{}", equation.equation_id),
-                        )?,
-                        sketch: sketch.clone(),
-                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                            SketchConstraintDefinitionInput::PolarDistance {
-                                first,
-                                second,
-                                distance: distance.into(),
-                                angle,
-                                distance_parameter,
-                            },
-                        )
-                        .ok()?,
-                        name: None,
-                        driving: None,
-                        active: Some(equation.active),
-                        virtual_space: None,
-                        visible: None,
-                        orientation: None,
-                        label_distance: None,
-                        label_position: None,
-                        metadata: None,
-                        native_ref: Some(sketch_native_ref(sketch)),
-                    },
-                    equation.offset,
-                ))
-            })
-            .collect();
-    Ok(constraints)
+                equation_constraint(ctx, sketch, equation.equation_id,
+                    SketchConstraintDefinitionInput::PolarDistance {
+                        first, second, distance: distance.into(), angle, distance_parameter,
+                    }, equation.active, equation.offset)
+            }), "creo polar distance constraints")
 }
 
 struct EquationArgumentSlots<'a>(&'a [Option<u32>]);
@@ -1582,44 +1508,19 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
         definition,
         &ambiguous_point_ids,
     )?;
-    crate::decode::collect_items(ctx, rows.into_iter()
+    collect_constraint_candidates(ctx, rows.into_iter()
         .filter(|equation| matches!(equation.function_id, 2 | 10 | 13))
-        .filter_map(|equation| {
-            let first = section_point_locus(definition, sketch, equation.first)?;
-            let second = section_point_locus(definition, sketch, equation.second)?;
+        .map(|equation| {
+            let Some(first) = section_point_locus(ctx, definition, sketch, equation.first)? else { return Ok(None) };
+            let Some(second) = section_point_locus(ctx, definition, sketch, equation.second)? else { return Ok(None) };
             let axis = match equation.axis {
                 SectionAxis::U => SketchCoordinateAxis::U,
                 SectionAxis::V => SketchCoordinateAxis::V,
             };
-            Some((
-                SketchConstraint {
-                    id: sketch_constraint_id(
-                        sketch,
-                        format_args!("equation:{}", equation.equation_id),
-                    )?,
-                    sketch: sketch.clone(),
-                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                        SketchConstraintDefinitionInput::SameCoordinate {
-                            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                                first, second, axis,
-                            )
-                            .ok()?,
-                        },
-                    )
-                    .ok()?,
-                    name: None,
-                    driving: None,
-                    active: Some(equation.active),
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                equation.offset,
-            ))
+            let Ok(relation) = cadmpeg_ir::sketches::SketchSameCoordinate::try_new(first, second, axis) else { return Ok(None) };
+            equation_constraint(ctx, sketch, equation.equation_id,
+                SketchConstraintDefinitionInput::SameCoordinate { relation },
+                equation.active, equation.offset)
         })
         , "creo section equation same coordinate constraints")
 }
@@ -1638,11 +1539,11 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
         .unwrap_or_default();
     let unique_segment_ids = unique_section_segment_external_ids(ctx, definition)?;
     let segments = section_segment_rows(ctx, definition)?;
-    crate::decode::collect_items(ctx, section_equation_point_on_line_constraint_rows(ctx, definition, &ambiguous_point_ids)?
+    collect_constraint_candidates(ctx, section_equation_point_on_line_constraint_rows(ctx, definition, &ambiguous_point_ids)?
         .into_iter()
-        .filter_map(|equation| {
-            let point = section_point_locus(definition, sketch, equation.target)?;
-            let line_external_id = crate::decode::uniqueness::exactly_one(segments
+        .map(|equation| {
+            let Some(point) = section_point_locus(ctx, definition, sketch, equation.target)? else { return Ok(None) };
+            let Some(line_external_id) = crate::decode::uniqueness::exactly_one(segments
                 .iter()
                 .filter(|segment| {
                     matches!(
@@ -1678,32 +1579,11 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                         })
                         .map(|segment| segment.external_id),
                 )
-            )?;
-            let entity = sketch_entity_id(sketch, line_external_id)?;
-            Some((
-                SketchConstraint {
-                    id: sketch_constraint_id(
-                        sketch,
-                        format_args!("equation:{}", equation.equation_id),
-                    )?,
-                    sketch: sketch.clone(),
-                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                        SketchConstraintDefinitionInput::PointOnObject { point, entity },
-                    )
-                    .ok()?,
-                    name: None,
-                    driving: None,
-                    active: Some(equation.active),
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                equation.offset,
-            ))
+            ) else { return Ok(None) };
+            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, line_external_id)? else { return Ok(None) };
+            equation_constraint(ctx, sketch, equation.equation_id,
+                SketchConstraintDefinitionInput::PointOnObject { point, entity },
+                equation.active, equation.offset)
         })
         , "creo section equation point on line constraints")
 }
@@ -1723,22 +1603,19 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
         .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
         .transpose()?
         .unwrap_or_default();
-    let constraints = section_equation_function_forty_three_axis_distance_rows(
+    collect_constraint_candidates(ctx, section_equation_function_forty_three_axis_distance_rows(
         ctx,
         definition,
         &resolved_section_coordinates(ctx, definition)?,
         &ambiguous_point_ids,
     )?
     .into_iter()
-    .filter_map(|equation| {
-        let first = section_point_locus(definition, sketch, equation.first)?;
-        let second = section_point_locus(definition, sketch, equation.second)?;
-        let (dimension, parameter) = resolved_feature_dimension_parameter(
-            sketch,
-            dimensions,
-            usize::try_from(equation.scalar.1).ok()?,
-        )?;
-        let dimension_value = dimension.value.resolved()?;
+    .map(|equation| {
+        let Some(first) = section_point_locus(ctx, definition, sketch, equation.first)? else { return Ok(None) };
+        let Some(second) = section_point_locus(ctx, definition, sketch, equation.second)? else { return Ok(None) };
+        let Ok(ordinal) = usize::try_from(equation.scalar.1) else { return Ok(None) };
+        let Some((dimension, parameter)) = resolved_feature_dimension_parameter_admitted(ctx, sketch, dimensions, ordinal)? else { return Ok(None) };
+        let Some(dimension_value) = dimension.value.resolved() else { return Ok(None) };
         if !matches!(dimension.dimension_type, 1..=5)
             || !dimension_value.is_finite()
             || dimension_value < 0.0
@@ -1746,7 +1623,7 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
                 .zip(FiniteReal::new(equation.value))
                 .is_some_and(|(first, second)| approximately_equal(first, second))
         {
-            return None;
+            return Ok(None);
         }
         let definition = match equation.coordinate {
             SectionAxis::U => SketchConstraintDefinitionInput::HorizontalDistance {
@@ -1760,31 +1637,10 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
                 parameter,
             },
         };
-        Some((
-            SketchConstraint {
-                id: sketch_constraint_id(
-                    sketch,
-                    format_args!("equation:{}", equation.equation_id),
-                )?,
-                sketch: sketch.clone(),
-                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
-                    .ok()?,
-                name: None,
-                driving: None,
-                active: Some(equation.active),
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(sketch_native_ref(sketch)),
-            },
-            equation.offset,
-        ))
+        equation_constraint(ctx, sketch, equation.equation_id,
+            definition, equation.active, equation.offset)
     })
-    .collect();
-    Ok(constraints)
+    , "creo axis distance constraints")
 }
 
 pub(in super::super) fn section_equation_unsigned_distance_constraints(
@@ -1802,17 +1658,13 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
         .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
         .transpose()?
         .unwrap_or_default();
-    crate::decode::collect_items(ctx, section_equation_unsigned_coordinate_distance_rows(ctx, definition, &ambiguous_point_ids)?
+    collect_constraint_candidates(ctx, section_equation_unsigned_coordinate_distance_rows(ctx, definition, &ambiguous_point_ids)?
         .into_iter()
-        .filter_map(|equation| {
-            let first = section_point_locus(definition, sketch, equation.first)?;
-            let second = section_point_locus(definition, sketch, equation.second)?;
-            let parameter = resolved_feature_dimension_parameter(
-                sketch,
-                dimensions,
-                usize::try_from(equation.scalar.1).ok()?,
-            )?
-            .1;
+        .map(|equation| {
+            let Some(first) = section_point_locus(ctx, definition, sketch, equation.first)? else { return Ok(None) };
+            let Some(second) = section_point_locus(ctx, definition, sketch, equation.second)? else { return Ok(None) };
+            let Ok(ordinal) = usize::try_from(equation.scalar.1) else { return Ok(None) };
+            let Some((_, parameter)) = resolved_feature_dimension_parameter_admitted(ctx, sketch, dimensions, ordinal)? else { return Ok(None) };
             let definition = match equation.coordinate {
                 SectionAxis::U => SketchConstraintDefinitionInput::HorizontalDistance {
                     first,
@@ -1825,30 +1677,8 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
                     parameter,
                 },
             };
-            Some((
-                SketchConstraint {
-                    id: sketch_constraint_id(
-                        sketch,
-                        format_args!("equation:{}", equation.equation_id),
-                    )?,
-                    sketch: sketch.clone(),
-                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                        definition,
-                    )
-                    .ok()?,
-                    name: None,
-                    driving: None,
-                    active: Some(equation.active),
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                equation.offset,
-            ))
+            equation_constraint(ctx, sketch, equation.equation_id,
+                definition, equation.active, equation.offset)
         })
         , "creo section equation unsigned distance constraints")
 }
@@ -2253,8 +2083,8 @@ pub(in super::super) fn section_dimension_constraints(
                                 }
                                 if let (Some(coordinate), Some(first), Some(second)) = (
                                     coordinate,
-                                    section_point_locus(definition, sketch, first_id),
-                                    section_point_locus(definition, sketch, second_id),
+                                    capture_constraint_refusal(&mut coordinate_refusal, section_point_locus(ctx, definition, sketch, first_id))?,
+                                    capture_constraint_refusal(&mut coordinate_refusal, section_point_locus(ctx, definition, sketch, second_id))?,
                                 ) {
                                     return Some(match coordinate {
                                         SectionAxis::U => {
