@@ -214,9 +214,13 @@ pub(super) fn feature_definition_record_id(
 }
 
 pub(super) fn feature_sketch_record_id_in_scan(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> String {
+) -> Result<String, CodecError> {
+    let count = u64::try_from(scan.features.definitions.len())
+        .map_err(|_| CodecError::malformed("Creo feature definition count exceeds u64"))?;
+    ctx.charge_work(count, "creo native sketch identity uniqueness")?;
     if scan
         .features
         .definitions
@@ -227,9 +231,15 @@ pub(super) fn feature_sketch_record_id_in_scan(
         || (definition.identity.schema_id().is_none()
             && definition.identity.owner_feature_id().is_none())
     {
-        format!("creo:featdefs:sketch#offset:{}", definition.offset)
+        ctx.format_retained(
+            format_args!("creo:featdefs:sketch#offset:{}", definition.offset),
+            "creo native sketch identity",
+        )
     } else {
-        format!("creo:featdefs:sketch#{}", definition.identity.id())
+        ctx.format_retained(
+            format_args!("creo:featdefs:sketch#{}", definition.identity.id()),
+            "creo native sketch identity",
+        )
     }
 }
 

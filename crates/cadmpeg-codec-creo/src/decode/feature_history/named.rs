@@ -2,7 +2,7 @@
 //! Named and referenced feature definitions.
 
 use super::super::uniqueness::unique_feature_profile_ref;
-use super::axes::feature_revolution_axis_for_transfer;
+use super::axes::{feature_revolution_axis_for_transfer, unresolved_feature_profile_ref};
 use super::draft::{
     linear_extrusion_extent_and_direction, numbered_feature_name_has_family,
     preceding_features_establish_body, schema_feature_definition, section_sweep_boolean_operation,
@@ -23,7 +23,7 @@ use cadmpeg_ir::features::{
     patterns::PatternKind, BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
     FaceSelection, FeatureDefinition as IrFeatureDefinition,
     FeatureOperation as IrFeatureOperation, FeatureTreeNodeRole, LinearTermination,
-    PartialRevolveConstruction, PlanarProfileRef, ProfileRef, RevolveConstruction,
+    PartialRevolveConstruction, ProfileRef, RevolveConstruction,
     UnresolvedFamily,
 };
 use cadmpeg_ir::math::Vector3;
@@ -223,11 +223,10 @@ pub(super) fn extrude_feature_definition_with_profile(
     feature_id: u32,
     op: BooleanOp,
 ) -> Result<IrFeatureDefinition, CodecError> {
-    let profile = unique_feature_profile_ref(scan, ir, feature_id).unwrap_or_else(|| {
-        ProfileRef::Planar(PlanarProfileRef::Unresolved(format!(
-            "creo:model:feature#{feature_id}"
-        )))
-    });
+    let profile = match unique_feature_profile_ref(ctx, scan, ir, feature_id)? {
+        Some(profile) => profile,
+        None => unresolved_feature_profile_ref(ctx, feature_id, "creo unresolved named profile identity")?,
+    };
     let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
     let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
         BooleanOp::NewBody
@@ -277,8 +276,12 @@ fn revolve_feature_definition_with_profile(
 ) -> Result<IrFeatureDefinition, CodecError> {
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
-    let profile = unique_feature_profile_ref(scan, ir, feature_id)
-        .and_then(|profile| profile.planar().cloned());
+    let profile = unique_feature_profile_ref(ctx, scan, ir, feature_id)?.and_then(|profile| {
+        match profile {
+            ProfileRef::Planar(planar) => Some(planar),
+            _ => None,
+        }
+    });
     let axis = feature_revolution_axis_for_transfer(
         ctx,
         scan,

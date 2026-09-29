@@ -72,16 +72,23 @@ pub(super) fn unique_feature_profile_definition<'a>(
 }
 
 pub(super) fn unique_feature_profile_ref(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> Option<ProfileRef> {
-    unique_feature_profile_definition(
+) -> Result<Option<ProfileRef>, cadmpeg_core::CodecError> {
+    let Some(definition) = unique_feature_profile_definition(
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,
-    )
-    .map(|definition| section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition)))
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(section_profile_ref(
+        ctx,
+        ir,
+        feature_sketch_record_id_in_scan(ctx, scan, definition)?,
+    )?))
 }
 
 pub(super) fn unique_feature_datum_plane(
