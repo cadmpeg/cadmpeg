@@ -2480,43 +2480,75 @@ pub(crate) fn project_relation_bindings(
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let sketches_by_feature = features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some((feature.native_ref.as_deref()?, sketch))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut sketches_by_feature = HashMap::new();
+    for feature in features {
+        let operation = "index SLDPRT planar relation sketches";
+        ctx.charge_work(1, operation)?;
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !sketches_by_feature.contains_key(native_ref) {
+            ctx.charge_collection_items(1, operation)?;
+            sketches_by_feature.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        sketches_by_feature.insert(native_ref, sketch);
+    }
     let transforms =
         marker_transform_candidates_by_feature(features, sketches, sketch_entities, lanes);
     let loci_by_marker = profile_loci_by_marker(features, sketches, sketch_entities, lanes);
-    let markers_by_id = lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
+    let mut markers_by_id = HashMap::new();
+    for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
+        let operation = "index SLDPRT planar relation markers";
+        ctx.charge_work(1, operation)?;
+        if !markers_by_id.contains_key(marker.id()) {
+            ctx.charge_collection_items(1, operation)?;
+            markers_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        markers_by_id.insert(marker.id(), marker);
+    }
     let relation_parameters = owned_relation_parameters(ctx, features, parameters, lanes)?;
-    let parameters_by_id = parameters
-        .iter()
-        .map(|parameter| (&parameter.id, parameter))
-        .collect::<HashMap<_, _>>();
-    // First-match index over `constraints` by `native_ref`, maintained on every
-    // push below so a lookup is O(1) instead of a scan of a growing arena.
-    // `or_insert` keeps the earliest index for a duplicated ref, matching the
-    // first-match semantics of the `position` scans this replaces.
+    let mut parameters_by_id = HashMap::new();
+    for parameter in parameters {
+        let operation = "index SLDPRT planar relation parameters";
+        ctx.charge_work(1, operation)?;
+        if !parameters_by_id.contains_key(&parameter.id) {
+            ctx.charge_collection_items(1, operation)?;
+            parameters_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        parameters_by_id.insert(&parameter.id, parameter);
+    }
+    // The native-reference index keeps the earliest constraint for duplicate
+    // references and is updated when this projection appends a constraint.
     let mut constraints_by_native_ref = HashMap::<String, usize>::new();
     for (index, constraint) in constraints.iter().enumerate() {
         if let Some(native_ref) = constraint.native_ref.as_deref() {
-            constraints_by_native_ref
-                .entry(native_ref.to_owned())
-                .or_insert(index);
+            let operation = "index SLDPRT planar relation constraints";
+            ctx.charge_work(1, operation)?;
+            if !constraints_by_native_ref.contains_key(native_ref) {
+                ctx.charge_collection_items(1, operation)?;
+                constraints_by_native_ref.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+                let key = ctx.format_retained(
+                    format_args!("{native_ref}"),
+                    "copy SLDPRT planar constraint reference",
+                )?;
+                constraints_by_native_ref.insert(key, index);
+            }
         }
     }
     for lane in lanes {
@@ -2544,17 +2576,17 @@ pub(crate) fn project_relation_bindings(
                 .as_ref()
                 .and_then(|parameter| parameters_by_id.get(parameter))
                 .copied();
-            let parameter_id = parameter.map(|parameter| parameter.id.clone());
             let reference_parameter = parameter.is_some_and(is_reference_relation_parameter);
             let native_kind = relation_native_kind(relation.family);
-            let mut entities = relation
-                .operands
-                .iter()
-                .filter_map(|operand| operand.entity_ref.as_deref())
-                .flat_map(|marker| {
-                    marker_entities(marker, &markers_by_id, &loci_by_marker).into_iter()
-                })
-                .collect::<Vec<_>>();
+            let mut entities = Vec::new();
+            for marker in relation.operands.iter().filter_map(|operand| operand.entity_ref.as_deref()) {
+                for entity in marker_entities(marker, &markers_by_id, &loci_by_marker) {
+                    ctx.reserve_collection_vec(
+                        &mut entities, 1, "collect SLDPRT planar relation entities",
+                    )?;
+                    entities.push(entity);
+                }
+            }
             entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             entities.dedup();
             let typed_definition = match relation.family {
@@ -2587,29 +2619,41 @@ pub(crate) fn project_relation_bindings(
                     &loci_by_marker,
                 ),
             };
-            let definition = typed_definition
-                .filter(|definition| {
-                    !(reference_parameter
-                        && relation_constraint_is_inactive(parameter, definition, sketch_entities))
-                })
-                .unwrap_or_else(|| SketchConstraintDefinitionInput::Native {
+            let typed_definition = typed_definition.filter(|definition| {
+                !(reference_parameter
+                    && relation_constraint_is_inactive(parameter, definition, sketch_entities))
+            });
+            let definition = if let Some(definition) = typed_definition {
+                definition
+            } else {
+                let mut operands = Vec::new();
+                for operand in &relation.operands {
+                    let native_ref = operand.entity_ref.as_deref().map(|reference| {
+                        ctx.format_retained(
+                            format_args!("{reference}"),
+                            "copy SLDPRT planar relation operand reference",
+                        )
+                    }).transpose()?;
+                    ctx.reserve_collection_vec(
+                        &mut operands, 1, "collect SLDPRT planar relation operands",
+                    )?;
+                    operands.push(SketchNativeOperand {
+                        native_kind: operand_kind_name(operand.kind),
+                        field: None,
+                        object_index: Some(u32::from(operand.entity_index)),
+                        native_ref,
+                    });
+                }
+                SketchConstraintDefinitionInput::Native {
                     native_kind,
                     native_state: None,
                     native_flags: None,
                     native_properties: std::collections::BTreeMap::new(),
                     entities,
-                    parameter: parameter_id,
-                    operands: relation
-                        .operands
-                        .iter()
-                        .map(|operand| SketchNativeOperand {
-                            native_kind: operand_kind_name(operand.kind),
-                            field: None,
-                            object_index: Some(u32::from(operand.entity_index)),
-                            native_ref: operand.entity_ref.clone(),
-                        })
-                        .collect(),
-                });
+                    parameter: parameter.map(|parameter| copy_relation_parameter_id(ctx, &parameter.id)).transpose()?,
+                    operands,
+                }
+            };
             let active = relation_constraint_is_inactive(parameter, &definition, sketch_entities)
                 .then_some(false);
             let has_display_scalar =
@@ -2619,15 +2663,16 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let projected = SketchConstraint {
-                id: match SketchConstraintId::mint(format!(
+            let id_text = ctx.format_retained(format_args!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
                     relation.offset
-                )) {
+                ), "format SLDPRT planar relation constraint identity")?;
+            let projected = SketchConstraint {
+                id: match SketchConstraintId::mint(id_text) {
                     Ok(id) => id,
                     Err(_) => continue,
                 },
-                sketch: (*sketch).clone(),
+                sketch: copy_planar_sketch_id(ctx, sketch)?,
                 definition,
                 name: None,
                 driving: relation
@@ -2641,7 +2686,10 @@ pub(crate) fn project_relation_bindings(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(relation.id.clone()),
+                native_ref: Some(ctx.format_retained(
+                    format_args!("{}", relation.id),
+                    "copy SLDPRT planar relation reference",
+                )?),
             };
             if let Some(index) = existing {
                 if !matches!(
@@ -2651,9 +2699,17 @@ pub(crate) fn project_relation_bindings(
                     constraints[index] = projected;
                 }
             } else {
-                constraints_by_native_ref
-                    .entry(relation.id.clone())
-                    .or_insert(constraints.len());
+                let operation = "index SLDPRT planar relation constraints";
+                ctx.charge_collection_items(1, operation)?;
+                constraints_by_native_ref.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+                let key = ctx.format_retained(
+                    format_args!("{}", relation.id),
+                    "copy SLDPRT planar constraint reference",
+                )?;
+                constraints_by_native_ref.insert(key, constraints.len());
+                ctx.reserve_collection_vec(constraints, 1, "append SLDPRT planar relation constraint")?;
                 constraints.push(projected);
             }
         }
@@ -2690,15 +2746,16 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let projected = SketchConstraint {
-                id: match SketchConstraintId::mint(format!(
+            let id_text = ctx.format_retained(format_args!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
                     marker.offset()
-                )) {
+                ), "format SLDPRT planar marker constraint identity")?;
+            let projected = SketchConstraint {
+                id: match SketchConstraintId::mint(id_text) {
                     Ok(id) => id,
                     Err(_) => continue,
                 },
-                sketch: (*sketch).clone(),
+                sketch: copy_planar_sketch_id(ctx, sketch)?,
                 definition,
                 name: None,
                 driving: None,
@@ -2709,7 +2766,10 @@ pub(crate) fn project_relation_bindings(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(marker.id().to_string()),
+                native_ref: Some(ctx.format_retained(
+                    format_args!("{}", marker.id()),
+                    "copy SLDPRT planar marker relation reference",
+                )?),
             };
             if let Some(index) = existing {
                 if !matches!(
@@ -2719,14 +2779,35 @@ pub(crate) fn project_relation_bindings(
                     constraints[index] = projected;
                 }
             } else {
-                constraints_by_native_ref
-                    .entry(marker.id().to_string())
-                    .or_insert(constraints.len());
+                let operation = "index SLDPRT planar relation constraints";
+                ctx.charge_collection_items(1, operation)?;
+                constraints_by_native_ref.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+                let key = ctx.format_retained(
+                    format_args!("{}", marker.id()),
+                    "copy SLDPRT planar constraint reference",
+                )?;
+                constraints_by_native_ref.insert(key, constraints.len());
+                ctx.reserve_collection_vec(constraints, 1, "append SLDPRT planar marker constraint")?;
                 constraints.push(projected);
             }
         }
     }
     Ok(())
+}
+
+fn copy_planar_sketch_id(
+    ctx: &DecodeContext<'_>,
+    id: &cadmpeg_ir::sketches::SketchId,
+) -> Result<cadmpeg_ir::sketches::SketchId, cadmpeg_core::CodecError> {
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "copy SLDPRT planar sketch identity",
+    )?;
+    cadmpeg_ir::sketches::SketchId::mint(text).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed("SolidWorks planar sketch identity is invalid".into())
+    })
 }
 
 fn copy_relation_parameter_id(
@@ -3939,6 +4020,9 @@ mod point_point_distance_family_tests {
 
 #[cfg(test)]
 mod ownership_tests;
+
+#[cfg(test)]
+mod planar_budget_tests;
 
 #[cfg(test)]
 mod spatial_budget_tests;
