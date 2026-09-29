@@ -470,6 +470,7 @@ pub(crate) struct CurveParameterRecord {
     pub(crate) suffix_offset: usize,
 }
 
+#[cfg(test)]
 impl CurveParameterRecord {
     /// Decoded scalar values in byte order.
     pub(crate) fn scalar_values(&self) -> Vec<f64> {

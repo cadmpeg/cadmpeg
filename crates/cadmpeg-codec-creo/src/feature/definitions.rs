@@ -6931,7 +6931,7 @@ fn definitions_in_ranges(
     payload: &[u8],
     starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut replay_dimension_class = None;
     let mut replay_variable_class = None;
@@ -7976,6 +7976,14 @@ mod tests {
     fn parsed_definition_vec_refuses_before_growth() {
         let payload = b"plain body";
         assert_definition_limit(payload, "creo parsed feature definitions", false, |ctx| {
+            super::definitions_in_ranges(ctx, payload, &[(0, None, None, false)]).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn definition_scalar_cache_refuses_before_unique_image_insertion() {
+        let payload = b"\x46\x08\0\0\0\0\0\0";
+        assert_definition_limit(payload, "creo scalar cache unique images", false, |ctx| {
             super::definitions_in_ranges(ctx, payload, &[(0, None, None, false)]).map(|_| ())
         });
     }

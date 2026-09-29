@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-state recipes, operation names, and model reference names.
 
+#[cfg(test)]
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -123,6 +124,7 @@ impl OperationName {
         matches!(self, Self::Stored { .. })
     }
 
+    #[cfg(test)]
     pub(crate) fn stored_name(&self) -> Option<String> {
         self.stored_name_bytes()
             .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
@@ -341,6 +343,7 @@ impl<R: RecipeForm> FeatureOperation<R> {
         self.name.display_name_stored()
     }
 
+    #[cfg(test)]
     pub(crate) fn stored_name(&self) -> Option<String> {
         self.name.stored_name()
     }
@@ -373,6 +376,7 @@ pub(crate) struct FeatureReferenceName {
     pub(crate) offset: usize,
 }
 
+#[cfg(test)]
 impl FeatureReferenceName {
     /// Stored name decoded with replacement for invalid UTF-8 sequences.
     pub(crate) fn name(&self) -> Cow<'_, str> {

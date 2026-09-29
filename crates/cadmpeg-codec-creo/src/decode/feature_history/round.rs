@@ -30,6 +30,7 @@ const EPS_ROUND_CAP_PARALLEL: f64 = 1.0e-10;
 const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1.0e-9;
 const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1.0e-9;
 
+#[cfg(test)]
 pub(in super::super) fn parallel_support_radius(planes: &[PlaneEquation]) -> Option<f64> {
     parallel_support_radius_from_iter(planes.iter().copied().map(Some))
 }
