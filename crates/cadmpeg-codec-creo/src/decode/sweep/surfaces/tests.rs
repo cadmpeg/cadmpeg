@@ -68,6 +68,10 @@ fn revolved_nurbs_surface_refuses_each_collection_boundary() {
         (11, "creo revolved NURBS weights"),
         (40, "creo revolved NURBS u knots"),
         (44, "creo revolved NURBS v knots"),
+        (56, "IR NURBS paired grid rows"),
+        (65, "IR NURBS paired poles"),
+        (76, "IR NURBS admitted grid rows"),
+        (85, "IR NURBS admitted poles"),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;

@@ -6,6 +6,8 @@ pub mod bezier;
 /// Rational control-polygon speed bounds.
 pub mod bounds;
 
+mod admitted;
+
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};

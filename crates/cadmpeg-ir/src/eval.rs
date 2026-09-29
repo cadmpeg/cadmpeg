@@ -1326,7 +1326,6 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
 /// Scratch contains `degree + 1` values, at most the admitted control count.
 fn bspline_basis(scratch: &admitted::Scratch<'_, '_>, knots: &[f64], degree: usize, span: usize, t: f64) -> Option<admitted::SupportValues<f64>> {
-    let finite_t = FiniteReal::new(t);
     let support = degree.checked_add(1)?;
     let mut values = if support <= 2 {
         admitted::SupportValues::Inline { values: [0.0; 2], len: support }
@@ -1334,6 +1333,13 @@ fn bspline_basis(scratch: &admitted::Scratch<'_, '_>, knots: &[f64], degree: usi
         scratch.work(support.checked_mul(support)?, "IR B-spline basis work")?;
         admitted::SupportValues::Heap(scratch.filled(support, 0.0, "IR B-spline basis")?)
     };
+    bspline_basis_into(knots, degree, span, t, &mut values)?;
+    Some(values)
+}
+
+fn bspline_basis_into(knots: &[f64], degree: usize, span: usize, t: f64, values: &mut [f64]) -> Option<()> {
+    let finite_t = FiniteReal::new(t);
+    values.fill(0.0);
     values[0] = 1.0;
     for j in 1..=degree {
         let mut saved = 0.0;
@@ -1371,7 +1377,7 @@ fn bspline_basis(scratch: &admitted::Scratch<'_, '_>, knots: &[f64], degree: usi
         }
         values[j] = saved;
     }
-    Some(values)
+    Some(())
 }
 
 fn bspline_basis_derivative(scratch: &admitted::Scratch<'_, '_>, knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {

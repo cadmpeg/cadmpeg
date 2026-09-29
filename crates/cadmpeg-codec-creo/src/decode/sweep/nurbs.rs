@@ -81,120 +81,93 @@ pub(in super::super) fn extruded_geometry_surface(
 }
 
 pub(in super::super) fn bspline_basis(
-    index: usize,
-    degree: usize,
-    parameter: f64,
-    knots: &[f64],
-    count: usize,
-) -> Option<f64> {
-    let end = index.checked_add(degree)?.checked_add(1)?;
-    let window = knots.get(index..=end)?;
-    let first = *window.first()?;
-    let second = *window.get(1)?;
-    let last = *window.last()?;
-    if parameter == *knots.last()? {
-        return Some(if index.checked_add(1)? == count {
-            1.0
-        } else {
-            0.0
-        });
+    ctx: &DecodeContext<'_>, index: usize, degree: usize, parameter: f64, knots: &[f64], count: usize,
+) -> Result<Option<f64>, CodecError> {
+    let _depth = ctx.enter_nested("creo interpolation basis depth")?;
+    ctx.charge_work(1, "creo interpolation basis work")?;
+    let Some(end) = index.checked_add(degree).and_then(|end| end.checked_add(1)) else { return Ok(None); };
+    let Some(window) = knots.get(index..=end) else { return Ok(None); };
+    let (Some(&first), Some(&second), Some(&last), Some(&last_knot)) = (window.first(), window.get(1), window.last(), knots.last()) else { return Ok(None); };
+    if parameter == last_knot {
+        return Ok(Some(f64::from(index.checked_add(1) == Some(count))));
     }
-    if degree == 0 {
-        return Some(if first <= parameter && parameter < second {
-            1.0
-        } else {
-            0.0
-        });
-    }
+    if degree == 0 { return Ok(Some(f64::from(first <= parameter && parameter < second))); }
     let left_denominator = window[degree] - first;
     let right_denominator = last - second;
     let left = if left_denominator > 0.0 {
-        (parameter - first) / left_denominator
-            * bspline_basis(index, degree - 1, parameter, knots, count)?
-    } else {
-        0.0
-    };
+        let Some(basis) = bspline_basis(ctx, index, degree - 1, parameter, knots, count)? else { return Ok(None); };
+        (parameter - first) / left_denominator * basis
+    } else { 0.0 };
     let right = if right_denominator > 0.0 {
-        (last - parameter) / right_denominator
-            * bspline_basis(index + 1, degree - 1, parameter, knots, count)?
-    } else {
-        0.0
-    };
-    Some(left + right)
+        let Some(basis) = bspline_basis(ctx, index + 1, degree - 1, parameter, knots, count)? else { return Ok(None); };
+        (last - parameter) / right_denominator * basis
+    } else { 0.0 };
+    Ok(Some(left + right))
 }
 
 pub(in super::super) fn bspline_basis_derivative(
-    index: usize,
-    degree: usize,
-    parameter: f64,
-    knots: &[f64],
-    count: usize,
-) -> Option<f64> {
-    let end = index.checked_add(degree)?.checked_add(1)?;
-    let window = knots.get(index..=end)?;
-    if degree == 0 {
-        return Some(0.0);
-    }
+    ctx: &DecodeContext<'_>, index: usize, degree: usize, parameter: f64, knots: &[f64], count: usize,
+) -> Result<Option<f64>, CodecError> {
+    let _depth = ctx.enter_nested("creo interpolation basis depth")?;
+    ctx.charge_work(1, "creo interpolation basis work")?;
+    let Some(end) = index.checked_add(degree).and_then(|end| end.checked_add(1)) else { return Ok(None); };
+    let Some(window) = knots.get(index..=end) else { return Ok(None); };
+    if degree == 0 { return Ok(Some(0.0)); }
+    let Ok(degree_value) = u32::try_from(degree).map(f64::from) else { return Ok(None); };
     let left_denominator = window[degree] - window[0];
     let right_denominator = window[degree + 1] - window[1];
     let left = if left_denominator > 0.0 {
-        degree as f64 / left_denominator
-            * bspline_basis(index, degree - 1, parameter, knots, count)?
-    } else {
-        0.0
-    };
+        let Some(basis) = bspline_basis(ctx, index, degree - 1, parameter, knots, count)? else { return Ok(None); };
+        degree_value / left_denominator * basis
+    } else { 0.0 };
     let right = if right_denominator > 0.0 {
-        degree as f64 / right_denominator
-            * bspline_basis(index + 1, degree - 1, parameter, knots, count)?
-    } else {
-        0.0
-    };
-    Some(left - right)
+        let Some(basis) = bspline_basis(ctx, index + 1, degree - 1, parameter, knots, count)? else { return Ok(None); };
+        degree_value / right_denominator * basis
+    } else { 0.0 };
+    Ok(Some(left - right))
 }
 
 fn solve_vector_system(
-    mut matrix: Vec<Vec<f64>>,
-    mut values: Vec<[f64; 3]>,
-) -> Option<Vec<[f64; 3]>> {
+    ctx: &DecodeContext<'_>, mut matrix: Vec<Vec<f64>>, mut values: Vec<[f64; 3]>,
+) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
+    const EPS_INTERPOLATION_PIVOT: f64 = 1e-14;
     let count = matrix.len();
-    (values.len() == count && matrix.iter().all(|row| row.len() == count)).then_some(())?;
+    if values.len() != count || matrix.iter().any(|row| row.len() != count) { return Ok(None); }
     for column in 0..count {
-        let pivot = (column..count).max_by(|left, right| {
-            matrix[*left][column]
-                .abs()
-                .total_cmp(&matrix[*right][column].abs())
-        })?;
-        (matrix[pivot][column].abs() > 1e-14).then_some(())?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count - column), "creo interpolation pivot work")?;
+        let Some(pivot) = (column..count).max_by(|left, right| {
+            matrix[*left][column].abs().total_cmp(&matrix[*right][column].abs())
+        }) else { return Ok(None); };
+        if matrix[pivot][column].abs() <= EPS_INTERPOLATION_PIVOT || matrix[pivot][column].is_nan() { return Ok(None); }
         matrix.swap(column, pivot);
         values.swap(column, pivot);
         let scale = matrix[column][column];
         for value in &mut matrix[column][column..] {
+            ctx.charge_work(1, "creo interpolation normalization work")?;
             *value /= scale;
         }
+        ctx.charge_work(3, "creo interpolation normalization work")?;
         values[column] = values[column].map(|value| value / scale);
         let pivot_value = values[column];
         let (before, pivot_and_after) = matrix.split_at_mut(column);
-        let (pivot_row, after) = pivot_and_after.split_first_mut()?;
+        let Some((pivot_row, after)) = pivot_and_after.split_first_mut() else { return Ok(None); };
         let (before_values, pivot_and_after_values) = values.split_at_mut(column);
-        let (_, after_values) = pivot_and_after_values.split_first_mut()?;
-        for (row, values) in before
-            .iter_mut()
-            .chain(after.iter_mut())
-            .zip(before_values.iter_mut().chain(after_values.iter_mut()))
-        {
+        let Some((_, after_values)) = pivot_and_after_values.split_first_mut() else { return Ok(None); };
+        for (row, values) in before.iter_mut().chain(after.iter_mut()).zip(before_values.iter_mut().chain(after_values.iter_mut())) {
+            ctx.charge_work(1, "creo interpolation elimination work")?;
             let factor = row[column];
-            if factor == 0.0 {
-                continue;
-            }
+            if factor == 0.0 { continue; }
             for (entry, pivot_entry) in row[column..].iter_mut().zip(&pivot_row[column..]) {
+                ctx.charge_work(1, "creo interpolation elimination work")?;
                 *entry -= factor * pivot_entry;
             }
             for (value, pivot) in values.iter_mut().zip(pivot_value) {
+                ctx.charge_work(1, "creo interpolation elimination work")?;
                 *value -= factor * pivot;
             }
         }
     }
-    Some(values)
+    Ok(Some(values))
 }
 
 #[derive(Debug)]
@@ -237,7 +210,7 @@ fn interpolation_curve_data(
     for parameter in parameters {
         let mut row = ctx.alloc_filled(control_count, 0.0, "creo interpolation matrix values")?;
         for (index, value) in row.iter_mut().enumerate() {
-            let Some(basis) = bspline_basis(index, DEGREE, *parameter, &knots, control_count)
+            let Some(basis) = bspline_basis(ctx, index, DEGREE, *parameter, &knots, control_count)?
             else {
                 return Ok(None);
             };
@@ -249,7 +222,7 @@ fn interpolation_curve_data(
         let mut row = ctx.alloc_filled(control_count, 0.0, "creo interpolation matrix values")?;
         for (index, value) in row.iter_mut().enumerate() {
             let Some(basis) =
-                bspline_basis_derivative(index, DEGREE, parameter, &knots, control_count)
+                bspline_basis_derivative(ctx, index, DEGREE, parameter, &knots, control_count)?
             else {
                 return Ok(None);
             };
@@ -265,7 +238,7 @@ fn interpolation_curve_data(
     )?;
     values.extend_from_slice(points);
     values.extend(endpoint_derivatives);
-    Ok(solve_vector_system(matrix, values)
+    Ok(solve_vector_system(ctx, matrix, values)?
         .map(|controls| InterpolationCurveData { knots, controls }))
 }
 
@@ -309,7 +282,7 @@ pub(in super::super) fn saved_spline_nurbs(
         "creo saved spline controls",
     )?;
     converted_controls.extend(control_points.into_iter().map(Point3::from));
-    match NurbsCurve::from_lanes(3, knots, converted_controls, None, false) {
+    match NurbsCurve::from_lanes_admitted(ctx, 3, knots, converted_controls, None, false)? {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
             refusal.note_checked(ctx,
@@ -569,12 +542,12 @@ pub(in super::super) fn interpolation_spline_surface(
         row.extend_from_slice(points);
         pole_rows.push(row);
     }
-    match NurbsSurface::from_lanes(
+    match NurbsSurface::from_lanes_admitted(ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, v_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, None),
         false,
-    ) {
+    )? {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note_checked(ctx,
@@ -1161,7 +1134,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     let mut knots = Vec::new();
     ctx.try_reserve_items(&mut knots, 8, "creo tabulated-cylinder directrix knots")?;
     knots.extend([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
-    match NurbsCurve::from_lanes(3, knots, controls, None, false) {
+    match NurbsCurve::from_lanes_admitted(ctx, 3, knots, controls, None, false)? {
         Ok(curve) => Ok(Some((curve, sweep))),
         Err(error) => {
             refusal.note_checked(ctx,
@@ -1298,6 +1271,62 @@ mod tests {
             )
         })
         .expect_err("interpolation allocation exceeds the collection limit")
+    }
+
+    #[test]
+    fn saved_spline_constructor_refuses_typed_pole_storage() {
+        let error = with_collection_limit(39, |ctx| super::saved_spline_nurbs(
+            ctx, &planar_or_offset_spline(0.0), &mut crate::lane_refusal::LaneRefusals::new()))
+            .expect_err("typed poles need forty items in total");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "IR NURBS admitted poles"));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| super::saved_spline_nurbs(
+            ctx, &planar_or_offset_spline(0.0), &mut crate::lane_refusal::LaneRefusals::new()))
+            .expect("service constructor").is_some());
+    }
+
+    #[test]
+    fn interpolation_constructor_refuses_typed_grid_storage() {
+        // The earlier collections use 302 items; four rows and sixteen poles
+        // use twenty more before the first typed row.
+        assert!(matches!(interpolation_surface_refusal(322), cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "IR NURBS admitted grid rows"));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| super::interpolation_spline_surface(
+            ctx, &interpolation_grid(), &"interpolation grid fixture", &mut crate::lane_refusal::LaneRefusals::new()))
+            .expect("service constructor").is_some());
+    }
+
+    #[test]
+    fn interpolation_basis_refuses_work_and_recursive_depth() {
+        for (work, depth, operation) in [(0, 128, "creo interpolation basis work"), (u64::MAX, 1, "creo interpolation basis depth")] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            policy.limits.max_recursion_depth = depth;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            for derivative in [false, true] {
+                let result = if derivative {
+                    super::bspline_basis_derivative(&ctx, 0, 3, 0.5, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], 4)
+                } else {
+                    super::bspline_basis(&ctx, 0, 3, 0.5, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], 4)
+                };
+                assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == operation));
+            }
+        }
+    }
+
+    #[test]
+    fn interpolation_dense_solver_refuses_each_work_boundary() {
+        for (cap, operation) in [(1, "creo interpolation pivot work"), (2, "creo interpolation normalization work"), (7, "creo interpolation elimination work")] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = super::solve_vector_system(&ctx, vec![vec![1.0, 0.0], vec![1.0, 1.0]], vec![[1.0; 3], [2.0; 3]]);
+            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == operation));
+        }
+        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::solve_vector_system(ctx,
+            vec![vec![1.0, 0.0], vec![1.0, 1.0]], vec![[1.0; 3], [2.0; 3]])).expect("service solver"), Some(vec![[1.0; 3]; 2]));
     }
 
     #[test]
@@ -1565,7 +1594,7 @@ mod tests {
     #[test]
     fn saved_spline_sketch_knots_refuse_at_collection_limit() {
         let spline = planar_or_offset_spline(0.0);
-        let error = with_collection_limit(43, |ctx| {
+        let error = with_collection_limit(47, |ctx| {
             super::saved_spline_sketch_geometry(
                 ctx,
                 &spline,
@@ -1584,7 +1613,7 @@ mod tests {
     #[test]
     fn saved_spline_sketch_controls_refuse_at_collection_limit() {
         let spline = planar_or_offset_spline(0.0);
-        let error = with_collection_limit(47, |ctx| {
+        let error = with_collection_limit(51, |ctx| {
             super::saved_spline_sketch_geometry(
                 ctx,
                 &spline,
@@ -1700,8 +1729,8 @@ mod tests {
     #[test]
     fn malformed_basis_knots_are_rejected() {
         for knots in [&[][..], &[0.0][..]] {
-            assert_eq!(super::bspline_basis(0, 3, 0.5, knots, 4), None);
-            assert_eq!(super::bspline_basis_derivative(0, 3, 0.5, knots, 4), None);
+            assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis(ctx, 0, 3, 0.5, knots, 4)).expect("service basis"), None);
+            assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis_derivative(ctx, 0, 3, 0.5, knots, 4)).expect("service basis"), None);
         }
     }
 

@@ -1111,13 +1111,14 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         let point = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut point, (index, control)| {
-                let basis = bspline_basis(
+                let basis = crate::decode::with_test_decode_ctx(|ctx| bspline_basis(
+                    ctx,
                     index,
                     nurbs.degree() as usize,
                     parameter,
                     nurbs.knots(),
                     nurbs.control_points().len(),
-                )
+                )).expect("service basis")
                 .expect("valid basis");
                 point[0] += basis * control.x;
                 point[1] += basis * control.y;
@@ -1132,13 +1133,14 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         let derivative = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut derivative, (index, control)| {
-                let basis = bspline_basis_derivative(
+                let basis = crate::decode::with_test_decode_ctx(|ctx| bspline_basis_derivative(
+                    ctx,
                     index,
                     nurbs.degree() as usize,
                     parameter,
                     nurbs.knots(),
                     nurbs.control_points().len(),
-                )
+                )).expect("service basis")
                 .expect("valid basis");
                 derivative[0] += basis * control.x;
                 derivative[1] += basis * control.y;
