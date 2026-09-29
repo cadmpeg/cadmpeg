@@ -457,6 +457,97 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
     Some(reference)
 }
 
+/// Take one reference with every retained text field admitted by the decode context.
+pub(crate) fn take_reference_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<Reference>, CodecError> {
+    macro_rules! some {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
+    let mut cursor = *at;
+    let present = some!(bytes.get(cursor)).to_owned();
+    cursor += 1;
+    if present == 0 {
+        *at = cursor;
+        return Ok(Some(Reference::Null));
+    }
+    if present != 1 {
+        return Ok(None);
+    }
+    let target = some!(View::u64_le_at(bytes, cursor));
+    cursor += 8;
+    let inline_type_guid = if View::u32_le_at(bytes, cursor) == Some(36) {
+        let (guid, end) = some!(lp_ascii_strict_charged(ctx, bytes, cursor, 36..=36)?);
+        if !is_guid_hyphenated(&guid) {
+            return Ok(None);
+        }
+        cursor = end;
+        Some(guid)
+    } else {
+        None
+    };
+    let reference = match *some!(bytes.get(cursor)) {
+        0 => {
+            cursor += 1;
+            match *some!(bytes.get(cursor)) {
+                0 => {
+                    cursor += 1;
+                    Reference::Local { target, inline_type_guid }
+                }
+                1 => {
+                    let segment = some!(View::u32_le_at(bytes, cursor + 1));
+                    cursor += 5;
+                    Reference::CrossSegment { target, inline_type_guid, segment }
+                }
+                _ => return Ok(None),
+            }
+        }
+        1 => {
+            cursor += 1;
+            let segment = some!(View::u32_le_at(bytes, cursor));
+            cursor += 4;
+            let (_, end) = some!(lp_utf16_bounded_charged(ctx, bytes, cursor, 0..=64)?);
+            cursor = end;
+            match *some!(bytes.get(cursor)) {
+                1 => {
+                    cursor += 1;
+                    Reference::CrossSegment { target, inline_type_guid, segment }
+                }
+                0 => {
+                    cursor += 1;
+                    let (guid, end) = some!(lp_ascii_strict_charged(ctx, bytes, cursor, 36..=36)?);
+                    if !is_guid_hyphenated(&guid) {
+                        return Ok(None);
+                    }
+                    let (link_name, end) = some!(lp_utf16_bounded_charged(ctx, bytes, end, 0..=256)?);
+                    cursor = end;
+                    match *some!(bytes.get(cursor)) {
+                        0 => cursor += 1,
+                        1 => {
+                            let (_, end) = some!(lp_utf16_bounded_charged(ctx, bytes, cursor + 1, 36..=36)?);
+                            let (_, end) = some!(lp_utf16_bounded_charged(ctx, bytes, end, 0..=256)?);
+                            cursor = end;
+                        }
+                        _ => return Ok(None),
+                    }
+                    Reference::CrossDocument { target, inline_type_guid, segment, link_name }
+                }
+                _ => return Ok(None),
+            }
+        }
+        _ => return Ok(None),
+    };
+    *at = cursor;
+    Ok(Some(reference))
+}
+
 /// Whether `value` is a 36-character hyphenated hexadecimal GUID.
 pub(crate) fn is_guid_hyphenated(value: &str) -> bool {
     value.len() == 36
