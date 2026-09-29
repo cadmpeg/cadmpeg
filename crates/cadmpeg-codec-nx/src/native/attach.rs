@@ -6456,7 +6456,8 @@ fn segment_binding_body_indexes<'a, 'ctx>(
                 {
                     continue;
                 }
-                { let body = body.try_clone_for_decode(ctx, "NX feature operation group body")?; ctx.push_scoped_btree_group(&mut reservation, &mut by_object, identity, || body, 0, "NX feature operation group index") }?;
+                let body = body.try_clone_for_decode(ctx, "NX feature operation group body")?;
+                ctx.push_scoped_btree_group(&mut reservation, &mut by_object, identity, || body, 0, "NX feature operation group index")?;
             }
         }
         ctx.charge_work(1, "NX segment binding identity index")?;

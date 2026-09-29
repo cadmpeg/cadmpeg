@@ -30,8 +30,7 @@ pub(crate) struct IdScope(IdentityComponent);
 impl IdScope {
     /// Copy one decoded scope under the caller's retained-text limit.
     pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let bytes = ctx.copy_retained(self.0.as_str().as_bytes(), "nx completion scope copy")?;
-        let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
+        let text = ctx.copy_retained_text(self.0.as_str(), "nx completion scope copy")?;
         IdentityComponent::try_new(text)
             .map(Self)
             .map_err(CodecError::malformed)
