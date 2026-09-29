@@ -488,17 +488,21 @@ impl<'a> WritableModel<'a> {
                         )));
                     }
                     let geometry = WritableEdgeCurve::Nurbs(nurbs);
-                    let expected_start = geometry.point(domain[0]).map_err(|_| {
-                        CodecError::malformed(format_args!(
+                    let expected_start = geometry.point(domain[0]).map_err(|failure| match failure {
+                        cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
+                        cadmpeg_ir::eval::EvaluationFailure::NoValue
+                        | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_) => CodecError::malformed(format_args!(
                             "edge {} curve has no finite start point",
                             edge.id.as_str()
-                        ))
+                        )),
                     })?;
-                    let expected_end = geometry.point(domain[1]).map_err(|_| {
-                        CodecError::malformed(format_args!(
+                    let expected_end = geometry.point(domain[1]).map_err(|failure| match failure {
+                        cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
+                        cadmpeg_ir::eval::EvaluationFailure::NoValue
+                        | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_) => CodecError::malformed(format_args!(
                             "edge {} curve has no finite end point",
                             edge.id.as_str()
-                        ))
+                        )),
                     })?;
                     (geometry, expected_start.get(), expected_end.get())
                 }
