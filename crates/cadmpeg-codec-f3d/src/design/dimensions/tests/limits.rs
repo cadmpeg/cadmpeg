@@ -11,7 +11,9 @@ use crate::records::parameters::{
     DesignParameterOwnerWire,
 };
 use crate::records::dimensions::{
-    DesignDimensionAnnotationOperand, DesignDimensionLocusPair, DesignDimensionLocusPairDraft,
+    DesignDimensionAnnotationFrame, DesignDimensionAnnotationFrameDraft,
+    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
+    DesignDimensionLocusPair, DesignDimensionLocusPairDraft,
 };
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::sketch_placement::{DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement};
@@ -22,6 +24,8 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SpatialSketch,
     SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
 };
+
+const EPS_NATIVE_FALLBACK_LINEAR: f64 = 1.0e-6;
 
 struct Fixture {
     placement: DesignSketchPlacement,
@@ -114,6 +118,262 @@ fn fixture() -> Fixture {
         profiles: Vec::new(), native_ref: Some(placement.id.clone()),
     };
     Fixture { placement, parameter, owner, curve, entity, spatial }
+}
+
+fn native_fallback_curves(fixture: &mut Fixture) -> [SketchCurveIdentity; 2] {
+    fixture.curve.owner_reference = Some(7);
+    let mut second = fixture.curve.clone();
+    second.id = "f3d:Design/BulkStream.dat:sketch-curve#31".into();
+    second.record_index = 31;
+    [fixture.curve.clone(), second]
+}
+
+fn native_fallback_pair() -> DesignDimensionLocusPair {
+    let mut draft = companion_pair().into_draft();
+    draft.governing_companion_record_index = 22;
+    draft.opaque_index = Some(crate::records::identity::Located { value: 0, offset: 35 });
+    draft.loci = [
+        DesignDimensionAnnotationOperand {
+            geometry_record_index: std::num::NonZeroU32::new(30),
+            geometry_reference_offset: 40,
+            role: 1,
+            role_offset: 50,
+        },
+        DesignDimensionAnnotationOperand {
+            geometry_record_index: std::num::NonZeroU32::new(31),
+            geometry_reference_offset: 55,
+            role: 2,
+            role_offset: 65,
+        },
+    ];
+    DesignDimensionLocusPair::try_new(draft).unwrap()
+}
+
+fn native_fallback_group() -> DesignDimensionLocusGroup {
+    DesignDimensionLocusGroup {
+        id: "f3d:Design/BulkStream.dat:dimension-locus-group#32".into(),
+        companion_record_index: 22,
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned()).unwrap(),
+        record_index: 32,
+        frame_length: 100,
+        loci: vec![DesignDimensionLocus {
+            returned: crate::records::identity::Located { value: 31, offset: 10 },
+            geometry_record_index: 30,
+            geometry_reference_offset: 20,
+            role: 1,
+            role_offset: 30,
+        }],
+        owner_reference: 7,
+        owner_reference_offset: 40,
+        owner_role: 0,
+        owner_role_offset: 50,
+        state: 1,
+        state_offset: 60,
+        next_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        next_record_index: 33,
+        next_byte_offset: 100,
+    }
+}
+
+fn native_fallback_null_pair() -> DesignDimensionLocusPair {
+    let mut draft = companion_pair().into_draft();
+    draft.governing_companion_record_index = 22;
+    draft.loci[1].geometry_record_index = std::num::NonZeroU32::new(30);
+    DesignDimensionLocusPair::try_new(draft).unwrap()
+}
+
+fn native_fallback_annotation() -> DesignDimensionAnnotationFrame {
+    DesignDimensionAnnotationFrame::try_new(DesignDimensionAnnotationFrameDraft {
+        id: "f3d:Design/BulkStream.dat:design-dimension-annotation-frame#34".into(),
+        companion_record_index: Some(22),
+        governing_companion_record_index: 22,
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: 34,
+        frame_length: 100,
+        operands: vec![
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: None,
+                geometry_reference_offset: 25,
+                role: 3,
+                role_offset: 35,
+            },
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(30),
+                geometry_reference_offset: 40,
+                role: 2,
+                role_offset: 50,
+            },
+        ],
+        entity_genesis: 0,
+        annotation_bytes: Vec::new(),
+        annotation_byte_offset: 111,
+        governing_owner_record_index: 21,
+        governing_owner_reference_offset: 112,
+        return_members: vec![crate::records::identity::Located {
+            value: std::num::NonZeroU32::new(30).unwrap(),
+            offset: 127,
+        }],
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        paired_byte_offset: 100,
+        owner_reference: 7,
+        owner_reference_offset: 120,
+    }).unwrap()
+}
+
+fn assert_native_auxiliary_refusal(
+    annotation: bool,
+    operation: &'static str,
+    dimension: ResourceDimension,
+) {
+    let fixture = fixture();
+    let pair = native_fallback_null_pair();
+    let frame = native_fallback_annotation();
+    let mut inputs = fixture.inputs();
+    if annotation {
+        inputs.annotation_frames = std::slice::from_ref(&frame);
+    } else {
+        inputs.null_pairs = std::slice::from_ref(&pair);
+    }
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            _ => panic!("unsupported native auxiliary limit"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+fn assert_native_fallback_refusal(
+    group: bool,
+    operation: &'static str,
+    dimension: ResourceDimension,
+) {
+    let mut fixture = fixture();
+    let curves = native_fallback_curves(&mut fixture);
+    let pair = native_fallback_pair();
+    let locus_group = native_fallback_group();
+    let mut inputs = fixture.inputs();
+    inputs.curves = &curves;
+    if group {
+        inputs.groups = std::slice::from_ref(&locus_group);
+    } else {
+        inputs.pairs = std::slice::from_ref(&pair);
+    }
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            _ => panic!("unsupported native fallback limit"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn native_pair_entity_id_refuses_retained_limit() {
+    assert_native_fallback_refusal(false, "f3d native dimension entity id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn native_pair_entity_refuses_collection_limit() {
+    assert_native_fallback_refusal(false, "f3d native dimension entity",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn native_pair_operand_reference_refuses_retained_limit() {
+    assert_native_fallback_refusal(false, "f3d dimension native operand reference",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn native_pair_operand_refuses_collection_limit() {
+    assert_native_fallback_refusal(false, "f3d native dimension operand",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn native_pair_output_refuses_collection_limit() {
+    assert_native_fallback_refusal(false, "f3d pair dimension constraint",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn native_group_locus_operand_refuses_collection_limit() {
+    assert_native_fallback_refusal(true, "f3d native group locus operand",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn native_group_owner_operand_refuses_collection_limit() {
+    assert_native_fallback_refusal(true, "f3d native group owner operand",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn native_group_return_operand_refuses_collection_limit() {
+    assert_native_fallback_refusal(true, "f3d native group return operand",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn annotation_native_operand_refuses_collection_limit() {
+    assert_native_auxiliary_refusal(true, "f3d annotation native operand",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn annotation_native_entity_id_refuses_retained_limit() {
+    assert_native_auxiliary_refusal(true, "f3d annotation native entity id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn annotation_native_entity_refuses_collection_limit() {
+    assert_native_auxiliary_refusal(true, "f3d annotation native entity",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn null_pair_native_operand_refuses_collection_limit() {
+    assert_native_auxiliary_refusal(false, "f3d null pair native operand",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn null_pair_native_entity_id_refuses_retained_limit() {
+    assert_native_auxiliary_refusal(false, "f3d null pair native entity id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn null_pair_native_entity_refuses_collection_limit() {
+    assert_native_auxiliary_refusal(false, "f3d null pair native entity",
+        ResourceDimension::CollectionItems);
 }
 
 fn parameter_companion() -> DesignParameterCompanion {
