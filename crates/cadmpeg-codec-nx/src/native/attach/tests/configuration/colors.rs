@@ -18,6 +18,9 @@ use std::collections::BTreeSet;
 
 #[test]
 fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let definition = crate::native::om::PartColorDefinition {
         id: "nx:test:color#201".into(),
         color_table: "nx:test:table#0".into(),
@@ -71,6 +74,7 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     let pairs = BTreeMap::from([(0, vec![1])]);
     assert_eq!(
         resolve_rm_face_colors(
+            &ctx,
             &face_ids,
             std::slice::from_ref(&assignment),
             std::slice::from_ref(&definition),
@@ -86,12 +90,13 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
 
     assert_eq!(
         resolve_rm_face_color_bindings(
+            &ctx,
             &face_ids,
             std::slice::from_ref(&assignment),
             std::slice::from_ref(&definition),
             std::slice::from_ref(&record),
             &pairs,
-        ),
+        ).expect("valid face color bindings"),
         vec![RmFaceColorBinding {
             face_id: "nx:s0:face#99".into(),
             color_definition: definition.id.clone(),
@@ -115,6 +120,7 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     .unwrap();
     assert_eq!(
         resolve_rm_face_colors(
+            &ctx,
             &face_ids,
             &[assignment.clone(), target_assignment],
             std::slice::from_ref(&definition),
@@ -131,7 +137,7 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     let mut conflicting = assignment;
     conflicting.color_definition = "nx:test:color#other".into();
     assert!(
-        resolve_rm_face_colors(&face_ids, &[conflicting], &[definition], &[record], &pairs,)
+        resolve_rm_face_colors(&ctx, &face_ids, &[conflicting], &[definition], &[record], &pairs,)
             .expect("valid colors")
             .is_empty()
     );
@@ -240,6 +246,83 @@ fn rm_source_color_bindings_refuse_scoped_limit() {
 #[test]
 fn rm_source_color_bindings_refuse_work_limit() {
     let error = source_color_binding_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+fn face_color_binding_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<Vec<RmFaceColorBinding>, cadmpeg_core::CodecError> {
+    let definition = crate::native::om::PartColorDefinition {
+        id: "nx:test:color#201".into(),
+        color_table: "nx:test:table#0".into(),
+        color_index: crate::om::color::PaletteIndex::new(201).unwrap(),
+        name: "Iron Gray".into(),
+        components: [(0.25_f64, 11), (0.5, 12), (0.75, 13)].map(|(value, offset)| {
+            let mut raw = (value * 4.0).to_be_bytes();
+            raw[0] -= 0x10;
+            (crate::om::color::ColorComponent::read(&raw).unwrap(), offset)
+        }),
+        source_offset: 10,
+    };
+    let assignment = RmDisplayColorAssignment {
+        id: "nx:test:assignment#0".into(),
+        ordinal: 0,
+        frame: DisplayColorFrame::new(
+            RmDisplayColorAssignmentEncoding::Linked(
+                LinkedRow::<(), u64>::new(
+                    CompactIndexAtom::read(&[42]).unwrap(),
+                    crate::om::discriminators::LinkedIndexDiscriminator::Form16,
+                    CompactIndexAtom::read(&[7]).unwrap().into(),
+                    [1, 2, 3].map(|value| CompactIndexAtom::read(&[value]).unwrap().into()),
+                    crate::om::discriminators::LinkedIndexFlag::Form03,
+                    crate::om::discriminators::IndexRowMode::Form04,
+                    22,
+                ).unwrap(),
+            ),
+            crate::om::color::PaletteIndex::new(201).unwrap(),
+        ).unwrap(),
+        target_object_id: None,
+        color_definition: definition.id.clone(),
+        source_entry: "/Root/FastLoad/RMFastLoad".into(),
+    };
+    let record = crate::native::parasolid::ParasolidDeltasRecord {
+        id: "nx:test:deltas#0".into(),
+        stream_ordinal: 1,
+        family: crate::deltas::record_family::RecordFamily::Face {
+            node_id: 42,
+            references: [1; 11],
+        },
+        xmt: 99,
+        byte_len: 1,
+        inflated_offset: 0,
+    };
+    let face_ids = BTreeSet::from(["nx:s0:face#99".to_string()]);
+    let pairs = BTreeMap::from([(0, vec![1])]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    resolve_rm_face_color_bindings(&ctx, &face_ids, &[assignment], &[definition], &[record], &pairs)
+}
+
+#[test]
+fn rm_face_color_bindings_refuse_collection_limit() {
+    let error = face_color_binding_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn rm_face_color_bindings_refuse_retained_limit() {
+    let error = face_color_binding_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn rm_face_color_bindings_refuse_work_limit() {
+    let error = face_color_binding_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }

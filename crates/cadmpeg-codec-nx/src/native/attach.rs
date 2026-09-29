@@ -572,6 +572,7 @@ fn attach_rm_face_colors(
         .collect::<BTreeMap<_, _>>();
     let face_ids = face_indices.keys().cloned().collect::<BTreeSet<_>>();
     let bindings = resolve_rm_face_colors(
+        ctx,
         &face_ids,
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
@@ -622,12 +623,13 @@ fn attach_rm_appearances(
         .map(|face| face.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let face_bindings = resolve_rm_face_color_bindings(
+        ctx,
         &face_ids,
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
         &model.parasolid.parasolid_deltas_records,
         &super::substrate::paired_delta_streams(ctx, scan)?,
-    );
+    )?;
     if source_bindings.is_empty() && face_bindings.is_empty() {
         return Ok(());
     }
@@ -880,6 +882,7 @@ fn resolve_rm_source_color_bindings(
 }
 
 fn resolve_rm_face_colors(
+    ctx: &DecodeContext<'_>,
     face_ids: &BTreeSet<String>,
     assignments: &[RmDisplayColorAssignment],
     definitions: &[super::om::PartColorDefinition],
@@ -890,7 +893,7 @@ fn resolve_rm_face_colors(
         .iter()
         .map(|definition| (definition.id.as_str(), definition))
         .collect::<BTreeMap<_, _>>();
-    resolve_rm_face_color_bindings(face_ids, assignments, definitions, records, delta_pairs)
+    resolve_rm_face_color_bindings(ctx, face_ids, assignments, definitions, records, delta_pairs)?
         .into_iter()
         .filter_map(|binding| {
             let definition = definitions_by_id.get(binding.color_definition.as_str())?;
@@ -912,86 +915,157 @@ fn resolve_rm_face_colors(
 }
 
 fn resolve_rm_face_color_bindings(
+    ctx: &DecodeContext<'_>,
     face_ids: &BTreeSet<String>,
     assignments: &[RmDisplayColorAssignment],
     definitions: &[super::om::PartColorDefinition],
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
-) -> Vec<RmFaceColorBinding> {
-    let mut partitions_by_delta = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for (partition, deltas) in delta_pairs {
-        for delta in deltas {
-            partitions_by_delta
-                .entry(*delta as u32)
-                .or_default()
-                .insert(*partition as u32);
-        }
-    }
-
-    let mut choices = BTreeMap::<u32, RmColorChoice<'_>>::new();
-    for assignment in assignments {
+) -> Result<Vec<RmFaceColorBinding>, CodecError> {
+    let mut bindings = Vec::new();
+    for (position, assignment) in assignments.iter().enumerate() {
         let RmDisplayColorAssignmentEncoding::Linked(row) = assignment.frame.encoding() else {
             continue;
         };
-        choices
-            .entry(row.first_index().atom.value())
-            .and_modify(|choice| choice.observe(assignment))
-            .or_insert_with(|| RmColorChoice::new(assignment));
-    }
-    let definition_ids = definitions
-        .iter()
-        .map(|definition| definition.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut face_records_by_node = BTreeMap::<u32, Vec<_>>::new();
-    for record in records {
-        let crate::deltas::record_family::RecordFamily::Face { node_id, .. } = &record.family
-        else {
+        let object_index = row.first_index().atom.value();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(position),
+            "NX RM face color assignment identity",
+        )?;
+        if assignments[..position].iter().any(|earlier| {
+            matches!(
+                earlier.frame.encoding(),
+                RmDisplayColorAssignmentEncoding::Linked(previous)
+                    if previous.first_index().atom.value() == object_index
+            )
+        }) {
             continue;
-        };
-        face_records_by_node
-            .entry(*node_id)
-            .or_default()
-            .push(record);
-    }
-
-    let mut bindings = Vec::new();
-    for (object_index, choice) in choices {
+        }
+        let mut choice = RmColorChoice::new(assignment);
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(assignments.len() - position - 1),
+            "NX RM face color assignments",
+        )?;
+        for later in assignments.iter().skip(position + 1) {
+            if matches!(
+                later.frame.encoding(),
+                RmDisplayColorAssignmentEncoding::Linked(next)
+                    if next.first_index().atom.value() == object_index
+            ) {
+                choice.observe(later);
+            }
+        }
         let RmColorChoice::Unique {
             definition,
             source_offset,
-        } = choice
-        else {
+        } = choice else {
             continue;
         };
-        if !definition_ids.contains(definition) {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(definitions.len()),
+            "NX RM face color definitions",
+        )?;
+        if !definitions.iter().any(|candidate| candidate.id.as_str() == definition) {
             continue;
         }
-        let candidates = face_records_by_node
-            .get(&object_index)
-            .into_iter()
-            .flatten()
-            .filter_map(|record| {
-                let partitions = partitions_by_delta.get(&record.stream_ordinal)?;
-                let mut partitions = partitions.iter();
-                let (Some(partition), None) = (partitions.next(), partitions.next()) else {
-                    return None;
+
+        let mut candidate = None::<String>;
+        let mut ambiguous = false;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(records.len()),
+            "NX RM face color records",
+        )?;
+        for record in records {
+            let crate::deltas::record_family::RecordFamily::Face { node_id, .. } = &record.family
+            else {
+                continue;
+            };
+            if *node_id != object_index {
+                continue;
+            }
+            let mut partition = None;
+            let mut multiple_partitions = false;
+            for (raw_partition, deltas) in delta_pairs {
+                let work = deltas.len().checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("NX RM face color delta links", 0, 1)
+                })?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(work),
+                    "NX RM face color delta links",
+                )?;
+                let Ok(partition_id) = u32::try_from(*raw_partition) else {
+                    continue;
                 };
-                let face_id = format!("nx:s{partition}:face#{}", record.xmt);
-                face_ids.contains(&face_id).then_some(face_id)
-            })
-            .collect::<BTreeSet<_>>();
-        let mut candidates = candidates.into_iter();
-        let (Some(face_id), None) = (candidates.next(), candidates.next()) else {
+                if !deltas.iter().any(|delta| u32::try_from(*delta).ok() == Some(record.stream_ordinal)) {
+                    continue;
+                }
+                match partition {
+                    None => partition = Some(partition_id),
+                    Some(existing) if existing == partition_id => {}
+                    Some(_) => {
+                        multiple_partitions = true;
+                        break;
+                    }
+                }
+            }
+            if multiple_partitions {
+                continue;
+            }
+            let Some(partition) = partition else {
+                continue;
+            };
+            let face_id = format!("nx:s{partition}:face#{}", record.xmt);
+            if !face_ids.contains(&face_id) {
+                continue;
+            }
+            match candidate.as_ref() {
+                None => candidate = Some(face_id),
+                Some(existing) if existing == &face_id => {}
+                Some(_) => {
+                    ambiguous = true;
+                    break;
+                }
+            }
+        }
+        if ambiguous {
+            continue;
+        }
+        let Some(face_id) = candidate else {
             continue;
         };
+        let bytes = std::mem::size_of::<RmFaceColorBinding>()
+            .checked_add(face_id.len())
+            .and_then(|bytes| bytes.checked_add(definition.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit(
+                "NX RM face color binding",
+                0,
+                cadmpeg_core::decode::u64_from_index(face_id.len()),
+            ))?;
+        ctx.charge_collection_items(1, "NX RM face color bindings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(bytes),
+            "NX RM face color bindings",
+        )?;
+        reserve_attach_vec(ctx, &mut bindings, 1, "NX RM face color bindings")?;
         bindings.push(RmFaceColorBinding {
             face_id,
             color_definition: definition.to_owned(),
             source_offset,
         });
     }
+    let sort_work = bindings.len().checked_mul(bindings.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX RM face color binding order",
+            0,
+            cadmpeg_core::decode::u64_from_index(bindings.len()),
+        )
+    })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sort_work),
+        "NX RM face color binding order",
+    )?;
     bindings.sort_by(|left, right| left.face_id.cmp(&right.face_id));
-    bindings
+    Ok(bindings)
 }
 
 /// Transfer each independently validated JPEG preview with its exact bounded
