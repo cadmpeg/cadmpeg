@@ -6217,49 +6217,50 @@ pub(super) fn sketch_normal_sign(normal: &Vector3) -> Option<f64> {
         .then_some(normal.z.signum())
 }
 
-pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
+pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
     let identifier_character = |character: char| {
         character.is_alphanumeric() || matches!(character, '_' | '"' | '$' | '°' | 'µ')
     };
-    let mut identifiers = Vec::new();
     let mut start = None;
-    for (offset, character) in expression
+    let mut characters = expression
         .char_indices()
-        .chain(std::iter::once((expression.len(), '\0')))
-    {
-        if identifier_character(character) {
-            start.get_or_insert(offset);
-            continue;
+        .chain(std::iter::once((expression.len(), '\0')));
+    std::iter::from_fn(move || {
+        for (offset, character) in characters.by_ref() {
+            if identifier_character(character) {
+                start.get_or_insert(offset);
+                continue;
+            }
+            let Some(token_start) = start.take() else {
+                continue;
+            };
+            let token = &expression[token_start..offset];
+            if !token
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_alphabetic() || character == '_')
+            {
+                continue;
+            }
+            let next = expression[offset..]
+                .chars()
+                .find(|character| !character.is_whitespace());
+            if next == Some('(') {
+                continue;
+            }
+            let previous = expression[..token_start]
+                .chars()
+                .rev()
+                .find(|character| !character.is_whitespace());
+            if matches!(token, "mm" | "cm" | "m" | "in" | "ft" | "deg" | "rad")
+                && previous.is_some_and(|character| character.is_ascii_digit() || character == ')')
+            {
+                continue;
+            }
+            return Some(token);
         }
-        let Some(token_start) = start.take() else {
-            continue;
-        };
-        let token = &expression[token_start..offset];
-        if !token
-            .chars()
-            .next()
-            .is_some_and(|character| character.is_alphabetic() || character == '_')
-        {
-            continue;
-        }
-        let next = expression[offset..]
-            .chars()
-            .find(|character| !character.is_whitespace());
-        if next == Some('(') {
-            continue;
-        }
-        let previous = expression[..token_start]
-            .chars()
-            .rev()
-            .find(|character| !character.is_whitespace());
-        if matches!(token, "mm" | "cm" | "m" | "in" | "ft" | "deg" | "rad")
-            && previous.is_some_and(|character| character.is_ascii_digit() || character == ')')
-        {
-            continue;
-        }
-        identifiers.push(token.to_owned());
-    }
-    identifiers.into_iter()
+        None
+    })
 }
 
 /// Count decoded same-stream parameter-name symbols that have no neutral
@@ -6301,10 +6302,10 @@ pub(crate) fn unresolved_parameter_expression_dependency_count(
                 .collect::<HashSet<_>>();
             Some(
                 expression_identifiers(parameter.expression())
-                    .filter(|identifier| names.contains(identifier.as_str()))
+                    .filter(|identifier| names.contains(*identifier))
                     .collect::<HashSet<_>>()
                     .into_iter()
-                    .filter(|identifier| !dependency_names.contains(identifier.as_str()))
+                    .filter(|identifier| !dependency_names.contains(*identifier))
                     .count(),
             )
         })

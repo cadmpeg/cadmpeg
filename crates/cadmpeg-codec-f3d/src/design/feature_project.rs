@@ -153,6 +153,30 @@ fn copy_feature_text(
         .map_err(|_| CodecError::malformed("validated feature text is not UTF-8"))
 }
 
+fn temporary_feature_text<'a, 'b>(
+    ctx: Option<&'a DecodeContext<'b>>,
+    text: &str,
+    operation: &'static str,
+) -> Result<(String, Option<cadmpeg_core::decode::ScopedReservation<'a>>), CodecError> {
+    let reservation = ctx.map(|ctx| ctx.reserve_scoped(text.len() as u64, operation)).transpose()?;
+    let mut copy = String::new();
+    if let Some(ctx) = ctx {
+        copy.try_reserve(text.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, text.len() as u64))?;
+    }
+    copy.push_str(text);
+    Ok((copy, reservation))
+}
+
+fn temporary_feature_id<'a, 'b>(
+    ctx: Option<&'a DecodeContext<'b>>,
+    id: &cadmpeg_ir::features::FeatureId,
+    operation: &'static str,
+) -> Result<(cadmpeg_ir::features::FeatureId, Option<cadmpeg_core::decode::ScopedReservation<'a>>), CodecError> {
+    let (text, reservation) = temporary_feature_text(ctx, id.as_str(), operation)?;
+    let id = cadmpeg_ir::features::FeatureId::try_from(text).map_err(CodecError::malformed)?;
+    Ok((id, reservation))
+}
+
 fn copy_feature_id(
     ctx: Option<&DecodeContext<'_>>,
     id: &cadmpeg_ir::features::FeatureId,
@@ -1759,80 +1783,87 @@ pub(crate) fn project_parameter_design_with_edge_identities(
     }
     for parameter in &mut parameters {
         let scope = parameter_scopes[&parameter.id];
-        let consumer_owner = parameter.owner.clone();
         if parameter.properties.contains_key("owner_record_index") {
             continue;
         }
-        let mut seen = HashSet::new();
-        parameter.dependencies = expression_identifiers(&parameter.expression)
-            .filter_map(|identifier| {
-                let preceding_owned = || {
-                    let consumer = consumer_owner.as_ref()?;
-                    let consumer_order = feature_order.get(consumer)?;
-                    let mut candidates = owned_aliases
-                        .get(&(scope, identifier.clone()))?
-                        .iter()
-                        .filter(|candidate| {
-                            parameter_owners
-                                .get(*candidate)
-                                .and_then(Option::as_ref)
-                                .and_then(|owner| feature_order.get(owner))
-                                .is_some_and(|order| order < consumer_order)
-                        });
-                    let candidate = candidates.next()?;
-                    candidates.next().is_none().then_some(candidate)
-                };
-                let candidate = if let Some(owner) = &parameter.owner {
-                    match feature_aliases.get(&(scope, owner.clone(), identifier.clone())) {
-                        Some(None) => return None,
-                        Some(Some(local)) => Some(local),
-                        None => match document_aliases.get(&(scope, identifier.clone())) {
-                            Some(Some(document)) => Some(document),
-                            Some(None) => None,
-                            None => preceding_owned(),
-                        },
-                    }
-                } else {
-                    document_aliases.get(&(scope, identifier))?.as_ref()
-                };
-                candidate.cloned().filter(|dependency| {
-                    let dependency_owner = parameter_owners.get(dependency);
-                    match (dependency_owner, &consumer_owner) {
-                        (Some(Some(dependency_owner)), Some(consumer_owner))
-                            if dependency_owner != consumer_owner =>
-                        {
-                            feature_order
-                                .get(dependency_owner)
-                                .zip(feature_order.get(consumer_owner))
-                                .is_some_and(|(dependency, consumer)| dependency < consumer)
-                        }
-                        (Some(Some(_)), None) => false,
-                        (Some(_), _) => true,
-                        (None, _) => false,
-                    }
-                })
-            })
-            .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
-            .collect();
+        parameter.dependencies.clear();
+        for identifier in expression_identifiers(&parameter.expression) {
+            let (identifier, _identifier_reservation) = temporary_feature_text(ctx, identifier,
+                "f3d expression identifier lookup")?;
+            let alias_key = (scope, identifier);
+            let preceding_owned = || {
+                let consumer = parameter.owner.as_ref()?;
+                let consumer_order = feature_order.get(consumer)?;
+                let mut candidates = owned_aliases
+                    .get(&alias_key)?
+                    .iter()
+                    .filter(|candidate| {
+                        parameter_owners
+                            .get(*candidate)
+                            .and_then(Option::as_ref)
+                            .and_then(|owner| feature_order.get(owner))
+                            .is_some_and(|order| order < consumer_order)
+                    });
+                let candidate = candidates.next()?;
+                candidates.next().is_none().then_some(candidate)
+            };
+            let candidate = if let Some(owner) = &parameter.owner {
+                let (owner_key, _owner_reservation) = temporary_feature_id(ctx, owner,
+                    "f3d expression owner lookup")?;
+                let (feature_identifier, _feature_identifier_reservation) = temporary_feature_text(ctx, &alias_key.1,
+                    "f3d expression feature identifier lookup")?;
+                match feature_aliases.get(&(scope, owner_key, feature_identifier)) {
+                    Some(None) => None,
+                    Some(Some(local)) => Some(local),
+                    None => match document_aliases.get(&alias_key) {
+                        Some(Some(document)) => Some(document),
+                        Some(None) => None,
+                        None => preceding_owned(),
+                    },
+                }
+            } else {
+                document_aliases.get(&alias_key).and_then(Option::as_ref)
+            };
+            let Some(candidate) = candidate else { continue; };
+            let dependency_owner = parameter_owners.get(candidate);
+            let allowed = match (dependency_owner, &parameter.owner) {
+                (Some(Some(dependency_owner)), Some(consumer_owner))
+                    if dependency_owner != consumer_owner =>
+                {
+                    feature_order
+                        .get(dependency_owner)
+                        .zip(feature_order.get(consumer_owner))
+                        .is_some_and(|(dependency, consumer)| dependency < consumer)
+                }
+                (Some(Some(_)), None) => false,
+                (Some(_), _) => true,
+                (None, _) => false,
+            };
+            if !allowed || candidate == &parameter.id || parameter.dependencies.contains(candidate) {
+                continue;
+            }
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d parameter dependency")?;
+                parameter.dependencies.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "f3d parameter dependency", 0, 1))?;
+            }
+            let dependency = copy_parameter_id(ctx, candidate,
+                "f3d parameter dependency id")?;
+            // discarded-value: the membership check admits this dependency.
+            let _ = parameter.dependencies.insert(dependency);
+        }
     }
     normalize_parameter_ordinals(&mut parameters);
-    let parameter_owners = parameters
-        .iter()
-        .filter_map(|parameter| Some((parameter.id.clone(), parameter.owner.clone()?)))
-        .collect::<HashMap<_, _>>();
     for feature in &mut features {
-        let mut seen = feature.dependencies.iter().cloned().collect::<HashSet<_>>();
-        feature.dependencies.extend(
-            parameters
-                .iter()
-                .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
-                .flat_map(|parameter| &parameter.dependencies)
-                .filter_map(|parameter| parameter_owners.get(parameter))
-                .filter(|dependency| {
-                    *dependency != &feature.id && seen.insert((*dependency).clone())
-                })
-                .cloned(),
-        );
+        for parameter in parameters.iter().filter(|parameter| parameter.owner.as_ref() == Some(&feature.id)) {
+            for dependency in &parameter.dependencies {
+                if let Some(Some(owner)) = parameter_owners.get(dependency) {
+                    if owner != &feature.id {
+                        insert_feature_dependency(ctx, &mut feature.dependencies, owner)?;
+                    }
+                }
+            }
+        }
     }
     ensure_feature_dependencies_precede(ctx, &features)?;
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
