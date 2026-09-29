@@ -1702,10 +1702,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ));
     operand.resolved_face_slots.clear();
     assert!(crate::design::face_resolve::retain_face_operand_resolution(
+        None,
         &group,
         std::slice::from_mut(&mut operand),
         &FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
-    ));
+    ).unwrap());
     assert_eq!(operand.resolved_face_slots, [50]);
     operand.resolved_face_slots.clear();
     operand.alternate_selector_candidate_faces = vec![
@@ -1722,10 +1723,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut ambiguous = [operand.clone(), operand.clone()];
     assert!(
         !crate::design::face_resolve::retain_face_operand_resolution(
+            None,
             &group,
             &mut ambiguous,
             &FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
-        )
+        ).unwrap()
     );
 
     let split_structure = crate::design::decode::operands::face_recipe_structure(&[
