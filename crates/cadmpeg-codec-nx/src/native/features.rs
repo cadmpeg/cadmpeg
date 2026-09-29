@@ -4187,7 +4187,9 @@ pub(super) fn feature_unlabeled_operation_body_writes(
                     id,
                     operation_record,
                     ordinal,
-                    body_image_data_block: unique_offset_data_block(&indexed, frame.body_image().value()),
+                    body_image_data_block: charged_unique_offset_data_block(
+                        ctx, &indexed, frame.body_image().value(),
+                    )?,
                     frame,
                 });
             }
@@ -4219,11 +4221,6 @@ pub(super) fn feature_operation_body_writes(
                     return;
                 }
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let operation_record = format!(
-                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-            );
             for (ordinal, write) in decoded.into_iter().enumerate() {
                 let Some(offset) = entry_offset.checked_add(write.offset() as u64) else {
                     continue;
@@ -4237,16 +4234,40 @@ pub(super) fn feature_operation_body_writes(
                 ) else {
                     continue;
                 };
-                writes.push(FeatureOperationBodyWrite {
-                    id: format!(
-                        "nx:feature-history:operation-body-write#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_label: Some(operation_label.clone()),
-                    operation_record: operation_record.clone(),
-                    ordinal: ordinal as u32,
-                    body_image_data_block: unique_offset_data_block(&indexed, frame.body_image().value()),
-                    frame,
-                });
+                let item = (|| -> Result<FeatureOperationBodyWrite, CodecError> {
+                    let ordinal_u32 = u32::try_from(ordinal)
+                        .map_err(|_| ctx.refuse_codec_limit("NX operation body write ordinal", 0, 1))?;
+                    Ok(FeatureOperationBodyWrite {
+                        id: format_feature_history_id(
+                            ctx, "operation-body-write", section_key, operation_ordinal, Some(ordinal),
+                        )?,
+                        operation_label: Some(format_feature_history_id(
+                            ctx, "operation-label", section_key, operation_ordinal, None,
+                        )?),
+                        operation_record: format_feature_history_id(
+                            ctx, "operation-record", section_key, operation_ordinal, None,
+                        )?,
+                        ordinal: ordinal_u32,
+                        body_image_data_block: charged_unique_offset_data_block(
+                            ctx, &indexed, frame.body_image().value(),
+                        )?,
+                        frame,
+                    })
+                })();
+                let item = match item {
+                    Ok(item) => item,
+                    Err(error) => { failure = Some(error); return; }
+                };
+                if let Err(error) = ctx.charge_collection_items(1, "NX operation body writes")
+                    .and_then(|()| ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureOperationBodyWrite>(),
+                    ), "NX operation body writes"))
+                    .and_then(|()| writes.try_reserve(1)
+                        .map_err(|_| ctx.refuse_codec_limit("allocate NX operation body writes", 0, 1))) {
+                    failure = Some(error);
+                    return;
+                }
+                writes.push(item);
             }
         },
     )?;

@@ -430,6 +430,61 @@ fn operation_body_write_retains_identity_group_and_image() {
     assert_eq!(second.frame.body_image().value(), 0x694);
 }
 
+fn operation_body_write_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let body_write = b"\x01\x02\x0b\x31\x97\x75\x01\x02\x10\x41\xff";
+    let store = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
+    let payload = composed_feature_history_payload(
+        &[(&[0xff; 4], "EXTRUDE", body_write.to_vec())], &store,
+    );
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx, prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    }).expect("synthetic body-write container");
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_writes(ctx, &container)
+    }).expect("admitted operation body writes");
+    assert_eq!(admitted.len(), 1);
+    assert!(admitted[0].body_image_data_block.is_some());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_operation_body_writes(&ctx, &container)
+        .expect_err("operation body-write resource limit")
+}
+
+#[test]
+fn operation_body_write_route_refuses_collection_limit() {
+    let error = operation_body_write_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn operation_body_write_route_refuses_retained_limit() {
+    let error = operation_body_write_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn operation_body_write_route_refuses_scoped_limit() {
+    let error = operation_body_write_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn operation_body_write_route_refuses_work_limit() {
+    let error = operation_body_write_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn operation_body_write_resolves_one_unique_image_block() {
     let body_write = vec![
