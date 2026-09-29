@@ -2434,7 +2434,7 @@ fn read_regions(
             &[sides_range, regions_range],
             warnings,
         )?;
-        if sides.len() != face_count.saturating_mul(2) {
+        if face_count.checked_mul(2) != Some(sides.len()) {
             return Err(error(
                 outer.position(),
                 "redundant Brep region face-side count mismatch",
@@ -2512,7 +2512,7 @@ fn read_region_topology_userdata(
             format_args!("Brep region-topology userdata skipped {skipped} trailing bytes"),
         )?;
     }
-    if sides.len() != face_count.saturating_mul(2) {
+    if face_count.checked_mul(2) != Some(sides.len()) {
         return Err(error(
             extra.range.start,
             "redundant Brep region face-side count mismatch",
@@ -2715,7 +2715,7 @@ fn validate_regions(
     ctx: &DecodeContext<'_>,
     raw: &RawBrep,
 ) -> Result<Vec<ResolvedFaceSide>, GeometryError> {
-    if raw.face_sides.len() != raw.faces.len().saturating_mul(2) {
+    if raw.faces.len().checked_mul(2) != Some(raw.face_sides.len()) {
         return Err(error(
             raw.source_range.start,
             "region side count is invalid",
