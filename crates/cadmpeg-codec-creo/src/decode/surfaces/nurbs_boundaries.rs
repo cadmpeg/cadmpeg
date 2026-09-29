@@ -143,11 +143,19 @@ fn nurbs_surface_boundaries(
             "creo NURBS boundary knots",
             || source_knots.try_clone(),
         )?;
-        let curve = match NurbsCurve::from_checked_lanes(
+        let poles = if let Some(weights) = weights {
+            let mut paired = Vec::new();
+            ctx.try_reserve_items(&mut paired, control_points.len(), "creo NURBS boundary paired poles")?;
+            paired.extend(control_points.into_iter().zip(weights).map(|(point, weight)|
+                cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight }));
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points: paired }
+        } else {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points: control_points }
+        };
+        let curve = match NurbsCurve::new_admitted_poles(
             degree,
             knots,
-            control_points,
-            weights,
+            poles,
             periodic,
         ) {
             Ok(curve) => curve,
@@ -1079,18 +1087,18 @@ mod tests {
 
     #[test]
     fn cubic_generator_knots_refuse_before_vec_copy() {
-        assert!(matches!(cubic_generator_with_collection_limit(63),
+        assert!(matches!(cubic_generator_with_collection_limit(75),
             Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "creo cubic generator knots"));
-        assert!(cubic_generator_with_collection_limit(72)
+        assert!(cubic_generator_with_collection_limit(84)
             .expect("collection limit admits the cubic generator")
             .is_some());
     }
 
     #[test]
     fn cubic_generator_control_points_refuse_before_vec_growth() {
-        assert!(matches!(cubic_generator_with_collection_limit(65),
+        assert!(matches!(cubic_generator_with_collection_limit(77),
             Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "creo cubic generator control points"));
@@ -1098,7 +1106,7 @@ mod tests {
 
     #[test]
     fn cubic_generator_weights_refuse_before_vec_growth() {
-        assert!(matches!(cubic_generator_with_collection_limit(67),
+        assert!(matches!(cubic_generator_with_collection_limit(79),
             Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "creo cubic generator weights"));
@@ -1106,7 +1114,7 @@ mod tests {
 
     #[test]
     fn cubic_generator_constructor_refuses_pairing_and_typed_poles() {
-        for (cap, operation) in [(69, "IR NURBS paired poles"), (71, "IR NURBS admitted poles")] {
+        for (cap, operation) in [(81, "IR NURBS paired poles"), (83, "IR NURBS admitted poles")] {
             assert!(matches!(cubic_generator_with_collection_limit(cap),
                 Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal.operation == operation));
         }
@@ -1133,6 +1141,15 @@ mod tests {
     boundary_collection_limit_test!(nurbs_boundary_control_points_refuse_before_vec_growth, "creo NURBS boundary control points");
     boundary_collection_limit_test!(nurbs_boundary_weights_refuse_before_vec_growth, "creo NURBS boundary weights");
     boundary_collection_limit_test!(nurbs_boundary_knots_refuse_before_fallible_clone, "creo NURBS boundary knots");
+
+    #[test]
+    fn nurbs_boundary_rational_pairing_refuses_collection_limit() {
+        // Two indices, two points, two weights and four knots precede pairing.
+        assert!(matches!(boundary_count_with_limit(11),
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+                if resource.operation == "creo NURBS boundary paired poles"));
+        assert_eq!(boundary_count_with_limit(48).expect("four admitted rational boundaries"), 4);
+    }
 
     #[test]
     fn nurbs_plane_boundary_preserves_control_index_refusal() {

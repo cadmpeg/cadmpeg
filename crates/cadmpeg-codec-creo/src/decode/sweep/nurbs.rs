@@ -385,11 +385,19 @@ pub(in super::super) fn saved_spline_sketch_geometry(
             Some(weights)
         }
     };
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+    let poles = if let Some(weights) = weights {
+        let mut paired = Vec::new();
+        ctx.try_reserve_items(&mut paired, controls.len(), "creo saved spline sketch paired poles")?;
+        paired.extend(controls.into_iter().zip(weights).map(|(point, weight)|
+            cadmpeg_ir::geometry::pcurve::WeightedPole2 { point, weight }));
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: paired }
+    } else {
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: controls }
+    };
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_parts(
         nurbs.degree(),
         knots,
-        controls,
-        weights,
+        poles,
         nurbs.periodic(),
     ) {
         Ok(pcurve) => Ok(Some(SketchGeometry::nurbs(pcurve))),
