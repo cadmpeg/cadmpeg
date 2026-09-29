@@ -462,19 +462,19 @@ fn conic_local_system(
     if let Some(slots) = scalar::decode_explicit_local_system_slots(body, cache) {
         return Some(slots);
     }
-    let mut values = Vec::with_capacity(12);
+    let mut values = [0.0; 12];
+    let mut count = 0;
     let mut cursor = crate::psb::Cursor::new(body);
-    while cursor.pos() < body.len() && values.len() < 12 {
+    while cursor.pos() < body.len() && count < values.len() {
         let run = cursor.take_with(|data, pos| conic_frame_run(data, pos, cache))?;
-        values.extend_from_slice(run.as_slice());
+        let end = count.checked_add(run.as_slice().len())?;
+        values.get_mut(count..end)?.copy_from_slice(run.as_slice());
+        count = end;
     }
-    if cursor.pos() != body.len() || values.len() != 12 {
+    if cursor.pos() != body.len() || count != values.len() {
         return None;
     }
-    let [a0, a1, a2, b0, b1, b2, c0, c1, c2, x, y, z] = values.as_slice() else {
-        return None;
-    };
-    cadmpeg_ir::units::FiniteVector::new([*a0, *a1, *a2, *b0, *b1, *b2, *c0, *c1, *c2, *x, *y, *z])
+    cadmpeg_ir::units::FiniteVector::new(values)
 }
 
 fn named_conic_local_system(
