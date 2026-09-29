@@ -984,15 +984,7 @@ impl Graph {
             ctx.charge_collection_items(2, "NX topology admitted node indices")?;
             reservation.grow(u64_from_index(candidate.bytes.len()))?;
             let mut bytes = Vec::new();
-            bytes
-                .try_reserve_exact(candidate.bytes.len())
-                .map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "NX topology admitted node bytes",
-                        0,
-                        u64_from_index(candidate.bytes.len()),
-                    )
-                })?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bytes, candidate.bytes.len(), "NX topology admitted node bytes")?;
             bytes.extend_from_slice(&candidate.bytes);
             self.by_pos.insert(candidate.pos, key);
             self.nodes.insert(
@@ -1084,7 +1076,7 @@ impl Graph {
         let mut graph = Self::default();
         let mut node_reservation = ctx.reserve_scoped(0, "NX topology node bytes")?;
         for candidate in selected.into_iter().chain(admitted_ownership) {
-            let Some(node) = candidate.materialize(ctx, &mut node_reservation, stream)? else {
+            let Some(node) = candidate.materialize(&mut node_reservation, stream)? else {
                 continue;
             };
             let key = (node.kind, node.xmt);
@@ -1735,7 +1727,6 @@ impl NodeCandidate {
 
     fn materialize(
         self,
-        ctx: &DecodeContext<'_>,
         reservation: &mut ScopedReservation<'_>,
         stream: &[u8],
     ) -> Result<Option<Node>, CodecError> {
@@ -1744,9 +1735,7 @@ impl NodeCandidate {
         };
         reservation.grow(u64_from_index(bytes.len()))?;
         let mut owned = Vec::new();
-        owned.try_reserve_exact(bytes.len()).map_err(|_| {
-            ctx.refuse_codec_limit("NX topology node bytes", 0, u64_from_index(bytes.len()))
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut owned, bytes.len(), "NX topology node bytes")?;
         owned.extend_from_slice(bytes);
         Ok(Some(Node {
             kind: self.kind,

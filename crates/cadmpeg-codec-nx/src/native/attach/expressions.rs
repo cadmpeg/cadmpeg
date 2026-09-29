@@ -44,11 +44,7 @@ pub(in crate::native) fn attach_expression_parameters(
             ))?;
         }
         let table_expressions = tables.entry(table).or_default();
-        ctx.charge_collection_items(1, "NX expression table members")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &crate::native::om::Expression,
-        >()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(table_expressions, 1, "NX expression table members")?;
+        ctx.reserve_scoped_vec(&mut reservation, table_expressions, 1, "NX expression table members")?;
         table_expressions.push(expression);
     }
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
@@ -68,11 +64,7 @@ pub(in crate::native) fn attach_expression_parameters(
             ))?;
         }
         let uses = uses_by_expression.entry(key).or_default();
-        ctx.charge_collection_items(1, "NX expression use member")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &crate::native::features::FeatureParameterUse,
-        >()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(uses, 1, "NX expression use member")?;
+        ctx.reserve_scoped_vec(&mut reservation, uses, 1, "NX expression use member")?;
         uses.push(parameter_use);
     }
     for uses in uses_by_expression.values_mut() {
@@ -106,12 +98,7 @@ pub(in crate::native) fn attach_expression_parameters(
     }
     let mut ordered_tables = Vec::new();
     for entry in tables {
-        ctx.charge_collection_items(1, "NX expression ordered tables")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            &str,
-            Vec<&crate::native::om::Expression>,
-        )>()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ordered_tables, 1, "NX expression ordered tables")?;
+        ctx.reserve_scoped_vec(&mut reservation, &mut ordered_tables, 1, "NX expression ordered tables")?;
         ordered_tables.push(entry);
     }
     for (_, expressions) in &mut ordered_tables {
@@ -339,11 +326,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 ))?;
             }
             let ids = parameter_ids.entry(key).or_default();
-            ctx.charge_collection_items(1, "NX parameter identity candidates")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                ParameterId,
-            >()))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(ids, 1, "NX parameter identity candidates")?;
+            ctx.reserve_scoped_vec(&mut reservation, ids, 1, "NX parameter identity candidates")?;
             ids.push(id);
         }
         for (ordinal, expression) in expressions.into_iter().enumerate() {
@@ -584,21 +567,13 @@ fn order_expression_dependencies(
         }
         let Some(index) = ready else { break };
         emitted[index] = true;
-        ctx.charge_collection_items(1, "NX expression dependency order")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &crate::native::om::Expression,
-        >()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut order, 1, "NX expression dependency order")?;
+        ctx.reserve_scoped_vec(reservation, &mut order, 1, "NX expression dependency order")?;
         order.push(expressions[index]);
     }
     let ordered_count = order.len();
     for (index, expression) in expressions.iter().enumerate() {
         if !emitted[index] {
-            ctx.charge_collection_items(1, "NX expression dependency order")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                &crate::native::om::Expression,
-            >()))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut order, 1, "NX expression dependency order")?;
+            ctx.reserve_scoped_vec(reservation, &mut order, 1, "NX expression dependency order")?;
             order.push(expression);
         }
     }

@@ -500,18 +500,7 @@ pub(crate) fn offset_store_named_point<'a>(
             (Some(first_scalar), Some(second_scalar), None) => {
                 if candidate.is_none() {
                     let value = name.value();
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(value.len()),
-                        "NX named point name",
-                    )?;
-                    let mut owned = String::new();
-                    owned.try_reserve_exact(value.len()).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "NX named point name",
-                            0,
-                            cadmpeg_core::decode::u64_from_index(value.len()),
-                        )
-                    })?;
+                    let mut owned = ctx.retained_string(value.len(), "NX named point name")?;
                     owned.push_str(value);
                     candidate = Some(OffsetStoreNamedPoint {
                         name: owned,
@@ -4968,34 +4957,15 @@ pub(crate) fn evaluate_constant_expression(
 
     impl Parser<'_, '_, '_> {
         fn push_value(&mut self, value: FiniteReal) -> Option<()> {
-            let charged = self
-                .ctx
-                .charge_collection_items(1, "NX expression value stack")
-                .and_then(|()| {
-                    if self.values.len() < self.charged_values_len {
-                        return Ok(());
-                    }
-                    self.values_reservation
-                        .grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FiniteReal,
-                        >(
-                        )))?;
-                    self.charged_values_len =
-                        self.charged_values_len.checked_add(1).ok_or_else(|| {
-                            self.ctx
-                                .refuse_codec_limit("NX expression value stack", 0, u64::MAX)
-                        })?;
-                    Ok(())
-                });
+            let charged = (|| -> Result<(), CodecError> {
+                if self.values.len() >= self.charged_values_len {
+                    self.values_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FiniteReal>()))?;
+                    self.charged_values_len = self.charged_values_len.checked_add(1).ok_or_else(|| self.ctx.refuse_codec_limit("NX expression value stack", 0, u64::MAX))?;
+                }
+                self.ctx.reserve_vec(&mut self.values, 1, "NX expression value stack")
+            })();
             if let Err(error) = charged {
                 self.failure = Some(error);
-                return None;
-            }
-            if self.values.try_reserve(1).is_err() {
-                self.failure = Some(
-                    self.ctx
-                        .refuse_codec_limit("NX expression value stack", 0, 1),
-                );
                 return None;
             }
             self.values.push(value);
@@ -5003,35 +4973,15 @@ pub(crate) fn evaluate_constant_expression(
         }
 
         fn push_operator(&mut self, operator: Operator) -> Option<()> {
-            let charged = self
-                .ctx
-                .charge_collection_items(1, "NX expression operator stack")
-                .and_then(|()| {
-                    if self.operators.len() < self.charged_operators_len {
-                        return Ok(());
-                    }
-                    self.operators_reservation
-                        .grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            Operator,
-                        >(
-                        )))?;
-                    self.charged_operators_len =
-                        self.charged_operators_len.checked_add(1).ok_or_else(|| {
-                            self.ctx
-                                .refuse_codec_limit("NX expression operator stack", 0, u64::MAX)
-                        })?;
-                    Ok(())
-                });
+            let charged = (|| -> Result<(), CodecError> {
+                if self.operators.len() >= self.charged_operators_len {
+                    self.operators_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Operator>()))?;
+                    self.charged_operators_len = self.charged_operators_len.checked_add(1).ok_or_else(|| self.ctx.refuse_codec_limit("NX expression operator stack", 0, u64::MAX))?;
+                }
+                self.ctx.reserve_vec(&mut self.operators, 1, "NX expression operator stack")
+            })();
             if let Err(error) = charged {
                 self.failure = Some(error);
-                return None;
-            }
-            if self.operators.try_reserve(1).is_err() {
-                self.failure = Some(self.ctx.refuse_codec_limit(
-                    "NX expression operator stack",
-                    0,
-                    1,
-                ));
                 return None;
             }
             self.operators.push(operator);

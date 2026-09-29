@@ -27,13 +27,7 @@ fn uuid_value_id(
         .checked_add(decimal_digits(section_ordinal))
         .and_then(|length| length.checked_add(decimal_digits(offset)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX OM UUID identity length", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "retain NX OM UUID identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX OM UUID identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX OM UUID identity")?;
     write!(
         id,
         "nx:om-object-uuid-values-{section_ordinal}:value#{offset}"
@@ -52,13 +46,7 @@ fn uuid_record_id(
         .checked_add(decimal_digits(section_ordinal))
         .and_then(|length| length.checked_add(decimal_digits(record_ordinal)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX OM UUID record identity length", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "retain NX OM UUID record identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX OM UUID record identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX OM UUID record identity")?;
     write!(
         id,
         "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"

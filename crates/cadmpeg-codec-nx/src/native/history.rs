@@ -85,9 +85,7 @@ impl BodyWriterHistory {
                     writer.as_str().len(),
                     "NX primary writer dependencies",
                 )?;
-                dependencies
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("NX primary writer dependencies", 0, 1))?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(dependencies, 1, "NX primary writer dependencies")?;
                 dependencies.push(writer.clone());
             }
             Ok(())

@@ -85,11 +85,7 @@ impl NameField<&str, usize, ()> {
             atom: code.atom,
             target: source_offset(u64_from_index(code.offset)),
         });
-        ctx.charge_retained(u64_from_index(self.value.len()), "NX native name field")?;
-        let mut value = String::new();
-        value.try_reserve_exact(self.value.len()).map_err(|_| {
-            ctx.refuse_codec_limit("NX native name field", 0, u64_from_index(self.value.len()))
-        })?;
+        let mut value = ctx.retained_string(self.value.len(), "NX native name field")?;
         value.push_str(self.value);
         Ok(NameField::new(value, offset, code).ok())
     }

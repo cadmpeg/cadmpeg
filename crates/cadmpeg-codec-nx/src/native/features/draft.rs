@@ -759,13 +759,7 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                             "NX draft complete reference indices",
                         )?;
                         let mut complete_indices = Vec::new();
-                        complete_indices.try_reserve_exact(count).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "allocate NX draft complete reference indices",
-                                0,
-                                cadmpeg_core::decode::u64_from_index(count),
-                            )
-                        })?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut complete_indices, count, "allocate NX draft complete reference indices")?;
                         complete_indices.extend(
                             graph
                                 .references()
@@ -914,13 +908,7 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
             "NX draft construction graph",
         )?;
         let mut graph = Vec::new();
-        graph.try_reserve_exact(count).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX draft construction graph",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut graph, count, "allocate NX draft construction graph")?;
         graph.extend(
             references
                 .iter()
@@ -972,14 +960,7 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
             .len()
             .checked_add(key.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX draft graph payload identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX draft graph payload identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX draft graph payload identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX draft graph payload identity")?;
         id.push_str(prefix);
         id.push_str(key);
         let mut construction_references: [String; 4] = std::array::from_fn(|_| String::new());

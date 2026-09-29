@@ -153,13 +153,10 @@ impl SupportUvValues {
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         ctx.charge_retained(bytes, operation)?;
         let mut first = Vec::new();
-        first
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut first, count, operation)?;
         let mut second = if lane_count == 2 {
             let mut lane = Vec::new();
-            lane.try_reserve_exact(count)
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut lane, count, operation)?;
             Some(lane)
         } else {
             None

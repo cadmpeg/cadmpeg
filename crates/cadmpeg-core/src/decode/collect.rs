@@ -191,6 +191,11 @@ impl DecodeContext<'_> {
         self.copy_slice(values, operation)
     }
 
+    /// Reserves text bytes charged by aggregate admission.
+    pub fn reserve_admitted_string(text: &mut String, additional: usize, operation: &'static str) -> Result<(), CodecError> {
+        text.try_reserve(additional).map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::RetainedBytes, u64::MAX, u64_from_index(additional), operation)))
+    }
+
     fn collection_allocation_failed(&self, count: usize, operation: &'static str) -> CodecError {
         CodecError::ResourceLimit(ResourceLimit::allocation_failed(
             ResourceDimension::CollectionItems,
@@ -1878,5 +1883,25 @@ mod tests {
         |ctx: &DecodeContext<'_>| ctx.collect_retained_vec([1u16], "test retained collection").map(|_| ()));
     operation_case!(copy_slice_with_work_refuses_before_copy, ResourceDimension::WorkUnits, 2,
         |ctx: &DecodeContext<'_>| ctx.copy_slice_with_work(&[1u8, 2], "test work copy").map(|_| ()));
+
+    #[test]
+    fn admitted_string_reserve_preserves_prefix_under_service_profile() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        ctx.charge_retained(2, "test admitted text slots").expect("service admits text");
+        let mut text = String::from("a");
+        DecodeContext::reserve_admitted_string(&mut text, 2, "test admitted text slots").expect("text allocation");
+        assert_eq!(text, "a");
+        assert!(text.capacity() >= 3);
+    }
+    #[test]
+    fn admitted_string_reserve_follows_one_below_limit_refusal_before_growth() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 1);
+        let mut text = String::new();
+        let result = ctx.charge_retained(2, "test admitted text slots").and_then(|()| DecodeContext::reserve_admitted_string(&mut text, 2, "test admitted text slots"));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert_eq!(text.capacity(), 0);
+    }
 
 }

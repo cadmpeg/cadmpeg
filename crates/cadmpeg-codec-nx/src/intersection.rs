@@ -363,11 +363,7 @@ pub(crate) struct CurveScan {
 impl CurveScan {
     pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let mut curves = Vec::new();
-        let count = cadmpeg_core::decode::u64_from_index(self.curves.len());
-        ctx.charge_collection_items(count, "NX intersection curve copy")?;
-        curves
-            .try_reserve_exact(self.curves.len())
-            .map_err(|_| ctx.refuse_codec_limit("NX intersection curve copy", 0, count))?;
+        ctx.reserve_vec(&mut curves, self.curves.len(), "NX intersection curve copy")?;
         for curve in &self.curves {
             ctx.charge_work(1, "copy NX intersection curves")?;
             let [support_first, support_second] = [0, 1].map(|side| {
@@ -1225,9 +1221,7 @@ fn chart_points(
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         let _reservation = ctx.reserve_scoped(bytes, operation)?;
         let mut points = Vec::new();
-        points
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut points, count, operation)?;
         for index in 0..count {
             let Some(point) = point_m(stream, block + index * 24) else {
                 return Ok(None);
@@ -1250,13 +1244,9 @@ fn chart_points(
     )?;
     let _reservation = ctx.reserve_scoped(bytes, operation)?;
     let mut points = Vec::new();
-    points
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut points, count, operation)?;
     let mut native_parameters = Vec::new();
-    native_parameters
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut native_parameters, count, operation)?;
     let mut ext_support_uv = [Some(Vec::new()), Some(Vec::new())];
     let mut lane_reservations = [
         ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
@@ -1274,13 +1264,7 @@ fn chart_points(
                 .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
             {
                 if let Some(values) = &mut ext_support_uv[lane] {
-                    ctx.charge_collection_items(1, "NX raw ext11 support-UV lane")?;
-                    lane_reservations[lane].grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<[f64; 2]>(),
-                    ))?;
-                    values.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("NX raw ext11 support-UV lane", 0, 1)
-                    })?;
+                    ctx.reserve_scoped_vec(&mut lane_reservations[lane], values, 1, "NX raw ext11 support-UV lane")?;
                     values.push(lanes[lane]);
                 }
             } else {
@@ -1560,9 +1544,7 @@ fn uv_at(
         operation,
     )?;
     let mut scalars = Vec::new();
-    scalars
-        .try_reserve_exact(count_usize)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut scalars, count_usize, operation)?;
     for _ in 0..count_usize {
         let Some(value) = view.f64_be() else {
             return Ok(None);

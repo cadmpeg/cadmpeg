@@ -56,9 +56,7 @@ impl<T> BranchItems<T> {
         ctx.charge_collection_items(count_u64, "NX branch item mapping")?;
         ctx.charge_retained(bytes, "NX branch item mapping")?;
         let mut mapped = Vec::new();
-        mapped
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit("NX branch item mapping", 0, count_u64))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut mapped, count, "NX branch item mapping")?;
         for (index, item) in self.0.into_iter().enumerate() {
             mapped.push(f(index, item));
         }
@@ -78,9 +76,7 @@ impl<T> BranchItems<T> {
         ctx.charge_collection_items(count_u64, "NX branch item mapping")?;
         ctx.charge_retained(bytes, "NX branch item mapping")?;
         let mut mapped = Vec::new();
-        mapped
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit("NX branch item mapping", 0, count_u64))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut mapped, count, "NX branch item mapping")?;
         for (index, item) in self.0.into_iter().enumerate() {
             mapped.push(f(index, item)?);
         }

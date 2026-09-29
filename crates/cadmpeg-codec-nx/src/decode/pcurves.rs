@@ -937,9 +937,7 @@ fn reversed_pole_rows<T: Copy>(
     ctx.charge_collection_items(count, "nx reversed pcurve poles")?;
     ctx.charge_retained(bytes, "nx reversed pcurve poles")?;
     let mut reversed = Vec::new();
-    reversed
-        .try_reserve_exact(rows.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx reversed pcurve poles", 0, count))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut reversed, rows.len(), "nx reversed pcurve poles")?;
     reversed.extend_from_slice(rows);
     reversed.reverse();
     Ok(reversed)
@@ -960,9 +958,7 @@ fn reflected_pcurve_knots(
     ctx.charge_collection_items(count, "nx reversed pcurve knots")?;
     ctx.charge_retained(bytes, "nx reversed pcurve knots")?;
     let mut reversed = Vec::new();
-    reversed
-        .try_reserve_exact(knots.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx reversed pcurve knots", 0, count))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut reversed, knots.len(), "nx reversed pcurve knots")?;
     for knot in knots.finite_knots().rev() {
         let Some(reflected) = cadmpeg_ir::math::reflect_parameter(knot, lower, upper) else {
             return Ok(None);

@@ -3702,14 +3702,7 @@ fn operation_header_identity_key(
             length.checked_add(slot.len())
         })
         .ok_or_else(|| ctx.refuse_codec_limit("retain NX operation header identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "retain NX operation header identity",
-    )?;
-    let mut identity = String::new();
-    identity
-        .try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX operation header identity", 0, 1))?;
+    let mut identity = ctx.retained_string(length, "retain NX operation header identity")?;
     identity.push_str(prefix);
     identity.push_str(slots[0]);
     for slot in slots.iter().skip(1) {
@@ -3754,9 +3747,7 @@ fn assign_operation_header_identities(
             ctx.charge_collection_items(1, "NX operation header counts")?;
             counts_guard.grow(cadmpeg_core::decode::u64_from_index(key.len()))?;
             let mut copy = String::new();
-            copy.try_reserve_exact(key.len()).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX operation header count key", 0, 1)
-            })?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut copy, key.len(), "allocate NX operation header count key")?;
             copy.push_str(key);
             counts.insert(copy, 0);
         }
@@ -3803,13 +3794,7 @@ fn format_feature_history_id(
             .and_then(|length| length.checked_add(decimal_width(subordinal)))
             .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature history identity", 0, 1))?;
     }
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "retain NX feature history identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX feature history identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX feature history identity")?;
     write!(
         &mut id,
         "{prefix}{kind}#{section_key}-{operation_ordinal:010}"
@@ -3841,13 +3826,7 @@ fn format_feature_child_id(
         .checked_add(suffix.len())
         .and_then(|length| length.checked_add(digits))
         .ok_or_else(|| ctx.refuse_codec_limit("NX feature child identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "NX feature child identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX feature child identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "NX feature child identity")?;
     write!(&mut id, "{parent}{suffix}{ordinal:010}")
         .map_err(|_| ctx.refuse_codec_limit("write NX feature child identity", 0, 1))?;
     Ok(id)
@@ -3888,9 +3867,7 @@ pub(super) fn feature_operation_labels(
             "NX feature label section key",
         )?;
         let mut section_key = String::new();
-        section_key
-            .try_reserve_exact(section_key_len)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX feature label section key", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut section_key, section_key_len, "allocate NX feature label section key")?;
         write!(&mut section_key, "{section_ordinal:010}")
             .map_err(|_| ctx.refuse_codec_limit("write NX feature label section key", 0, 1))?;
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -4005,9 +3982,7 @@ pub(super) fn feature_boolean_operations(
                     )
                 })
                 .and_then(|()| {
-                    operations
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit("allocate NX Boolean operations", 0, 1))
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut operations, 1, "allocate NX Boolean operations")
                 })
             {
                 failure = Some(error);
@@ -4074,13 +4049,7 @@ pub(super) fn feature_operation_records(
                         ctx.charge_collection_items(1, "NX operation record identity counts")?;
                         counts_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
                         let mut copy = String::new();
-                        copy.try_reserve_exact(key.len()).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "allocate NX operation record identity key",
-                                0,
-                                1,
-                            )
-                        })?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut copy, key.len(), "allocate NX operation record identity key")?;
                         copy.push_str(key);
                         identity_counts.insert(copy, 1);
                     }
@@ -4127,9 +4096,7 @@ pub(super) fn feature_operation_records(
                     )
                 })
                 .and_then(|()| {
-                    records.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX feature operation records", 0, 1)
-                    })
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut records, 1, "allocate NX feature operation records")
                 })
             {
                 failure = Some(error);
@@ -4341,9 +4308,7 @@ pub(super) fn feature_operation_body_writes(
                         )
                     })
                     .and_then(|()| {
-                        writes.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("allocate NX operation body writes", 0, 1)
-                        })
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut writes, 1, "allocate NX operation body writes")
                     })
                 {
                     failure = Some(error);
@@ -5063,14 +5028,7 @@ pub(super) fn feature_operation_state_journal_uses(
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1)
             })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX operation journal use identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX operation journal use identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX operation journal use identity")?;
         write!(
             &mut id,
             "{prefix}{operation_key}-{journal_key}-{journal_row_ordinal:010}"
@@ -5434,25 +5392,12 @@ pub(super) fn feature_body_segment_uses(
             .checked_add(suffix.len())
             .and_then(|count| count.checked_add(replacement.len()))
             .ok_or_else(|| ctx.refuse_codec_limit("NX body segment use identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX body segment use identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX body segment use identity", 0, 1))?;
+        let mut id = ctx.retained_string(id_len, "NX body segment use identity")?;
         id.push_str(prefix);
         id.push_str(replacement);
         id.push_str(suffix);
         let copy = |source: &str, operation: &'static str| -> Result<String, CodecError> {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(source.len()),
-                operation,
-            )?;
-            let mut value = String::new();
-            value
-                .try_reserve_exact(source.len())
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            let mut value = ctx.retained_string(source.len(), operation)?;
             value.push_str(source);
             Ok(value)
         };
@@ -5545,9 +5490,7 @@ fn feature_input_store_sections(
             "NX input-store operation groups",
         )?;
         let mut label = String::new();
-        label
-            .try_reserve_exact(key_len)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX input-store operation label", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut label, key_len, "allocate NX input-store operation label")?;
         label.push_str(&input.operation_label);
         let mut sections = BTreeSet::new();
         sections.insert(block.section_ordinal);
@@ -5642,13 +5585,7 @@ pub(super) fn feature_body_data_block_uses(
                 })
             })
             .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature body block use id", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "retain NX feature body block use id",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX feature body block use id", 0, 1))?;
+        let mut id = ctx.retained_string(id_len, "retain NX feature body block use id")?;
         id.push_str(prefix);
         if prefix.len() != reference.id.len() {
             id.push_str(new);
@@ -5758,13 +5695,7 @@ pub(super) fn feature_input_block_identity_groups(
             ))?;
         }
         let members = by_block.entry(input.data_block.as_str()).or_default();
-        ctx.charge_collection_items(1, "NX input block group members")?;
-        member_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &FeatureInputBlock,
-        >()))?;
-        members
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX input block group members", 0, 1))?;
+        ctx.reserve_scoped_vec(&mut member_reservation, members, 1, "NX input block group members")?;
         members.push(input);
     }
     let mut group_reservation = ctx.reserve_scoped(0, "NX input block group order")?;
@@ -5788,14 +5719,7 @@ pub(super) fn feature_input_block_identity_groups(
             "sort NX input block group members",
         )?;
         members.sort_by_key(|member| member.source_offset);
-        ctx.charge_collection_items(1, "NX input block group order")?;
-        group_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            &str,
-            Vec<&FeatureInputBlock>,
-        )>()))?;
-        groups
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX input block group order", 0, 1))?;
+        ctx.reserve_scoped_vec(&mut group_reservation, &mut groups, 1, "NX input block group order")?;
         groups.push((data_block, members));
     }
     drop(map_reservation);
@@ -5832,14 +5756,7 @@ pub(super) fn feature_input_block_identity_groups(
             .len()
             .checked_add(digits.max(10))
             .ok_or_else(|| ctx.refuse_codec_limit("NX input block identity group id", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX input block identity group id",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX input block identity group id", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX input block identity group id")?;
         write!(&mut id, "{prefix}{ordinal:010}")
             .map_err(|_| ctx.refuse_codec_limit("format NX input block identity group id", 0, 1))?;
         ctx.reserve_retained_vec(&mut output, 1, "NX input block identity groups")?;
@@ -5956,13 +5873,7 @@ fn format_column_relation_id(
         .and_then(|length| length.checked_add(digits.max(10)))
         .and_then(|length| length.checked_add(if construction_slot.is_some() { 13 } else { 2 }))
         .ok_or_else(|| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "NX column relation identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX column relation identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "NX column relation identity")?;
     if let Some(slot) = construction_slot {
         write!(&mut id, "{prefix}{key}-{slot:010}-{kind}-{ordinal:010}")
             .map_err(|_| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
@@ -6184,14 +6095,7 @@ pub(super) fn feature_input_column_targets(
             .len()
             .checked_add(key.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX input column target identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX input column target identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX input column target identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX input column target identity")?;
         id.push_str(prefix);
         id.push_str(key);
         ctx.reserve_retained_vec(&mut output, 1, "NX input column targets")?;
@@ -6339,14 +6243,7 @@ pub(super) fn feature_datum_plane_payloads(
             .len()
             .checked_add(key.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX datum plane payload identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX datum plane payload identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX datum plane payload identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX datum plane payload identity")?;
         id.push_str(prefix);
         id.push_str(key);
         let operation_label = ctx.copy_retained_text(&header.operation_label, "NX datum plane payload operation label")?;
@@ -6385,9 +6282,7 @@ pub(super) fn feature_datum_csys_payloads(
         )?;
         let copy = |value: &str| -> Result<String, CodecError> {
             let mut id = String::new();
-            id.try_reserve_exact(value.len()).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX datum CSYS source block identity", 0, 1)
-            })?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut id, value.len(), "allocate NX datum CSYS source block identity")?;
             id.push_str(value);
             Ok(id)
         };
@@ -7280,8 +7175,7 @@ fn offset_data_block_bytes_for_section<'a>(
         )?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(map_bytes))?;
         let mut key = String::new();
-        key.try_reserve_exact(length)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX offset block view key", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut key, length, "allocate NX offset block view key")?;
         write!(&mut key, "{prefix}{section_ordinal}{infix}{block_ordinal}")
             .map_err(|_| ctx.refuse_codec_limit("format NX offset block view key", 0, 1))?;
         let offset = entry_offset
@@ -7455,13 +7349,7 @@ pub(super) fn feature_sketch_payload_names(
             "NX sketch name source blocks",
         )?;
         let mut ids = Vec::new();
-        ids.try_reserve_exact(count).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX sketch name source blocks",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ids, count, "allocate NX sketch name source blocks")?;
         ids.extend(construction.members.iter().map(|member| &member.data_block));
         ids.push(&construction.terminal_data_block);
         let Some(joined) = JoinedPayload::from_source(ctx, ids.iter().copied(), &blocks)? else {
@@ -7479,13 +7367,7 @@ pub(super) fn feature_sketch_payload_names(
                 .checked_sub(old.len())
                 .and_then(|length| length.checked_add(new.len()))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload identity", 0, 1))?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(length),
-                "NX sketch payload identity",
-            )?;
-            let mut id = String::new();
-            id.try_reserve_exact(length)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload identity", 0, 1))?;
+            let mut id = ctx.retained_string(length, "NX sketch payload identity")?;
             id.push_str(&construction.id[..start]);
             id.push_str(new);
             id.push_str(&construction.id[end..]);
@@ -7548,13 +7430,7 @@ fn sorted_payload_refs<'ctx, 'a, T>(
         "NX sketch payload record references",
     )?;
     let mut references = Vec::new();
-    references.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX sketch payload record references",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut references, count, "allocate NX sketch payload record references")?;
     references.extend(source.iter().filter(|record| include(record)));
     let sort_work = cadmpeg_core::decode::u64_from_index(count)
         .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
@@ -7848,13 +7724,7 @@ pub(super) fn feature_sketch_point_groups(
             "NX sketch point group member slots",
         )?;
         let mut members = Vec::new();
-        members.try_reserve_exact(count).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX sketch point group members",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut members, count, "allocate NX sketch point group members")?;
         for witness in points.iter().filter(&matches) {
             members.push(ctx.copy_retained_text(&witness.id, "NX sketch point group member")?);
         }
@@ -7864,13 +7734,7 @@ pub(super) fn feature_sketch_point_groups(
             .len()
             .checked_add(key.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point group identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(length),
-            "NX sketch point group identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(length)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch point group identity", 0, 1))?;
+        let mut id = ctx.retained_string(length, "NX sketch point group identity")?;
         id.push_str(prefix);
         id.push_str(key);
         ctx.reserve_retained_vec(&mut groups, 1, "NX sketch point groups")?;

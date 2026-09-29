@@ -28,14 +28,7 @@ impl ProductText<&str> {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<ProductText<String>, cadmpeg_core::CodecError> {
         let value = self.as_str();
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(value.len()),
-            "retain NX store version",
-        )?;
-        let mut owned = String::new();
-        owned
-            .try_reserve_exact(value.len())
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX store version", 0, 1))?;
+        let mut owned = ctx.retained_string(value.len(), "retain NX store version")?;
         owned.push_str(value);
         ProductText::new(owned)
             .map_err(|_| ctx.refuse_codec_limit("validate NX store version", 0, 1))

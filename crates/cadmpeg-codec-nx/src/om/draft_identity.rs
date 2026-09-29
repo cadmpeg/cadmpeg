@@ -160,11 +160,7 @@ impl DraftIdentityFrame {
         let Some(text) = std::str::from_utf8(&tail[..len]).ok() else {
             return Ok(None);
         };
-        ctx.charge_retained(u64_from_index(len), "NX draft identity text")?;
-        let mut identity = String::new();
-        identity.try_reserve_exact(len).map_err(|_| {
-            ctx.refuse_codec_limit("NX draft identity text", 0, u64_from_index(len))
-        })?;
+        let mut identity = ctx.retained_string(len, "NX draft identity text")?;
         identity.push_str(text);
         Ok(Some(Self {
             prefix,

@@ -135,9 +135,7 @@ pub(crate) fn classify_layers(
             "retain NX schema carrier labels",
         )?;
         let mut label = String::new();
-        label.try_reserve_exact(label_len).map_err(|_| {
-            ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut label, label_len, "nx schema carrier labels")?;
         std::fmt::Write::write_fmt(&mut label, format_args!("stream@{}", stream.file_offset))
             .map_err(|_| {
                 ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))

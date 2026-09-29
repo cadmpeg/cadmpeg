@@ -31,9 +31,7 @@ impl Sha256Hex {
         ctx.charge_retained(64, operation)?;
         let digest = cadmpeg_ir::hash::sha256(bytes);
         let mut encoded = String::new();
-        encoded
-            .try_reserve_exact(64)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 64))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut encoded, 64, operation)?;
         for byte in digest {
             encoded.push(char::from(HEX[usize::from(byte >> 4)]));
             encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));

@@ -305,8 +305,7 @@ pub(super) fn fast_load_component_object_groups(
             "NX fast-load group temporary lists",
         )?;
         let mut uses = Vec::new();
-        uses.try_reserve_exact(use_count)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load group uses", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut uses, use_count, "allocate NX fast-load group uses")?;
         for occurrence in occurrences
             .iter()
             .filter(|occurrence| occurrence.component_uuid == uuid.id)
@@ -314,9 +313,7 @@ pub(super) fn fast_load_component_object_groups(
             uses.push(ctx.copy_retained_text(&occurrence.id, "allocate NX fast-load group use")?);
         }
         let mut values = Vec::new();
-        values
-            .try_reserve_exact(value_count)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load group values", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut values, value_count, "allocate NX fast-load group values")?;
         for value in object_uuid_values
             .iter()
             .filter(|value| value.uuid == uuid.uuid)
@@ -363,10 +360,7 @@ fn structure_identity(
         .len()
         .checked_add(digits)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    let mut id = ctx.retained_string(length, operation)?;
     write!(id, "{prefix}{ordinal}").map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     Ok(id)
 }

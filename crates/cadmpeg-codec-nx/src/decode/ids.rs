@@ -55,11 +55,7 @@ impl IdScope {
         let mut count = CountBytes(0);
         write!(&mut count, "s{stream_index}")
             .map_err(|_| ctx.refuse_codec_limit("nx stream scope text", 0, u64::MAX))?;
-        ctx.charge_retained(u64_from_index(count.0), "nx stream scope text")?;
-        let mut text = String::new();
-        text.try_reserve_exact(count.0).map_err(|_| {
-            ctx.refuse_codec_limit("nx stream scope text", 0, u64_from_index(count.0))
-        })?;
+        let mut text = ctx.retained_string(count.0, "nx stream scope text")?;
         write!(&mut text, "s{stream_index}").map_err(|_| {
             ctx.refuse_codec_limit("nx stream scope text", 0, u64_from_index(count.0))
         })?;
@@ -95,10 +91,7 @@ impl IdScope {
         let mut count = CountBytes(0);
         write!(&mut count, "nx:{}", self.0.as_str())
             .map_err(|_| ctx.refuse_codec_limit("nx scope prefix", 0, u64::MAX))?;
-        ctx.charge_retained(u64_from_index(count.0), "nx scope prefix")?;
-        let mut text = String::new();
-        text.try_reserve_exact(count.0)
-            .map_err(|_| ctx.refuse_codec_limit("nx scope prefix", 0, u64_from_index(count.0)))?;
+        let mut text = ctx.retained_string(count.0, "nx scope prefix")?;
         write!(&mut text, "nx:{}", self.0.as_str())
             .map_err(|_| ctx.refuse_codec_limit("nx scope prefix", 0, u64_from_index(count.0)))?;
         Ok(text)
@@ -127,10 +120,7 @@ impl IdScope {
         let mut count = CountBytes(0);
         write!(&mut count, "nx:{}:{}#{key}", self.0.as_str(), kind.as_str())
             .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64::MAX))?;
-        ctx.charge_retained(u64_from_index(count.0), "nx identity text")?;
-        let mut text = String::new();
-        text.try_reserve_exact(count.0)
-            .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64_from_index(count.0)))?;
+        let mut text = ctx.retained_string(count.0, "nx identity text")?;
         write!(&mut text, "nx:{}:{}#{key}", self.0.as_str(), kind.as_str())
             .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64_from_index(count.0)))?;
         Identity::new(text)

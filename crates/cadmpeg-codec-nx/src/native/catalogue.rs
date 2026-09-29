@@ -2258,9 +2258,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 "NX roll-forward catalog group slots",
             )?;
             let mut groups = Vec::new();
-            groups.try_reserve_exact(count).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX roll-forward catalog groups", 0, 1)
-            })?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut groups, count, "allocate NX roll-forward catalog groups")?;
             groups.extend(
                 m.om.operation_state_groups
                     .iter()

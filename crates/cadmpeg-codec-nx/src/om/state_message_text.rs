@@ -5,7 +5,7 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::printable_string::PrintableString;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{DecodeContext};
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,15 +36,7 @@ impl StateMessageText<&str> {
         ctx: &DecodeContext<'_>,
     ) -> Result<StateMessageText<String>, CodecError> {
         let text = self.as_str();
-        ctx.charge_retained(u64_from_index(text.len()), "NX state message text")?;
-        let mut owned = String::new();
-        owned.try_reserve(text.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "NX state message text allocation",
-                0,
-                u64_from_index(text.len()),
-            )
-        })?;
+        let mut owned = ctx.retained_string(text.len(), "NX state message text")?;
         owned.push_str(text);
         Ok(StateMessageText(
             PrintableString::new(owned).map_err(CodecError::malformed)?,

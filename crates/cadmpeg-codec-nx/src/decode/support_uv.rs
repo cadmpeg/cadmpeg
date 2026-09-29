@@ -149,12 +149,7 @@ fn linear_pcurve_geometry(
     controls: &[Point2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<PcurveGeometry, cadmpeg_core::CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(controls.len());
-    ctx.charge_collection_items(count, "nx support UV admitted controls")?;
-    let mut points = Vec::new();
-    points
-        .try_reserve_exact(controls.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx support UV admitted controls", 0, count))?;
+    let mut points = ctx.collection_vec(controls.len(), "nx support UV admitted controls")?;
     for control in controls {
         points.push(FinitePoint2::new(*control).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("control_points contains a non-finite point")
@@ -1737,9 +1732,7 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
         };
         ctx.charge_collection_items(2, "nx coupled support UV boundary lanes")?;
         for lane in &mut lanes {
-            lane.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx coupled support UV boundary lanes", 0, 1)
-            })?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(lane, 1, "nx coupled support UV boundary lanes")?;
         }
         lanes[blend_side].push(blend_parameters);
         lanes[support_side].push(support_parameters);
@@ -2278,12 +2271,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     validated_endpoint_witnesses: &EndpointWitnesses,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let source_count = cadmpeg_core::decode::u64_from_index(sources.len());
-    ctx.charge_collection_items(source_count, "nx completion source prefixes")?;
-    let mut source_prefixes = Vec::new();
-    source_prefixes
-        .try_reserve_exact(sources.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx completion source prefixes", 0, source_count))?;
+    let mut source_prefixes = ctx.collection_vec(sources.len(), "nx completion source prefixes")?;
     for source in sources {
         source_prefixes.push(source.scope.prefix_charged(ctx)?);
     }

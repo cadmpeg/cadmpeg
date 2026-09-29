@@ -2082,15 +2082,11 @@ fn insert_source_attribute(
         "nx source attribute text",
     )?;
     let mut key_text = String::new();
-    key_text
-        .try_reserve_exact(key_len.0)
-        .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut key_text, key_len.0, "nx source attribute text")?;
     write!(&mut key_text, "{key}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     let mut value_text = String::new();
-    value_text
-        .try_reserve_exact(value_len.0)
-        .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut value_text, value_len.0, "nx source attribute text")?;
     write!(&mut value_text, "{value}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     attributes.insert(key_text, value_text);
