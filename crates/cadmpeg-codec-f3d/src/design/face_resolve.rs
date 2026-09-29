@@ -382,29 +382,31 @@ pub(super) fn resolved_body_recipe_shape(
 }
 
 pub(super) fn resolved_profile_face_group(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::ProfileRef> {
+) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
     use cadmpeg_ir::features::ProfileRef;
 
-    let selection =
-        resolved_historical_face_group(scope, scope.previous_history_state_id(), group, operands)?;
+    let Some(selection) = resolved_historical_face_group(
+        scope, scope.previous_history_state_id(), group, operands) else { return Ok(None); };
     let cadmpeg_ir::features::FaceSelection::Historical {
         state,
         faces,
         native,
     } = selection
     else {
-        return None;
+        return Ok(None);
     };
-    Some(ProfileRef::Planar(
+    let native_copy = copy_face_text(ctx, native.as_str(), "f3d Loft face profile native id")?;
+    Ok(Some(ProfileRef::Planar(
         cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
-            native: vec![native.as_str().to_owned()].try_into().ok()?,
+            native: vec![native_copy].try_into().map_err(CodecError::malformed)?,
         },
-    ))
+    )))
 }
 
 /// Return the top-level profile groups of one Extrude operand hierarchy.
@@ -2510,6 +2512,7 @@ mod tests {
         resolve_surface_delete_face_history_set,
         resolved_explicit_bounded_face_group, resolved_extrude_profile_face_group,
         resolved_face_group, resolved_historical_split_face_target_group_with_updated_faces,
+        resolved_profile_face_group,
         retain_face_operand_resolution, stable_face_support_set, ExtrudeFaceResolution,
     };
     use crate::design::edge_resolve::feature_input_topology_id;
@@ -3724,6 +3727,28 @@ mod tests {
             tolerance: None,
         }];
         (operand, group, faces)
+    }
+
+    #[test]
+    fn loft_face_profile_native_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (mut operand, group, _) = start_geometry_fixture();
+        operand.resolved_face_slots = vec![10];
+        let scope = loft_scope();
+        assert!(resolved_profile_face_group(None, &scope, &group,
+            std::slice::from_ref(&operand)).unwrap().is_some());
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = resolved_profile_face_group(Some(&ctx), &scope, &group,
+            std::slice::from_ref(&operand)).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == "f3d Loft face profile native id"));
     }
 
     fn assert_face_operand_retained_refusal(operand: &DesignFaceOperand, operation: &'static str) {

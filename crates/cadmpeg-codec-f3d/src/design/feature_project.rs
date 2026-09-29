@@ -7040,8 +7040,13 @@ pub(super) fn project_fixed_loft(
         }
         let mut sections = Vec::new();
         for group in &profile_groups {
-            let profile = match resolved_loft_edge_profile_group(ctx, scope, group, edge_operands)?
-                .or_else(|| resolved_profile_face_group(scope, group, face_operands)) {
+            let edge_profile = resolved_loft_edge_profile_group(ctx, scope, group, edge_operands)?;
+            let face_profile = if edge_profile.is_none() {
+                resolved_profile_face_group(ctx, scope, group, face_operands)?
+            } else {
+                None
+            };
+            let profile = match edge_profile.or(face_profile) {
                 Some(profile) => profile,
                 None => ProfileRef::Planar(PlanarProfileRef::Native(copy_feature_text(
                     ctx, &group.id, "f3d Loft profile group id")?)),
