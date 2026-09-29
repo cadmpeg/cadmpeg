@@ -90,8 +90,8 @@ pub(super) fn preserve_passthrough_sections(
                 Exactness::Unknown,
             )
         };
-        let namespace = cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section")
-            .map_err(CodecError::malformed)?;
+        let namespace = crate::identity::section_namespace(section.name())
+            .ok_or_else(|| CodecError::malformed("invalid Creo passthrough section namespace"))?;
         let id = crate::identity::compose_checked::<UnknownId>(
             ctx, &namespace, offset, "creo passthrough section identity",
         )?;
@@ -103,6 +103,7 @@ pub(super) fn preserve_passthrough_sections(
             tag,
             exactness,
         )?;
+        ctx.try_reserve_items(&mut unknowns, 1, "creo passthrough unknown records")?;
         unknowns.push(UnknownRecord::retained(
             id,
             offset as u64,
@@ -117,6 +118,27 @@ pub(super) fn preserve_passthrough_sections(
 mod tests {
     use super::preserve_passthrough_sections;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    #[test]
+    fn passthrough_unknown_record_refuses_collection_limit() {
+        let mut scan = crate::container::scan_bytes_ok(vec![0u8; 48]);
+        scan.framing.sections.push(crate::container::Section::scan(
+            "ND:0:VisibGeom:0".to_owned(), 0, 48, None, &[0u8; 48],
+        ).expect("section extent").section);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Each feature annotation owns handles, provenance, and exactness nodes.
+        policy.limits.max_collection_items = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = preserve_passthrough_sections(&ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
+            .expect_err("fourth collection item is the unknown record");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "creo passthrough unknown records"));
+        let records = crate::decode::with_test_decode_ctx(|ctx| preserve_passthrough_sections(
+            ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())).expect("service records");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id().as_str(), "creo:VisibGeom:section#0");
+    }
 
     #[test]
     fn passthrough_section_bounds_error_refuses_retained_limit() {

@@ -10,6 +10,17 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{IdentityError, IdentityNamespace};
 
+/// Names classified as geometry or thumbnail sections use static namespaces.
+pub(crate) fn section_namespace(name: &str) -> Option<IdentityNamespace> {
+    match name {
+        "VisibGeom" => Some(cadmpeg_ir::identity_namespace!("creo", "VisibGeom", "section")),
+        "NovisGeom" => Some(cadmpeg_ir::identity_namespace!("creo", "NovisGeom", "section")),
+        "ActDatums" => Some(cadmpeg_ir::identity_namespace!("creo", "ActDatums", "section")),
+        "THMB_IMG_MAIN" => Some(cadmpeg_ir::identity_namespace!("creo", "THMB_IMG_MAIN", "section")),
+        _ => None,
+    }
+}
+
 /// Build a typed identity after admitting its exact retained text length.
 pub(crate) fn compose_checked<I>(
     ctx: &DecodeContext<'_>,
