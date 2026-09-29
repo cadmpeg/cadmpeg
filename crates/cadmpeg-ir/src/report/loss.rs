@@ -421,6 +421,24 @@ pub struct NamespacedLossKind {
 }
 
 impl LossKind {
+    fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        match self {
+            Self::Shared { kind } => Ok(Self::Shared { kind: *kind }),
+            Self::Namespaced(kind) => Ok(Self::Namespaced(NamespacedLossKind {
+                namespace: LossNamespaceName(
+                    ctx.copy_retained_text(kind.namespace.as_str(), operation)?,
+                ),
+                code: ctx.copy_retained_text(&kind.code, operation)?,
+                taxonomy: kind.taxonomy,
+                strict_floor: kind.strict_floor,
+            })),
+        }
+    }
+
     /// Shared-namespace code whose local id equals the taxonomy `snake_case` name.
     pub fn shared(taxonomy: LossTaxonomy) -> Self {
         Self::Shared { kind: taxonomy }
@@ -493,6 +511,22 @@ impl NamespacedLossKind {
         }
     }
 
+    /// Constructs a codec-local kind from strings admitted by the caller.
+    ///
+    /// A decoder can reserve and charge both strings before this move.
+    pub fn new_owned(
+        namespace: String,
+        code: String,
+        taxonomy: LossTaxonomy,
+    ) -> Result<Self, LossNamespaceError> {
+        Ok(Self {
+            namespace: LossNamespaceName::try_from(namespace)?,
+            code,
+            taxonomy,
+            strict_floor: taxonomy.strict_floor(),
+        })
+    }
+
     /// Pins the strict-mode severity floor independently of taxonomy.
     #[must_use]
     pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
@@ -540,6 +574,25 @@ pub struct LossNote {
 }
 
 impl LossNote {
+    /// Copies a report loss after admitting every owned string in the copy.
+    pub fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let message = ctx.copy_retained_text(&self.message, operation)?;
+        Ok(Self {
+            code: self.code.clone_admitted(ctx, operation)?,
+            severity: self.severity,
+            message,
+            provenance: self
+                .provenance
+                .as_ref()
+                .map(|value| value.clone_admitted(ctx, operation))
+                .transpose()?,
+        })
+    }
+
     /// Creates a loss note with the kind's default severity and no provenance.
     pub fn new(code: impl Into<LossKind>, message: impl Into<String>) -> Self {
         let code = code.into();

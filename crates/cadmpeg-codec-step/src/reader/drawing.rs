@@ -2,10 +2,11 @@
 //! STEP drawing definitions, revisions, sheets, views, and their relations.
 
 use crate::ids::kind;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::{Identity, ProductDefinitionId};
@@ -19,7 +20,7 @@ use crate::parse::{Exchange, RawRecord, ReferenceName, Value};
 
 use super::representation;
 use super::ValueExt;
-use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
+use super::{decode_text_charged, opaque_record_id, record_targets, StageOutcome};
 
 const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
     "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
@@ -31,6 +32,7 @@ struct TargetContext<'a> {
     known_typed: &'a HashSet<u64>,
     exchange: &'a Exchange,
     external_documents: &'a BTreeMap<u64, &'a str>,
+    ctx: &'a DecodeContext<'a>,
 }
 
 struct DrawingCandidate<'a> {
@@ -38,7 +40,44 @@ struct DrawingCandidate<'a> {
     name: &'static str,
     identity: Identity,
     offset: usize,
-    parameters: Cow<'a, [Value]>,
+    parameters: DrawingParameters<'a>,
+}
+
+#[derive(Clone, Copy)]
+struct DrawingParameters<'a> {
+    inherited_name: Option<&'a Value>,
+    direct: &'a [Value],
+}
+
+impl<'a> DrawingParameters<'a> {
+    fn from_slice(direct: &'a [Value]) -> Self {
+        Self {
+            inherited_name: None,
+            direct,
+        }
+    }
+
+    fn len(self) -> usize {
+        self.direct.len() + usize::from(self.inherited_name.is_some())
+    }
+
+    fn get(self, index: usize) -> Option<&'a Value> {
+        match self.inherited_name {
+            Some(name) if index == 0 => Some(name),
+            Some(_) => index
+                .checked_sub(1)
+                .and_then(|index| self.direct.get(index)),
+            None => self.direct.get(index),
+        }
+    }
+
+    fn first(self) -> Option<&'a Value> {
+        self.get(0)
+    }
+
+    fn iter(self) -> impl Iterator<Item = &'a Value> {
+        self.inherited_name.into_iter().chain(self.direct.iter())
+    }
 }
 
 enum TargetResolution {
@@ -47,14 +86,76 @@ enum TargetResolution {
     Unresolved,
 }
 
+fn ensure_drawing_relationship_group(
+    relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
+    role: NonBlankString,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if let std::collections::btree_map::Entry::Vacant(entry) = relationships.entry(role) {
+        ctx.charge_collection_items(1, "step_drawing_relationship_groups")?;
+        entry.insert(Vec::new());
+    }
+    Ok(())
+}
+
+fn clone_drawing_identities(
+    source: &BTreeSet<String>,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<String>, CodecError> {
+    let mut copy = BTreeSet::new();
+    for identity in source {
+        ctx.charge_collection_items(1, "step_drawing_ambiguous_identity_copy")?;
+        copy.insert(ctx.copy_retained_text(identity, "step_drawing_ambiguous_identity_text")?);
+    }
+    Ok(copy)
+}
+
+fn push_drawing_relationship(
+    relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
+    role: NonBlankString,
+    target: ReferenceSelection,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let targets = match relationships.entry(role) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "step_drawing_relationship_groups")?;
+            entry.insert(Vec::new())
+        }
+    };
+    ctx.reserve_vec(targets, 1, "step_drawing_relationship_members")?;
+    targets.push(target);
+    Ok(())
+}
+
+fn visit_drawing_references(
+    value: &Value,
+    ctx: &DecodeContext<'_>,
+    visitor: &mut impl FnMut(u64) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let _nested = ctx.enter_nested("step_drawing_reference_walk")?;
+    match value {
+        Value::Reference(id) => visitor(*id)?,
+        Value::List(values) => {
+            for value in values {
+                visit_drawing_references(value, ctx, visitor)?;
+            }
+        }
+        Value::Typed(_, value) => visit_drawing_references(value, ctx, visitor)?,
+        _ => {}
+    }
+    Ok(())
+}
+
 impl TargetContext<'_> {
-    fn resolve(&self, id: u64) -> TargetResolution {
+    fn resolve(&self, id: u64) -> Result<TargetResolution, CodecError> {
         target_resolution(
             id,
             self.target_identities,
             self.known_typed,
             self.exchange,
             self.external_documents,
+            self.ctx,
         )
     }
 }
@@ -65,99 +166,123 @@ pub(super) fn decode(
     ir: &mut CadIr,
     known_typed: &HashSet<u64>,
     product_definition_ids_by_shape: &BTreeMap<u64, ProductDefinitionId>,
-) -> StageOutcome<()> {
+    ctx: &DecodeContext<'_>,
+) -> Result<StageOutcome<()>, CodecError> {
     let mut losses = Vec::new();
-    let mut candidates = exchange
-        .records()
-        .iter()
-        .filter_map(|(&id, record)| {
-            let (name, kind) = drawing_type(record)?;
-            let parameters = source_parameters(record, name);
-            if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
-                losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
-                        "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
-                    )));
-                return None;
-            }
-            Some(DrawingCandidate {
-                id,
-                name,
-                identity: ids::drawing(kind, id),
-                offset: record.span.start,
-                parameters,
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for (&id, record) in exchange.records() {
+        let Some((name, kind)) = drawing_type(record) else {
+            continue;
+        };
+        let parameters = source_parameters(record, name);
+        if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
+            ctx.reserve_vec(&mut losses, 1, "step_drawing_losses")?;
+            losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
+                "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
+            )));
+            continue;
+        }
+        ctx.reserve_vec(&mut candidates, 1, "step_drawing_candidates")?;
+        candidates.push(DrawingCandidate {
+            id,
+            name,
+            identity: ids::drawing(kind, id),
+            offset: record.span.start,
+            parameters,
+        });
+    }
     candidates.sort_by_key(|candidate| candidate.offset);
 
     if candidates.is_empty() {
-        return StageOutcome {
+        return Ok(StageOutcome {
             value: (),
             claims: HashSet::new(),
             losses,
             notes: Vec::new(),
-        };
+        });
     }
 
-    let drawing_ids = candidates
-        .iter()
-        .map(|candidate| candidate.id)
-        .collect::<BTreeSet<_>>();
-    let hidden_drawing_ids = exchange
-        .records()
-        .values()
-        .filter_map(|record| {
-            record
-                .partials
-                .iter()
-                .find(|partial| partial.name == "INVISIBILITY")
-                .and_then(|partial| partial.parameters.first())
-        })
-        .flat_map(|items| {
-            let mut targets = Vec::new();
-            collect_references(items, &mut targets);
-            targets
-        })
-        .filter(|id| drawing_ids.contains(id))
-        .collect::<BTreeSet<_>>();
-
-    let mut target_identities = record_targets(ir, |record_id| known_typed.contains(&record_id));
+    let mut drawing_ids = BTreeSet::new();
     for candidate in &candidates {
-        target_identities
-            .entry(candidate.id)
-            .or_default()
-            .insert(candidate.identity.as_str().to_owned());
+        ctx.insert_btree_set(&mut drawing_ids, candidate.id, "step_drawing_ids")
+            .map(|_| ())?;
+    }
+    let mut hidden_drawing_ids = BTreeSet::new();
+    for record in exchange.records().values() {
+        let Some(items) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "INVISIBILITY")
+            .and_then(|partial| partial.parameters.first())
+        else {
+            continue;
+        };
+        visit_drawing_references(items, ctx, &mut |id| {
+            if drawing_ids.contains(&id) {
+                ctx.insert_btree_set(&mut hidden_drawing_ids, id, "step_hidden_drawing_ids")
+                    .map(|_| ())?;
+            }
+            Ok(())
+        })?;
+    }
+
+    let mut target_identities =
+        record_targets(ir, |record_id| known_typed.contains(&record_id), ctx)?;
+    for candidate in &candidates {
+        ctx.admit_btree_entry(
+            &target_identities,
+            &candidate.id,
+            "step_drawing_target_groups",
+        )?;
+        let targets = target_identities.entry(candidate.id).or_default();
+        ctx.insert_btree_set(
+            targets,
+            ctx.copy_retained_text(
+                candidate.identity.as_str(),
+                "step_drawing_target_member_text",
+            )?,
+            "step_drawing_target_members",
+        )
+        .map(|_| ())?;
     }
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
     // identity set.
     for (&shape_id, product_definition_id) in product_definition_ids_by_shape {
-        target_identities
-            .entry(shape_id)
-            .or_default()
-            .insert(product_definition_id.as_str().to_owned());
+        ctx.admit_btree_entry(&target_identities, &shape_id, "step_drawing_target_groups")?;
+        let targets = target_identities.entry(shape_id).or_default();
+        ctx.insert_btree_set(
+            targets,
+            ctx.copy_retained_text(
+                product_definition_id.as_str(),
+                "step_drawing_target_member_text",
+            )?,
+            "step_drawing_target_members",
+        )
+        .map(|_| ())?;
     }
-    let drawing_target_ids = referenced_target_ids(exchange, &candidates);
+    let drawing_target_ids = referenced_target_ids(exchange, &candidates, ctx)?;
     add_source_typed_targets(
         ir,
         exchange,
         known_typed,
         &drawing_target_ids,
         &mut target_identities,
-    );
-    let external_documents = exchange
-        .references()
-        .iter()
-        .filter_map(|entry| match entry.name {
-            ReferenceName::Entity(id) => Some((id, entry.uri.as_str())),
-            ReferenceName::Value(_) => None,
-        })
-        .collect::<BTreeMap<_, _>>();
+        ctx,
+    )?;
+    let mut external_documents = BTreeMap::new();
+    for entry in exchange.references() {
+        if let ReferenceName::Entity(id) = entry.name {
+            ctx.admit_btree_entry(&external_documents, &id, "step_drawing_external_documents")?;
+            external_documents.insert(id, entry.uri.as_str());
+        }
+    }
     let target_context = TargetContext {
         target_identities: &target_identities,
         known_typed,
         exchange,
         external_documents: &external_documents,
+        ctx,
     };
 
     let mut drawings = BTreeMap::<u64, Drawing>::new();
@@ -170,10 +295,12 @@ pub(super) fn decode(
             ..
         } = candidate;
         let mut stored_parameters = BTreeMap::new();
+        ctx.charge_collection_items(1, "step_drawing_stored_parameters")?;
         stored_parameters.insert(
             cadmpeg_core::nonblank_literal!("source_id"),
             format!("#{id}"),
         );
+        ctx.charge_collection_items(1, "step_drawing_stored_parameters")?;
         stored_parameters.insert(cadmpeg_core::nonblank_literal!("source_type"), name.into());
         for (index, value) in parameters.iter().enumerate() {
             if let Some(value) = value_text(
@@ -182,12 +309,16 @@ pub(super) fn decode(
                 &mut losses,
                 id,
                 &format!("drawing parameter {index}"),
-            ) {
-                stored_parameters.insert(parameter_key(name, index), value);
+                ctx,
+            )? {
+                let key = parameter_key(name, index);
+                ctx.admit_btree_entry(&stored_parameters, &key, "step_drawing_stored_parameters")?;
+                stored_parameters.insert(key, value);
             }
         }
 
         let Some(order) = cadmpeg_core::decode::id_from_index(order) else {
+            ctx.reserve_vec(&mut losses, 1, "step_drawing_losses")?;
             losses.push(StepLossCode::DrawingOrderUnstatable.note(format!(
                 "drawing #{id} position in the stored order exceeds the stated order width"
             )));
@@ -198,16 +329,19 @@ pub(super) fn decode(
         add_reference_fields(
             &mut relationships,
             name,
-            parameters.as_ref(),
+            parameters,
             id,
             &target_context,
             &mut losses,
-        );
+        )?;
+        ctx.admit_btree_entry(&drawings, &id, "step_drawing_entries")?;
         drawings.insert(
             id,
             Drawing {
-                id: DrawingId::from(identity.clone()),
-                object: identity.as_str().to_owned(),
+                id: DrawingId::from(
+                    identity.try_clone_for_decode(ctx, "step_drawing_identity_copy")?,
+                ),
+                object: ctx.copy_retained_text(identity.as_str(), "step_drawing_object_copy")?,
                 kind: drawing_kind(name),
                 runtime_type: name.into(),
                 order,
@@ -225,7 +359,7 @@ pub(super) fn decode(
         );
     }
 
-    add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses);
+    add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses, ctx)?;
     let mut association_ids = HashSet::new();
     add_draughting_model_associations(
         exchange,
@@ -233,17 +367,29 @@ pub(super) fn decode(
         &target_context,
         &mut losses,
         &mut association_ids,
-    );
+    )?;
 
-    let mut typed_records = drawings.keys().copied().collect::<HashSet<_>>();
-    typed_records.extend(association_ids);
+    let mut typed_records = HashSet::new();
+    for &id in drawings.keys() {
+        ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")
+            .map(|_| ())?;
+    }
+    for id in association_ids {
+        ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")
+            .map(|_| ())?;
+    }
+    ctx.reserve_vec(
+        &mut ir.model.drawings,
+        drawings.len(),
+        "step_drawing_ir_items",
+    )?;
     ir.model.drawings.extend(drawings.into_values());
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed_records,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
@@ -257,19 +403,20 @@ pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
 fn referenced_target_ids(
     exchange: &Exchange,
     candidates: &[DrawingCandidate<'_>],
-) -> BTreeSet<u64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u64>, CodecError> {
     let mut ids = BTreeSet::new();
     for candidate in candidates {
         for &index in relationship_indices(candidate.name) {
             if let Some(value) = candidate.parameters.get(index) {
-                collect_reference_ids(value, &mut ids);
+                collect_reference_ids(value, &mut ids, ctx)?;
             }
         }
     }
     for (_, record) in exchange.entities("DRAWING_SHEET_REVISION_USAGE") {
         let parameters = source_parameters(record, "DRAWING_SHEET_REVISION_USAGE");
         for value in parameters.iter().take(2) {
-            collect_reference_ids(value, &mut ids);
+            collect_reference_ids(value, &mut ids, ctx)?;
         }
     }
     for association_id in
@@ -283,7 +430,7 @@ fn referenced_target_ids(
         };
         for index in [2, 4] {
             if let Some(value) = parameters.get(index) {
-                collect_reference_ids(value, &mut ids);
+                collect_reference_ids(value, &mut ids, ctx)?;
             }
         }
         if record
@@ -292,17 +439,23 @@ fn referenced_target_ids(
             .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
         {
             if let Some(placeholder_id) = association_placeholder_reference(record, parameters) {
-                ids.insert(placeholder_id);
+                ctx.insert_btree_set(&mut ids, placeholder_id, "step_drawing_referenced_targets")
+                    .map(|_| ())?;
             }
         }
     }
-    ids
+    Ok(ids)
 }
 
-fn collect_reference_ids(value: &Value, output: &mut BTreeSet<u64>) {
-    let mut references = Vec::new();
-    collect_references(value, &mut references);
-    output.extend(references);
+fn collect_reference_ids(
+    value: &Value,
+    output: &mut BTreeSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    visit_drawing_references(value, ctx, &mut |id| {
+        ctx.insert_btree_set(output, id, "step_drawing_referenced_targets")
+            .map(|_| ())
+    })
 }
 
 fn add_source_typed_targets(
@@ -311,7 +464,8 @@ fn add_source_typed_targets(
     known_typed: &HashSet<u64>,
     referenced_ids: &BTreeSet<u64>,
     target_identities: &mut BTreeMap<u64, BTreeSet<String>>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     let mut native_targets = Vec::new();
     for &id in referenced_ids {
         if !known_typed.contains(&id) || target_identities.contains_key(&id) {
@@ -320,34 +474,47 @@ fn add_source_typed_targets(
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
-        if wrapper_target_resolution(id, target_identities, exchange).is_some() {
+        if wrapper_target_resolution(id, target_identities, exchange, ctx)?.is_some() {
             continue;
         }
-        let identity = opaque_record_id(id, record);
-        let source_type = record
-            .partials
-            .iter()
-            .map(|partial| partial.name.as_str())
-            .collect::<Vec<_>>()
-            .join("+");
+        let identity = opaque_record_id(id, record, ctx)?;
+        let copied_identity = ctx.copy_retained_text(
+            identity.as_str(),
+            "step_drawing_native_target_identity_copy",
+        )?;
+        let source_type = ctx.join_display_retained(
+            record.partials.iter().map(|partial| partial.name.as_str()),
+            "+",
+            "step_drawing_source_type_text",
+        )?;
+        ctx.reserve_vec(&mut native_targets, 1, "step_drawing_native_target_items")?;
         native_targets.push(NativeRecord::from_identity(
-            identity.clone(),
+            identity,
             [
                 ("source_id".to_owned(), NativeField::Text(format!("#{id}"))),
                 ("source_type".to_owned(), NativeField::Text(source_type)),
             ],
         ));
-        target_identities.insert(id, BTreeSet::from([identity.into_string()]));
+        ctx.admit_btree_entry(target_identities, &id, "step_drawing_native_target_groups")?;
+        ctx.charge_collection_items(1, "step_drawing_native_target_members")?;
+        target_identities.insert(id, BTreeSet::from([copied_identity]));
     }
     if native_targets.is_empty() {
-        return;
+        return Ok(());
     }
     let namespace = ir.native.namespace_mut("step");
-    namespace
-        .arenas_mut()
-        .entry("drawing_targets".into())
-        .or_default()
-        .extend(native_targets);
+    let arenas = namespace.arenas_mut();
+    if !arenas.contains_key("drawing_targets") {
+        ctx.charge_collection_items(1, "step_drawing_native_arena")?;
+    }
+    let target_arena = arenas.entry("drawing_targets".into()).or_default();
+    ctx.reserve_vec(
+        target_arena,
+        native_targets.len(),
+        "step_drawing_native_arena_items",
+    )?;
+    target_arena.extend(native_targets);
+    Ok(())
 }
 
 /// Each drawing entity name and the identity kind that name spells.
@@ -395,7 +562,7 @@ fn required_parameter_count(name: &str) -> Option<usize> {
     }
 }
 
-fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> Cow<'a, [Value]> {
+fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> DrawingParameters<'a> {
     let direct = record
         .partials
         .iter()
@@ -403,32 +570,30 @@ fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> Cow<'a, [Value]> 
         .map(|partial| partial.parameters.as_slice());
     if name == "DRAUGHTING_CALLOUT" {
         if let Some(parameters) = direct.filter(|parameters| parameters.len() >= 2) {
-            return Cow::Borrowed(parameters);
+            return DrawingParameters::from_slice(parameters);
         }
-        let mut parameters = Vec::new();
-        if let Some(value) = record
+        let inherited_name = record
             .partials
             .iter()
             .find(|partial| partial.name == "REPRESENTATION_ITEM")
-            .and_then(|partial| partial.parameters.first())
-        {
-            parameters.push(value.clone());
-        }
-        parameters.extend(direct.unwrap_or_default().iter().cloned());
-        return Cow::Owned(parameters);
+            .and_then(|partial| partial.parameters.first());
+        return DrawingParameters {
+            inherited_name,
+            direct: direct.unwrap_or_default(),
+        };
     }
     if let Some(parameters) = direct.filter(|parameters| !parameters.is_empty()) {
-        return Cow::Borrowed(parameters);
+        return DrawingParameters::from_slice(parameters);
     }
     if matches!(
         name,
         "DRAUGHTING_MODEL" | "PRESENTATION_VIEW" | "DRAWING_SHEET_REVISION"
     ) {
         if let Some(parameters) = representation::parameters(record) {
-            return Cow::Borrowed(parameters);
+            return DrawingParameters::from_slice(parameters);
         }
     }
-    Cow::Borrowed(direct.unwrap_or_default())
+    DrawingParameters::from_slice(direct.unwrap_or_default())
 }
 
 fn parameter_key(name: &str, index: usize) -> NonBlankString {
@@ -469,22 +634,25 @@ fn relationship_indices(name: &str) -> &'static [usize] {
 fn add_reference_fields(
     relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
     name: &str,
-    parameters: &[Value],
+    parameters: DrawingParameters<'_>,
     source_id: u64,
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), CodecError> {
     for &index in relationship_indices(name) {
         let Some(value) = parameters.get(index) else {
             continue;
         };
         let role = parameter_key(name, index);
-        let mut references = Vec::new();
-        collect_references(value, &mut references);
-        for target_id in references {
-            match target_context.resolve(target_id) {
+        visit_drawing_references(value, target_context.ctx, &mut |target_id| {
+            match target_context.resolve(target_id)? {
                 TargetResolution::Resolved(target) => {
-                    relationships.entry(role.clone()).or_default().push(target);
+                    push_drawing_relationship(
+                        relationships,
+                        role.clone(),
+                        target,
+                        target_context.ctx,
+                    )?;
                 }
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
@@ -492,15 +660,21 @@ fn add_reference_fields(
                     role.as_str(),
                     target_id,
                     &identities,
-                ),
+                    target_context.ctx,
+                )?,
                 TargetResolution::Unresolved => {
+                    target_context
+                        .ctx
+                        .reserve_vec(losses, 1, "step_drawing_losses")?;
                     losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                         "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
                     )));
                 }
             }
-        }
+            Ok(())
+        })?;
     }
+    Ok(())
 }
 
 fn note_ambiguous_target(
@@ -509,11 +683,17 @@ fn note_ambiguous_target(
     role: &str,
     target_id: u64,
     identities: &BTreeSet<String>,
-) {
-    let identities = identities.iter().cloned().collect::<Vec<_>>().join(", ");
-    losses.push(StepLossCode::DrawingRelationshipTargetAmbiguous.note(format!(
-        "STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"
-    )));
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let identities = ctx.join_display_retained(
+        identities.iter().map(String::as_str),
+        ", ",
+        "step_drawing_ambiguous_identities_text",
+    )?;
+    ctx.reserve_vec(losses, 1, "step_drawing_losses")?;
+    let message = ctx.format_retained(format_args!("STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"), "step_drawing_ambiguous_loss_text")?;
+    losses.push(StepLossCode::DrawingRelationshipTargetAmbiguous.note(message));
+    Ok(())
 }
 
 fn add_sheet_revision_usages(
@@ -521,72 +701,87 @@ fn add_sheet_revision_usages(
     drawings: &mut BTreeMap<u64, Drawing>,
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
-) {
-    let usages = exchange
-        .entities("DRAWING_SHEET_REVISION_USAGE")
-        .filter_map(|(id, record)| {
-            let parameters = source_parameters(record, "DRAWING_SHEET_REVISION_USAGE");
-            Some((
-                id,
-                parameters.first()?.reference()?,
-                parameters.get(1)?.reference()?,
-                parameters.get(2).cloned(),
-            ))
-        })
-        .collect::<Vec<_>>();
-    for (usage_id, sheet_id, revision_id, sequence) in usages {
-        let sheet_target = target_context.resolve(revision_id);
-        let revision_target = target_context.resolve(sheet_id);
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    for (usage_id, record) in exchange.entities("DRAWING_SHEET_REVISION_USAGE") {
+        let parameters = source_parameters(record, "DRAWING_SHEET_REVISION_USAGE");
+        let Some(sheet_id) = parameters.first().and_then(ValueExt::reference) else {
+            continue;
+        };
+        let Some(revision_id) = parameters.get(1).and_then(ValueExt::reference) else {
+            continue;
+        };
+        let sheet_target = target_context.resolve(revision_id)?;
+        let revision_target = target_context.resolve(sheet_id)?;
         if let Some(sheet) = drawings.get_mut(&sheet_id) {
             match sheet_target {
-                TargetResolution::Resolved(target) => sheet
-                    .relationships
-                    .entry(cadmpeg_core::nonblank_literal!("drawing_revision"))
-                    .or_default()
-                    .push(target),
+                TargetResolution::Resolved(target) => push_drawing_relationship(
+                    &mut sheet.relationships,
+                    cadmpeg_core::nonblank_literal!("drawing_revision"),
+                    target,
+                    target_context.ctx,
+                )?,
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
                     "drawing_revision",
                     revision_id,
                     &identities,
-                ),
+                    target_context.ctx,
+                )?,
                 TargetResolution::Unresolved => {
+                    target_context
+                        .ctx
+                        .reserve_vec(losses, 1, "step_drawing_losses")?;
                     losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
                         "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
                     )));
                 }
             }
-            if let Some(sequence) = sequence.and_then(|value| {
-                value_text(
-                    target_context.exchange,
-                    &value,
-                    losses,
-                    usage_id,
-                    "drawing sheet revision usage sequence",
-                )
-            }) {
-                sheet.parameters.insert(
-                    cadmpeg_core::nonblank_literal!("usage_{usage_id}_sequence"),
-                    sequence,
-                );
+            if let Some(sequence) = parameters
+                .get(2)
+                .map(|value| {
+                    value_text(
+                        target_context.exchange,
+                        value,
+                        losses,
+                        usage_id,
+                        "drawing sheet revision usage sequence",
+                        ctx,
+                    )
+                })
+                .transpose()?
+                .flatten()
+            {
+                let key = cadmpeg_core::nonblank_literal!("usage_{usage_id}_sequence");
+                target_context.ctx.admit_btree_entry(
+                    &sheet.parameters,
+                    &key,
+                    "step_drawing_usage_sequences",
+                )?;
+                sheet.parameters.insert(key, sequence);
             }
         }
         if let Some(revision) = drawings.get_mut(&revision_id) {
             match revision_target {
-                TargetResolution::Resolved(target) => revision
-                    .relationships
-                    .entry(cadmpeg_core::nonblank_literal!("sheet_revision"))
-                    .or_default()
-                    .push(target),
+                TargetResolution::Resolved(target) => push_drawing_relationship(
+                    &mut revision.relationships,
+                    cadmpeg_core::nonblank_literal!("sheet_revision"),
+                    target,
+                    target_context.ctx,
+                )?,
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing revision #{revision_id} usage #{usage_id}"),
                     "sheet_revision",
                     sheet_id,
                     &identities,
-                ),
+                    target_context.ctx,
+                )?,
                 TargetResolution::Unresolved => {
+                    target_context
+                        .ctx
+                        .reserve_vec(losses, 1, "step_drawing_losses")?;
                     losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
                         "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
                     )));
@@ -594,6 +789,7 @@ fn add_sheet_revision_usages(
             }
         }
     }
+    Ok(())
 }
 
 fn add_draughting_model_associations(
@@ -602,7 +798,7 @@ fn add_draughting_model_associations(
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
     typed: &mut HashSet<u64>,
-) {
+) -> Result<(), CodecError> {
     for association_id in
         exchange.matching_entity_ids(|name| DRAWING_ASSOCIATION_TYPES.contains(&name))
     {
@@ -621,8 +817,8 @@ fn add_draughting_model_associations(
 
         let mut complete = true;
         let definition_id = parameters.get(2).and_then(ValueExt::reference);
-        let definition_target = definition_id.and_then(|definition_id| {
-            match target_context.resolve(definition_id) {
+        let definition_target = if let Some(definition_id) = definition_id {
+            match target_context.resolve(definition_id)? {
                 TargetResolution::Resolved(definition) => Some(definition),
                 TargetResolution::Ambiguous(identities) => {
                     note_ambiguous_target(
@@ -631,11 +827,15 @@ fn add_draughting_model_associations(
                         "semantic_definition",
                         definition_id,
                         &identities,
-                    );
+                        target_context.ctx,
+                    )?;
                     complete = false;
                     None
                 }
                 TargetResolution::Unresolved => {
+                    target_context
+                        .ctx
+                        .reserve_vec(losses, 1, "step_drawing_losses")?;
                     losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(
                         format!(
                             "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
@@ -645,49 +845,58 @@ fn add_draughting_model_associations(
                     None
                 }
             }
-        });
+        } else {
+            None
+        };
         if definition_id.is_none() {
             complete = false;
         }
 
-        let item_ids = parameters
-            .get(4)
-            .into_iter()
-            .flat_map(|items| {
-                let mut references = Vec::new();
-                collect_references(items, &mut references);
-                references
-            })
-            .collect::<Vec<_>>();
-        if item_ids.is_empty() {
+        ensure_drawing_relationship_group(
+            &mut model.relationships,
+            cadmpeg_core::nonblank_literal!("associated_items"),
+            target_context.ctx,
+        )?;
+        let mut has_items = false;
+        if let Some(items) = parameters.get(4) {
+            visit_drawing_references(items, target_context.ctx, &mut |item_id| {
+                has_items = true;
+                match target_context.resolve(item_id)? {
+                    TargetResolution::Resolved(item) => push_drawing_relationship(
+                        &mut model.relationships,
+                        cadmpeg_core::nonblank_literal!("associated_items"),
+                        item,
+                        target_context.ctx,
+                    )?,
+                    TargetResolution::Ambiguous(identities) => {
+                        note_ambiguous_target(
+                            losses,
+                            &format!("draughting model #{model_id} association #{association_id}"),
+                            "associated_items",
+                            item_id,
+                            &identities,
+                            target_context.ctx,
+                        )?;
+                        complete = false;
+                    }
+                    TargetResolution::Unresolved => {
+                        target_context
+                            .ctx
+                            .reserve_vec(losses, 1, "step_drawing_losses")?;
+                        losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
+                            format!(
+                                "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
+                            ),
+                        ));
+                        complete = false;
+                    }
+                }
+                Ok(())
+            })?;
+        }
+        if !has_items {
             complete = false;
         }
-        let item_targets = item_ids
-            .into_iter()
-            .filter_map(|item_id| match target_context.resolve(item_id) {
-                TargetResolution::Resolved(item) => Some(item),
-                TargetResolution::Ambiguous(identities) => {
-                    note_ambiguous_target(
-                        losses,
-                        &format!("draughting model #{model_id} association #{association_id}"),
-                        "associated_items",
-                        item_id,
-                        &identities,
-                    );
-                    complete = false;
-                    None
-                }
-                TargetResolution::Unresolved => {
-                    losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
-                        format!(
-                            "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
-                        ),
-                    ));
-                    complete = false;
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
 
         let placeholder_target = if record
             .partials
@@ -695,7 +904,7 @@ fn add_draughting_model_associations(
             .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
         {
             match association_placeholder_reference(record, parameters) {
-                Some(placeholder_id) => match target_context.resolve(placeholder_id) {
+                Some(placeholder_id) => match target_context.resolve(placeholder_id)? {
                     TargetResolution::Resolved(placeholder) => Some(placeholder),
                     TargetResolution::Ambiguous(identities) => {
                         note_ambiguous_target(
@@ -704,11 +913,15 @@ fn add_draughting_model_associations(
                             "annotation_placeholder",
                             placeholder_id,
                             &identities,
-                        );
+                            target_context.ctx,
+                        )?;
                         complete = false;
                         None
                     }
                     TargetResolution::Unresolved => {
+                        target_context
+                            .ctx
+                            .reserve_vec(losses, 1, "step_drawing_losses")?;
                         losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                             "STEP draughting model #{model_id} association #{association_id} relationship annotation_placeholder references source-typed record #{placeholder_id} without a neutral identity"
                         )));
@@ -726,28 +939,29 @@ fn add_draughting_model_associations(
         };
 
         if let Some(definition) = definition_target {
-            model
-                .relationships
-                .entry(cadmpeg_core::nonblank_literal!("semantic_definition"))
-                .or_default()
-                .push(definition);
+            push_drawing_relationship(
+                &mut model.relationships,
+                cadmpeg_core::nonblank_literal!("semantic_definition"),
+                definition,
+                target_context.ctx,
+            )?;
         }
-        model
-            .relationships
-            .entry(cadmpeg_core::nonblank_literal!("associated_items"))
-            .or_default()
-            .extend(item_targets);
         if let Some(placeholder) = placeholder_target {
-            model
-                .relationships
-                .entry(cadmpeg_core::nonblank_literal!("annotation_placeholder"))
-                .or_default()
-                .push(placeholder);
+            push_drawing_relationship(
+                &mut model.relationships,
+                cadmpeg_core::nonblank_literal!("annotation_placeholder"),
+                placeholder,
+                target_context.ctx,
+            )?;
         }
         if complete {
-            typed.insert(association_id);
+            target_context
+                .ctx
+                .insert_hash_set(typed, association_id, "step_drawing_typed_claims")
+                .map(|_| ())?;
         }
     }
+    Ok(())
 }
 
 fn association_parameters(record: &RawRecord) -> Option<&[Value]> {
@@ -783,50 +997,54 @@ fn target_resolution(
     known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
-) -> TargetResolution {
+    ctx: &DecodeContext<'_>,
+) -> Result<TargetResolution, CodecError> {
     if let Some(identity) = target_identities
         .get(&id)
         .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.first())
     {
-        return TargetResolution::Resolved(ReferenceSelection::new(
-            ReferenceTarget::Local(identity.clone()),
+        return Ok(TargetResolution::Resolved(ReferenceSelection::new(
+            ReferenceTarget::Local(
+                ctx.copy_retained_text(identity, "step_drawing_local_target_text")?,
+            ),
             Vec::new(),
-        ));
+        )));
     }
     if let Some(uri) = external_documents.get(&id) {
-        return TargetResolution::Resolved(ReferenceSelection::new(
+        return Ok(TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::External {
-                document: (*uri).into(),
+                document: ctx.copy_retained_text(uri, "step_drawing_external_target_text")?,
                 object: format!("#{id}"),
             },
             Vec::new(),
-        ));
+        )));
     }
-    let wrapper_ambiguity = match wrapper_target_resolution(id, target_identities, exchange) {
+    let wrapper_ambiguity = match wrapper_target_resolution(id, target_identities, exchange, ctx)? {
         Some(WrapperTargetResolution::Singleton(identity)) => {
-            return TargetResolution::Resolved(ReferenceSelection::new(
+            return Ok(TargetResolution::Resolved(ReferenceSelection::new(
                 ReferenceTarget::Local(identity),
                 Vec::new(),
-            ));
+            )));
         }
         Some(WrapperTargetResolution::Ambiguous(identities)) => Some(identities),
         None => None,
     };
     if !known_typed.contains(&id) {
         if let Some(record) = exchange.records().get(&id) {
-            return TargetResolution::Resolved(ReferenceSelection::new(
-                ReferenceTarget::Local(opaque_record_id(id, record).into_string()),
+            return Ok(TargetResolution::Resolved(ReferenceSelection::new(
+                ReferenceTarget::Local(opaque_record_id(id, record, ctx)?.into_string()),
                 Vec::new(),
-            ));
+            )));
         }
     }
-    target_identities
+    let ambiguity = target_identities
         .get(&id)
         .filter(|identities| identities.len() > 1)
-        .cloned()
-        .or(wrapper_ambiguity)
-        .map_or(TargetResolution::Unresolved, TargetResolution::Ambiguous)
+        .map(|identities| clone_drawing_identities(identities, ctx))
+        .transpose()?
+        .or(wrapper_ambiguity);
+    Ok(ambiguity.map_or(TargetResolution::Unresolved, TargetResolution::Ambiguous))
 }
 
 enum WrapperTargetResolution {
@@ -838,29 +1056,41 @@ fn wrapper_target_resolution(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
     exchange: &Exchange,
-) -> Option<WrapperTargetResolution> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<WrapperTargetResolution>, CodecError> {
     if target_identities.contains_key(&id) {
-        return None;
+        return Ok(None);
     }
     let mut identities = BTreeSet::new();
     let mut active = BTreeSet::new();
     let mut complete = BTreeSet::new();
-    let mut pending = vec![(id, false)];
+    let mut pending = ctx.alloc_filled(1, (id, false), "step_drawing_wrapper_pending")?;
     while let Some((id, leaving)) = pending.pop() {
         if leaving {
             active.remove(&id);
-            complete.insert(id);
+            ctx.insert_btree_set(&mut complete, id, "step_drawing_wrapper_complete")
+                .map(|_| ())?;
             continue;
         }
         if complete.contains(&id) {
             continue;
         }
-        if !active.insert(id) {
-            return None;
+        if active.contains(&id) {
+            return Ok(None);
         }
+        ctx.insert_btree_set(&mut active, id, "step_drawing_wrapper_active")
+            .map(|_| ())?;
+        ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
         pending.push((id, true));
         if let Some(targets) = target_identities.get(&id) {
-            identities.extend(targets.iter().cloned());
+            for target in targets {
+                if !identities.contains(target) {
+                    ctx.charge_collection_items(1, "step_drawing_wrapper_identities")?;
+                    identities.insert(
+                        ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?,
+                    );
+                }
+            }
             continue;
         }
         let Some(record) = exchange.records().get(&id) else {
@@ -873,20 +1103,29 @@ fn wrapper_target_resolution(
             .and_then(|partial| partial.parameters.get(2))
             .and_then(ValueExt::reference)
         {
+            ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
             pending.push((plane, false));
         } else if let Some(items) = mapped_representation(record, exchange)
             .and_then(|representation| exchange.records().get(&representation))
             .and_then(representation::items)
         {
-            pending.extend(items.into_iter().rev().map(|item| (item, false)));
+            for item in items.rev() {
+                ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
+                pending.push((item, false));
+            }
         }
     }
-    let identity = identities.pop_first()?;
-    if identities.is_empty() {
-        return Some(WrapperTargetResolution::Singleton(identity));
+    if identities.len() == 1 {
+        let Some(identity) = identities.pop_first() else {
+            return Ok(None);
+        };
+        return Ok(Some(WrapperTargetResolution::Singleton(identity)));
     }
-    identities.insert(identity);
-    Some(WrapperTargetResolution::Ambiguous(identities))
+    if identities.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(WrapperTargetResolution::Ambiguous(identities)))
+    }
 }
 
 fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
@@ -908,61 +1147,100 @@ fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64>
         .and_then(ValueExt::reference)
 }
 
-fn collect_references(value: &Value, output: &mut Vec<u64>) {
-    match value {
-        Value::Reference(id) => output.push(*id),
-        Value::List(values) => values
-            .iter()
-            .for_each(|value| collect_references(value, output)),
-        Value::Typed(_, value) => collect_references(value, output),
-        _ => {}
-    }
-}
-
 fn value_text(
     exchange: &Exchange,
     value: &Value,
     losses: &mut Vec<LossNote>,
     record_id: u64,
     field: &str,
-) -> Option<String> {
-    match value {
-        Value::Reference(id) => Some(format!("#{id}")),
-        Value::ValueReference(id) => Some(format!("@{id}")),
-        Value::ConstantEntity(name) => Some(format!("#{name}")),
-        Value::ConstantValue(name) => Some(format!("@{name}")),
-        Value::Integer(value) => Some(value.to_string()),
-        Value::Real(value) => Some(value.to_string()),
-        Value::Enumeration(value) => Some(format!(".{value}.")),
-        Value::String(_) => decode_text(
-            exchange,
-            value,
-            losses,
-            record_id,
-            field,
-            StepLossCode::MetadataStringInvalid,
-        ),
-        Value::Binary(value) => Some(format!(
-            "binary:{}:{}",
-            value.bit_len(),
-            value.data().iter().fold(String::new(), |mut output, byte| {
-                const HEX: &[u8; 16] = b"0123456789ABCDEF";
-                output.push(char::from(HEX[(byte >> 4) as usize]));
-                output.push(char::from(HEX[(byte & 0x0F) as usize]));
-                output
-            })
-        )),
-        Value::Resource(value) => Some(format!("<{value}>")),
-        Value::Omitted => Some("$".into()),
-        Value::Derived => Some("*".into()),
-        Value::List(values) => values
-            .iter()
-            .map(|value| value_text(exchange, value, losses, record_id, field))
-            .collect::<Option<Vec<_>>>()
-            .map(|values| format!("({})", values.join(","))),
-        Value::Typed(name, value) => value_text(exchange, value, losses, record_id, field)
-            .map(|value| format!("{name}({value})")),
-    }
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<String>, CodecError> {
+    let _depth_guard = ctx.enter_nested("step_drawing_value_text_depth")?;
+    let text = match value {
+        Value::Reference(id) => {
+            ctx.format_retained(format_args!("#{id}"), "step_drawing_value_text")?
+        }
+        Value::ExternalReference(id) => {
+            ctx.format_retained(format_args!("@{id}"), "step_drawing_value_text")?
+        }
+        Value::ConstantEntity(name) => {
+            ctx.format_retained(format_args!("#{name}"), "step_drawing_value_text")?
+        }
+        Value::ExpressValueConstant(name) => {
+            ctx.format_retained(format_args!("@{name}"), "step_drawing_value_text")?
+        }
+        Value::Integer(value) => {
+            ctx.format_retained(format_args!("{value}"), "step_drawing_value_text")?
+        }
+        Value::Real(value) => {
+            ctx.format_retained(format_args!("{value}"), "step_drawing_value_text")?
+        }
+        Value::Enumeration(value) => {
+            ctx.format_retained(format_args!(".{value}."), "step_drawing_value_text")?
+        }
+        Value::String(_) => {
+            return decode_text_charged(
+                exchange,
+                value,
+                losses,
+                record_id,
+                field,
+                StepLossCode::MetadataStringInvalid,
+                ctx,
+            )
+        }
+        Value::Binary(value) => {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            let mut text = ctx.format_retained(
+                format_args!("binary:{}:", value.bit_len()),
+                "step_drawing_value_text",
+            )?;
+            for byte in value.data() {
+                ctx.charge_retained(2, "step_drawing_value_text")?;
+                text.try_reserve(2).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "step_drawing_value_text",
+                            ),
+                            0,
+                            2,
+                            "step_drawing_value_text",
+                        ),
+                    )
+                })?;
+                text.push(char::from(HEX[usize::from(byte >> 4)]));
+                text.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+            text
+        }
+        Value::Resource(value) => {
+            ctx.format_retained(format_args!("<{value}>"), "step_drawing_value_text")?
+        }
+        Value::Omitted => ctx.format_retained(format_args!("$"), "step_drawing_value_text")?,
+        Value::Derived => ctx.format_retained(format_args!("*"), "step_drawing_value_text")?,
+        Value::List(values) => {
+            let mut text = ctx.format_retained(format_args!("("), "step_drawing_value_text")?;
+            for (index, value) in values.iter().enumerate() {
+                let Some(part) = value_text(exchange, value, losses, record_id, field, ctx)? else {
+                    return Ok(None);
+                };
+                if index != 0 {
+                    ctx.append_retained(&mut text, ",", "step_drawing_value_text")?;
+                }
+                ctx.append_retained(&mut text, &part, "step_drawing_value_text")?;
+            }
+            ctx.append_retained(&mut text, ")", "step_drawing_value_text")?;
+            text
+        }
+        Value::Typed(name, value) => {
+            let Some(value) = value_text(exchange, value, losses, record_id, field, ctx)? else {
+                return Ok(None);
+            };
+            ctx.format_retained(format_args!("{name}({value})"), "step_drawing_value_text")?
+        }
+    };
+    Ok(Some(text))
 }
 
 #[cfg(test)]

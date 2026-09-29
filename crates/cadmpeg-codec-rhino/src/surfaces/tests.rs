@@ -24,6 +24,39 @@ fn with_test_context<R>(f: impl FnOnce(&DecodeContext<'_>) -> R) -> R {
     f(&ctx)
 }
 
+fn with_collection_limit<R>(
+    max_collection_items: u64,
+    f: impl FnOnce(&DecodeContext<'_>) -> R,
+) -> R {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context input fits service profile");
+    f(&ctx)
+}
+
+fn simple_extrusion_curves() -> (NurbsCurve, NurbsCurve) {
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    let start = NurbsCurve::from_lanes(
+        1,
+        knots.clone(),
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("valid start profile");
+    let end = NurbsCurve::from_lanes(
+        1,
+        knots,
+        vec![Point3::new(0.0, 0.0, 1.0), Point3::new(1.0, 0.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("valid end profile");
+    (start, end)
+}
+
 fn decode(
     data: &[u8],
     class: Uuid,
@@ -469,7 +502,7 @@ fn curve_payload(version: u8, rational: bool, knots: &[f64]) -> Vec<u8> {
     }
     push_i32(&mut bytes, 6);
     for index in 0..6 {
-        push_f64(&mut bytes, index as f64);
+        push_f64(&mut bytes, f64::from(index));
         push_f64(&mut bytes, 0.0);
         push_f64(&mut bytes, 0.0);
         if rational {
@@ -492,14 +525,17 @@ fn curve_2d_payload(rational: bool) -> Vec<u8> {
     push_i32(&mut bytes, 0);
     bytes.extend([0; 48]);
     let knots = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0];
-    push_i32(&mut bytes, knots.len() as i32);
+    push_i32(
+        &mut bytes,
+        i32::try_from(knots.len()).expect("fixture value fits i32"),
+    );
     for knot in knots {
         push_f64(&mut bytes, knot);
     }
     push_i32(&mut bytes, 6);
     for index in 0..6 {
-        push_f64(&mut bytes, index as f64);
-        push_f64(&mut bytes, 2.0 * index as f64);
+        push_f64(&mut bytes, f64::from(index));
+        push_f64(&mut bytes, 2.0 * f64::from(index));
         if rational {
             push_f64(&mut bytes, if index == 0 { 2.0 } else { 1.0 });
         }
@@ -566,12 +602,18 @@ fn surface_2d_payload(rational: bool) -> Vec<u8> {
     push_i32(&mut bytes, 0);
     bytes.extend([0; 48]);
     let u_knots = [10.0, 11.0, 12.0];
-    push_i32(&mut bytes, u_knots.len() as i32);
+    push_i32(
+        &mut bytes,
+        i32::try_from(u_knots.len()).expect("fixture value fits i32"),
+    );
     for knot in u_knots {
         push_f64(&mut bytes, knot);
     }
     let v_knots = [20.0, 21.0];
-    push_i32(&mut bytes, v_knots.len() as i32);
+    push_i32(
+        &mut bytes,
+        i32::try_from(v_knots.len()).expect("fixture value fits i32"),
+    );
     for knot in v_knots {
         push_f64(&mut bytes, knot);
     }
@@ -1217,12 +1259,18 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     )
     .expect("valid test curve");
     let mut end = start.clone();
-    end.edit_control_points(|point| {
+    end.try_map_control_points(|_, point| {
+        let mut point = point.get();
         point.z = 7.0;
-        Ok(())
+        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                "control_points contains a non-finite point".into(),
+            )
+        })
     })
     .expect("valid test curve edit");
     let plain = super::extrusion_nurbs(
+        &cadmpeg_test_support::service_decode_context(),
         &start,
         &end,
         cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
@@ -1242,6 +1290,7 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         end.control_points()[1]
     );
     let transposed = super::extrusion_nurbs(
+        &cadmpeg_test_support::service_decode_context(),
         &start,
         &end,
         cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
@@ -1263,6 +1312,48 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         transposed.poles().into_iter().nth(3).unwrap(),
         end.control_points()[0]
     );
+}
+
+#[test]
+fn extrusion_surface_rows_refuse_collection_limit() {
+    let (start, end) = simple_extrusion_curves();
+    let refusal = with_collection_limit(5, |ctx| {
+        super::extrusion_nurbs(
+            ctx,
+            &start,
+            &end,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite path domain"),
+            false,
+            0,
+        )
+    })
+    .expect_err("two rows and four poles exceed five collection items");
+    assert!(matches!(
+        refusal,
+        GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino extrusion surface rows"
+    ));
+}
+
+#[test]
+fn extrusion_surface_knots_refuse_collection_limit() {
+    let (start, end) = simple_extrusion_curves();
+    let refusal = with_collection_limit(9, |ctx| {
+        super::extrusion_nurbs(
+            ctx,
+            &start,
+            &end,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite path domain"),
+            false,
+            0,
+        )
+    })
+    .expect_err("surface knots exceed remaining collection items");
+    assert!(matches!(
+        refusal,
+        GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino extrusion surface knots"
+    ));
 }
 
 #[test]

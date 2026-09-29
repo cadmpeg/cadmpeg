@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity-table bodies and their resolved native productions.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use super::{
     entity_suffix_framing, entity_suffix_value, CatiaConstraintRange, CatiaDefinitionChainValue,
-    CatiaDefinitionSchemaSelection, CatiaDefinitionValue, CatiaEntitySuffixFraming,
-    CatiaEntitySuffixSchemaSelection, CatiaEntitySuffixValue, CatiaEntityValueSchemaSelection,
-    CatiaFormulaRelation, CatiaParameterValue, CatiaRangeInterval, CatiaReferenceSignature,
-    CatiaRelationExpression, CatiaRelationProgramInstance, CatiaSchemaConfigurationRecord,
-    CatiaSchemaConfigurationRowLink,
+    CatiaDefinitionSchemaSelection, CatiaDefinitionValue, CatiaEntityReference,
+    CatiaEntitySuffixFraming, CatiaEntitySuffixSchemaSelection, CatiaEntitySuffixValue,
+    CatiaEntityValueSchemaSelection, CatiaFormulaRelation, CatiaParameterValue, CatiaRangeInterval,
+    CatiaReferenceSignature, CatiaReferenceSignatureWire, CatiaRelationExpression,
+    CatiaRelationExpressionWire, CatiaRelationProgramInstance, CatiaRelationProgramInstanceWire,
+    CatiaRelationTypeSignature, CatiaSchemaConfigurationRecord, CatiaSchemaConfigurationRowLink,
 };
 use crate::{entity_table, value_block};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 /// Complete production selected by the entity value and suffix frames.
@@ -112,23 +117,27 @@ impl CatiaEntityRecord {
     /// Total framed byte length.
     pub(super) fn byte_len(&self) -> u64 {
         match &self.body {
-            CatiaEntityRecordBody::Inline(bytes) => 6 + bytes.len() as u64,
+            CatiaEntityRecordBody::Inline(bytes) => 6 + u64_from_index(bytes.len()),
             CatiaEntityRecordBody::Nested {
                 definition_prefix,
                 definition_suffix,
                 value_payload,
                 record_suffix,
             } => {
-                24 + definition_prefix.len() as u64
-                    + definition_suffix.len() as u64
-                    + value_payload.len() as u64
-                    + record_suffix.len() as u64
+                24 + u64_from_index(definition_prefix.len())
+                    + u64_from_index(definition_suffix.len())
+                    + u64_from_index(value_payload.len())
+                    + u64_from_index(record_suffix.len())
             }
         }
     }
 
-    pub(crate) fn value_packets(&self) -> Vec<entity_table::EntityValuePacket> {
-        entity_table::value_packets(self.value_payload(), &self.value_fields())
+    pub(crate) fn value_packets(
+        &self,
+        ctx: &DecodeContext<'_>,
+        fields: &[value_block::ValueField],
+    ) -> Result<Vec<entity_table::EntityValuePacket>, CodecError> {
+        entity_table::value_packets_charged(ctx, self.value_payload(), fields)
     }
 
     pub(crate) fn numeric_pair(&self) -> Option<entity_table::NumericPair> {
@@ -310,8 +319,11 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub(crate) fn value_fields(&self) -> Vec<value_block::ValueField> {
-        value_block::tokenize(self.value_payload())
+    pub(crate) fn value_fields_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<value_block::ValueField>, cadmpeg_core::CodecError> {
+        value_block::tokenize_charged(ctx, self.value_payload())
     }
 
     pub(super) fn record_suffix(&self) -> &[u8] {
@@ -343,12 +355,16 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub(super) fn set_suffix_from_bytes(&mut self, suffix: &[u8]) {
-        self.suffix = match (entity_suffix_value(suffix), entity_suffix_framing(suffix)) {
+    pub(super) fn parse_suffix(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        let suffix = self.record_suffix();
+        let value = entity_suffix_value(suffix);
+        let framing = entity_suffix_framing(ctx, suffix)?;
+        self.suffix = match (value, framing) {
             (Some(value), _) => Some(CatiaEntityRecordSuffix::Value(value)),
             (None, Some(framing)) => Some(CatiaEntityRecordSuffix::Framing(framing)),
             (None, None) => None,
         };
+        Ok(())
     }
 }
 
@@ -387,7 +403,7 @@ pub(super) struct CatiaEntityRecordWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_relation_expression"
     )]
-    relation_expression: Option<CatiaRelationExpression>,
+    relation_expression: Option<CatiaRelationExpressionWire>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -423,7 +439,7 @@ pub(super) struct CatiaEntityRecordWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_relation_program_instance"
     )]
-    relation_program_instance: Option<CatiaRelationProgramInstance>,
+    relation_program_instance: Option<CatiaRelationProgramInstanceWire>,
     #[serde(
         default,
         alias = "configuration_record",
@@ -457,7 +473,7 @@ pub(super) struct CatiaEntityRecordWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_reference_signature"
     )]
-    reference_signature: Option<CatiaReferenceSignature>,
+    reference_signature: Option<CatiaReferenceSignatureWire>,
     #[serde(with = "cadmpeg_ir::bytes")]
     record_suffix: Vec<u8>,
     #[serde(
@@ -481,7 +497,84 @@ pub(super) struct CatiaEntityRecordWire {
 }
 
 impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
-    fn from(value: CatiaEntityRecord) -> Self {
+    fn from(mut value: CatiaEntityRecord) -> Self {
+        let payload = match &value.body {
+            CatiaEntityRecordBody::Inline(_) => &[][..],
+            CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
+        };
+        let value_fields = value_block::tokenize(payload);
+        let value_packets = entity_table::value_packets(payload, &value_fields);
+        let signature = match value.value_production.as_ref() {
+            Some(CatiaEntityValueProduction::RelationExpression(expression)) => {
+                expression.signature()
+            }
+            _ => None,
+        };
+        let output_entity = match value.object_production.as_ref() {
+            Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) => {
+                instance.output_entity().cloned()
+            }
+            _ => None,
+        };
+        let reference_signature = value.reference_signature.take().map(Into::into);
+        Self::from_with_views(
+            value,
+            value_fields,
+            value_packets,
+            signature,
+            output_entity,
+            reference_signature,
+        )
+    }
+}
+
+impl CatiaEntityRecordWire {
+    pub(super) fn from_charged(
+        ctx: &DecodeContext<'_>,
+        mut value: CatiaEntityRecord,
+    ) -> Result<Self, CodecError> {
+        let payload = match &value.body {
+            CatiaEntityRecordBody::Inline(_) => &[][..],
+            CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
+        };
+        let value_fields = value_block::tokenize_charged(ctx, payload)?;
+        let value_packets = entity_table::value_packets_charged(ctx, payload, &value_fields)?;
+        let signature = match value.value_production.as_ref() {
+            Some(CatiaEntityValueProduction::RelationExpression(expression)) => {
+                expression.signature_charged(ctx)?
+            }
+            _ => None,
+        };
+        let output_entity = match value.object_production.as_ref() {
+            Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) => instance
+                .output_entity()
+                .map(|entity| entity.copy_charged(ctx))
+                .transpose()?,
+            _ => None,
+        };
+        let reference_signature = value
+            .reference_signature
+            .take()
+            .map(|signature| CatiaReferenceSignatureWire::from_charged(ctx, signature))
+            .transpose()?;
+        Ok(Self::from_with_views(
+            value,
+            value_fields,
+            value_packets,
+            signature,
+            output_entity,
+            reference_signature,
+        ))
+    }
+
+    fn from_with_views(
+        value: CatiaEntityRecord,
+        value_fields: Vec<value_block::ValueField>,
+        value_packets: Vec<entity_table::EntityValuePacket>,
+        signature: Option<CatiaRelationTypeSignature>,
+        output_entity: Option<CatiaEntityReference>,
+        reference_signature: Option<CatiaReferenceSignatureWire>,
+    ) -> Self {
         let byte_len = value.byte_len();
         let (
             inline_body,
@@ -508,16 +601,15 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
                 record_suffix,
             } => (
                 None,
-                11 + definition_prefix.len() as u64 + definition_suffix.len() as u64,
+                11 + u64_from_index(definition_prefix.len())
+                    + u64_from_index(definition_suffix.len()),
                 definition_prefix,
                 definition_suffix,
-                6 + value_payload.len() as u64,
+                6 + u64_from_index(value_payload.len()),
                 value_payload,
                 record_suffix,
             ),
         };
-        let value_fields = value_block::tokenize(&value_payload);
-        let value_packets = entity_table::value_packets(&value_payload, &value_fields);
         let numeric_pair = entity_table::parse_numeric_pair(&value_payload);
         let (suffix_value, suffix_framing) = match value.suffix {
             Some(CatiaEntityRecordSuffix::Value(suffix)) => (Some(suffix), None),
@@ -586,19 +678,23 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
             value_payload,
             value_fields,
             value_schema_selections: value.value_schema_selections,
-            relation_expression,
+            relation_expression: relation_expression.map(|expression| {
+                CatiaRelationExpressionWire::from_with_signature(expression, signature)
+            }),
             parameter_value,
             range_interval: value.range_interval,
             constraint_range,
             definition_value,
             definition_chain_value,
-            relation_program_instance,
+            relation_program_instance: relation_program_instance.map(|instance| {
+                CatiaRelationProgramInstanceWire::from_with_output(instance, output_entity)
+            }),
             schema_configuration_record,
             schema_configuration_row_link,
             formula_relation,
             value_packets,
             numeric_pair,
-            reference_signature: value.reference_signature,
+            reference_signature,
             record_suffix,
             suffix_value,
             suffix_framing,
@@ -613,17 +709,21 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
     fn try_from(wire: CatiaEntityRecordWire) -> Result<Self, Self::Error> {
         if wire.inline_body.is_none() {
             if wire.definition_len
-                != 11 + wire.definition_prefix.len() as u64 + wire.definition_suffix.len() as u64
+                != 11
+                    + u64_from_index(wire.definition_prefix.len())
+                    + u64_from_index(wire.definition_suffix.len())
             {
                 return Err("definition_len disagrees with definition bytes".to_owned());
             }
-            if wire.value_len != 6 + wire.value_payload.len() as u64 {
+            if wire.value_len != 6 + u64_from_index(wire.value_payload.len()) {
                 return Err("value_len disagrees with value_payload".to_owned());
             }
         }
         let byte_len = match &wire.inline_body {
-            Some(bytes) => 6 + bytes.len() as u64,
-            None => 7 + wire.definition_len + wire.value_len + wire.record_suffix.len() as u64,
+            Some(bytes) => 6 + u64_from_index(bytes.len()),
+            None => {
+                7 + wire.definition_len + wire.value_len + u64_from_index(wire.record_suffix.len())
+            }
         };
         if wire.byte_len != byte_len {
             return Err("byte_len disagrees with body".to_owned());
@@ -673,9 +773,9 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             wire.schema_configuration_row_link,
             wire.formula_relation,
         ) {
-            (Some(value), None, None, None) => {
-                Some(CatiaEntityObjectProduction::RelationProgramInstance(value))
-            }
+            (Some(value), None, None, None) => Some(
+                CatiaEntityObjectProduction::RelationProgramInstance(value.try_into()?),
+            ),
             (None, Some(value), None, None) => Some(
                 CatiaEntityObjectProduction::SchemaConfigurationRecord(value),
             ),
@@ -696,7 +796,7 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             wire.definition_chain_value,
         ) {
             (Some(value), None, None, None, None) => {
-                Some(CatiaEntityValueProduction::RelationExpression(value))
+                Some(CatiaEntityValueProduction::RelationExpression(value.into()))
             }
             (None, Some(value), None, None, None) => {
                 Some(CatiaEntityValueProduction::ParameterValue(value))
@@ -727,7 +827,10 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             object_production,
             value_production,
             range_interval: wire.range_interval,
-            reference_signature: wire.reference_signature,
+            reference_signature: wire
+                .reference_signature
+                .map(TryInto::try_into)
+                .transpose()?,
             suffix,
             suffix_schema_selection: wire.suffix_schema_selection,
         })
@@ -816,7 +919,7 @@ mod tests {
 cadmpeg_core::named_optional_field!(deserialize_inline_body, Vec<u8>, "inline_body");
 cadmpeg_core::named_optional_field!(
     deserialize_relation_expression,
-    CatiaRelationExpression,
+    CatiaRelationExpressionWire,
     "relation_expression"
 );
 cadmpeg_core::named_optional_field!(
@@ -846,7 +949,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(
     deserialize_relation_program_instance,
-    CatiaRelationProgramInstance,
+    CatiaRelationProgramInstanceWire,
     "relation_program_instance"
 );
 cadmpeg_core::named_optional_field!(
@@ -871,7 +974,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(
     deserialize_reference_signature,
-    CatiaReferenceSignature,
+    CatiaReferenceSignatureWire,
     "reference_signature"
 );
 cadmpeg_core::named_optional_field!(

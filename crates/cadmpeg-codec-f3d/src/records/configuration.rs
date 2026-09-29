@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted configuration documents and their authored variant order.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
@@ -80,6 +81,42 @@ impl ConfigurationScalar {
         }
     }
 
+    pub(crate) fn text_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        struct ScalarText<'a>(&'a ConfigurationScalar);
+        impl std::fmt::Display for ScalarText<'_> {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self.0 {
+                    ConfigurationScalar::Null => formatter.write_str("null"),
+                    ConfigurationScalar::Bool(value) => std::fmt::Display::fmt(value, formatter),
+                    ConfigurationScalar::Number(value) => std::fmt::Display::fmt(value, formatter),
+                    ConfigurationScalar::String(value) => formatter.write_str(value),
+                }
+            }
+        }
+        struct Length(usize);
+        impl std::fmt::Write for Length {
+            fn write_str(&mut self, value: &str) -> std::fmt::Result {
+                self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+                Ok(())
+            }
+        }
+        let operation = "project F3D configuration scalar text";
+        let display = ScalarText(self);
+        let args = format_args!("{display}");
+        let mut length = Length(0);
+        std::fmt::write(&mut length, args)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        let bytes =
+            u64::try_from(length.0).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        ctx.charge_retained(bytes, operation)?;
+        let mut text = String::new();
+        text.try_reserve(length.0)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+        std::fmt::write(&mut text, args)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+        Ok(text)
+    }
+
     fn value(&self) -> Value {
         match self {
             Self::Null => Value::Null,
@@ -91,7 +128,12 @@ impl ConfigurationScalar {
 }
 
 impl ConfigurationVariant {
-    fn admit(entry_name: &str, name: &str, value: Value) -> Result<Self, CodecError> {
+    fn admit(
+        ctx: Option<&DecodeContext<'_>>,
+        entry_name: &str,
+        name: &str,
+        value: Value,
+    ) -> Result<Self, CodecError> {
         let Value::Object(mut fields) = value else {
             return Err(CodecError::malformed(format_args!(
                 "F3D configuration variant `{name}` must be an object: {entry_name}"
@@ -112,6 +154,9 @@ impl ConfigurationVariant {
                             )));
                         }
                     };
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "admit configuration parameter")?;
+                    }
                     admitted.insert(key, value);
                 }
                 Some(admitted)
@@ -129,15 +174,22 @@ impl ConfigurationVariant {
         ))
         };
         let suppressed = match fields.remove("suppressed") {
-            Some(Value::Array(values)) => Some(
-                values
-                    .into_iter()
-                    .map(|value| match value {
-                        Value::String(value) => Ok(value),
-                        _ => Err(suppressed_error()),
-                    })
-                    .collect::<Result<_, _>>()?,
-            ),
+            Some(Value::Array(values)) => {
+                let mut suppressed = Vec::new();
+                for value in values {
+                    let Value::String(value) = value else {
+                        return Err(suppressed_error());
+                    };
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "admit suppressed configuration member")?;
+                        suppressed.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("admit suppressed configuration member", 0, 1)
+                        })?;
+                    }
+                    suppressed.push(value);
+                }
+                Some(suppressed)
+            }
             Some(_) => return Err(suppressed_error()),
             None => None,
         };
@@ -417,6 +469,26 @@ impl DesignConfiguration {
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
+        payload: Map<String, Value>,
+    ) -> Result<Self, CodecError> {
+        Self::try_new_with_context(None, entry_name, kind, variant_order, payload)
+    }
+
+    pub(crate) fn try_new_charged(
+        ctx: &DecodeContext<'_>,
+        entry_name: String,
+        kind: DesignConfigurationKind,
+        variant_order: Vec<String>,
+        payload: Map<String, Value>,
+    ) -> Result<Self, CodecError> {
+        Self::try_new_with_context(Some(ctx), entry_name, kind, variant_order, payload)
+    }
+
+    fn try_new_with_context(
+        ctx: Option<&DecodeContext<'_>>,
+        entry_name: String,
+        kind: DesignConfigurationKind,
+        variant_order: Vec<String>,
         mut payload: Map<String, Value>,
     ) -> Result<Self, CodecError> {
         let extension = match kind {
@@ -475,21 +547,40 @@ impl DesignConfiguration {
         };
         let variants = match variants {
             Some(variants) => {
-                let mut variants = variants
-                    .into_iter()
-                    .map(|(name, value)| {
-                        ConfigurationVariant::admit(&entry_name, &name, value)
-                            .map(|value| (name, value))
-                    })
-                    .collect::<Result<BTreeMap<_, _>, _>>()?;
+                let mut admitted = BTreeMap::new();
+                for (name, value) in variants {
+                    let value = ConfigurationVariant::admit(ctx, &entry_name, &name, value)?;
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "admit configuration variant")?;
+                    }
+                    admitted.insert(name, value);
+                }
+                let mut variants = admitted;
                 let explicit_order = !variant_order.is_empty();
                 let entries = if !explicit_order && variants.len() <= 1 {
-                    variants.into_iter().collect()
+                    let mut entries = Vec::new();
+                    for variant in variants {
+                        if let Some(ctx) = ctx {
+                            ctx.charge_collection_items(1, "order configuration variants")?;
+                            entries.try_reserve(1).map_err(|_| {
+                                ctx.refuse_codec_limit("order configuration variants", 0, 1)
+                            })?;
+                        }
+                        entries.push(variant);
+                    }
+                    entries
                 } else {
-                    let entries = variant_order
-                        .into_iter()
-                        .map(|name| variants.remove_entry(&name).ok_or_else(&invalid_order))
-                        .collect::<Result<_, _>>()?;
+                    let mut entries = Vec::new();
+                    for name in variant_order {
+                        let variant = variants.remove_entry(&name).ok_or_else(&invalid_order)?;
+                        if let Some(ctx) = ctx {
+                            ctx.charge_collection_items(1, "order configuration variants")?;
+                            entries.try_reserve(1).map_err(|_| {
+                                ctx.refuse_codec_limit("order configuration variants", 0, 1)
+                            })?;
+                        }
+                        entries.push(variant);
+                    }
                     if !variants.is_empty() {
                         return Err(invalid_order());
                     }
@@ -516,6 +607,10 @@ impl DesignConfiguration {
 
     pub(crate) fn id(&self) -> String {
         crate::ids::configuration_entry_id(&self.entry_name, &self.identity_scope)
+    }
+
+    pub(crate) fn id_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        crate::ids::configuration_entry_id_charged(ctx, &self.entry_name, &self.identity_scope)
     }
 
     pub(crate) fn entry_name(&self) -> &String {

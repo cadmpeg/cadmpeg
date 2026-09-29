@@ -97,6 +97,52 @@ fn rendering(archive: ArchiveVersion, object: bool, corrupt: &str) -> Vec<u8> {
     )
 }
 
+fn rendering_collection_refusal(limit: u64) -> crate::chunks::FramingError {
+    let bytes = rendering(ArchiveVersion::V8, true, "none");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("rendering chunk");
+    settings::parse_rendering_attributes(
+        &ctx,
+        &bytes,
+        &mut reader,
+        ArchiveVersion::V8,
+        settings::RenderingAttributesKind::Object,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("rendering children exceed collection limit")
+}
+
+#[test]
+fn rendering_material_references_refuse_collection_limit() {
+    assert!(matches!(
+        rendering_collection_refusal(0),
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino rendering material references"
+    ));
+}
+
+#[test]
+fn obsolete_rendering_mappings_refuse_collection_limit() {
+    assert!(matches!(
+        rendering_collection_refusal(1),
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino obsolete rendering mappings"
+    ));
+}
+
+#[test]
+fn rendering_mapping_channels_refuse_collection_limit() {
+    assert!(matches!(
+        rendering_collection_refusal(2),
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino rendering mapping channels"
+    ));
+}
+
 #[test]
 fn rendering_checksums_follow_each_nested_chunk_owner() {
     for archive in [ArchiveVersion::V5, ArchiveVersion::V8] {
@@ -116,6 +162,7 @@ fn rendering_checksums_follow_each_nested_chunk_owner() {
                     settings::RenderingAttributesKind::Layer
                 };
                 settings::parse_rendering_attributes(
+                    &cadmpeg_test_support::service_decode_context(),
                     &bytes,
                     &mut reader,
                     archive,

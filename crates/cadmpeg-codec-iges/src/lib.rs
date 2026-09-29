@@ -14,6 +14,7 @@
 mod binary;
 mod card;
 mod compressed;
+mod decode_resource;
 mod dialect;
 mod directory;
 mod entities;
@@ -113,7 +114,13 @@ impl IgesVersion {
     }
 
     const fn global_flag(self) -> u8 {
-        version::VersionFlag::from_write_version(self).value() as u8
+        match self {
+            Self::V4_0 => 6,
+            Self::V5_0 => 8,
+            Self::V5_1 => 9,
+            Self::V5_2 => 10,
+            Self::V5_3 => 11,
+        }
     }
 }
 

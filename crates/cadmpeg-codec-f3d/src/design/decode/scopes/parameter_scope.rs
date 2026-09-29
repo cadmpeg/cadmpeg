@@ -52,15 +52,11 @@ use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
 use crate::ids::native_stream;
-use crate::records::entity_header::DesignEntityHeader;
 use crate::records::feature::assembly;
-use crate::records::feature::assembly_features::DesignComponentOccurrence;
 use crate::records::feature::coil;
 use crate::records::feature::direct_face;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::parameters::DesignParameter;
-use crate::records::recipes::ConstructionRecipe;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -71,15 +67,14 @@ use std::collections::HashMap;
 pub(crate) fn decode_parameter_scopes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    entities: &[DesignEntityHeader],
-    types: &[crate::records::entity_header::SegmentType],
-    (parameters, parameter_owners): (
-        &[DesignParameter],
-        &[crate::records::parameters::DesignParameterOwner],
-    ),
-    component_occurrences: &[DesignComponentOccurrence],
-    recipes: &[ConstructionRecipe],
+    native: &crate::native::F3dNative,
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
+    let entities = &native.design_entity_headers;
+    let types = &native.design_types;
+    let parameters = &native.design_parameters;
+    let parameter_owners = &native.design_parameter_owners;
+    let component_occurrences = &native.design_component_occurrences;
+    let recipes = &native.construction_recipes;
     let mut out = Vec::new();
     for entry in scan
         .entries

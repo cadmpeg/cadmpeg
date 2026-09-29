@@ -46,6 +46,21 @@ impl TopologyContext {
     }
 }
 
+impl From<TopologyContext> for u8 {
+    fn from(context: TopologyContext) -> Self {
+        match context {
+            TopologyContext::C0 => 0,
+            TopologyContext::C1 => 1,
+            TopologyContext::C2 => 2,
+            TopologyContext::C3 => 3,
+            TopologyContext::C4 => 4,
+            TopologyContext::C5 => 5,
+            TopologyContext::C6 => 6,
+            TopologyContext::C7 => 7,
+        }
+    }
+}
+
 /// Semantic lane carried by one compressed topology packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
@@ -76,12 +91,12 @@ std::thread_local! {
 impl fmt::Display for TopologyPacketRole {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::FaceDegrees(context) => write!(formatter, "face_degrees_{}", *context as u8),
+            Self::FaceDegrees(context) => write!(formatter, "face_degrees_{}", u8::from(*context)),
             Self::VertexValences => formatter.write_str("vertex_valences"),
             Self::VertexGroups => formatter.write_str("vertex_groups"),
             Self::VertexFlags => formatter.write_str("vertex_flags"),
             Self::FaceAttributeMasks(context) => {
-                write!(formatter, "face_attribute_masks_{}", *context as u8)
+                write!(formatter, "face_attribute_masks_{}", u8::from(*context))
             }
             Self::FaceAttributeMasks7Next30 => {
                 formatter.write_str("face_attribute_masks_7_next_30")

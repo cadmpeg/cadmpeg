@@ -56,9 +56,17 @@ pub(crate) fn rhino_header(version: &str) -> Vec<u8> {
 fn rhino_long_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     if version >= 50 {
-        bytes.extend((body.len() as i64).to_le_bytes());
+        bytes.extend(
+            i64::try_from(body.len())
+                .expect("test chunk length fits i64")
+                .to_le_bytes(),
+        );
     } else {
-        bytes.extend((body.len() as i32).to_le_bytes());
+        bytes.extend(
+            i32::try_from(body.len())
+                .expect("test chunk length fits i32")
+                .to_le_bytes(),
+        );
     }
     bytes.extend(body);
     bytes
@@ -69,7 +77,11 @@ fn rhino_short_chunk(version: u64, typecode: u32, value: i64) -> Vec<u8> {
     if version >= 50 {
         bytes.extend(value.to_le_bytes());
     } else {
-        bytes.extend((value as i32).to_le_bytes());
+        bytes.extend(
+            i32::try_from(value)
+                .expect("test short chunk value fits i32")
+                .to_le_bytes(),
+        );
     }
     bytes
 }
@@ -142,7 +154,11 @@ pub(crate) fn synthetic_rhino_point(
     bytes.extend(object_table);
     let eof_offset = bytes.len();
     bytes.extend(rhino_long_chunk(version, 0x0000_7fff, &[0; 8]));
-    let eof = rhino_long_chunk(version, 0x0000_7fff, &(bytes.len() as u64).to_le_bytes());
+    let eof = rhino_long_chunk(
+        version,
+        0x0000_7fff,
+        &cadmpeg_core::decode::u64_from_index(bytes.len()).to_le_bytes(),
+    );
     bytes[eof_offset..].copy_from_slice(&eof);
 
     let path = dir.join(name);
@@ -176,9 +192,14 @@ fn minimal_rhino_archive_with_comment(
     bytes.extend(rhino_long_chunk(version, 0x0000_7fff, &vec![0; width]));
     let file_size = bytes.len();
     let eof_body = if version >= 50 {
-        (file_size as u64).to_le_bytes().to_vec()
+        cadmpeg_core::decode::u64_from_index(file_size)
+            .to_le_bytes()
+            .to_vec()
     } else {
-        (file_size as u32).to_le_bytes().to_vec()
+        u32::try_from(file_size)
+            .expect("test archive size fits u32")
+            .to_le_bytes()
+            .to_vec()
     };
     let eof = rhino_long_chunk(version, 0x0000_7fff, &eof_body);
     bytes[eof_offset..].copy_from_slice(&eof);

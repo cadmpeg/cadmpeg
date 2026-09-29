@@ -113,8 +113,11 @@ fn native_validation_rejects_orphan_history_records() {
         .namespace_mut("sldprt")
         .arenas_mut()
         .get_mut("features")
-        .unwrap()[0] =
-        cadmpeg_ir::NativeRecord::new(orphan.id(), orphan_fields).expect("valid native identity");
+        .unwrap()[0] = cadmpeg_ir::NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new(orphan.id()).expect("valid identity"),
+        orphan_fields,
+    )
+    .expect("valid native identity");
     assert!(
         crate::resolved_features::validate::validate_native(decoded.ir())
             .iter()

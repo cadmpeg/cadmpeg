@@ -4,6 +4,8 @@
 use super::{find_color, style_application_order, ColorResolution, StyleDomain};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod collection_limits;
+mod string_limits;
 mod surface_styles;
 
 /// A style whose override walk does not terminate states no depth. Its
@@ -11,7 +13,8 @@ mod surface_styles;
 /// decoder does not read it as the deepest style.
 #[test]
 fn a_style_with_no_stated_depth_takes_a_position_of_its_own() {
-    let (exchange, _) = crate::parse::parse(
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let (exchange, _) = crate::test_support::with_service_context(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=COLOUR_RGB('surface',1.,0.,0.);\
 #2=SURFACE_STYLE_FILL_AREA(#1);\
@@ -20,26 +23,30 @@ fn a_style_with_no_stated_depth_takes_a_position_of_its_own() {
 #5=STYLED_ITEM('',(#3),#4);\
 #6=OVER_RIDING_STYLED_ITEM('',(#3),#4,#6);\
 ENDSEC;END-ISO-10303-21;",
-    )
+        crate::parse::parse_inner)
     .expect("parse style graph");
-    let graph_limit = 64;
+        let graph_limit = 64;
 
-    assert_eq!(
-        style_application_order(5, &exchange, graph_limit),
-        (false, Some(0))
-    );
-    assert_eq!(
-        style_application_order(6, &exchange, graph_limit),
-        (true, None)
-    );
-    let mut styles = vec![6_u64, 5_u64];
-    styles.sort_by_key(|id| style_application_order(*id, &exchange, graph_limit));
-    assert_eq!(styles, [5, 6]);
+        assert_eq!(
+            style_application_order(5, &exchange, graph_limit, ctx).expect("local style depth"),
+            (false, Some(0))
+        );
+        assert_eq!(
+            style_application_order(6, &exchange, graph_limit, ctx).expect("local style depth"),
+            (true, None)
+        );
+        let mut styles = vec![6_u64, 5_u64];
+        styles.sort_by_key(|id| {
+            style_application_order(*id, &exchange, graph_limit, ctx).expect("local style depth")
+        });
+        assert_eq!(styles, [5, 6]);
+    });
 }
 
 #[test]
 fn surface_color_search_ignores_curve_style_colors() {
-    let (exchange, _) = crate::parse::parse(
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let (exchange, _) = crate::test_support::with_service_context(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=COLOUR_RGB('curve',0.,0.,1.);\
 #2=CURVE_STYLE('',#1);\
@@ -47,24 +54,29 @@ fn surface_color_search_ignores_curve_style_colors() {
 #4=SURFACE_STYLE_FILL_AREA(#3);\
 #5=PRESENTATION_STYLE_ASSIGNMENT((#2,#4));\
 ENDSEC;END-ISO-10303-21;",
-    )
+        crate::parse::parse_inner)
     .expect("parse style graph");
-    let color = find_color(
-        5,
-        &exchange,
-        StyleDomain::Surface,
-        &mut BTreeSet::new(),
-        &mut BTreeMap::new(),
-        &mut Vec::new(),
-        &mut BTreeSet::new(),
-        0,
-    )
-    .expect("surface color");
-    let ColorResolution::Candidate(color) = color else {
-        panic!("expected one surface color");
-    };
-    assert_eq!(color.color.r(), 1.0);
-    assert_eq!(color.color.b(), 0.0);
+        let color = find_color(
+            5,
+            &exchange,
+            StyleDomain::Surface,
+            super::ColorSearchState {
+                active: &mut BTreeSet::new(),
+                cache: &mut BTreeMap::new(),
+                losses: &mut Vec::new(),
+                invalid_surface_sides: &mut BTreeSet::new(),
+            },
+            0,
+            ctx,
+        )
+        .expect("colour search fits local resources")
+        .expect("surface color");
+        let ColorResolution::Candidate(color) = color else {
+            panic!("expected one surface color");
+        };
+        assert_eq!(color.color.r(), 1.0);
+        assert_eq!(color.color.b(), 0.0);
+    });
 }
 
 use std::io::Cursor;
@@ -126,7 +138,8 @@ fn presentation_layer_expands_all_product_definition_views() {
             definition.id.as_str() == "step:product:product#3-definition-6"
                 && definition.native_ref.as_deref() == Some("#6")
         }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -200,7 +213,8 @@ fn ps04_product_definition_views_keep_identity_when_records_reordered() {
     reordered_members.sort();
     assert_eq!(source_members, reordered_members);
     for result in [&source_order, &reordered] {
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -232,7 +246,8 @@ fn presentation_layer_preserves_empty_label_and_visibility() {
         [PresentationItem::Source { source_id }] if source_id == "#1"
     ));
 
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -344,7 +359,8 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
         cadmpeg_ir::presentation::PresentationItem::Tessellation { tessellation }
             if tessellation.ends_with("#7")
     )));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -521,7 +537,8 @@ fn styled_free_curve_is_a_reachable_source_carrier() {
             .map(|source| source.object_id.as_str()),
         Some("#10")
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#7")
@@ -594,7 +611,8 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
             && loss.message.contains("#76")
             && loss.message.contains("scalar color omitted")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -643,7 +661,8 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
                 && loss.message.contains("#76")
                 && loss.message.contains("scalar color omitted")
         }));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -689,7 +708,8 @@ fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::ConflictingScalarColors.kind() }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -759,7 +779,8 @@ fn context_dependent_styles_are_not_flattened_without_context() {
             && loss.message.contains("#7 in #5")
             && loss.message.contains("#8 in #6")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1004,7 +1025,8 @@ fn duplicate_surface_transparency_properties_do_not_select_by_set_order() {
                 && loss.message.contains("#11=0.75")
                 && loss.message.contains("transparency omitted")
         }));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1140,7 +1162,8 @@ fn presentation_records_retain_non_color_geometry_owners() {
             .object_id,
         "#10"
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1195,7 +1218,8 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
         .expect("STEP unknown arena")
         .iter()
         .all(|record| record.id.as_str() != "step:data:styled_item#6"));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1284,7 +1308,8 @@ fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
             Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
         );
         assert!(result.report().losses.is_empty());
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1379,7 +1404,9 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
         &StepWriteOptions::default(),
     )
     .expect("write body presentation");
-    let (exchange, diagnostics) = crate::parse::parse(&bytes).expect("parse body presentation");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(&bytes, crate::parse::parse_inner)
+            .expect("parse body presentation");
     assert!(diagnostics.is_empty());
     let layer = exchange
         .records()
@@ -1451,7 +1478,8 @@ pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inpu
         PmiDefinition::DatumSystem { references }
             if references.as_slice().len() == 1 && references.as_slice()[0].common_group.is_none()
     )));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

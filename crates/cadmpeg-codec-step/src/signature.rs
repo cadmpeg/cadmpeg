@@ -4,11 +4,17 @@
 use std::ops::Range;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 
 use crate::parse::ParseError;
 
-pub(crate) fn decode_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<u8>, ParseError> {
-    let mut compact = Vec::with_capacity(payload.len());
+pub(crate) fn decode_payload(
+    input: &[u8],
+    payload: &Range<usize>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<u8>, ParseError> {
+    let mut compact = Vec::new();
+    let mut compact_reservation = ctx.reserve_scoped(0, "step_signature_compact_temp")?;
     let mut at = payload.start;
     while at < payload.end {
         if input[at].is_ascii_control() || input[at] == b' ' {
@@ -31,15 +37,26 @@ pub(crate) fn decode_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec
                 continue;
             }
         }
+        ctx.charge_collection_items(1, "step_signature_compact_items")?;
+        compact_reservation.grow(1)?;
+        compact.try_reserve(1).map_err(|_| {
+            ParseError::Resource(ctx.refuse_codec_limit("step_signature_compact_items", 0, 1))
+        })?;
         compact.push(input[at]);
         at += 1;
     }
-    let cms = STANDARD
-        .decode(compact)
-        .map_err(|error| ParseError::Syntax {
-            offset: payload.start,
-            message: format!("invalid SIGNATURE Base64 payload: {error}"),
-        })?;
+    let estimate = base64::decoded_len_estimate(compact.len());
+    let _cms_reservation =
+        ctx.reserve_scoped(u64_from_index(estimate), "step_signature_cms_temp")?;
+    let mut cms = ctx.alloc_filled(estimate, 0_u8, "step_signature_cms_bytes")?;
+    let decoded =
+        STANDARD
+            .decode_slice(&compact, &mut cms)
+            .map_err(|error| ParseError::Syntax {
+                offset: payload.start,
+                message: format!("invalid SIGNATURE Base64 payload: {error}"),
+            })?;
+    cms.truncate(decoded);
     // SG-04: this is a structural detached-CMS gate. It does not compute the
     // Part 21 alphabet digest, verify a signer key, or apply caller policy;
     // the codec retains an admitted signature as opaque source data.
@@ -63,8 +80,11 @@ impl<'a> Ber<'a> {
         Self { input, at: 0 }
     }
 
-    fn remaining(&self) -> usize {
-        self.input.len().saturating_sub(self.at)
+    fn remaining(&self) -> Result<usize, &'static str> {
+        self.input
+            .len()
+            .checked_sub(self.at)
+            .ok_or("BER cursor exceeds input")
     }
 
     fn take(&mut self) -> Result<(u8, &'a [u8]), &'static str> {
@@ -170,9 +190,9 @@ fn validate_algorithm_identifier(value: &[u8]) -> Result<(), &'static str> {
     if algorithm.take_tag(0x06)?.is_empty() {
         return Err("empty CMS algorithm OID");
     }
-    while algorithm.remaining() > 0 {
+    while algorithm.remaining()? > 0 {
         algorithm.take()?;
-        if algorithm.remaining() > 0 {
+        if algorithm.remaining()? > 0 {
             return Err("CMS algorithm identifier has multiple parameters");
         }
     }
@@ -184,7 +204,7 @@ fn validate_octet_string(tag: u8, value: &[u8]) -> Result<(), &'static str> {
         0x04 => Ok(()),
         0x24 => {
             let mut chunks = Ber::new(value);
-            while chunks.remaining() > 0 {
+            while chunks.remaining()? > 0 {
                 let (chunk_tag, chunk_value) = chunks.take()?;
                 validate_octet_string(chunk_tag, chunk_value)?;
             }
@@ -199,7 +219,7 @@ fn validate_subject_key_identifier(tag: u8, value: &[u8]) -> Result<(), &'static
         0x80 => Ok(()),
         0xa0 => {
             let mut chunks = Ber::new(value);
-            while chunks.remaining() > 0 {
+            while chunks.remaining()? > 0 {
                 let (chunk_tag, chunk_value) = chunks.take()?;
                 validate_octet_string(chunk_tag, chunk_value)?;
             }
@@ -211,10 +231,10 @@ fn validate_subject_key_identifier(tag: u8, value: &[u8]) -> Result<(), &'static
 
 fn validate_digest_algorithms(value: &[u8]) -> Result<(), &'static str> {
     let mut algorithms = Ber::new(value);
-    if algorithms.remaining() == 0 {
+    if algorithms.remaining()? == 0 {
         return Err("CMS SignedData has no digest algorithm");
     }
-    while algorithms.remaining() > 0 {
+    while algorithms.remaining()? > 0 {
         let algorithm = algorithms.take_tag(0x30)?;
         validate_algorithm_identifier(algorithm)?;
     }
@@ -227,7 +247,7 @@ fn validate_signer_identifier(tag: u8, value: &[u8]) -> Result<(), &'static str>
             let mut issuer_and_serial = Ber::new(value);
             let issuer = issuer_and_serial.take_tag(0x30)?;
             let mut issuer = Ber::new(issuer);
-            while issuer.remaining() > 0 {
+            while issuer.remaining()? > 0 {
                 issuer.take()?;
             }
             validate_integer(issuer_and_serial.take_tag(0x02)?)?;
@@ -258,17 +278,17 @@ fn validate_signer_info(value: &[u8]) -> Result<(), &'static str> {
 
 fn validate_signer_infos(value: &[u8]) -> Result<(), &'static str> {
     let mut signers = Ber::new(value);
-    if signers.remaining() == 0 {
+    if signers.remaining()? == 0 {
         return Err("CMS SignedData has no signer");
     }
-    while signers.remaining() > 0 {
+    while signers.remaining()? > 0 {
         validate_signer_info(signers.take_tag(0x30)?)?;
     }
     Ok(())
 }
 
 fn require_empty(ber: &Ber<'_>) -> Result<(), &'static str> {
-    (ber.remaining() == 0)
+    (ber.remaining()? == 0)
         .then_some(())
         .ok_or("trailing BER value")
 }
@@ -300,12 +320,12 @@ fn validate_detached_cms(input: &[u8]) -> Result<(), &'static str> {
     let encap_content_info = signed_data.take_tag(0x30)?;
     let mut encap_content_info = Ber::new(encap_content_info);
     encap_content_info.take_tag(0x06)?;
-    if encap_content_info.remaining() != 0 {
+    if encap_content_info.remaining()? != 0 {
         return Err("CMS SignedData is not detached");
     }
 
     let mut optional_stage = 0;
-    while signed_data.remaining() > 0 {
+    while signed_data.remaining()? > 0 {
         let (tag, value) = signed_data.take()?;
         match tag {
             0xa0 | 0xa1 => {
@@ -315,7 +335,7 @@ fn validate_detached_cms(input: &[u8]) -> Result<(), &'static str> {
                 }
                 optional_stage = stage;
                 let mut optional = Ber::new(value);
-                while optional.remaining() > 0 {
+                while optional.remaining()? > 0 {
                     optional.take()?;
                 }
             }

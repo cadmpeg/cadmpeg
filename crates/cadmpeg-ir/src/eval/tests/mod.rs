@@ -388,7 +388,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
@@ -403,7 +403,6 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
             },
         )
         .unwrap();
-
     let index = crate::index::ModelIndex::new(&ir);
     let budget = WorkBudget::new(5);
     assert_eq!(
@@ -440,7 +439,8 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
         &surface,
         [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         [point, point],
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .expect("degree-zero surface bound");
     assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
 }
@@ -466,7 +466,8 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
             &surface,
             [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
             [pole, pole],
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .expect("degree-zero patch span bound");
         assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
     }
@@ -495,7 +496,8 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             .expect("surface endpoint")
             .get()
     });
-    let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, endpoints).expect("resource allocation did not fail")
+    let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, endpoints)
+        .expect("resource allocation did not fail")
         .expect("multi-span rational Bézier residual bound");
 
     for index in 0..=100 {
@@ -589,7 +591,8 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             &id,
             point.get(),
             parameter,
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .expect("direct analytic inverse")
         .get();
         assert!((inverse - parameter).abs() < 1.0e-12);
@@ -682,7 +685,8 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             &id,
             point,
             seed,
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .expect("polyline inverse")
         .get();
         assert!((inverse - expected).abs() < 1.0e-12);
@@ -706,10 +710,15 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     });
     let index = crate::index::ModelIndex::new(&ir);
     let point = Point3::new(0.5, 0.005, 0.0);
-    assert!(super::model_curve_parameter_near_point_in_index(&index, &id, point, 0.5).expect("resource allocation did not fail").is_none());
+    assert!(
+        super::model_curve_parameter_near_point_in_index(&index, &id, point, 0.5)
+            .expect("resource allocation did not fail")
+            .is_none()
+    );
     let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
         &index, &id, point, 0.5, 0.01,
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .expect("caller tolerance admits the bounded residual")
     .get();
     assert!((inverse - 0.5).abs() < 1.0e-12);
@@ -751,7 +760,8 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         &id,
         point.get(),
         parameter,
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .expect("transformed inverse")
     .get();
     assert!((inverse - parameter).abs() < 1.0e-10);
@@ -773,7 +783,8 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         &id,
         Point3::new(0.0, 0.0, 0.0),
         0.0
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .is_none());
 }
 
@@ -796,7 +807,8 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
             &id,
             point,
             seed
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .map(crate::scalar::FiniteReal::get),
         Some(seed)
     );
@@ -805,7 +817,8 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
         &id,
         Point3::new(2.0, 3.0, 5.0),
         seed
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .is_none());
 }
 
@@ -833,7 +846,9 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
         (IsolineDirection::ConstantU, 0.4, [-2.0, 0.75, 3.0]),
         (IsolineDirection::ConstantV, 1.25, [0.0, 0.6, 1.0]),
     ] {
-        let curve = nurbs_surface_isoline(&surface, direction, at).expect("resource allocation did not fail").expect("isoline");
+        let curve = nurbs_surface_isoline(&surface, direction, at)
+            .expect("resource allocation did not fail")
+            .expect("isoline");
         for sample in samples {
             let (u, v) = match direction {
                 IsolineDirection::ConstantU => (at, sample),
@@ -960,7 +975,6 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             record_bounds: None,
         },
     ];
-
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &second_id, 1.0e16, -1.0e16)
@@ -1035,7 +1049,6 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
         record_bounds: None,
     });
     let index = crate::index::ModelIndex::new(&ir);
-
     let point = model_surface_point_by_id(&index, &offset_id, 0.25, 1.2)
         .expect("linearly extended offset")
         .get();
@@ -1145,7 +1158,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
     ];
     ir.model
         .add_procedural_surface(
-            subset_id.clone(),
+            &subset_id,
             procedural_surface! {
                 id: subset_construction,
                 definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[0.0, 1.0], [0.0, 1.0]], Some(false), Some(true), None).unwrap()),
@@ -1156,7 +1169,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         .expect("subset surface exists and has no procedural construction");
     ir.model
         .add_procedural_surface(
-            offset_id.clone(),
+            &offset_id,
             procedural_surface! {
                 id: offset_construction,
                 definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
@@ -1165,7 +1178,6 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             },
         )
         .expect("offset surface exists and has no procedural construction");
-
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &offset_id, 0.25, 0.5)
@@ -1206,7 +1218,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
     ];
     ir.model
         .add_procedural_surface(
-            bounded_id.clone(),
+            &bounded_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::CurveBounded {
@@ -1220,7 +1232,6 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
             },
         )
         .unwrap();
-
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &bounded_id, 0.25, 0.75)
@@ -1268,7 +1279,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
@@ -1283,7 +1294,6 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
             },
         )
         .unwrap();
-
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, 0.5, 4.0)
         .expect("linear sweep point")
@@ -1351,7 +1361,6 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-
     let index = crate::index::ModelIndex::new(&ir);
     let partials = model_surface_partials_by_id(&index, &surface_id, -0.5, 3.0)
         .expect("cacheless reversed extrusion point");
@@ -1413,7 +1422,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::AxisRevolution(
@@ -1429,7 +1438,6 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
             },
         )
         .unwrap();
-
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
         .expect("axis revolution point")
@@ -1475,7 +1483,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
@@ -1484,7 +1492,6 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
             },
         )
         .unwrap();
-
     let index = crate::index::ModelIndex::new(&ir);
     let partials = model_surface_second_partials_by_id(&index, &surface_id, 1.5, 12.0)
         .expect("mapped revolution partials");
@@ -1523,7 +1530,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         source_object: None,
     });
     ir.model.add_procedural_surface(
-        surface_id.clone(),
+        &surface_id,
         procedural_surface! {
             id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
             definition: ProceduralSurfaceDefinition::Revolution(
@@ -1541,7 +1548,6 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
             record_bounds: None,
         },
     ).unwrap();
-
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, 0.0, 0.0)
         .expect("wide mapped revolution point")
@@ -1618,7 +1624,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
@@ -1633,7 +1639,6 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
             },
         )
         .unwrap();
-
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
         .expect("normalized line domain maps to distance carrier")
@@ -1881,7 +1886,9 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
         (SurfaceParameterAxis::U, 0.25),
         (SurfaceParameterAxis::V, 0.75),
     ] {
-        let isocurve = nurbs_surface_isocurve(&surface, axis, fixed).expect("resource allocation did not fail").expect("exact isocurve");
+        let isocurve = nurbs_surface_isocurve(&surface, axis, fixed)
+            .expect("resource allocation did not fail")
+            .expect("exact isocurve");
         let geometry = SolvedCurveGeometry::Nurbs(isocurve);
         for varying in [0.0, 0.2, 0.7, 1.0] {
             let expected = match axis {
@@ -1917,61 +1924,26 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     .unwrap();
     let point = Point3::new(0.5, 0.0, 0.0);
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1).expect("resource allocation did not fail")
+        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1)
+            .expect("resource allocation did not fail")
             .map(crate::scalar::FiniteReal::get),
         Some(0.25)
     );
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.9).expect("resource allocation did not fail")
+        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.9)
+            .expect("resource allocation did not fail")
             .map(crate::scalar::FiniteReal::get),
         Some(0.75)
     );
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, Point3::new(0.5, 1.0, 0.0), 1.0e-12, 0.5,).expect("resource allocation did not fail"),
+        nurbs_curve_parameter_near_point(&curve, Point3::new(0.5, 1.0, 0.0), 1.0e-12, 0.5,)
+            .expect("resource allocation did not fail"),
         None
     );
     assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound.get() >= 2.0));
 }
 
-#[test]
-fn bounded_nurbs_interval_search_keeps_a_fixed_working_set() {
-    let boundaries = (0..=10_000)
-        .map(crate::scalar::FiniteReal::from_index)
-        .collect::<Vec<_>>();
-    let seed = crate::scalar::FiniteReal::new(5_000.5).expect("finite seed");
-    let intervals = super::bounded_nearest_intervals(&boundaries, seed).expect("resource allocation did not fail");
-
-    assert_eq!(intervals.len(), 512);
-    assert!(intervals
-        .iter()
-        .any(|interval| interval.map(crate::scalar::FiniteReal::get) == [5_000.0, 5_001.0]));
-}
-
-#[test]
-fn bounded_nurbs_containment_search_keeps_the_final_valid_spans() {
-    let boundaries = [0.0, 1.0, 1.0, 2.0, 3.0];
-
-    assert_eq!(
-        super::bounded_tail_intervals(&boundaries).expect("resource allocation did not fail"),
-        (vec![[0.0, 1.0], [1.0, 2.0], [2.0, 3.0]], false)
-    );
-
-    let many_boundaries = (0..=10_000).map(f64::from).collect::<Vec<_>>();
-    let (intervals, truncated) = super::bounded_tail_intervals(&many_boundaries).expect("resource allocation did not fail");
-    assert_eq!(intervals.len(), 512);
-    assert!(truncated);
-}
-
-#[test]
-fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
-    let boundaries = [0, 1, 2].map(crate::scalar::FiniteReal::from_index);
-    let seed = crate::scalar::FiniteReal::new(1.4).expect("finite seed");
-
-    assert_eq!(
-        super::nearest_boundary_witness(&boundaries, seed, 0.0, |_| Ok(Some(0.0))).expect("resource allocation did not fail"),
-        super::BoundaryWitness::Found(crate::scalar::FiniteReal::ONE)
-    );
-}
+mod bounded_nurbs;
 
 mod periodic_and_analytic;
 

@@ -4168,7 +4168,7 @@ fn check_feature_sketch_references(
                         .map_or(0, |sketch| sketch.profiles.len());
                     if profiles
                         .iter()
-                        .any(|index| *index as usize >= profile_count)
+                        .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= profile_count)
                     {
                         feature_geometry_error(
                             findings,
@@ -4184,10 +4184,9 @@ fn check_feature_sketch_references(
                         .iter()
                         .find(|candidate| candidate.id == *sketch)
                         .map_or(0, |sketch| sketch.profiles.len());
-                    if profiles
-                        .iter()
-                        .any(|index| *index as usize >= sketch_profile_count)
-                    {
+                    if profiles.iter().any(|index| {
+                        cadmpeg_core::decode::index_from_u32(*index) >= sketch_profile_count
+                    }) {
                         feature_geometry_error(
                             findings,
                             feature,
@@ -4205,11 +4204,12 @@ fn check_feature_sketch_references(
                         selected_sketch.map_or(0, |sketch| sketch.profiles.len());
                     let invalid = regions.iter().any(|region| match region {
                         crate::features::SketchProfileRegion::Loops { loops } => {
-                            loops.outer() as usize >= sketch_profile_count
-                                || loops
-                                    .holes()
-                                    .iter()
-                                    .any(|index| *index as usize >= sketch_profile_count)
+                            cadmpeg_core::decode::index_from_u32(loops.outer())
+                                >= sketch_profile_count
+                                || loops.holes().iter().any(|index| {
+                                    cadmpeg_core::decode::index_from_u32(*index)
+                                        >= sketch_profile_count
+                                })
                         }
                         crate::features::SketchProfileRegion::Trimmed {
                             outer_boundary,

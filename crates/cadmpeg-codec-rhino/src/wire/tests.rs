@@ -4,6 +4,40 @@
 use super::{read_finite, Uuid};
 use crate::chunks::{BoundedReader, FramingError};
 
+#[test]
+fn canonical_json_sorts_nested_keys_and_refuses_collection_limit() {
+    #[derive(serde::Serialize)]
+    struct Nested {
+        z: u32,
+        a: u32,
+    }
+    #[derive(serde::Serialize)]
+    struct Root {
+        z: Nested,
+        a: u32,
+    }
+    let value = Root {
+        z: Nested { z: 2, a: 1 },
+        a: 3,
+    };
+    let service = cadmpeg_test_support::service_decode_context();
+    let text = super::admitted_canonical_json(&service, &value, "Rhino canonical JSON")
+        .expect("service policy admits JSON");
+    assert_eq!(text, r#"{"a":3,"z":{"a":1,"z":2}}"#);
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits");
+    let refusal = super::admitted_canonical_json(&ctx, &value, "Rhino canonical JSON")
+        .expect_err("four JSON map entries exceed three collection items");
+    assert!(
+        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "Rhino canonical JSON")
+    );
+}
+
 /// A non-finite value is refused at its own first byte, not after the read.
 #[test]
 fn read_finite_refuses_a_nonfinite_value_at_its_first_byte() {
@@ -56,21 +90,6 @@ fn parses_mixed_endian_uuid_and_nil_uuid() {
         Uuid::nil().to_string(),
         "00000000-0000-0000-0000-000000000000"
     );
-}
-
-#[test]
-fn nonempty_source_id_matches_the_uuid_rendering() {
-    for wire in [
-        [
-            0xdd, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
-            0x22, 0xf0,
-        ],
-        [0; 16],
-        [0xff; 16],
-    ] {
-        let uuid = Uuid::from_wire(wire);
-        assert_eq!(uuid.to_nonempty().as_str(), uuid.to_string());
-    }
 }
 
 /// A non-finite coordinate and an overflowing product are both refused, so the

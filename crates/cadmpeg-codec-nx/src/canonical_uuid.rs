@@ -22,15 +22,8 @@ impl<S: AsRef<str>> CanonicalUuid<S> {
         Ok(Self(value))
     }
 
-    #[cfg(test)]
     pub(crate) fn as_str(&self) -> &str {
         self.0.as_ref()
-    }
-}
-
-impl CanonicalUuid<&str> {
-    pub(crate) fn into_owned(self) -> CanonicalUuid<String> {
-        CanonicalUuid(self.0.to_owned())
     }
 }
 
@@ -51,7 +44,7 @@ mod tests {
             "01234567-89ab-cdef-0123-456789abcdef",
             "00000000-0000-0000-0000-000000000000",
         ] {
-            let value = CanonicalUuid::new(text).unwrap().into_owned();
+            let value = CanonicalUuid::new(text.to_owned()).unwrap();
             let json = serde_json::to_string(text).unwrap();
             assert_eq!(serde_json::to_string(&value).unwrap(), json);
             assert_eq!(

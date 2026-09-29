@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 
 use crate::dialect::FcstdDialect;
 use crate::native::{
-    copy_xml_text, malformed, DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire,
-    ObjectRecord, PropertyFamily, PropertyRecord, ValueRecord,
+    DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire, ObjectRecord, PropertyFamily,
+    PropertyRecord, ValueRecord,
 };
 
 const MAX_OBJECTS: usize = 1_000_000;
@@ -35,21 +35,24 @@ pub(crate) struct Graph {
 pub(crate) fn parse_with_context(
     bytes: &[u8],
     schema_version: &str,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    if let Some(ctx) = ctx {
-        ctx.charge_work(
-            bytes.len() as u64,
-            "FCStd persistence XML lexical admission",
-        )?;
-    }
-    if let (Some(ctx), Some((nodes, _))) = (ctx, crate::container::xml_envelope_counts(bytes)) {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "FCStd persistence XML lexical admission",
+    )?;
+    if let Some((nodes, _)) = crate::container::xml_envelope_counts(bytes) {
         ctx.charge_collection_items(nodes, "FCStd persistence XML node tree")?;
     }
-    let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
+    let xml = roxmltree::Document::parse(text).map_err(|error| {
+        crate::resource::malformed_charged(
+            ctx,
+            format_args!("invalid Document.xml: {error}"),
+            "FCStd persistence diagnostic",
+        )
+    })?;
     parse_document(
         text,
         &xml,
@@ -58,22 +61,11 @@ pub(crate) fn parse_with_context(
     )
 }
 
-fn charge_items(
-    ctx: Option<&DecodeContext<'_>>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(count as u64, operation)?;
-    }
-    Ok(())
-}
-
 fn parse_document(
     text: &str,
     xml: &roxmltree::Document<'_>,
     schema: FcstdDialect,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Graph, CodecError> {
     let root = xml.root_element();
     // Schema 2 is its own element vocabulary. Every other declared schema, and
@@ -84,24 +76,29 @@ fn parse_document(
     // corrupt schema-4 document does. `crate::dialect` charges the
     // dialect-unverified loss for the undeclared case.
     let (declarations_tag, data_tag, record_tag) = schema.persistence_tags();
-    let objects_node = unique_section(root, declarations_tag)?;
-    let data_node = unique_section(root, data_tag)?;
+    let objects_node = unique_section(root, declarations_tag, ctx)?;
+    let data_node = unique_section(root, data_tag, ctx)?;
 
     let declared_count = objects_node
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "{declarations_tag} Count is missing or invalid"
-            ))
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("{declarations_tag} Count is missing or invalid"),
+                "FCStd persistence diagnostic",
+            )
         })?;
-    let object_limit = ctx
-        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_entities).ok())
+    let object_limit = usize::try_from(ctx.policy().limits.max_entities)
+        .ok()
         .map_or(MAX_OBJECTS, |policy| policy.min(MAX_OBJECTS));
     if declared_count > object_limit {
         return Err(CodecError::Malformed("object count limit exceeded".into()));
     }
-    charge_items(ctx, declared_count, "FCStd object declarations")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(declared_count),
+        "FCStd object declarations",
+    )?;
     if schema == FcstdDialect::Schema2 && objects_node.attribute("Dependencies").is_some() {
         return Err(CodecError::Malformed(
             "schema 2 Features cannot carry object dependencies".into(),
@@ -124,35 +121,43 @@ fn parse_document(
         .children()
         .filter(|node| node.has_tag_name("ObjectDeps"))
         .count();
-    charge_items(
-        ctx,
-        dependency_node_count,
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(dependency_node_count),
         "FCStd object dependency records",
     )?;
     let dependency_nodes = objects_node
         .children()
-        .filter(|node| node.has_tag_name("ObjectDeps"))
-        .collect::<Vec<_>>();
-    if (!dependencies_enabled && !dependency_nodes.is_empty())
-        || (dependencies_enabled && dependency_nodes.len() != declared_count)
+        .filter(|node| node.has_tag_name("ObjectDeps"));
+    let mut dependency_records = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        dependency_node_count,
+        "FCStd object dependency records",
+    )?;
+    dependency_records.extend(dependency_nodes);
+    if (!dependencies_enabled && !dependency_records.is_empty())
+        || (dependencies_enabled && dependency_records.len() != declared_count)
     {
         return Err(CodecError::Malformed(
             "ObjectDeps records do not match the Objects dependency envelope".into(),
         ));
     }
     let mut dependency_map = HashMap::<String, DependencyInfo>::new();
-    for (order, node) in dependency_nodes.into_iter().enumerate() {
-        let name = required_attr(node, "Name")?;
+    for (order, node) in dependency_records.into_iter().enumerate() {
+        let name = retained_attr(ctx, node, "Name", "FCStd dependency owner name")?;
         let dependency_item_count = node
             .children()
             .filter(|child| child.has_tag_name("Dep"))
             .count();
-        charge_items(ctx, dependency_item_count, "FCStd object dependencies")?;
-        let dependencies = node
-            .children()
-            .filter(|child| child.has_tag_name("Dep"))
-            .map(|child| required_attr(child, "Name"))
-            .collect::<Result<Vec<_>, _>>()?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(dependency_item_count),
+            "FCStd object dependencies",
+        )?;
+        let mut dependencies = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            dependency_item_count,
+            "FCStd object dependencies",
+        )?;
+        for child in node.children().filter(|child| child.has_tag_name("Dep")) {
+            dependencies.push(retained_attr(ctx, child, "Name", "FCStd dependency name")?);
+        }
         let dependency_count = node
             .attribute("Count")
             .and_then(|value| value.parse::<usize>().ok())
@@ -160,10 +165,14 @@ fn parse_document(
                 CodecError::Malformed("ObjectDeps Count is missing or invalid".into())
             })?;
         if dependency_count != dependencies.len() {
-            return Err(CodecError::malformed(format_args!(
-                "ObjectDeps {name} Count={dependency_count} but {} dependencies were found",
-                dependencies.len()
-            )));
+            return Err(crate::resource::malformed_charged(
+                ctx,
+                format_args!(
+                    "ObjectDeps {name} Count={dependency_count} but {} dependencies were found",
+                    dependencies.len()
+                ),
+                "FCStd persistence diagnostic",
+            ));
         }
         let allow_partial = node
             .attribute("AllowPartial")
@@ -172,21 +181,32 @@ fn parse_document(
             .map_err(|_| {
                 CodecError::Malformed("ObjectDeps AllowPartial must be positive".into())
             })?;
-        if dependency_map
-            .insert(
-                name.clone(),
-                DependencyInfo {
-                    dependencies,
-                    allow_partial,
-                    order,
-                },
-            )
-            .is_some()
-        {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate ObjectDeps name {name}"
-            )));
+        if dependency_map.contains_key(&name) {
+            return Err(crate::resource::malformed_charged(
+                ctx,
+                format_args!("duplicate ObjectDeps name {name}"),
+                "FCStd persistence diagnostic",
+            ));
         }
+        ctx.charge_collection_items(1, "FCStd dependency lookup")?;
+        dependency_map.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    ctx.policy().limits.max_collection_items,
+                    1,
+                    "FCStd dependency lookup",
+                ),
+            )
+        })?;
+        dependency_map.insert(
+            name,
+            DependencyInfo {
+                dependencies,
+                allow_partial,
+                order,
+            },
+        );
     }
 
     let mut data_by_name = HashMap::new();
@@ -194,52 +214,87 @@ fn parse_document(
         .children()
         .filter(|node| node.has_tag_name(record_tag))
     {
-        charge_items(ctx, 1, "FCStd object data lookup")?;
-        let name = required_attr(node, "name")?;
-        if data_by_name.insert(name.clone(), node).is_some() {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate ObjectData name {name}"
-            )));
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(1),
+            "FCStd object data lookup",
+        )?;
+        data_by_name.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    ctx.policy().limits.max_collection_items,
+                    1,
+                    "FCStd object data lookup",
+                ),
+            )
+        })?;
+        let name = retained_attr(ctx, node, "name", "FCStd object data name")?;
+        if data_by_name.contains_key(&name) {
+            return Err(crate::resource::malformed_charged(
+                ctx,
+                format_args!("duplicate ObjectData name {name}"),
+                "FCStd persistence diagnostic",
+            ));
         }
+        data_by_name.insert(name, node);
     }
     let data_count = data_node
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!("{data_tag} Count is missing or invalid"))
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("{data_tag} Count is missing or invalid"),
+                "FCStd persistence diagnostic",
+            )
         })?;
     if data_count != data_by_name.len() {
-        return Err(CodecError::malformed(format_args!(
-            "{data_tag} Count={data_count} but {} records were found",
-            data_by_name.len()
-        )));
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "{data_tag} Count={data_count} but {} records were found",
+                data_by_name.len()
+            ),
+            "FCStd persistence diagnostic",
+        ));
     }
 
-    charge_items(ctx, declared_count, "FCStd object records")?;
-    let mut objects = Vec::new();
-    let mut object_names = HashSet::new();
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(declared_count),
+        "FCStd object records",
+    )?;
+    let mut objects: Vec<ObjectRecord> =
+        cadmpeg_core::decode::DecodeContext::admitted_vec(declared_count, "FCStd object records")?;
     for (order, node) in objects_node
         .children()
         .filter(|node| node.has_tag_name(record_tag))
         .enumerate()
     {
         let name = retained_attr(ctx, node, "name", "FCStd object name")?;
-        if !object_names.insert(name.clone()) {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate object declaration name {name}"
-            )));
+        for prior in &objects {
+            ctx.charge_work(1, "FCStd duplicate object names")?;
+            if prior.name == name {
+                return Err(crate::resource::malformed_charged(
+                    ctx,
+                    format_args!("duplicate object declaration name {name}"),
+                    "FCStd persistence diagnostic",
+                ));
+            }
         }
         let type_name = retained_attr(ctx, node, "type", "FCStd object type")?;
-        let id = object_id(&name);
+        let id = crate::native::native_id_charged(ctx, "object", &name)?;
         let data_node = data_by_name.get(&name);
         let attributes = node
             .attributes()
             .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
             .map(|attribute| {
-                charge_items(ctx, 1, "FCStd object attributes")?;
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "FCStd object attributes",
+                )?;
                 Ok((
-                    copy_xml_text(ctx, attribute.name(), "FCStd object attribute name")?,
-                    copy_xml_text(ctx, attribute.value(), "FCStd object attribute")?,
+                    ctx.copy_retained_text(attribute.name(), "FCStd object attribute name")?,
+                    ctx.copy_retained_text(attribute.value(), "FCStd object attribute")?,
                 ))
             })
             .collect::<Result<_, CodecError>>()?;
@@ -249,28 +304,35 @@ fn parse_document(
                 .as_ref()
                 .is_none_or(|dependency| dependency.order != order)
         {
-            return Err(CodecError::malformed(format_args!(
-                "ObjectDeps order does not match object {name}"
-            )));
+            return Err(crate::resource::malformed_charged(
+                ctx,
+                format_args!("ObjectDeps order does not match object {name}"),
+                "FCStd persistence diagnostic",
+            ));
         }
+        let (dependencies, dependency_allow_partial) = match dependency {
+            Some(dependency) => (dependency.dependencies, dependency.allow_partial),
+            None => (Vec::new(), None),
+        };
         objects.push(ObjectRecord {
             id,
-            name: name.clone(),
+            name,
             type_name,
             persistent_id: node.attribute("id").and_then(|value| value.parse().ok()),
-            view_type: node.attribute("ViewType").map(str::to_owned),
+            view_type: node
+                .attribute("ViewType")
+                .map(|value| ctx.copy_retained_text(value, "FCStd object view type"))
+                .transpose()?,
             attributes,
-            dependencies: dependency
-                .as_ref()
-                .map_or_else(Vec::new, |dependency| dependency.dependencies.clone()),
-            dependency_allow_partial: dependency.and_then(|dependency| dependency.allow_partial),
+            dependencies,
+            dependency_allow_partial,
             order,
             data: data_node
                 .map(|data| {
                     crate::native::RetainedXml::from_source(
                         ctx,
                         &text[data.range()],
-                        data.range().start as u64,
+                        cadmpeg_core::decode::u64_from_index(data.range().start),
                         "FCStd object XML",
                     )
                 })
@@ -279,10 +341,14 @@ fn parse_document(
     }
 
     if declared_count != objects.len() {
-        return Err(CodecError::malformed(format_args!(
-            "{declarations_tag} Count={declared_count} but {} declarations were found",
-            objects.len()
-        )));
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "{declarations_tag} Count={declared_count} but {} declarations were found",
+                objects.len()
+            ),
+            "FCStd persistence diagnostic",
+        ));
     }
     if !dependency_map.is_empty() {
         return Err(CodecError::Malformed(
@@ -290,23 +356,25 @@ fn parse_document(
         ));
     }
     if data_by_name.len() != objects.len() {
-        return Err(CodecError::malformed(format_args!(
-            "object declarations and {data_tag} identities disagree"
-        )));
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!("object declarations and {data_tag} identities disagree"),
+            "FCStd persistence diagnostic",
+        ));
     }
-    let declared_names = objects
-        .iter()
-        .map(|object| object.name.clone())
-        .collect::<std::collections::HashSet<_>>();
     for object in &mut objects {
         for dependency in &mut object.dependencies {
-            if !declared_names.contains(dependency) {
-                return Err(CodecError::malformed(format_args!(
-                    "object {} depends on missing object {dependency}",
-                    object.name
-                )));
+            if !data_by_name.contains_key(dependency) {
+                return Err(crate::resource::malformed_charged(
+                    ctx,
+                    format_args!(
+                        "object {} depends on missing object {dependency}",
+                        object.name
+                    ),
+                    "FCStd persistence diagnostic",
+                ));
             }
-            *dependency = object_id(dependency);
+            *dependency = crate::native::native_id_charged(ctx, "object", dependency)?;
         }
     }
 
@@ -316,16 +384,19 @@ fn parse_document(
         .children()
         .filter(|node| node.has_tag_name("Properties"))
         .count();
-    charge_items(
-        ctx,
-        document_property_containers,
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(document_property_containers),
         "FCStd document property containers",
     )?;
     let document_properties = root
         .children()
-        .filter(|node| node.has_tag_name("Properties"))
-        .collect::<Vec<_>>();
-    match document_properties.as_slice() {
+        .filter(|node| node.has_tag_name("Properties"));
+    let mut document_property_nodes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        document_property_containers,
+        "FCStd document property containers",
+    )?;
+    document_property_nodes.extend(document_properties);
+    match document_property_nodes.as_slice() {
         [] => {}
         [document_properties] => {
             parse_properties(
@@ -344,104 +415,191 @@ fn parse_document(
     }
     for object in &objects {
         let data = data_by_name.get(&object.name).ok_or_else(|| {
-            CodecError::malformed(format_args!("missing ObjectData for {}", object.name))
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("missing ObjectData for {}", object.name),
+                "FCStd persistence diagnostic",
+            )
         })?;
-        let children = data.children().filter(roxmltree::Node::is_element).count();
-        charge_items(ctx, children, "FCStd object data children")?;
-        let children = data
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .collect::<Vec<_>>();
-        let extension_containers = children
+        let children_count = data.children().filter(roxmltree::Node::is_element).count();
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(children_count),
+            "FCStd object data children",
+        )?;
+        let children = data.children().filter(roxmltree::Node::is_element);
+        let mut child_nodes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            children_count,
+            "FCStd object data children",
+        )?;
+        child_nodes.extend(children);
+        let mut extension_containers = child_nodes
             .iter()
             .filter(|node| node.has_tag_name("Extensions"))
-            .copied()
-            .collect::<Vec<_>>();
-        if extension_containers.len() > 1 {
-            return Err(malformed(format!(
-                "object {} has multiple direct Extensions containers",
-                object.id
-            )));
+            .copied();
+        let extension_container = extension_containers.next();
+        if extension_containers.next().is_some() {
+            return Err(crate::resource::malformed_charged(
+                ctx,
+                format_args!(
+                    "object {} has multiple direct Extensions containers",
+                    object.id
+                ),
+                "FCStd persistence diagnostic",
+            ));
         }
-        let property_containers = children
+        let mut property_containers = child_nodes
             .iter()
             .filter(|node| node.has_tag_name("Properties"))
-            .copied()
-            .collect::<Vec<_>>();
-        if property_containers.len() > 1 {
-            return Err(malformed(format!(
-                "object {} has multiple direct Properties containers",
-                object.id
-            )));
-        }
-        if let (Some(extensions), Some(properties)) =
-            (extension_containers.first(), property_containers.first())
-        {
-            if extensions.range().start > properties.range().start {
-                return Err(malformed(format!(
-                    "object {} writes Properties before Extensions",
+            .copied();
+        let property_container = property_containers.next();
+        if property_containers.next().is_some() {
+            return Err(crate::resource::malformed_charged(
+                ctx,
+                format_args!(
+                    "object {} has multiple direct Properties containers",
                     object.id
-                )));
+                ),
+                "FCStd persistence diagnostic",
+            ));
+        }
+        if let (Some(extensions), Some(properties)) = (extension_container, property_container) {
+            if extensions.range().start > properties.range().start {
+                return Err(crate::resource::malformed_charged(
+                    ctx,
+                    format_args!("object {} writes Properties before Extensions", object.id),
+                    "FCStd persistence diagnostic",
+                ));
             }
         }
         let mut extension_ids_by_start = HashMap::new();
-        if let Some(extensions_node) = extension_containers.first() {
+        if let Some(extensions_node) = extension_container {
             let extension_count = extensions_node
                 .children()
                 .filter(|node| node.has_tag_name("Extension"))
                 .count();
-            charge_items(ctx, extension_count, "FCStd extension nodes")?;
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(extension_count),
+                "FCStd extension nodes",
+            )?;
             let nodes = extensions_node
                 .children()
-                .filter(|node| node.has_tag_name("Extension"))
-                .collect::<Vec<_>>();
+                .filter(|node| node.has_tag_name("Extension"));
+            let mut extension_nodes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                extension_count,
+                "FCStd extension nodes",
+            )?;
+            extension_nodes.extend(nodes);
             let declared = extensions_node
                 .attribute("Count")
                 .and_then(|value| value.parse::<usize>().ok())
                 .ok_or_else(|| {
                     CodecError::Malformed("Extensions Count is missing or invalid".into())
                 })?;
-            if declared != nodes.len() {
-                return Err(CodecError::malformed(format_args!(
-                    "Extensions Count={declared} but {} records were found for {}",
-                    nodes.len(),
-                    object.id
-                )));
+            if declared != extension_nodes.len() {
+                return Err(crate::resource::malformed_charged(
+                    ctx,
+                    format_args!(
+                        "Extensions Count={declared} but {} records were found for {}",
+                        extension_nodes.len(),
+                        object.id
+                    ),
+                    "FCStd persistence diagnostic",
+                ));
             }
             let mut extension_names = HashSet::new();
             let mut extension_types = HashSet::new();
-            for (order, node) in nodes.into_iter().enumerate() {
+            for (order, node) in extension_nodes.into_iter().enumerate() {
                 let name = retained_attr(ctx, node, "name", "FCStd extension name")?;
                 let type_name = retained_attr(ctx, node, "type", "FCStd extension type")?;
-                if !extension_names.insert(name.clone()) {
-                    return Err(malformed(format!(
-                        "duplicate extension name {name} for {}",
-                        object.id
-                    )));
+                if extension_names.contains(&name) {
+                    return Err(crate::resource::malformed_charged(
+                        ctx,
+                        format_args!("duplicate extension name {name} for {}", object.id),
+                        "FCStd persistence diagnostic",
+                    ));
                 }
-                if !extension_types.insert(type_name.clone()) {
-                    return Err(malformed(format!(
-                        "duplicate extension type {type_name} for {}",
-                        object.id
-                    )));
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "FCStd extension name set",
+                )?;
+                extension_names.try_reserve(1).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            ctx.policy().limits.max_collection_items,
+                            1,
+                            "FCStd extension name set",
+                        ),
+                    )
+                })?;
+                extension_names.insert(ctx.copy_retained_text(&name, "FCStd extension name copy")?);
+                if extension_types.contains(&type_name) {
+                    return Err(crate::resource::malformed_charged(
+                        ctx,
+                        format_args!("duplicate extension type {type_name} for {}", object.id),
+                        "FCStd persistence diagnostic",
+                    ));
                 }
-                let id = extension_id(&object.id, &name, order);
-                extension_ids_by_start.insert(node.range().start, id.clone());
-                charge_items(ctx, 1, "FCStd extension records")?;
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "FCStd extension type set",
+                )?;
+                extension_types.try_reserve(1).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            ctx.policy().limits.max_collection_items,
+                            1,
+                            "FCStd extension type set",
+                        ),
+                    )
+                })?;
+                extension_types
+                    .insert(ctx.copy_retained_text(&type_name, "FCStd extension type copy")?);
+                let id = extension_id(ctx, &object.id, &name, order)?;
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "FCStd extension identity lookup",
+                )?;
+                extension_ids_by_start.try_reserve(1).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            ctx.policy().limits.max_collection_items,
+                            1,
+                            "FCStd extension identity lookup",
+                        ),
+                    )
+                })?;
+                extension_ids_by_start.insert(
+                    node.range().start,
+                    ctx.copy_retained_text(&id, "FCStd extension identity copy")?,
+                );
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "FCStd extension records",
+                )?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    &mut extensions,
+                    1,
+                    "FCStd extension records",
+                )?;
                 extensions.push(ExtensionRecord {
                     id,
-                    owner: object.id.clone(),
+                    owner: ctx.copy_retained_text(&object.id, "FCStd extension owner")?,
                     name,
                     type_name,
                     order,
-                    raw_xml: copy_xml_text(ctx, &text[node.range()], "FCStd extension XML")?,
+                    raw_xml: {
+                        ctx.copy_retained_text(&text[node.range()], "FCStd extension XML")
+                    }?,
                 });
             }
         }
-        for container in property_containers {
+        if let Some(container) = property_container {
             parse_properties(text, container, &object.id, &mut properties, ctx)?;
         }
-        if let Some(extensions_node) = extension_containers.first() {
+        if let Some(extensions_node) = extension_container {
             for extension in extensions_node
                 .children()
                 .filter(|node| node.has_tag_name("Extension"))
@@ -449,10 +607,11 @@ fn parse_document(
                 let extension_id = extension_ids_by_start
                     .get(&extension.range().start)
                     .ok_or_else(|| {
-                        malformed(format!(
-                            "extension under {} has no native identity",
-                            object.id
-                        ))
+                        crate::resource::malformed_charged(
+                            ctx,
+                            format_args!("extension under {} has no native identity", object.id),
+                            "FCStd persistence diagnostic",
+                        )
                     })?;
                 for container in extension
                     .children()
@@ -472,11 +631,14 @@ fn parse_document(
                 let Some(target) = link.object() else {
                     continue;
                 };
-                if declared_names.contains(target) {
+                if data_by_name.contains_key(target) {
                     link.set_object(
-                        cadmpeg_core::text::NonBlankString::new(object_id(target)).ok_or_else(
-                            || CodecError::malformed("link object identity must not be empty"),
-                        )?,
+                        cadmpeg_core::text::NonBlankString::new(crate::native::native_id_charged(
+                            ctx, "object", target,
+                        )?)
+                        .ok_or_else(|| {
+                            CodecError::malformed("link object identity must not be empty")
+                        })?,
                     );
                 }
             }
@@ -495,44 +657,71 @@ fn parse_properties(
     container: roxmltree::Node<'_, '_>,
     owner: &str,
     output: &mut Vec<PropertyRecord>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let node_count = container
         .children()
         .filter(|node| node.has_tag_name("Property"))
         .count();
-    charge_items(ctx, node_count, "FCStd property nodes")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(node_count),
+        "FCStd property nodes",
+    )?;
     let nodes = container
         .children()
-        .filter(|node| node.has_tag_name("Property"))
-        .collect::<Vec<_>>();
+        .filter(|node| node.has_tag_name("Property"));
+    let mut property_nodes =
+        cadmpeg_core::decode::DecodeContext::admitted_vec(node_count, "FCStd property nodes")?;
+    property_nodes.extend(nodes);
     let transient_node_count = container
         .children()
         .filter(|node| node.has_tag_name("_Property"))
         .count();
-    charge_items(ctx, transient_node_count, "FCStd transient property nodes")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(transient_node_count),
+        "FCStd transient property nodes",
+    )?;
     let transient_nodes = container
         .children()
-        .filter(|node| node.has_tag_name("_Property"))
-        .collect::<Vec<_>>();
-    let mut property_names = HashSet::new();
-    for node in transient_nodes.iter().chain(nodes.iter()) {
-        let name = required_attr(*node, "name")?;
-        if !property_names.insert(name.clone()) {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate property name {name} for {owner}"
-            )));
+        .filter(|node| node.has_tag_name("_Property"));
+    let mut transient_property_nodes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        transient_node_count,
+        "FCStd transient property nodes",
+    )?;
+    transient_property_nodes.extend(transient_nodes);
+    let all_nodes = transient_property_nodes.iter().chain(property_nodes.iter());
+    for (index, node) in all_nodes.clone().enumerate() {
+        let name = node.attribute("name").ok_or_else(|| {
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("{} element has no name attribute", node.tag_name().name()),
+                "FCStd persistence diagnostic",
+            )
+        })?;
+        for prior in all_nodes.clone().take(index) {
+            ctx.charge_work(1, "FCStd duplicate property names")?;
+            if prior.attribute("name") == Some(name) {
+                return Err(crate::resource::malformed_charged(
+                    ctx,
+                    format_args!("duplicate property name {name} for {owner}"),
+                    "FCStd persistence diagnostic",
+                ));
+            }
         }
     }
     let declared = container
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| CodecError::Malformed("Properties Count is missing or invalid".into()))?;
-    if declared != nodes.len() {
-        return Err(CodecError::malformed(format_args!(
-            "Properties Count={declared} but {} properties were found for {owner}",
-            nodes.len()
-        )));
+    if declared != property_nodes.len() {
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "Properties Count={declared} but {} properties were found for {owner}",
+                property_nodes.len()
+            ),
+            "FCStd persistence diagnostic",
+        ));
     }
     let declared_transient =
         container
@@ -542,19 +731,27 @@ fn parse_properties(
                     CodecError::Malformed("Properties TransientCount is invalid".into())
                 })
             })?;
-    if declared_transient != transient_nodes.len() {
-        return Err(CodecError::malformed(format_args!(
+    if declared_transient != transient_property_nodes.len() {
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "Properties TransientCount={declared_transient} but {} transient properties were found for {owner}",
-            transient_nodes.len()
-        )));
+            transient_property_nodes.len()
+        ), "FCStd persistence diagnostic"));
     }
-    for (order, node) in transient_nodes.into_iter().enumerate() {
+    for (order, node) in transient_property_nodes.into_iter().enumerate() {
         let name = retained_attr(ctx, node, "name", "FCStd transient property name")?;
         let type_name = retained_attr(ctx, node, "type", "FCStd transient property type")?;
-        charge_items(ctx, 1, "FCStd transient property records")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(1),
+            "FCStd transient property records",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            output,
+            1,
+            "FCStd transient property records",
+        )?;
         output.push(PropertyRecord {
-            id: crate::native::native_child_id("property", owner, &name),
-            owner: owner.to_owned(),
+            id: crate::native::native_child_id_charged(ctx, "property", owner, &name)?,
+            owner: ctx.copy_retained_text(owner, "FCStd transient property owner")?,
             name,
             family: property_family(&type_name),
             type_name,
@@ -566,12 +763,12 @@ fn parse_properties(
             xml: crate::native::RetainedXml::from_source(
                 ctx,
                 &text[node.range()],
-                node.range().start as u64,
+                cadmpeg_core::decode::u64_from_index(node.range().start),
                 "FCStd transient property XML",
             )?,
         });
     }
-    for (order, node) in nodes.into_iter().enumerate() {
+    for (order, node) in property_nodes.into_iter().enumerate() {
         let name = retained_attr(ctx, node, "name", "FCStd persisted property name")?;
         let type_name = retained_attr(ctx, node, "type", "FCStd persisted property type")?;
         let mut retained_value_bytes = 0_usize;
@@ -579,69 +776,91 @@ fn parse_properties(
             .descendants()
             .filter(|value| value.is_element() && *value != node)
             .count();
-        charge_items(ctx, value_count, "FCStd property value records")?;
-        let values = node
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(value_count),
+            "FCStd property value records",
+        )?;
+        let mut values = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            value_count,
+            "FCStd property value records",
+        )?;
+        for (value_order, value) in node
             .descendants()
             .filter(|value| value.is_element() && *value != node)
             .enumerate()
-            .map(|(value_order, value)| {
-                let len = value.range().len();
-                retained_value_bytes = retained_value_bytes
-                    .checked_add(len)
-                    .filter(|total| *total <= MAX_PROPERTY_VALUE_XML_BYTES)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "property {name} retained value XML limit exceeded"
+        {
+            let len = value.range().len();
+            retained_value_bytes = retained_value_bytes
+                .checked_add(len)
+                .filter(|total| *total <= MAX_PROPERTY_VALUE_XML_BYTES)
+                .ok_or_else(|| {
+                    crate::resource::malformed_charged(
+                        ctx,
+                        format_args!("property {name} retained value XML limit exceeded"),
+                        "FCStd persistence diagnostic",
+                    )
+                })?;
+            values.push(ValueRecord {
+                tag: ctx.copy_retained_text(value.tag_name().name(), "FCStd value tag")?,
+                order: value_order,
+                attributes: value
+                    .attributes()
+                    .map(|attribute| {
+                        ctx.charge_collection_items(
+                            cadmpeg_core::decode::u64_from_index(1),
+                            "FCStd value attributes",
+                        )?;
+                        Ok((
+                            ctx.copy_retained_text(attribute.name(), "FCStd value attribute name")?,
+                            ctx.copy_retained_text(attribute.value(), "FCStd value attribute")?,
                         ))
-                    })?;
-                Ok(ValueRecord {
-                    tag: copy_xml_text(ctx, value.tag_name().name(), "FCStd value tag")?,
-                    order: value_order,
-                    attributes: value
-                        .attributes()
-                        .map(|attribute| {
-                            charge_items(ctx, 1, "FCStd value attributes")?;
-                            Ok((
-                                copy_xml_text(ctx, attribute.name(), "FCStd value attribute name")?,
-                                copy_xml_text(ctx, attribute.value(), "FCStd value attribute")?,
-                            ))
-                        })
-                        .collect::<Result<_, CodecError>>()?,
-                    text: value
-                        .text()
-                        .map(|text| copy_xml_text(ctx, text, "FCStd value text"))
-                        .transpose()?,
-                    raw_xml: copy_xml_text(ctx, &text[value.range()], "FCStd value XML")?,
-                })
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
+                    })
+                    .collect::<Result<_, CodecError>>()?,
+                text: value
+                    .text()
+                    .map(|text| ctx.copy_retained_text(text, "FCStd value text"))
+                    .transpose()?,
+                raw_xml: ctx.copy_retained_text(&text[value.range()], "FCStd value XML")?,
+            });
+        }
         let links = if link_grammar(&type_name).is_some() {
             parse_link_targets(node, &type_name, ctx)?
         } else {
             Vec::new()
         };
-        let side_entries = values
-            .iter()
-            .flat_map(|value| {
-                value
-                    .attributes
-                    .iter()
-                    .filter(|(name, _)| {
-                        (matches!(name.as_str(), "file" | "File") && !is_xlink_type(&type_name))
-                            || (property_family(&type_name) == PropertyFamily::File
-                                && matches!(name.as_str(), "name" | "Name"))
-                    })
-                    .filter(|(_, value)| !value.is_empty())
-                    .map(|(_, value)| {
-                        charge_items(ctx, 1, "FCStd side entry references")?;
-                        copy_xml_text(ctx, value, "FCStd side entry name")
-                    })
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        charge_items(ctx, 1, "FCStd persisted property records")?;
+        let mut side_entries = Vec::new();
+        for value in &values {
+            for (name, entry_name) in &value.attributes {
+                let selected = (matches!(name.as_str(), "file" | "File")
+                    && !is_xlink_type(&type_name))
+                    || (property_family(&type_name) == PropertyFamily::File
+                        && matches!(name.as_str(), "name" | "Name"));
+                if selected && !entry_name.is_empty() {
+                    ctx.charge_collection_items(
+                        cadmpeg_core::decode::u64_from_index(1),
+                        "FCStd side entry references",
+                    )?;
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                        &mut side_entries,
+                        1,
+                        "FCStd side entry references",
+                    )?;
+                    side_entries.push(ctx.copy_retained_text(entry_name, "FCStd side entry name")?);
+                }
+            }
+        }
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(1),
+            "FCStd persisted property records",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            output,
+            1,
+            "FCStd persisted property records",
+        )?;
         output.push(PropertyRecord {
-            id: crate::native::native_child_id("property", owner, &name),
-            owner: owner.to_owned(),
+            id: crate::native::native_child_id_charged(ctx, "property", owner, &name)?,
+            owner: ctx.copy_retained_text(owner, "FCStd persisted property owner")?,
             name,
             family: property_family(&type_name),
             type_name,
@@ -656,11 +875,16 @@ fn parse_properties(
                     .attribute("group")
                     .map(|group| -> Result<DynamicPropertyMeta, CodecError> {
                         Ok(DynamicPropertyMeta {
-                            group: copy_xml_text(ctx, group, "FCStd dynamic property group")?,
+                            group: {
+                                ctx.copy_retained_text(group, "FCStd dynamic property group")
+                            }?,
                             documentation: node
                                 .attribute("doc")
                                 .map(|doc| {
-                                    copy_xml_text(ctx, doc, "FCStd dynamic property documentation")
+                                    ctx.copy_retained_text(
+                                        doc,
+                                        "FCStd dynamic property documentation",
+                                    )
                                 })
                                 .transpose()?,
                             attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
@@ -674,7 +898,7 @@ fn parse_properties(
             xml: crate::native::RetainedXml::from_source(
                 ctx,
                 &text[node.range()],
-                node.range().start as u64,
+                cadmpeg_core::decode::u64_from_index(node.range().start),
                 "FCStd persisted property XML",
             )?,
         });
@@ -683,6 +907,7 @@ fn parse_properties(
 }
 
 pub(crate) fn validate_link_property(
+    ctx: &DecodeContext<'_>,
     property: roxmltree::Node<'_, '_>,
     type_name: &str,
 ) -> Result<(), CodecError> {
@@ -691,56 +916,103 @@ pub(crate) fn validate_link_property(
     } else {
         type_name
     };
-    parse_link_targets(property, grammar_type, None).map(|_| ())
+    parse_link_targets(property, grammar_type, ctx).map(|_| ())
 }
 
 fn parse_link_targets(
     property: roxmltree::Node<'_, '_>,
     type_name: &str,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Option<LinkTarget>>, CodecError> {
     let grammar = link_grammar(type_name);
     let Some(grammar) = grammar else {
         return Ok(Vec::new());
     };
-    let root = single_value_element(property, grammar.root_tag(), type_name)?;
+    let root = single_value_element(property, grammar.root_tag(), type_name, ctx)?;
     match grammar {
         LinkGrammar::Link => {
             reject_nested_link_value(root)?;
-            charge_items(ctx, 1, "FCStd link target records")?;
-            Ok(vec![local_link(root, "value", Vec::new(), ctx)?])
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(1),
+                "FCStd link target records",
+            )?;
+            let mut targets =
+                cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link target records")?;
+            targets.push(local_link(root, "value", Vec::new(), ctx)?);
+            Ok(targets)
         }
-        LinkGrammar::LinkList => counted_children(root, "Link", type_name, ctx)?
-            .map(|node| {
+        LinkGrammar::LinkList => {
+            let children = counted_children(root, "Link", type_name, ctx)?;
+            let mut targets = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                children.len(),
+                "FCStd link target or subelement records",
+            )?;
+            for node in children {
                 reject_nested_link_value(node)?;
-                local_link(node, "value", Vec::new(), ctx)
-            })
-            .collect(),
-        LinkGrammar::LinkSub => {
-            let subelements = counted_children(root, "Sub", type_name, ctx)?
-                .map(|node| {
-                    reject_nested_link_value(node)?;
-                    restored_subelement(node, "value", ctx)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            charge_items(ctx, 1, "FCStd link target records")?;
-            Ok(vec![local_link(root, "value", subelements, ctx)?])
+                targets.push(local_link(node, "value", Vec::new(), ctx)?);
+            }
+            Ok(targets)
         }
-        LinkGrammar::LinkSubList => counted_children(root, "Link", type_name, ctx)?
-            .map(|node| {
+        LinkGrammar::LinkSub => {
+            let children = counted_children(root, "Sub", type_name, ctx)?;
+            let mut subelements = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                children.len(),
+                "FCStd link target or subelement records",
+            )?;
+            for node in children {
+                reject_nested_link_value(node)?;
+                subelements.push(restored_subelement(node, "value", ctx)?);
+            }
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(1),
+                "FCStd link target records",
+            )?;
+            let mut targets =
+                cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link target records")?;
+            targets.push(local_link(root, "value", subelements, ctx)?);
+            Ok(targets)
+        }
+        LinkGrammar::LinkSubList => {
+            let children = counted_children(root, "Link", type_name, ctx)?;
+            let mut targets = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                children.len(),
+                "FCStd link target or subelement records",
+            )?;
+            for node in children {
                 reject_nested_link_value(node)?;
                 let sub = restored_subelement(node, "sub", ctx)?;
-                charge_items(ctx, 1, "FCStd link subelements")?;
-                local_link(node, "obj", vec![sub], ctx)
-            })
-            .collect(),
-        LinkGrammar::XLink => {
-            charge_items(ctx, 1, "FCStd link target records")?;
-            Ok(vec![xlink(root, ctx)?])
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "FCStd link subelements",
+                )?;
+                let mut subelements =
+                    cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link subelements")?;
+                subelements.push(sub);
+                targets.push(local_link(node, "obj", subelements, ctx)?);
+            }
+            Ok(targets)
         }
-        LinkGrammar::XLinkSubList => counted_children(root, "XLink", type_name, ctx)?
-            .map(|node| xlink(node, ctx))
-            .collect(),
+        LinkGrammar::XLink => {
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(1),
+                "FCStd link target records",
+            )?;
+            let mut targets =
+                cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link target records")?;
+            targets.push(xlink(root, ctx)?);
+            Ok(targets)
+        }
+        LinkGrammar::XLinkSubList => {
+            let children = counted_children(root, "XLink", type_name, ctx)?;
+            let mut targets = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                children.len(),
+                "FCStd link target or subelement records",
+            )?;
+            for node in children {
+                targets.push(xlink(node, ctx)?);
+            }
+            Ok(targets)
+        }
     }
 }
 
@@ -807,15 +1079,22 @@ fn single_value_element<'a, 'input>(
     property: roxmltree::Node<'a, 'input>,
     tag: &str,
     type_name: &str,
+    ctx: &DecodeContext<'_>,
 ) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
     let mut elements = property.children().filter(roxmltree::Node::is_element);
     let value = elements.next().ok_or_else(|| {
-        CodecError::malformed(format_args!("{type_name} requires one {tag} value"))
+        crate::resource::malformed_charged(
+            ctx,
+            format_args!("{type_name} requires one {tag} value"),
+            "FCStd persistence diagnostic",
+        )
     })?;
     if !value.has_tag_name(tag) || elements.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "{type_name} requires exactly one {tag} value"
-        )));
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!("{type_name} requires exactly one {tag} value"),
+            "FCStd persistence diagnostic",
+        ));
     }
     Ok(value)
 }
@@ -824,36 +1103,63 @@ fn counted_children<'a, 'input>(
     parent: roxmltree::Node<'a, 'input>,
     tag: &'static str,
     type_name: &str,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<impl Iterator<Item = roxmltree::Node<'a, 'input>>, CodecError> {
-    let count = required_attr(parent, "count")?
+    ctx: &DecodeContext<'_>,
+) -> Result<impl ExactSizeIterator<Item = roxmltree::Node<'a, 'input>>, CodecError> {
+    let count = parent
+        .attribute("count")
+        .ok_or_else(|| {
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!(
+                    "{} element has no count attribute",
+                    parent.tag_name().name()
+                ),
+                "FCStd persistence diagnostic",
+            )
+        })?
         .parse::<usize>()
-        .map_err(|_| CodecError::malformed(format_args!("{type_name} count is invalid")))?;
-    charge_items(ctx, count, "FCStd link nodes")?;
-    charge_items(ctx, count, "FCStd link target or subelement records")?;
-    let children = parent
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if children.len() != count || children.iter().any(|child| !child.has_tag_name(tag)) {
-        return Err(CodecError::malformed(format_args!(
-            "{type_name} count={count} but {} {tag} values were found",
-            children.len()
-        )));
+        .map_err(|_| {
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("{type_name} count is invalid"),
+                "FCStd persistence diagnostic",
+            )
+        })?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "FCStd link nodes",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "FCStd link target or subelement records",
+    )?;
+    let children = parent.children().filter(roxmltree::Node::is_element);
+    let mut child_nodes =
+        cadmpeg_core::decode::DecodeContext::admitted_vec(count, "FCStd link nodes")?;
+    child_nodes.extend(children);
+    if child_nodes.len() != count || child_nodes.iter().any(|child| !child.has_tag_name(tag)) {
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "{type_name} count={count} but {} {tag} values were found",
+                child_nodes.len()
+            ),
+            "FCStd persistence diagnostic",
+        ));
     }
-    Ok(children.into_iter())
+    Ok(child_nodes.into_iter())
 }
 
 fn local_link(
     node: roxmltree::Node<'_, '_>,
     object_attribute: &str,
     subelements: Vec<String>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<LinkTarget>, CodecError> {
     if object_attribute == "obj" {
-        reject_link_aliases(node, &["obj", "sub"])?;
+        reject_link_aliases(node, &["obj", "sub"], ctx)?;
     } else {
-        reject_link_aliases(node, &[object_attribute])?;
+        reject_link_aliases(node, &[object_attribute], ctx)?;
     }
     LinkTarget::optional_from_wire(LinkTargetWire {
         document: None,
@@ -871,23 +1177,32 @@ fn local_link(
 
 fn xlink(
     node: roxmltree::Node<'_, '_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<LinkTarget>, CodecError> {
-    reject_link_aliases(node, &["name", "file", "sub"])?;
+    reject_link_aliases(node, &["name", "file", "sub"], ctx)?;
     let file = node
         .attribute("file")
-        .map(|value| copy_xml_text(ctx, value, "FCStd link document"))
+        .map(|value| ctx.copy_retained_text(value, "FCStd link document"))
         .transpose()?;
     let child_count = node.children().filter(roxmltree::Node::is_element).count();
-    charge_items(ctx, child_count, "FCStd XLink children")?;
-    let children = node
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(child_count),
+        "FCStd XLink children",
+    )?;
+    let children = node.children().filter(roxmltree::Node::is_element);
+    let mut child_nodes =
+        cadmpeg_core::decode::DecodeContext::admitted_vec(child_count, "FCStd XLink children")?;
+    child_nodes.extend(children);
     let subelements = match (node.attribute("sub"), node.attribute("count")) {
-        (Some(_), None) if children.is_empty() => {
-            charge_items(ctx, 1, "FCStd link subelements")?;
-            vec![restored_subelement(node, "sub", ctx)?]
+        (Some(_), None) if child_nodes.is_empty() => {
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(1),
+                "FCStd link subelements",
+            )?;
+            let mut subelements =
+                cadmpeg_core::decode::DecodeContext::admitted_vec(1, "FCStd link subelements")?;
+            subelements.push(restored_subelement(node, "sub", ctx)?);
+            subelements
         }
         (Some(_), None) => {
             return Err(CodecError::Malformed(
@@ -904,18 +1219,22 @@ fn xlink(
                     "App::PropertyXLink uses count only for one or more Sub values".into(),
                 ));
             }
-            counted_children(node, "Sub", "App::PropertyXLink", ctx)?
-                .map(|child| {
-                    if child.children().any(|value| value.is_element()) {
-                        return Err(CodecError::Malformed(
-                            "App::PropertyXLink Sub carrier has nested values".into(),
-                        ));
-                    }
-                    restored_subelement(child, "value", ctx)
-                })
-                .collect::<Result<Vec<_>, _>>()?
+            let children = counted_children(node, "Sub", "App::PropertyXLink", ctx)?;
+            let mut subelements = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                children.len(),
+                "FCStd link target or subelement records",
+            )?;
+            for child in children {
+                if child.children().any(|value| value.is_element()) {
+                    return Err(CodecError::Malformed(
+                        "App::PropertyXLink Sub carrier has nested values".into(),
+                    ));
+                }
+                subelements.push(restored_subelement(child, "value", ctx)?);
+            }
+            subelements
         }
-        (None, None) if children.is_empty() => Vec::new(),
+        (None, None) if child_nodes.is_empty() => Vec::new(),
         (None, None) => {
             return Err(CodecError::Malformed(
                 "App::PropertyXLink has nested values without a sub carrier".into(),
@@ -939,22 +1258,29 @@ fn xlink(
 fn restored_subelement(
     node: roxmltree::Node<'_, '_>,
     primary_attribute: &str,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
     let primary = node.attribute(primary_attribute).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "{} element has no {primary_attribute} attribute",
-            node.tag_name().name()
-        ))
+        crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "{} element has no {primary_attribute} attribute",
+                node.tag_name().name()
+            ),
+            "FCStd persistence diagnostic",
+        )
     })?;
-    copy_xml_text(
-        ctx,
+    ctx.copy_retained_text(
         node.attribute("shadowed").unwrap_or(primary),
         "FCStd link subelement",
     )
 }
 
-fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Result<(), CodecError> {
+fn reject_link_aliases(
+    node: roxmltree::Node<'_, '_>,
+    allowed: &[&str],
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     const CARRIERS: &[&str] = &[
         "value", "Value", "object", "Object", "obj", "Obj", "name", "Name", "document", "Document",
         "doc", "Doc", "file", "File", "sub", "Sub",
@@ -962,11 +1288,15 @@ fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Resul
     if let Some(attribute) = node.attributes().find(|attribute| {
         CARRIERS.contains(&attribute.name()) && !allowed.contains(&attribute.name())
     }) {
-        return Err(CodecError::malformed(format_args!(
-            "{} has unsupported link carrier {}",
-            node.tag_name().name(),
-            attribute.name()
-        )));
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "{} has unsupported link carrier {}",
+                node.tag_name().name(),
+                attribute.name()
+            ),
+            "FCStd persistence diagnostic",
+        ));
     }
     Ok(())
 }
@@ -1056,52 +1386,52 @@ pub(crate) fn is_xlink_type(type_name: &str) -> bool {
 fn unique_section<'a, 'input>(
     root: roxmltree::Node<'a, 'input>,
     tag: &str,
+    ctx: &DecodeContext<'_>,
 ) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
-    let sections = root
-        .children()
-        .filter(|node| node.has_tag_name(tag))
-        .collect::<Vec<_>>();
-    match sections.as_slice() {
-        [section] => Ok(*section),
-        [] => Err(CodecError::malformed(format_args!(
-            "Document.xml has no {tag} section"
-        ))),
-        _ => Err(CodecError::malformed(format_args!(
-            "Document.xml has duplicate {tag} sections"
-        ))),
+    let mut sections = root.children().filter(|node| node.has_tag_name(tag));
+    let first = sections.next().ok_or_else(|| {
+        crate::resource::malformed_charged(
+            ctx,
+            format_args!("Document.xml has no {tag} section"),
+            "FCStd persistence diagnostic",
+        )
+    })?;
+    if sections.next().is_some() {
+        Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!("Document.xml has duplicate {tag} sections"),
+            "FCStd persistence diagnostic",
+        ))
+    } else {
+        Ok(first)
     }
 }
 
-fn object_id(name: &str) -> String {
-    crate::native::native_id("object", name)
-}
-
-fn extension_id(owner: &str, name: &str, order: usize) -> String {
-    crate::native::native_child_id("extension", owner, &format!("{order}:{name}"))
-}
-
-fn required_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Result<String, CodecError> {
-    node.attribute(name).map(str::to_owned).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "{} element has no {name} attribute",
-            node.tag_name().name()
-        ))
-    })
+fn extension_id(
+    ctx: &DecodeContext<'_>,
+    owner: &str,
+    name: &str,
+    order: usize,
+) -> Result<String, CodecError> {
+    let order = ctx.format_retained(format_args!("{order}"), "FCStd extension order text")?;
+    let child = ctx.join_retained(&[&order, name], ":", "FCStd extension identity key")?;
+    crate::native::native_child_id_charged(ctx, "extension", owner, &child)
 }
 
 fn retained_attr(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     node: roxmltree::Node<'_, '_>,
     name: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let value = node.attribute(name).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "{} element has no {name} attribute",
-            node.tag_name().name()
-        ))
+        crate::resource::malformed_charged(
+            ctx,
+            format_args!("{} element has no {name} attribute", node.tag_name().name()),
+            "FCStd persistence diagnostic",
+        )
     })?;
-    copy_xml_text(ctx, value, operation)
+    ctx.copy_retained_text(value, operation)
 }
 
 fn bool_attr(value: Option<&str>) -> Option<bool> {

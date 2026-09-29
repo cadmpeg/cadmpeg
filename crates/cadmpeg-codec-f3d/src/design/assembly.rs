@@ -1057,7 +1057,8 @@ mod tests {
             .iter()
             .map(|scope| crate::ids::neutral_feature_id(scope).as_str().len())
             .sum::<usize>()
-            + crate::ids::neutral_assembly_joint_id(&scopes[2])
+            + crate::ids::neutral_assembly_joint_id(None, &scopes[2])
+                .expect("joint identifier")
                 .as_str()
                 .len();
         let arena = DecodeArena::new();
@@ -1076,14 +1077,16 @@ mod tests {
     #[test]
     fn assembly_joint_native_reference_refuses_retained_limit() {
         let scopes = one_joint_scopes();
-        let key_length = crate::ids::neutral_assembly_joint_id(&scopes[2])
+        let key_length = crate::ids::neutral_assembly_joint_id(None, &scopes[2])
+            .expect("joint identifier")
             .as_str()
             .len();
         let identifier_bytes = scopes[..2]
             .iter()
             .map(|scope| crate::ids::neutral_feature_id(scope).as_str().len())
             .sum::<usize>()
-            + crate::ids::neutral_assembly_joint_id(&scopes[2])
+            + crate::ids::neutral_assembly_joint_id(None, &scopes[2])
+                .expect("joint identifier")
                 .as_str()
                 .len();
         let arena = DecodeArena::new();

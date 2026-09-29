@@ -2,7 +2,10 @@ use crate::container;
 use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::test_support::test_bytes::zlib_compress;
 use crate::test_support::test_prt::assembly_with_external_paths;
+use crate::test_support::test_prt::prt_with_arrangements;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::prt_with_size_framed_om_section;
 use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
 use crate::test_support::test_prt::rmfastload_prt;
 use crate::test_support::test_streams::partition_stream;
@@ -27,6 +30,116 @@ fn native_fastload_result(
     let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy)?;
     let container = container::scan_bytes(&ctx, file.as_slice())?;
     super::super::rmfastload_object_id_table(&ctx, &container)
+}
+
+fn store_header_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let file = prt_with_indexed_om_section();
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::service();
+    let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
+    let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::store_headers(&ctx, &container).unwrap_err()
+}
+
+#[test]
+fn store_header_route_refuses_collection_limit() {
+    let error = store_header_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn store_header_route_refuses_retained_limit() {
+    let error = store_header_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn store_header_route_refuses_work_limit() {
+    let error = store_header_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+fn indexed_om_projection_error(
+    configure: impl FnOnce(&mut DecodePolicy),
+    project: impl FnOnce(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
+) -> CodecError {
+    let file = prt_with_indexed_om_section();
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::service();
+    let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
+    let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    project(&ctx, &container).unwrap_err()
+}
+
+#[test]
+fn native_string_value_route_refuses_collection_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| super::super::string_values(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn native_string_value_route_refuses_retained_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| super::super::string_values(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn native_string_value_route_refuses_work_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| super::super::string_values(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn native_object_reference_route_refuses_collection_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| super::super::object_references(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn native_object_reference_route_refuses_retained_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| super::super::object_references(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn native_object_reference_route_refuses_work_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| super::super::object_references(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 fn assert_fastload_limit(error: &CodecError, dimension: ResourceDimension, operation: &str) {
@@ -68,10 +181,13 @@ fn decode_retains_strict_tiff_material_texture_assets() {
     );
     assert_eq!(serde_json::to_value(&assets[0]).unwrap()["version"], 42);
     assert_eq!(assets[0].first_ifd_offset(), 8);
-    assert_eq!(assets[0].byte_len(), texture.len() as u64);
+    assert_eq!(
+        assets[0].byte_len(),
+        cadmpeg_core::decode::u64_from_index(texture.len())
+    );
     assert_eq!(
         assets[0].sha256,
-        crate::native::hex::Sha256Hex::digest(&texture)
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&texture)
     );
     assert_eq!(
         assets[0].source_entry(),
@@ -212,6 +328,781 @@ fn assembly_metadata_lists_external_child_paths() {
 }
 
 #[test]
+fn external_reference_extraction_refuses_record_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let file = assembly_with_external_paths();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+            .expect("external reference container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Two strings enter both the parsed table and the container result before
+    // extraction admits the two native records.
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = super::super::external_references(&ctx, &container)
+        .expect_err("two native records exceed the remaining collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx external references"
+    ));
+}
+
+fn native_external_record_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceRecord>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::external_reference_records(&ctx, &container)
+}
+
+#[test]
+fn native_external_record_route_preserves_indexed_record() {
+    let records = native_external_record_result(|_| {}).expect("native indexed record");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].record_id, 6);
+}
+
+#[test]
+fn native_external_record_route_refuses_collection_limit() {
+    let error = native_external_record_result(|policy| policy.limits.max_collection_items = 10)
+        .expect_err("native record exceeds the parsed collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native external reference records"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_record_route_refuses_retained_limit() {
+    let error = native_external_record_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("indexed record exceeds the retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
+}
+
+fn native_external_indexed_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceIndexedRecord>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let decoded = crate::test_support::with_decode_context(|ctx| {
+        super::super::external_reference_records(ctx, &container)
+    })
+    .expect("handle-set record");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::external_reference_indexed_records(&ctx, &container, &decoded)
+}
+
+#[test]
+fn native_external_indexed_route_preserves_record_links() {
+    let records = native_external_indexed_result(|_| {}).expect("native indexed records");
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].record_id, 7);
+    assert_eq!(records[1].record_id, 6);
+    assert!(records[0].handle_set_record.is_none());
+    assert_eq!(
+        records[1].handle_set_record.as_deref(),
+        Some("nx:external-reference-record:/Root/ExternalReferences#6")
+    );
+}
+
+#[test]
+fn native_external_indexed_route_refuses_collection_limit() {
+    let error = native_external_indexed_result(|policy| policy.limits.max_collection_items = 9)
+        .expect_err("native indexed record exceeds collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native external reference indexed records"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_indexed_route_refuses_retained_limit() {
+    let error = native_external_indexed_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("indexed record exceeds retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_indexed_route_refuses_scoped_limit() {
+    let error = native_external_indexed_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("decoded index exceeds scoped budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "nx external reference decoded index"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_indexed_route_refuses_work_limit() {
+    let error = native_external_indexed_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("indexed scan exceeds work budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits),
+        "{error:?}"
+    );
+}
+
+fn native_external_empty_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceEmptyRecord>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let indexed = crate::test_support::with_decode_context(|ctx| {
+        let records = super::super::external_reference_records(ctx, &container)?;
+        super::super::external_reference_indexed_records(ctx, &container, &records)
+    })
+    .expect("native indexed records");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::external_reference_empty_records(&ctx, &container, &indexed)
+}
+
+#[test]
+fn native_external_empty_route_preserves_record() {
+    let records = native_external_empty_result(|_| {}).expect("native empty record");
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].id,
+        "nx:external-reference-empty-record:/Root/ExternalReferences#7"
+    );
+    assert!(!records[0].closing_marker);
+}
+
+#[test]
+fn native_external_empty_route_refuses_collection_limit() {
+    let error = native_external_empty_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("native empty record exceeds collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native external reference empty records"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_empty_route_refuses_retained_limit() {
+    let error = native_external_empty_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("native empty record exceeds retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx native external reference empty records"),
+        "{error:?}"
+    );
+}
+
+fn native_external_tail_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceTailReferencePair>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let records = crate::test_support::with_decode_context(|ctx| {
+        super::super::external_reference_records(ctx, &container)
+    })
+    .expect("handle-set record");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::external_reference_tail_reference_pairs(&ctx, &container, &records)
+}
+
+#[test]
+fn native_external_tail_route_preserves_pair() {
+    let pairs = native_external_tail_result(|_| {}).expect("external tail pair");
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].ordinal, 0);
+    assert_eq!(pairs[0].persistent_handle, 5);
+}
+
+#[test]
+fn native_external_tail_route_refuses_collection_limit() {
+    let error = native_external_tail_result(|policy| policy.limits.max_collection_items = 1)
+        .expect_err("native pair exceeds parsed collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native external reference tail pairs"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_tail_route_refuses_retained_limit() {
+    let error = native_external_tail_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("external pair exceeds retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_tail_route_refuses_work_limit() {
+    let error = native_external_tail_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("external pair scan exceeds work budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits),
+        "{error:?}"
+    );
+}
+
+fn native_external_string_uses_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceRecordStringUse>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let (records, references) =
+        crate::test_support::with_decode_context(|ctx| -> Result<_, CodecError> {
+            Ok((
+                super::super::external_reference_records(ctx, &container)?,
+                super::super::external_references(ctx, &container)?,
+            ))
+        })
+        .expect("native external-reference inputs");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::external_reference_record_string_uses(&ctx, &records, &references)
+}
+
+#[test]
+fn native_external_string_uses_route_preserves_slots() {
+    let uses = native_external_string_uses_result(|_| {}).expect("external string uses");
+    assert_eq!(uses.len(), 4);
+    assert_eq!(
+        uses.iter()
+            .map(|use_| use_.string_index)
+            .collect::<Vec<_>>(),
+        [0, 1, 2, 3]
+    );
+}
+
+#[test]
+fn native_external_string_uses_route_refuses_collection_limit() {
+    let error = native_external_string_uses_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("slot index exceeds collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx external reference slot index"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_string_uses_route_refuses_retained_limit() {
+    let error = native_external_string_uses_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("slot use exceeds retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx native external reference string uses"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_string_uses_route_refuses_scoped_limit() {
+    let error =
+        native_external_string_uses_result(|policy| policy.limits.max_materialized_bytes = 0)
+            .expect_err("slot index exceeds scoped budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "nx external reference slot index"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_string_uses_route_refuses_work_limit() {
+    let error = native_external_string_uses_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("slot index exceeds work budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx external reference slot index"),
+        "{error:?}"
+    );
+}
+
+fn native_external_children_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceRecordChild>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let (records, references, uses) =
+        crate::test_support::with_decode_context(|ctx| -> Result<_, CodecError> {
+            let records = super::super::external_reference_records(ctx, &container)?;
+            let references = super::super::external_references(ctx, &container)?;
+            let uses =
+                super::super::external_reference_record_string_uses(ctx, &records, &references)?;
+            Ok((records, references, uses))
+        })
+        .expect("complete external-reference child inputs");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::external_reference_record_children(&ctx, &records, &references, &uses)
+}
+
+#[test]
+fn native_external_children_route_preserves_child() {
+    let children = native_external_children_result(|_| {}).expect("external child");
+    assert_eq!(children.len(), 1);
+    assert_eq!(
+        children[0].id,
+        "nx:external-reference-record:/Root/ExternalReferences#6:child"
+    );
+}
+
+#[test]
+fn native_external_children_route_refuses_collection_limit() {
+    let error = native_external_children_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("child index exceeds collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx external reference child index"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_children_route_refuses_retained_limit() {
+    let error = native_external_children_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("child record exceeds retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx native external reference children"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_children_route_refuses_scoped_limit() {
+    let error = native_external_children_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("child index exceeds scoped budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "nx external reference child index"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_children_route_refuses_work_limit() {
+    let error = native_external_children_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("child index exceeds work budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx external reference child index"),
+        "{error:?}"
+    );
+}
+
+fn active_configuration_join_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ConfigurationAttributeUse>, CodecError> {
+    let file = prt_with_arrangements();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("arrangement container");
+    let configurations = crate::test_support::with_decode_context(|ctx| {
+        super::super::configurations(ctx, &container)
+    })
+    .expect("arrangement table");
+    let attributes = crate::test_support::with_decode_context(|ctx| {
+        super::super::part_attributes(ctx, &container)
+    })
+    .expect("part attribute table");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::configuration_attribute_uses(&ctx, &configurations, &attributes)
+}
+
+#[test]
+fn active_configuration_join_route_preserves_relation() {
+    let uses = active_configuration_join_result(|_| {}).expect("active configuration use");
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].name, "Model");
+}
+
+#[test]
+fn active_configuration_join_route_refuses_collection_limit() {
+    let error = active_configuration_join_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("active relation exceeds collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx active configuration attribute uses"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn active_configuration_join_route_refuses_retained_limit() {
+    let error = active_configuration_join_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("active relation exceeds retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx active configuration attribute uses"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn active_configuration_join_route_refuses_work_limit() {
+    let error = active_configuration_join_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("active relation exceeds work budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx active configuration join"),
+        "{error:?}"
+    );
+}
+
+fn arrangement_configuration_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::Configuration>, CodecError> {
+    let file = prt_with_arrangements();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("arrangement container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::configurations(&ctx, &container)
+}
+
+#[test]
+fn arrangement_configuration_route_preserves_order() {
+    let configurations = arrangement_configuration_result(|_| {}).expect("arrangement table");
+    assert_eq!(configurations.len(), 2);
+    assert_eq!(configurations[0].name, "Model");
+    assert_eq!(configurations[1].name, "Exploded");
+}
+
+#[test]
+fn arrangement_configuration_route_refuses_collection_limit() {
+    let error = arrangement_configuration_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("arrangement names exceed collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx arrangement names"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn arrangement_configuration_route_refuses_retained_limit() {
+    let error = arrangement_configuration_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("arrangement records exceed retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx arrangement configurations"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn arrangement_configuration_route_refuses_scoped_limit() {
+    let error = arrangement_configuration_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("arrangement names exceed scoped budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "nx arrangement names"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn arrangement_configuration_route_refuses_work_limit() {
+    let error = arrangement_configuration_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("arrangement XML exceeds work budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx arrangement XML scan"),
+        "{error:?}"
+    );
+}
+
+fn part_attribute_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::PartAttribute>, CodecError> {
+    let file = prt_with_arrangements();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("part attribute container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::part_attributes(&ctx, &container)
+}
+
+#[test]
+fn part_attribute_route_preserves_typed_value() {
+    let attributes = part_attribute_result(|_| {}).expect("typed part attribute");
+    assert_eq!(attributes.len(), 1);
+    assert_eq!(attributes[0].title, "NX_Arrangement");
+    assert_eq!(attributes[0].value, "Model");
+}
+
+#[test]
+fn part_attribute_route_refuses_collection_limit() {
+    let error = part_attribute_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("part attribute exceeds collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native part attributes"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn part_attribute_route_refuses_retained_limit() {
+    let error = part_attribute_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("part attribute exceeds retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx native part attributes"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn part_attribute_route_refuses_work_limit() {
+    let error = part_attribute_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("part attribute XML exceeds work budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx part attribute XML scan"),
+        "{error:?}"
+    );
+}
+
+fn class_definition_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ClassDefinition>, CodecError> {
+    let file = prt_with_indexed_om_section();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("class definition container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::class_definitions(&ctx, &container)
+}
+
+fn field_definition_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::FieldDefinition>, CodecError> {
+    let file = prt_with_size_framed_om_section();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("field definition container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::field_definitions(&ctx, &container)
+}
+
+#[test]
+fn registry_class_route_preserves_definition() {
+    let classes = class_definition_result(|_| {}).expect("class definition");
+    assert_eq!(classes.len(), 1);
+    assert_eq!(classes[0].name, "UGS::EXP_expression");
+}
+
+#[test]
+fn registry_class_route_refuses_collection_limit() {
+    let error = class_definition_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("class definition exceeds collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn registry_class_route_refuses_retained_limit() {
+    let error = class_definition_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("class definition exceeds retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn registry_class_route_refuses_scoped_limit() {
+    let error = class_definition_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("class definition exceeds scoped budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn registry_class_route_refuses_work_limit() {
+    let error = class_definition_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("class definition exceeds work budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn registry_field_route_preserves_definitions() {
+    let fields = field_definition_result(|_| {}).expect("field definitions");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "m_target");
+}
+
+#[test]
+fn registry_field_route_refuses_collection_limit() {
+    let error = field_definition_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("field definitions exceed collection budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn registry_field_route_refuses_retained_limit() {
+    let error = field_definition_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("field definitions exceed retained budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn registry_field_route_refuses_scoped_limit() {
+    let error = field_definition_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("field definitions exceed scoped budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn registry_field_route_refuses_work_limit() {
+    let error = field_definition_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("field definitions exceed work budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = super::super::ObjectReference {
         id: "nx:test:reference#0".into(),
@@ -253,8 +1144,12 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         source_offset: 30,
     };
 
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let handles =
-        super::super::persistent_handles(&[reference], &[control], &[external], &[tail_pair]);
+        super::super::persistent_handles(&ctx, &[reference], &[control], &[external], &[tail_pair])
+            .unwrap();
 
     assert_eq!(handles.len(), 2);
     assert_eq!(handles[0].records, ["nx:test:om-record#0"]);
@@ -265,6 +1160,51 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
     assert_eq!(handles[1].value, 0x5060_7080);
     assert_eq!(handles[1].external_records, ["nx:test:external-record#6"]);
     assert_eq!(handles[1].external_occurrence_count, 1);
+}
+
+fn persistent_handle_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let reference = super::super::ObjectReference {
+        id: "reference".into(),
+        record: "record".into(),
+        object_id: 1,
+        ordinal: 0,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(17)),
+        source_entry: "om".into(),
+        source_offset: 0,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::persistent_handles(&ctx, &[reference], &[], &[], &[]).unwrap_err()
+}
+
+#[test]
+fn persistent_handle_route_refuses_collection_limit() {
+    let error = persistent_handle_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn persistent_handle_route_refuses_scoped_limit() {
+    let error = persistent_handle_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn persistent_handle_route_refuses_retained_limit() {
+    let error = persistent_handle_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn persistent_handle_route_refuses_work_limit() {
+    let error = persistent_handle_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -283,13 +1223,64 @@ fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
         reference(3, 35),
         reference(4, 40),
     ];
-    let pairs = super::super::data_block_control_handle_pairs(&references);
+    let pairs = crate::test_support::with_decode_context(|ctx| {
+        super::super::data_block_control_handle_pairs(ctx, &references)
+    })
+    .unwrap();
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].id, "nx:om-data-block-control:handle-pair#10");
     assert_eq!(pairs[0].first_reference, "reference#0");
     assert_eq!(pairs[0].second_reference, "reference#1");
     assert_eq!(pairs[0].first_handle, 100);
     assert_eq!(pairs[0].second_handle, 101);
+}
+
+fn control_handle_pair_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let reference = |ordinal: u32, source_offset: u64| super::super::DataBlockControlReference {
+        id: format!("reference#{ordinal}"),
+        data_block: "block#0".into(),
+        ordinal,
+        reference: DirectReference::PersistentHandle(ordinal + 100),
+        source_offset,
+    };
+    let references = [reference(0, 10), reference(1, 15)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    super::super::data_block_control_handle_pairs(&ctx, &references).unwrap_err()
+}
+
+#[test]
+fn control_handle_pair_route_refuses_collection_limit() {
+    let error = control_handle_pair_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "NX control handle pair blocks"));
+}
+
+#[test]
+fn control_handle_pair_route_refuses_scoped_limit() {
+    let error = control_handle_pair_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "NX control handle pair index"));
+}
+
+#[test]
+fn control_handle_pair_route_refuses_retained_limit() {
+    let error = control_handle_pair_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain NX control handle pair id"));
+}
+
+#[test]
+fn control_handle_pair_route_refuses_work_limit() {
+    let error = control_handle_pair_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index NX control handle pair references"));
 }
 
 #[test]
@@ -313,7 +1304,10 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
         reference("record#1", 6, 25),
     ];
 
-    let pairs = super::super::object_record_handle_pairs(&references);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let pairs = super::super::object_record_handle_pairs(&ctx, &references).unwrap();
     assert_eq!(pairs.len(), 2);
     assert_eq!(pairs[0].record, "record#0");
     assert_eq!(pairs[0].first_reference, "record#0:reference#0");
@@ -321,6 +1315,52 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
     assert_eq!(pairs[0].object_id, 7);
     assert_eq!(pairs[1].record, "record#1");
     assert_eq!(pairs[1].source_offset, 20);
+}
+
+fn record_handle_pair_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let reference = |ordinal, source_offset| super::super::ObjectReference {
+        id: format!("reference#{ordinal}"),
+        record: "record".into(),
+        object_id: 7,
+        ordinal,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(ordinal + 100)),
+        source_entry: "om".into(),
+        source_offset,
+    };
+    let references = [reference(0, 10), reference(1, 15)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::object_record_handle_pairs(&ctx, &references).unwrap_err()
+}
+
+#[test]
+fn record_handle_pair_route_refuses_collection_limit() {
+    let error = record_handle_pair_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn record_handle_pair_route_refuses_scoped_limit() {
+    let error = record_handle_pair_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn record_handle_pair_route_refuses_retained_limit() {
+    let error = record_handle_pair_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn record_handle_pair_route_refuses_work_limit() {
+    let error = record_handle_pair_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -346,7 +1386,7 @@ fn native_retains_rmfastload_table_and_member_words() {
     assert_eq!(table.registry_source_offset, entry_offset);
     assert_eq!(
         table.source_offset,
-        entry_offset + b"UGS::Solid::Topol".len() as u64
+        entry_offset + cadmpeg_core::decode::u64_from_index(b"UGS::Solid::Topol".len())
     );
     assert_eq!(object_ids[0].table, table.id);
     assert_eq!(object_ids[0].value, 1);
@@ -360,18 +1400,34 @@ fn native_retains_rmfastload_table_and_member_words() {
     assert_eq!(object_ids[49].value, 50);
     assert_eq!(object_ids[49].raw(), 50u32.to_le_bytes());
     assert_eq!(table.members.as_slice()[49], object_ids[49].id);
-    assert_eq!(
-        super::super::rmfastload_target_object_id(&object_ids, 0),
-        Some(object_ids[0].id.clone())
-    );
-    assert_eq!(
-        super::super::rmfastload_target_object_id(&object_ids, 49),
-        Some(object_ids[49].id.clone())
-    );
-    assert_eq!(
-        super::super::rmfastload_target_object_id(&object_ids, 50),
-        None
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            super::super::rmfastload_target_object_id(ctx, &object_ids, 0).unwrap(),
+            Some(object_ids[0].id.clone())
+        );
+        assert_eq!(
+            super::super::rmfastload_target_object_id(ctx, &object_ids, 49).unwrap(),
+            Some(object_ids[49].id.clone())
+        );
+        assert_eq!(
+            super::super::rmfastload_target_object_id(ctx, &object_ids, 50).unwrap(),
+            None
+        );
+    });
+}
+
+#[test]
+fn rmfastload_target_identity_refuses_retained_limit() {
+    let (_, object_ids) = native_fastload_result(DecodePolicy::service())
+        .expect("RMFastLoad input is valid")
+        .expect("RMFastLoad table is present");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::rmfastload_target_object_id(&ctx, &object_ids, 0).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
 }
 
 #[test]
@@ -399,7 +1455,8 @@ fn fastload_identity_map_refuses_collection_limit_before_reserve() {
 fn fastload_identity_map_refuses_materialized_limit_before_reserve() {
     let mut policy = DecodePolicy::default();
     let map_entry_bytes = std::mem::size_of::<(u32, usize)>() + 4 * std::mem::size_of::<usize>();
-    policy.limits.max_materialized_bytes = (50 * map_entry_bytes - 1) as u64;
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index(50 * map_entry_bytes - 1);
     let error = native_fastload_result(policy).expect_err("identity map needs one more byte");
     assert_fastload_limit(
         &error,
@@ -467,7 +1524,7 @@ fn fastload_native_copies_refuse_retained_limit_before_creation() {
         + "/Root/FastLoad/RMFastLoad".len()
         + stable_bytes;
     policy.limits.max_retained_bytes =
-        (directory_bytes + parsed_id_bytes + native_bytes - 1) as u64;
+        cadmpeg_core::decode::u64_from_index(directory_bytes + parsed_id_bytes + native_bytes - 1);
     let error = native_fastload_result(policy).expect_err("native copies need one more byte");
     assert_fastload_limit(
         &error,
@@ -523,7 +1580,8 @@ fn decode_selects_dominant_rmfastload_body() {
             .map(String::as_str),
         Some("rmfastload_object_id_membership")
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.findings.is_empty(),
         "findings: {:?}",
@@ -546,8 +1604,11 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
             crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(),
             crate::om::discriminators::LinkedIndexDiscriminator::Form16,
             CompactIndexTarget {
-                atom: crate::om::compact::CompactIndexAtom::from_wire(target, &[target as u8])
-                    .unwrap(),
+                atom: crate::om::compact::CompactIndexAtom::from_wire(
+                    target,
+                    &[u8::try_from(target).expect("fixture value fits u8")],
+                )
+                .unwrap(),
                 target: format!("block#{target}"),
             },
             [5, 6, 7].map(|value| CompactIndexTarget {
@@ -569,8 +1630,11 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         ordinal: 0,
         frame: TargetRow::<String, u64>::new(
             CompactIndexTarget {
-                atom: crate::om::compact::CompactIndexAtom::from_wire(index, &[index as u8])
-                    .unwrap(),
+                atom: crate::om::compact::CompactIndexAtom::from_wire(
+                    index,
+                    &[u8::try_from(index).expect("fixture value fits u8")],
+                )
+                .unwrap(),
                 target: format!("block#{index}"),
             },
             [5, 6, 7].map(|value| CompactIndexTarget {
@@ -626,7 +1690,10 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         ),
     ];
 
-    let tables = data_block_column_index_tables(&linked_rows, &target_rows);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let tables = data_block_column_index_tables(&ctx, &linked_rows, &target_rows).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].id, "nx:om-data-block-column-index-tables:table#2");
     assert_eq!(tables[0].opening_linked_row, "opening");
@@ -649,7 +1716,9 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         crate::om::discriminators::IndexRowMode::Form07,
         150,
     );
-    assert!(data_block_column_index_tables(&linked_rows, &gap).is_empty());
+    assert!(data_block_column_index_tables(&ctx, &linked_rows, &gap)
+        .unwrap()
+        .is_empty());
     let mut incomplete_mode = target_rows.clone();
     incomplete_mode[2] = target(
         "target-60",
@@ -657,7 +1726,96 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         crate::om::discriminators::IndexRowMode::Form07,
         175,
     );
-    assert!(data_block_column_index_tables(&linked_rows, &incomplete_mode).is_empty());
+    assert!(
+        data_block_column_index_tables(&ctx, &linked_rows, &incomplete_mode)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+fn column_index_table_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    use crate::native::om::column_row::{DataBlockLinkedIndexRow, DataBlockTargetIndexRow};
+    use crate::om::column_row::{LinkedRow, TargetRow};
+    use crate::om::compact::{CompactIndexAtom, CompactIndexTarget};
+    use crate::om::discriminators::{IndexRowMode, LinkedIndexDiscriminator, LinkedIndexFlag};
+
+    let atom = |value: u32| {
+        CompactIndexAtom::from_wire(
+            value,
+            &[u8::try_from(value).expect("fixture value fits u8")],
+        )
+        .unwrap()
+    };
+    let target = |value| CompactIndexTarget {
+        atom: atom(value),
+        target: format!("block#{value}"),
+    };
+    let linked = |id: &str, value, mode, offset| DataBlockLinkedIndexRow {
+        id: id.into(),
+        section_ordinal: 0,
+        ordinal: 0,
+        frame: LinkedRow::<String, u64>::new(
+            atom(20),
+            LinkedIndexDiscriminator::Form16,
+            target(value),
+            [5, 6, 7].map(target),
+            LinkedIndexFlag::Form03,
+            mode,
+            offset,
+        )
+        .unwrap(),
+        source_entry: "entry".into(),
+        opening_data_block: "opening".into(),
+        opening_block_offset: 0,
+    };
+    let target_row = |value, mode, offset| DataBlockTargetIndexRow {
+        id: "target".into(),
+        section_ordinal: 0,
+        ordinal: 0,
+        frame: TargetRow::<String, u64>::new(target(value), [5, 6, 7].map(target), mode, offset)
+            .unwrap(),
+        source_entry: "entry".into(),
+        opening_data_block: "opening".into(),
+        opening_block_offset: 0,
+    };
+    let linked_rows = [
+        linked("opening", 63, IndexRowMode::Form07, 100),
+        linked("linked", 61, IndexRowMode::Form04, 150),
+    ];
+    let target_rows = [target_row(62, IndexRowMode::Form04, 125)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::data_block_column_index_tables(&ctx, &linked_rows, &target_rows).unwrap_err()
+}
+
+#[test]
+fn column_index_table_route_refuses_collection_limit() {
+    let error = column_index_table_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn column_index_table_route_refuses_scoped_limit() {
+    let error = column_index_table_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn column_index_table_route_refuses_retained_limit() {
+    let error = column_index_table_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn column_index_table_route_refuses_work_limit() {
+    let error = column_index_table_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -666,6 +1824,9 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
         external_reference_record_children, external_reference_record_string_uses,
         ExternalReference, ExternalReferenceRecord,
     };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
 
     let references = (0..4)
         .map(|ordinal| ExternalReference {
@@ -686,7 +1847,9 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
         source_entry: "stream".into(),
         source_offset: 20,
     };
-    let uses = external_reference_record_string_uses(std::slice::from_ref(&record), &references);
+    let uses =
+        external_reference_record_string_uses(&ctx, std::slice::from_ref(&record), &references)
+            .expect("complete string use lane");
     assert_eq!(uses.len(), 4);
     assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
     assert_eq!(
@@ -705,26 +1868,44 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     assert_eq!(uses[1].source_offset, 31);
     let mut child_references = references.clone();
     child_references[0].path = "child.prt".into();
-    let child_uses =
-        external_reference_record_string_uses(std::slice::from_ref(&record), &child_references);
+    let child_uses = external_reference_record_string_uses(
+        &ctx,
+        std::slice::from_ref(&record),
+        &child_references,
+    )
+    .expect("complete child string use lane");
     let children = external_reference_record_children(
+        &ctx,
         std::slice::from_ref(&record),
         &child_references,
         &child_uses,
-    );
+    )
+    .expect("complete child record");
     assert_eq!(children.len(), 1);
     assert_eq!(children[0].external_record, record.id);
     assert_eq!(children[0].name_reference, "reference#0");
     assert_eq!(children[0].directory_reference, "reference#1");
-    assert!(
-        external_reference_record_children(std::slice::from_ref(&record), &references, &uses)
-            .is_empty()
-    );
+    assert!(external_reference_record_children(
+        &ctx,
+        std::slice::from_ref(&record),
+        &references,
+        &uses
+    )
+    .expect("non-child record")
+    .is_empty());
 
     let mut out_of_range = record.clone();
     out_of_range.id_slots[2] = 4;
-    assert!(external_reference_record_string_uses(&[out_of_range], &references).is_empty());
+    assert!(
+        external_reference_record_string_uses(&ctx, &[out_of_range], &references)
+            .expect("unresolved slot")
+            .is_empty()
+    );
     let mut duplicate = references.clone();
     duplicate.push(references[0].clone());
-    assert!(external_reference_record_string_uses(&[record], &duplicate).is_empty());
+    assert!(
+        external_reference_record_string_uses(&ctx, &[record], &duplicate)
+            .expect("duplicate slot")
+            .is_empty()
+    );
 }

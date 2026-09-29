@@ -47,10 +47,10 @@ impl<B> DatumCsysFrame<B> {
     ) -> Result<Self, &'static str> {
         let width: u64 = references
             .iter()
-            .map(|(token, _)| token.raw().len() as u64)
+            .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum();
         origin
-            .checked_add(14 + width + TRAILER.len() as u64)
+            .checked_add(14 + width + cadmpeg_core::decode::u64_from_index(TRAILER.len()))
             .ok_or("source_offsets: datum-CSYS frame end overflows")?;
         Ok(Self {
             control,
@@ -69,7 +69,7 @@ impl<B> DatumCsysFrame<B> {
         let mut at = self.origin + 14;
         self.references.each_ref().map(|(token, _)| {
             let offset = at;
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             offset
         })
     }
@@ -89,18 +89,25 @@ impl<B> DatumCsysFrame<B> {
     }
     pub(crate) fn resolve<C>(
         self,
-        mut resolve: impl FnMut(u32) -> Option<C>,
-    ) -> Option<DatumCsysFrame<C>> {
-        let [slot0, slot1, slot2, slot3, slot4, slot5, slot6, slot7] = self
-            .references
-            .map(|(token, _)| Some((token, resolve(token.value())?)));
-        Some(DatumCsysFrame {
+        mut resolve: impl FnMut(u32) -> Result<Option<C>, cadmpeg_core::CodecError>,
+    ) -> Result<Option<DatumCsysFrame<C>>, cadmpeg_core::CodecError> {
+        let [slot0, slot1, slot2, slot3, slot4, slot5, slot6, slot7] =
+            self.references.map(|(token, _)| {
+                resolve(token.value()).map(|value| value.map(|value| (token, value)))
+            });
+        let [slot0, slot1, slot2, slot3, slot4, slot5, slot6, slot7] = [
+            slot0?, slot1?, slot2?, slot3?, slot4?, slot5?, slot6?, slot7?,
+        ];
+        let [Some(slot0), Some(slot1), Some(slot2), Some(slot3), Some(slot4), Some(slot5), Some(slot6), Some(slot7)] =
+            [slot0, slot1, slot2, slot3, slot4, slot5, slot6, slot7]
+        else {
+            return Ok(None);
+        };
+        Ok(Some(DatumCsysFrame {
             control: self.control,
             origin: self.origin,
-            references: [
-                slot0?, slot1?, slot2?, slot3?, slot4?, slot5?, slot6?, slot7?,
-            ],
-        })
+            references: [slot0, slot1, slot2, slot3, slot4, slot5, slot6, slot7],
+        }))
     }
 }
 
@@ -123,7 +130,7 @@ pub(crate) fn datum_csys_references(record: OperationPayload<'_>) -> Option<Datu
     }
     DatumCsysFrame::new(
         record.payload()[0],
-        record.payload_offset() as u64,
+        cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         references,
     )
     .ok()
@@ -182,9 +189,13 @@ mod tests {
         assert!(frame.clone().relocate(u64::MAX - 141).is_none());
         assert!(frame
             .clone()
-            .resolve(|value| (value != 768).then_some(value))
+            .resolve(|value| Ok((value != 768).then_some(value)))
+            .unwrap()
             .is_none());
-        let resolved = frame.resolve(|value| Some(value.to_string())).unwrap();
+        let resolved = frame
+            .resolve(|value| Ok(Some(value.to_string())))
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.members()[0].1, "0");
         assert_eq!(resolved.offsets(), [114, 116, 119, 121, 124, 126, 129, 131]);
         payload.pop();

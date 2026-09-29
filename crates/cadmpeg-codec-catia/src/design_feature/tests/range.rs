@@ -121,5 +121,7 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
         transfer.native_operation_range_records,
         HashSet::from(["range-record".to_string()])
     );
-    assert!(transfer.consumed_records().contains("range-record"));
+    assert!(transfer
+        .consumed_records()
+        .any(|record| record == "range-record"));
 }

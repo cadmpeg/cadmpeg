@@ -12,7 +12,8 @@ use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::topology::ParameterInterval;
 use crate::transform::Transform2;
 use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
-use cadmpeg_core::decode::ResourceLimit;
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -118,7 +119,9 @@ impl PcurveNurbsPoles<FinitePoint2> {
 
     /// Copy rational evaluator weights with scratch bounded by the admitted pole count.
     pub fn try_weights(&self) -> Result<Option<Vec<f64>>, ResourceLimit> {
-        let Self::Rational { points } = self else { return Ok(None); };
+        let Self::Rational { points } = self else {
+            return Ok(None);
+        };
         let mut output = Vec::new();
         super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR pcurve weight copy")?;
         output.extend(points.iter().map(|pole| pole.weight.get()));
@@ -1682,6 +1685,53 @@ impl<P: Copy, S: Copy> PolarNurbsPoles<P, S> {
 }
 
 impl PolarPcurveNurbs {
+    /// Assemble admitted lanes without copying their allocations.
+    ///
+    /// # Errors
+    /// Refuses a degree or lane count that does not define a polar NURBS.
+    pub fn from_admitted_parts(
+        degree: u32,
+        knots: KnotVector,
+        poles: PolarNurbsPoles<FinitePoint2, FiniteReal>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "poles")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure(
+                "polar NURBS degree must be positive".into(),
+            ));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
+    /// Copy the admitted knot and pole lanes through the decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let knots = self.knots.try_clone_for_decode(ctx, operation)?;
+        let poles = match &self.poles {
+            PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
+                poles: super::copy_decode_slice(poles, ctx, operation)?,
+            },
+            PolarNurbsPoles::Rational { poles } => PolarNurbsPoles::Rational {
+                poles: super::copy_decode_slice(poles, ctx, operation)?,
+            },
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
     /// Build a polar NURBS from its pole rows.
     ///
     /// A pole is one row carrying its radial and axial halves together, so
@@ -1844,6 +1894,54 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
+    /// Copy the admitted knot and pole lanes through the decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let knots = self.knots.try_clone_for_decode(ctx, operation)?;
+        let poles = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
+                points: super::copy_decode_slice(points, ctx, operation)?,
+            },
+            PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
+                points: super::copy_decode_slice(points, ctx, operation)?,
+            },
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
+    /// Build from admitted knot and pole rows without copying either lane.
+    ///
+    /// # Errors
+    ///
+    /// Refuses inconsistent cardinalities or a zero degree.
+    pub fn from_admitted_rows(
+        degree: u32,
+        knots: KnotVector,
+        poles: PcurveNurbsPoles<FinitePoint2>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure(
+                "pcurve NURBS degree must be positive".into(),
+            ));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
     /// Build a parameter-space NURBS with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
@@ -1963,27 +2061,63 @@ impl PcurveNurbs {
         self.poles.points()
     }
 
-    /// Atomically edit pole positions and preserve finite coordinates.
+    /// Replace every admitted pole position when the supplied lane has the same cardinality.
     ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_control_points(
-        &mut self,
-        edit: impl FnMut(&mut Point2) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        let mut poles = self.poles.to_raw();
-        poles.apply_points(edit)?;
-        self.poles = poles.admit()?;
-        Ok(())
+    /// The check precedes mutation. Pole weights and knots stay in place.
+    pub fn replace_admitted_control_points(&mut self, positions: &[FinitePoint2]) -> bool {
+        let count = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => points.len(),
+            PcurveNurbsPoles::Rational { points } => points.len(),
+        };
+        if positions.len() != count {
+            return false;
+        }
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for (point, position) in points.iter_mut().zip(positions) {
+                    *point = *position;
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for (pole, position) in points.iter_mut().zip(positions) {
+                    pole.point = *position;
+                }
+            }
+        }
+        true
     }
 
-    /// Atomically map every admitted pole position. The closure states its
-    /// own refusal, which discards the whole map; the positions it returns are
-    /// admitted, so nothing is checked.
-    pub fn map_control_points(
+    /// Map pole positions in order after every result passes admission.
+    /// The map must return the same result for the same index and position.
+    /// Pole weights and knots stay in place.
+    pub fn try_map_control_points<E>(
         &mut self,
-        map: impl FnMut(FinitePoint2) -> Result<FinitePoint2, NurbsError>,
-    ) -> Result<(), NurbsError> {
-        self.poles = self.poles.clone().try_map_points(map)?;
+        map: impl Fn(usize, FinitePoint2) -> Result<FinitePoint2, E>,
+    ) -> Result<(), E> {
+        match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for (index, point) in points.iter().copied().enumerate() {
+                    map(index, point)?;
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for (index, pole) in points.iter().enumerate() {
+                    map(index, pole.point)?;
+                }
+            }
+        }
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for (index, point) in points.iter_mut().enumerate() {
+                    *point = map(index, *point)?;
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for (index, pole) in points.iter_mut().enumerate() {
+                    pole.point = map(index, pole.point)?;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -2110,6 +2244,125 @@ impl TryFrom<PlacedPcurveWire> for PlacedPcurve {
 }
 
 impl PcurveGeometry {
+    /// Scale a decoded pcurve while propagating allocation refusal separately
+    /// from invalid scaled geometry.
+    pub fn try_scale_coordinates_for_decode(
+        &mut self,
+        scales: [f64; 2],
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        match self {
+            Self::Nurbs { nurbs } => Ok(nurbs
+                .try_map_control_points(|_, point| {
+                    let point = point.get();
+                    FinitePoint2::new(Point2::new(point.u * scales[0], point.v * scales[1]))
+                        .ok_or(())
+                })
+                .is_ok()),
+            Self::Trimmed(trimmed) => {
+                let mut basis = trimmed.basis.try_clone_for_decode(ctx, operation)?;
+                if !basis.try_scale_coordinates_for_decode(scales, ctx, operation)? {
+                    return Ok(false);
+                }
+                *trimmed.basis = basis;
+                Ok(true)
+            }
+            Self::Offset(offset) => {
+                if scales[0] != scales[1] {
+                    return Ok(false);
+                }
+                let Some(distance) = FiniteReal::new(offset.distance.get() * scales[0]) else {
+                    return Ok(false);
+                };
+                let mut basis = offset.basis.try_clone_for_decode(ctx, operation)?;
+                if !basis.try_scale_coordinates_for_decode(scales, ctx, operation)? {
+                    return Ok(false);
+                }
+                *offset.basis = basis;
+                offset.distance = distance;
+                Ok(true)
+            }
+            Self::Transformed(placed) => {
+                let Some(u_scale) = NonZeroReal::new(scales[0]) else {
+                    return Ok(false);
+                };
+                let Some(v_scale) = NonZeroReal::new(scales[1]) else {
+                    return Ok(false);
+                };
+                let mut rows = placed.transform.affine_rows();
+                rows[0][1] *= u_scale.get() / v_scale.get();
+                rows[0][2] *= u_scale.get();
+                rows[1][0] *= v_scale.get() / u_scale.get();
+                rows[1][2] *= v_scale.get();
+                let Some(transform) = Transform2::affine(rows) else {
+                    return Ok(false);
+                };
+                let mut basis = placed.basis.try_clone_for_decode(ctx, operation)?;
+                if !basis.try_scale_coordinates_for_decode(scales, ctx, operation)? {
+                    return Ok(false);
+                }
+                *placed.basis = basis;
+                placed.transform = transform;
+                Ok(true)
+            }
+            _ => Ok(self.try_scale_coordinates(scales).is_ok()),
+        }
+    }
+
+    /// Copy a decoded parameter curve through the caller's collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Line(value) => Self::Line(*value),
+            Self::PolarHarmonic(value) => Self::PolarHarmonic(*value),
+            Self::PolarNurbs { nurbs } => Self::PolarNurbs {
+                nurbs: nurbs.try_clone_for_decode(ctx, operation)?,
+            },
+            Self::SphericalGreatCircle(value) => Self::SphericalGreatCircle(*value),
+            Self::Circle(value) => Self::Circle(*value),
+            Self::Ellipse(value) => Self::Ellipse(*value),
+            Self::Harmonic(value) => Self::Harmonic(*value),
+            Self::Parabola(value) => Self::Parabola(*value),
+            Self::Hyperbola(value) => Self::Hyperbola(*value),
+            Self::Hyperbolic(value) => Self::Hyperbolic(*value),
+            Self::Nurbs { nurbs } => Self::Nurbs {
+                nurbs: nurbs.try_clone_for_decode(ctx, operation)?,
+            },
+            Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                super::charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Transformed(PlacedPcurve {
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Trimmed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                super::charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Trimmed(TrimmedPcurve {
+                    parameter_range: value.parameter_range,
+                    same_sense: value.same_sense,
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    depth: value.depth,
+                })
+            }
+            Self::Offset(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                super::charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Offset(OffsetPcurve {
+                    distance: value.distance,
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    depth: value.depth,
+                })
+            }
+        })
+    }
+
     /// Nesting carriers enclosing the leaf of this carrier's inline chain.
     #[must_use]
     pub(crate) const fn nesting_depth(&self) -> usize {
@@ -2199,9 +2452,8 @@ impl PcurveGeometry {
             )?),
             Self::Nurbs { nurbs } => {
                 return nurbs
-                    .edit_control_points(|point| {
-                        *point = scale(*point);
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        FinitePoint2::new(scale(point.get())).ok_or_else(non_finite_control_point)
                     })
                     .map_err(|error| error.to_string());
             }

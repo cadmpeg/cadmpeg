@@ -333,7 +333,7 @@ fn common_tag(variants: &[Value], defs: &Map<String, Value>) -> Option<(String, 
         .get("properties")
         .and_then(Value::as_object)?;
     'candidate: for key in first.keys() {
-        let mut values = Vec::with_capacity(variants.len());
+        let mut values = Vec::new();
         for variant in variants {
             if let Some(constant) = variant
                 .get("properties")

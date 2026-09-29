@@ -123,7 +123,11 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
                 id.clone(),
                 sketch.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                    position: Point2::new(ordinal as f64, 0.0),
+                    position: Point2::new(
+                        cadmpeg_core::convert::f64_from_index(ordinal)
+                            .expect("test ordinal is exactly representable"),
+                        0.0,
+                    ),
                 })
                 .unwrap(),
             )
@@ -150,7 +154,9 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(
         round_trip.model.sketch_constraints,

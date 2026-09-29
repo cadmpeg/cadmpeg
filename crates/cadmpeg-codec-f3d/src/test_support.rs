@@ -21,6 +21,16 @@ use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 use crate::F3dCodec;
 
+pub(crate) fn with_decode_context<T>(
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    f(&ctx)
+}
+
 /// Plans an inherited write through the sealed encoder and writes its bytes.
 pub(crate) fn plan_inherited_write(
     ir: &CadIr,

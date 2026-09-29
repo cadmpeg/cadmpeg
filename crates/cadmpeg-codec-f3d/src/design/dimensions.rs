@@ -7840,12 +7840,10 @@ pub(super) fn exact_offset_constraint(
         || relation.return_members().len() < 4
         || !relation.return_members().len().is_multiple_of(2)
         || relation.return_members().len() != relation.members().len()
-        || relation.return_members().iter().any(|member| {
-            matches!(
-                member.reference,
-                crate::records::sketch_relations::SketchRelationReference::Index(_)
-            )
-        })
+        || relation
+            .return_members()
+            .iter()
+            .any(|member| member.reference.resolved().is_none())
     {
         return None;
     }

@@ -412,7 +412,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             )?;
             source_carriers.admit_procedural_surface(
                 ir,
-                surface_id,
+                &surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     curve_id,
                     (

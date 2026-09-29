@@ -118,9 +118,7 @@ impl PropertyValue<'_> {
             Self::Filetime { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
             Self::String { value, .. } => {
                 ctx.charge_retained(
-                    u64::try_from(value.len()).map_err(|_| {
-                        ctx.refuse_codec_limit("OLE scalar length", u64::MAX - 1, u64::MAX)
-                    })?,
+                    cadmpeg_core::decode::u64_from_index(value.len()),
                     "retain OLE scalar text",
                 )?;
                 value.clone()
@@ -154,8 +152,7 @@ fn charge_retained_len(
     len: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let len = u64::try_from(len)
-        .map_err(|_| ctx.refuse_codec_limit("OLE retained byte count", u64::MAX - 1, u64::MAX))?;
+    let len = cadmpeg_core::decode::u64_from_index(len);
     ctx.charge_retained(len, operation)
 }
 
@@ -174,7 +171,9 @@ pub(crate) fn inventory<'a>(
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
-        if stream.logical_size() < 28 || stream.logical_size() > MAX_STREAM_SIZE as u64 {
+        if stream.logical_size() < 28
+            || stream.logical_size() > cadmpeg_core::decode::u64_from_index(MAX_STREAM_SIZE)
+        {
             continue;
         }
         let view = snapshot.open(ctx, stream)?;
@@ -241,9 +240,16 @@ pub(crate) fn parse_property_set_stream<'a>(
             "OLE property-set stream has no sections".into(),
         ));
     }
-    ctx.charge_collection_items(section_count as u64, "admit OLE section directories")?;
-    let mut directories = Vec::with_capacity(section_count);
-    ctx.charge_collection_items(section_count as u64, "admit OLE section FMTIDs")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(section_count),
+        "admit OLE section directories",
+    )?;
+    let mut directories =
+        DecodeContext::admitted_vec(section_count, "admit OLE section directories")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(section_count),
+        "admit OLE section FMTIDs",
+    )?;
     let mut fmtids = BTreeSet::new();
     for _ in 0..section_count {
         let fmtid = cursor.array("section FMTID")?;
@@ -257,8 +263,12 @@ pub(crate) fn parse_property_set_stream<'a>(
     let header_end = cursor.position();
     directories.sort_by_key(|(_, offset)| *offset);
     let mut previous_end = header_end;
-    ctx.charge_collection_items(section_count as u64, "admit OLE property-set sections")?;
-    let mut sections = Vec::with_capacity(section_count);
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(section_count),
+        "admit OLE property-set sections",
+    )?;
+    let mut sections =
+        DecodeContext::admitted_vec(section_count, "admit OLE property-set sections")?;
     for (fmtid, offset) in directories {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
@@ -267,7 +277,10 @@ pub(crate) fn parse_property_set_stream<'a>(
         }
         require_zero_range(bytes, previous_end, offset, "section gap")?;
         let mut section = crate::reader::at(source, source.start() + offset, "section size")?;
-        let size = crate::reader::u32(&mut section, "section size")? as usize;
+        let size =
+            usize::try_from(crate::reader::u32(&mut section, "section size")?).map_err(|_| {
+                CodecError::Malformed("Inventor numeric value exceeds target range".into())
+            })?;
         let end = offset.checked_add(size).ok_or_else(|| {
             CodecError::Malformed("OLE property-set section range overflows".into())
         })?;
@@ -315,10 +328,17 @@ fn parse_section<'a>(
     // The directory is read entry by entry below, so the window states its own
     // bound: a directory the section cannot hold stops at the entry that runs
     // out of bytes.
-    ctx.charge_collection_items(property_count as u64, "admit OLE property IDs")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(property_count),
+        "admit OLE property IDs",
+    )?;
     let mut ids = BTreeSet::new();
-    ctx.charge_collection_items(property_count as u64, "admit OLE property directory")?;
-    let mut directory = Vec::with_capacity(property_count);
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(property_count),
+        "admit OLE property directory",
+    )?;
+    let mut directory =
+        DecodeContext::admitted_vec(property_count, "admit OLE property directory")?;
     for _ in 0..property_count {
         let id = cursor.u32("property id")?;
         if !ids.insert(id) {
@@ -346,7 +366,10 @@ fn parse_section<'a>(
     if let Some((offset, _)) = directory.first() {
         require_zero_range(bytes, directory_end, *offset, "property-directory gap")?;
     }
-    ctx.charge_collection_items(property_count as u64, "admit OLE property ranges")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(property_count),
+        "admit OLE property ranges",
+    )?;
     let ranges = directory
         .iter()
         .enumerate()
@@ -379,8 +402,11 @@ fn parse_section<'a>(
         })
         .transpose()?
         .unwrap_or_default();
-    ctx.charge_collection_items(property_count as u64, "admit OLE properties")?;
-    let mut properties = Vec::with_capacity(property_count);
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(property_count),
+        "admit OLE properties",
+    )?;
+    let mut properties = DecodeContext::admitted_vec(property_count, "admit OLE properties")?;
     for (id, start, end) in ranges {
         let raw = source
             .child(source.start() + start, source.start() + end)
@@ -437,9 +463,15 @@ fn parse_dictionary(
 ) -> Result<BTreeMap<u32, String>, CodecError> {
     let mut cursor = Cursor::new(source, "OLE property dictionary");
     let count = cursor.count("entry count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(count as u64, "admit OLE property dictionary entries")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit OLE property dictionary entries",
+    )?;
     let mut names = BTreeMap::new();
-    ctx.charge_collection_items(count as u64, "admit OLE folded dictionary names")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit OLE folded dictionary names",
+    )?;
     let mut folded_names = BTreeSet::new();
     for _ in 0..count {
         let id = cursor.u32("entry id")?;
@@ -497,8 +529,11 @@ fn parse_vector<'a>(
     code_page: Option<u16>,
 ) -> Result<PropertyValue<'a>, CodecError> {
     let count = cursor.count("vector element count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(count as u64, "admit OLE property vector elements")?;
-    let mut values = Vec::with_capacity(count);
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit OLE property vector elements",
+    )?;
+    let mut values = DecodeContext::admitted_vec(count, "admit OLE property vector elements")?;
     for _ in 0..count {
         if element_type == VT_VARIANT {
             let nested_type = cursor.u16("variant type")?;
@@ -618,15 +653,15 @@ fn parse_scalar<'a>(
         ScalarType::Empty => PropertyValue::Empty { type_code },
         ScalarType::I2 => PropertyValue::Signed {
             type_code,
-            value: cursor.i16("VT_I2")? as i64,
+            value: i64::from(cursor.i16("VT_I2")?),
         },
         ScalarType::I4 => PropertyValue::Signed {
             type_code,
-            value: cursor.i32("VT_I4")? as i64,
+            value: i64::from(cursor.i32("VT_I4")?),
         },
         ScalarType::R4 => PropertyValue::Float {
             type_code,
-            value: f32::from_bits(cursor.u32("VT_R4")?) as f64,
+            value: f64::from(f32::from_bits(cursor.u32("VT_R4")?)),
         },
         ScalarType::R8 => PropertyValue::Float {
             type_code,
@@ -650,19 +685,19 @@ fn parse_scalar<'a>(
         }
         ScalarType::I1 => PropertyValue::Signed {
             type_code,
-            value: cursor.u8("VT_I1")? as i8 as i64,
+            value: i64::from(cursor.u8("VT_I1")?.cast_signed()),
         },
         ScalarType::Ui1 => PropertyValue::Unsigned {
             type_code,
-            value: cursor.u8("VT_UI1")? as u64,
+            value: u64::from(cursor.u8("VT_UI1")?),
         },
         ScalarType::Ui2 => PropertyValue::Unsigned {
             type_code,
-            value: cursor.u16("VT_UI2")? as u64,
+            value: u64::from(cursor.u16("VT_UI2")?),
         },
         ScalarType::Ui4 => PropertyValue::Unsigned {
             type_code,
-            value: cursor.u32("VT_UI4")? as u64,
+            value: u64::from(cursor.u32("VT_UI4")?),
         },
         ScalarType::Ui8 => PropertyValue::Unsigned {
             type_code,
@@ -765,9 +800,7 @@ fn decode_code_page(
         let utf8_len = crate::reader::utf16_utf8_len(view, bytes.len() / 2)
             .ok_or_else(|| CodecError::Malformed("OLE code-page string is not UTF-16".into()))?;
         let _units = ctx.reserve_scoped(
-            u64::try_from(bytes.len()).map_err(|_| {
-                ctx.refuse_codec_limit("OLE UTF-16 unit byte count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
             "decode OLE code-page UTF-16 units",
         )?;
         charge_retained_len(ctx, utf8_len, "retain OLE property string")?;
@@ -795,8 +828,7 @@ fn decode_code_page(
         return Err(CodecError::NotImplemented(message.to_string()));
     };
     ctx.charge_work(
-        u64::try_from(content.len())
-            .map_err(|_| ctx.refuse_codec_limit("OLE code-page work", u64::MAX - 1, u64::MAX))?,
+        cadmpeg_core::decode::u64_from_index(content.len()),
         "decode OLE code-page string",
     )?;
     let (selected_encoding, source) = encoding_rs::Encoding::for_bom(content)
@@ -990,9 +1022,7 @@ impl<'a> Cursor<'a> {
             CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
         })?;
         let _units = ctx.reserve_scoped(
-            u64::try_from(byte_len).map_err(|_| {
-                ctx.refuse_codec_limit("OLE Unicode unit byte count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(byte_len),
             "decode OLE Unicode property units",
         )?;
         charge_retained_len(ctx, utf8_len, "retain OLE Unicode property string")?;
@@ -1049,7 +1079,8 @@ mod tests {
             let offset = entry_start + index * 2;
             bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
         }
-        let name_len = ((name.encode_utf16().count() + 1) * 2) as u16;
+        let name_len =
+            u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fixture value fits u16");
         bytes[entry_start + 64..entry_start + 66].copy_from_slice(&name_len.to_le_bytes());
         let arena = DecodeArena::new();
         let (setup, root) =
@@ -1405,7 +1436,9 @@ mod tests {
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         bytes.extend_from_slice(&FMTID_SUMMARY);
         bytes.extend_from_slice(&48_u32.to_le_bytes());
-        bytes.extend_from_slice(&(section_size as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(section_size).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         for (id, offset) in [
             (1_u32, code_page_offset),
@@ -1413,7 +1446,9 @@ mod tests {
             (17, preview_offset),
         ] {
             bytes.extend_from_slice(&id.to_le_bytes());
-            bytes.extend_from_slice(&(offset as u32).to_le_bytes());
+            bytes.extend_from_slice(
+                &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+            );
         }
         bytes.extend_from_slice(&2_u16.to_le_bytes());
         bytes.extend_from_slice(&0_u16.to_le_bytes());
@@ -1429,7 +1464,9 @@ mod tests {
         bytes.extend_from_slice(&0x001f_u16.to_le_bytes());
         bytes.extend_from_slice(&0_u16.to_le_bytes());
         let units = value.encode_utf16().chain([0]).collect::<Vec<_>>();
-        bytes.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for unit in units {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
@@ -1443,7 +1480,9 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&0x0041_u16.to_le_bytes());
         bytes.extend_from_slice(&0_u16.to_le_bytes());
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value);
         while bytes.len() % 4 != 0 {
             bytes.push(0);

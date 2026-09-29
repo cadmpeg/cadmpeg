@@ -887,8 +887,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     indexed_header(&mut group_bytes, *b"259", 100);
 
     let mut group = parse_extrude_selection_group(&ctx, &group_bytes, &scope, 0, &record)
-        .transpose()
-        .unwrap()
+        .expect("group decode resources")
         .expect("counted Extrude selection group");
     assert_eq!(
         group
@@ -1448,17 +1447,17 @@ fn extrude_selection_group_member_copies_refuse_collection_limits() {
     use cadmpeg_core::CodecError;
     let (bytes, scope, record) = counted_extrude_selection_fixture();
     for (limit, operation) in [
-        (1, "f3d extrude selection members"),
-        (3, "f3d extrude selection member offsets"),
-        (5, "f3d extrude selection unique members"),
-        (7, "f3d extrude selection normalized members"),
+        (1, "parse F3D extrude selection members"),
+        (3, "parse F3D extrude selection member offsets"),
+        (5, "index F3D extrude selection members"),
+        (7, "admit F3D extrude selection members"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            parse_extrude_selection_group(&ctx, &bytes, &scope, 0, &record).transpose(),
+            parse_extrude_selection_group(&ctx, &bytes, &scope, 0, &record),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation
@@ -1475,7 +1474,6 @@ fn extrude_selection_group_output_refuses_collection_and_id_limits() {
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let group = parse_extrude_selection_group(&ctx, &bytes, &scope, 0, &record)
-        .transpose()
         .unwrap()
         .expect("counted Extrude selection group");
     let stream = "Design/BulkStream.dat";

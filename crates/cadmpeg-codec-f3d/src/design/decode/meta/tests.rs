@@ -15,6 +15,15 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::streams_test::design_metastream_with_records;
 use crate::test_support::zip_test::with_scan;
 
+fn decode_component_naming_spaces(
+    scan: &crate::container::ContainerScan<'_>,
+) -> Result<Vec<crate::records::recipes::DesignComponentNamingSpace>, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    super::decode_component_naming_spaces(&ctx, scan)
+}
+
 #[test]
 fn bulk_metadata_reuses_the_parsed_type_table() {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
@@ -38,8 +47,9 @@ fn bulk_metadata_reuses_the_parsed_type_table() {
     zip.write_all(&meta).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
     with_scan(&bytes, |scan| {
-        let first = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
-        let second = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let first = super::metadata_for_bulk_stream(&ctx, scan, bulk_name)?.unwrap();
+        let second = super::metadata_for_bulk_stream(&ctx, scan, bulk_name)?.unwrap();
         assert!(std::rc::Rc::ptr_eq(&first, &second));
         assert_eq!(first.types.len(), 1);
         assert_eq!(
@@ -203,8 +213,10 @@ fn design_primary_frames_charge_registration_and_frame_storage() {
     };
     let arena = DecodeArena::new();
     for (allowance, operation) in [
-        (0, "f3d registered primary entities"),
-        (1, "f3d design primary frames"),
+        (0, "frame F3D primary records"),
+        (1, "index F3D primary entities"),
+        (2, "f3d registered primary entities"),
+        (3, "f3d design primary frames"),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = allowance;
@@ -247,10 +259,12 @@ fn typed_primary_frames_charge_all_collections() {
     let arena = DecodeArena::new();
     for (allowance, operation) in [
         (0, "f3d typed primary entities"),
-        (1, "f3d registered primary entities"),
-        (2, "f3d design primary frames"),
-        (3, "f3d resolved primary entities"),
-        (4, "f3d typed primary frames"),
+        (1, "frame F3D primary records"),
+        (2, "index F3D primary entities"),
+        (3, "f3d registered primary entities"),
+        (4, "f3d design primary frames"),
+        (5, "f3d resolved primary entities"),
+        (6, "f3d typed primary frames"),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = allowance;
@@ -511,13 +525,8 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         let mut bulk = vec![0xaa, 0xbb];
         let marker = bulk.len();
         binding(&mut bulk, 17, reserved_len, CONTEXT_UUID);
-        let decoded = with_scan(&archive(&bulk), |scan| {
-            crate::design::decode::meta::decode_component_naming_spaces(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
-        })
-        .expect("component naming space");
+        let decoded = with_scan(&archive(&bulk), decode_component_naming_spaces)
+            .expect("component naming space");
         let [space] = decoded.as_slice() else {
             panic!("expected one component naming space");
         };
@@ -534,10 +543,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     let typed_marker = typed.len();
     typed_binding(&mut typed, 17, CONTEXT_UUID);
     let decoded = with_scan(&archive(&typed), |scan| {
-        crate::design::decode::meta::decode_component_naming_spaces(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-        )
+        decode_component_naming_spaces(scan)
     })
     .expect("typed component naming space");
     let [space] = decoded.as_slice() else {
@@ -556,10 +562,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     );
     typed_binding(&mut overlapping_reference, 17, CONTEXT_UUID);
     let decoded = with_scan(&archive(&overlapping_reference), |scan| {
-        crate::design::decode::meta::decode_component_naming_spaces(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-        )
+        decode_component_naming_spaces(scan)
     })
     .expect("typed binding beside an overlapping 01 01 reference");
     let [space] = decoded.as_slice() else {
@@ -576,10 +579,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb",
     );
     let error = with_scan(&archive(&conflicting), |scan| {
-        crate::design::decode::meta::decode_component_naming_spaces(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-        )
+        decode_component_naming_spaces(scan)
     })
     .expect_err("conflicting component UUIDs must be rejected");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));

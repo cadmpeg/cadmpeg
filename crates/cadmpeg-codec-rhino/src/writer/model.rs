@@ -479,8 +479,12 @@ impl<'a> WritableModel<'a> {
                     check_nurbs_curve(curve.id.as_str(), nurbs)?;
                     let count = nurbs.control_points().len();
                     if nurbs.periodic()
-                        || [nurbs.knots()[nurbs.degree() as usize], nurbs.knots()[count]]
-                            != [lo, hi]
+                        || [
+                            nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| {
+                                CodecError::Malformed("Rhino count exceeds address space".into())
+                            })?],
+                            nurbs.knots()[count],
+                        ] != [lo, hi]
                     {
                         return Err(CodecError::NotImplemented(format!(
                             "edge {} requires a nonperiodic full-domain NURBS curve",
@@ -488,18 +492,32 @@ impl<'a> WritableModel<'a> {
                         )));
                     }
                     let geometry = WritableEdgeCurve::Nurbs(nurbs);
-                    let expected_start = geometry.point(domain[0]).map_err(|_| {
-                        CodecError::malformed(format_args!(
-                            "edge {} curve has no finite start point",
-                            edge.id.as_str()
-                        ))
-                    })?;
-                    let expected_end = geometry.point(domain[1]).map_err(|_| {
-                        CodecError::malformed(format_args!(
-                            "edge {} curve has no finite end point",
-                            edge.id.as_str()
-                        ))
-                    })?;
+                    let expected_start =
+                        geometry.point(domain[0]).map_err(|failure| match failure {
+                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                                CodecError::ResourceLimit(limit)
+                            }
+                            cadmpeg_ir::eval::EvaluationFailure::NoValue
+                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_) => {
+                                CodecError::malformed(format_args!(
+                                    "edge {} curve has no finite start point",
+                                    edge.id.as_str()
+                                ))
+                            }
+                        })?;
+                    let expected_end =
+                        geometry.point(domain[1]).map_err(|failure| match failure {
+                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                                CodecError::ResourceLimit(limit)
+                            }
+                            cadmpeg_ir::eval::EvaluationFailure::NoValue
+                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_) => {
+                                CodecError::malformed(format_args!(
+                                    "edge {} curve has no finite end point",
+                                    edge.id.as_str()
+                                ))
+                            }
+                        })?;
                     (geometry, expected_start.get(), expected_end.get())
                 }
                 _ => {

@@ -7,10 +7,31 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::BodyId;
 
-use super::super::{representation_bodies, TopologyData};
+use super::super::{admitted_body_clone, representation_bodies, TopologyData};
 
 fn body_id() -> BodyId {
     BodyId::try_from("step:data:body#1").expect("test body id")
+}
+
+#[test]
+fn representation_body_vector_refuses_before_two_item_copy() {
+    let bodies = [
+        body_id(),
+        BodyId::try_from("step:data:body#2").expect("test body id"),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"bodies", &arena, &policy)
+        .expect("root fits selected profile");
+    let error = admitted_body_clone(&bodies, &ctx, "step_representation_body_test_copy")
+        .expect_err("two body slots exceed one collection item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_representation_body_test_copy"
+    ));
 }
 
 fn topology_with_body_at(root: u64) -> TopologyData {
@@ -38,7 +59,9 @@ fn assert_walk_limit(
     calls: usize,
 ) {
     let source = source(records);
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("test exchange parses");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("test exchange parses");
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &service)
@@ -51,8 +74,7 @@ fn assert_walk_limit(
             topology,
             &mut cache,
             &mut BTreeSet::new(),
-            0,
-            Some(&ctx),
+            &ctx,
         )
         .expect("service admits representation bodies");
         assert_eq!(bodies.len(), 1);
@@ -70,8 +92,7 @@ fn assert_walk_limit(
             topology,
             &mut cache,
             &mut BTreeSet::new(),
-            0,
-            Some(&ctx),
+            &ctx,
         ) {
             Ok(_) => {}
             Err(refusal) => {
@@ -134,7 +155,9 @@ fn representation_cached_bodies_charge_before_clone() {
 #[test]
 fn representation_root_bodies_reserve_temporary_bytes_before_clone() {
     let source = source("#20=SHAPE_REPRESENTATION('',(),$);");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("test exchange parses");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("test exchange parses");
     let topology = topology_with_body_at(20);
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
@@ -146,8 +169,7 @@ fn representation_root_bodies_reserve_temporary_bytes_before_clone() {
         &topology,
         &mut BTreeMap::new(),
         &mut BTreeSet::new(),
-        0,
-        Some(&ctx),
+        &ctx,
     )
     .expect("service admits root body bytes");
     let mut limited = service;
@@ -162,8 +184,7 @@ fn representation_root_bodies_reserve_temporary_bytes_before_clone() {
         &topology,
         &mut BTreeMap::new(),
         &mut BTreeSet::new(),
-        0,
-        Some(&ctx),
+        &ctx,
     )
     .expect_err("root body bytes exceed the selected temporary allowance");
     assert!(

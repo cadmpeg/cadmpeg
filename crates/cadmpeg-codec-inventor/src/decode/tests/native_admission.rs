@@ -1262,7 +1262,7 @@ fn projected_body_ids_refuse_collection_and_retained_limits_before_copy() {
     ));
 
     policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (id.as_str().len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
         collect_body_ids(&ctx, [&id]),
@@ -1329,7 +1329,7 @@ fn projected_appearance_color_index_refuses_limits_before_id_copy() {
     ));
 
     policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (id.as_str().len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
         index_projected_colors(&ctx, [(&id, color)]),
@@ -1361,7 +1361,7 @@ fn face_color_index_refuses_limits_before_face_id_copy() {
     ));
 
     policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (id.as_str().len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
         index_face_colors(&ctx, [(&id, color)]),
@@ -1530,10 +1530,7 @@ fn rejected_representation_does_not_fail_decode() {
         .expect("native namespace");
     assert!(matches!(
         UfrxRecord::read(namespace).expect("admitted UFRx arenas agree"),
-        UfrxRecord::ParsedPrefix {
-            representation: None,
-            ..
-        }
+        UfrxRecord::ParsedPrefix(payload) if payload.representation.is_none()
     ));
 }
 
@@ -1660,6 +1657,36 @@ fn placement_conversion_issue_refuses_before_failure_text_creation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
         u64::try_from("suffix_len must not be zero".len() - 1).expect("detail length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let mut issues = Vec::new();
+    assert!(matches!(
+        admit_assembly_placement(&ctx, wire, &mut issues),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor placement conversion issue"
+    ));
+    assert!(issues.is_empty());
+}
+
+#[test]
+fn uppercase_placement_digest_refuses_before_failure_text_creation() {
+    let wire: AssemblyPlacementRecordWire = serde_json::from_value(serde_json::json!({
+        "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
+        "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
+        "transform_prefix": false, "transform_encoding": [0, 0],
+        "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
+        "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
+        "object_reference": 0, "suffix_len": 48, "suffix_sha256": "A".repeat(64)
+    }))
+    .expect("placement wire");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(
+        "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters"
+            .len()
+            - 1,
+    )
+    .expect("detail length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
     assert!(matches!(

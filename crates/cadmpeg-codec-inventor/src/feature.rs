@@ -240,10 +240,7 @@ pub(crate) struct ClassId([u8; 16]);
 
 impl std::fmt::Display for ClassId {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for byte in self.0 {
-            formatter.write_fmt(format_args!("{byte:02x}"))?;
-        }
-        Ok(())
+        cadmpeg_ir::hash::LowerHex(&self.0).fmt(formatter)
     }
 }
 
@@ -510,7 +507,7 @@ pub(crate) fn inventory(
                 admit_issue_detail(ctx, &error, "retain Inventor PmDc feature issue detail")?;
                 ctx.charge_retained(32, "retain Inventor PmDc feature issue type id")?;
                 ctx.charge_retained(
-                    segment.pair.token.as_str().len() as u64,
+                    cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                     "retain Inventor PmDc feature issue segment token",
                 )?;
                 inventory.issues.push(RecordIssue {
@@ -535,7 +532,7 @@ fn parse_pattern_feature(
 ) -> Result<PmDcPatternFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32("pattern-feature state")? as i32;
+    let state = cursor.u32("pattern-feature state")?.cast_signed();
     let outline_value = cursor.u32("pattern-feature outline value")?;
     let properties = reference_list(ctx, &mut cursor, 2, "pattern-feature properties")?;
     let value = cursor.u32("pattern-feature value")?;
@@ -546,10 +543,11 @@ fn parse_pattern_feature(
         PmDcPatternFamily::Mirror => 13,
     };
     ctx.charge_collection_items(
-        slot_count as u64,
+        cadmpeg_core::decode::u64_from_index(slot_count),
         "admit Inventor pattern feature property slots",
     )?;
-    let mut property_slots = Vec::with_capacity(slot_count);
+    let mut property_slots =
+        DecodeContext::admitted_vec(slot_count, "admit Inventor pattern feature property slots")?;
     for _ in 0..6 {
         property_slots.push(cursor.reference("pattern-feature property slot")?);
     }
@@ -568,7 +566,11 @@ fn parse_pattern_feature(
             }
             if version > 20 {
                 ctx.charge_collection_items(6, "admit Inventor pattern feature extension values")?;
-                extension_values.reserve(6);
+                DecodeContext::reserve_admitted_vec(
+                    &mut extension_values,
+                    6,
+                    "admit Inventor pattern feature extension values",
+                )?;
                 for _ in 0..6 {
                     extension_values.push(cursor.u32("pattern-feature extension value")?);
                 }
@@ -601,7 +603,7 @@ fn parse_feature(
 ) -> Result<PmDcFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32("feature state")? as i32;
+    let state = cursor.u32("feature state")?.cast_signed();
     let outline_value = cursor.u32("feature outline value")?;
     let properties = reference_list(ctx, &mut cursor, 2, "feature property list")?;
     let value = cursor.u32("feature value")?;
@@ -622,7 +624,7 @@ fn parse_terminator(
 ) -> Result<PmDcFeatureTerminatorPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32("feature terminator state")? as i32;
+    let state = cursor.u32("feature terminator state")?.cast_signed();
     cursor.finish("feature terminator")?;
     Ok(PmDcFeatureTerminatorPayload {
         save_version_major: version,
@@ -1082,7 +1084,8 @@ pub(crate) fn project(
     let total = inventory
         .features
         .len()
-        .saturating_add(inventory.pattern_features.len());
+        .checked_add(inventory.pattern_features.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("Inventor feature count", u64::MAX, u64::MAX))?;
     let mut feature_tokens = HashSet::new();
     for token in inventory
         .features
@@ -1134,10 +1137,14 @@ pub(crate) fn project(
         )?,
         parameter_values: {
             ctx.charge_collection_items(
-                parameters
-                    .iter()
-                    .filter(|parameter| parameter.native_ref.is_some() && parameter.value.is_some())
-                    .count() as u64,
+                cadmpeg_core::decode::u64_from_index(
+                    parameters
+                        .iter()
+                        .filter(|parameter| {
+                            parameter.native_ref.is_some() && parameter.value.is_some()
+                        })
+                        .count(),
+                ),
                 "index Inventor feature parameter values",
             )?;
             parameters
@@ -1164,7 +1171,7 @@ pub(crate) fn project(
                 if let Some(native) = sketch.native_ref.as_deref() {
                     ctx.charge_collection_items(1, "index Inventor feature sketch ids")?;
                     ctx.charge_retained(
-                        sketch.id.as_str().len() as u64,
+                        cadmpeg_core::decode::u64_from_index(sketch.id.as_str().len()),
                         "retain Inventor feature sketch id",
                     )?;
                     ids.insert(native, sketch.id.clone());
@@ -1246,7 +1253,10 @@ pub(crate) fn project(
             projected.push(value);
         }
     }
-    ctx.charge_collection_items(projected.len() as u64, "count Inventor feature ordinals")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(projected.len()),
+        "count Inventor feature ordinals",
+    )?;
     let ordinal_counts = projected.iter().map(|(feature, _)| feature.ordinal).fold(
         HashMap::<u64, usize>::new(),
         |mut counts, ordinal| {
@@ -1255,7 +1265,9 @@ pub(crate) fn project(
         },
     );
     ctx.charge_collection_items(
-        ordinal_counts.values().filter(|count| **count > 1).count() as u64,
+        cadmpeg_core::decode::u64_from_index(
+            ordinal_counts.values().filter(|count| **count > 1).count(),
+        ),
         "collect duplicate Inventor feature ordinals",
     )?;
     let duplicate_ordinals = ordinal_counts
@@ -1265,16 +1277,18 @@ pub(crate) fn project(
     projected.retain(|(feature, _)| !duplicate_ordinals.contains(&feature.ordinal));
     projected.sort_unstable_by_key(|(feature, _)| feature.ordinal);
     ctx.charge_collection_items(
-        projected.len() as u64,
+        cadmpeg_core::decode::u64_from_index(projected.len()),
         "collect Inventor projected features",
     )?;
     ctx.charge_collection_items(
-        projected.len() as u64,
+        cadmpeg_core::decode::u64_from_index(projected.len()),
         "collect Inventor feature topologies",
     )?;
     let (features, result_topologies): (Vec<_>, Vec<_>) = projected.into_iter().unzip();
     Ok(FeatureProjection {
-        unresolved_features: total.saturating_sub(features.len()),
+        unresolved_features: total.checked_sub(features.len()).ok_or_else(|| {
+            CodecError::malformed("Inventor feature projection exceeds inventory")
+        })?,
         unresolved_states: features.len(),
         features,
         result_topologies,
@@ -1301,7 +1315,7 @@ fn project_extrusion(
     }
     for (position, selection) in boundary.references().iter().enumerate() {
         if let Err(error) = ctx.charge_work(
-            position as u64,
+            cadmpeg_core::decode::u64_from_index(position),
             "check distinct Inventor extrusion selections",
         ) {
             return Some(Err(error));
@@ -1334,7 +1348,7 @@ fn project_extrusion(
             return Some(Err(error));
         }
         if let Err(error) = ctx.charge_retained(
-            property.id_len() as u64,
+            cadmpeg_core::decode::u64_from_index(property.id_len()?),
             "retain Inventor extrusion selection id",
         ) {
             return Some(Err(error));
@@ -1350,7 +1364,7 @@ fn project_extrusion(
         sketch_reference.index.checked_sub(1)?,
     ))?;
     let sketch_native_reservation = ctx.reserve_scoped(
-        sketch.id_len() as u64,
+        cadmpeg_core::decode::u64_from_index(sketch.id_len()?),
         "resolve Inventor extrusion sketch native id",
     );
     let _sketch_native_reservation = match sketch_native_reservation {
@@ -1359,7 +1373,7 @@ fn project_extrusion(
     };
     let sketch_id = index.sketch_ids.get(sketch.id().as_str())?;
     if let Err(error) = ctx.charge_retained(
-        sketch_id.as_str().len() as u64,
+        cadmpeg_core::decode::u64_from_index(sketch_id.as_str().len()),
         "retain Inventor extrusion sketch id",
     ) {
         return Some(Err(error));
@@ -1409,7 +1423,7 @@ fn project_extrusion(
         return Some(Err(error));
     }
     if let Err(error) = ctx.charge_collection_items(
-        selections.len() as u64,
+        cadmpeg_core::decode::u64_from_index(selections.len()),
         "check Inventor native profile selections",
     ) {
         return Some(Err(error));
@@ -1458,12 +1472,17 @@ fn admit_projected_feature(
     ctx.charge_collection_items(1, "project Inventor feature")?;
     ctx.charge_entities(1, "project Inventor feature")?;
     ctx.charge_retained(
-        label.name.as_str().len() as u64,
+        cadmpeg_core::decode::u64_from_index(label.name.as_str().len()),
         "retain Inventor projected feature name",
     )?;
-    ctx.charge_retained(tag.len() as u64, "retain Inventor projected feature tag")?;
     ctx.charge_retained(
-        source.id_len() as u64,
+        cadmpeg_core::decode::u64_from_index(tag.len()),
+        "retain Inventor projected feature tag",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(source.id_len().ok_or_else(|| {
+            CodecError::Malformed("Inventor identifier length exceeds address space".into())
+        })?),
         "retain Inventor projected feature native id",
     )?;
     Ok(())
@@ -1539,7 +1558,7 @@ fn project_fillet(
             return Some(Err(error));
         }
         if let Err(error) = ctx.charge_retained(
-            edge_collection.id_len() as u64,
+            cadmpeg_core::decode::u64_from_index(edge_collection.id_len()?),
             "retain Inventor fillet edge collection id",
         ) {
             return Some(Err(error));
@@ -1622,7 +1641,7 @@ fn project_chamfer(
         return Some(Err(error));
     }
     if let Err(error) = ctx.charge_retained(
-        edges.id_len() as u64,
+        cadmpeg_core::decode::u64_from_index(edges.id_len()?),
         "retain Inventor chamfer edge collection id",
     ) {
         return Some(Err(error));
@@ -1824,7 +1843,7 @@ fn feature_result(
             return Some(Err(error));
         }
         if let Err(error) = ctx.charge_retained(
-            body.id_len() as u64,
+            cadmpeg_core::decode::u64_from_index(body.id_len()?),
             "retain Inventor feature result body id",
         ) {
             return Some(Err(error));
@@ -1835,7 +1854,7 @@ fn feature_result(
         return None;
     }
     if let Err(error) = ctx.charge_collection_items(
-        bodies.len() as u64,
+        cadmpeg_core::decode::u64_from_index(bodies.len()),
         "precheck distinct Inventor feature result bodies",
     ) {
         return Some(Err(error));
@@ -1845,9 +1864,19 @@ fn feature_result(
     }
     let key_len = source.identity.segment_token.as_str().len()
         + 1
-        + source.identity.record_ordinal.max(1).ilog10() as usize
+        + match usize::try_from(source.identity.record_ordinal.max(1).ilog10()) {
+            Ok(value) => value,
+            Err(_) => {
+                return Some(Err(CodecError::Malformed(
+                    "Inventor numeric value exceeds target range".into(),
+                )))
+            }
+        }
         + 1;
-    let key_reservation = ctx.reserve_scoped(key_len as u64, "compose Inventor feature result key");
+    let key_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(key_len),
+        "compose Inventor feature result key",
+    );
     let _key_reservation = match key_reservation {
         Ok(reservation) => reservation,
         Err(error) => return Some(Err(error)),
@@ -1855,13 +1884,13 @@ fn feature_result(
     let feature_id_len = "inventor:design:feature#".len() + key_len;
     let result_id_len = "inventor:design:feature-result#".len() + key_len;
     if let Err(error) = ctx.charge_retained(
-        (feature_id_len * 2 + result_id_len) as u64,
+        cadmpeg_core::decode::u64_from_index(feature_id_len * 2 + result_id_len),
         "retain Inventor feature result identities",
     ) {
         return Some(Err(error));
     }
     if let Err(error) = ctx.charge_retained(
-        collection.id_len() as u64,
+        cadmpeg_core::decode::u64_from_index(collection.id_len()?),
         "retain Inventor feature result source id",
     ) {
         return Some(Err(error));
@@ -1873,18 +1902,19 @@ fn feature_result(
         return Some(Err(error));
     }
     if let Err(error) = ctx.charge_collection_items(
-        bodies.len() as u64,
+        cadmpeg_core::decode::u64_from_index(bodies.len()),
         "materialize Inventor feature result members",
     ) {
         return Some(Err(error));
     }
-    if let Err(error) =
-        ctx.charge_collection_items(bodies.len() as u64, "sort Inventor feature result members")
-    {
+    if let Err(error) = ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(bodies.len()),
+        "sort Inventor feature result members",
+    ) {
         return Some(Err(error));
     }
     if let Err(error) = ctx.charge_collection_items(
-        bodies.len() as u64,
+        cadmpeg_core::decode::u64_from_index(bodies.len()),
         "check distinct Inventor feature result bodies",
     ) {
         return Some(Err(error));
@@ -2054,7 +2084,16 @@ fn boolean_properties(
         if let Some(value) = boolean(source, *slot, index) {
             ctx.charge_collection_items(1, "project Inventor feature boolean property")?;
             ctx.charge_retained(
-                ("property_".len() + slot.max(&1).ilog10() as usize + 1 + "_boolean".len()) as u64,
+                cadmpeg_core::decode::u64_from_index(
+                    "property_".len()
+                        + usize::try_from(slot.max(&1).ilog10()).map_err(|_| {
+                            CodecError::Malformed(
+                                "Inventor numeric value exceeds target range".into(),
+                            )
+                        })?
+                        + 1
+                        + "_boolean".len(),
+                ),
                 "retain Inventor feature property name",
             )?;
             ctx.charge_retained(
@@ -2440,13 +2479,13 @@ mod tests {
             ),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit_bytes as u64;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
             assert!(matches!(
                 inventory_with_record(END_OF_FEATURES_TYPE, &[], policy),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes
                         && limit.operation == operation
-                        && limit.used == used as u64
+                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
             ));
         }
     }
@@ -2459,9 +2498,13 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&2u16.to_le_bytes());
         bytes.extend_from_slice(&0x3000u16.to_le_bytes());
-        bytes.extend_from_slice(&(values.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(values.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         if !values.is_empty() {
-            bytes.extend_from_slice(&(values.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(
+                &(u32::try_from(values.len()).expect("fixture value fits u32")).to_le_bytes(),
+            );
             bytes.extend_from_slice(&0u32.to_le_bytes());
         }
         for value in values {
@@ -2472,7 +2515,9 @@ mod tests {
 
     fn utf16(value: &str) -> Vec<u8> {
         let units = value.encode_utf16().collect::<Vec<_>>();
-        let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(units.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         for unit in units {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
@@ -2489,8 +2534,10 @@ mod tests {
     fn reference_list(values: &[u32]) -> PmDcReferenceList {
         PmDcReferenceList::new(
             2,
-            (!values.is_empty())
-                .then_some(crate::pmdc::PmDcListMetadata::U32([values.len() as u32, 0])),
+            (!values.is_empty()).then_some(crate::pmdc::PmDcListMetadata::U32([
+                u32::try_from(values.len()).expect("fixture value fits u32"),
+                0,
+            ])),
             values.iter().copied().map(reference).collect(),
         )
         .expect("test list metadata matches length")
@@ -2533,8 +2580,10 @@ mod tests {
                 outline_value: 0,
                 properties: PmDcReferenceList::new(
                     2,
-                    (!references.is_empty())
-                        .then_some(crate::pmdc::PmDcListMetadata::U32([slot_count as u32, 0])),
+                    (!references.is_empty()).then_some(crate::pmdc::PmDcListMetadata::U32([
+                        u32::try_from(slot_count).expect("fixture value fits u32"),
+                        0,
+                    ])),
                     references,
                 )
                 .expect("test list metadata matches length"),

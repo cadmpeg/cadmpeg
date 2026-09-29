@@ -2,10 +2,12 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{DirectoryEntry, SourceStatus};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -44,6 +46,58 @@ use super::{
     mirror_flag_valid, new_general_note_charset_valid, new_general_note_font_valid,
     sectioned_area_curves_coplanar, sectioned_area_valid, vertical_text_flag_valid,
 };
+
+fn assert_section_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimension) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            _ => panic!("unsupported test dimension"),
+        }
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, dimension);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn sectioned_area_coplanarity_refuses_active_nodes_and_recursion() {
+    let bytes = symbol_and_sectioned_area_file();
+    assert_section_refusal(
+        &bytes,
+        "iges section active curves",
+        ResourceDimension::CollectionItems,
+    );
+    assert_section_refusal(
+        &bytes,
+        "iges section active curve id",
+        ResourceDimension::RetainedBytes,
+    );
+    assert_section_refusal(
+        &bytes,
+        "iges coplanar curve recursion",
+        ResourceDimension::RecursionDepth,
+    );
+}
 
 #[test]
 fn malformed_flag_note_width_sum_refuses_without_overflow() {
@@ -633,250 +687,284 @@ fn sectioned_area_fill_patterns_follow_the_declared_dialect() {
 
 #[test]
 fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
-    let mut ir = CadIr::empty();
-    for (sequence, z) in [(1, 0.0), (3, 0.0)] {
-        ir.model.curves.push(Curve {
-            id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(0.0, 0.0, z),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    1.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        });
-    }
-    let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
-    assert!(sectioned_area_curves_coplanar(
-        &ir,
-        &[1, 3],
-        pattern_plane,
-        0.001
-    ));
-    if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-        &mut ir.model.curves[1].geometry
-    {
-        let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis().as_raw();
-        let ref_direction = circle_curve.frame().reference().as_raw();
-        let radius = circle_curve.radius().get();
-        let mut center = center;
-        center.z = 0.01;
-        *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            center,
-            *axis,
-            *ref_direction,
-            radius,
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let mut ir = CadIr::empty();
+        for (sequence, z) in [(1, 0.0), (3, 0.0)] {
+            ir.model.curves.push(Curve {
+                id: CurveId::mint(format!("iges:model:curve#D{sequence}"))
+                    .expect("identity grammar"),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::new(0.0, 0.0, z),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        1.0,
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            });
+        }
+        let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
+        assert!(sectioned_area_curves_coplanar(
+            &ir,
+            [1, 3].into_iter(),
+            pattern_plane,
+            0.001,
+            decode_ctx
         )
-        .unwrap();
-    }
-    assert!(!sectioned_area_curves_coplanar(
-        &ir,
-        &[1, 3],
-        pattern_plane,
-        0.001
-    ));
-
-    let entry = |sequence, entity_type| DirectoryEntry {
-        source_offset: 0,
-        sequence,
-        entity_type,
-        parameter_start: 0,
-        structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
-        transform: 0,
-        label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0]),
-        line_weight: 0,
-        color: 0,
-        parameter_line_count: 1,
-        form: 0,
-        reserved: [[b' '; 8]; 2],
-        label: [b' '; 8],
-        subscript: 0,
-    };
-    let boundary = entry(1, 100);
-    let island = entry(3, 100);
-    let entries = BTreeMap::from([(1, &boundary), (3, &island)]);
-    let record_values = [
-        TokenValue::Integer(230),
-        TokenValue::Integer(1),
-        TokenValue::Integer(2),
-        TokenValue::real(0.0),
-        TokenValue::real(0.0),
-        TokenValue::real(0.0),
-        TokenValue::real(std::f64::consts::FRAC_PI_4),
-        TokenValue::real(0.0),
-        TokenValue::Integer(1),
-        TokenValue::Integer(3),
-    ];
-    let record = ParameterRecord::from_test_tokens(
-        5,
-        1..2,
-        Vec::new(),
-        record_values.len(),
-        record_values
-            .into_iter()
-            .map(|value| Token { value, span: 0..0 })
-            .collect(),
-        Vec::new(),
-    );
-    assert!(sectioned_area_valid(
-        &ir,
-        &record,
-        &entries,
-        0,
-        GlobalTable::V4_0,
-        Transform::identity(),
-        1.0,
-        0.001
-    ));
-    assert!(!sectioned_area_valid(
-        &ir,
-        &record,
-        &entries,
-        0,
-        GlobalTable::V5_0,
-        Transform::identity(),
-        1.0,
-        0.001
-    ));
-    if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-        &mut ir.model.curves[0].geometry
-    {
-        let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis().as_raw();
-        let ref_direction = circle_curve.frame().reference().as_raw();
-        let radius = circle_curve.radius().get();
-        let mut center = center;
-        center.z = 0.01;
-        *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            center,
-            *axis,
-            *ref_direction,
-            radius,
+        .unwrap());
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+            &mut ir.model.curves[1].geometry
+        {
+            let center = circle_curve.center().get();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
+            let radius = circle_curve.radius().get();
+            let mut center = center;
+            center.z = 0.01;
+            *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                center,
+                *axis,
+                *ref_direction,
+                radius,
+            )
+            .unwrap();
+        }
+        assert!(!sectioned_area_curves_coplanar(
+            &ir,
+            [1, 3].into_iter(),
+            pattern_plane,
+            0.001,
+            decode_ctx
         )
-        .unwrap();
-    }
-    let translated_pattern_plane = Transform::affine([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.01],
-    ])
-    .expect("affine transform");
-    assert!(sectioned_area_valid(
-        &ir,
-        &record,
-        &entries,
-        0,
-        GlobalTable::V5_0,
-        translated_pattern_plane,
-        1.0,
-        0.001
-    ));
-}
+        .unwrap());
 
-#[test]
-fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
-    let mut ir = CadIr::empty();
-    for sequence in [1, 3] {
-        ir.model.curves.push(Curve {
-            id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    1.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        });
-    }
-    let entry = |sequence, entity_type| DirectoryEntry {
-        source_offset: 0,
-        sequence,
-        entity_type,
-        parameter_start: 0,
-        structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
-        transform: 0,
-        label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0]),
-        line_weight: 0,
-        color: 0,
-        parameter_line_count: 1,
-        form: 0,
-        reserved: [[b' '; 8]; 2],
-        label: [b' '; 8],
-        subscript: 0,
-    };
-    let island = entry(3, 100);
-    let entries = BTreeMap::from([(3, &island)]);
-    let record = |island_count: i64| {
-        let values = [
+        let entry = |sequence, entity_type| DirectoryEntry {
+            source_offset: 0,
+            sequence,
+            entity_type,
+            parameter_start: 0,
+            structure: 0,
+            line_font: 0,
+            level: 0,
+            view: 0,
+            transform: 0,
+            label_display: 0,
+            status: SourceStatus::from_codes([0, 0, 0, 0]),
+            line_weight: 0,
+            color: 0,
+            parameter_line_count: 1,
+            form: 0,
+            reserved: [[b' '; 8]; 2],
+            label: [b' '; 8],
+            subscript: 0,
+        };
+        let boundary = entry(1, 100);
+        let island = entry(3, 100);
+        let entries = BTreeMap::from([(1, &boundary), (3, &island)]);
+        let record_values = [
             TokenValue::Integer(230),
-            TokenValue::Integer(0),
+            TokenValue::Integer(1),
             TokenValue::Integer(2),
             TokenValue::real(0.0),
             TokenValue::real(0.0),
             TokenValue::real(0.0),
-            TokenValue::real(1.0),
             TokenValue::real(std::f64::consts::FRAC_PI_4),
-            TokenValue::Integer(island_count),
+            TokenValue::real(0.0),
+            TokenValue::Integer(1),
             TokenValue::Integer(3),
         ];
-        ParameterRecord::from_test_tokens(
+        let record = ParameterRecord::from_test_tokens(
             5,
             1..2,
             Vec::new(),
-            if island_count == 0 { 9 } else { values.len() },
-            values
+            record_values.len(),
+            record_values
                 .into_iter()
                 .map(|value| Token { value, span: 0..0 })
                 .collect(),
             Vec::new(),
+        );
+        assert!(sectioned_area_valid(
+            &ir,
+            &record,
+            &entries,
+            0,
+            super::SectionedAreaContext {
+                global_table: GlobalTable::V4_0,
+                transform: Transform::identity(),
+                length_factor: 1.0,
+                resolution: 0.001
+            },
+            decode_ctx
         )
-    };
+        .unwrap());
+        assert!(!sectioned_area_valid(
+            &ir,
+            &record,
+            &entries,
+            0,
+            super::SectionedAreaContext {
+                global_table: GlobalTable::V5_0,
+                transform: Transform::identity(),
+                length_factor: 1.0,
+                resolution: 0.001
+            },
+            decode_ctx
+        )
+        .unwrap());
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+            &mut ir.model.curves[0].geometry
+        {
+            let center = circle_curve.center().get();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
+            let radius = circle_curve.radius().get();
+            let mut center = center;
+            center.z = 0.01;
+            *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                center,
+                *axis,
+                *ref_direction,
+                radius,
+            )
+            .unwrap();
+        }
+        let translated_pattern_plane = Transform::affine([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.01],
+        ])
+        .expect("affine transform");
+        assert!(sectioned_area_valid(
+            &ir,
+            &record,
+            &entries,
+            0,
+            super::SectionedAreaContext {
+                global_table: GlobalTable::V5_0,
+                transform: translated_pattern_plane,
+                length_factor: 1.0,
+                resolution: 0.001
+            },
+            decode_ctx
+        )
+        .unwrap());
+    });
+}
 
-    assert!(sectioned_area_valid(
-        &ir,
-        &record(1),
-        &entries,
-        1,
-        GlobalTable::V5_0,
-        Transform::identity(),
-        1.0,
-        0.001
-    ));
-    assert!(!sectioned_area_valid(
-        &ir,
-        &record(0),
-        &entries,
-        1,
-        GlobalTable::V5_0,
-        Transform::identity(),
-        1.0,
-        0.001
-    ));
-    assert!(!sectioned_area_valid(
-        &ir,
-        &record(1),
-        &entries,
-        0,
-        GlobalTable::V5_0,
-        Transform::identity(),
-        1.0,
-        0.001
-    ));
+#[test]
+fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let mut ir = CadIr::empty();
+        for sequence in [1, 3] {
+            ir.model.curves.push(Curve {
+                id: CurveId::mint(format!("iges:model:curve#D{sequence}"))
+                    .expect("identity grammar"),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        1.0,
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            });
+        }
+        let entry = |sequence, entity_type| DirectoryEntry {
+            source_offset: 0,
+            sequence,
+            entity_type,
+            parameter_start: 0,
+            structure: 0,
+            line_font: 0,
+            level: 0,
+            view: 0,
+            transform: 0,
+            label_display: 0,
+            status: SourceStatus::from_codes([0, 0, 0, 0]),
+            line_weight: 0,
+            color: 0,
+            parameter_line_count: 1,
+            form: 0,
+            reserved: [[b' '; 8]; 2],
+            label: [b' '; 8],
+            subscript: 0,
+        };
+        let island = entry(3, 100);
+        let entries = BTreeMap::from([(3, &island)]);
+        let record = |island_count: i64| {
+            let values = [
+                TokenValue::Integer(230),
+                TokenValue::Integer(0),
+                TokenValue::Integer(2),
+                TokenValue::real(0.0),
+                TokenValue::real(0.0),
+                TokenValue::real(0.0),
+                TokenValue::real(1.0),
+                TokenValue::real(std::f64::consts::FRAC_PI_4),
+                TokenValue::Integer(island_count),
+                TokenValue::Integer(3),
+            ];
+            ParameterRecord::from_test_tokens(
+                5,
+                1..2,
+                Vec::new(),
+                if island_count == 0 { 9 } else { values.len() },
+                values
+                    .into_iter()
+                    .map(|value| Token { value, span: 0..0 })
+                    .collect(),
+                Vec::new(),
+            )
+        };
+
+        assert!(sectioned_area_valid(
+            &ir,
+            &record(1),
+            &entries,
+            1,
+            super::SectionedAreaContext {
+                global_table: GlobalTable::V5_0,
+                transform: Transform::identity(),
+                length_factor: 1.0,
+                resolution: 0.001
+            },
+            decode_ctx
+        )
+        .unwrap());
+        assert!(!sectioned_area_valid(
+            &ir,
+            &record(0),
+            &entries,
+            1,
+            super::SectionedAreaContext {
+                global_table: GlobalTable::V5_0,
+                transform: Transform::identity(),
+                length_factor: 1.0,
+                resolution: 0.001
+            },
+            decode_ctx
+        )
+        .unwrap());
+        assert!(!sectioned_area_valid(
+            &ir,
+            &record(1),
+            &entries,
+            0,
+            super::SectionedAreaContext {
+                global_table: GlobalTable::V5_0,
+                transform: Transform::identity(),
+                length_factor: 1.0,
+                resolution: 0.001
+            },
+            decode_ctx
+        )
+        .unwrap());
+    });
 }
 
 #[test]

@@ -732,7 +732,7 @@ fn encode_sketch_nurbs(
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    encode_f64_sequence(record, &knots);
+    encode_f64_sequence(record, knots);
     let weight_count = u32::try_from(poles.weights().len())
         .map_err(|_| CodecError::NotImplemented("sketch NURBS has too many weights".into()))?;
     record.extend_from_slice(&weight_count.to_le_bytes());

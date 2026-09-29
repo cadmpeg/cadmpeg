@@ -42,6 +42,46 @@ impl IdFormat {
     ) -> Identity {
         Identity::compose(&self.brep_namespace(kind), key)
     }
+
+    /// Compose an identity whose kind came from a source record.
+    pub(crate) fn try_brep_identity(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        kind: &IdentityComponent,
+        record_index: usize,
+    ) -> Result<Identity, cadmpeg_core::CodecError> {
+        let format = IdentityComponent::from_static(self.proof);
+        let index = record_index.to_string();
+        let length = format
+            .as_str()
+            .len()
+            .checked_add(":brep:".len())
+            .and_then(|length| length.checked_add(kind.as_str().len()))
+            .and_then(|length| length.checked_add("#".len()))
+            .and_then(|length| length.checked_add(index.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("ASM unknown record identity", u64::MAX, u64::MAX)
+            })?;
+        let requested = cadmpeg_core::decode::u64_from_index(length);
+        ctx.charge_retained(requested, "ASM unknown record identity")?;
+        let mut text = String::new();
+        text.try_reserve(length).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("ASM unknown record identity"),
+                    0,
+                    requested,
+                    "ASM unknown record identity",
+                ),
+            )
+        })?;
+        text.push_str(format.as_str());
+        text.push_str(":brep:");
+        text.push_str(kind.as_str());
+        text.push('#');
+        text.push_str(&index);
+        Identity::new(text).map_err(cadmpeg_core::CodecError::malformed)
+    }
 }
 
 impl std::fmt::Display for IdFormat {

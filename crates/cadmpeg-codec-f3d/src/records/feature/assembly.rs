@@ -415,7 +415,14 @@ impl DesignAssemblyAlignment {
     }
 
     /// Return both occurrence paths when every operand uses that qualifier form.
+    #[cfg(test)]
     pub(crate) fn operand_paths(&self) -> Option<[DesignAssemblyOperandPath; 2]> {
+        self.operand_path_refs()
+            .map(|paths| paths.map(Clone::clone))
+    }
+
+    /// Borrow both occurrence paths when every operand uses that qualifier form.
+    pub(crate) fn operand_path_refs(&self) -> Option<[&DesignAssemblyOperandPath; 2]> {
         match self.form.as_ref()? {
             DesignAssemblyAlignmentForm::Qualified(operands) => {
                 let [Some(first), Some(second)] = operands
@@ -424,7 +431,7 @@ impl DesignAssemblyAlignment {
                 else {
                     return None;
                 };
-                Some([first.clone(), second.clone()])
+                Some([first, second])
             }
             _ => None,
         }

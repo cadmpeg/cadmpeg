@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `UFRx` document states and their owned child records.
 
-use crate::native::digest::Sha256Hex;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, ser::SerializeStruct, Deserialize, Serialize};
@@ -64,34 +64,18 @@ pub(crate) fn representation_issue(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-// One document state owns all child arenas; no extra box is needed for the singleton header.
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum UfrxRecord {
     Absent {
         id: String,
     },
-    ParsedPrefix {
-        id: String,
-        directory_id: u32,
-        schema: u16,
-        section_versions: Vec<u16>,
-        original_file_name: String,
-        caption: String,
-        representation: Option<UfrxRepresentationRecord>,
-        model_states: Vec<UfrxModelStateRecord>,
-        external_references: Vec<ExternalReferenceRecord>,
-        embedded_references: Vec<EmbeddedReferenceRecord>,
-        occurrences: Vec<UfrxOccurrenceRecord>,
-        tail_len: u64,
-        tail_sha256: Sha256Hex,
-    },
+    ParsedPrefix(Box<UfrxParsedPrefix>),
     Unsupported {
         id: String,
         directory_id: u32,
         schema: u16,
         section_versions: Vec<u16>,
         tail_len: u64,
-        tail_sha256: Sha256Hex,
+        tail_sha256: Sha256Digest,
         detail: String,
     },
     Malformed {
@@ -99,6 +83,23 @@ pub(crate) enum UfrxRecord {
         directory_id: u32,
         detail: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UfrxParsedPrefix {
+    pub(crate) id: String,
+    pub(crate) directory_id: u32,
+    pub(crate) schema: u16,
+    pub(crate) section_versions: Vec<u16>,
+    pub(crate) original_file_name: String,
+    pub(crate) caption: String,
+    pub(crate) representation: Option<UfrxRepresentationRecord>,
+    pub(crate) model_states: Vec<UfrxModelStateRecord>,
+    pub(crate) external_references: Vec<ExternalReferenceRecord>,
+    pub(crate) embedded_references: Vec<EmbeddedReferenceRecord>,
+    pub(crate) occurrences: Vec<UfrxOccurrenceRecord>,
+    pub(crate) tail_len: u64,
+    pub(crate) tail_sha256: Sha256Digest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -187,7 +188,7 @@ pub(crate) struct UfrxModelStateRecord {
     state: [u16; 2],
     prefix_count: u32,
     parameters: Vec<UfrxModelStateParameterRecord>,
-    suffix_sha256: Sha256Hex,
+    suffix_sha256: Sha256Digest,
 }
 
 impl Serialize for UfrxModelStateRecord {
@@ -233,7 +234,7 @@ impl TryFrom<UfrxModelStateRecordWire> for UfrxModelStateRecord {
             state: wire.state,
             prefix_count: wire.prefix_count,
             parameters: wire.parameters,
-            suffix_sha256: Sha256Hex::try_from(wire.suffix_sha256)
+            suffix_sha256: Sha256Digest::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
     }
@@ -292,7 +293,7 @@ struct UfrxRecordView<'a> {
     embedded_reference_count: u64,
     occurrence_count: u64,
     tail_len: u64,
-    tail_sha256: Option<&'a Sha256Hex>,
+    tail_sha256: Option<&'a Sha256Digest>,
     detail: Option<&'a str>,
 }
 
@@ -318,37 +319,44 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
                 tail_sha256: None,
                 detail: None,
             },
-            UfrxRecord::ParsedPrefix {
-                id,
-                directory_id,
-                schema,
-                section_versions,
-                original_file_name,
-                caption,
-                representation,
-                model_states,
-                external_references,
-                embedded_references,
-                occurrences,
-                tail_len,
-                tail_sha256,
-            } => Self {
-                id,
-                state: UfrxRecordState::ParsedPrefix,
-                directory_id: Some(*directory_id),
-                schema: Some(*schema),
-                section_versions,
-                original_file_name: Some(original_file_name),
-                caption: Some(caption),
-                representation: representation.as_ref(),
-                model_state_count: u64::try_from(model_states.len())?,
-                reference_count: u64::try_from(external_references.len())?,
-                embedded_reference_count: u64::try_from(embedded_references.len())?,
-                occurrence_count: u64::try_from(occurrences.len())?,
-                tail_len: *tail_len,
-                tail_sha256: Some(tail_sha256),
-                detail: None,
-            },
+            UfrxRecord::ParsedPrefix(payload) => {
+                let UfrxParsedPrefix {
+                    id,
+                    directory_id,
+                    schema,
+                    section_versions,
+                    original_file_name,
+                    caption,
+                    representation,
+                    model_states,
+                    external_references,
+                    embedded_references,
+                    occurrences,
+                    tail_len,
+                    tail_sha256,
+                } = payload.as_ref();
+                Self {
+                    id,
+                    state: UfrxRecordState::ParsedPrefix,
+                    directory_id: Some(*directory_id),
+                    schema: Some(*schema),
+                    section_versions,
+                    original_file_name: Some(original_file_name),
+                    caption: Some(caption),
+                    representation: representation.as_ref(),
+                    model_state_count: cadmpeg_core::decode::u64_from_index(model_states.len()),
+                    reference_count: cadmpeg_core::decode::u64_from_index(
+                        external_references.len(),
+                    ),
+                    embedded_reference_count: cadmpeg_core::decode::u64_from_index(
+                        embedded_references.len(),
+                    ),
+                    occurrence_count: cadmpeg_core::decode::u64_from_index(occurrences.len()),
+                    tail_len: *tail_len,
+                    tail_sha256: Some(tail_sha256),
+                    detail: None,
+                }
+            }
             UfrxRecord::Unsupported {
                 id,
                 directory_id,
@@ -408,16 +416,18 @@ impl UfrxRecordWire {
         occurrences: Vec<UfrxOccurrenceRecord>,
     ) -> Result<UfrxRecord, String> {
         let wire = self;
-        if wire.model_state_count != model_states.len() as u64 {
+        if wire.model_state_count != cadmpeg_core::decode::u64_from_index(model_states.len()) {
             return Err("UFRx model_state_count does not match its arena".into());
         }
-        if wire.reference_count != external_references.len() as u64 {
+        if wire.reference_count != cadmpeg_core::decode::u64_from_index(external_references.len()) {
             return Err("UFRx reference_count does not match its arena".into());
         }
-        if wire.embedded_reference_count != embedded_references.len() as u64 {
+        if wire.embedded_reference_count
+            != cadmpeg_core::decode::u64_from_index(embedded_references.len())
+        {
             return Err("UFRx embedded_reference_count does not match its arena".into());
         }
-        if wire.occurrence_count != occurrences.len() as u64 {
+        if wire.occurrence_count != cadmpeg_core::decode::u64_from_index(occurrences.len()) {
             return Err("UFRx occurrence_count does not match its arena".into());
         }
         let has_children = !model_states.is_empty()
@@ -452,33 +462,35 @@ impl UfrxRecordWire {
         }
         match wire.state {
             UfrxRecordState::Absent => Ok(UfrxRecord::Absent { id: wire.id }),
-            UfrxRecordState::ParsedPrefix => Ok(UfrxRecord::ParsedPrefix {
-                id: wire.id,
-                directory_id: wire
-                    .directory_id
-                    .ok_or_else(|| "parsed UFRxDoc requires directory_id".to_owned())?,
-                schema: wire
-                    .schema
-                    .ok_or_else(|| "parsed UFRxDoc requires schema".to_owned())?,
-                section_versions: wire.section_versions,
-                original_file_name: wire
-                    .original_file_name
-                    .ok_or_else(|| "parsed UFRxDoc requires original_file_name".to_owned())?,
-                caption: wire
-                    .caption
-                    .ok_or_else(|| "parsed UFRxDoc requires caption".to_owned())?,
-                representation: wire.representation,
-                model_states,
-                external_references,
-                embedded_references,
-                occurrences,
-                tail_len: wire.tail_len,
-                tail_sha256: Sha256Hex::try_from(
-                    wire.tail_sha256
-                        .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
-                )
-                .map_err(|detail| format!("tail_sha256: {detail}"))?,
-            }),
+            UfrxRecordState::ParsedPrefix => {
+                Ok(UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
+                    id: wire.id,
+                    directory_id: wire
+                        .directory_id
+                        .ok_or_else(|| "parsed UFRxDoc requires directory_id".to_owned())?,
+                    schema: wire
+                        .schema
+                        .ok_or_else(|| "parsed UFRxDoc requires schema".to_owned())?,
+                    section_versions: wire.section_versions,
+                    original_file_name: wire
+                        .original_file_name
+                        .ok_or_else(|| "parsed UFRxDoc requires original_file_name".to_owned())?,
+                    caption: wire
+                        .caption
+                        .ok_or_else(|| "parsed UFRxDoc requires caption".to_owned())?,
+                    representation: wire.representation,
+                    model_states,
+                    external_references,
+                    embedded_references,
+                    occurrences,
+                    tail_len: wire.tail_len,
+                    tail_sha256: Sha256Digest::try_from(
+                        wire.tail_sha256
+                            .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
+                    )
+                    .map_err(|detail| format!("tail_sha256: {detail}"))?,
+                })))
+            }
             UfrxRecordState::Unsupported => Ok(UfrxRecord::Unsupported {
                 id: wire.id,
                 directory_id: wire
@@ -489,7 +501,7 @@ impl UfrxRecordWire {
                     .ok_or_else(|| "unsupported UFRxDoc requires schema".to_owned())?,
                 section_versions: wire.section_versions,
                 tail_len: wire.tail_len,
-                tail_sha256: Sha256Hex::try_from(
+                tail_sha256: Sha256Digest::try_from(
                     wire.tail_sha256
                         .ok_or_else(|| "unsupported UFRxDoc requires tail_sha256".to_owned())?,
                 )
@@ -670,7 +682,7 @@ pub(crate) struct EmbeddedReferenceRecord {
     display_name: String,
     state_values: [u8; 8],
     record_len: NonZeroU64,
-    record_sha256: Sha256Hex,
+    record_sha256: Sha256Digest,
 }
 
 impl Serialize for EmbeddedReferenceRecord {
@@ -735,7 +747,7 @@ impl TryFrom<EmbeddedReferenceRecordWire> for EmbeddedReferenceRecord {
             display_name: wire.display_name,
             state_values: wire.state_values,
             record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
-            record_sha256: Sha256Hex::try_from(wire.record_sha256)
+            record_sha256: Sha256Digest::try_from(wire.record_sha256)
                 .map_err(|error| format!("record_sha256: {error}"))?,
         })
     }
@@ -753,7 +765,7 @@ pub(crate) struct UfrxOccurrenceRecord {
     pub(crate) title: Option<String>,
     header_padding_words: u8,
     record_len: NonZeroU64,
-    record_sha256: Sha256Hex,
+    record_sha256: Sha256Digest,
 }
 
 impl Serialize for UfrxOccurrenceRecord {
@@ -803,7 +815,7 @@ impl TryFrom<UfrxOccurrenceRecordWire> for UfrxOccurrenceRecord {
             title: wire.title,
             header_padding_words: wire.header_padding_words,
             record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
-            record_sha256: Sha256Hex::try_from(wire.record_sha256)
+            record_sha256: Sha256Digest::try_from(wire.record_sha256)
                 .map_err(|error| format!("record_sha256: {error}"))?,
         })
     }
@@ -819,31 +831,25 @@ impl Serialize for UfrxRecord {
 impl UfrxRecord {
     pub(crate) fn model_states(&self) -> &[UfrxModelStateRecord] {
         match self {
-            Self::ParsedPrefix { model_states, .. } => model_states,
+            Self::ParsedPrefix(payload) => &payload.model_states,
             _ => &[],
         }
     }
     pub(crate) fn external_references(&self) -> &[ExternalReferenceRecord] {
         match self {
-            Self::ParsedPrefix {
-                external_references,
-                ..
-            } => external_references,
+            Self::ParsedPrefix(payload) => &payload.external_references,
             _ => &[],
         }
     }
     pub(crate) fn embedded_references(&self) -> &[EmbeddedReferenceRecord] {
         match self {
-            Self::ParsedPrefix {
-                embedded_references,
-                ..
-            } => embedded_references,
+            Self::ParsedPrefix(payload) => &payload.embedded_references,
             _ => &[],
         }
     }
     pub(crate) fn occurrences(&self) -> &[UfrxOccurrenceRecord] {
         match self {
-            Self::ParsedPrefix { occurrences, .. } => occurrences,
+            Self::ParsedPrefix(payload) => &payload.occurrences,
             _ => &[],
         }
     }
@@ -884,9 +890,9 @@ mod tests {
         byte_document_id_present, embedded_reference_issue, external_reference_issue,
         model_state_issue, occurrence_issue, representation_issue, EmbeddedReferenceRecord,
         ExternalReferenceRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
-        UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
+        UfrxOccurrenceRecord, UfrxParsedPrefix, UfrxRecord, UfrxRepresentationRecord,
     };
-    use crate::native::digest::Sha256Hex;
+    use cadmpeg_ir::hash::digest::Sha256Digest;
     use cadmpeg_ir::native::NativeNamespace;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
@@ -964,7 +970,7 @@ mod tests {
             "end_string_flag": 0, "file_reference_id": 1,
             "occurrence_id": 1, "header_value": 0, "title": null,
             "header_padding_words": 8, "record_len": 1,
-            "record_sha256": "A".repeat(64)
+            "record_sha256": "a".repeat(64)
         });
         let record: UfrxOccurrenceRecord =
             serde_json::from_value(expected.clone()).expect("valid fixture");
@@ -973,7 +979,7 @@ mod tests {
 
     #[test]
     fn ufrx_state_streams_once_with_retained_limit() {
-        let record = UfrxRecord::ParsedPrefix {
+        let record = UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
             id: "inventor:ufrx:state#root".into(),
             directory_id: 3,
             schema: 1,
@@ -986,8 +992,8 @@ mod tests {
             embedded_references: vec![],
             occurrences: vec![],
             tail_len: 0,
-            tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("valid fixture"),
-        };
+            tail_sha256: Sha256Digest::try_from("0".repeat(64)).expect("valid fixture"),
+        }));
         let expected = serde_json::to_value(&record).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
@@ -1077,7 +1083,7 @@ mod tests {
             "id": "occurrence", "ordinal": 0, "end_string_flag": 0,
             "file_reference_id": 1, "occurrence_id": 1, "header_value": 0,
             "title": null, "header_padding_words": 8, "record_len": 1,
-            "record_sha256": "A".repeat(64)
+            "record_sha256": "a".repeat(64)
         });
         let embedded = serde_json::json!({
             "id": "embedded", "ordinal": 0, "value_0": 0, "filetime": 0,
@@ -1102,6 +1108,7 @@ mod tests {
             ("record_len", serde_json::json!(0)),
             ("record_sha256", serde_json::json!("a".repeat(63))),
             ("record_sha256", serde_json::json!("g".repeat(64))),
+            ("record_sha256", serde_json::json!("A".repeat(64))),
         ] {
             let mut wire = occurrence.clone();
             wire[field] = value.clone();
@@ -1191,7 +1198,7 @@ mod tests {
 
     #[test]
     fn parsed_state_owns_arenas_and_checks_wire_counts() {
-        let record = UfrxRecord::ParsedPrefix {
+        let record = UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
             id: "inventor:ufrx:state#root".into(),
             directory_id: 3,
             schema: 1,
@@ -1215,8 +1222,8 @@ mod tests {
             embedded_references: vec![],
             occurrences: vec![],
             tail_len: 0,
-            tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
-        };
+            tail_sha256: Sha256Digest::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
+        }));
         let mut namespace = NativeNamespace::default();
         record
             .install(&crate::native::test_ctx(), &mut namespace)
@@ -1263,7 +1270,7 @@ mod tests {
                 schema: 1,
                 section_versions: vec![1],
                 tail_len: 0,
-                tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
+                tail_sha256: Sha256Digest::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
                 detail: "schema".into(),
             },
         ] {
