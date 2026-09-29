@@ -5319,6 +5319,7 @@ fn preserve_source_image(
         "source_image",
         Exactness::ByteExact,
     );
+    ctx.reserve_collection_vec(unknowns, 1, "retain SLDPRT source image record")?;
     unknowns.push(UnknownRecord::retained(
         UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
