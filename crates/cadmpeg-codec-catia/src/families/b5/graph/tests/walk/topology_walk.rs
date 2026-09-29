@@ -149,7 +149,7 @@ fn record_walk_admits_unique_isolated_geometry_by_topology_reference() {
 #[test]
 fn record_walk_closes_native_vertex_incidence_dependencies() {
     fn append(bytes: &mut Vec<u8>, class: u8, object_id: u32, payload: &[u8]) {
-        bytes.extend_from_slice(&[0xb5, 0x03, class, payload.len() as u8]);
+        bytes.extend_from_slice(&[0xb5, 0x03, class, u8::try_from(payload.len()).expect("fixture value fits u8")]);
         bytes.extend_from_slice(&object_id.to_le_bytes());
         bytes.extend_from_slice(payload);
     }

@@ -1478,7 +1478,7 @@ mod tests {
 
     fn support(ordinal: u32, start: Point3, end: Point3) -> ZeroEntitySupportOccurrence {
         ZeroEntitySupportOccurrence {
-            pos: ordinal as usize,
+            pos: cadmpeg_core::decode::index_from_u32(ordinal),
             record_ordinal: ordinal,
             tag: [0x21, 0x71],
             face_local_slot: ordinal,
@@ -1549,12 +1549,12 @@ mod tests {
             carrier_pos: 100,
             carrier_record_ordinal: face_ordinal,
             face: Some(super::super::records::ZeroEntityFace {
-                pos: face_ordinal as usize,
+                pos: cadmpeg_core::decode::index_from_u32(face_ordinal),
                 record_ordinal: face_ordinal,
                 tag: [0x5f, 0x0c],
                 allocations: vec![10, 3],
                 loops: Some(vec![super::super::records::ZeroEntityLoop {
-                    pos: face_ordinal as usize + 1,
+                    pos: cadmpeg_core::decode::index_from_u32(face_ordinal) + 1,
                     record_ordinal: face_ordinal + 100,
                     tag: [0x62, 0x14],
                     members: crate::families::zero_entity::records::ZeroEntityLoopMembers::try_new(

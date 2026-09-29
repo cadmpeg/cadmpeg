@@ -1095,7 +1095,7 @@ mod consolidated_analytic_refinement_tests {
         bytes[5..13].copy_from_slice(&exact_x.to_le_bytes());
         let coarse = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
             cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                Point3::new(f64::from(exact_x as f32), 2.0, 3.0),
+                Point3::new(f64::from(cadmpeg_core::convert::f32_from_f64(exact_x).expect("fixture value fits f32")), 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 7.0,
@@ -1158,7 +1158,7 @@ mod consolidated_analytic_refinement_tests {
         bytes[5..13].copy_from_slice(&exact_x.to_le_bytes());
         let coarse = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                Point3::new(f64::from(exact_x as f32), 2.0, 3.0),
+                Point3::new(f64::from(cadmpeg_core::convert::f32_from_f64(exact_x).expect("fixture value fits f32")), 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 5.0,

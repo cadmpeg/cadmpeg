@@ -1465,7 +1465,7 @@ fn standard_face_membership_refuses_point_collection_limit() {
     for index in 0..2 {
         ir.model.points.push(Point::new(
             PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-            FinitePoint3::new(Point3::new(index as f64, 0.0, 0.0)).expect("finite position"),
+            FinitePoint3::new(Point3::new(f64::from(index), 0.0, 0.0)).expect("finite position"),
             None,
         ));
     }

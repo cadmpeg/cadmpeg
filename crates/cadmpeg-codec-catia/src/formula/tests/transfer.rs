@@ -1231,9 +1231,9 @@ fn typed_parameter_name_and_native_ref_refuse_retained_limits() {
     .expect("typed candidate");
     let before_name = entity.id.len() + admitted.parameter.id.as_str().len();
     for (cap, operation) in [
-        (before_name as u64, "catia_formula_typed_parameter_name"),
+        (cadmpeg_core::decode::u64_from_index(before_name), "catia_formula_typed_parameter_name"),
         (
-            (before_name + value.name.value.len()) as u64,
+            cadmpeg_core::decode::u64_from_index(before_name + value.name.value.len()),
             "catia_formula_typed_parameter_native_ref",
         ),
     ] {

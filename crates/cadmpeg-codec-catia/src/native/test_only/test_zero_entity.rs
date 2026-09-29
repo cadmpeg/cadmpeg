@@ -243,13 +243,13 @@ pub(super) fn validate_zero_entity_support_runs(
                             let knots = nurbs.knots();
                             nurbs.degree() == expected_degree
                                 && nurbs.control_points().len() == expected_controls
-                                && knots[..=expected_degree as usize]
+                                && knots[..=cadmpeg_core::decode::index_from_u32(expected_degree)]
                                     .iter()
                                     .all(|knot| *knot == knots[0])
                                 && knots[expected_controls..]
                                     .iter()
                                     .all(|knot| *knot == knots[expected_controls])
-                                && knots[expected_degree as usize] < knots[expected_controls]
+                                && knots[cadmpeg_core::decode::index_from_u32(expected_degree)] < knots[expected_controls]
                                 && knots
                                     .chunk_by(|left, right| left == right)
                                     .map(<[f64]>::len)
@@ -573,7 +573,7 @@ pub(super) fn validate_zero_entity_topology_records(
                     && oriented_use_pairs[index - 1].header_record_ordinal
                         < pair.header_record_ordinal)
             && pair.uses.iter().enumerate().all(|(use_index, use_)| {
-                let side = use_index as u32 + 1;
+                let side = u32::try_from(use_index).expect("fixture value fits u32") + 1;
                 use_.side == side
                     && !use_.allocations.contains(&0)
                     && zero_entity_record(records, use_.record_ordinal).is_some_and(|source| {

@@ -2590,7 +2590,7 @@ mod tests {
                 .zip(first_derivatives)
                 .enumerate()
                 .map(|(index, (point, first_derivatives))| E5PcurveJetSite {
-                    knot: finite(index as f64),
+                    knot: finite(cadmpeg_core::convert::f64_from_index(index).expect("fixture index is exactly representable")),
                     multiplicity: 6,
                     point: finite_pair(point),
                     first_derivatives: finite_pair(first_derivatives),

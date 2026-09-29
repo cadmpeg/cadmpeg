@@ -63,7 +63,7 @@ fn payload_relation(target_object: &str, payload_offset: u64) -> CatiaDesignObje
             payload_offset,
             container: CatiaObjectRecordReferenceSource::Field,
         },
-        target_entity_id: payload_offset as u32,
+        target_entity_id: u32::try_from(payload_offset).expect("fixture value fits u32"),
         target_field: "target-field".to_string(),
         target_class: None,
         target_design_object: Some(target_object.to_string()),
@@ -1098,7 +1098,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                 kind,
                 &format!("{kind}-entry"),
             );
-            object.first_field_byte_offset = (ordinal as u64) * 10;
+            object.first_field_byte_offset = (cadmpeg_core::decode::u64_from_index(ordinal)) * 10;
             object
         })
         .collect::<Vec<_>>();
