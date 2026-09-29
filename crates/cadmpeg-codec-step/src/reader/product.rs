@@ -575,7 +575,9 @@ pub(super) fn decode(
             native_ref: None,
         });
         admit_occurrence(ctx, ir, admitted_ir_entities)?;
-        root_ordinal = root_ordinal.saturating_add(1);
+        root_ordinal = root_ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "step_root_occurrence_path_map")?;
             ctx.charge_collection_items(1, "step_root_occurrence_path_members")?;
@@ -769,7 +771,9 @@ pub(super) fn decode(
                 native_ref: Some(format!("#{usage_id}")),
             });
             admit_occurrence(ctx, ir, admitted_ir_entities)?;
-            *ordinal = ordinal.saturating_add(1);
+            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::malformed("STEP child occurrence ordinal exceeds u32")
+            })?;
             let mut path = BTreeSet::new();
             if let Some(parent_path) = parent_path {
                 for &definition in parent_path {

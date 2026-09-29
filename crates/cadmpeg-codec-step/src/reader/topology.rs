@@ -1345,7 +1345,7 @@ impl BuildOutcome {
         }
     }
 
-    fn fail(&mut self, failure: Option<BuildFailure>) {
+    fn fail(&mut self, failure: Option<BuildFailure>) -> Result<(), CodecError> {
         match self {
             Self::Built(built) => {
                 *self = Self::Partial {
@@ -1357,12 +1357,19 @@ impl BuildOutcome {
                 };
             }
             Self::Partial { failures, .. } => {
-                failures.count = failures.count.saturating_add(1);
+                failures.count = failures.count.checked_add(1).ok_or_else(|| {
+                    cadmpeg_core::decode::refuse_local_limit(
+                        "step topology failures",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
                 if failures.first.is_none() {
                     failures.first = failure;
                 }
             }
         }
+        Ok(())
     }
 
     fn into_parts(self) -> (Vec<Built>, Option<BuildFailures>) {
@@ -1531,7 +1538,7 @@ fn build_wire(
             ctx,
         ) {
             Ok(Some(value)) => outcome.push(value, ctx)?,
-            Ok(None) => outcome.fail(None),
+            Ok(None) => outcome.fail(None)?,
             Err(error) => return Err(error),
         }
     }
@@ -1776,7 +1783,7 @@ fn build_shell_wire(
             ctx,
         ) {
             Ok(Some(value)) => outcome.push(value, ctx)?,
-            Ok(None) => outcome.fail(None),
+            Ok(None) => outcome.fail(None)?,
             Err(error) => return Err(error),
         }
     }
@@ -3008,7 +3015,7 @@ fn build(
                     outcome.fail(Some(BuildFailure {
                         record_id: shell_reference,
                         carrier_kind: CarrierKind::ShellCarrier,
-                    }));
+                    }))?;
                     continue;
                 }
             }
@@ -3050,7 +3057,7 @@ fn build(
             ctx,
         ) {
             Ok(value) => outcome.push(value, ctx)?,
-            Err(BuildError::Absent) => outcome.fail(failure),
+            Err(BuildError::Absent) => outcome.fail(failure)?,
             Err(BuildError::Resource(error)) => return Err(error),
         }
     }

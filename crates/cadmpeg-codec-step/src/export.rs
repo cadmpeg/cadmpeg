@@ -4417,8 +4417,8 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
-        if unwritten_pmi > 0 {
+        if let Some(unwritten_pmi) = self.ir.model.pmi.len().checked_sub(self.written_pmi) {
+            if unwritten_pmi > 0 {
             // Naming the target that would carry these is only honest when the
             // schema gate is why they were dropped. A target that supports
             // semantic PMI and still left annotations unwritten dropped them for
@@ -4436,6 +4436,7 @@ impl<'a> Builder<'a> {
                 StepLossCode::PmiAnnotationNotWritten,
                 format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
             );
+            }
         }
         // STEP-native source associations identify records already represented
         // by the writer's own STEP graph. They are not lossy foreign-source
