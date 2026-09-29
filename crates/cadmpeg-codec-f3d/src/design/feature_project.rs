@@ -6059,31 +6059,27 @@ fn variable_fillet_law(
     ))
 }
 
-fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> Vec<u32> {
-    match law {
+fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> impl Iterator<Item = u32> + '_ {
+    let (first, second, middle) = match law {
         DesignFilletRadiusLaw::Constant {
             radius_parameter_record_index,
-        } => vec![*radius_parameter_record_index],
+        } => (Some(*radius_parameter_record_index), None, None),
         DesignFilletRadiusLaw::Chordal {
             chord_length_parameter_record_index,
-        } => vec![*chord_length_parameter_record_index],
+        } => (Some(*chord_length_parameter_record_index), None, None),
         DesignFilletRadiusLaw::Asymmetric {
             offset_one_parameter_record_index,
             offset_two_parameter_record_index,
-        } => vec![
-            *offset_one_parameter_record_index,
-            *offset_two_parameter_record_index,
-        ],
+        } => (Some(*offset_one_parameter_record_index), Some(*offset_two_parameter_record_index), None),
         DesignFilletRadiusLaw::Variable {
             start_radius_parameter_record_index,
             end_radius_parameter_record_index,
             middle,
-        } => std::iter::once(*start_radius_parameter_record_index)
-            .chain(std::iter::once(*end_radius_parameter_record_index))
-            .chain(middle.iter().map(|row| row.radius_parameter_record_index))
-            .chain(middle.iter().map(|row| row.parameter_record_index))
-            .collect(),
-    }
+        } => (Some(*start_radius_parameter_record_index), Some(*end_radius_parameter_record_index), Some(middle.as_slice())),
+    };
+    [first, second].into_iter().flatten()
+        .chain(middle.into_iter().flatten().map(|row| row.radius_parameter_record_index))
+        .chain(middle.into_iter().flatten().map(|row| row.parameter_record_index))
 }
 
 /// Count parameters whose unit token has no settled neutral quantity kind.
