@@ -147,7 +147,7 @@ mod tests {
         let expected = error.to_string();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
         let error =

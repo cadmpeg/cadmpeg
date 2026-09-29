@@ -171,7 +171,9 @@ pub(crate) fn inventory<'a>(
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
-        if stream.logical_size() < 28 || stream.logical_size() > MAX_STREAM_SIZE as u64 {
+        if stream.logical_size() < 28
+            || stream.logical_size() > cadmpeg_core::decode::u64_from_index(MAX_STREAM_SIZE)
+        {
             continue;
         }
         let view = snapshot.open(ctx, stream)?;
@@ -238,10 +240,16 @@ pub(crate) fn parse_property_set_stream<'a>(
             "OLE property-set stream has no sections".into(),
         ));
     }
-    ctx.charge_collection_items(section_count as u64, "admit OLE section directories")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(section_count),
+        "admit OLE section directories",
+    )?;
     let mut directories =
         DecodeContext::admitted_vec(section_count, "admit OLE section directories")?;
-    ctx.charge_collection_items(section_count as u64, "admit OLE section FMTIDs")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(section_count),
+        "admit OLE section FMTIDs",
+    )?;
     let mut fmtids = BTreeSet::new();
     for _ in 0..section_count {
         let fmtid = cursor.array("section FMTID")?;
@@ -255,7 +263,10 @@ pub(crate) fn parse_property_set_stream<'a>(
     let header_end = cursor.position();
     directories.sort_by_key(|(_, offset)| *offset);
     let mut previous_end = header_end;
-    ctx.charge_collection_items(section_count as u64, "admit OLE property-set sections")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(section_count),
+        "admit OLE property-set sections",
+    )?;
     let mut sections =
         DecodeContext::admitted_vec(section_count, "admit OLE property-set sections")?;
     for (fmtid, offset) in directories {
@@ -266,7 +277,10 @@ pub(crate) fn parse_property_set_stream<'a>(
         }
         require_zero_range(bytes, previous_end, offset, "section gap")?;
         let mut section = crate::reader::at(source, source.start() + offset, "section size")?;
-        let size = crate::reader::u32(&mut section, "section size")? as usize;
+        let size =
+            usize::try_from(crate::reader::u32(&mut section, "section size")?).map_err(|_| {
+                CodecError::Malformed("Inventor numeric value exceeds target range".into())
+            })?;
         let end = offset.checked_add(size).ok_or_else(|| {
             CodecError::Malformed("OLE property-set section range overflows".into())
         })?;
@@ -314,9 +328,15 @@ fn parse_section<'a>(
     // The directory is read entry by entry below, so the window states its own
     // bound: a directory the section cannot hold stops at the entry that runs
     // out of bytes.
-    ctx.charge_collection_items(property_count as u64, "admit OLE property IDs")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(property_count),
+        "admit OLE property IDs",
+    )?;
     let mut ids = BTreeSet::new();
-    ctx.charge_collection_items(property_count as u64, "admit OLE property directory")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(property_count),
+        "admit OLE property directory",
+    )?;
     let mut directory =
         DecodeContext::admitted_vec(property_count, "admit OLE property directory")?;
     for _ in 0..property_count {
@@ -346,7 +366,10 @@ fn parse_section<'a>(
     if let Some((offset, _)) = directory.first() {
         require_zero_range(bytes, directory_end, *offset, "property-directory gap")?;
     }
-    ctx.charge_collection_items(property_count as u64, "admit OLE property ranges")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(property_count),
+        "admit OLE property ranges",
+    )?;
     let ranges = directory
         .iter()
         .enumerate()
@@ -379,7 +402,10 @@ fn parse_section<'a>(
         })
         .transpose()?
         .unwrap_or_default();
-    ctx.charge_collection_items(property_count as u64, "admit OLE properties")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(property_count),
+        "admit OLE properties",
+    )?;
     let mut properties = DecodeContext::admitted_vec(property_count, "admit OLE properties")?;
     for (id, start, end) in ranges {
         let raw = source
@@ -437,9 +463,15 @@ fn parse_dictionary(
 ) -> Result<BTreeMap<u32, String>, CodecError> {
     let mut cursor = Cursor::new(source, "OLE property dictionary");
     let count = cursor.count("entry count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(count as u64, "admit OLE property dictionary entries")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit OLE property dictionary entries",
+    )?;
     let mut names = BTreeMap::new();
-    ctx.charge_collection_items(count as u64, "admit OLE folded dictionary names")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit OLE folded dictionary names",
+    )?;
     let mut folded_names = BTreeSet::new();
     for _ in 0..count {
         let id = cursor.u32("entry id")?;
@@ -497,7 +529,10 @@ fn parse_vector<'a>(
     code_page: Option<u16>,
 ) -> Result<PropertyValue<'a>, CodecError> {
     let count = cursor.count("vector element count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(count as u64, "admit OLE property vector elements")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit OLE property vector elements",
+    )?;
     let mut values = DecodeContext::admitted_vec(count, "admit OLE property vector elements")?;
     for _ in 0..count {
         if element_type == VT_VARIANT {
@@ -618,15 +653,15 @@ fn parse_scalar<'a>(
         ScalarType::Empty => PropertyValue::Empty { type_code },
         ScalarType::I2 => PropertyValue::Signed {
             type_code,
-            value: cursor.i16("VT_I2")? as i64,
+            value: i64::from(cursor.i16("VT_I2")?),
         },
         ScalarType::I4 => PropertyValue::Signed {
             type_code,
-            value: cursor.i32("VT_I4")? as i64,
+            value: i64::from(cursor.i32("VT_I4")?),
         },
         ScalarType::R4 => PropertyValue::Float {
             type_code,
-            value: f32::from_bits(cursor.u32("VT_R4")?) as f64,
+            value: f64::from(f32::from_bits(cursor.u32("VT_R4")?)),
         },
         ScalarType::R8 => PropertyValue::Float {
             type_code,
@@ -650,19 +685,19 @@ fn parse_scalar<'a>(
         }
         ScalarType::I1 => PropertyValue::Signed {
             type_code,
-            value: cursor.u8("VT_I1")? as i8 as i64,
+            value: i64::from(cursor.u8("VT_I1")?.cast_signed()),
         },
         ScalarType::Ui1 => PropertyValue::Unsigned {
             type_code,
-            value: cursor.u8("VT_UI1")? as u64,
+            value: u64::from(cursor.u8("VT_UI1")?),
         },
         ScalarType::Ui2 => PropertyValue::Unsigned {
             type_code,
-            value: cursor.u16("VT_UI2")? as u64,
+            value: u64::from(cursor.u16("VT_UI2")?),
         },
         ScalarType::Ui4 => PropertyValue::Unsigned {
             type_code,
-            value: cursor.u32("VT_UI4")? as u64,
+            value: u64::from(cursor.u32("VT_UI4")?),
         },
         ScalarType::Ui8 => PropertyValue::Unsigned {
             type_code,

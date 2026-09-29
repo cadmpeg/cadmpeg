@@ -11,7 +11,9 @@ use super::super::{find_color, ColorResolution, StyleDomain};
 const LAYER_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();#2=PRESENTATION_LAYER_ASSIGNMENT('Layer','details',(#1));ENDSEC;END-ISO-10303-21;";
 
 fn layer_result(retained_limit: u64) -> Result<(), CodecError> {
-    let (exchange, _) = crate::parse::parse(LAYER_SOURCE).expect("valid layer exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(LAYER_SOURCE, crate::parse::parse_inner)
+            .expect("valid layer exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = retained_limit;
@@ -20,13 +22,7 @@ fn layer_result(retained_limit: u64) -> Result<(), CodecError> {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
     let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
-    super::super::decode(
-        &exchange,
-        &topology.value,
-        &mut ir,
-        &BTreeMap::new(),
-        Some(&ctx),
-    )?;
+    super::super::decode(&exchange, &topology.value, &mut ir, &BTreeMap::new(), &ctx)?;
     Ok(())
 }
 
@@ -51,7 +47,9 @@ fn presentation_layer_description_refuses_retained_limit() {
 }
 
 fn color_result(source: &[u8], retained_limit: u64) -> Result<Option<ColorResolution>, CodecError> {
-    let (exchange, _) = crate::parse::parse(source).expect("valid colour exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid colour exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = retained_limit;
@@ -68,7 +66,7 @@ fn color_result(source: &[u8], retained_limit: u64) -> Result<Option<ColorResolu
             invalid_surface_sides: &mut BTreeSet::new(),
         },
         0,
-        Some(&ctx),
+        &ctx,
     )
 }
 

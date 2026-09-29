@@ -1377,7 +1377,7 @@ impl<'a> DecodeContext<'a> {
         }
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: hatch.source_range.start as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(hatch.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -1499,7 +1499,7 @@ impl<'a> DecodeContext<'a> {
         let name = (!identity.name.is_empty()).then(|| identity.name.clone());
         let feature = Feature {
             id: id.clone(),
-            ordinal: source_order as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
             name,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -1607,7 +1607,7 @@ impl<'a> DecodeContext<'a> {
         )?;
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: detail.source_range.start as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(detail.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -1754,7 +1754,7 @@ impl<'a> DecodeContext<'a> {
         )?;
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: cage.source_range.start as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(cage.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -1949,7 +1949,7 @@ impl<'a> DecodeContext<'a> {
         )?;
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: construction.source_range.start as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(construction.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -2628,7 +2628,10 @@ impl<'a> DecodeContext<'a> {
     fn mint_unknown_id(source_order: usize) -> UnknownId {
         UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "record"),
-            cadmpeg_ir::ids::IdentityKey::zero_padded(source_order as u64, 6),
+            cadmpeg_ir::ids::IdentityKey::zero_padded(
+                cadmpeg_core::decode::u64_from_index(source_order),
+                6,
+            ),
         )
     }
 
@@ -2948,7 +2951,7 @@ impl<'a> DecodeContext<'a> {
             let range = record.source_range.clone();
             let id = UnknownId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "history", "source"),
-                IdentityKey::zero_padded(range.start as u64, 12),
+                IdentityKey::zero_padded(cadmpeg_core::decode::u64_from_index(range.start), 12),
             );
             reserve_transaction_vec(
                 self.expand.ctx(),
@@ -2978,7 +2981,8 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let table_key = source.table_typecode.to_be_bytes();
         let record_key = source.record.typecode.to_be_bytes();
-        let offset_key = (source.record.range.start as u64).to_be_bytes();
+        let offset_key =
+            (cadmpeg_core::decode::u64_from_index(source.record.range.start)).to_be_bytes();
         let key = IdentityKey::hex_byte(table_key[0])
             .with_hex_bytes(&table_key[1..])
             .dash(IdentityKey::hex_byte(record_key[0]).with_hex_bytes(&record_key[1..]))
@@ -3004,11 +3008,11 @@ impl<'a> DecodeContext<'a> {
         range: std::ops::Range<usize>,
     ) -> Result<UnknownRecord, cadmpeg_core::CodecError> {
         let bytes = &self.scan.data[range.clone()];
-        let byte_len = bytes.len() as u64;
+        let byte_len = cadmpeg_core::decode::u64_from_index(bytes.len());
         let retained_end = self.retained_bytes.checked_add(bytes.len()).filter(|end| {
             bytes.len() <= self.retention_limits[0] && *end <= self.retention_limits[1]
         });
-        let offset = range.start as u64;
+        let offset = cadmpeg_core::decode::u64_from_index(range.start);
         match retained_end {
             Some(end) => {
                 let data = self
@@ -6028,7 +6032,10 @@ fn brep_free_vertex_indices(
         }
     }
     let free_count = attached.iter().filter(|attached| !**attached).count();
-    ctx.charge_collection_items(free_count as u64, "Rhino Brep free vertices")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(free_count),
+        "Rhino Brep free vertices",
+    )?;
     let mut free = Vec::new();
     free.try_reserve_exact(free_count).map_err(|_| {
         crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
@@ -6209,7 +6216,10 @@ fn shell_slots(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     count: usize,
 ) -> Result<Vec<ShellGroup>, crate::curves::GeometryError> {
-    ctx.charge_collection_items(count as u64, "Rhino Brep shell groups")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "Rhino Brep shell groups",
+    )?;
     let mut shells = Vec::new();
     shells.try_reserve_exact(count).map_err(|_| {
         crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
@@ -6761,7 +6771,11 @@ fn loss_provenance(
         ),
         "Rhino class loss tag",
     )?;
-    Ok(SourceProvenance::root("rhino", outcome.first_object.range().start as u64).with_tag(tag))
+    Ok(SourceProvenance::root(
+        "rhino",
+        cadmpeg_core::decode::u64_from_index(outcome.first_object.range().start),
+    )
+    .with_tag(tag))
 }
 
 /// Builds the metadata-only Rhino decode transaction.

@@ -1216,19 +1216,19 @@ impl RseRecordRecord {
             token: retained_copy(ctx, token, "retain Inventor RSe record token")?,
             ordinal: frame.ordinal,
             selector: frame.selector,
-            type_index: frame.type_index(),
+            type_index: frame.type_index()?,
             type_id: {
                 ctx.charge_retained(32, "retain Inventor RSe record type GUID")?;
                 crate::pmdc::type_id_string(frame.type_id)
             },
             payload_offset: frame.payload_offset,
-            payload_len: u64::from(frame.payload_len()),
+            payload_len: u64::from(frame.payload_len()?),
             payload_sha256: retained_digest(
                 ctx,
                 frame.payload.window(),
                 "retain Inventor RSe payload digest",
             )?,
-            trailing_payload_len: frame.trailing_payload_len(),
+            trailing_payload_len: frame.trailing_payload_len()?,
             trailer_len: cadmpeg_core::decode::u64_from_index(frame.trailer.window().len()),
             trailer_sha256: retained_digest(
                 ctx,
@@ -1264,7 +1264,10 @@ struct RseRecordRecordWire {
 impl TryFrom<RseRecordRecordWire> for RseRecordRecord {
     type Error = String;
     fn try_from(wire: RseRecordRecordWire) -> Result<Self, Self::Error> {
-        if wire.type_index != wire.selector as u8 {
+        if wire.type_index
+            != u8::try_from(wire.selector & 0xff)
+                .map_err(|_| "selector low byte exceeds u8".to_string())?
+        {
             return Err("type_index disagrees with selector".into());
         }
         if wire.trailing_payload_len != 0

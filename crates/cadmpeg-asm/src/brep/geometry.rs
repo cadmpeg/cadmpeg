@@ -837,7 +837,7 @@ pub(super) fn rational_four_arc_circle(
     let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } = curve.pole_rows() else {
         return None;
     };
-    let degree = curve.degree() as usize;
+    let degree = usize::try_from(curve.degree()).ok()?;
     if degree < 2 || curve.periodic() || points.len() != 4 * degree + 1 {
         return None;
     }
@@ -996,7 +996,8 @@ fn reduce_homogeneous_bezier_to_quadratic(
         );
         reduced.push(control[0]);
         for index in 1..degree {
-            let alpha = index as f64 / degree as f64;
+            let alpha = cadmpeg_core::convert::f64_from_index(index)?
+                / cadmpeg_core::convert::f64_from_index(degree)?;
             let denominator = 1.0 - alpha;
             reduced.push(std::array::from_fn(|coordinate| {
                 (control[index][coordinate] - alpha * reduced[index - 1][coordinate]) / denominator
@@ -1043,7 +1044,7 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
     let domains: HashMap<&str, [f64; 2]> = ctx.collect_hash_map(
         out.curves.iter().filter_map(|curve| match &curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                let first = nurbs.knots().get(nurbs.degree() as usize)?;
+                let first = nurbs.knots().get(usize::try_from(nurbs.degree()).ok()?)?;
                 let last = nurbs.knots().get(nurbs.pole_count())?;
                 Some((curve.id.as_str(), [*first, *last]))
             }

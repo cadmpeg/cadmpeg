@@ -193,11 +193,7 @@ fn missing_shape_body_text_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits retained policy");
     assert!(matches!(
-        super::super::join_product_texts(
-            ["body-one", "body-two"],
-            Some(&ctx),
-            "step_missing_shape_body_text",
-        ),
+        super::super::join_product_texts(["body-one", "body-two"], &ctx, "step_missing_shape_body_text"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_missing_shape_body_text"
@@ -215,11 +211,7 @@ fn missing_shape_body_loss_text_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits retained policy");
     assert!(matches!(
-        super::super::format_product_text(
-            Some(&ctx),
-            "step_missing_shape_body_loss_text",
-            format_args!("body omitted uncommitted shape body reference(s): {}", "body-one"),
-        ),
+        ctx.format_retained(format_args!("body omitted uncommitted shape body reference(s): {}", "body-one"), "step_missing_shape_body_loss_text"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_missing_shape_body_loss_text"

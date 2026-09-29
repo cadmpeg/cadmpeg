@@ -103,7 +103,7 @@ pub(crate) fn parse(
         } else {
             inline_bytes
                 .as_ref()
-                .map_or(&[] as &[u8], |(bytes, _)| bytes.as_slice())
+                .map_or(&[][..], |(bytes, _)| bytes.as_slice())
         };
         let declared_count = if source_entry.is_some() {
             let header_count = string_table_header_count(ctx, bytes)?;
@@ -185,7 +185,7 @@ pub(crate) fn parse(
                 } else {
                     inline_bytes
                         .as_ref()
-                        .map_or(&[] as &[u8], |(bytes, _)| bytes.as_slice())
+                        .map_or(&[][..], |(bytes, _)| bytes.as_slice())
                 };
                 let parsed = parse_element_map(ctx, bytes, source_entry.is_some())?;
                 let declared_count = match declared_count {
@@ -275,7 +275,7 @@ fn owning_property(
     node: roxmltree::Node<'_, '_>,
     properties: &[PropertyRecord],
 ) -> Result<Option<String>, CodecError> {
-    let start = node.range().start as u64;
+    let start = cadmpeg_core::decode::u64_from_index(node.range().start);
     let mut owners = properties
         .iter()
         .filter(|property| property.xml.start() <= start && start < property.xml.end());
@@ -906,8 +906,12 @@ fn parse_string_table(
     }
     // Each record consumes at least one non-whitespace byte, so the declared count
     // cannot exceed the table's byte length.
-    let capacity = bounded_len(declared_count as u64, 1, text.len())
-        .ok_or_else(|| CodecError::Malformed("string-table record count exceeds input".into()))?;
+    let capacity = bounded_len(
+        cadmpeg_core::decode::u64_from_index(declared_count),
+        1,
+        text.len(),
+    )
+    .ok_or_else(|| CodecError::Malformed("string-table record count exceeds input".into()))?;
     let mut output = ctx.collection_vec(capacity, "FreeCAD string table entries")?;
     let mut previous_id = 0_i64;
     for _ in 0..declared_count {
@@ -1107,8 +1111,12 @@ fn parse_element_map(
     let map_count = next_count(ctx, &mut tokens, "map count", MAX_MAP_NODES)?;
     // Each map node consumes at least one whitespace-separated token, so its count
     // cannot exceed the element map's byte length.
-    let map_capacity = bounded_len(map_count as u64, 1, text.len())
-        .ok_or_else(|| CodecError::Malformed("element-map node count exceeds input".into()))?;
+    let map_capacity = bounded_len(
+        cadmpeg_core::decode::u64_from_index(map_count),
+        1,
+        text.len(),
+    )
+    .ok_or_else(|| CodecError::Malformed("element-map node count exceeds input".into()))?;
     let mut maps = ctx.collection_vec(map_capacity, "FreeCAD element map nodes")?;
     for expected_index in 1..=map_count {
         expect(ctx, &mut tokens, "ElementMap")?;
@@ -1121,8 +1129,12 @@ fn parse_element_map(
         let node_id = next_u64(ctx, &mut tokens, "map node id")?;
         let group_count = next_count(ctx, &mut tokens, "group count", MAX_GROUPS)?;
         // Each group consumes at least one token, so its count cannot exceed the byte length.
-        let group_capacity = bounded_len(group_count as u64, 1, text.len())
-            .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
+        let group_capacity = bounded_len(
+            cadmpeg_core::decode::u64_from_index(group_count),
+            1,
+            text.len(),
+        )
+        .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
         let mut groups = ctx.collection_vec(group_capacity, "FreeCAD element map groups")?;
         for _ in 0..group_count {
             let indexed_name = ctx.copy_retained_text(
@@ -1132,10 +1144,12 @@ fn parse_element_map(
             expect(ctx, &mut tokens, "ChildCount")?;
             let child_count = next_count(ctx, &mut tokens, "child count", MAX_NAMES)?;
             // Each child consumes at least one token, so its count cannot exceed the byte length.
-            let child_capacity =
-                bounded_len(child_count as u64, 1, text.len()).ok_or_else(|| {
-                    CodecError::Malformed("element-map child count exceeds input".into())
-                })?;
+            let child_capacity = bounded_len(
+                cadmpeg_core::decode::u64_from_index(child_count),
+                1,
+                text.len(),
+            )
+            .ok_or_else(|| CodecError::Malformed("element-map child count exceeds input".into()))?;
             let mut children =
                 ctx.collection_vec(child_capacity, "FreeCAD element map children")?;
             for _ in 0..child_count {
@@ -1151,9 +1165,12 @@ fn parse_element_map(
             expect(ctx, &mut tokens, "NameCount")?;
             let name_count = next_count(ctx, &mut tokens, "name count", MAX_NAMES)?;
             // Each name consumes at least one token, so its count cannot exceed the byte length.
-            let name_capacity = bounded_len(name_count as u64, 1, text.len()).ok_or_else(|| {
-                CodecError::Malformed("element-map name count exceeds input".into())
-            })?;
+            let name_capacity = bounded_len(
+                cadmpeg_core::decode::u64_from_index(name_count),
+                1,
+                text.len(),
+            )
+            .ok_or_else(|| CodecError::Malformed("element-map name count exceeds input".into()))?;
             let mut names = ctx.collection_vec(name_capacity, "FreeCAD element map names")?;
             for _ in 0..name_count {
                 let mut chain = Vec::new();

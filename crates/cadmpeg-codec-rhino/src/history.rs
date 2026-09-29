@@ -1182,7 +1182,10 @@ impl serde::Serialize for MeshStripLengths<'_> {
         match self.0 {
             TessellationMesh::List { .. }
             | TessellationMesh::ShadedList { .. }
-            | TessellationMesh::CornerShadedList { .. } => ([] as [u32; 0]).serialize(serializer),
+            | TessellationMesh::CornerShadedList { .. } => {
+                let empty: [u32; 0] = [];
+                empty.serialize(serializer)
+            }
             TessellationMesh::Strips { strips } => serialize_strip_lengths(strips, serializer),
             TessellationMesh::ShadedStrips { strips } => {
                 serialize_strip_lengths(strips, serializer)
@@ -1205,7 +1208,10 @@ impl serde::Serialize for MeshNormals<'_> {
         match self.0 {
             TessellationMesh::List { .. }
             | TessellationMesh::CornerShadedList { .. }
-            | TessellationMesh::Strips { .. } => ([] as [u32; 0]).serialize(serializer),
+            | TessellationMesh::Strips { .. } => {
+                let empty: [u32; 0] = [];
+                empty.serialize(serializer)
+            }
             TessellationMesh::ShadedList { vertices, .. } => {
                 let mut sequence = serializer.serialize_seq(Some(vertices.len()))?;
                 for vertex in vertices {

@@ -146,8 +146,7 @@ pub(super) fn decode(
             topology,
             &mut representation_cache,
             &mut BTreeSet::new(),
-            0,
-            Some(ctx),
+            ctx,
         )?;
         let product_linked = product_representations.contains(&id)
             || items

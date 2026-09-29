@@ -503,9 +503,12 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         ),
     ]);
 
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse ZIP root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse ZIP root");
     let (subsidiary_exchange, subsidiary_diagnostics) =
-        crate::parse::parse(subsidiary).expect("parse ZIP subsidiary");
+        crate::test_support::with_service_context(subsidiary, crate::parse::parse_inner)
+            .expect("parse ZIP subsidiary");
     assert!(root_diagnostics.is_empty());
     assert!(subsidiary_diagnostics.is_empty());
     assert_eq!(root_exchange.references()[0].name.to_string(), "#10");
@@ -602,7 +605,9 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
 fn forwarded_reference_retains_unparsed_subsidiary_as_a_resource() {
     let root = include_bytes!("tests/data/ce02_root_forwarded_unparsed.p21");
     let subsidiary = include_bytes!("tests/data/ce02_subsidiary_unparsed.p21");
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse CE-02 root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
         root_exchange.anchors()[0].value,
@@ -710,7 +715,9 @@ fn codec_keeps_external_reference_graph_resource_local() {
 fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
     let root = include_bytes!("tests/data/er03_root_valid.p21");
     let subsidiary = include_bytes!("tests/data/er03_subsidiary_valid.p21");
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse valid root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse valid root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
         root_exchange.references()[0].uri,
@@ -722,7 +729,8 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
     );
 
     let (subsidiary_exchange, subsidiary_diagnostics) =
-        crate::parse::parse(subsidiary).expect("parse valid subsidiary");
+        crate::test_support::with_service_context(subsidiary, crate::parse::parse_inner)
+            .expect("parse valid subsidiary");
     assert!(subsidiary_diagnostics.is_empty());
     assert_eq!(
         subsidiary_exchange.anchors()[0].value,
@@ -769,7 +777,9 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
     let root = include_bytes!("tests/data/er03_root_distinct_resources.p21");
     let alpha = include_bytes!("tests/data/er03_subsidiary_alpha.p21");
     let beta = include_bytes!("tests/data/er03_subsidiary_beta.p21");
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse identity root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse identity root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(root_exchange.references().len(), 2);
     assert_eq!(
@@ -792,7 +802,9 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
         (alpha.as_slice(), b"alpha".as_slice()),
         (beta.as_slice(), b"beta".as_slice()),
     ] {
-        let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse subsidiary");
+        let (exchange, diagnostics) =
+            crate::test_support::with_service_context(bytes, crate::parse::parse_inner)
+                .expect("parse subsidiary");
         assert!(diagnostics.is_empty());
         assert_eq!(exchange.anchors()[0].name, "remote_item");
         assert_eq!(
@@ -869,7 +881,9 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
 fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
     let root = include_bytes!("tests/data/ce02_root_anchor_valid.p21");
     let subsidiary = include_bytes!("tests/data/ce02_subsidiary_valid.p21");
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse CE-02 root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
         root_exchange.anchors()[0].value,
@@ -878,7 +892,8 @@ fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
     assert_eq!(root_exchange.references()[0].uri, "#target");
 
     let (subsidiary_exchange, subsidiary_diagnostics) =
-        crate::parse::parse(subsidiary).expect("parse CE-02 subsidiary");
+        crate::test_support::with_service_context(subsidiary, crate::parse::parse_inner)
+            .expect("parse CE-02 subsidiary");
     assert!(subsidiary_diagnostics.is_empty());
     assert_eq!(
         subsidiary_exchange.anchors()[0].value,
@@ -1049,7 +1064,8 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
         "EXAMPLE_RECORD:1"
     );
     let (exchange, diagnostics) =
-        crate::parse::parse(bytes).expect("parse opaque signature payload");
+        crate::test_support::with_service_context(bytes, crate::parse::parse_inner)
+            .expect("parse opaque signature payload");
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.signatures().len(), 1);
     let signature = exchange.signatures()[0].clone();

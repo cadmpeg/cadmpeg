@@ -146,7 +146,7 @@ fn read_u8_string_span(bytes: &[u8], at: usize) -> Option<(&str, usize)> {
     if *bytes.get(at)? != 0x07 {
         return None;
     }
-    let len = *bytes.get(at + 1)? as usize;
+    let len = usize::from(*bytes.get(at + 1)?);
     let start = at + 2;
     let value = std::str::from_utf8(bytes.get(start..start + len)?).ok()?;
     Some((value, start + len))

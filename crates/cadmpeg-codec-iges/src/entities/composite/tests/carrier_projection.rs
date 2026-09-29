@@ -45,358 +45,389 @@ use crate::IgesCodec;
 
 #[test]
 fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
-    const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
-    let curve = test_nurbs(
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 2.0, 0.0),
-            Point3::new(2.0, -1.0, 0.0),
-            Point3::new(4.0, 0.0, 0.0),
-        ],
-        Some(vec![1.0, 0.5, 2.0, 1.0]),
-    );
-    let interval = [0.25, 1.5];
-    let trimmed = trim_nurbs_to_interval(None, &curve, interval)
-        .expect("carrier lanes pair")
-        .expect("a bounded active interval has an exact NURBS subrange");
-
-    assert_eq!(trimmed.knots().first(), Some(&interval[0]));
-    assert_eq!(trimmed.knots().last(), Some(&interval[1]));
-    assert_eq!(
-        trimmed.weights().map(|weights| weights.len()),
-        Some(trimmed.pole_count())
-    );
-    for parameter in [0.25, 0.5, 1.0, 1.5] {
-        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
-            .expect("source NURBS evaluates");
-        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&trimmed, parameter)
-            .expect("trimmed NURBS evaluates");
-        assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
-    }
-}
-
-#[test]
-fn concatenation_accepts_exact_active_nurbs_subranges() {
-    const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
-    let curve = test_nurbs(
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 2.0, 0.0),
-            Point3::new(2.0, -1.0, 0.0),
-            Point3::new(4.0, 0.0, 0.0),
-        ],
-        Some(vec![1.0, 0.5, 2.0, 1.0]),
-    );
-    let first = trim_nurbs_to_interval(None, &curve, [0.0, 1.0])
-        .expect("carrier lanes pair")
-        .expect("first active NURBS interval is exact");
-    let second = trim_nurbs_to_interval(None, &curve, [1.0, 2.0])
-        .expect("carrier lanes pair")
-        .expect("second active NURBS interval is exact");
-    let concatenated = concatenate_nurbs(
-        None,
-        vec![(first, [0.0, 1.0], ()), (second, [1.0, 2.0], ())],
-        None,
-    )
-    .expect("carrier lanes pair")
-    .expect("evaluated active endpoints join exactly");
-
-    for parameter in [0.25, 0.75, 1.25, 1.75] {
-        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
-            .expect("source NURBS evaluates");
-        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&concatenated.nurbs, parameter)
-            .expect("concatenated NURBS evaluates");
-        assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
-    }
-}
-
-#[test]
-fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
-    const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
-    let piecewise_constant = test_nurbs(
-        0,
-        vec![0.0, 1.0, 2.0],
-        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        None,
-    );
-    let nonclamped = test_nurbs(
-        2,
-        vec![0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0],
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 2.0, 0.0),
-            Point3::new(2.0, -1.0, 0.0),
-            Point3::new(4.0, 0.0, 0.0),
-        ],
-        None,
-    );
-
-    for (curve, interval, parameters) in [
-        (piecewise_constant, [0.5, 1.5], vec![0.75, 1.25]),
-        (nonclamped, [1.0, 3.0], vec![1.25, 2.0, 2.75]),
-    ] {
-        let trimmed = trim_nurbs_to_interval(None, &curve, interval)
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
+        let curve = test_nurbs(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(2.0, -1.0, 0.0),
+                Point3::new(4.0, 0.0, 0.0),
+            ],
+            Some(vec![1.0, 0.5, 2.0, 1.0]),
+        );
+        let interval = [0.25, 1.5];
+        let trimmed = trim_nurbs_to_interval(decode_ctx, &curve, interval)
             .expect("carrier lanes pair")
-            .expect("a valid active interval has an exact NURBS subrange");
-        for parameter in parameters {
+            .expect("a bounded active interval has an exact NURBS subrange");
+
+        assert_eq!(trimmed.knots().first(), Some(&interval[0]));
+        assert_eq!(trimmed.knots().last(), Some(&interval[1]));
+        assert_eq!(
+            trimmed.weights().map(|weights| weights.len()),
+            Some(trimmed.pole_count())
+        );
+        for parameter in [0.25, 0.5, 1.0, 1.5] {
             let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
                 .expect("source NURBS evaluates");
             let after = cadmpeg_ir::eval::nurbs_curve_point_at(&trimmed, parameter)
                 .expect("trimmed NURBS evaluates");
             assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
         }
-    }
+    });
+}
+
+#[test]
+fn concatenation_accepts_exact_active_nurbs_subranges() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
+        let curve = test_nurbs(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(2.0, -1.0, 0.0),
+                Point3::new(4.0, 0.0, 0.0),
+            ],
+            Some(vec![1.0, 0.5, 2.0, 1.0]),
+        );
+        let first = trim_nurbs_to_interval(decode_ctx, &curve, [0.0, 1.0])
+            .expect("carrier lanes pair")
+            .expect("first active NURBS interval is exact");
+        let second = trim_nurbs_to_interval(decode_ctx, &curve, [1.0, 2.0])
+            .expect("carrier lanes pair")
+            .expect("second active NURBS interval is exact");
+        let concatenated = concatenate_nurbs(
+            decode_ctx,
+            vec![(first, [0.0, 1.0], ()), (second, [1.0, 2.0], ())],
+            None,
+        )
+        .expect("carrier lanes pair")
+        .expect("evaluated active endpoints join exactly");
+
+        for parameter in [0.25, 0.75, 1.25, 1.75] {
+            let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
+                .expect("source NURBS evaluates");
+            let after = cadmpeg_ir::eval::nurbs_curve_point_at(&concatenated.nurbs, parameter)
+                .expect("concatenated NURBS evaluates");
+            assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
+        }
+    });
+}
+
+#[test]
+fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
+        let piecewise_constant = test_nurbs(
+            0,
+            vec![0.0, 1.0, 2.0],
+            vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+            None,
+        );
+        let nonclamped = test_nurbs(
+            2,
+            vec![0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(2.0, -1.0, 0.0),
+                Point3::new(4.0, 0.0, 0.0),
+            ],
+            None,
+        );
+
+        for (curve, interval, parameters) in [
+            (piecewise_constant, [0.5, 1.5], vec![0.75, 1.25]),
+            (nonclamped, [1.0, 3.0], vec![1.25, 2.0, 2.75]),
+        ] {
+            let trimmed = trim_nurbs_to_interval(decode_ctx, &curve, interval)
+                .expect("carrier lanes pair")
+                .expect("a valid active interval has an exact NURBS subrange");
+            for parameter in parameters {
+                let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
+                    .expect("source NURBS evaluates");
+                let after = cadmpeg_ir::eval::nurbs_curve_point_at(&trimmed, parameter)
+                    .expect("trimmed NURBS evaluates");
+                assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
+            }
+        }
+    });
 }
 
 #[test]
 fn concatenation_preserves_degree_zero_spans() {
-    let point = Point3::new(1.0, 2.0, 3.0);
-    let first = (
-        test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point, point], None),
-        [0.0, 2.0],
-    );
-    let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [0.0, 1.0]);
-    let concatenated = concatenate_nurbs(
-        None,
-        vec![(first.0, first.1, ()), (second.0, second.1, ())],
-        None,
-    )
-    .expect("carrier lanes pair")
-    .expect("degree-zero spans with an exact join concatenate");
-
-    assert_eq!(concatenated.nurbs.degree(), 0);
-    assert_eq!(
-        concatenated.nurbs.knots().as_slice(),
-        vec![0.0, 1.0, 2.0, 3.0]
-    );
-    assert_eq!(
-        concatenated.nurbs.control_points(),
-        vec![point, point, point]
-    );
-    for parameter in [0.5, 1.5, 2.5] {
-        assert_eq!(
-            cadmpeg_ir::eval::nurbs_curve_point_at(&concatenated.nurbs, parameter)
-                .ok()
-                .map(cadmpeg_ir::features::FinitePoint3::get),
-            Some(point)
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let point = Point3::new(1.0, 2.0, 3.0);
+        let first = (
+            test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point, point], None),
+            [0.0, 2.0],
         );
-    }
+        let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [0.0, 1.0]);
+        let concatenated = concatenate_nurbs(
+            decode_ctx,
+            vec![(first.0, first.1, ()), (second.0, second.1, ())],
+            None,
+        )
+        .expect("carrier lanes pair")
+        .expect("degree-zero spans with an exact join concatenate");
+
+        assert_eq!(concatenated.nurbs.degree(), 0);
+        assert_eq!(
+            concatenated.nurbs.knots().as_slice(),
+            vec![0.0, 1.0, 2.0, 3.0]
+        );
+        assert_eq!(
+            concatenated.nurbs.control_points(),
+            vec![point, point, point]
+        );
+        for parameter in [0.5, 1.5, 2.5] {
+            assert_eq!(
+                cadmpeg_ir::eval::nurbs_curve_point_at(&concatenated.nurbs, parameter)
+                    .ok()
+                    .map(cadmpeg_ir::features::FinitePoint3::get),
+                Some(point)
+            );
+        }
+    });
 }
 
 #[test]
 fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
-    let mut curve = test_nurbs(
-        1,
-        vec![0.5, 0.5, 1.5, 2.5, 2.5],
-        vec![
-            Point3::new(1.0, 2.0, 3.0),
-            Point3::new(1.0, 2.0, 3.0),
-            Point3::new(1.0, 2.0, 3.0),
-        ],
-        None,
-    );
-    let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
-        .expect("valid multi-span linear NURBS evaluates before degree elevation");
-    elevate_nurbs_to_degree(None, &mut curve, [0.5, 2.5], 3, None).expect("elevation lanes pair");
-    let after = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
-        .expect("valid multi-span linear NURBS evaluates after degree elevation");
-    assert_eq!(curve.degree(), 3);
-    assert!(before.distance(after.get()) <= 1.0e-12);
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let mut curve = test_nurbs(
+            1,
+            vec![0.5, 0.5, 1.5, 2.5, 2.5],
+            vec![
+                Point3::new(1.0, 2.0, 3.0),
+                Point3::new(1.0, 2.0, 3.0),
+                Point3::new(1.0, 2.0, 3.0),
+            ],
+            None,
+        );
+        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
+            .expect("valid multi-span linear NURBS evaluates before degree elevation");
+        elevate_nurbs_to_degree(decode_ctx, &mut curve, [0.5, 2.5], 3, None)
+            .expect("elevation lanes pair");
+        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
+            .expect("valid multi-span linear NURBS evaluates after degree elevation");
+        assert_eq!(curve.degree(), 3);
+        assert!(before.distance(after.get()) <= 1.0e-12);
+    });
 }
 
 #[test]
 fn multi_span_degree_zero_elevation_preserves_the_curve() {
-    let point = Point3::new(1.0, 2.0, 3.0);
-    let source = test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point; 2], None);
-    let mut elevated = source.clone();
-    elevate_nurbs_to_degree(None, &mut elevated, [0.0, 2.0], 2, None)
-        .expect("elevation lanes pair");
-    assert_eq!(elevated.degree(), 2);
-    for parameter in [0.25, 0.75, 1.25, 1.75] {
-        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&source, parameter).unwrap();
-        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
-        assert_eq!(before, after);
-    }
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let point = Point3::new(1.0, 2.0, 3.0);
+        let source = test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point; 2], None);
+        let mut elevated = source.clone();
+        elevate_nurbs_to_degree(decode_ctx, &mut elevated, [0.0, 2.0], 2, None)
+            .expect("elevation lanes pair");
+        assert_eq!(elevated.degree(), 2);
+        for parameter in [0.25, 0.75, 1.25, 1.75] {
+            let before = cadmpeg_ir::eval::nurbs_curve_point_at(&source, parameter).unwrap();
+            let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
+            assert_eq!(before, after);
+        }
+    });
 }
 
 #[test]
 fn multi_span_rational_degree_elevation_preserves_the_curve() {
-    const EPS_DEGREE_ELEVATION: f64 = 1.0e-9;
-    let source = test_nurbs(
-        2,
-        vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 2.0, 0.0),
-            Point3::new(2.0, -1.0, 0.0),
-            Point3::new(3.0, 0.0, 0.0),
-        ],
-        Some(vec![1.0, 2.0, 1.0, 3.0]),
-    );
-    let mut elevated = source.clone();
-    elevate_nurbs_to_degree(None, &mut elevated, [0.0, 1.0], 3, None)
-        .expect("elevation lanes pair");
-    assert_eq!(elevated.degree(), 3);
-    assert_eq!(elevated.weights().map(|weights| weights.len()), Some(7));
-    for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
-        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&source, parameter).unwrap();
-        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
-        assert!(before.distance(after.get()) <= EPS_DEGREE_ELEVATION);
-    }
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        const EPS_DEGREE_ELEVATION: f64 = 1.0e-9;
+        let source = test_nurbs(
+            2,
+            vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(2.0, -1.0, 0.0),
+                Point3::new(3.0, 0.0, 0.0),
+            ],
+            Some(vec![1.0, 2.0, 1.0, 3.0]),
+        );
+        let mut elevated = source.clone();
+        elevate_nurbs_to_degree(decode_ctx, &mut elevated, [0.0, 1.0], 3, None)
+            .expect("elevation lanes pair");
+        assert_eq!(elevated.degree(), 3);
+        assert_eq!(elevated.weights().map(|weights| weights.len()), Some(7));
+        for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
+            let before = cadmpeg_ir::eval::nurbs_curve_point_at(&source, parameter).unwrap();
+            let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
+            assert!(before.distance(after.get()) <= EPS_DEGREE_ELEVATION);
+        }
+    });
 }
 
 #[test]
 fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
-    let point = |x, y| Point3::new(x, y, 0.0);
-    let line = |start, end| test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None);
-    let constant = |position| test_nurbs(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], vec![position; 3], None);
-    let cubic = test_nurbs(
-        3,
-        vec![0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
-        vec![
-            point(1.0, 1.0),
-            point(1.666_666_666_666_666_7, 0.666_666_666_666_666_6),
-            point(2.333_333_333_333_333_5, 0.333_333_333_333_333_3),
-            point(3.0, 0.0),
-        ],
-        None,
-    );
-    let mut children = vec![
-        (line(point(3.0, 0.0), point(2.0, 0.0)), [0.0, 1.0]),
-        (constant(point(2.0, 0.0)), [0.0, 2.0]),
-        (line(point(2.0, 0.0), point(1.0, 0.0)), [0.0, 1.0]),
-        (line(point(1.0, 0.0), point(1.0, 1.0)), [0.0, 1.0]),
-        (cubic, [0.0, 2.0]),
-        (line(point(3.0, 0.0), point(3.0, 0.0)), [0.0, 1.0]),
-    ];
-    for (index, (curve, interval)) in children.iter_mut().enumerate() {
-        if curve.degree() < 3 {
-            elevate_nurbs_to_degree(None, curve, *interval, 3, None)
-                .unwrap_or_else(|error| panic!("child {index} should elevate: {error}"));
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let point = |x, y| Point3::new(x, y, 0.0);
+        let line = |start, end| test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None);
+        let constant =
+            |position| test_nurbs(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], vec![position; 3], None);
+        let cubic = test_nurbs(
+            3,
+            vec![0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
+            vec![
+                point(1.0, 1.0),
+                point(1.666_666_666_666_666_7, 0.666_666_666_666_666_6),
+                point(2.333_333_333_333_333_5, 0.333_333_333_333_333_3),
+                point(3.0, 0.0),
+            ],
+            None,
+        );
+        let mut children = vec![
+            (line(point(3.0, 0.0), point(2.0, 0.0)), [0.0, 1.0]),
+            (constant(point(2.0, 0.0)), [0.0, 2.0]),
+            (line(point(2.0, 0.0), point(1.0, 0.0)), [0.0, 1.0]),
+            (line(point(1.0, 0.0), point(1.0, 1.0)), [0.0, 1.0]),
+            (cubic, [0.0, 2.0]),
+            (line(point(3.0, 0.0), point(3.0, 0.0)), [0.0, 1.0]),
+        ];
+        for (index, (curve, interval)) in children.iter_mut().enumerate() {
+            if curve.degree() < 3 {
+                elevate_nurbs_to_degree(decode_ctx, curve, *interval, 3, None)
+                    .unwrap_or_else(|error| panic!("child {index} should elevate: {error}"));
+            }
         }
-    }
-    let concatenated = concatenate_nurbs(
-        None,
-        children
-            .into_iter()
-            .map(|(curve, range)| (curve, range, ()))
-            .collect(),
-        None,
-    )
-    .expect("carrier lanes pair")
-    .expect("mixed-degree composite should have an exact NURBS carrier");
-    assert_eq!(concatenated.nurbs.degree(), 3);
-    assert_eq!(
-        std::iter::once(0.0)
-            .chain(concatenated.segments.into_iter().map(|segment| segment.end))
-            .collect::<Vec<_>>(),
-        vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
-    );
+        let concatenated = concatenate_nurbs(
+            decode_ctx,
+            children
+                .into_iter()
+                .map(|(curve, range)| (curve, range, ()))
+                .collect(),
+            None,
+        )
+        .expect("carrier lanes pair")
+        .expect("mixed-degree composite should have an exact NURBS carrier");
+        assert_eq!(concatenated.nurbs.degree(), 3);
+        assert_eq!(
+            std::iter::once(0.0)
+                .chain(concatenated.segments.into_iter().map(|segment| segment.end))
+                .collect::<Vec<_>>(),
+            vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
+        );
+    });
 }
 
 #[test]
 fn concatenated_range_is_exactly_the_canonical_knot_domain() {
-    let line = |start: f64, end: f64, x: f64| {
-        (
-            test_nurbs(
-                1,
-                vec![start, start, end, end],
-                vec![Point3::new(x, 0.0, 0.0), Point3::new(x + 1.0, 0.0, 0.0)],
-                None,
-            ),
-            [start, end],
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let line = |start: f64, end: f64, x: f64| {
+            (
+                test_nurbs(
+                    1,
+                    vec![start, start, end, end],
+                    vec![Point3::new(x, 0.0, 0.0), Point3::new(x + 1.0, 0.0, 0.0)],
+                    None,
+                ),
+                [start, end],
+            )
+        };
+        let first = line(0.0, 0.3, 0.0);
+        let second = line(1.0e9, 1.0e9 + 0.1, 1.0);
+
+        let concatenated = concatenate_nurbs(
+            decode_ctx,
+            vec![(first.0, first.1, ()), (second.0, second.1, ())],
+            None,
         )
-    };
-    let first = line(0.0, 0.3, 0.0);
-    let second = line(1.0e9, 1.0e9 + 0.1, 1.0);
+        .expect("carrier lanes pair")
+        .expect("joined lines should concatenate");
 
-    let concatenated = concatenate_nurbs(
-        None,
-        vec![(first.0, first.1, ()), (second.0, second.1, ())],
-        None,
-    )
-    .expect("carrier lanes pair")
-    .expect("joined lines should concatenate");
-
-    assert_eq!(
-        Some(&concatenated.segments.end()),
-        concatenated.nurbs.knots().last()
-    );
+        assert_eq!(
+            Some(&concatenated.segments.end()),
+            concatenated.nurbs.knots().last()
+        );
+    });
 }
 
 #[test]
 fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
-    let first_id = CurveId::mint("test:model:curve#first").expect("identity grammar");
-    let second_id = CurveId::mint("test:model:curve#second").expect("identity grammar");
-    let composite_id = CurveId::mint("test:model:curve#composite").expect("identity grammar");
-    let first_end = Point3::new(1.0, 0.0, 0.0);
-    let mut ir = CadIr::empty();
-    ir.model.curves.extend([
-        Curve {
-            id: first_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(0.0, 0.0, 0.0), first_end],
-                None,
-            ))),
-            source_object: None,
-        },
-        Curve {
-            id: second_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-                None,
-            ))),
-            source_object: None,
-        },
-        Curve {
-            id: composite_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-                segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
-                    CompositeCurveSegment {
-                        curve: first_id.clone(),
-                        same_sense: true,
-                        transition: CompositeCurveTransition::Continuous,
-                    },
-                    CompositeCurveSegment {
-                        curve: second_id.clone(),
-                        same_sense: true,
-                        transition: CompositeCurveTransition::Continuous,
-                    },
-                ])
-                .unwrap(),
-                self_intersect: None,
-            }),
-            source_object: None,
-        },
-    ]);
-    for (index, curve) in [first_id, second_id].into_iter().enumerate() {
-        ir.model.edges.push(Edge {
-            id: EdgeId::mint(format!("test:model:edge#edge-{index}")).expect("identity grammar"),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
-            start: VertexId::mint(format!("test:model:vertex#start-{index}"))
-                .expect("identity grammar"),
-            end: VertexId::mint(format!("test:model:vertex#end-{index}"))
-                .expect("identity grammar"),
-            tolerance: None,
-        });
-    }
-    assert!(bounded_nurbs_for_curve(&ir, &composite_id, None, None)
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let first_id = CurveId::mint("test:model:curve#first").expect("identity grammar");
+        let second_id = CurveId::mint("test:model:curve#second").expect("identity grammar");
+        let composite_id = CurveId::mint("test:model:curve#composite").expect("identity grammar");
+        let first_end = Point3::new(1.0, 0.0, 0.0);
+        let mut ir = CadIr::empty();
+        ir.model.curves.extend([
+            Curve {
+                id: first_id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), first_end],
+                    None,
+                ))),
+                source_object: None,
+            },
+            Curve {
+                id: second_id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                    None,
+                ))),
+                source_object: None,
+            },
+            Curve {
+                id: composite_id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                    segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
+                        CompositeCurveSegment {
+                            curve: first_id.clone(),
+                            same_sense: true,
+                            transition: CompositeCurveTransition::Continuous,
+                        },
+                        CompositeCurveSegment {
+                            curve: second_id.clone(),
+                            same_sense: true,
+                            transition: CompositeCurveTransition::Continuous,
+                        },
+                    ])
+                    .unwrap(),
+                    self_intersect: None,
+                }),
+                source_object: None,
+            },
+        ]);
+        for (index, curve) in [first_id, second_id].into_iter().enumerate() {
+            ir.model.edges.push(Edge {
+                id: EdgeId::mint(format!("test:model:edge#edge-{index}"))
+                    .expect("identity grammar"),
+                carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0]))
+                    .unwrap(),
+                start: VertexId::mint(format!("test:model:vertex#start-{index}"))
+                    .expect("identity grammar"),
+                end: VertexId::mint(format!("test:model:vertex#end-{index}"))
+                    .expect("identity grammar"),
+                tolerance: None,
+            });
+        }
+        assert!(
+            bounded_nurbs_for_curve(&ir, &composite_id, decode_ctx, None)
+                .expect("carrier lanes pair")
+                .is_none()
+        );
+        let (carrier, range) = bounded_nurbs_for_curve_with_tolerance(
+            &ir,
+            &composite_id,
+            Some(0.001),
+            decode_ctx,
+            None,
+        )
         .expect("carrier lanes pair")
-        .is_none());
-    let (carrier, range) =
-        bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001), None, None)
-            .expect("carrier lanes pair")
-            .expect("carrier join within the global resolution should project");
-    assert_eq!(range, [0.0, 2.0]);
-    assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
+        .expect("carrier join within the global resolution should project");
+        assert_eq!(range, [0.0, 2.0]);
+        assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
+    });
 }
 
 #[test]
@@ -821,39 +852,43 @@ fn decode_projects_a_large_composite_batch_without_repeated_curve_scans() {
 /// failure, and the refusal says so.
 #[test]
 fn a_reversed_child_interval_names_itself_not_the_endpoint_join() {
-    let point = Point3::new(1.0, 2.0, 3.0);
-    let first = (
-        test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point, point], None),
-        [0.0, 2.0],
-    );
-    // The second child states the interval [1.0, 0.0] over an ordinary knot
-    // vector: the stated interval, not the knots, runs backwards.
-    let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [1.0, 0.0]);
-    let error = concatenate_nurbs(
-        None,
-        vec![(first.0, first.1, ()), (second.0, second.1, ())],
-        None,
-    )
-    .expect_err("a reversed child interval is refused by name")
-    .to_string();
-    assert!(
-        error.contains("reversed interval"),
-        "the refusal names the reversed interval: {error}"
-    );
-    assert!(
-        !error.contains("endpoints"),
-        "the refusal is not the endpoint join: {error}"
-    );
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let point = Point3::new(1.0, 2.0, 3.0);
+        let first = (
+            test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point, point], None),
+            [0.0, 2.0],
+        );
+        // The second child states the interval [1.0, 0.0] over an ordinary knot
+        // vector: the stated interval, not the knots, runs backwards.
+        let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [1.0, 0.0]);
+        let error = concatenate_nurbs(
+            decode_ctx,
+            vec![(first.0, first.1, ()), (second.0, second.1, ())],
+            None,
+        )
+        .expect_err("a reversed child interval is refused by name")
+        .to_string();
+        assert!(
+            error.contains("reversed interval"),
+            "the refusal names the reversed interval: {error}"
+        );
+        assert!(
+            !error.contains("endpoints"),
+            "the refusal is not the endpoint join: {error}"
+        );
+    });
 }
 
 /// A composite that states no child at all is refused by name.
 #[test]
 fn an_empty_child_list_names_itself() {
-    let error = concatenate_nurbs(None, Vec::<(NurbsCurve, [f64; 2], ())>::new(), None)
-        .expect_err("an empty child list is refused by name")
-        .to_string();
-    assert!(
-        error.contains("no child curve"),
-        "the refusal names the empty child list: {error}"
-    );
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let error = concatenate_nurbs(decode_ctx, Vec::<(NurbsCurve, [f64; 2], ())>::new(), None)
+            .expect_err("an empty child list is refused by name")
+            .to_string();
+        assert!(
+            error.contains("no child curve"),
+            "the refusal names the empty child list: {error}"
+        );
+    });
 }

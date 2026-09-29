@@ -94,13 +94,7 @@ fn insert_source_attribute(
     let key = ctx.format_retained(format_args!("{key}"), "iges source attribute key")?;
     let key = NonBlankString::new(key)
         .ok_or_else(|| CodecError::malformed("IGES source attribute key is blank"))?;
-    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-        Some(ctx),
-        attributes,
-        key,
-        value,
-        "iges source attributes",
-    )?;
+    ctx.insert_btree_map(attributes, key, value, "iges source attributes")?;
     Ok(())
 }
 
@@ -166,12 +160,7 @@ fn attributed_sequences(
         });
     let mut attributed = BTreeSet::new();
     for sequence in sequences {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
-            &mut attributed,
-            sequence,
-            "iges attributed loss sequences",
-        )?;
+        ctx.insert_btree_set(&mut attributed, sequence, "iges attributed loss sequences")?;
     }
     Ok(attributed)
 }
@@ -201,8 +190,7 @@ fn quarantined_parameter_sequences(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut sequences = BTreeSet::new();
     for record in records {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
+        ctx.insert_btree_set(
             &mut sequences,
             record.sequence,
             "iges quarantined parameter sequence index",
@@ -342,8 +330,7 @@ fn mark_quarantined_placements(
             && entry.form == 0
             && quarantined.contains(&entry.sequence)
     }) {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut projection.placement_rejections,
             entry.sequence,
             entities::structure::PlacementRejection::MissingRecord,
@@ -407,12 +394,12 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             card_storage,
         )?;
-        let scan = card::scan_with_context(bytes, Some(ctx))?;
+        let scan = card::scan_with_context(bytes, ctx)?;
         let (global, mut global_losses) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =
-            directory::parse(&scan, global.global_table(), Some(ctx))?;
+            directory::parse(&scan, global.global_table(), ctx)?;
         if mode == ParseMode::Decode {
-            entities::geometry::enforce_transform_depth(&directory, Some(ctx))?;
+            entities::geometry::enforce_transform_depth(&directory, ctx)?;
         }
         let parameter::ParameterAssembly {
             records: parameters,
@@ -424,7 +411,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &directory,
             &quarantined_directory,
             &global,
-            Some(ctx),
+            ctx,
         )?;
         let conditional_losses = global.conditional_double_precision_losses(
             parameter::uses_double_precision(&parameters),

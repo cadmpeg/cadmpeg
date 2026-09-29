@@ -94,7 +94,7 @@ pub(crate) struct TrailingPointerGroups {
 impl TrailingPointerGroups {
     fn fully_valid_with_context(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Option<ResolvedGroups>, CodecError> {
         if self
             .association_pointers
@@ -104,8 +104,7 @@ impl TrailingPointerGroups {
         {
             return Ok(None);
         }
-        let mut associations = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
+        let mut associations = ctx.collection_vec(
             self.association_pointers.len(),
             "iges resolved association pointers",
         )?;
@@ -114,8 +113,7 @@ impl TrailingPointerGroups {
                 associations.push(sequence);
             }
         }
-        let mut properties = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
+        let mut properties = ctx.collection_vec(
             self.property_pointers.len(),
             "iges resolved property pointers",
         )?;
@@ -194,9 +192,16 @@ impl TrailingPointerAnalysis {
     fn candidate_count(&self, record: &ParameterRecord, primary_end: Option<usize>) -> usize {
         match self {
             Self::Macro => 0,
-            Self::Unambiguous(_) => {
-                primary_end.map_or_else(|| structural_pointer_group_candidates(record).len(), |_| 1)
-            }
+            Self::Unambiguous(_) => primary_end.map_or_else(
+                || {
+                    crate::test_support::with_service_context(&[], |ctx| {
+                        structural_pointer_group_candidates_with_context(record, ctx)
+                            .expect("test-only pointer candidate allocation")
+                            .len()
+                    })
+                },
+                |_| 1,
+            ),
             Self::Ambiguous { candidates, .. } => *candidates,
             Self::SingleInvalid(_) => 1,
         }
@@ -569,7 +574,7 @@ fn analyze_trailing_pointer_groups_for_global_table_with_context(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<TrailingPointerAnalysis, CodecError> {
     if directory
         .get(&record.directory_sequence)
@@ -585,37 +590,12 @@ fn analyze_trailing_pointer_groups_for_global_table_with_context(
     )
 }
 
-#[cfg(test)]
-fn analyze_trailing_pointer_groups_for_global_table(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-    global_table: GlobalTable,
-) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_for_global_table_with_context(
-        record,
-        directory,
-        global_table,
-        None,
-    )
-    .expect("test-only trailing pointer analysis")
-}
-
-#[cfg(test)]
-// Existing boundary fixtures use the fully specified later-profile default;
-// every production caller supplies the resolved file global_table explicitly.
-fn analyze_trailing_pointer_groups(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_for_global_table(record, directory, GlobalTable::V5Later)
-}
-
 fn analyze_trailing_pointer_groups_with_records_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global_table: GlobalTable,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<TrailingPointerAnalysis, CodecError> {
     if directory
         .get(&record.directory_sequence)
@@ -639,76 +619,100 @@ fn analyze_trailing_pointer_groups_with_records_for_global_table(
     analyze_trailing_pointer_groups_from_end(record, directory, primary_end, ctx)
 }
 
-#[cfg(test)]
-fn analyze_trailing_pointer_groups_with_records(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_with_records_for_global_table(
-        record,
-        directory,
-        records,
-        GlobalTable::V5Later,
-        None,
-    )
-    .expect("test-only trailing pointer analysis")
-}
-
 fn analyze_trailing_pointer_groups_from_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     primary_end: Option<usize>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<TrailingPointerAnalysis, CodecError> {
     // IGES defines the group order and pointer classes, but the entity table
     // supplies NV when it defines the primary layout. Use that table boundary
     // before applying the generic CADIR recovery for an entity without a
     // registered layout.
-    let candidates = match primary_end {
+    let mut candidates = match primary_end {
         Some(start) => {
             let prefix = non_integer_prefix(record, ctx)?;
             let candidate = pointer_group_candidate_with_prefix(record, start, &prefix, true);
-            let mut candidates = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                usize::from(candidate.is_some()),
-                "iges pointer candidates",
-            )?;
+            let mut candidates =
+                ctx.collection_vec(usize::from(candidate.is_some()), "iges pointer candidates")?;
             candidates.extend(candidate);
             candidates
         }
         None => structural_pointer_group_candidates_with_context(record, ctx)?,
     };
-    let mut valid_groups = Vec::new();
-    for candidate in &candidates {
-        if let Some(groups) = groups_for_candidate_with_context(record, directory, *candidate, ctx)?
-        {
-            if let Some(resolved) = groups.fully_valid_with_context(ctx)? {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
-                    &mut valid_groups,
-                    1,
-                    "iges valid pointer groups",
-                )?;
-                valid_groups.push(resolved);
+    if candidates.len() > 1 {
+        let prefix_count = record
+            .tokens
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| refuse_local_limit("iges pointer class prefixes", u64::MAX, 1))?;
+        let mut prefix = ctx.collection_vec(prefix_count, "iges pointer class prefixes")?;
+        let mut invalid = [0_usize; 2];
+        prefix.push(invalid);
+        ctx.charge_work(
+            u64_from_index(record.tokens.len()),
+            "iges pointer class classification",
+        )?;
+        for index in 0..record.tokens.len() {
+            let kind = record
+                .raw_integer(index)
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|sequence| sequence % 2 == 1)
+                .and_then(|sequence| directory.get(&sequence))
+                .map(|entry| entry.entity_type);
+            invalid[0] += usize::from(!matches!(kind, Some(212 | 312 | 402)));
+            invalid[1] += usize::from(!matches!(kind, Some(316 | 322 | 406 | 422)));
+            prefix.push(invalid);
+        }
+        let valid_range = |start: usize, end: usize, class: usize| {
+            prefix
+                .get(start)
+                .zip(prefix.get(end))
+                .is_some_and(|(first, last)| first[class] == last[class])
+        };
+        let mut valid = 0;
+        let mut sole = None;
+        for candidate in &candidates {
+            if valid_range(
+                candidate.association_start,
+                candidate.property_count_index,
+                0,
+            ) && candidate
+                .property_count_index
+                .checked_add(1)
+                .is_some_and(|start| valid_range(start, record.tokens.len(), 1))
+            {
+                valid += 1;
+                sole = Some(*candidate);
+            }
+        }
+        match (valid, sole) {
+            (1, Some(candidate)) => {
+                candidates.clear();
+                candidates.push(candidate);
+            }
+            _ => {
+                return Ok(TrailingPointerAnalysis::Ambiguous {
+                    candidates: candidates.len(),
+                    valid,
+                })
             }
         }
     }
-    let valid = valid_groups.len();
-    match valid_groups.into_iter().next() {
-        Some(groups) if valid == 1 => Ok(TrailingPointerAnalysis::Unambiguous(groups)),
-        None if candidates.len() == 1 => {
-            match groups_for_candidate_with_context(record, directory, candidates[0], ctx)? {
-                Some(groups) => Ok(TrailingPointerAnalysis::SingleInvalid(groups)),
-                None => Ok(TrailingPointerAnalysis::Ambiguous {
-                    candidates: 1,
-                    valid: 0,
-                }),
-            }
-        }
-        Some(_) | None => Ok(TrailingPointerAnalysis::Ambiguous {
+    let [candidate] = candidates.as_slice() else {
+        return Ok(TrailingPointerAnalysis::Ambiguous {
             candidates: candidates.len(),
-            valid,
+            valid: 0,
+        });
+    };
+    match groups_for_candidate_with_context(record, directory, *candidate, ctx)? {
+        Some(groups) => match groups.fully_valid_with_context(ctx)? {
+            Some(resolved) => Ok(TrailingPointerAnalysis::Unambiguous(resolved)),
+            None => Ok(TrailingPointerAnalysis::SingleInvalid(groups)),
+        },
+        None => Ok(TrailingPointerAnalysis::Ambiguous {
+            candidates: 1,
+            valid: 0,
         }),
     }
 }
@@ -2530,7 +2534,7 @@ fn pointer_group_candidate_with_prefix(
 
 fn structural_pointer_group_candidates_with_context(
     record: &ParameterRecord,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PointerGroupCandidate>, CodecError> {
     let non_integer_prefix = non_integer_prefix(record, ctx)?;
     let mut candidates = Vec::new();
@@ -2541,38 +2545,23 @@ fn structural_pointer_group_candidates_with_context(
             &non_integer_prefix,
             false,
         ) {
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut candidates,
-                1,
-                "iges pointer candidates",
-            )?;
+            ctx.reserve_vec(&mut candidates, 1, "iges pointer candidates")?;
             candidates.push(candidate);
         }
     }
     Ok(candidates)
 }
 
-#[cfg(test)]
-fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerGroupCandidate> {
-    structural_pointer_group_candidates_with_context(record, None)
-        .expect("test-only pointer candidate allocation")
-}
-
 fn non_integer_prefix(
     record: &ParameterRecord,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<usize>, CodecError> {
     let count = record
         .tokens
         .len()
         .checked_add(1)
         .ok_or_else(|| refuse_local_limit("iges noninteger token prefix", u64::MAX, 1))?;
-    let mut prefix = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        count,
-        "iges noninteger token prefix",
-    )?;
+    let mut prefix = ctx.collection_vec(count, "iges noninteger token prefix")?;
     prefix.push(0);
     for index in 0..record.tokens.len() {
         prefix.push(prefix[index] + usize::from(record.raw_integer(index).is_none()));
@@ -2584,7 +2573,7 @@ fn groups_for_candidate_with_context(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     candidate: PointerGroupCandidate,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<TrailingPointerGroups>, CodecError> {
     let pointers =
         |range: Range<usize>, admitted: fn(i64) -> bool| -> Result<Option<Vec<_>>, CodecError> {
@@ -2594,11 +2583,7 @@ fn groups_for_candidate_with_context(
             {
                 return Ok(None);
             }
-            let mut pointers = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                range.len(),
-                "iges trailing pointer entries",
-            )?;
+            let mut pointers = ctx.collection_vec(range.len(), "iges trailing pointer entries")?;
             for token_index in range {
                 let Some(raw_pointer) = record.raw_integer(token_index) else {
                     return Ok(None);
@@ -2643,16 +2628,6 @@ fn groups_for_candidate_with_context(
         association_pointers,
         property_pointers,
     }))
-}
-
-#[cfg(test)]
-fn groups_for_candidate(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-    candidate: PointerGroupCandidate,
-) -> Option<TrailingPointerGroups> {
-    groups_for_candidate_with_context(record, directory, candidate, None)
-        .expect("test-only trailing pointer allocation")
 }
 
 /// Why one entity's Parameter Data has no typed tokens.
@@ -2889,7 +2864,7 @@ fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>
 /// comment payload and may use the remaining card space without token rules.
 pub(crate) fn layout_parameter_cards(
     bytes: &[u8],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     let mut fields = Vec::new();
     let mut cursor = 0_usize;
@@ -2906,12 +2881,7 @@ pub(crate) fn layout_parameter_cards(
             CodecError::Malformed("IGES Parameter Data delimiter is missing".into())
         })?;
         end += 1;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut fields,
-            1,
-            "iges parameter layout fields",
-        )?;
+        ctx.reserve_vec(&mut fields, 1, "iges parameter layout fields")?;
         fields.push(start..end);
         cursor = end;
         if *delimiter == b';' {
@@ -2939,23 +2909,13 @@ pub(crate) fn layout_parameter_cards(
         }
         if card.len() + minimum > 64 {
             card.extend(std::iter::repeat_with(|| b' ').take(64 - card.len()));
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut cards,
-                1,
-                "iges parameter layout cards",
-            )?;
+            ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
             cards.push(std::mem::take(&mut card));
             card = layout_parameter_card(ctx)?;
         }
         for byte in field.iter().copied() {
             if card.len() == 64 {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
-                    &mut cards,
-                    1,
-                    "iges parameter layout cards",
-                )?;
+                ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
                 cards.push(std::mem::take(&mut card));
                 card = layout_parameter_card(ctx)?;
             }
@@ -2965,33 +2925,21 @@ pub(crate) fn layout_parameter_cards(
 
     for byte in bytes[cursor..].iter().copied() {
         if card.len() == 64 {
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut cards,
-                1,
-                "iges parameter layout cards",
-            )?;
+            ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
             cards.push(std::mem::take(&mut card));
             card = layout_parameter_card(ctx)?;
         }
         card.push(byte);
     }
     if !card.is_empty() {
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut cards,
-            1,
-            "iges parameter layout cards",
-        )?;
+        ctx.reserve_vec(&mut cards, 1, "iges parameter layout cards")?;
         cards.push(card);
     }
     Ok(cards)
 }
 
-fn layout_parameter_card(ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u8>, CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_retained(64, "iges parameter layout card bytes")?;
-    }
+fn layout_parameter_card(ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
+    ctx.charge_retained(64, "iges parameter layout card bytes")?;
     let mut card = Vec::new();
     card.try_reserve_exact(64).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
@@ -3041,7 +2989,7 @@ fn hollerith(
     card_boundaries: &[usize],
     start: usize,
     global_table: GlobalTable,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<(Token, usize)>, TokenizeFailure> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
@@ -3089,7 +3037,10 @@ fn hollerith(
     }
     Ok(Some((
         Token {
-            value: TokenValue::String(copy_token_bytes(payload, ctx)?),
+            value: TokenValue::String(
+                ctx.copy_retained(payload, "iges parameter string token")
+                    .map_err(TokenizeFailure::Refusal)?,
+            ),
             span: start..end,
         },
         end,
@@ -3211,6 +3162,7 @@ fn macro_keyword(bytes: &[u8], span: &Range<usize>, keyword: &[u8]) -> bool {
 /// stream. Statement spans exclude their record delimiters; `record_end`
 /// points immediately after the terminating `ENDM` delimiter, so the caller
 /// can retain any remaining card bytes as the ordinary Parameter Data comment.
+#[derive(Debug)]
 pub(crate) enum MacroDataError {
     Defect(ParameterDefect, usize),
     Refusal(CodecError),
@@ -3232,7 +3184,7 @@ pub(crate) fn macro_parameter_data_with_context(
     bytes: &[u8],
     parameter_delimiter: u8,
     record_delimiter: u8,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<MacroParameterData, MacroDataError> {
     let mut statements = Vec::new();
     let mut start = 0_usize;
@@ -3250,12 +3202,7 @@ pub(crate) fn macro_parameter_data_with_context(
         if trim_macro_span(bytes, raw_statement.clone()).is_empty() {
             return Err((ParameterDefect::MacroStatementEmpty, start).into());
         }
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut statements,
-            1,
-            "iges macro statement spans",
-        )?;
+        ctx.reserve_vec(&mut statements, 1, "iges macro statement spans")?;
         statements.push(raw_statement.clone());
         let record_end = cursor + 1;
         if macro_keyword(bytes, &raw_statement, b"ENDM") {
@@ -3339,24 +3286,11 @@ pub(crate) fn macro_parameter_data_with_context(
     Err((ParameterDefect::MacroTerminatorMissing, start).into())
 }
 
-#[cfg(test)]
-pub(crate) fn macro_parameter_data(
-    bytes: &[u8],
-    parameter_delimiter: u8,
-    record_delimiter: u8,
-) -> Result<MacroParameterData, (ParameterDefect, usize)> {
-    match macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter, None) {
-        Ok(data) => Ok(data),
-        Err(MacroDataError::Defect(defect, offset)) => Err((defect, offset)),
-        Err(MacroDataError::Refusal(error)) => panic!("test-only macro allocation: {error}"),
-    }
-}
-
 fn tokenize_macro(
     bytes: &[u8],
     parameter_delimiter: u8,
     record_delimiter: u8,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     let data = macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter, ctx)
         .map_err(|error| match error {
@@ -3364,7 +3298,8 @@ fn tokenize_macro(
             MacroDataError::Refusal(error) => TokenizeFailure::Refusal(error),
         })?;
     let mut tokens = Vec::new();
-    charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
+    ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+        .map_err(TokenizeFailure::Refusal)?;
     tokens.push(Token {
         value: TokenValue::Integer(306),
         span: data.entity_type_span,
@@ -3375,16 +3310,24 @@ fn tokenize_macro(
         .map(|statement| data.header_payload_start..statement.end)
         .filter(|span| span.start < span.end)
     {
-        charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
+        ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+            .map_err(TokenizeFailure::Refusal)?;
         tokens.push(Token {
-            value: TokenValue::String(copy_token_bytes(&bytes[span.clone()], ctx)?),
+            value: TokenValue::String(
+                ctx.copy_retained(&bytes[span.clone()], "iges parameter string token")
+                    .map_err(TokenizeFailure::Refusal)?,
+            ),
             span,
         });
     }
     for span in data.statement_spans.iter().skip(1) {
-        charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
+        ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+            .map_err(TokenizeFailure::Refusal)?;
         tokens.push(Token {
-            value: TokenValue::String(copy_token_bytes(&bytes[span.clone()], ctx)?),
+            value: TokenValue::String(
+                ctx.copy_retained(&bytes[span.clone()], "iges parameter string token")
+                    .map_err(TokenizeFailure::Refusal)?,
+            ),
             span: span.clone(),
         });
     }
@@ -3487,7 +3430,7 @@ fn numeric_with_limits(
     bytes: &[u8],
     span: Range<usize>,
     limits: NumericLimits,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Token, TokenizeFailure> {
     let start = span.start;
     let raw = &bytes[span.clone()];
@@ -3523,8 +3466,7 @@ fn numeric_with_limits(
             ));
         }
         let _reservation = ctx
-            .map(|ctx| ctx.reserve_scoped(u64_from_index(text.len()), "iges numeric token text"))
-            .transpose()
+            .reserve_scoped(u64_from_index(text.len()), "iges numeric token text")
             .map_err(TokenizeFailure::Refusal)?;
         let mut normalized = String::new();
         normalized.try_reserve_exact(text.len()).map_err(|_| {
@@ -3574,7 +3516,7 @@ fn tokenize_with_limits(
     record_delimiter: u8,
     global_table: GlobalTable,
     limits: NumericLimits,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     let mut tokens = Vec::new();
     let mut cursor = 0_usize;
@@ -3586,7 +3528,8 @@ fn tokenize_with_limits(
             return Ok((tokens, cursor + 1));
         }
         if bytes.get(cursor) == Some(&parameter_delimiter) {
-            charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
+            ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+                .map_err(TokenizeFailure::Refusal)?;
             tokens.push(Token {
                 value: TokenValue::Omitted,
                 span: cursor..cursor,
@@ -3633,7 +3576,8 @@ fn tokenize_with_limits(
             }
             (numeric_with_limits(bytes, span, limits, ctx)?, end)
         };
-        charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
+        ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+            .map_err(TokenizeFailure::Refusal)?;
         tokens.push(token);
         match bytes.get(end).copied() {
             Some(value) if value == parameter_delimiter => cursor = end + 1,
@@ -3655,7 +3599,7 @@ fn tokenize(
     parameter_delimiter: u8,
     record_delimiter: u8,
     global_table: GlobalTable,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     tokenize_with_limits(
         bytes,
@@ -3703,7 +3647,7 @@ fn declared_range(entry: &DirectoryEntry, census: &Range<u32>) -> DeclaredRange 
 }
 
 /// The contiguous head of the run of cards whose back-pointer names one entry.
-fn contiguous_run(cards: &[u32], ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u32>, CodecError> {
+fn contiguous_run(cards: &[u32], ctx: &DecodeContext<'_>) -> Result<Vec<u32>, CodecError> {
     let mut run = Vec::<u32>::new();
     for sequence in cards {
         if run
@@ -3712,12 +3656,7 @@ fn contiguous_run(cards: &[u32], ctx: Option<&DecodeContext<'_>>) -> Result<Vec<
         {
             break;
         }
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut run,
-            1,
-            "iges contiguous parameter cards",
-        )?;
+        ctx.reserve_vec(&mut run, 1, "iges contiguous parameter cards")?;
         run.push(*sequence);
     }
     Ok(run)
@@ -3729,13 +3668,9 @@ fn contiguous_run(cards: &[u32], ctx: Option<&DecodeContext<'_>>) -> Result<Vec<
 /// marks the later range and the range holding the highest end so far.
 fn overlapping_ranges(
     declared: &BTreeMap<u32, Range<u32>>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u32>, CodecError> {
-    let mut ordered = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        declared.len(),
-        "iges declared parameter ranges",
-    )?;
+    let mut ordered = ctx.collection_vec(declared.len(), "iges declared parameter ranges")?;
     ordered.extend(
         declared
             .iter()
@@ -3747,19 +3682,13 @@ fn overlapping_ranges(
     let mut highest_owner = None;
     for (start, end, sequence) in ordered {
         if start < highest_end {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                ctx,
+            ctx.insert_btree_set(
                 &mut overlapping,
                 sequence,
                 "iges overlapping parameter ranges",
             )?;
             if let Some(owner) = highest_owner {
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    ctx,
-                    &mut overlapping,
-                    owner,
-                    "iges overlapping parameter ranges",
-                )?;
+                ctx.insert_btree_set(&mut overlapping, owner, "iges overlapping parameter ranges")?;
             }
         }
         if end >= highest_end {
@@ -3778,7 +3707,7 @@ struct OwnedParameterBytes {
 fn owned_bytes(
     cards: &[u32],
     lines: &BTreeMap<u32, &PhysicalLine>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<OwnedParameterBytes, CodecError> {
     let (byte_count, card_count) = cards
         .iter()
@@ -3790,9 +3719,7 @@ fn owned_bytes(
             ))
         })
         .ok_or_else(|| refuse_local_limit("iges owned parameter bytes", u64::MAX, 1))?;
-    if let Some(ctx) = ctx {
-        ctx.charge_retained(u64_from_index(byte_count), "iges owned parameter bytes")?;
-    }
+    ctx.charge_retained(u64_from_index(byte_count), "iges owned parameter bytes")?;
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(byte_count).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
@@ -3804,11 +3731,7 @@ fn owned_bytes(
             ),
         )
     })?;
-    let mut card_boundaries = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        card_count,
-        "iges parameter card boundaries",
-    )?;
+    let mut card_boundaries = ctx.collection_vec(card_count, "iges parameter card boundaries")?;
     for sequence in cards {
         let Some(line) = lines.get(sequence) else {
             continue;
@@ -3839,7 +3762,7 @@ fn quarantine(
     lines: &BTreeMap<u32, &PhysicalLine>,
     defect: ParameterDefect,
     failing_offset: Option<usize>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<QuarantinedParameterRecord, CodecError> {
     let byte_count = cards
         .iter()
@@ -3856,12 +3779,10 @@ fn quarantine(
                 .checked_add(1)
                 .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
             let mut range = first..range_end;
-            if let Some(ctx) = ctx {
-                ctx.charge_retained(
-                    u64_from_index(byte_count),
-                    "iges quarantined parameter bytes",
-                )?;
-            }
+            ctx.charge_retained(
+                u64_from_index(byte_count),
+                "iges quarantined parameter bytes",
+            )?;
             let mut bytes = Vec::new();
             bytes.try_reserve_exact(byte_count).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
@@ -3916,24 +3837,14 @@ fn resolve_ownership<'a>(
     lines: &BTreeMap<u32, &PhysicalLine>,
     back_pointers: &BTreeMap<u32, Option<u32>>,
     recoveries: &mut FramingRecoveries,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Ownership<'a>>, CodecError> {
     let mut typed = BTreeSet::new();
     let mut candidates = Vec::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
-            &mut typed,
-            entry.sequence,
-            "iges typed parameter owners",
-        )?;
+        ctx.insert_btree_set(&mut typed, entry.sequence, "iges typed parameter owners")?;
         if !(entry.entity_type == 0 && entry.parameter_line_count == 0) {
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut candidates,
-                1,
-                "iges parameter owner candidates",
-            )?;
+            ctx.reserve_vec(&mut candidates, 1, "iges parameter owner candidates")?;
             candidates.push(entry);
         }
     }
@@ -3955,8 +3866,7 @@ fn resolve_ownership<'a>(
     for (sequence, pointer) in back_pointers {
         if let Some(owner) = pointer {
             if !named_by.contains_key(owner) {
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                    ctx,
+                ctx.insert_btree_map(
                     &mut named_by,
                     *owner,
                     Vec::new(),
@@ -3964,12 +3874,7 @@ fn resolve_ownership<'a>(
                 )?;
             }
             if let Some(cards) = named_by.get_mut(owner) {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
-                    cards,
-                    1,
-                    "iges named parameter owner cards",
-                )?;
+                ctx.reserve_vec(cards, 1, "iges named parameter owner cards")?;
                 cards.push(*sequence);
             }
         }
@@ -3979,8 +3884,7 @@ fn resolve_ownership<'a>(
     for entry in &candidates {
         match declared_range(entry, &census) {
             DeclaredRange::Usable(range) => {
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                    ctx,
+                ctx.insert_btree_map(
                     &mut declared,
                     entry.sequence,
                     range,
@@ -3988,8 +3892,7 @@ fn resolve_ownership<'a>(
                 )?;
             }
             DeclaredRange::CardMissing => {
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    ctx,
+                ctx.insert_btree_set(
                     &mut card_missing,
                     entry.sequence,
                     "iges missing parameter cards",
@@ -4005,8 +3908,7 @@ fn resolve_ownership<'a>(
             continue;
         }
         for card in range.clone() {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                ctx,
+            ctx.insert_btree_map(
                 &mut claimed,
                 card,
                 *sequence,
@@ -4018,14 +3920,8 @@ fn resolve_ownership<'a>(
         match back_pointers.get(card).copied().flatten() {
             Some(pointer) if pointer == *owner => {}
             Some(pointer) if pointer % 2 == 1 && typed.contains(&pointer) => {
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    ctx,
-                    &mut conflicted,
-                    *owner,
-                    "iges conflicting parameter owners",
-                )?;
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    ctx,
+                ctx.insert_btree_set(&mut conflicted, *owner, "iges conflicting parameter owners")?;
+                ctx.insert_btree_set(
                     &mut conflicted,
                     pointer,
                     "iges conflicting parameter owners",
@@ -4066,12 +3962,7 @@ fn resolve_ownership<'a>(
                 Some(range) => range_to_cards(range, ctx)?,
                 None => run()?,
             };
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut resolved,
-                1,
-                "iges resolved parameter ownership",
-            )?;
+            ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")?;
             resolved.push(Ownership {
                 entry,
                 cards,
@@ -4081,12 +3972,7 @@ fn resolve_ownership<'a>(
         }
         if let Some(range) = range {
             let cards = range_to_cards(range, ctx)?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut resolved,
-                1,
-                "iges resolved parameter ownership",
-            )?;
+            ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")?;
             resolved.push(Ownership {
                 entry,
                 cards,
@@ -4109,12 +3995,7 @@ fn resolve_ownership<'a>(
                 ),
                 format_args!("the back-pointer census run of {} card(s)", run.len()),
             )?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut resolved,
-                1,
-                "iges resolved parameter ownership",
-            )?;
+            ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")?;
             resolved.push(Ownership {
                 entry,
                 cards: run,
@@ -4129,12 +4010,7 @@ fn resolve_ownership<'a>(
         } else {
             ParameterDefect::NoOwnedCards
         };
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut resolved,
-            1,
-            "iges resolved parameter ownership",
-        )?;
+        ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")?;
         resolved.push(Ownership {
             entry,
             cards: Vec::new(),
@@ -4144,15 +4020,8 @@ fn resolve_ownership<'a>(
     Ok(resolved)
 }
 
-fn range_to_cards(
-    range: Range<u32>,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<u32>, CodecError> {
-    let mut cards = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        range.len(),
-        "iges_parameter_ownership",
-    )?;
+fn range_to_cards(range: Range<u32>, ctx: &DecodeContext<'_>) -> Result<Vec<u32>, CodecError> {
+    let mut cards = ctx.collection_vec(range.len(), "iges_parameter_ownership")?;
     cards.extend(range);
     Ok(cards)
 }
@@ -4162,22 +4031,15 @@ pub(crate) fn assemble_with_context(
     directory: &[DirectoryEntry],
     quarantined_directory: &[QuarantinedDirectoryRecord],
     global: &ResolvedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<ParameterAssembly, CodecError> {
     let mut lines = BTreeMap::new();
     for (sequence, line) in scan.section(Section::Parameter) {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
-            &mut lines,
-            sequence,
-            line,
-            "iges parameter lines",
-        )?;
+        ctx.insert_btree_map(&mut lines, sequence, line, "iges parameter lines")?;
     }
     let mut back_pointers = BTreeMap::new();
     for (sequence, line) in &lines {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut back_pointers,
             *sequence,
             back_pointer(line),
@@ -4189,8 +4051,7 @@ pub(crate) fn assemble_with_context(
         .iter()
         .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
     {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -4205,12 +4066,7 @@ pub(crate) fn assemble_with_context(
     for owned in &ownership {
         let entry = owned.entry;
         if let Some(defect) = owned.quarantine {
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut quarantined,
-                1,
-                "iges quarantined parameter records",
-            )?;
+            ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records")?;
             quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None, ctx)?);
             continue;
         }
@@ -4237,12 +4093,7 @@ pub(crate) fn assemble_with_context(
             Ok(value) => value,
             Err(TokenizeFailure::Refusal(error)) => return Err(error),
             Err(TokenizeFailure::Defect(defect, offset)) => {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
-                    &mut quarantined,
-                    1,
-                    "iges quarantined parameter records",
-                )?;
+                ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records")?;
                 quarantined.push(quarantine(
                     entry,
                     &owned.cards,
@@ -4256,12 +4107,7 @@ pub(crate) fn assemble_with_context(
         };
         if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
         {
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut quarantined,
-                1,
-                "iges quarantined parameter records",
-            )?;
+            ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records")?;
             quarantined.push(quarantine(
                 entry,
                 &owned.cards,
@@ -4283,8 +4129,7 @@ pub(crate) fn assemble_with_context(
         let record = ParameterRecord {
             directory_sequence: entry.sequence,
             line_range: line_start..line_end,
-            comment: cadmpeg_core::decode::DecodeContext::copy_retained_optional(
-                ctx,
+            comment: ctx.copy_retained(
                 owned_bytes.bytes.get(record_end..).unwrap_or_default(),
                 "iges parameter comment",
             )?,
@@ -4292,19 +4137,13 @@ pub(crate) fn assemble_with_context(
             tokens,
             parameter_end,
         };
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut records,
-            1,
-            "iges parameter records",
-        )?;
+        ctx.reserve_vec(&mut records, 1, "iges parameter records")?;
         records.push(record);
     }
     {
         let mut record_by_directory = BTreeMap::new();
         for record in &records {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                ctx,
+            ctx.insert_btree_map(
                 &mut record_by_directory,
                 record.directory_sequence,
                 record,
@@ -4319,8 +4158,7 @@ pub(crate) fn assemble_with_context(
                 global.global_table(),
                 ctx,
             )?;
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                ctx,
+            ctx.insert_btree_map(
                 &mut trailing_pointer_analysis,
                 record.directory_sequence,
                 analysis,
@@ -4342,17 +4180,11 @@ pub(crate) fn assemble_with_context(
         .iter()
         .flat_map(|owned| owned.cards.iter().copied())
     {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
-            &mut accounted,
-            sequence,
-            "iges accounted parameter cards",
-        )?;
+        ctx.insert_btree_set(&mut accounted, sequence, "iges accounted parameter cards")?;
     }
     let mut quarantined_sequences = BTreeSet::new();
     for record in quarantined_directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut quarantined_sequences,
             record.sequence,
             "iges quarantined directory sequences",
@@ -4382,46 +4214,6 @@ pub(crate) fn assemble_with_context(
         quarantined,
         recoveries,
     })
-}
-
-fn charge_token(
-    ctx: Option<&DecodeContext<'_>>,
-    tokens: &mut Vec<Token>,
-) -> Result<(), CodecError> {
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
-        tokens,
-        1,
-        "iges_parameter_tokens",
-    )
-}
-
-fn copy_token_bytes(
-    bytes: &[u8],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<u8>, TokenizeFailure> {
-    match ctx {
-        Some(ctx) => ctx
-            .copy_retained(bytes, "iges parameter string token")
-            .map_err(TokenizeFailure::Refusal),
-        None => {
-            let mut copy = Vec::new();
-            copy.try_reserve_exact(bytes.len()).map_err(|_| {
-                TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "iges parameter string token",
-                        ),
-                        u64_from_index(bytes.len()),
-                        u64_from_index(bytes.len()),
-                        "iges parameter string token",
-                    ),
-                ))
-            })?;
-            copy.extend_from_slice(bytes);
-            Ok(copy)
-        }
-    }
 }
 
 pub(crate) fn summary_notes(

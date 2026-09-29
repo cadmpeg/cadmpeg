@@ -3,7 +3,6 @@
 
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
-use std::fmt;
 
 use super::{named_parameter, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -48,53 +47,9 @@ pub(super) struct ProductData {
     pub(super) product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
 
-fn reserve_product_items<T>(
-    values: &mut Vec<T>,
-    count: usize,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
-    }
-    values.try_reserve(count).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                1,
-                operation,
-            ),
-        ),
-        None => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                1,
-                operation,
-            ),
-        ),
-    })
-}
-
-fn insert_product_map<K: Ord, V>(
-    values: &mut BTreeMap<K, V>,
-    key: K,
-    value: V,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<Option<V>, CodecError> {
-    if !values.contains_key(&key) {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, operation)?;
-        }
-    }
-    Ok(values.insert(key, value))
-}
-
 fn join_product_references(
     ids: impl IntoIterator<Item = u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let mut text = String::new();
@@ -102,26 +57,16 @@ fn join_product_references(
         let numbered = format!("#{id}");
         let separator = if text.is_empty() { "" } else { ", " };
         let additional = separator.len() + numbered.len();
-        if let Some(ctx) = ctx {
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
-        }
-        text.try_reserve(additional).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
+        text.try_reserve(additional).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec(operation),
                     0,
                     1,
                     operation,
                 ),
-            ),
-            None => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    1,
-                    operation,
-                ),
-            ),
+            )
         })?;
         text.push_str(separator);
         text.push_str(&numbered);
@@ -131,33 +76,23 @@ fn join_product_references(
 
 fn join_product_texts<'a>(
     values: impl IntoIterator<Item = &'a str>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let mut text = String::new();
     for value in values {
         let separator = if text.is_empty() { "" } else { ", " };
         let additional = separator.len() + value.len();
-        if let Some(ctx) = ctx {
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
-        }
-        text.try_reserve(additional).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
+        text.try_reserve(additional).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec(operation),
                     0,
                     1,
                     operation,
                 ),
-            ),
-            None => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    1,
-                    operation,
-                ),
-            ),
+            )
         })?;
         text.push_str(separator);
         text.push_str(value);
@@ -165,57 +100,12 @@ fn join_product_texts<'a>(
     Ok(text)
 }
 
-fn format_product_text(
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-    arguments: fmt::Arguments<'_>,
-) -> Result<String, CodecError> {
-    match ctx {
-        Some(ctx) => ctx.format_retained(arguments, operation),
-        None => Ok(arguments.to_string()),
-    }
-}
-
-fn claim_product_typed(
-    typed: &mut HashSet<u64>,
-    id: u64,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "step_product_typed_claims";
-    if typed.contains(&id) {
-        return Ok(());
-    }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, OPERATION)?;
-    }
-    typed.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
-                0,
-                1,
-                OPERATION,
-            ),
-        ),
-        None => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
-                0,
-                1,
-                OPERATION,
-            ),
-        ),
-    })?;
-    typed.insert(id);
-    Ok(())
-}
-
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
     topology: &TopologyData,
     ir: &mut CadIr,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     admitted_ir_entities: &mut u64,
 ) -> Result<StageOutcome<ProductData>, CodecError> {
     let mut typed = HashSet::new();
@@ -228,9 +118,7 @@ pub(super) fn decode(
         else {
             continue;
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_product_formations")?;
-        }
+        ctx.charge_collection_items(1, "step_product_formations")?;
         formations.insert(id, product);
     }
     let mut definitions = BTreeMap::new();
@@ -242,26 +130,20 @@ pub(super) fn decode(
         else {
             continue;
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_product_definitions")?;
-        }
+        ctx.charge_collection_items(1, "step_product_definitions")?;
         definitions.insert(id, product);
     }
     let mut definitions_by_product_in_source_order = BTreeMap::<u64, Vec<u64>>::new();
     for (&definition, &product) in &definitions {
         if !definitions_by_product_in_source_order.contains_key(&product) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_product_definition_groups")?;
-            }
+            ctx.charge_collection_items(1, "step_product_definition_groups")?;
         }
         let grouped = definitions_by_product_in_source_order
             .entry(product)
             .or_default();
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_product_definition_group_members")?;
-        }
-        grouped.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+        ctx.charge_collection_items(1, "step_product_definition_group_members")?;
+        grouped.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec(
                         "step_product_definition_group_members",
@@ -270,17 +152,7 @@ pub(super) fn decode(
                     1,
                     "step_product_definition_group_members",
                 ),
-            ),
-            None => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(
-                        "step_product_definition_group_members",
-                    ),
-                    0,
-                    1,
-                    "step_product_definition_group_members",
-                ),
-            ),
+            )
         })?;
         grouped.push(definition);
     }
@@ -324,9 +196,7 @@ pub(super) fn decode(
         };
         if !description.is_empty() {
             if !definition_descriptions.contains_key(&id) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_product_definition_descriptions")?;
-                }
+                ctx.charge_collection_items(1, "step_product_definition_descriptions")?;
             }
             definition_descriptions.entry(id).or_insert(description);
         }
@@ -335,9 +205,7 @@ pub(super) fn decode(
     let mut definition_counts = BTreeMap::<u64, usize>::new();
     for product in definitions.values() {
         if !definition_counts.contains_key(product) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_product_definition_counts")?;
-            }
+            ctx.charge_collection_items(1, "step_product_definition_counts")?;
         }
         *definition_counts.entry(*product).or_default() += 1;
     }
@@ -412,29 +280,21 @@ pub(super) fn decode(
                 || Ok::<ProductDefinitionId, CodecError>(product_ir_id(step_id)),
                 |definition| {
                     let id = product_definition_ir_id(step_id, definition, definition_count);
-                    if let Some(ctx) = ctx {
-                        ctx.charge_collection_items(1, "step_product_definition_prototypes")?;
-                    }
+                    ctx.charge_collection_items(1, "step_product_definition_prototypes")?;
                     definition_prototypes.insert(definition, id.clone());
                     Ok(id)
                 },
             )?;
             let definition_description = definition
                 .and_then(|definition| definition_descriptions.get(&definition))
-                .map(|text| match ctx {
-                    Some(ctx) => {
-                        ctx.copy_retained_text(text, "step_product_definition_description_copy")
-                    }
-                    None => Ok::<String, CodecError>(text.to_owned()),
+                .map(|text| {
+                    ctx.copy_retained_text(text, "step_product_definition_description_copy")
                 })
                 .transpose()?;
             let description = if definition_count <= 1 {
                 product_description
                     .as_deref()
-                    .map(|text| match ctx {
-                        Some(ctx) => ctx.copy_retained_text(text, "step_product_description_copy"),
-                        None => Ok::<String, CodecError>(text.to_owned()),
-                    })
+                    .map(|text| ctx.copy_retained_text(text, "step_product_description_copy"))
                     .transpose()?
                     .or(definition_description)
             } else {
@@ -442,12 +302,7 @@ pub(super) fn decode(
                     Some(description) => Some(description),
                     None => product_description
                         .as_deref()
-                        .map(|text| match ctx {
-                            Some(ctx) => {
-                                ctx.copy_retained_text(text, "step_product_description_copy")
-                            }
-                            None => Ok::<String, CodecError>(text.to_owned()),
-                        })
+                        .map(|text| ctx.copy_retained_text(text, "step_product_description_copy"))
                         .transpose()?,
                 }
             };
@@ -482,23 +337,21 @@ pub(super) fn decode(
                 |definition| format!("PRODUCT_DEFINITION #{definition}"),
             );
             if !missing.is_empty() {
-                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
-                losses.push(StepLossCode::DecodeWarning.note(format_product_text(
-                    ctx,
-                    "step_missing_shape_body_loss_text",
+                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+                losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(
                     format_args!("{owner} omitted uncommitted shape body reference(s): {missing}"),
+                    "step_missing_shape_body_loss_text",
                 )?));
             }
             if has_shape_binding && bodies.is_empty() {
-                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
+                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{owner} has a shape representation with no committed topology body"
                 )));
             }
-            reserve_product_items(
+            ctx.reserve_vec(
                 &mut ir.model.product_definitions,
                 1,
-                ctx,
                 "step_product_definition_ir_items",
             )?;
             ir.model.product_definitions.push(ProductDefinition {
@@ -506,25 +359,16 @@ pub(super) fn decode(
                 kind: ProductDefinitionKind::Part,
                 source_name: name
                     .as_deref()
-                    .map(|text| match ctx {
-                        Some(ctx) => ctx.copy_retained_text(text, "step_product_source_name_copy"),
-                        None => Ok::<String, CodecError>(text.to_owned()),
-                    })
+                    .map(|text| ctx.copy_retained_text(text, "step_product_source_name_copy"))
                     .transpose()?,
                 label: name
                     .as_deref()
-                    .map(|text| match ctx {
-                        Some(ctx) => ctx.copy_retained_text(text, "step_product_label_copy"),
-                        None => Ok::<String, CodecError>(text.to_owned()),
-                    })
+                    .map(|text| ctx.copy_retained_text(text, "step_product_label_copy"))
                     .transpose()?,
                 description,
-                part_number: Some(match ctx {
-                    Some(ctx) => {
-                        ctx.copy_retained_text(&product_id, "step_product_part_number_copy")
-                    }
-                    None => Ok::<String, CodecError>(product_id.clone()),
-                }?),
+                part_number: Some(
+                    ctx.copy_retained_text(&product_id, "step_product_part_number_copy")?,
+                ),
                 bom_properties: BTreeMap::new(),
                 bodies,
                 native_ref: Some(
@@ -532,15 +376,14 @@ pub(super) fn decode(
                 ),
             });
             if !product_definition_ids_by_source.contains_key(&step_id) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_product_source_groups")?;
-                }
+                ctx.charge_collection_items(1, "step_product_source_groups")?;
             }
             let grouped = product_definition_ids_by_source.entry(step_id).or_default();
-            reserve_product_items(grouped, 1, ctx, "step_product_source_group_members")?;
+            ctx.reserve_vec(grouped, 1, "step_product_source_group_members")?;
             grouped.push(product_definition_id);
         }
-        claim_product_typed(&mut typed, step_id, ctx)?;
+        ctx.insert_hash_set(&mut typed, step_id, "step_product_typed_claims")
+            .map(|_| ())?;
     }
     let mut product_definition_ids_by_shape = BTreeMap::new();
     for (shape_id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
@@ -550,13 +393,12 @@ pub(super) fn decode(
         else {
             continue;
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_product_shape_prototypes")?;
-        }
+        ctx.charge_collection_items(1, "step_product_shape_prototypes")?;
         product_definition_ids_by_shape.insert(shape_id, prototype.clone());
     }
     for id in formations.keys().chain(definitions.keys()) {
-        claim_product_typed(&mut typed, *id, ctx)?;
+        ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims")
+            .map(|_| ())?;
     }
 
     let mut usages = BTreeMap::new();
@@ -585,9 +427,7 @@ pub(super) fn decode(
         else {
             continue;
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_product_usage_entries")?;
-        }
+        ctx.charge_collection_items(1, "step_product_usage_entries")?;
         usages.insert(
             id,
             Usage {
@@ -600,9 +440,7 @@ pub(super) fn decode(
     let mut child_definitions = BTreeSet::new();
     for usage in usages.values() {
         if !child_definitions.contains(&usage.child_definition) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_product_child_definitions")?;
-            }
+            ctx.charge_collection_items(1, "step_product_child_definitions")?;
             child_definitions.insert(usage.child_definition);
         }
     }
@@ -614,7 +452,7 @@ pub(super) fn decode(
             continue;
         }
         let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
-            reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
+            ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRODUCT_DEFINITION #{definition} has no local product prototype"
             )));
@@ -624,12 +462,7 @@ pub(super) fn decode(
             kind!("occurrence"),
             key_word!("definition").dash(definition),
         ));
-        reserve_product_items(
-            &mut ir.model.occurrences,
-            1,
-            ctx,
-            "step_root_occurrence_items",
-        )?;
+        ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_root_occurrence_items")?;
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
             prototype: PrototypeReference::Local {
@@ -645,16 +478,22 @@ pub(super) fn decode(
             link: None,
             native_ref: None,
         });
-        admit_occurrence(ctx, ir, admitted_ir_entities)?;
+        ctx.admit_entities(
+            u64_from_index(ir.model.entity_count()),
+            admitted_ir_entities,
+            "step_assembly_occurrence",
+        )?;
         root_ordinal = root_ordinal
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_root_occurrence_path_map")?;
-            ctx.charge_collection_items(1, "step_root_occurrence_path_members")?;
-        }
+        ctx.charge_collection_items(1, "step_root_occurrence_path_map")?;
+        ctx.charge_collection_items(1, "step_root_occurrence_path_members")?;
         occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
-        enqueue_occurrence(&mut pending_occurrences, definition, id, ctx)?;
+        ctx.push_back(
+            &mut pending_occurrences,
+            (definition, id),
+            "step_pending_occurrence",
+        )?;
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
@@ -688,12 +527,8 @@ pub(super) fn decode(
         } else {
             "occurrence-owned mapped"
         };
-        reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
-        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format_product_text(
-            ctx,
-            "step_ambiguous_placement_loss_text",
-            format_args!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"),
-        )?));
+        ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+        losses.push(StepLossCode::NauoPlacementAmbiguous.note(ctx.format_retained(format_args!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"), "step_ambiguous_placement_loss_text")?));
     }
     for (&usage_id, source_ids) in &competing_placements {
         let records = join_product_references(
@@ -701,12 +536,8 @@ pub(super) fn decode(
             ctx,
             "step_competing_placement_source_text",
         )?;
-        reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
-        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format_product_text(
-            ctx,
-            "step_competing_placement_loss_text",
-            format_args!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"),
-        )?));
+        ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+        losses.push(StepLossCode::NauoPlacementAmbiguous.note(ctx.format_retained(format_args!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"), "step_competing_placement_loss_text")?));
     }
     let mut usage_instances = BTreeMap::<u64, usize>::new();
     let mut missing_placement_reports = BTreeSet::new();
@@ -714,16 +545,12 @@ pub(super) fn decode(
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in &usages {
         if !usages_by_parent.contains_key(&usage.parent_definition) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_product_usage_parent_groups")?;
-            }
+            ctx.charge_collection_items(1, "step_product_usage_parent_groups")?;
         }
         let grouped = usages_by_parent.entry(usage.parent_definition).or_default();
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_product_usage_parent_members")?;
-        }
-        grouped.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+        ctx.charge_collection_items(1, "step_product_usage_parent_members")?;
+        grouped.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec(
                         "step_product_usage_parent_members",
@@ -732,17 +559,7 @@ pub(super) fn decode(
                     1,
                     "step_product_usage_parent_members",
                 ),
-            ),
-            None => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(
-                        "step_product_usage_parent_members",
-                    ),
-                    0,
-                    1,
-                    "step_product_usage_parent_members",
-                ),
-            ),
+            )
         })?;
         grouped.push(usage_id);
     }
@@ -759,7 +576,7 @@ pub(super) fn decode(
             let usage = &usages[&usage_id];
             let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
             else {
-                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
+                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} references an unresolved child definition"
                 )));
@@ -768,23 +585,21 @@ pub(super) fn decode(
             let parent_path = occurrence_paths.get(&parent);
             let depth_limit = assembly_depth_limit(ctx);
             if parent_path.is_some_and(|path| path.len() >= depth_limit) {
-                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
+                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} exceeds the {depth_limit}-level assembly depth limit"
                 )));
                 continue;
             }
             if parent_path.is_some_and(|path| path.contains(&usage.child_definition)) {
-                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
+                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} closes an assembly definition cycle"
                 )));
                 continue;
             }
             if !usage_instances.contains_key(&usage_id) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_usage_instance_counts")?;
-                }
+                ctx.charge_collection_items(1, "step_usage_instance_counts")?;
             }
             let instance = usage_instances.entry(usage_id).or_default();
             *instance += 1;
@@ -801,28 +616,24 @@ pub(super) fn decode(
             ));
             let occurrence_cap = occurrence_limit(ctx);
             if ir.model.occurrences.len() >= occurrence_cap {
-                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
+                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "assembly occurrence expansion exceeds the {occurrence_cap}-occurrence limit"
                 )));
                 break 'expansion;
             }
             if !child_ordinals.contains_key(&parent) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_child_occurrence_ordinals")?;
-                }
+                ctx.charge_collection_items(1, "step_child_occurrence_ordinals")?;
             }
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
             let transform = if let Some(transform) = placements.get(&usage_id).copied() {
                 transform
             } else {
                 if !missing_placement_reports.contains(&usage_id) {
-                    if let Some(ctx) = ctx {
-                        ctx.charge_collection_items(1, "step_missing_placement_reports")?;
-                    }
+                    ctx.charge_collection_items(1, "step_missing_placement_reports")?;
                 }
                 if missing_placement_reports.insert(usage_id) {
-                    reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
+                    ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
                     losses.push(StepLossCode::NauoPlacementUnresolved.note(format!(
                         "NAUO #{usage_id} has no resolved occurrence transform; \
                              identity placement was used"
@@ -830,12 +641,7 @@ pub(super) fn decode(
                 }
                 Transform::identity()
             };
-            reserve_product_items(
-                &mut ir.model.occurrences,
-                1,
-                ctx,
-                "step_child_occurrence_items",
-            )?;
+            ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_child_occurrence_items")?;
             ir.model.occurrences.push(Occurrence {
                 id: id.clone(),
                 prototype: PrototypeReference::Local {
@@ -851,42 +657,42 @@ pub(super) fn decode(
                 name: usage
                     .name
                     .as_deref()
-                    .map(|text| match ctx {
-                        Some(ctx) => {
-                            ctx.copy_retained_text(text, "step_product_occurrence_name_copy")
-                        }
-                        None => Ok::<String, CodecError>(text.to_owned()),
-                    })
+                    .map(|text| ctx.copy_retained_text(text, "step_product_occurrence_name_copy"))
                     .transpose()?,
                 visible: None,
                 link: None,
                 native_ref: Some(format!("#{usage_id}")),
             });
-            admit_occurrence(ctx, ir, admitted_ir_entities)?;
+            ctx.admit_entities(
+                u64_from_index(ir.model.entity_count()),
+                admitted_ir_entities,
+                "step_assembly_occurrence",
+            )?;
             *ordinal = ordinal.checked_add(1).ok_or_else(|| {
                 CodecError::malformed("STEP child occurrence ordinal exceeds u32")
             })?;
             let mut path = BTreeSet::new();
             if let Some(parent_path) = parent_path {
                 for &definition in parent_path {
-                    if let Some(ctx) = ctx {
-                        ctx.charge_collection_items(1, "step_child_occurrence_path_members")?;
-                    }
+                    ctx.charge_collection_items(1, "step_child_occurrence_path_members")?;
                     path.insert(definition);
                 }
             }
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_child_occurrence_path_members")?;
-                ctx.charge_collection_items(1, "step_child_occurrence_path_map")?;
-            }
+            ctx.charge_collection_items(1, "step_child_occurrence_path_members")?;
+            ctx.charge_collection_items(1, "step_child_occurrence_path_map")?;
             path.insert(usage.child_definition);
             occurrence_paths.insert(id.clone(), path);
-            enqueue_occurrence(&mut pending_occurrences, usage.child_definition, id, ctx)?;
-            claim_product_typed(&mut typed, usage_id, ctx)?;
+            ctx.push_back(
+                &mut pending_occurrences,
+                (usage.child_definition, id),
+                "step_pending_occurrence",
+            )?;
+            ctx.insert_hash_set(&mut typed, usage_id, "step_product_typed_claims")
+                .map(|_| ())?;
         }
     }
     if !had_roots && !usages.is_empty() {
-        reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
+        ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
         losses.push(
             StepLossCode::DecodeWarning.note("assembly occurrence graph has no resolvable root"),
         );
@@ -933,7 +739,8 @@ pub(super) fn decode(
                 .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
                 .is_some()
         {
-            claim_product_typed(&mut typed, id, ctx)?;
+            ctx.insert_hash_set(&mut typed, id, "step_product_typed_claims")
+                .map(|_| ())?;
         }
     }
     for (&usage_id, source_ids) in &ambiguous_placements {
@@ -953,59 +760,15 @@ pub(super) fn decode(
     })
 }
 
-fn enqueue_occurrence(
-    pending: &mut VecDeque<(u64, OccurrenceId)>,
-    definition: u64,
-    id: OccurrenceId,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "step_pending_occurrence";
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, OPERATION)?;
-    }
-    pending.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
-                0,
-                1,
-                OPERATION,
-            ),
-        ),
-        None => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
-                0,
-                1,
-                OPERATION,
-            ),
-        ),
-    })?;
-    pending.push_back((definition, id));
-    Ok(())
-}
-
-fn admit_occurrence(
-    ctx: Option<&DecodeContext<'_>>,
-    ir: &CadIr,
-    admitted: &mut u64,
-) -> Result<(), CodecError> {
-    let current = u64_from_index(ir.model.entity_count());
-    if let Some(ctx) = ctx {
-        ctx.admit_entities(current, admitted, "step_assembly_occurrence")?;
-    } else {
-        *admitted = current;
-    }
-    Ok(())
-}
-
-fn occurrence_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
-    ctx.and_then(|ctx| usize::try_from(ctx.policy().limits.max_entities).ok())
+fn occurrence_limit(ctx: &DecodeContext<'_>) -> usize {
+    usize::try_from(ctx.policy().limits.max_entities)
+        .ok()
         .map_or(MAX_OCCURRENCES, |policy| policy.min(MAX_OCCURRENCES))
 }
 
-fn assembly_depth_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
-    ctx.and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+fn assembly_depth_limit(ctx: &DecodeContext<'_>) -> usize {
+    usize::try_from(ctx.policy().limits.max_recursion_depth)
+        .ok()
         .map_or(MAX_ASSEMBLY_DEPTH, |policy| policy.min(MAX_ASSEMBLY_DEPTH))
 }
 
@@ -1021,7 +784,7 @@ fn apply_body_placements(
     sources: BodyPlacementSources<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let BodyPlacementSources {
         geometry,
@@ -1033,9 +796,7 @@ fn apply_body_placements(
         if let Some(definition) =
             named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2).and_then(ValueExt::reference)
         {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_body_placement_shapes")?;
-            }
+            ctx.charge_collection_items(1, "step_body_placement_shapes")?;
             pds.insert(id, definition);
         }
     }
@@ -1048,17 +809,13 @@ fn apply_body_placements(
             .flatten()
     }) {
         if !assembly_representations.contains(representation) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_assembly_representations")?;
-            }
+            ctx.charge_collection_items(1, "step_assembly_representations")?;
             assembly_representations.insert(*representation);
         }
     }
     let mut body_indices = BTreeMap::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_body_placement_indices")?;
-        }
+        ctx.charge_collection_items(1, "step_body_placement_indices")?;
         body_indices.insert(body.id.clone(), index);
     }
     let mut representation_cache = BTreeMap::new();
@@ -1086,7 +843,6 @@ fn apply_body_placements(
             topology,
             &mut representation_cache,
             &mut BTreeSet::new(),
-            0,
             ctx,
         )?;
         if bodies.is_empty() {
@@ -1096,7 +852,7 @@ fn apply_body_placements(
         let transform = match mapped_item_transform(origin, target, geometry) {
             Ok(Some(transform)) => transform,
             Ok(None) | Err(TransformError::Singular) => {
-                reserve_product_items(losses, 1, ctx, "step_product_losses")?;
+                ctx.reserve_vec(losses, 1, "step_product_losses")?;
                 losses.push(
                     StepLossCode::DecodeWarning
                         .note(format!("MAPPED_ITEM #{id} has no resolved body placement")),
@@ -1107,12 +863,10 @@ fn apply_body_placements(
         };
         for body in body_ids {
             if !placements_by_body.contains_key(&body) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_body_placement_groups")?;
-                }
+                ctx.charge_collection_items(1, "step_body_placement_groups")?;
             }
             let grouped = placements_by_body.entry(body).or_default();
-            reserve_product_items(grouped, 1, ctx, "step_body_placement_group_members")?;
+            ctx.reserve_vec(grouped, 1, "step_body_placement_group_members")?;
             grouped.push((id, transform));
         }
     }
@@ -1120,7 +874,7 @@ fn apply_body_placements(
         let mut unique = Vec::<(u64, Transform)>::new();
         for placement in placements {
             if unique.iter().all(|(_, existing)| *existing != placement.1) {
-                reserve_product_items(&mut unique, 1, ctx, "step_unique_body_placements")?;
+                ctx.reserve_vec(&mut unique, 1, "step_unique_body_placements")?;
                 unique.push(placement);
             }
         }
@@ -1137,12 +891,8 @@ fn apply_body_placements(
                     ctx,
                     "step_body_conflict_source_text",
                 )?;
-                reserve_product_items(losses, 1, ctx, "step_product_losses")?;
-                losses.push(StepLossCode::BodyConflictingMappedPlacements.note(format_product_text(
-                    ctx,
-                    "step_body_conflict_loss_text",
-                    format_args!("body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"),
-                )?));
+                ctx.reserve_vec(losses, 1, "step_product_losses")?;
+                losses.push(StepLossCode::BodyConflictingMappedPlacements.note(ctx.format_retained(format_args!("body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"), "step_body_conflict_loss_text")?));
             }
         }
     }
@@ -1151,7 +901,7 @@ fn apply_body_placements(
 
 fn drawing_owned_items(
     exchange: &Exchange,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut pending = Vec::new();
     for record in exchange.records().values() {
@@ -1175,23 +925,19 @@ fn drawing_owned_items(
         if visited.contains(&id) {
             continue;
         }
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_drawing_owned_visited")?;
-        }
+        ctx.charge_collection_items(1, "step_drawing_owned_visited")?;
         visited.insert(id);
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         if record.partial("MAPPED_ITEM").is_some() {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_drawing_owned_items")?;
-            }
+            ctx.charge_collection_items(1, "step_drawing_owned_items")?;
             items.insert(id);
             continue;
         }
         if let Some(representation_items) = super::representation::items(record) {
             for item in representation_items {
-                push_drawing_reference(&mut pending, item, ctx)?;
+                ctx.push_vec(&mut pending, item, "step_drawing_owned_pending")?;
             }
         }
         for partial in record.partials.iter().filter(|partial| {
@@ -1217,14 +963,12 @@ fn drawing_owned_items(
 fn collect_references(
     value: &Value,
     references: &mut Vec<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_drawing_reference_walk"))
-        .transpose()?;
+    let _nested = ctx.enter_nested("step_drawing_reference_walk")?;
     match value {
         Value::Reference(id) => {
-            push_drawing_reference(references, *id, ctx)?;
+            ctx.push_vec(references, *id, "step_drawing_owned_pending")?;
         }
         Value::List(values) => {
             for value in values {
@@ -1234,37 +978,6 @@ fn collect_references(
         Value::Typed(_, value) => collect_references(value, references, ctx)?,
         _ => {}
     }
-    Ok(())
-}
-
-fn push_drawing_reference(
-    references: &mut Vec<u64>,
-    id: u64,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "step_drawing_owned_pending";
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, OPERATION)?;
-    }
-    references.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
-                0,
-                1,
-                OPERATION,
-            ),
-        ),
-        None => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
-                0,
-                1,
-                OPERATION,
-            ),
-        ),
-    })?;
-    references.push(id);
     Ok(())
 }
 
@@ -1278,16 +991,14 @@ fn shape_bindings(
     exchange: &Exchange,
     definitions: &BTreeMap<u64, u64>,
     topology: &TopologyData,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<BodyId>>, CodecError> {
     let mut pds = BTreeMap::new();
     for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
         if let Some(definition) =
             named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2).and_then(ValueExt::reference)
         {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_shape_binding_shapes")?;
-            }
+            ctx.charge_collection_items(1, "step_shape_binding_shapes")?;
             pds.insert(id, definition);
         }
     }
@@ -1309,12 +1020,10 @@ fn shape_bindings(
         )? {
             let (body_ids, _body_bytes) = bodies.into_parts();
             if !result.contains_key(&definition) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_shape_binding_groups")?;
-                }
+                ctx.charge_collection_items(1, "step_shape_binding_groups")?;
             }
             let grouped = result.entry(definition).or_default();
-            reserve_product_items(grouped, body_ids.len(), ctx, "step_shape_binding_bodies")?;
+            ctx.reserve_vec(grouped, body_ids.len(), "step_shape_binding_bodies")?;
             grouped.extend(body_ids);
         }
     }
@@ -1328,7 +1037,7 @@ fn shape_binding<'a>(
     definitions: &BTreeMap<u64, u64>,
     topology: &TopologyData,
     representation_cache: &mut BTreeMap<u64, super::topology::AdmittedRepresentationBodies<'a>>,
-    ctx: Option<&'a DecodeContext<'_>>,
+    ctx: &'a DecodeContext<'_>,
 ) -> Result<Option<(u64, super::topology::AdmittedRepresentationBodies<'a>)>, CodecError> {
     let Some(shape) =
         named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0).and_then(ValueExt::reference)
@@ -1352,7 +1061,6 @@ fn shape_binding<'a>(
         topology,
         representation_cache,
         &mut BTreeSet::new(),
-        0,
         ctx,
     )?;
     Ok(Some((definition, bodies)))
@@ -1361,7 +1069,7 @@ fn shape_binding<'a>(
 fn definition_representations(
     exchange: &Exchange,
     pds: &BTreeMap<u64, u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, BTreeSet<u64>>, CodecError> {
     let mut result = BTreeMap::<u64, BTreeSet<u64>>::new();
     for (_, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
@@ -1379,15 +1087,11 @@ fn definition_representations(
             continue;
         };
         if !result.contains_key(&definition) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_definition_representation_groups")?;
-            }
+            ctx.charge_collection_items(1, "step_definition_representation_groups")?;
         }
         let representations = result.entry(definition).or_default();
         if !representations.contains(&representation) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_definition_representation_members")?;
-            }
+            ctx.charge_collection_items(1, "step_definition_representation_members")?;
             representations.insert(representation);
         }
     }
@@ -1401,16 +1105,14 @@ fn occurrence_placements(
     losses: &mut Vec<LossNote>,
     ambiguous: &mut BTreeMap<u64, Vec<u64>>,
     competing: &mut BTreeMap<u64, Vec<u64>>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
     let mut pds = BTreeMap::new();
     for (&id, record) in exchange.records() {
         if let Some(definition) =
             named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2).and_then(ValueExt::reference)
         {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_occurrence_placement_shapes")?;
-            }
+            ctx.charge_collection_items(1, "step_occurrence_placement_shapes")?;
             pds.insert(id, definition);
         }
     }
@@ -1419,17 +1121,13 @@ fn occurrence_placements(
     for (&definition, representations) in &definition_representations {
         for &representation in representations {
             if !definitions_by_representation.contains_key(&representation) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_represented_definition_groups")?;
-                }
+                ctx.charge_collection_items(1, "step_represented_definition_groups")?;
             }
             let definitions = definitions_by_representation
                 .entry(representation)
                 .or_default();
             if !definitions.contains(&definition) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_represented_definition_members")?;
-                }
+                ctx.charge_collection_items(1, "step_represented_definition_members")?;
                 definitions.insert(definition);
             }
         }
@@ -1448,25 +1146,22 @@ fn occurrence_placements(
             Ok(Some((usage, transform))) => {
                 if usages.contains_key(&usage) {
                     if !context_candidates.contains_key(&usage) {
-                        if let Some(ctx) = ctx {
-                            ctx.charge_collection_items(1, "step_context_candidate_groups")?;
-                        }
+                        ctx.charge_collection_items(1, "step_context_candidate_groups")?;
                     }
                     let grouped = context_candidates.entry(usage).or_default();
-                    reserve_product_items(grouped, 1, ctx, "step_context_candidate_members")?;
+                    ctx.reserve_vec(grouped, 1, "step_context_candidate_members")?;
                     grouped.push(record_id);
-                    insert_product_map(
+                    ctx.insert_btree_map(
                         &mut result,
                         usage,
                         transform,
-                        ctx,
                         "step_occurrence_placement_results",
                     )?;
                 }
             }
             Ok(None) => {}
             Err(TransformError::Singular) => {
-                reserve_product_items(losses, 1, ctx, "step_product_losses")?;
+                ctx.reserve_vec(losses, 1, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION #{record_id} has a singular placement"
                 )));
@@ -1477,21 +1172,19 @@ fn occurrence_placements(
     for (&usage, source_ids) in &context_candidates {
         if source_ids.len() > 1 {
             let mut copied = Vec::new();
-            reserve_product_items(
+            ctx.reserve_vec(
                 &mut copied,
                 source_ids.len(),
-                ctx,
                 "step_ambiguous_context_source_copy",
             )?;
             copied.extend_from_slice(source_ids);
             let mut source_ids = copied;
             source_ids.sort_unstable();
             source_ids.dedup();
-            insert_product_map(
+            ctx.insert_btree_map(
                 ambiguous,
                 usage,
                 source_ids,
-                ctx,
                 "step_ambiguous_placement_groups",
             )?;
         }
@@ -1515,12 +1208,10 @@ fn occurrence_placements(
             continue;
         };
         if !occurrence_representations.contains_key(&usage) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_occurrence_representation_groups")?;
-            }
+            ctx.charge_collection_items(1, "step_occurrence_representation_groups")?;
         }
         let grouped = occurrence_representations.entry(usage).or_default();
-        reserve_product_items(grouped, 1, ctx, "step_occurrence_representation_members")?;
+        ctx.reserve_vec(grouped, 1, "step_occurrence_representation_members")?;
         grouped.push((record_id, representation));
     }
     for (&usage_id, representations) in &occurrence_representations {
@@ -1551,7 +1242,7 @@ fn occurrence_placements(
                         Ok(Some(placement)) => placement,
                         Ok(None) => continue,
                         Err(TransformError::Singular) => {
-                            reserve_product_items(losses, 1, ctx, "step_product_losses")?;
+                            ctx.reserve_vec(losses, 1, "step_product_losses")?;
                             losses.push(
                                 StepLossCode::DecodeWarning.note(format!(
                                     "MAPPED_ITEM #{item_id} has a singular placement"
@@ -1562,12 +1253,7 @@ fn occurrence_placements(
                         Err(error) => return Err(placement_error(error)),
                     };
                 if child_representations.contains(&mapped_representation) {
-                    reserve_product_items(
-                        &mut candidates,
-                        1,
-                        ctx,
-                        "step_occurrence_placement_candidates",
-                    )?;
+                    ctx.reserve_vec(&mut candidates, 1, "step_occurrence_placement_candidates")?;
                     candidates.push((source_id, transform));
                 }
             }
@@ -1580,17 +1266,15 @@ fn occurrence_placements(
         {
             let original = &context_candidates[&usage_id];
             let mut source_ids = Vec::new();
-            reserve_product_items(
+            ctx.reserve_vec(
                 &mut source_ids,
                 original.len(),
-                ctx,
                 "step_competing_context_source_copy",
             )?;
             source_ids.extend_from_slice(original);
-            reserve_product_items(
+            ctx.reserve_vec(
                 &mut source_ids,
                 candidates.len(),
-                ctx,
                 "step_competing_mapped_sources",
             )?;
             source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
@@ -1598,56 +1282,46 @@ fn occurrence_placements(
             source_ids.dedup();
             result.remove(&usage_id);
             let mut copied = Vec::new();
-            reserve_product_items(
-                &mut copied,
-                source_ids.len(),
-                ctx,
-                "step_competing_source_copy",
-            )?;
+            ctx.reserve_vec(&mut copied, source_ids.len(), "step_competing_source_copy")?;
             copied.extend_from_slice(&source_ids);
-            insert_product_map(
+            ctx.insert_btree_map(
                 ambiguous,
                 usage_id,
                 copied,
-                ctx,
                 "step_ambiguous_placement_groups",
             )?;
-            insert_product_map(
+            ctx.insert_btree_map(
                 competing,
                 usage_id,
                 source_ids,
-                ctx,
                 "step_competing_placement_groups",
             )?;
             continue;
         }
         match candidates.as_slice() {
             [(_, transform)] => {
-                insert_product_map(
+                ctx.insert_btree_map(
                     &mut result,
                     usage_id,
                     *transform,
-                    ctx,
                     "step_occurrence_placement_results",
                 )?;
             }
             [] => {}
             _ => {
                 let mut source_ids = Vec::new();
-                reserve_product_items(
+                ctx.reserve_vec(
                     &mut source_ids,
                     candidates.len(),
-                    ctx,
                     "step_ambiguous_mapped_sources",
                 )?;
                 source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
                 source_ids.sort_unstable();
                 source_ids.dedup();
-                insert_product_map(
+                ctx.insert_btree_map(
                     ambiguous,
                     usage_id,
                     source_ids,
-                    ctx,
                     "step_ambiguous_placement_groups",
                 )?;
             }
@@ -1657,9 +1331,7 @@ fn occurrence_placements(
     for usage in usages.values() {
         let pair = (usage.parent_definition, usage.child_definition);
         if !sibling_usage_counts.contains_key(&pair) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_sibling_usage_counts")?;
-            }
+            ctx.charge_collection_items(1, "step_sibling_usage_counts")?;
         }
         *sibling_usage_counts.entry(pair).or_default() += 1;
     }
@@ -1695,7 +1367,7 @@ fn occurrence_placements(
                         Ok(Some(placement)) => placement,
                         Ok(None) => continue,
                         Err(TransformError::Singular) => {
-                            reserve_product_items(losses, 1, ctx, "step_product_losses")?;
+                            ctx.reserve_vec(losses, 1, "step_product_losses")?;
                             losses.push(
                                 StepLossCode::DecodeWarning.note(format!(
                                     "MAPPED_ITEM #{item_id} has a singular placement"
@@ -1714,12 +1386,7 @@ fn occurrence_placements(
                     && mapped_definitions.contains(&usage.child_definition)
                     && !placements.contains(&transform)
                 {
-                    reserve_product_items(
-                        &mut placements,
-                        1,
-                        ctx,
-                        "step_fallback_occurrence_placements",
-                    )?;
+                    ctx.reserve_vec(&mut placements, 1, "step_fallback_occurrence_placements")?;
                     placements.push(transform);
                 }
             }
@@ -1727,15 +1394,14 @@ fn occurrence_placements(
         let sibling_usage_count =
             sibling_usage_counts[&(usage.parent_definition, usage.child_definition)];
         if sibling_usage_count == 1 && placements.len() == 1 {
-            insert_product_map(
+            ctx.insert_btree_map(
                 &mut result,
                 usage_id,
                 placements[0],
-                ctx,
                 "step_occurrence_placement_results",
             )?;
         } else if !placements.is_empty() {
-            reserve_product_items(losses, 1, ctx, "step_product_losses")?;
+            ctx.reserve_vec(losses, 1, "step_product_losses")?;
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "NAUO #{usage_id} has an ambiguous mapped-item placement"
             )));

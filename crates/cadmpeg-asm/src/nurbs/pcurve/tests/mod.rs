@@ -23,12 +23,12 @@ fn push_f64(out: &mut Vec<u8>, value: f64) {
 }
 
 fn push_ident(out: &mut Vec<u8>, value: &str) {
-    out.extend_from_slice(&[0x0d, value.len() as u8]);
+    out.extend_from_slice(&[0x0d, u8::try_from(value.len()).expect("test value fits")]);
     out.extend_from_slice(value.as_bytes());
 }
 
 fn push_string(out: &mut Vec<u8>, value: &str) {
-    out.extend_from_slice(&[0x07, value.len() as u8]);
+    out.extend_from_slice(&[0x07, u8::try_from(value.len()).expect("test value fits")]);
     out.extend_from_slice(value.as_bytes());
 }
 

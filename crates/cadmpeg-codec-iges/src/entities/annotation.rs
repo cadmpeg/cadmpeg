@@ -63,15 +63,12 @@ fn sectioned_area_curves_coplanar(
     sequences: impl Iterator<Item = u32>,
     pattern_plane: (Point3, Vector3),
     resolution: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if !resolution.is_finite() || resolution < 0.0 {
         return Ok(false);
     }
-    let index = match ctx {
-        Some(ctx) => ModelIndex::try_new_model_only_for_decode(ir, ctx)?,
-        None => ModelIndex::new_model_only(ir),
-    };
+    let index = ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
     let identity = Transform::identity();
     let mut active = BTreeSet::new();
     for sequence in sequences {
@@ -83,12 +80,7 @@ fn sectioned_area_curves_coplanar(
             return Ok(false);
         }
         let active_id = curve_id.try_clone_for_decode(ctx, "iges section active curve id")?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
-            &mut active,
-            active_id,
-            "iges section active curves",
-        )?;
+        ctx.insert_btree_set(&mut active, active_id, "iges section active curves")?;
         let Some(geometry) = curve.geometry.solved() else {
             return Ok(false);
         };
@@ -981,7 +973,7 @@ fn sectioned_area_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     form: i64,
     context: SectionedAreaContext,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let SectionedAreaContext {
         global_table,
@@ -1059,12 +1051,11 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -1073,8 +1064,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -1177,8 +1167,7 @@ pub(super) fn project(
             .transpose()?
             .unwrap_or(false);
         if valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                ctx,
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges annotation decoded sequences",
@@ -1206,7 +1195,7 @@ pub(super) fn project(
                 | AnnotationKind::NewGeneralNote
                 | AnnotationKind::Leader => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
         }
     }
 
