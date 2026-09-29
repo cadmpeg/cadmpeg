@@ -950,7 +950,7 @@ pub(crate) fn project_spatial_sketch_design(
     for placement in placements {
         let id = neutral_spatial_sketch_id(placement);
         if !spatial_ids.contains(&id) { continue; }
-        let profiles = closed_spatial_sketch_profiles(&id, &entities, linear_tolerance);
+        let profiles = closed_spatial_sketch_profiles(ctx, &id, &entities, linear_tolerance)?;
         let name = copy_project_text(ctx, placement.entity_id.as_str(), "f3d spatial sketch name")?;
         let native_ref = copy_project_text(ctx, &placement.id, "f3d spatial sketch native reference")?;
         push_project_item(ctx, &mut sketches,
