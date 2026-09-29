@@ -20,6 +20,94 @@ use crate::records::{
 };
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
+fn body_recipe_limit_fixture() -> (
+    DesignParameterScope,
+    DesignConstructionOperandGroup,
+    DesignBodyRecipeOperand,
+) {
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#12",
+        crate::records::feature::scope::DesignFeatureKind::ReplaceFace,
+        12,
+    );
+    let group = group(12, 0, 100, 200, DesignOperandRole::ROLE_0X9);
+    let operand = DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+            id: "f3d:Design/BulkStream.dat:body-recipe#200".into(),
+            scope_record_index: 12,
+            owner: DesignOperandOwner::Group {
+                group_record_index: 100,
+                group_member_ordinal: 0,
+            },
+            record_index: 200,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            ).unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            ).unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
+            references: vec![DesignBodyRecipeReference {
+                design_reference: 326,
+                design_reference_offset: 25,
+                form: 33,
+                form_offset: 33,
+                candidate_faces: Vec::new(),
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 203,
+            nested_record_index_offset: 38,
+            recipe_id: "f3d:Design/BulkStream.dat:recipe#202".into(),
+            resolved_face_slot: Some(20),
+            resolved_body_state_id: Some(7),
+            resolved_body_slot: Some(3),
+            resolved_body_face_slots: vec![20, 21],
+            next_record_index: 204,
+            next_byte_offset: 256,
+        },
+    ).unwrap();
+    (scope, group, operand)
+}
+
+fn assert_body_recipe_collection_limit(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (scope, group, operand) = body_recipe_limit_fixture();
+    let operands = [operand];
+    assert!(matches!(crate::design::face_resolve::resolved_body_recipe_selection(
+        None, &scope, &group, &operands).unwrap(), Some(FaceSelection::Historical { .. })));
+    for limit in 0..12 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(crate::design::face_resolve::resolved_body_recipe_selection(
+            Some(&ctx), &scope, &group, &operands), Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation) {
+            return;
+        }
+    }
+    panic!("no body recipe collection refusal at {operation}");
+}
+
+#[test]
+fn body_recipe_member_index_refuses_collection_limit() {
+    assert_body_recipe_collection_limit("f3d body recipe member index");
+}
+
+#[test]
+fn body_recipe_face_slot_refuses_collection_limit() {
+    assert_body_recipe_collection_limit("f3d body recipe face slot");
+}
+
 fn group(
     scope_record_index: u32,
     scope_reference_ordinal: u32,
@@ -184,11 +272,13 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         .unwrap();
 
     let definition = project_replace_face(
+        None,
         &scope,
         &[replacement_group.clone(), target_group.clone()],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
     )
+    .unwrap()
     .expect("typed ReplaceFace");
     assert!(matches!(
         definition, FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
@@ -204,21 +294,23 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             && replacement_native.as_str() == replacement_group.id)));
 
     let reversed = project_replace_face(
+        None,
         &scope,
         &[target_group.clone(), replacement_group.clone()],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
-    );
+    ).unwrap();
     assert!(matches!(
         reversed,
         Some(FeatureDefinition::Operation(FeatureOperation::ReplaceFace { .. }))
     ));
     assert!(project_replace_face(
+        None,
         &scope,
         &[replacement_group.clone(), target_group.clone(), target_group.clone()],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
-    ).is_none());
+    ).unwrap().is_none());
 
     let mut invalid_scope = scope;
     invalid_scope
@@ -229,12 +321,13 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         })
         .unwrap();
     assert!(project_replace_face(
+        None,
         &invalid_scope,
         &[replacement_group, target_group],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
     )
-    .is_none());
+    .unwrap().is_none());
 }
 
 fn surface_trim_fixture() -> (

@@ -304,19 +304,20 @@ pub(super) fn resolved_historical_face_operand(
 /// group. Persistent-reference candidate faces identify each body; they do
 /// not define a partial target boundary.
 pub(super) fn resolved_body_recipe_selection(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     if group.scope_record_index != scope.record_index
         || group.extrude_role().is_some()
         || group.members().is_empty()
     {
-        return None;
+        return Ok(None);
     }
-    let stream = native_stream(&group.id)?;
+    let Some(stream) = native_stream(&group.id) else { return Ok(None); };
     if native_stream(&scope.id) != Some(stream) {
-        return None;
+        return Ok(None);
     }
     let mut faces = Vec::new();
     let mut state_id = None;
@@ -327,54 +328,57 @@ pub(super) fn resolved_body_recipe_selection(
         .map(|member| &member.value)
         .enumerate()
     {
-        if !member_records.insert(*record_index) {
-            return None;
+        if !insert_face_set(ctx, &mut member_records, *record_index,
+            "f3d body recipe member index")? {
+            return Ok(None);
         }
-        let ordinal = u32::try_from(ordinal).ok()?;
+        let Some(ordinal) = u32::try_from(ordinal).ok() else { return Ok(None); };
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
                 && operand.owner.group() == Some((group.record_index, ordinal))
                 && operand.record_index() == *record_index
         });
-        let operand = matches.next()?;
+        let Some(operand) = matches.next() else { return Ok(None); };
         if matches.next().is_some()
             || operand.references().is_empty()
             || operand.resolved_body_slot.is_none()
             || operand.resolved_body_face_slots.is_empty()
         {
-            return None;
+            return Ok(None);
         }
-        let operand_state_id = operand.resolved_body_state_id?;
+        let Some(operand_state_id) = operand.resolved_body_state_id else { return Ok(None); };
         match state_id {
             None => state_id = Some(operand_state_id),
             Some(expected) if expected == operand_state_id => {}
-            Some(_) => return None,
+            Some(_) => return Ok(None),
         }
         for face in &operand.resolved_body_face_slots {
             if !faces.contains(face) {
-                faces.push(*face);
+                push_face_item(ctx, &mut faces, *face, "f3d body recipe face slot")?;
             }
         }
     }
-    historical_face_selection_in_state(scope, group, state_id?, faces)
+    let Some(state_id) = state_id else { return Ok(None); };
+    Ok(historical_face_selection_in_state(scope, group, state_id, faces))
 }
 
 /// Resolve the complete input-state body boundaries selected by an Extrude
 /// target-shape group. Persistent-reference candidate faces identify each
 /// body; they do not define a partial target boundary.
 pub(super) fn resolved_body_recipe_shape(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     if crate::design::design_feature_family(&scope.kind())
         != Some(crate::design::DesignFeatureFamily::Extrude)
         || group.role() != DesignOperandRole::ROLE_0X5
     {
-        return None;
+        return Ok(None);
     }
-    resolved_body_recipe_selection(scope, group, operands)
+    resolved_body_recipe_selection(ctx, scope, group, operands)
 }
 
 pub(super) fn resolved_profile_face_group(
