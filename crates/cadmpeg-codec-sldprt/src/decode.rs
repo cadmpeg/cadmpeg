@@ -2591,13 +2591,14 @@ fn ensure_display_appearance(
         cadmpeg_ir::ids::IdentityKey::from(section_ordinal).colon(definition.record_offset),
     );
     crate::annotations::note(
+        ctx,
         annotations,
-        id.as_str().to_owned(),
+        id.as_str(),
         &definition.source_name,
         definition.record_offset as u64,
         "displaylist_visual_properties",
         Exactness::ByteExact,
-    );
+    )?;
     ctx.reserve_collection_vec(&mut ir.model.appearances, 1, "admit SLDPRT display appearance")?;
     ir.model.appearances.push(Appearance {
         id: id.clone(),
@@ -3205,13 +3206,14 @@ fn build_geometry_ir(
             cadmpeg_ir::ids::IdentityKey::from(face_color.color_attr).with_tail(&site),
         );
         crate::annotations::note(
+            ctx,
             &mut annotations,
-            id.as_str().to_owned(),
+            id.as_str(),
             annotation_source,
             face_color.offset as u64,
             "00_53_color",
             Exactness::ByteExact,
-        );
+        )?;
         if !ir
             .model
             .appearances
@@ -3275,13 +3277,14 @@ fn build_geometry_ir(
             index,
         );
         crate::annotations::note(
+            ctx,
             &mut annotations,
-            id.as_str().to_owned(),
+            id.as_str(),
             &definition.source_name,
             definition.record_offset as u64,
             "moVisualProperties_c",
             Exactness::ByteExact,
-        );
+        )?;
         ctx.reserve_collection_vec(&mut ir.model.appearances, 1, "admit SLDPRT material appearance")?;
         ir.model.appearances.push(Appearance {
             id,
@@ -3378,13 +3381,14 @@ fn build_geometry_ir(
                 });
             }
             crate::annotations::note(
+                ctx,
                 &mut annotations,
-                id.clone(),
+                id.as_str(),
                 display_stream,
                 display_face.table.start() as u64,
                 "displaylist_tessellation",
                 Exactness::ByteExact,
-            );
+            )?;
             display_links.push(id.clone());
             if let Some(definition) = resolved.by_face.get(&table_index) {
                 let table_index_text = table_index.to_string();
@@ -3453,13 +3457,14 @@ fn build_geometry_ir(
             display.ordinal(),
         );
         crate::annotations::note(
+            ctx,
             &mut annotations,
-            display_id.as_str().to_owned(),
+            display_id.as_str(),
             display_stream,
             0,
             "displaylist_tessellation",
             Exactness::Unknown,
-        );
+        )?;
         ctx.reserve_collection_vec(&mut unknowns, 1, "retain SLDPRT display unknown")?;
         unknowns.push(UnknownRecord::retained(
             display_id,
@@ -3511,13 +3516,14 @@ fn build_geometry_ir(
             continue;
         }
         crate::annotations::note(
+            ctx,
             &mut annotations,
-            id.as_str().to_owned(),
+            id.as_str(),
             source_block.section.source_stream(),
             source_block.offset as u64,
             source_block.family.label(),
             Exactness::ByteExact,
-        );
+        )?;
         unknowns.push(UnknownRecord::retained(
             id,
             0,
@@ -3531,13 +3537,14 @@ fn build_geometry_ir(
             source_stream.directory_id,
         );
         crate::annotations::note(
+            ctx,
             &mut annotations,
-            id.as_str().to_owned(),
+            id.as_str(),
             &source_stream.path,
             0,
             container::payload_family(&source_stream.payload).label(),
             Exactness::ByteExact,
-        );
+        )?;
         unknowns.push(UnknownRecord::retained(
             id,
             0,
@@ -3997,13 +4004,14 @@ fn build_metadata_ir(
             )?,
         );
         crate::annotations::note(
+            ctx,
             &mut annotations,
-            id.as_str().to_owned(),
+            id.as_str(),
             site.source_stream(),
             0,
             "parasolid_stream",
             Exactness::Unknown,
-        );
+        )?;
         ctx.reserve_collection_vec(&mut unknowns, 1, "retain SLDPRT metadata site")?;
         unknowns.push(UnknownRecord::retained(
             id,
@@ -5421,13 +5429,14 @@ fn preserve_source_image(
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
     crate::annotations::note(
+        ctx,
         annotations,
         "sldprt:file:source-image#0",
         &cadmpeg_ir::stream_name!("source"),
         0,
         "source_image",
         Exactness::ByteExact,
-    );
+    )?;
     ctx.reserve_collection_vec(unknowns, 1, "retain SLDPRT source image record")?;
     unknowns.push(UnknownRecord::retained(
         UnknownId::compose(
