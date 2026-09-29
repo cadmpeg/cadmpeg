@@ -134,12 +134,7 @@ pub(super) fn b5_edge_support_definition(
         let Some(surface_id) = surface_ids.get(surface) else {
             return Ok(None);
         };
-        side.surface = Some(crate::resource::copy_id(
-            ctx,
-            surface_id.as_str(),
-            SurfaceId::mint,
-            "catia_b5_edge_support_surface_id",
-        )?);
+        side.surface = Some(surface_id.try_clone_for_decode(ctx, "catia_b5_edge_support_surface_id")?);
         let support_range = support_range.map(FiniteReal::get);
         let mapped_range = (support_range != parameter_range)
             .then(|| DirectedParameterRange::new(support_range).ok())
@@ -375,12 +370,7 @@ pub(super) fn emit_edges(
         } else {
             CurvePlan {
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                    record: Some(crate::resource::copy_id(
-                        admission.context(),
-                        payload.as_str(),
-                        cadmpeg_ir::ids::UnknownId::mint,
-                        "catia_b5_edge_unknown_id",
-                    )?),
+                    record: Some(payload.try_clone_for_decode(admission.context(), "catia_b5_edge_unknown_id")?),
                 }),
                 parameter_range: None,
                 edge_tolerance: None,
@@ -421,12 +411,7 @@ pub(super) fn emit_edges(
                 "catia_b5_curve_geometry_annotation",
             )?;
         }
-        let model_curve_id = crate::resource::copy_id(
-            admission.context(),
-            curve_id.as_str(),
-            CurveId::mint,
-            "catia_b5_model_edge_curve_id",
-        )?;
+        let model_curve_id = curve_id.try_clone_for_decode(admission.context(), "catia_b5_model_edge_curve_id")?;
         admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
         ir.model.curves.push(Curve {
             id: model_curve_id,
@@ -498,12 +483,7 @@ pub(super) fn emit_edges(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            let owner = crate::resource::copy_id(
-                admission.context(),
-                curve_id.as_str(),
-                CurveId::mint,
-                "catia_b5_edge_procedural_owner_id",
-            )?;
+            let owner = curve_id.try_clone_for_decode(admission.context(), "catia_b5_edge_procedural_owner_id")?;
             admission.reserve_entity(
                 &mut ir.model.procedural_curves,
                 "catia_b5_emit_procedural_curves",
@@ -547,12 +527,7 @@ pub(super) fn emit_edges(
                 "catia_b5_edge_annotation",
             )?;
         }
-        let map_id = crate::resource::copy_id(
-            admission.context(),
-            id.as_str(),
-            EdgeId::mint,
-            "catia_b5_edge_map_id",
-        )?;
+        let map_id = id.try_clone_for_decode(admission.context(), "catia_b5_edge_map_id")?;
         admission.context().insert_hash_map(
             &mut edge_id_map,
             edge_id,
