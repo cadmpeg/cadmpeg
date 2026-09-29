@@ -1360,95 +1360,105 @@ fn project_all_dimension_constraints(
     for records in recipes_by_companion.values_mut() {
         records.sort_by_key(|record| record.recipe_ordinal);
     }
-    constraints.extend(recipes_by_companion.into_iter().filter_map(
-        |((scope, companion_record_index), records)| {
-            let companion = companions_by_key.get(&(scope, companion_record_index))?;
-            let owner = owners_by_companion.get(&(scope, companion_record_index))?;
-            let (parameter, parameter_id) = parameter_for(scope, companion_record_index)?;
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group");
-            let sketch = sketches_by_scope
-                .get(&(scope, owner.scope_record_index()))?
-                .clone();
-            let linear_candidates = if parameter.source_kind().starts_with("Linear Dimension")
-                && design_dimension_unit(parameter)
-            {
-                recipe_linear_dimension_candidates(
-                    entities,
-                    &sketch,
-                    parameter.evaluated_value().get() * 10.0,
-                    &parameter_id,
-                    linear_tolerance,
-                )
-            } else {
-                Vec::default()
+    for ((scope, companion_record_index), records) in recipes_by_companion {
+        let Some(companion) = companions_by_key.get(&(scope, companion_record_index)) else {
+            continue;
+        };
+        let Some(owner) = owners_by_companion.get(&(scope, companion_record_index)) else {
+            continue;
+        };
+        let Some((parameter, parameter_id)) = parameter_for(scope, companion_record_index) else {
+            continue;
+        };
+        let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group");
+        let Some(sketch) = sketches_by_scope.get(&(scope, owner.scope_record_index())) else {
+            continue;
+        };
+        let sketch = copy_dimension_sketch_id(ctx, sketch,
+            "f3d recipe dimension sketch id")?;
+        let linear_candidates = if parameter.source_kind().starts_with("Linear Dimension")
+            && design_dimension_unit(parameter)
+        {
+            recipe_linear_dimension_candidates(
+                entities,
+                &sketch,
+                parameter.evaluated_value().get() * 10.0,
+                &parameter_id,
+                linear_tolerance,
+            )
+        } else {
+            Vec::default()
+        };
+        let copied = copy_dimension_parameter_id(ctx, &parameter_id,
+            "f3d recipe repeated parameter id")?;
+        let repeated = repeated_linear_dimension(&linear_candidates, copied);
+        let extension = recipe_extension_point_dimension(&linear_candidates, entities, &sketch);
+        let radial = owner_scoped_radial_dimension_definition(
+            entities, &sketch, parameter, &parameter_id, linear_tolerance,
+        );
+        let concentric = concentric_circle_dimension_definition(
+            entities, &sketch, parameter, &parameter_id, linear_tolerance,
+        );
+        let definition = if let Some(radial) = radial {
+            radial
+        } else if linear_candidates.len() == 1 {
+            let Some(definition) = linear_candidates.into_iter().next() else {
+                continue;
             };
-            let repeated = repeated_linear_dimension(&linear_candidates, parameter_id.clone());
-            let extension = recipe_extension_point_dimension(&linear_candidates, entities, &sketch);
-            let radial = owner_scoped_radial_dimension_definition(
-                entities,
-                &sketch,
-                parameter,
-                &parameter_id,
-                linear_tolerance,
-            );
-            let concentric = concentric_circle_dimension_definition(
-                entities,
-                &sketch,
-                parameter,
-                &parameter_id,
-                linear_tolerance,
-            );
-            let definition = radial.or_else(|| {
-                match (
-                    linear_candidates.as_slice(),
-                    repeated,
-                    extension,
-                    concentric,
-                ) {
-                    ([definition], _, _, _) => Some(definition.clone()),
-                    (_, Some(definition), _, _)
-                    | (_, _, Some(definition), _)
-                    | (_, _, _, Some(definition)) => Some(definition),
-                    _ => Some(Definition::Native {
-                        native_kind: parameter.source_kind_name(),
-                        native_state: None,
-                        native_flags: None,
-                        native_properties: std::collections::BTreeMap::new(),
-                        entities: recipe_dimension_candidate_entities(&linear_candidates),
-                        parameter: Some(parameter_id),
-                        operands: records
-                            .into_iter()
-                            .map(|record| SketchNativeOperand {
-                                native_kind: cadmpeg_core::nonblank_literal!("construction_recipe"),
-                                field: Some(NativeOperandField {
-                                    name: cadmpeg_core::nonblank_literal!("recipe"),
-                                    role: None,
-                                }),
-                                object_index: Some(record.record_index),
-                                native_ref: Some(record.id.clone()),
-                            })
-                            .collect(),
+            definition
+        } else if let Some(repeated) = repeated {
+            repeated
+        } else if let Some(extension) = extension {
+            extension
+        } else if let Some(concentric) = concentric {
+            concentric
+        } else {
+            let mut operands = Vec::new();
+            for record in records {
+                let native_ref = copy_dimension_text(ctx, &record.id,
+                    "f3d recipe native operand reference")?;
+                push_dimension_item(ctx, &mut operands, SketchNativeOperand {
+                    native_kind: cadmpeg_core::nonblank_literal!("construction_recipe"),
+                    field: Some(NativeOperandField {
+                        name: cadmpeg_core::nonblank_literal!("recipe"),
+                        role: None,
                     }),
-                }
-            })?;
-            Some(SketchConstraint {
-                id: constraint_id,
-                sketch,
-                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
-                    .ok()?,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(companion.id().to_owned()),
-            })
-        },
-    ));
+                    object_index: Some(record.record_index),
+                    native_ref: Some(native_ref),
+                }, "f3d recipe native operand")?;
+            }
+            Definition::Native {
+                native_kind: parameter.source_kind_name(),
+                native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
+                entities: recipe_dimension_candidate_entities(&linear_candidates),
+                parameter: Some(parameter_id),
+                operands,
+            }
+        };
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+        else {
+            continue;
+        };
+        let native_ref = copy_dimension_text(ctx, companion.id(),
+            "f3d recipe constraint native reference")?;
+        push_dimension_item(ctx, &mut constraints, SketchConstraint {
+            id: constraint_id,
+            sketch,
+            definition,
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: Some(native_ref),
+        }, "f3d recipe dimension constraint")?;
+    }
     let mut projected_parameters = HashSet::new();
     for constraint in &constraints {
         for parameter in constraint_parameters(constraint.definition.kind()) {
