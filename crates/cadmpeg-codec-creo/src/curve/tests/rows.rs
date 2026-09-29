@@ -37,6 +37,14 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
+fn two_chart_samples_service(
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Vec<crate::curve::TwoChartPcurveSamples> {
+    crate::decode::with_test_decode_ctx(|ctx| two_chart_pcurve_samples(ctx, payload, face_ids))
+        .expect("service two-chart samples admitted")
+}
+
 fn fc05_caps_service(
     circles: &[Fc05Circle],
     topology: &[CurveTopologyRow],
@@ -302,8 +310,7 @@ fn pcurve_endpoint_slots_must_be_finite() {
     assert!(pcurve_endpoints_service(&[record], &[topology]).is_empty());
 }
 
-#[test]
-fn decodes_canonical_and_positional_two_chart_sample_rows() {
+fn canonical_and_positional_two_chart_input() -> (Vec<u8>, BTreeSet<u32>) {
     let samples = [
         0x0f, 0xe4, 0x0d, 0x18, // point 0
         0xe4, 0x0f, 0x18, 0x0d, // point 1
@@ -317,8 +324,73 @@ fn decodes_canonical_and_positional_two_chart_sample_rows() {
     payload.extend_from_slice(&samples);
     payload.extend_from_slice(&[10, 11, 9, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
-    let face_ids = BTreeSet::from([10, 11]);
-    let decoded = two_chart_pcurve_samples(&payload, Some(&face_ids));
+    (payload, BTreeSet::from([10, 11]))
+}
+
+fn two_chart_limit_error(limit: u64) -> CodecError {
+    let (payload, face_ids) = canonical_and_positional_two_chart_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    two_chart_pcurve_samples(&ctx, &payload, Some(&face_ids))
+        .err()
+        .expect("two-chart samples exceed collection limit")
+}
+
+#[test]
+fn two_chart_counted_samples_refuse_collection_limit() {
+    let error = two_chart_limit_error(0);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo two-chart sample points"));
+}
+
+#[test]
+fn two_chart_canonical_group_node_refuses_collection_limit() {
+    let error = two_chart_limit_error(3);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo two-chart canonical group nodes"));
+}
+
+#[test]
+fn two_chart_canonical_count_node_refuses_collection_limit() {
+    let error = two_chart_limit_error(4);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo two-chart canonical count nodes"));
+}
+
+#[test]
+fn two_chart_sample_row_refuses_collection_limit() {
+    let error = two_chart_limit_error(8);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo two-chart sample rows"));
+}
+
+#[test]
+fn two_chart_replay_samples_refuse_collection_limit() {
+    let error = two_chart_limit_error(9);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo two-chart sample points"));
+}
+
+#[test]
+fn two_chart_result_count_node_refuses_collection_limit() {
+    let error = two_chart_limit_error(13);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo two-chart result count nodes"));
+}
+
+#[test]
+fn decodes_canonical_and_positional_two_chart_sample_rows() {
+    let (payload, face_ids) = canonical_and_positional_two_chart_input();
+    let decoded = two_chart_samples_service(&payload, Some(&face_ids));
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].curve_id, 7);
     assert_eq!(decoded[0].faces, [10, 11]);
@@ -339,7 +411,7 @@ fn two_chart_sample_rows_require_exact_counted_consumption() {
     ]);
 
     let face_ids = BTreeSet::from([10, 11]);
-    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
+    assert!(two_chart_samples_service(&payload, Some(&face_ids)).is_empty());
 }
 
 #[test]
@@ -350,7 +422,7 @@ fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
     let face_ids = BTreeSet::from([10, 11]);
-    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
+    assert!(two_chart_samples_service(&payload, Some(&face_ids)).is_empty());
 }
 
 #[test]
@@ -369,7 +441,7 @@ fn two_chart_replay_consumes_curve_local_scalar_forms() {
     payload.extend(samples);
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
-    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
+    let decoded = two_chart_samples_service(&payload, Some(&BTreeSet::from([10, 11])));
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].samples.len(), 2);
     let expected_first = f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]);
