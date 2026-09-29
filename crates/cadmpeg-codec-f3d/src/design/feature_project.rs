@@ -913,9 +913,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             (stream, owner.record_index()), owner,
             "f3d projected parameter owner index")?;
     }
-    let native_scope_properties = |scope: &DesignParameterScope, native_scope: &str| {
-        scope_properties(scope, native_scope, placements)
-    };
     let mut features = scopes
         .iter()
         .filter(|scope| {
@@ -1507,7 +1504,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 ),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: if matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Native { .. })) {
-                    cadmpeg_core::text::named_entries(&scope.id, native_scope_properties(scope, native_scope))?
+                    scope_properties(ctx, scope, native_scope, placements)?
                 } else {
                     BTreeMap::new()
                 },
@@ -2316,14 +2313,18 @@ pub(super) fn project_combine(
 }
 
 fn scope_properties(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     native_scope: &str,
     placements: &[DesignSketchPlacement],
-) -> std::collections::BTreeMap<String, String> {
+) -> Result<std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     use std::collections::BTreeMap;
     let mut properties = BTreeMap::new();
     for (ordinal, record_index) in scope.reference_members().values().enumerate() {
-        properties.insert(format!("reference:{ordinal}"), record_index.to_string());
+        insert_feature_tree(ctx, &mut properties,
+            cadmpeg_core::text::NonBlankString::new(format!("reference:{ordinal}"))
+                .ok_or_else(|| CodecError::malformed("reference property key is blank"))?,
+            record_index.to_string(), "f3d scope reference property")?;
     }
     if let Some(profile) = scope.extrude_profile().or(scope.base_flange_profile()) {
         if let Some(placement) = placements.iter().find(|placement| {
@@ -2331,10 +2332,12 @@ fn scope_properties(
                 && placement.entity_id == profile.entity_id
         }) {
             let id = neutral_sketch_id(placement);
-            properties.insert("profile".into(), id.into_string());
+            insert_feature_tree(ctx, &mut properties,
+                cadmpeg_core::nonblank_literal!("profile"), id.into_string(),
+                "f3d scope profile property")?;
         }
     }
-    properties
+    Ok(properties)
 }
 
 /// The native definition for a scope this codec does not type.
