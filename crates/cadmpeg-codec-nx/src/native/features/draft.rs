@@ -1102,26 +1102,37 @@ pub(in crate::native) fn feature_draft_construction_terminal_lanes(
     container: &Container,
 ) -> Result<Vec<FeatureDraftConstructionTerminalLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(lane) = crate::om::draft_terminal::scan(record.payload_view())
                 .and_then(|lane| lane.into_absolute(entry_offset))
             else {
                 return;
             };
-            lanes.push(FeatureDraftConstructionTerminalLane {
-                id: format!(
-                    "nx:feature-history:draft-construction-terminal-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                lane,
-            });
+            let projected = (|| -> Result<_, CodecError> {
+                let id = format_feature_history_id(ctx, "draft-construction-terminal-lane", section_key, operation_ordinal, None)?;
+                let operation_label = format_feature_history_id(ctx, "operation-label", section_key, operation_ordinal, None)?;
+                ctx.charge_collection_items(1, "NX draft construction terminal lanes")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDraftConstructionTerminalLane>()), "NX draft construction terminal lane")?;
+                lanes.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX draft construction terminal lanes", 0, 1))?;
+                Ok(FeatureDraftConstructionTerminalLane { id, operation_label, lane })
+            })();
+            match projected {
+                Ok(lane) => lanes.push(lane),
+                Err(error) => failure = Some(error),
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(lanes)
 }
 

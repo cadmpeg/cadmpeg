@@ -11,6 +11,7 @@ use crate::native::features::draft::feature_draft_construction_fixed_lanes;
 use crate::native::features::draft::feature_draft_construction_binary32_lanes;
 use crate::native::features::draft::feature_draft_construction_graph_strings;
 use crate::native::features::draft::feature_draft_construction_identity_frames;
+use crate::native::features::draft::feature_draft_construction_terminal_lanes;
 use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
 use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::draft::FeatureDraftConstructionIndexLane;
@@ -517,6 +518,51 @@ fn draft_identity_route_refuses_scoped_limit() {
 #[test]
 fn draft_identity_route_refuses_work_limit() {
     let error = draft_identity_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+fn draft_terminal_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = draft_container();
+    let lanes = crate::test_support::with_decode_context(|ctx| {
+        feature_draft_construction_terminal_lanes(ctx, &container)
+    }).expect("admitted draft terminal lane");
+    assert_eq!(lanes.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_draft_construction_terminal_lanes(&ctx, &container)
+        .err().expect("draft terminal lane resource limit")
+}
+
+#[test]
+fn draft_terminal_route_refuses_collection_limit() {
+    let error = draft_terminal_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn draft_terminal_route_refuses_retained_limit() {
+    let error = draft_terminal_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn draft_terminal_route_refuses_scoped_limit() {
+    let error = draft_terminal_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn draft_terminal_route_refuses_work_limit() {
+    let error = draft_terminal_route_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
