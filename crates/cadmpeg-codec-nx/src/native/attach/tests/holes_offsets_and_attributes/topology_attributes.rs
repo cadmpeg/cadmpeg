@@ -5,6 +5,7 @@ use crate::native::attach::attribute_uses_by_entity;
 use crate::native::attach::insert_sole;
 use crate::native::attach::parasolid_topology_attribute_class_names;
 use crate::native::attach::parasolid_topology_attribute_targets;
+use crate::native::attach::topology_attribute_name;
 use crate::native::attach::ParasolidAttributeNameIndex;
 use crate::native::attach::ParasolidNumericAttributeSources;
 use crate::native::attach::ParasolidStructuredAttributeSources;
@@ -179,6 +180,35 @@ fn attribute_lookup_refuses_scoped_limit() {
 #[test]
 fn attribute_lookup_refuses_work_limit() {
     let error = attribute_lookup_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+fn fallback_attribute_name_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<String, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    topology_attribute_name(&ctx, None, Some("CLASS"), "84", 7)
+}
+
+#[test]
+fn fallback_attribute_name_keeps_class_prefix() {
+    assert_eq!(fallback_attribute_name_with_limit(|_| {}).unwrap(), "CLASS.parasolid_type_84_reference_7");
+}
+
+#[test]
+fn fallback_attribute_name_refuses_retained_limit() {
+    let error = fallback_attribute_name_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn fallback_attribute_name_refuses_work_limit() {
+    let error = fallback_attribute_name_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }

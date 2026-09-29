@@ -4980,25 +4980,20 @@ fn attach_parasolid_topology_string_attributes(
             annotations
                 .derived(id.as_str(), "name")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            let generic_name = format!(
-                "parasolid_type_84_reference_{}",
-                string_use.position.reference_ordinal()
-            );
-            let name = attribute_index
+            let field_name = attribute_index
                 .attribute_names
                 .field_name(ctx, reference, string_use.id.as_str())?;
+            let name = topology_attribute_name(
+                ctx,
+                field_name,
+                attribute_index.class_names.get(reference.id.as_str()).and_then(Option::as_ref).copied(),
+                "84",
+                string_use.position.reference_ordinal(),
+            )?;
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: context.target.clone(),
-                name: name
-                    .or_else(|| {
-                        attribute_index
-                            .class_names
-                            .get(reference.id.as_str())
-                            .and_then(Option::as_ref)
-                            .map(|class_name| format!("{class_name}.{generic_name}"))
-                    })
-                    .unwrap_or(generic_name),
+                name,
                 values: vec![AttributeValue::String(string.value.as_str().to_owned())],
             });
         }
@@ -5164,6 +5159,43 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
         name.push_str(&field_name);
         Ok(Some(name))
     }
+}
+
+fn topology_attribute_name(
+    ctx: &DecodeContext<'_>,
+    field_name: Option<String>,
+    class_name: Option<&str>,
+    family: &str,
+    reference_ordinal: u32,
+) -> Result<String, CodecError> {
+    if let Some(name) = field_name {
+        return Ok(name);
+    }
+    let mut remaining = reference_ordinal;
+    let mut digits = 1_usize;
+    while remaining >= 10 {
+        remaining /= 10;
+        digits += 1;
+    }
+    let class_prefix_len = class_name.map_or(Some(0), |name| name.len().checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid attribute class prefix", 0, class_name.map_or(0, |name| cadmpeg_core::decode::u64_from_index(name.len()))))?;
+    let name_len = "parasolid_type_".len()
+        .checked_add(family.len())
+        .and_then(|bytes| bytes.checked_add("_reference_".len()))
+        .and_then(|bytes| bytes.checked_add(digits))
+        .and_then(|bytes| bytes.checked_add(class_prefix_len))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid attribute fallback name", 0, cadmpeg_core::decode::u64_from_index(family.len())))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(name_len), "NX Parasolid attribute fallback name")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(name_len), "NX Parasolid attribute fallback name")?;
+    let mut name = String::new();
+    name.try_reserve(name_len).map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid attribute fallback name", 0, cadmpeg_core::decode::u64_from_index(name_len)))?;
+    if let Some(class_name) = class_name {
+        name.push_str(class_name);
+        name.push('.');
+    }
+    std::fmt::Write::write_fmt(&mut name, format_args!("parasolid_type_{family}_reference_{reference_ordinal}"))
+        .map_err(|_| CodecError::malformed("NX Parasolid attribute fallback name formatting failed"))?;
+    Ok(name)
 }
 
 /// Records `value` as the sole value for `key`, or `None` once the key repeats.
@@ -5514,25 +5546,20 @@ fn attach_parasolid_topology_numeric_attributes(
             annotations
                 .derived(id.as_str(), "name")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            let generic_name = format!(
-                "parasolid_type_{lane}_reference_{}",
-                numeric_use.position.reference_ordinal()
-            );
-            let name = attribute_index
+            let field_name = attribute_index
                 .attribute_names
                 .field_name(ctx, reference, numeric_use.id.as_str())?;
+            let name = topology_attribute_name(
+                ctx,
+                field_name,
+                attribute_index.class_names.get(reference.id.as_str()).and_then(Option::as_ref).copied(),
+                lane,
+                numeric_use.position.reference_ordinal(),
+            )?;
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: context.target.clone(),
-                name: name
-                    .or_else(|| {
-                        attribute_index
-                            .class_names
-                            .get(reference.id.as_str())
-                            .and_then(Option::as_ref)
-                            .map(|class_name| format!("{class_name}.{generic_name}"))
-                    })
-                    .unwrap_or(generic_name),
+                name,
                 values,
             });
         }
@@ -5670,25 +5697,20 @@ fn attach_parasolid_topology_structured_attributes(
             annotations
                 .derived(id.as_str(), "name")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            let generic_name = format!(
-                "parasolid_type_{family}_reference_{}",
-                structured_use.position.reference_ordinal()
-            );
-            let name = attribute_index
+            let field_name = attribute_index
                 .attribute_names
                 .field_name(ctx, reference, structured_use.id.as_str())?;
+            let name = topology_attribute_name(
+                ctx,
+                field_name,
+                attribute_index.class_names.get(reference.id.as_str()).and_then(Option::as_ref).copied(),
+                family,
+                structured_use.position.reference_ordinal(),
+            )?;
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: context.target.clone(),
-                name: name
-                    .or_else(|| {
-                        attribute_index
-                            .class_names
-                            .get(reference.id.as_str())
-                            .and_then(Option::as_ref)
-                            .map(|class_name| format!("{class_name}.{generic_name}"))
-                    })
-                    .unwrap_or(generic_name),
+                name,
                 values,
             });
         }
