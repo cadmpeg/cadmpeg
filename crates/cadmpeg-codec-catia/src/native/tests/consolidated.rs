@@ -449,9 +449,14 @@ fn consolidated_parameter_point_borrowed_wire_preserves_json_bytes() {
 #[test]
 fn consolidated_parameter_point_retained_limit_refuses_json_record() {
     let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
-    let point = native.consolidated_parameter_points.first().expect("parameter point");
+    let point = native
+        .consolidated_parameter_points
+        .first()
+        .expect("parameter point");
     let arena_name = "consolidated_parameter_points";
-    let json_len = serde_json::to_vec(point).expect("parameter point JSON").len();
+    let json_len = serde_json::to_vec(point)
+        .expect("parameter point JSON")
+        .len();
     let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -461,7 +466,8 @@ fn consolidated_parameter_point_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(point))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(point))
             .expect("service profile admits parameter point");
     });
 }
@@ -482,9 +488,14 @@ fn consolidated_plane_carrier_borrowed_wire_preserves_json_bytes() {
 #[test]
 fn consolidated_plane_carrier_retained_limit_refuses_json_record() {
     let native = crate::native::CatiaNative::decode(&b2_plane_carrier_stream());
-    let carrier = native.consolidated_plane_carriers.first().expect("plane carrier");
+    let carrier = native
+        .consolidated_plane_carriers
+        .first()
+        .expect("plane carrier");
     let arena_name = "consolidated_plane_carriers";
-    let json_len = serde_json::to_vec(carrier).expect("plane carrier JSON").len();
+    let json_len = serde_json::to_vec(carrier)
+        .expect("plane carrier JSON")
+        .len();
     let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -494,7 +505,8 @@ fn consolidated_plane_carrier_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(carrier))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(carrier))
             .expect("service profile admits plane carrier");
     });
 }
@@ -530,7 +542,8 @@ fn consolidated_cylinder_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(cylinder))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(cylinder))
             .expect("service profile admits cylinder");
     });
 }
@@ -542,7 +555,10 @@ fn consolidated_owner_packet_borrowed_wire_preserves_json_bytes() {
         b2_adjacent_face_counted_owner_stream(),
     ] {
         let native = crate::native::CatiaNative::decode(&bytes);
-        let packet = native.consolidated_owner_packets.first().expect("owner packet");
+        let packet = native
+            .consolidated_owner_packets
+            .first()
+            .expect("owner packet");
         let owned: crate::native::CatiaConsolidatedOwnerPacketWire = packet.clone().into();
         assert_eq!(
             serde_json::to_vec(packet).expect("borrowed packet JSON"),
@@ -553,10 +569,12 @@ fn consolidated_owner_packet_borrowed_wire_preserves_json_bytes() {
 
 #[test]
 fn consolidated_owner_packet_retained_limit_refuses_json_record() {
-    let native = crate::native::CatiaNative::decode(&
-        crate::test_support::test_b2::b2_owner_packet_stream(),
-    );
-    let packet = native.consolidated_owner_packets.first().expect("owner packet");
+    let native =
+        crate::native::CatiaNative::decode(&crate::test_support::test_b2::b2_owner_packet_stream());
+    let packet = native
+        .consolidated_owner_packets
+        .first()
+        .expect("owner packet");
     let arena_name = "consolidated_owner_packets";
     let json_len = serde_json::to_vec(packet).expect("packet JSON").len();
     let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
@@ -568,7 +586,8 @@ fn consolidated_owner_packet_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(packet))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(packet))
             .expect("service profile admits owner packet");
     });
 }
@@ -908,7 +927,11 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
                                 && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
                     })
     }));
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
     assert!(match revolution.definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
             matches!((matched_payload.angular_interval().endpoints(), &matched_payload.parameter_interval().map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),), (angular_interval, Some([-4.0, 9.0]),) if angular_interval == [0.5, 0.5 + std::f64::consts::TAU]),

@@ -147,14 +147,18 @@ mod tests {
 
     #[test]
     fn edge_definition_retained_limit_refuses_json_record() {
-        let value = edge_definition();
         #[derive(serde::Serialize)]
         struct Record<'a> {
             id: &'static str,
             #[serde(flatten)]
             definition: &'a CatiaConsolidatedEdgeDefinition,
         }
-        let record = Record { id: "catia:test:definition#0", definition: &value };
+        let value = edge_definition();
+
+        let record = Record {
+            id: "catia:test:definition#0",
+            definition: &value,
+        };
         let arena_name = "edge_definitions";
         let json_len = serde_json::to_vec(&record).expect("definition JSON").len();
         let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
@@ -166,7 +170,8 @@ mod tests {
         assert!(error.to_string().contains("RetainedBytes"), "{error}");
         crate::test_support::with_service_context(|ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
-            namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+            namespace
+                .set_arena(ctx, arena_name, std::slice::from_ref(&record))
                 .expect("service profile admits edge definition");
         });
     }

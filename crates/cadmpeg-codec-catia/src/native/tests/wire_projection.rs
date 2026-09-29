@@ -28,18 +28,22 @@ fn entity_reference_borrowed_wire_preserves_json_bytes() {
 
 #[test]
 fn entity_reference_retained_limit_refuses_json_record() {
-    let reference = crate::native::CatiaEntityReference::Resolved {
-        entity_id: 8,
-        entity: "catia:test:entity#8".to_owned(),
-        class_name: Some("Example".to_owned()),
-    };
     #[derive(serde::Serialize)]
     struct Record<'a> {
         id: &'static str,
         #[serde(flatten)]
         reference: &'a crate::native::CatiaEntityReference,
     }
-    let record = Record { id: "catia:test:entity-reference#0", reference: &reference };
+    let reference = crate::native::CatiaEntityReference::Resolved {
+        entity_id: 8,
+        entity: "catia:test:entity#8".to_owned(),
+        class_name: Some("Example".to_owned()),
+    };
+
+    let record = Record {
+        id: "catia:test:entity-reference#0",
+        reference: &reference,
+    };
     let arena_name = "entity_references";
     let json_len = serde_json::to_vec(&record).expect("reference JSON").len();
     let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
@@ -51,7 +55,8 @@ fn entity_reference_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(&record))
             .expect("service profile admits reference");
     });
 }
@@ -97,7 +102,8 @@ fn signature_cohort_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&cohort))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(&cohort))
             .expect("service profile admits cohort");
     });
 }
@@ -125,16 +131,22 @@ fn object_record_reference_borrowed_wire_preserves_json_bytes() {
 
 #[test]
 fn object_record_reference_retained_limit_refuses_json_record() {
-    let reference = object_record_reference();
     #[derive(serde::Serialize)]
     struct Record<'a> {
         id: &'static str,
         #[serde(flatten)]
         reference: &'a crate::native::CatiaObjectRecordReference,
     }
-    let record = Record { id: "catia:test:record-reference#0", reference: &reference };
+    let reference = object_record_reference();
+
+    let record = Record {
+        id: "catia:test:record-reference#0",
+        reference: &reference,
+    };
     let arena_name = "object_record_references";
-    let json_len = serde_json::to_vec(&record).expect("record reference JSON").len();
+    let json_len = serde_json::to_vec(&record)
+        .expect("record reference JSON")
+        .len();
     let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -144,7 +156,8 @@ fn object_record_reference_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(&record))
             .expect("service profile admits record reference");
     });
 }
