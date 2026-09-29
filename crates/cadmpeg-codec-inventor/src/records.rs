@@ -634,7 +634,7 @@ pub(crate) fn synthetic_meta_table_body() -> Vec<u8> {
     push_u32(&mut body, counts[0]);
     body.resize(body.len() + payloads[0], 0);
     for index in 1..payloads.len() {
-        push_u32(&mut body, payloads[index - 1] as u32 + 4);
+        push_u32(&mut body, u32::try_from(payloads[index - 1]).expect("fixture value fits u32") + 4);
         push_u32(&mut body, counts[index]);
         body.resize(body.len() + payloads[index], 0);
     }
@@ -644,12 +644,12 @@ pub(crate) fn synthetic_meta_table_body() -> Vec<u8> {
 
 #[cfg(test)]
 fn test_counted(body: &mut Vec<u8>, values: &[u32], item_size: usize) {
-    push_u32(body, values.len() as u32);
+    push_u32(body, u32::try_from(values.len()).expect("fixture value fits u32"));
     for value in values {
         push_u32(body, *value);
     }
     body.resize(body.len() + values.len() * (item_size - 4), 0);
-    push_u32(body, (4 + values.len() * item_size) as u32);
+    push_u32(body, u32::try_from(4 + values.len() * item_size).expect("fixture value fits u32"));
 }
 
 impl<'a> Cursor<'a> {
