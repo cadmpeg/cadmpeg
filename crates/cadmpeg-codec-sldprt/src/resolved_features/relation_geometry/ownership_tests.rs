@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::ParameterId;
 use std::collections::HashMap;
 
-fn relation_lane() -> FeatureInputLane {
+pub(super) fn relation_lane() -> FeatureInputLane {
     FeatureInputLane {
         id: "lane".into(),
         configuration: None,
