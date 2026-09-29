@@ -100,6 +100,50 @@ fn topology_target_index_refuses_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
+fn topology_context_index_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.faces[0].id = cadmpeg_ir::ids::FaceId::mint("nx:s3:face#60").unwrap();
+    let references = [crate::native::parasolid::ParasolidTopologyAttributeListReference {
+        id: "reference".into(),
+        stream_ordinal: 3,
+        topology_type: TopologyAttributeKind::Face,
+        topology_xmt: 60,
+        attribute_list_xmt: 50,
+        attribute_list_record: Some("entity".into()),
+        inflated_offset: 300,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let index = ParasolidTopologyAttributeIndex::new(&ctx, &ir, &references, &[], &[], &[], &[])?;
+    assert_eq!(index.contexts.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn topology_context_index_refuses_collection_limit() {
+    let error = topology_context_index_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn topology_context_index_refuses_scoped_limit() {
+    let error = topology_context_index_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn topology_context_index_refuses_work_limit() {
+    let error = topology_context_index_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
