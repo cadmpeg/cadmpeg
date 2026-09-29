@@ -90,13 +90,52 @@ fn body_image_outputs_require_one_body_per_binding() {
         ),
     ]);
 
-    let outputs = operation_body_image_outputs_by_write(&uses, &bodies);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (outputs, _reservation) = operation_body_image_outputs_by_write(&ctx, &uses, &bodies).unwrap();
 
     assert_eq!(
         outputs.get("write-a"),
         Some(&BodyId::mint("test:model:entity#body-a").expect("identity grammar"))
     );
     assert!(!outputs.contains_key("write-b"));
+}
+
+fn body_image_index_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let uses = [body_image_use("use", "write", "binding")];
+    let body = BodyId::mint("test:model:entity#body").unwrap();
+    let bodies = BTreeMap::from([("binding", vec![body.clone()])]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (outputs, _reservation) = operation_body_image_outputs_by_write(&ctx, &uses, &bodies)?;
+    assert_eq!(outputs["write"], body);
+    Ok(())
+}
+
+#[test]
+fn body_image_index_refuses_collection_limit() {
+    let error = body_image_index_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn body_image_index_refuses_scoped_limit() {
+    let error = body_image_index_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn body_image_index_refuses_work_limit() {
+    let error = body_image_index_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -241,7 +280,9 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
         vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
     )]);
 
-    assert!(operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(operation_body_image_outputs_by_write(ctx, &uses, &bodies).unwrap().0.is_empty());
+    });
 }
 
 #[test]
@@ -264,7 +305,10 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
         ),
     ]);
 
-    let outputs = operation_body_identity_outputs_by_write(&uses, &bodies);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (outputs, _reservation) = operation_body_identity_outputs_by_write(&ctx, &uses, &bodies).unwrap();
 
     assert_eq!(
         outputs.get("write-a"),
@@ -275,6 +319,10 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
 
 #[test]
 fn conflicting_body_output_witnesses_remain_unresolved() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut reservation = ctx.reserve_scoped(0, "NX body image output indexes").unwrap();
     let mut outputs = BTreeMap::from([(
         "write",
         BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
@@ -282,21 +330,25 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
     let mut conflicts = BTreeSet::new();
 
     merge_operation_body_outputs(
+        &ctx,
+        &mut reservation,
         &mut outputs,
         &mut conflicts,
-        [(
+        &BTreeMap::from([(
             "write",
             BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
-        )],
-    );
+        )]),
+    ).unwrap();
     merge_operation_body_outputs(
+        &ctx,
+        &mut reservation,
         &mut outputs,
         &mut conflicts,
-        [(
+        &BTreeMap::from([(
             "write",
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
-        )],
-    );
+        )]),
+    ).unwrap();
 
     assert!(!outputs.contains_key("write"));
     assert!(conflicts.contains("write"));
@@ -334,11 +386,15 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     };
 
     let writes = [write_a, write_b];
-    let outputs = operation_body_group_partition_outputs_by_write(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (outputs, _reservation) = operation_body_group_partition_outputs_by_write(
+        &ctx,
         &writes,
         &[use_],
         std::slice::from_ref(&body),
-    );
+    ).unwrap();
 
     assert_eq!(outputs.get("write-a"), Some(&body.id));
     assert_eq!(outputs.get("write-b"), Some(&body.id));

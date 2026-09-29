@@ -2221,28 +2221,37 @@ fn attach_feature_operations(
     }
     let (bodies_by_object_index, bodies_by_segment_binding, _body_index_reservation) =
         segment_binding_body_indexes(ctx, ir, body_bindings)?;
-    let mut body_image_outputs_by_write = operation_body_image_outputs_by_write(
+    let (mut body_image_outputs_by_write, mut body_output_reservation) = operation_body_image_outputs_by_write(
+        ctx,
         operation_body_image_segment_uses,
         &bodies_by_segment_binding,
-    );
+    )?;
     let mut conflicting_body_output_writes = BTreeSet::new();
+    let (identity_candidates, _identity_candidate_reservation) = operation_body_identity_outputs_by_write(
+        ctx,
+        operation_body_identity_segment_uses,
+        &bodies_by_segment_binding,
+    )?;
     merge_operation_body_outputs(
+        ctx,
+        &mut body_output_reservation,
         &mut body_image_outputs_by_write,
         &mut conflicting_body_output_writes,
-        operation_body_identity_outputs_by_write(
-            operation_body_identity_segment_uses,
-            &bodies_by_segment_binding,
-        ),
-    );
+        &identity_candidates,
+    )?;
+    let (partition_candidates, _partition_candidate_reservation) = operation_body_group_partition_outputs_by_write(
+        ctx,
+        operation_body_writes,
+        body_write_group_partition_uses,
+        &ir.model.bodies,
+    )?;
     merge_operation_body_outputs(
+        ctx,
+        &mut body_output_reservation,
         &mut body_image_outputs_by_write,
         &mut conflicting_body_output_writes,
-        operation_body_group_partition_outputs_by_write(
-            operation_body_writes,
-            body_write_group_partition_uses,
-            &ir.model.bodies,
-        ),
-    );
+        &partition_candidates,
+    )?;
     let explicit_hole_outputs = primary_hole_outputs(
         ctx,
         simple_hole_templates,
@@ -4804,24 +4813,7 @@ fn segment_binding_body_indexes<'a, 'ctx>(
     let mut by_binding = BTreeMap::<&str, Vec<BodyId>>::new();
     let mut reservation = ctx.reserve_scoped(0, "NX segment binding body indexes")?;
     for binding in bindings {
-        let mut decimal = [0u8; 10];
-        let mut digit_count = 0;
-        let mut ordinal = binding.stream_ordinal;
-        loop {
-            decimal[digit_count] = b'0' + (ordinal % 10) as u8;
-            digit_count += 1;
-            ordinal /= 10;
-            if ordinal == 0 {
-                break;
-            }
-        }
-        let mut prefix = [0u8; 15];
-        prefix[..4].copy_from_slice(b"nx:s");
-        for (index, digit) in decimal[..digit_count].iter().rev().enumerate() {
-            prefix[4 + index] = *digit;
-        }
-        let prefix_len = 4 + digit_count + 1;
-        prefix[prefix_len - 1] = b':';
+        let (prefix, prefix_len) = stream_prefix(binding.stream_ordinal, false);
         let mut stream_bodies = Vec::new();
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()), "NX segment body prefix scan")?;
         for body in ir.model.bodies.iter().filter(|body| body.id.as_str().as_bytes().starts_with(&prefix[..prefix_len])) {
@@ -4854,6 +4846,48 @@ fn segment_binding_body_indexes<'a, 'ctx>(
         by_binding.insert(binding.id.as_str(), stream_bodies);
     }
     Ok((by_object, by_binding, reservation))
+}
+
+fn stream_prefix(ordinal: u32, body_marker: bool) -> ([u8; 20], usize) {
+    let mut decimal = [0u8; 10];
+    let mut digit_count = 0;
+    let mut ordinal = ordinal;
+    loop {
+        decimal[digit_count] = b'0' + (ordinal % 10) as u8;
+        digit_count += 1;
+        ordinal /= 10;
+        if ordinal == 0 {
+            break;
+        }
+    }
+    let mut prefix = [0u8; 20];
+    prefix[..4].copy_from_slice(b"nx:s");
+    for (index, digit) in decimal[..digit_count].iter().rev().enumerate() {
+        prefix[4 + index] = *digit;
+    }
+    let suffix = if body_marker { b":body#".as_slice() } else { b":".as_slice() };
+    let suffix_start = 4 + digit_count;
+    let prefix_len = suffix_start + suffix.len();
+    prefix[suffix_start..prefix_len].copy_from_slice(suffix);
+    (prefix, prefix_len)
+}
+
+fn insert_scoped_body_output<K: Ord + Copy>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    outputs: &mut BTreeMap<K, BodyId>,
+    key: K,
+    body: &BodyId,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_work(1, operation)?;
+    if !outputs.contains_key(&key) {
+        ctx.charge_collection_items(1, operation)?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(K, BodyId)>()))?;
+    }
+    reservation.grow(cadmpeg_core::decode::u64_from_index(body.as_str().len()))?;
+    outputs.insert(key, body.clone());
+    Ok(())
 }
 
 fn push_grouped_operation<K: Ord, V>(
@@ -9548,14 +9582,19 @@ fn feature_body_outputs(
     Ok(outputs)
 }
 
-fn operation_body_image_outputs_by_write<'a>(
+fn operation_body_image_outputs_by_write<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     uses: &'a [crate::native::features::FeatureOperationBodyImageSegmentUse],
     bodies_by_segment_binding: &BTreeMap<&str, Vec<BodyId>>,
-) -> BTreeMap<&'a str, BodyId> {
+) -> Result<(BTreeMap<&'a str, BodyId>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
     let mut unique_uses = BTreeMap::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX body image output indexes")?;
     for use_ in uses {
+        ctx.charge_work(1, "NX body image unique-use index")?;
         match unique_uses.entry(use_.operation_body_write.as_str()) {
             Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX body image unique-use index")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, Option<&crate::native::features::FeatureOperationBodyImageSegmentUse>)>()))?;
                 entry.insert(Some(use_));
             }
             Entry::Occupied(mut entry) => {
@@ -9574,39 +9613,52 @@ fn operation_body_image_outputs_by_write<'a>(
         else {
             continue;
         };
-        outputs.insert(write, body.clone());
+        insert_scoped_body_output(ctx, &mut reservation, &mut outputs, write, body, "NX body image outputs")?;
     }
-    outputs
+    Ok((outputs, reservation))
 }
 
 fn merge_operation_body_outputs<'a>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     outputs: &mut BTreeMap<&'a str, BodyId>,
     conflicts: &mut BTreeSet<&'a str>,
-    candidates: impl IntoIterator<Item = (&'a str, BodyId)>,
-) {
-    for (write, body) in candidates {
+    candidates: &BTreeMap<&'a str, BodyId>,
+) -> Result<(), CodecError> {
+    for (&write, body) in candidates {
+        ctx.charge_work(1, "NX body output candidate merge")?;
         if conflicts.contains(write) {
             continue;
         }
         match outputs.entry(write) {
             Entry::Vacant(entry) => {
-                entry.insert(body);
+                ctx.charge_collection_items(1, "NX merged body output")?;
+                let bytes = std::mem::size_of::<(&str, BodyId)>().checked_add(body.as_str().len())
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX merged body output", 0, cadmpeg_core::decode::u64_from_index(body.as_str().len())))?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+                entry.insert(body.clone());
             }
-            Entry::Occupied(entry) if entry.get() == &body => {}
+            Entry::Occupied(entry) if entry.get() == body => {}
             Entry::Occupied(entry) => {
                 entry.remove();
+                ctx.charge_collection_items(1, "NX conflicting body output")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&str>()))?;
                 conflicts.insert(write);
             }
         }
     }
+    Ok(())
 }
 
-fn operation_body_identity_outputs_by_write<'a>(
+fn operation_body_identity_outputs_by_write<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     uses: &'a [crate::native::features::FeatureOperationBodyIdentitySegmentUse],
     bodies_by_segment_binding: &BTreeMap<&str, Vec<BodyId>>,
-) -> BTreeMap<&'a str, BodyId> {
+) -> Result<(BTreeMap<&'a str, BodyId>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
     let mut outputs = BTreeMap::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX body identity output index")?;
     for use_ in uses {
+        ctx.charge_work(1, "NX body identity output lookup")?;
         let Some([body]) = bodies_by_segment_binding
             .get(use_.segment_body_binding.as_str())
             .map(Vec::as_slice)
@@ -9615,6 +9667,10 @@ fn operation_body_identity_outputs_by_write<'a>(
         };
         match outputs.entry(use_.operation_body_write.as_str()) {
             Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX body identity output index")?;
+                let bytes = std::mem::size_of::<(&str, BodyId)>().checked_add(body.as_str().len())
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX body identity output index", 0, cadmpeg_core::decode::u64_from_index(body.as_str().len())))?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
                 entry.insert(body.clone());
             }
             Entry::Occupied(entry) if entry.get() == body => {}
@@ -9623,18 +9679,23 @@ fn operation_body_identity_outputs_by_write<'a>(
             }
         }
     }
-    outputs
+    Ok((outputs, reservation))
 }
 
-fn operation_body_group_partition_outputs_by_write<'a>(
+fn operation_body_group_partition_outputs_by_write<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     writes: &'a [crate::native::features::FeatureOperationBodyWrite],
     uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
     bodies: &[cadmpeg_ir::topology::Body],
-) -> BTreeMap<&'a str, BodyId> {
+) -> Result<(BTreeMap<&'a str, BodyId>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
     let mut partitions_by_identity = BTreeMap::<u8, Option<u32>>::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX body partition output indexes")?;
     for use_ in uses {
+        ctx.charge_work(1, "NX body partition identity index")?;
         match partitions_by_identity.entry(use_.body_identity) {
             Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX body partition identity index")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u8, Option<u32>)>()))?;
                 entry.insert(Some(use_.partition_stream_ordinal));
             }
             Entry::Occupied(mut entry)
@@ -9647,28 +9708,30 @@ fn operation_body_group_partition_outputs_by_write<'a>(
             Entry::Occupied(_) => {}
         }
     }
-    let unique_bodies = partitions_by_identity
-        .into_iter()
-        .filter_map(|(identity, partition)| {
-            let partition = partition?;
-            let prefix = format!("nx:s{partition}:body#");
-            let mut matches = bodies
-                .iter()
-                .filter(|body| body.id.as_str().starts_with(&prefix));
-            let body = matches.next()?;
-            matches.next().is_none().then_some(())?;
-            Some((identity, body.id.clone()))
-        })
-        .collect::<BTreeMap<_, _>>();
-    writes
-        .iter()
-        .filter_map(|write| {
-            unique_bodies
-                .get(&write.frame.body_identity())
-                .cloned()
-                .map(|body| (write.id.as_str(), body))
-        })
-        .collect()
+    let mut unique_bodies = BTreeMap::new();
+    for (identity, partition) in partitions_by_identity {
+        let Some(partition) = partition else {
+            continue;
+        };
+        let (prefix, prefix_len) = stream_prefix(partition, true);
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(bodies.len()), "NX body partition prefix scan")?;
+        let mut matches = bodies.iter().filter(|body| body.id.as_str().as_bytes().starts_with(&prefix[..prefix_len]));
+        let Some(body) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
+        }
+        insert_scoped_body_output(ctx, &mut reservation, &mut unique_bodies, identity, &body.id, "NX unique partition body")?;
+    }
+    let mut outputs = BTreeMap::new();
+    for write in writes {
+        ctx.charge_work(1, "NX partition body write lookup")?;
+        if let Some(body) = unique_bodies.get(&write.frame.body_identity()) {
+            insert_scoped_body_output(ctx, &mut reservation, &mut outputs, write.id.as_str(), body, "NX partition body output")?;
+        }
+    }
+    Ok((outputs, reservation))
 }
 
 fn complete_operation_body_image_outputs(
