@@ -917,6 +917,17 @@ macro_rules! id_type {
             pub fn as_str(&self) -> &str {
                 self.0.as_str()
             }
+
+            /// Copy an admitted identity into decoder-retained storage.
+            pub fn copy_admitted(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                let text = ctx.copy_retained_text(self.as_str(), operation)?;
+                Self::mint(text)
+                    .map_err(|_| cadmpeg_core::CodecError::malformed("admitted identity copy is invalid"))
+            }
         }
 
         impl std::fmt::Display for $name {

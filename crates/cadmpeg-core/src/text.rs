@@ -105,6 +105,16 @@ impl NonBlankString {
         &self.0
     }
 
+    /// Copy a previously admitted non-blank value into decoder-retained storage.
+    pub fn copy_admitted(
+        &self,
+        ctx: &crate::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, crate::CodecError> {
+        let text = ctx.copy_retained_text(self.as_str(), operation)?;
+        Self::new(text).ok_or_else(|| crate::CodecError::malformed("non-blank text copy changed"))
+    }
+
     /// Consumes the value and returns the source string.
     #[must_use]
     pub fn into_string(self) -> String {
@@ -408,6 +418,22 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         named_entries_reporting_checked(&ctx, "f", entries)
+    }
+
+    #[test]
+    fn nonblank_copy_refuses_retained_bytes_before_duplication() {
+        let value = NonBlankString::new("abc").expect("nonblank fixture");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = value.copy_admitted(&ctx, "nonblank copy").expect_err("three bytes exceed two");
+        assert!(matches!(error, crate::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "nonblank copy"));
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        assert_eq!(value.copy_admitted(&ctx, "nonblank copy").expect("service copy"), value);
     }
 
     #[test]

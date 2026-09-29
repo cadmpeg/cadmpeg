@@ -1921,6 +1921,7 @@ fn native_constraint_kind_rejects_empty_text_at_input_admission() {
 }
 
 mod admitted_records;
+mod allocation;
 mod frames;
 mod spatial;
 
