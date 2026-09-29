@@ -3136,7 +3136,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
     )?;
     crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
-    sync_active_configuration_resolutions(&mut ir)?;
+    sync_active_configuration_resolutions(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     let pattern_hole_nominals =
         crate::swift::pattern_hole_nominal_context(ctx, &ir.model.features)?;
@@ -4328,7 +4328,7 @@ fn build_metadata_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     )?;
-    sync_active_configuration_resolutions(&mut ir)?;
+    sync_active_configuration_resolutions(ctx, &mut ir)?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses =
         crate::history::configuration::project_configuration_sketch_states(
@@ -4669,7 +4669,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     }
 }
 
-fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
+fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
     let mut active = ir
         .model
         .configurations
@@ -4800,34 +4800,30 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             *taper_angle = resolved_taper_angle;
         }
     }
-    let resolved = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::CosmeticThread {
-                    face,
-                    diameter,
-                    extent,
-                },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            let complete = match face {
-                cadmpeg_ir::features::FaceSelection::Faces(selected)
-                | cadmpeg_ir::features::FaceSelection::Resolved {
-                    faces: selected, ..
-                } => !selected.is_empty(),
-                _ => false,
-            };
-            complete.then_some((feature.id.clone(), face.clone(), *diameter, *extent))
-        })
-        .collect::<Vec<_>>();
-    let configuration = &mut ir.model.configurations[configuration_index];
-    for (feature, resolved_face, resolved_diameter, resolved_extent) in resolved {
-        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+    let (features, configurations) = (&ir.model.features, &mut ir.model.configurations);
+    let configuration = &mut configurations[configuration_index];
+    for feature in features {
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::CosmeticThread {
+                face: resolved_face,
+                diameter: resolved_diameter,
+                extent: resolved_extent,
+            },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let complete = match resolved_face {
+            cadmpeg_ir::features::FaceSelection::Faces(selected)
+            | cadmpeg_ir::features::FaceSelection::Resolved {
+                faces: selected, ..
+            } => !selected.is_empty(),
+            _ => false,
+        };
+        if !complete {
+            continue;
+        }
+        let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
             continue;
         };
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -4840,40 +4836,34 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
         else {
             continue;
         };
-        if *diameter == resolved_diameter
-            && *extent == resolved_extent
+        if diameter == resolved_diameter
+            && extent == resolved_extent
             && matches!(
                 face,
                 cadmpeg_ir::features::FaceSelection::Unresolved
                     | cadmpeg_ir::features::FaceSelection::Native(_)
             )
         {
-            *face = resolved_face;
+            *face = resolved_face.try_clone_charged(ctx, "copy SLDPRT resolved cosmetic thread face")?;
         }
     }
-    let resolved = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::DatumOffsetPlane {
-                    reference:
-                        Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                            face: face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
-                        }),
-                    distance,
-                },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            (!selected.is_empty()).then_some((feature.id.clone(), face.clone(), *distance))
-        })
-        .collect::<Vec<_>>();
-    let configuration = &mut ir.model.configurations[configuration_index];
-    for (feature, resolved_face, resolved_distance) in resolved {
-        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+    for feature in features {
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::DatumOffsetPlane {
+                reference:
+                    Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                        face: resolved_face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
+                    }),
+                distance: resolved_distance,
+            },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        if selected.is_empty() {
+            continue;
+        }
+        let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
             continue;
         };
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -4886,9 +4876,9 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
         else {
             continue;
         };
-        if *distance == resolved_distance {
+        if distance == resolved_distance {
             *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                face: resolved_face,
+                face: resolved_face.try_clone_charged(ctx, "copy SLDPRT resolved datum face")?,
             });
         }
     }
