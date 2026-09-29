@@ -3,7 +3,8 @@
 use super::grid::{quantize, GridPoint};
 use super::markers::marker_is_geometry_locus;
 use super::relation_geometry::{
-    relation_operand_geometry_ref, relation_uses_solver_line_operand, solver_line_geometry_ref,
+    relation_operand_geometry_ref_matches, relation_uses_solver_line_operand,
+    solver_line_geometry_ref_matches,
 };
 use super::relation_records::{relation_uses_dynamic_operands, relation_uses_solver_points};
 use super::transforms::{
@@ -373,10 +374,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     let marker = |index: usize| relation_operand_marker(relation, index, sketch, markers_by_id);
     let dynamic = relation_uses_dynamic_operands(relation);
     let point = |index: usize| {
-        let scoped_ref = relation_operand_geometry_ref(relation, index);
         sketch_entities
             .iter()
-            .find(|entity| entity.geometry_ref.as_deref() == Some(scoped_ref.as_str()))
+            .find(|entity| {
+                entity.geometry_ref.as_deref().is_some_and(|geometry_ref| {
+                    relation_operand_geometry_ref_matches(geometry_ref, relation, index)
+                })
+            })
             .filter(|entity| {
                 matches!(
                     *entity.geometry.definition(),
@@ -1238,10 +1242,15 @@ fn solver_line_entity(
             return None;
         }
     }
-    let geometry_ref = solver_line_geometry_ref(&relation.feature_ref, operand.entity_index);
     let mut solver_lines = sketch_entities.iter().filter(|entity| {
         entity.sketch == *sketch
-            && entity.geometry_ref.as_deref() == Some(geometry_ref.as_str())
+            && entity.geometry_ref.as_deref().is_some_and(|geometry_ref| {
+                solver_line_geometry_ref_matches(
+                    geometry_ref,
+                    &relation.feature_ref,
+                    operand.entity_index,
+                )
+            })
             && matches!(
                 *entity.geometry.definition(),
                 SketchGeometryDefinition::Line { .. }
