@@ -5795,29 +5795,32 @@ pub(crate) fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveEx
 /// reference boundary can be resolved by its face roles.
 #[cfg(test)]
 fn topology_rows(payload: &[u8]) -> Vec<CurveTopologyRow> {
-    topology_rows_with_face_ids(payload, None)
+    crate::decode::with_test_decode_ctx(|ctx| topology_rows_with_face_ids(ctx, payload, None))
+        .expect("test curve topology rows admitted")
 }
 
 /// Decode standard topology rows using the enclosing `srf_array` identifier
 /// set to resolve variable-width reference boundaries.
 pub(crate) fn topology_rows_with_face_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
-) -> Vec<CurveTopologyRow> {
-    let mut rows = framed_rows_with_face_ids(payload, face_ids)
-        .into_iter()
-        .filter_map(|row| {
-            parse_topology_row(
+) -> Result<Vec<CurveTopologyRow>, cadmpeg_core::CodecError> {
+    let mut rows = Vec::new();
+    for row in framed_rows_with_face_ids(ctx, payload, face_ids)? {
+        if let Some(parsed) = parse_topology_row(
                 &payload[row.start..row.end],
                 row.start,
                 row.suffix_start,
                 row.suffix,
-            )
-        })
-        .collect::<Vec<_>>();
+            ) {
+            ctx.try_reserve_items(&mut rows, 1, "creo topology curve rows")?;
+            rows.push(parsed);
+        }
+    }
     rows.sort_by_key(|row| row.offset);
     rows.dedup_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
 /// Decode a complete DEPDB `crv_array\0 f2 f8 <count>` cross-section array.
@@ -6032,15 +6035,21 @@ fn curve_namespace_end(payload: &[u8], start: usize) -> usize {
         .unwrap_or(payload.len())
 }
 
-fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -> Vec<FramedRow> {
+fn framed_rows_with_face_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Result<Vec<FramedRow>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     let mut arrays = Vec::new();
     let mut search = 0;
     while let Some(array) = find(payload, b"crv_array\0", search) {
+        ctx.try_reserve_items(&mut arrays, 1, "creo curve namespace starts")?;
         arrays.push(array + b"crv_array\0".len());
         search = array + b"crv_array\0".len();
     }
     if arrays.is_empty() {
+        ctx.try_reserve_items(&mut arrays, 1, "creo curve namespace starts")?;
         arrays.push(0);
     }
     for (index, &namespace_start) in arrays.iter().enumerate() {
@@ -6056,25 +6065,39 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
         let mut boundary_anchored = false;
         let mut segments = Vec::new();
         while let Some((terminator, length)) = row_terminator(payload, cursor, namespace_end) {
+            ctx.try_reserve_items(&mut segments, 1, "creo framed curve segments")?;
             segments.push((cursor, terminator, boundary_anchored));
             cursor = terminator + length;
             boundary_anchored = true;
         }
         if cursor < namespace_end {
+            ctx.try_reserve_items(&mut segments, 1, "creo framed curve segments")?;
             segments.push((cursor, namespace_end, boundary_anchored));
         }
-        let known_face_ids = face_ids.map(|face_ids| {
-            let mut known = face_ids.clone();
+        let known_face_ids = if let Some(face_ids) = face_ids {
+            let mut known = BTreeSet::new();
+            for id in face_ids {
+                ctx.charge_collection_items(1, "creo known curve face ID nodes")?;
+                known.insert(*id);
+            }
             for &(start, end, _) in &segments {
                 let Some(suffix) = unique_topology_suffix_in_segment(&payload[start..end]) else {
                     continue;
                 };
-                known.extend(suffix.faces.into_iter().flatten().map(NonZeroU32::get));
+                for id in suffix.faces.into_iter().flatten().map(NonZeroU32::get) {
+                    if !known.contains(&id) {
+                        ctx.charge_collection_items(1, "creo known curve face ID nodes")?;
+                        known.insert(id);
+                    }
+                }
             }
-            known
-        });
+            Some(known)
+        } else {
+            None
+        };
         for &(start, end, boundary_anchored) in &segments {
             if let Some(row) = framed_segment_with_face_ids(
+                ctx,
                 payload,
                 namespace_start,
                 start,
@@ -6082,17 +6105,19 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
                 boundary_anchored,
                 face_ids,
                 known_face_ids.as_ref(),
-            ) {
+            )? {
+                ctx.try_reserve_items(&mut result, 1, "creo framed curve rows")?;
                 result.push(row);
             }
         }
     }
     result.sort_by_key(|row| row.start);
     result.dedup_by_key(|row| row.start);
-    result
+    Ok(result)
 }
 
 fn framed_segment_with_face_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     namespace_start: usize,
     start: usize,
@@ -6100,21 +6125,25 @@ fn framed_segment_with_face_ids(
     boundary_anchored: bool,
     materialized_face_ids: Option<&BTreeSet<u32>>,
     known_face_ids: Option<&BTreeSet<u32>>,
-) -> Option<FramedRow> {
-    let segment = payload.get(start..end)?;
-    let mut prefixes = (0..segment.len())
-        .filter_map(|row_start| {
-            topology_prefix_fields(segment, row_start).map(|prefix| (row_start, prefix.end))
-        })
-        .collect::<Vec<_>>();
+) -> Result<Option<FramedRow>, cadmpeg_core::CodecError> {
+    let Some(segment) = payload.get(start..end) else {
+        return Ok(None);
+    };
+    let mut prefixes = Vec::new();
+    for row_start in 0..segment.len() {
+        if let Some(prefix) = topology_prefix_fields(segment, row_start) {
+            ctx.try_reserve_items(&mut prefixes, 1, "creo framed curve prefixes")?;
+            prefixes.push((row_start, prefix.end));
+        }
+    }
     prefixes.sort_unstable_by_key(|(_, end)| *end);
     let closes = segment
         .iter()
         .enumerate()
         .filter(|(_, byte)| **byte == psb::token::COMPOUND_CLOSE)
         .map(|(offset, _)| offset)
-        .collect::<Vec<_>>();
-    for close in closes.into_iter().rev() {
+        .rev();
+    for close in closes {
         let row_end = close + 1;
         if !complete_curve_row_linkage(&segment[row_end..]) {
             continue;
@@ -6132,28 +6161,28 @@ fn framed_segment_with_face_ids(
         if boundary_anchored
             && topology_prefix_fields(segment, 0).is_some_and(|prefix| prefix.end <= suffix_start)
         {
-            return Some(FramedRow {
+            return Ok(Some(FramedRow {
                 namespace_start,
                 start,
                 end: start + row_end,
                 suffix_start,
                 suffix,
                 reference_geometry,
-            });
+            }));
         }
         let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
         if eligible == 1 {
-            return Some(FramedRow {
+            return Ok(Some(FramedRow {
                 namespace_start,
                 start: start + prefixes[0].0,
                 end: start + row_end,
                 suffix_start: suffix_start - prefixes[0].0,
                 suffix,
                 reference_geometry,
-            });
+            }));
         }
     }
-    None
+    Ok(None)
 }
 
 fn generic_compact_at(bytes: &[u8], offset: usize) -> Option<(u32, usize)> {
@@ -6306,7 +6335,7 @@ pub(crate) fn parameter_records_with_face_ids(
 ) -> Result<Vec<CurveParameterRecord>, cadmpeg_core::CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut records = Vec::new();
-    for framed in framed_rows_with_face_ids(payload, face_ids) {
+    for framed in framed_rows_with_face_ids(ctx, payload, face_ids)? {
         let row = &payload[framed.start..framed.end];
         let (curve_id, after_id) = compact_int(row, 0);
         let Some(&type_byte) = row.get(after_id) else {
@@ -6489,7 +6518,7 @@ pub(crate) fn two_chart_pcurve_samples(
     face_ids: Option<&BTreeSet<u32>>,
 ) -> Result<Vec<TwoChartPcurveSamples>, cadmpeg_core::CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
-    let framed = framed_rows_with_face_ids(payload, face_ids);
+    let framed = framed_rows_with_face_ids(ctx, payload, face_ids)?;
     let mut canonical_counts = BTreeMap::<(usize, u32, u8), BTreeSet<u32>>::new();
     for row in &framed {
         let bytes = &payload[row.start..row.end];
@@ -7249,12 +7278,14 @@ fn topology_suffix_with_face_ids(
     known_face_ids: Option<&BTreeSet<u32>>,
 ) -> Option<TopologySuffixCandidate> {
     let candidates = topology_suffix_candidates(row)?;
-    if candidates.len() == 1 {
-        return candidates.first().copied();
+    let mut initial = candidates.iter().flatten().copied();
+    if let (Some(candidate), None) = (initial.next(), initial.next()) {
+        return Some(candidate);
     }
     if let Some(ids) = materialized_face_ids.filter(|ids| !ids.is_empty()) {
-        let role_matches = candidates
+        let mut role_matches = candidates
             .iter()
+            .flatten()
             .filter(|candidate| {
                 candidate
                     .faces
@@ -7262,16 +7293,15 @@ fn topology_suffix_with_face_ids(
                     .flatten()
                     .all(|id| ids.contains(&id.get()))
             })
-            .copied()
-            .collect::<Vec<_>>();
-        match role_matches.as_slice() {
-            [candidate] => return Some(*candidate),
-            [] => {}
+            .copied();
+        match (role_matches.next(), role_matches.next()) {
+            (Some(candidate), None) => return Some(candidate),
+            (None, None) => {}
             _ => return None,
         }
     }
     let ids = known_face_ids.filter(|ids| !ids.is_empty())?;
-    let mut role_matches = candidates.into_iter().filter(|candidate| {
+    let mut role_matches = candidates.into_iter().flatten().filter(|candidate| {
         candidate
             .faces
             .iter()
@@ -7293,21 +7323,23 @@ fn unique_topology_suffix_in_segment(segment: &[u8]) -> Option<TopologySuffixCan
         let Some(candidates) = topology_suffix_candidates(&segment[..row_end]) else {
             continue;
         };
-        if let [candidate] = candidates.as_slice() {
-            return Some(*candidate);
+        let mut unique = candidates.into_iter().flatten();
+        if let (Some(candidate), None) = (unique.next(), unique.next()) {
+            return Some(candidate);
         }
     }
     None
 }
 
-fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>> {
+fn topology_suffix_candidates(row: &[u8]) -> Option<[Option<TopologySuffixCandidate>; 24]> {
     let close = row.len().checked_sub(1)?;
     (row.get(close) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
-    let reference_geometry_candidates = if row.get(close.saturating_sub(2)..close) == Some(&[0, 0])
-    {
-        vec![(close - 2, [0, 0])]
+    let mut reference_geometry_candidates = [None; 3];
+    let mut reference_count = 0;
+    if row.get(close.saturating_sub(2)..close) == Some(&[0, 0]) {
+        reference_geometry_candidates[0] = Some((close - 2, [0, 0]));
+        reference_count = 1;
     } else {
-        let mut candidates = Vec::new();
         for length in 2..=4 {
             let Some(start) = close.checked_sub(length) else {
                 continue;
@@ -7319,13 +7351,18 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>
                 continue;
             };
             if end == close {
-                candidates.push((start, [first, second]));
+                reference_geometry_candidates[reference_count] = Some((start, [first, second]));
+                reference_count += 1;
             }
         }
-        candidates
-    };
-    let mut candidates = Vec::new();
-    for (reference_geometry_start, reference_geometry) in reference_geometry_candidates {
+    }
+    let mut candidates = [None; 24];
+    let mut candidate_count = 0;
+    for (reference_geometry_start, reference_geometry) in reference_geometry_candidates
+        .into_iter()
+        .take(reference_count)
+        .flatten()
+    {
         for length in 4..=11 {
             let Some(start) = reference_geometry_start.checked_sub(length) else {
                 continue;
@@ -7343,12 +7380,13 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>
                 continue;
             };
             if end == reference_geometry_start {
-                candidates.push(TopologySuffixCandidate {
+                candidates[candidate_count] = Some(TopologySuffixCandidate {
                     start,
                     faces: [f0, f1].map(NonZeroU32::new),
                     next_edges: [e0, e1],
                     reference_geometry,
                 });
+                candidate_count += 1;
             }
         }
     }

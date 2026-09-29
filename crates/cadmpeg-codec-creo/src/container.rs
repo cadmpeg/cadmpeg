@@ -1810,7 +1810,7 @@ fn curve_topology_rows(
     collect_section_records_result(
         ctx,
         sections.iter(),
-        |bytes| Ok(curve::topology_rows_with_face_ids(bytes, Some(face_ids))),
+        |bytes| curve::topology_rows_with_face_ids(ctx, bytes, Some(face_ids)),
         |row, base| row.offset += base,
         |row| row.offset,
     )

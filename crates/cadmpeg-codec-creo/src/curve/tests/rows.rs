@@ -46,6 +46,14 @@ fn two_chart_samples_service(
         .expect("service two-chart samples admitted")
 }
 
+fn topology_rows_service(
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Vec<CurveTopologyRow> {
+    crate::decode::with_test_decode_ctx(|ctx| topology_rows_with_face_ids(ctx, payload, face_ids))
+        .expect("service topology rows admitted")
+}
+
 fn one_prototype_pcurve_input() -> Vec<u8> {
     let mut payload = b"crv_array\0crv_id\0\x07crv_pnt_arr\0\xf9\x02\x04".to_vec();
     payload.extend_from_slice(&[0x12; 8]);
@@ -879,6 +887,82 @@ fn decodes_a_uniquely_delimited_topology_suffix() {
     );
 }
 
+fn one_framed_curve_input() -> Vec<u8> {
+    vec![
+        b't', b'o', b'p', b'o', b'l', b'_', b'r', b'e', b'f', b'_', b'd', b'a', b't', b'a', 0, 7,
+        8, 4, 1, 0xf6, 0x29, 0x43, 0,
+        10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3,
+    ]
+}
+
+fn framed_curve_limit_error(limit: u64, face_ids: Option<BTreeSet<u32>>) -> CodecError {
+    let payload = one_framed_curve_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    topology_rows_with_face_ids(&ctx, &payload, face_ids.as_ref())
+        .err()
+        .expect("framed curve exceeds collection limit")
+}
+
+#[test]
+fn framed_curve_namespace_start_refuses_collection_limit() {
+    let error = framed_curve_limit_error(0, None);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo curve namespace starts"));
+}
+
+#[test]
+fn framed_curve_segment_refuses_collection_limit() {
+    let error = framed_curve_limit_error(1, None);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo framed curve segments"));
+}
+
+#[test]
+fn framed_curve_known_face_node_refuses_collection_limit() {
+    let error = framed_curve_limit_error(2, Some(BTreeSet::from([10, 11])));
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo known curve face ID nodes"));
+}
+
+#[test]
+fn framed_curve_discovered_face_node_refuses_collection_limit() {
+    let error = framed_curve_limit_error(2, Some(BTreeSet::new()));
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo known curve face ID nodes"));
+}
+
+#[test]
+fn framed_curve_prefix_refuses_collection_limit() {
+    let error = framed_curve_limit_error(2, None);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo framed curve prefixes"));
+}
+
+#[test]
+fn framed_curve_row_refuses_collection_limit() {
+    let error = framed_curve_limit_error(3, None);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo framed curve rows"));
+}
+
+#[test]
+fn topology_curve_row_refuses_collection_limit() {
+    let error = framed_curve_limit_error(4, None);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo topology curve rows"));
+}
+
 #[test]
 fn retains_nonzero_reference_geometry_after_topology_references() {
     let payload = [
@@ -892,7 +976,7 @@ fn retains_nonzero_reference_geometry_after_topology_references() {
     let face_ids = BTreeSet::from([10, 11]);
 
     assert_eq!(
-        topology_rows_with_face_ids(&payload, Some(&face_ids))[0].faces,
+        topology_rows_service(&payload, Some(&face_ids))[0].faces,
         [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
     );
     let parameters = crate::decode::with_test_decode_ctx(|ctx| {
@@ -908,7 +992,8 @@ fn retains_nonzero_reference_geometry_after_topology_references() {
 fn reference_geometry_uses_the_generic_compact_lane() {
     let row = [10, 11, 7, 7, 0x81, 0x0d, 68, 0xe3];
     assert_eq!(
-        topology_suffix_candidates(&row),
+        topology_suffix_candidates(&row)
+            .map(|candidates| candidates.into_iter().flatten().collect::<Vec<_>>()),
         Some(vec![TopologySuffixCandidate {
             start: 0,
             faces: [10, 11].map(NonZeroU32::new),
@@ -932,7 +1017,7 @@ fn face_namespace_resolves_ambiguous_reference_boundaries() {
     assert!(parameter_records(&payload).is_empty());
 
     let face_ids = std::collections::BTreeSet::from([141, 143]);
-    let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
+    let rows = topology_rows_service(&payload, Some(&face_ids));
     assert_eq!(
         rows,
         vec![CurveTopologyRow {
@@ -970,7 +1055,7 @@ fn topology_evidence_resolves_an_ambiguous_suffix_with_an_unmaterialized_face() 
     ]);
 
     let face_ids = std::collections::BTreeSet::from([143]);
-    let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
+    let rows = topology_rows_service(&payload, Some(&face_ids));
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[1].id, 144);
     assert_eq!(
