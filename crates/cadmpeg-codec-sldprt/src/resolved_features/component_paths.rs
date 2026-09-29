@@ -13,83 +13,119 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::{HashMap, HashSet};
 
 pub(super) fn component_path_features(
+    ctx: &DecodeContext<'_>,
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
-) -> Vec<String> {
+) -> Result<Vec<String>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT component path producers";
     let mut by_source = HashMap::<u32, Option<&str>>::new();
     for feature in features {
-        let Some(source_id) = feature.source_value() else {
-            continue;
-        };
-        by_source
-            .entry(source_id)
-            .and_modify(|candidate| *candidate = None)
-            .or_insert(Some(feature.id.as_str()));
-    }
-    let mut result = Vec::new();
-    for component in components {
-        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
-            continue;
-        };
-        if let Some(Some(feature)) = by_source.get(&source_id) {
-            if !result.iter().any(|existing| existing == feature) {
-                result.push((*feature).to_string());
-            }
+        ctx.charge_work(1, OPERATION)?;
+        let Some(source_id) = feature.source_value() else { continue; };
+        if let Some(candidate) = by_source.get_mut(&source_id) {
+            *candidate = None;
+        } else {
+            reserve_component_map(ctx, &mut by_source, OPERATION)?;
+            by_source.insert(source_id, Some(feature.id.as_str()));
         }
     }
-    result
+    let mut result: Vec<String> = Vec::new();
+    for component in components {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else { continue; };
+        let Some(Some(feature)) = by_source.get(&source_id) else { continue; };
+        let mut duplicate = false;
+        for existing in &result {
+            charge_component_text_comparison(ctx, existing, feature, OPERATION)?;
+            if existing == feature { duplicate = true; break; }
+        }
+        if !duplicate {
+            let identity = copy_component_text(ctx, feature)?;
+            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            result.push(identity);
+        }
+    }
+    Ok(result)
 }
 
 pub(super) fn feature_precedes_consumer(
+    ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     features: &[crate::records::Feature],
     consumer_ref: &str,
-) -> bool {
-    features
-        .iter()
-        .find(|consumer| consumer.id == consumer_ref)
-        .is_some_and(|consumer| {
-            if feature.parent != consumer.parent {
-                return false;
-            }
-            match (
-                feature.source_value().filter(|source| *source != 0),
-                consumer.source_value().filter(|source| *source != 0),
-            ) {
-                (Some(feature_source), Some(consumer_source)) => feature_source < consumer_source,
-                _ => feature.ordinal < consumer.ordinal,
-            }
-        })
+) -> Result<bool, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT component path consumer";
+    for consumer in features {
+        charge_component_text_comparison(ctx, &consumer.id, consumer_ref, OPERATION)?;
+        if consumer.id != consumer_ref { continue; }
+        charge_component_text_comparison(ctx, &feature.parent, &consumer.parent, OPERATION)?;
+        if feature.parent != consumer.parent { return Ok(false); }
+        return Ok(match (
+            feature.source_value().filter(|source| *source != 0),
+            consumer.source_value().filter(|source| *source != 0),
+        ) {
+            (Some(feature_source), Some(consumer_source)) => feature_source < consumer_source,
+            _ => feature.ordinal < consumer.ordinal,
+        });
+    }
+    Ok(false)
 }
 
 pub(super) fn component_path_input_features(
+    ctx: &DecodeContext<'_>,
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
     consumer_ref: &str,
-) -> Vec<String> {
-    component_path_features(components, features)
-        .into_iter()
-        .filter(|feature_ref| {
-            features
-                .iter()
-                .find(|feature| feature.id == feature_ref.as_str())
-                .is_some_and(|feature| feature_precedes_consumer(feature, features, consumer_ref))
-        })
-        .collect()
+) -> Result<Vec<String>, CodecError> {
+    let mut producers = component_path_features(ctx, components, features)?;
+    let mut retained = 0;
+    for index in 0..producers.len() {
+        let mut found = None;
+        for feature in features {
+            charge_component_text_comparison(ctx, &feature.id, &producers[index], "resolve SLDPRT component path inputs")?;
+            if feature.id == producers[index] { found = Some(feature); break; }
+        }
+        if let Some(feature) = found {
+            if feature_precedes_consumer(ctx, feature, features, consumer_ref)? {
+                producers.swap(retained, index);
+                retained += 1;
+            }
+        }
+    }
+    producers.truncate(retained);
+    Ok(producers)
 }
 
 pub(crate) fn surface_selection_producer_features(
+    ctx: &DecodeContext<'_>,
     components: &[FeatureInputComponentPathEntry],
     terminal_feature_ref: Option<&str>,
     features: &[crate::records::Feature],
-) -> Vec<String> {
-    let mut producers = component_path_features(components, features);
+) -> Result<Vec<String>, CodecError> {
+    let mut producers = component_path_features(ctx, components, features)?;
     if let Some(terminal) = terminal_feature_ref {
-        if !producers.iter().any(|producer| producer == terminal) {
-            producers.push(terminal.to_string());
+        let mut duplicate = false;
+        for producer in &producers {
+            charge_component_text_comparison(ctx, producer, terminal, "resolve SLDPRT surface producers")?;
+            if producer == terminal { duplicate = true; break; }
+        }
+        if !duplicate {
+            let terminal = copy_component_text(ctx, terminal)?;
+            ctx.reserve_collection_vec(&mut producers, 1, "resolve SLDPRT surface producers")?;
+            producers.push(terminal);
         }
     }
-    producers
+    Ok(producers)
+}
+
+fn charge_component_text_comparison(
+    ctx: &DecodeContext<'_>, left: &str, right: &str, operation: &'static str,
+) -> Result<(), CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(left.len())
+        .checked_add(cadmpeg_core::decode::u64_from_index(right.len()))
+        .and_then(|work| work.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)
 }
 
 pub(super) fn component_path_terminal_feature<'a>(
@@ -758,6 +794,7 @@ pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
 
 
 fn copy_component_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), "retain SLDPRT adjacent profile identity")?;
     ctx.format_retained(format_args!("{text}"), "retain SLDPRT adjacent profile identity")
 }
 

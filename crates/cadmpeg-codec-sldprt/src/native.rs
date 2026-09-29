@@ -1540,28 +1540,18 @@ fn edge_selection_disagrees_with_payload(
             })
             .unwrap_or_default()
             != record.components
-        || usize::try_from(record.offset)
-            .ok()
-            .map(|offset| {
-                crate::resolved_features::selections::compact_edge_producer_features_at(
-                    &lane.native_payload,
-                    offset,
-                    &record.components,
-                    edge_features,
-                    &record.feature_ref,
-                )
-            })
-            .unwrap_or_default()
-            != record.producer_feature_refs
-        || usize::try_from(record.offset).ok().and_then(|offset| {
-            crate::resolved_features::selections::compact_edge_owner_feature_at(
-                &lane.native_payload,
-                offset,
-                &record.components,
-                edge_features,
-                &record.feature_ref,
-            )
-        }) != record.terminal_feature_ref)
+        || match usize::try_from(record.offset) {
+            Ok(offset) => crate::resolved_features::selections::compact_edge_producer_features_at(
+                ctx, &lane.native_payload, offset, &record.components, edge_features, &record.feature_ref,
+            )?,
+            Err(_) => Vec::new(),
+        } != record.producer_feature_refs
+        || match usize::try_from(record.offset) {
+            Ok(offset) => crate::resolved_features::selections::compact_edge_owner_feature_at(
+                ctx, &lane.native_payload, offset, &record.components, edge_features, &record.feature_ref,
+            )?,
+            Err(_) => None,
+        } != record.terminal_feature_ref)
 }
 
 /// `true` when a surface selection disagrees with the compact reference in its lane payload.
@@ -1590,10 +1580,10 @@ fn surface_selection_disagrees_with_payload(
     };
     Ok(!matches_payload
         || crate::resolved_features::component_paths::surface_selection_producer_features(
-            &record.components,
+            ctx, &record.components,
             record.terminal_feature_ref.as_deref(),
             surface_features,
-        ) != record.producer_feature_refs
+        )? != record.producer_feature_refs
         || usize::try_from(record.offset).ok().and_then(|offset| {
             crate::resolved_features::selections::surface_selection_terminal_feature_at(
                 &lane.native_payload,

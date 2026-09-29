@@ -740,10 +740,11 @@ pub(crate) fn enrich_history_sweep_paths(
 
 /// Bind reference-curve cross sections consumed by surface sweeps.
 pub(crate) fn project_surface_sweep_profiles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{GeneratedCurveRef, PlanarProfileRef};
 
     let history_features = histories
@@ -864,7 +865,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 _ => continue,
             };
             let mut dependencies = match generated.as_slice() {
-                [(_, components)] => component_path_features(components, &history_features)
+                [(_, components)] => component_path_features(ctx, components, &history_features)?
                     .into_iter()
                     .filter_map(|native| feature_ids_by_native.get(native.as_str()).cloned())
                     .collect::<Vec<_>>(),
@@ -906,6 +907,7 @@ pub(crate) fn project_surface_sweep_profiles(
         }
         feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 #[cfg(test)]

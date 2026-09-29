@@ -413,19 +413,21 @@ pub(super) fn compact_edge_selections(
                 let components = compact_edge_component_path_at(&lane.native_payload, offset)
                     .unwrap_or_default();
                 let terminal_feature_ref = compact_edge_owner_feature_at(
+                    ctx,
                     &lane.native_payload,
                     offset,
                     &components,
                     &history_features,
                     &feature.id,
-                );
+                )?;
                 let producer_feature_refs = compact_edge_producer_features_at(
+                    ctx,
                     &lane.native_payload,
                     offset,
                     &components,
                     &history_features,
                     &feature.id,
-                );
+                )?;
                 ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
                 let id = ctx.format_retained(format_args!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"), OPERATION)?;
                 let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
@@ -748,10 +750,11 @@ pub(super) fn compact_surface_selections(
                 &history_features,
             );
             let producer_feature_refs = surface_selection_producer_features(
+                    ctx,
                 &components,
                 terminal_feature_ref.as_deref(),
                 &history_features,
-            );
+            )?;
             ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
             let id = ctx.format_retained(format_args!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"), OPERATION)?;
             let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
@@ -2660,45 +2663,59 @@ fn distinct_candidates<T: PartialEq>(candidates: impl IntoIterator<Item = T>) ->
 }
 
 pub(crate) fn compact_edge_owner_feature_at(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
     consumer_ref: &str,
-) -> Option<String> {
-    let count = usize::try_from(View::u32_le_at(payload, marker.checked_sub(12)?)?).ok()?;
-    let owner_source = if compact_component_reference_list_at(payload, marker).is_some() {
-        None
-    } else {
-        compact_edge_component_path(payload, marker, count)?.1
+) -> Result<Option<String>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT compact edge owner";
+    let count = marker.checked_sub(12).and_then(|offset| View::u32_le_at(payload, offset)).and_then(|count| usize::try_from(count).ok());
+    let Some(count) = count else { return Ok(None); };
+    let owner_source = if compact_component_reference_list_at(payload, marker).is_some() { None }
+    else {
+        let Some((_, owner)) = compact_edge_component_path(payload, marker, count) else { return Ok(None); };
+        owner
     };
-    owner_source
-        .and_then(|source| {
-            features
-                .iter()
-                .find(|feature| feature.source_value() == Some(source))
-        })
-        .filter(|feature| feature_precedes_consumer(feature, features, consumer_ref))
-        .map(|feature| feature.id.clone())
-        .or_else(|| component_path_input_features(components, features, consumer_ref).pop())
+    if let Some(source) = owner_source {
+        for feature in features {
+            ctx.charge_work(1, OPERATION)?;
+            if feature.source_value() != Some(source) { continue; }
+            if feature_precedes_consumer(ctx, feature, features, consumer_ref)? {
+                return Ok(Some(copy_selection_text(ctx, &feature.id, OPERATION)?));
+            }
+            break;
+        }
+    }
+    Ok(component_path_input_features(ctx, components, features, consumer_ref)?.pop())
 }
 
 pub(crate) fn compact_edge_producer_features_at(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
     consumer_ref: &str,
-) -> Vec<String> {
-    let mut producers = component_path_input_features(components, features, consumer_ref);
-    if let Some(owner) =
-        compact_edge_owner_feature_at(payload, marker, components, features, consumer_ref)
-    {
-        if !producers.contains(&owner) {
+) -> Result<Vec<String>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT compact edge producers";
+    let mut producers = component_path_input_features(ctx, components, features, consumer_ref)?;
+    if let Some(owner) = compact_edge_owner_feature_at(ctx, payload, marker, components, features, consumer_ref)? {
+        let mut duplicate = false;
+        for producer in &producers {
+            let work = u64_from_index(producer.len()).checked_add(u64_from_index(owner.len()))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            if producer == &owner { duplicate = true; break; }
+        }
+        if !duplicate {
+            ctx.reserve_collection_vec(&mut producers, 1, OPERATION)?;
             producers.push(owner);
         }
     }
-    producers
+    Ok(producers)
 }
 
 pub(crate) fn surface_selection_terminal_feature_at(
