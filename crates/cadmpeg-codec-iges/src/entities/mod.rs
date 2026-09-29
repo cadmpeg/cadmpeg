@@ -81,9 +81,7 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     )?;
     stack.push((sequence, false));
     while let Some((current, expanded)) = stack.pop() {
-        {
             ctx.charge_work(1, "iges cycle work")?;
-        }
         if expanded {
             active.remove(&current);
             ctx.insert_btree_set(
@@ -110,9 +108,7 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
         )?;
         stack.push((current, true));
         for target in successors(current).rev() {
-            {
                 ctx.charge_work(1, "iges cycle work")?;
-            }
             if active.contains(&target) {
                 return Ok(true);
             }

@@ -508,7 +508,6 @@ fn euclidean_control_points(
     homogeneous: Vec<[f64; 4]>,
     rational: bool,
 ) -> Result<Option<EuclideanControlNet>, CodecError> {
-    {
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(homogeneous.len()),
             "iges composite Euclidean control points",
@@ -519,7 +518,6 @@ fn euclidean_control_points(
                 "iges composite Euclidean weights",
             )?;
         }
-    }
     let mut control_points = cadmpeg_core::decode::DecodeContext::admitted_vec(
         homogeneous.len(),
         "iges composite Euclidean control points",
@@ -569,12 +567,10 @@ fn elevate_bezier_homogeneous(
     {
         return Ok(None);
     }
-    {
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(control_points.len()),
             "iges composite Bezier source copy",
         )?;
-    }
     let mut elevated = cadmpeg_core::decode::DecodeContext::admitted_vec(
         control_points.len(),
         "iges composite Bezier source copy",
@@ -588,12 +584,10 @@ fn elevate_bezier_homogeneous(
         let Some(next_count) = next_degree.checked_add(1) else {
             return Ok(None);
         };
-        {
             ctx.charge_collection_items(
                 cadmpeg_core::decode::u64_from_index(next_count),
                 "iges composite Bezier elevated net",
             )?;
-        }
         let mut next = cadmpeg_core::decode::DecodeContext::admitted_vec(
             next_count,
             "iges composite Bezier elevated net",
@@ -1532,10 +1526,8 @@ fn concatenate_nurbs<T>(
         let child_weights = match poles {
             NurbsPoles3::Polynomial { points } => {
                 child_control_points.extend(points);
-                {
-                        ctx.alloc_filled(control_count, 1.0, "iges composite child weights")
-                    }
-                .map_err(CompositeCurveError::ChildWeightAllocation)?
+                ctx.alloc_filled(control_count, 1.0, "iges composite child weights")
+                    .map_err(CompositeCurveError::ChildWeightAllocation)?
             }
             NurbsPoles3::Rational { points } => {
                 let mut weights = ctx.collection_vec(
@@ -1779,12 +1771,10 @@ fn bounded_nurbs_for_id(
         return Ok(None);
     };
     if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
-        {
             ctx.charge_collection_items(
                 u64_from_index(segments.len()),
                 "iges composite nested children",
             )?;
-        }
         let mut children = cadmpeg_core::decode::DecodeContext::admitted_vec(
             segments.len(),
             "iges composite nested children",
@@ -2613,12 +2603,10 @@ fn project_with_type_130_policy(
             child_curves: &curve_ids,
             join_tolerance,
         };
-        {
             ctx.charge_collection_items(
                 u64_from_index(curve_ids.len()),
                 "iges composite projected children",
             )?;
-        }
         let mut children = cadmpeg_core::decode::DecodeContext::admitted_vec(
             curve_ids.len(),
             "iges composite projected children",

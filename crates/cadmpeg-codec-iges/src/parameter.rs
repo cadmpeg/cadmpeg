@@ -2927,9 +2927,7 @@ pub(crate) fn layout_parameter_cards(
 }
 
 fn layout_parameter_card(ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
-    {
         ctx.charge_retained(64, "iges parameter layout card bytes")?;
-    }
     let mut card = Vec::new();
     card.try_reserve_exact(64).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
@@ -3710,9 +3708,7 @@ fn owned_bytes(
             ))
         })
         .ok_or_else(|| refuse_local_limit("iges owned parameter bytes", u64::MAX, 1))?;
-    {
         ctx.charge_retained(u64_from_index(byte_count), "iges owned parameter bytes")?;
-    }
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(byte_count).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
@@ -3775,12 +3771,10 @@ fn quarantine(
                 .checked_add(1)
                 .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
             let mut range = first..range_end;
-            {
                 ctx.charge_retained(
                     u64_from_index(byte_count),
                     "iges quarantined parameter bytes",
                 )?;
-            }
             let mut bytes = Vec::new();
             bytes.try_reserve_exact(byte_count).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(

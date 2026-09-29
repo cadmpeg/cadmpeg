@@ -101,9 +101,7 @@ fn boolean_tree_is_valid(
     });
     let mut operands_valid = true;
     for term in terms {
-        {
             ctx.charge_work(1, "iges boolean term validation")?;
-        }
         let valid = match term {
             BooleanTerm::Operation => true,
             BooleanTerm::Operand(target_sequence) => match entries.get(target_sequence) {
