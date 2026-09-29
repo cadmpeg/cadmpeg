@@ -22,6 +22,14 @@ use cadmpeg_ir::features::RibConstruction;
 use cadmpeg_ir::features::SplitFaceTool;
 use std::collections::BTreeMap;
 
+fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
 #[test]
 fn split_face_path_uses_the_prebound_source_sketch() {
     let dimensions =
@@ -184,7 +192,8 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
     let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
-    derive_feature_outputs(
+    with_test_ctx(|ctx| derive_feature_outputs(
+        ctx,
         &mut projected,
         &histories,
         &[],
@@ -192,7 +201,7 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
         &[],
         &[],
         &[],
-    )
+    ))
     .unwrap();
 
     assert!(projected[0].evaluation.outputs().is_empty());
@@ -225,7 +234,8 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
     let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
-    derive_feature_outputs(
+    with_test_ctx(|ctx| derive_feature_outputs(
+        ctx,
         &mut projected,
         &histories,
         &[],
@@ -233,7 +243,7 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
         &[],
         &[],
         &[],
-    )
+    ))
     .unwrap();
 
     assert!(projected
