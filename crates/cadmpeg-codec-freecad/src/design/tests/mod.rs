@@ -1740,7 +1740,7 @@ fn parameter_dependency_fixture(
                 cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Feature")
                     .expect("valid feature identity"),
             ),
-            ordinal: ordinal as u32,
+            ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
             name: name.into(),
             expression: expression.into(),
             display: None,
