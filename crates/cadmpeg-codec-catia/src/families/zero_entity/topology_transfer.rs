@@ -1446,10 +1446,13 @@ fn curve_orientation(
     parameter_range: [f64; 2],
     endpoints: [Point3; 2],
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(start) = cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[0]))? else {
+    let Some(start) =
+        cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[0]))?
+    else {
         return Ok(None);
     };
-    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[1]))? else {
+    let Some(end) = cadmpeg_ir::eval::finite_or_refusal(curve_point(geometry, parameter_range[1]))?
+    else {
         return Ok(None);
     };
     let evaluated = [start, end];

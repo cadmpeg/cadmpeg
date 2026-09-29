@@ -50,20 +50,17 @@ pub(super) fn fill_bspline_basis(
                 else {
                     return Ok(None);
                 };
-                let Some(right_quotient) = finite_or_refusal(difference_quotient(
-                    right_knot, t, right_knot, left_knot,
-                ))? else {
+                let Some(right_quotient) =
+                    finite_or_refusal(difference_quotient(right_knot, t, right_knot, left_knot))?
+                else {
                     return Ok(None);
                 };
-                let Some(left_quotient) = finite_or_refusal(difference_quotient(
-                    t, left_knot, right_knot, left_knot,
-                ))? else {
+                let Some(left_quotient) =
+                    finite_or_refusal(difference_quotient(t, left_knot, right_knot, left_knot))?
+                else {
                     return Ok(None);
                 };
-                [
-                    value * right_quotient.get(),
-                    value * left_quotient.get(),
-                ]
+                [value * right_quotient.get(), value * left_quotient.get()]
             };
             values[r] = saved + right_term;
             saved = left_term;

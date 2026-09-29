@@ -33,7 +33,8 @@ const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9: f64 = EPS_SKETCH_VALIDATION
 fn spatial_oriented_endpoints(
     geometry: &SpatialSketchGeometry,
     reversed: bool,
-) -> Result<Option<(crate::math::Point3, crate::math::Point3)>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<(crate::math::Point3, crate::math::Point3)>, cadmpeg_core::decode::ResourceLimit>
+{
     let endpoints = match geometry.definition() {
         SpatialSketchGeometryDefinition::Line { start, end } => (start.get(), end.get()),
         SpatialSketchGeometryDefinition::Arc {
@@ -69,14 +70,14 @@ fn spatial_oriented_endpoints(
         SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let start = curve.knots()[curve.degree() as usize];
             let end = curve.knots()[curve.pole_count()];
-            let Some(start_point) = crate::eval::finite_or_refusal(
-                crate::eval::nurbs_curve_point_at(curve, start),
-            )? else {
+            let Some(start_point) =
+                crate::eval::finite_or_refusal(crate::eval::nurbs_curve_point_at(curve, start))?
+            else {
                 return Ok(None);
             };
-            let Some(end_point) = crate::eval::finite_or_refusal(
-                crate::eval::nurbs_curve_point_at(curve, end),
-            )? else {
+            let Some(end_point) =
+                crate::eval::finite_or_refusal(crate::eval::nurbs_curve_point_at(curve, end))?
+            else {
                 return Ok(None);
             };
             (start_point.get(), end_point.get())
@@ -542,7 +543,9 @@ pub(super) fn check_sketches(
                         None => None,
                     };
                     let right_endpoints = match spatial_geometry.get(&right.entity) {
-                        Some((_, geometry)) => spatial_oriented_endpoints(geometry, right.reversed)?,
+                        Some((_, geometry)) => {
+                            spatial_oriented_endpoints(geometry, right.reversed)?
+                        }
                         None => None,
                     };
                     let endpoints = left_endpoints.zip(right_endpoints);

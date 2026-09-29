@@ -1632,22 +1632,19 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let ring = match cadmpeg_ir::topology::LoopRing::try_new_for_decode(
+                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::try_new_for_decode(
                             ctx,
                             coedge_ids,
                             vertex_uses,
-                        )? {
-                            Ok(ring) => ring,
-                            Err(_) => {
-                                super::push_optional_entity_loss(
-                                    Some(ctx),
-                                    &mut losses,
-                                    entry,
-                                    format_args!("{}", "edge loop has no coedges"),
-                                )?;
-                                valid = false;
-                                break;
-                            }
+                        )? else {
+                            super::push_optional_entity_loss(
+                                Some(ctx),
+                                &mut losses,
+                                entry,
+                                format_args!("{}", "edge loop has no coedges"),
+                            )?;
+                            valid = false;
+                            break;
                         };
                         LoopBoundary::Ring(ring)
                     };

@@ -195,16 +195,18 @@ pub(super) fn oriented_circle_plan(
         };
         let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve));
-        let start = match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, parameter_range[0])) {
-            Ok(Some(point)) => point,
-            Ok(None) => return None,
-            Err(limit) => return Some(Err(limit.into())),
-        };
-        let end = match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, parameter_range[1])) {
-            Ok(Some(point)) => point,
-            Ok(None) => return None,
-            Err(limit) => return Some(Err(limit.into())),
-        };
+        let start =
+            match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, parameter_range[0])) {
+                Ok(Some(point)) => point,
+                Ok(None) => return None,
+                Err(limit) => return Some(Err(limit.into())),
+            };
+        let end =
+            match cadmpeg_ir::eval::finite_or_refusal(curve_point(&geometry, parameter_range[1])) {
+                Ok(Some(point)) => point,
+                Ok(None) => return None,
+                Err(limit) => return Some(Err(limit.into())),
+            };
         let residual = distance([start.x, start.y, start.z], edge_start)
             .max(distance([end.x, end.y, end.z], edge_end));
         if residual > POINT_TOLERANCE {
@@ -222,7 +224,8 @@ pub(super) fn oriented_circle_plan(
             },
             cache_fit_tolerance: None,
         }))
-    })().transpose()
+    })()
+    .transpose()
 }
 
 fn isoparametric_angle_coordinate(
@@ -322,7 +325,8 @@ pub(super) fn oriented_nurbs_range(
             },
             cache_fit_tolerance: None,
         }))
-    })().transpose()
+    })()
+    .transpose()
 }
 
 pub(super) fn isocurve_endpoint_parameters(

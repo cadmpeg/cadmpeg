@@ -414,7 +414,8 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     }
     let Some(surface_midpoint) = cadmpeg_ir::eval::finite_or_refusal(
         cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v),
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let surface_midpoint = surface_midpoint.get();
@@ -1440,7 +1441,8 @@ mod route_tests {
             FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite pcurve origin"),
             FinitePoint2::new(Point2::new(0.0, sweep)).expect("finite pcurve direction"),
         )
-        .expect("circle evaluation resources").expect("tiny circle branch");
+        .expect("circle evaluation resources")
+        .expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
     }
 
@@ -1479,7 +1481,8 @@ mod route_tests {
             pcurve_origin,
             pcurve_direction,
         )
-        .expect("circle evaluation resources").is_none());
+        .expect("circle evaluation resources")
+        .is_none());
         assert!(circle_parameter_range_from_surface_branch(
             &surface,
             center,
@@ -1491,7 +1494,8 @@ mod route_tests {
             pcurve_origin,
             pcurve_direction,
         )
-        .expect("circle evaluation resources").is_none());
+        .expect("circle evaluation resources")
+        .is_none());
         assert!(circle_parameter_range_from_surface_branch(
             &surface,
             center,
@@ -1503,7 +1507,8 @@ mod route_tests {
             pcurve_origin,
             pcurve_direction,
         )
-        .expect("circle evaluation resources").is_none());
+        .expect("circle evaluation resources")
+        .is_none());
     }
 
     #[test]

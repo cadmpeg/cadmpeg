@@ -138,10 +138,9 @@ fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
     .expect("service budget admits context")
     .expect("wide support context");
     assert_eq!(context.parameter_range().endpoints(), range);
-    let (cached, cached_range) =
-        e5_occurrence_intersection_cache(&sides)
-            .expect("evaluation resources")
-            .expect("wide exact carrier cache");
+    let (cached, cached_range) = e5_occurrence_intersection_cache(&sides)
+        .expect("evaluation resources")
+        .expect("wide exact carrier cache");
     assert_eq!(cached, &line);
     assert_eq!(cached_range, range);
 }
@@ -312,10 +311,9 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         right_circle,
         [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
     ));
-    let (cache, range) =
-        e5_occurrence_intersection_cache(&sides)
-            .expect("evaluation resources")
-            .expect("frame-gauged circle cache");
+    let (cache, range) = e5_occurrence_intersection_cache(&sides)
+        .expect("evaluation resources")
+        .expect("frame-gauged circle cache");
     assert_eq!(cache, &left_circle);
     assert_eq!(range, [0.0, std::f64::consts::PI]);
 }

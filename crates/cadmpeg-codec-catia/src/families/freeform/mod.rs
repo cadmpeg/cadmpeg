@@ -1253,14 +1253,14 @@ fn attach_standalone_wires(
         else {
             return Ok(false);
         };
-        let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::curve_point(geometry, range[0]),
-        )? else {
+        let Some(start) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(geometry, range[0]))?
+        else {
             return Ok(false);
         };
-        let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::curve_point(geometry, range[1]),
-        )? else {
+        let Some(end) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(geometry, range[1]))?
+        else {
             return Ok(false);
         };
         let carrier_id = crate::resource::copy_id(
@@ -3771,15 +3771,14 @@ fn solve_planar_chart_rechart(
     let images = crate::resource::collect_fallible_options(
         ctx,
         loci.iter().map(|locus| {
-            let Some(uv) = cadmpeg_ir::eval::analytic_surface_parameters(
-                target, *locus,
-            ) else {
+            let Some(uv) = cadmpeg_ir::eval::analytic_surface_parameters(target, *locus) else {
                 return Ok(None);
             };
             let uv = cadmpeg_ir::math::Point2::from(uv);
-            let Some(back) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::surface_point(target, uv.u, uv.v),
-            )? else {
+            let Some(back) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
+                target, uv.u, uv.v,
+            ))?
+            else {
                 return Ok(None);
             };
             Ok(((back.x - locus.x)
@@ -3979,29 +3978,37 @@ fn unique_paired_surface_lift_match<'a, T>(
     let midpoint = if ordinary_midpoint.is_finite() {
         ordinary_midpoint
     } else {
-        let Some(midpoint) = cadmpeg_ir::math::interpolate(parameter_range[0], parameter_range[1], 0.5) else {
+        let Some(midpoint) =
+            cadmpeg_ir::math::interpolate(parameter_range[0], parameter_range[1], 0.5)
+        else {
             return Ok(None);
         };
         midpoint.get()
     };
     let parameters = [parameter_range[0], midpoint, parameter_range[1]];
-    let resolved_lift = |parameter| -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
-        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::pcurve_uv(resolved_pcurve, parameter),
-        )? else {
-            return Ok(None);
+    let resolved_lift =
+        |parameter| -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
+            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(
+                resolved_pcurve,
+                parameter,
+            ))?
+            else {
+                return Ok(None);
+            };
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
+                resolved_surface,
+                uv.u,
+                uv.v,
+            ))
         };
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
-            resolved_surface, uv.u, uv.v,
-        ))
-    };
     let mut resolved_loci = [None; 3];
     let mut partner_uv = [None; 3];
     for (index, parameter) in parameters.into_iter().enumerate() {
         resolved_loci[index] = resolved_lift(parameter)?;
-        partner_uv[index] = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameter),
-        )?;
+        partner_uv[index] = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(
+            partner_pcurve,
+            parameter,
+        ))?;
         if resolved_loci[index].is_none() || partner_uv[index].is_none() {
             return Ok(None);
         }
@@ -4015,14 +4022,15 @@ fn unique_paired_surface_lift_match<'a, T>(
             };
             let Some(partner) = cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v),
-            )? else {
+            )?
+            else {
                 matches = false;
                 break;
             };
             let distance = (resolved.x - partner.x)
                 .hypot(resolved.y - partner.y)
                 .hypot(resolved.z - partner.z);
-            if !(distance < TOLERANCE) {
+            if distance.partial_cmp(&TOLERANCE) != Some(std::cmp::Ordering::Less) {
                 matches = false;
                 break;
             }

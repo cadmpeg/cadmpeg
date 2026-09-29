@@ -491,7 +491,8 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         *line_pcurve.origin(),
         (*line_pcurve.direction()).into(),
     )
-    .expect("circle evaluation resources").expect("torus circle range");
+    .expect("circle evaluation resources")
+    .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
 
@@ -546,7 +547,8 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
         *line_pcurve.origin(),
         (*line_pcurve.direction()).into(),
     )
-    .expect("circle evaluation resources").expect("torus meridian circle range");
+    .expect("circle evaluation resources")
+    .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);
 }
 

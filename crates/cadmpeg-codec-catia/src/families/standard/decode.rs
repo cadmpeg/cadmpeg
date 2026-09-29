@@ -12,6 +12,7 @@ type NativeEndpointEvidenceOutput =
     Result<Result<Option<Vec<Option<[usize; 2]>>>, &'static str>, CodecError>;
 
 mod edge_geometry;
+mod surface_membership;
 use edge_geometry::{
     attach_standard_circles, attach_standard_lines, build_standard_edge_curve,
     canonical_unoriented_axis, circle_endpoint_range_choices,
@@ -5446,14 +5447,16 @@ fn standard_limit_curve_bindings(
                     let position = ir.model.points[point].position().get();
                     let mut all_faces = true;
                     for face in support.faces {
-                        let Some(surface) = face_surface(ir, bindings, surface_indices, face) else {
+                        let Some(surface) = face_surface(ir, bindings, surface_indices, face)
+                        else {
                             all_faces = false;
                             break;
                         };
                         if !matches!(
                             surface.geometry,
                             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                        ) && !point_on_surface(position, &surface.geometry)? {
+                        ) && !point_on_surface(position, &surface.geometry)?
+                        {
                             all_faces = false;
                             break;
                         }
@@ -5489,8 +5492,10 @@ fn standard_limit_curve_bindings(
                 Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                     return Err(limit.into());
                 }
-                Err(cadmpeg_ir::eval::EvaluationFailure::NoValue
-                | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)) => continue,
+                Err(
+                    cadmpeg_ir::eval::EvaluationFailure::NoValue
+                    | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_),
+                ) => continue,
             };
             let mut checked_surface = false;
             let mut agrees = true;
@@ -5740,7 +5745,10 @@ fn attach_standard_topology(
                                 point.position().get(),
                                 surface,
                                 face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                            ).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                            )
+                            .map_err(CodecError::from)
+                            .map_err(StandardTopologyError::Resource)?
+                            {
                                 crate::resource::push(
                                     ctx,
                                     &mut points,
@@ -6091,15 +6099,25 @@ fn attach_standard_topology(
                                     point.position().get(),
                                     &surface.geometry,
                                     face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                                ).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                                )
+                                .map_err(CodecError::from)
+                                .map_err(StandardTopologyError::Resource)?
+                                {
                                     all_points = false;
                                     break;
                                 }
                             }
-                            if all_points && standard_nurbs_line_pair_on_face(
-                                &surface.geometry, support, pair, &ir.model.points,
-                                face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                            ).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                            if all_points
+                                && standard_nurbs_line_pair_on_face(
+                                    &surface.geometry,
+                                    support,
+                                    pair,
+                                    &ir.model.points,
+                                    face_bounds.as_ref().and_then(|bounds| bounds[face]),
+                                )
+                                .map_err(CodecError::from)
+                                .map_err(StandardTopologyError::Resource)?
+                            {
                                 any_pair = true;
                                 break;
                             }
@@ -6248,12 +6266,19 @@ fn attach_standard_topology(
                             point.position().get(),
                             &surface.geometry,
                             face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
-                        ).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                        )
+                        .map_err(CodecError::from)
+                        .map_err(StandardTopologyError::Resource)?
+                        {
                             all_points = false;
                             break;
                         }
                     }
-                    if all_points { pair_index += 1; } else { options[edge].remove(pair_index); }
+                    if all_points {
+                        pair_index += 1;
+                    } else {
+                        options[edge].remove(pair_index);
+                    }
                 }
                 if options[edge].is_empty() {
                     return Err(StandardTopologyFailure::EmptyEndpointDomain.into());
@@ -6274,31 +6299,37 @@ fn attach_standard_topology(
     let has_open_face_domains = open_face_domains
         .as_ref()
         .is_some_and(|domains| domains.iter().any(|domain| !domain.is_empty()));
-    let endpoint_pair_on_incident_faces = |edge: usize, pair: [usize; 2]| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-        for point in pair {
-            let Some(position) = ir
-                .model
-                .points
-                .get(point)
-                .map(|point| point.position().get())
-            else {
-                return Ok(false);
-            };
-            for face in supports[edge].faces {
-                let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
+    let endpoint_pair_on_incident_faces =
+        |edge: usize, pair: [usize; 2]| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+            for point in pair {
+                let Some(position) = ir
+                    .model
+                    .points
+                    .get(point)
+                    .map(|point| point.position().get())
+                else {
                     return Ok(false);
                 };
-                let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
-                if !point_on_standard_face(position, &surface.geometry, bounds)?
-                    || !standard_nurbs_line_pair_on_face(
-                        &surface.geometry, &supports[edge], &pair, &ir.model.points, bounds,
-                    )? {
-                    return Ok(false);
+                for face in supports[edge].faces {
+                    let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
+                        return Ok(false);
+                    };
+                    let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
+                    if !point_on_standard_face(position, &surface.geometry, bounds)?
+                        || !standard_nurbs_line_pair_on_face(
+                            &surface.geometry,
+                            &supports[edge],
+                            &pair,
+                            &ir.model.points,
+                            bounds,
+                        )?
+                    {
+                        return Ok(false);
+                    }
                 }
             }
-        }
-        Ok(true)
-    };
+            Ok(true)
+        };
     if let Some(options) = &mut endpoint_options {
         for (edge, pairs) in options.iter_mut().enumerate() {
             let support = &supports[edge];
@@ -6393,7 +6424,10 @@ fn attach_standard_topology(
                     }
                     let mut index = 0;
                     while index < domain.len() {
-                        if endpoint_pair_on_incident_faces(edge, domain[index]).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                        if endpoint_pair_on_incident_faces(edge, domain[index])
+                            .map_err(CodecError::from)
+                            .map_err(StandardTopologyError::Resource)?
+                        {
                             index += 1;
                         } else {
                             domain.remove(index);
@@ -6438,7 +6472,10 @@ fn attach_standard_topology(
                     }
                     let mut index = 0;
                     while index < domain.len() {
-                        if endpoint_pair_on_incident_faces(edge, domain[index]).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                        if endpoint_pair_on_incident_faces(edge, domain[index])
+                            .map_err(CodecError::from)
+                            .map_err(StandardTopologyError::Resource)?
+                        {
                             index += 1;
                         } else {
                             domain.remove(index);
@@ -6469,7 +6506,10 @@ fn attach_standard_topology(
         for (edge, pairs) in options.iter_mut().enumerate() {
             let mut index = 0;
             while index < pairs.len() {
-                if endpoint_pair_on_incident_faces(edge, pairs[index]).map_err(CodecError::from).map_err(StandardTopologyError::Resource)? {
+                if endpoint_pair_on_incident_faces(edge, pairs[index])
+                    .map_err(CodecError::from)
+                    .map_err(StandardTopologyError::Resource)?
+                {
                     index += 1;
                 } else {
                     pairs.remove(index);
@@ -9545,151 +9585,6 @@ fn standard_endpoint_options_for_selected_faces(
     Ok(filtered_options)
 }
 
-fn nurbs_surface_point_distance(
-    surface: &NurbsSurface,
-    point: Point3,
-    uv: Point2,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(position) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, uv.u, uv.v),
-    )? else {
-        return Ok(None);
-    };
-    let distance = position.distance(point);
-    Ok(distance.is_finite().then_some(distance))
-}
-
-fn refine_nurbs_surface_point(
-    surface: &NurbsSurface,
-    point: Point3,
-    seed: Point2,
-    domains: [[f64; 2]; 2],
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let mut parameters = seed;
-    for _ in 0..NURBS_SURFACE_REFINEMENT_ITERATIONS {
-        let Some(partials) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::nurbs_surface_partials(surface, parameters.u, parameters.v),
-        )? else {
-            return Ok(None);
-        };
-        let residual = partials.point.vector_from(point);
-        let Some((u, v)) =
-            cadmpeg_ir::math::solve::least_squares_step(partials.du, partials.dv, residual)
-        else {
-            break;
-        };
-        let step = Point2::new(u.get(), v.get());
-        let Some(current) = nurbs_surface_point_distance(surface, point, parameters)? else {
-            return Ok(None);
-        };
-        let mut scale = 1.0;
-        let mut accepted = None;
-        for _ in 0..NURBS_SURFACE_BACKTRACK_STEPS {
-            let candidate = Point2::new(
-                (parameters.u - scale * step.u).clamp(domains[0][0], domains[0][1]),
-                (parameters.v - scale * step.v).clamp(domains[1][0], domains[1][1]),
-            );
-            let Some(distance) = nurbs_surface_point_distance(surface, point, candidate)? else {
-                return Ok(None);
-            };
-            if distance <= current {
-                accepted = Some((candidate, distance));
-                break;
-            }
-            scale *= 0.5;
-        }
-        let Some((candidate, distance)) = accepted else {
-            break;
-        };
-        parameters = candidate;
-        if distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE {
-            return Ok(Some(distance));
-        }
-    }
-    nurbs_surface_point_distance(surface, point, parameters)
-}
-
-fn nurbs_surface_witness_distance(
-    surface: &NurbsSurface,
-    point: Point3,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(domains) = nurbs_surface_parameter_domain(surface) else { return Ok(None); };
-    let Ok(u_degree) = usize::try_from(surface.u_degree()) else { return Ok(None); };
-    let Ok(v_degree) = usize::try_from(surface.v_degree()) else { return Ok(None); };
-    let Some(u_knots) = surface.u_knots().get(u_degree..=surface.u_count()) else { return Ok(None); };
-    let Some(v_knots) = surface.v_knots().get(v_degree..=surface.v_count()) else { return Ok(None); };
-    let u_spans = u_knots.windows(2).filter(|pair| pair[0] != pair[1]).count();
-    let v_spans = v_knots.windows(2).filter(|pair| pair[0] != pair[1]).count();
-    if u_spans == 0 || v_spans == 0 {
-        return Ok(None);
-    }
-    let Some(samples) = u_spans
-        .checked_mul(NURBS_SURFACE_SEEDS_PER_SPAN)
-        .and_then(|count| count.checked_mul(v_spans))
-        .and_then(|count| count.checked_mul(NURBS_SURFACE_SEEDS_PER_SPAN))
-    else {
-        return Ok(None);
-    };
-    let mut best: Option<f64> = None;
-    let mut consider = |seed: Point2| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
-        if let Some(distance) = refine_nurbs_surface_point(surface, point, seed, domains)? {
-            best = Some(best.map_or(distance, |previous| {
-                if previous.total_cmp(&distance).is_le() {
-                    previous
-                } else {
-                    distance
-                }
-            }));
-        }
-        Ok(())
-    };
-    if samples > NURBS_SURFACE_MAX_SEEDS {
-        const SIDE: usize = 16;
-        for knots in [u_knots, v_knots] {
-            for pair in knots.windows(2).filter(|pair| pair[0] != pair[1]) {
-                for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                    let fraction = step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
-                    if cadmpeg_ir::math::interpolate(pair[0], pair[1], fraction).is_none() {
-                        return Ok(None);
-                    }
-                }
-            }
-        }
-        for u in 0..SIDE {
-            for v in 0..SIDE {
-                let u_fraction = u as f64 / (SIDE - 1) as f64;
-                let v_fraction = v as f64 / (SIDE - 1) as f64;
-                let Some(u) = cadmpeg_ir::math::interpolate(domains[0][0], domains[0][1], u_fraction) else {
-                    return Ok(None);
-                };
-                let Some(v) = cadmpeg_ir::math::interpolate(domains[1][0], domains[1][1], v_fraction) else {
-                    return Ok(None);
-                };
-                consider(Point2::new(u.get(), v.get()))?;
-            }
-        }
-    } else {
-        for u_pair in u_knots.windows(2).filter(|pair| pair[0] != pair[1]) {
-            for u_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                let u_fraction = u_step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
-                let Some(u) = cadmpeg_ir::math::interpolate(u_pair[0], u_pair[1], u_fraction) else {
-                    return Ok(None);
-                };
-                for v_pair in v_knots.windows(2).filter(|pair| pair[0] != pair[1]) {
-                    for v_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                        let v_fraction = v_step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
-                        let Some(v) = cadmpeg_ir::math::interpolate(v_pair[0], v_pair[1], v_fraction) else {
-                            return Ok(None);
-                        };
-                        consider(Point2::new(u.get(), v.get()))?;
-                    }
-                }
-            }
-        }
-    }
-    Ok(best)
-}
-
 fn point_on_nurbs_surface(
     point: Point3,
     surface: &NurbsSurface,
@@ -9711,7 +9606,7 @@ fn point_on_nurbs_surface(
             return Ok(Some(false));
         }
     }
-    let Some(distance) = nurbs_surface_witness_distance(surface, point)? else {
+    let Some(distance) = surface_membership::nurbs_surface_witness_distance(surface, point)? else {
         return Ok(None);
     };
     Ok((distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE).then_some(true))
@@ -9821,20 +9716,20 @@ fn owner_matches_a5_carrier(
         for v in [tail.lower()[1], tail.upper()[1]] {
             let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::nurbs_surface_point(surface, u, v),
-            )? else {
+            )?
+            else {
                 return Ok(false);
             };
             if ![point.x, point.y, point.z]
-                    .into_iter()
-                    .enumerate()
-                    .all(|(axis, value)| {
-                        value
-                            >= f64::from(tail.bounds()[axis][0])
-                                - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-                            && value
-                                <= f64::from(tail.bounds()[axis][1])
-                                    + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-                    }) {
+                .into_iter()
+                .enumerate()
+                .all(|(axis, value)| {
+                    value >= f64::from(tail.bounds()[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                        && value
+                            <= f64::from(tail.bounds()[axis][1])
+                                + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                })
+            {
                 return Ok(false);
             }
         }
@@ -10018,7 +9913,12 @@ fn bind_standard_a5_owner_surfaces(
         let mut matched = Vec::new();
         for (carrier, value) in carriers.iter().enumerate() {
             if owner_matches_a5_carrier(&owner.numeric_tail, &value.geometry)? {
-                crate::resource::push(ctx, &mut matched, carrier, "catia_a5_owner_carrier_indices")?;
+                crate::resource::push(
+                    ctx,
+                    &mut matched,
+                    carrier,
+                    "catia_a5_owner_carrier_indices",
+                )?;
             }
         }
         crate::resource::push(
@@ -10189,12 +10089,14 @@ fn standard_endpoint_pair_supports_topology(
     witness: Option<FinitePoint3>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let endpoint_is_supported = |point| -> Result<bool, cadmpeg_core::decode::ResourceLimit> { Ok(match surface {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {
-            point_on_surface_if_supported(point, surface)? != Some(false)
-        }
-        _ => point_on_surface(point, surface)?,
-    }) };
+    let endpoint_is_supported = |point| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+        Ok(match surface {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {
+                point_on_surface_if_supported(point, surface)? != Some(false)
+            }
+            _ => point_on_surface(point, surface)?,
+        })
+    };
     if !endpoint_is_supported(start)? || !endpoint_is_supported(end)? {
         return Ok(false);
     }
@@ -10836,9 +10738,12 @@ mod circle_axis_tests {
             false,
         )
         .expect("anisotropic nurbs surface");
-        let residual = super::nurbs_surface_witness_distance(&surface, Point3::new(0.3, 0.4, 0.))
-            .expect("witness evaluation accepts the fixture")
-            .expect("witness distance for a point on the surface");
+        let residual = super::surface_membership::nurbs_surface_witness_distance(
+            &surface,
+            Point3::new(0.3, 0.4, 0.),
+        )
+        .expect("witness evaluation accepts the fixture")
+        .expect("witness distance for a point on the surface");
         assert!(residual <= super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE);
     }
 }
