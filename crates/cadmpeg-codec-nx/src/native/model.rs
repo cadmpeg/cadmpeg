@@ -931,9 +931,10 @@ impl NativeModel {
             feature_hole_package_construction_group_lanes(ctx, container)?;
         let feature_hole_package_construction_group_uses =
             feature_hole_package_construction_group_uses(
+                ctx,
                 &feature_hole_package_construction_group_lanes,
                 &feature_simple_hole_construction_groups,
-            );
+            )?;
         let feature_body_segment_uses = feature_body_segment_uses(
             &feature_body_references,
             &feature_body_data_block_uses,
