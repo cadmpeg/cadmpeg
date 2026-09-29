@@ -638,7 +638,7 @@ impl PolylineCurve {
     pub fn parameter_at(&self, index: usize) -> Option<FiniteReal> {
         match &self.samples {
             PolylineSamples::Unparameterized { points } => {
-                points.get(index).map(|_| FiniteReal::from_index(index))
+                points.get(index).and_then(|_| FiniteReal::from_index(index))
             }
             PolylineSamples::Parameterized { vertices } => {
                 vertices.get(index).map(|row| row.parameter)

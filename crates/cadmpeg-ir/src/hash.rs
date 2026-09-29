@@ -296,7 +296,7 @@ where
     F: FnMut(u64) -> Result<(), E>,
 {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if let Err(error) = (self.charge)(buf.len() as u64) {
+        if let Err(error) = (self.charge)(cadmpeg_core::decode::u64_from_index(buf.len())) {
             self.error = Some(error);
             return Err(std::io::Error::other("digest work charge rejected"));
         }

@@ -133,7 +133,7 @@ impl<V> Strips<V> {
             return None;
         }
         let span = strips.iter().try_fold(0u64, |total, strip| {
-            total.checked_add(strip.vertices().len() as u64)
+            total.checked_add(cadmpeg_core::decode::u64_from_index(strip.vertices().len()))
         })?;
         u32::try_from(span).is_ok().then_some(Self(strips))
     }
@@ -975,7 +975,7 @@ fn require_triangle_indices(
     if triangles
         .iter()
         .flatten()
-        .any(|index| *index as usize >= vertex_count)
+        .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= vertex_count)
     {
         return Err(tessellation_error(
             "contains an out-of-range tessellation index",

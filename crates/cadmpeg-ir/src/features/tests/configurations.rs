@@ -137,7 +137,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     {
         ir.model.features.push(Feature {
             id: feature,
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
             dependencies: DistinctMembers::default(),

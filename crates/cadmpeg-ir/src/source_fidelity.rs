@@ -126,7 +126,7 @@ impl RetainedBytes {
     #[must_use]
     pub fn byte_len(&self) -> u64 {
         match self {
-            Self::Inline { data } => data.len() as u64,
+            Self::Inline { data } => cadmpeg_core::decode::u64_from_index(data.len()),
             Self::Digest { byte_len, .. } => *byte_len,
         }
     }
