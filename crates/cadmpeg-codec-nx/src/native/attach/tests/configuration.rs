@@ -83,7 +83,8 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
         assignment("assignment-f", None, "color-a", 60),
     ];
     assert_eq!(
-        resolve_rm_source_color_bindings(&assignments),
+        crate::test_support::with_decode_context(|ctx| resolve_rm_source_color_bindings(ctx, &assignments))
+            .expect("admitted RM source colors"),
         vec![
             RmSourceColorBinding {
                 source_id: "source-a".into(),

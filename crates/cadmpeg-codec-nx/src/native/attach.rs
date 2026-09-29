@@ -614,7 +614,7 @@ fn attach_rm_appearances(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let source_bindings = resolve_rm_source_color_bindings(&model.om.rm_display_color_assignments);
+    let source_bindings = resolve_rm_source_color_bindings(ctx, &model.om.rm_display_color_assignments)?;
     let face_ids = ir
         .model
         .faces
@@ -836,35 +836,47 @@ impl<'a> RmColorChoice<'a> {
 }
 
 fn resolve_rm_source_color_bindings(
+    ctx: &DecodeContext<'_>,
     assignments: &[RmDisplayColorAssignment],
-) -> Vec<RmSourceColorBinding> {
+) -> Result<Vec<RmSourceColorBinding>, CodecError> {
     let mut choices = BTreeMap::<&str, RmColorChoice<'_>>::new();
+    let mut choices_reservation = ctx.reserve_scoped(0, "NX RM source color choices")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(assignments.len()), "NX RM source color assignments")?;
     for assignment in assignments {
         let Some(source_id) = assignment.target_object_id.as_deref() else {
             continue;
         };
+        if !choices.contains_key(source_id) {
+            ctx.charge_collection_items(1, "NX RM source color choices")?;
+            choices_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, RmColorChoice<'_>)>()))?;
+        }
         choices
             .entry(source_id)
             .and_modify(|choice| choice.observe(assignment))
             .or_insert_with(|| RmColorChoice::new(assignment));
     }
-    choices
-        .into_iter()
-        .filter_map(|(source_id, choice)| {
-            let RmColorChoice::Unique {
-                definition,
-                source_offset,
-            } = choice
-            else {
-                return None;
-            };
-            Some(RmSourceColorBinding {
-                source_id: source_id.to_owned(),
-                color_definition: definition.to_owned(),
-                source_offset,
-            })
-        })
-        .collect()
+    let mut bindings = Vec::new();
+    for (source_id, choice) in choices {
+        let RmColorChoice::Unique {
+            definition,
+            source_offset,
+        } = choice else {
+            continue;
+        };
+        let bytes = std::mem::size_of::<RmSourceColorBinding>()
+            .checked_add(source_id.len())
+            .and_then(|bytes| bytes.checked_add(definition.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX RM source color binding", 0, cadmpeg_core::decode::u64_from_index(source_id.len())))?;
+        ctx.charge_collection_items(1, "NX RM source color bindings")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX RM source color bindings")?;
+        reserve_attach_vec(ctx, &mut bindings, 1, "NX RM source color bindings")?;
+        bindings.push(RmSourceColorBinding {
+            source_id: source_id.to_owned(),
+            color_definition: definition.to_owned(),
+            source_offset,
+        });
+    }
+    Ok(bindings)
 }
 
 fn resolve_rm_face_colors(
