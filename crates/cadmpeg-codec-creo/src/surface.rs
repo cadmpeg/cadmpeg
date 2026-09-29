@@ -1546,7 +1546,7 @@ impl SurfaceParameterRecord {
         let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let axial_candidates = self.type24_axial_interval_corner_candidates();
-        if let Some(first) = axial_candidates.first() {
+        if let Some(first) = axial_candidates.as_ref().and_then(|candidates| candidates.first()) {
             return Some(first.radius.get());
         }
         if let Some(envelope) = self.type24_round_edge_envelope() {
@@ -1622,16 +1622,15 @@ impl SurfaceParameterRecord {
     /// Decode every cylinder placement allowed by a type-24 axial-interval
     /// corner envelope whose control shell does not select a radial quadrant.
     #[must_use]
-    pub(crate) fn type24_axial_interval_corner_candidates(&self) -> Vec<PositionalCylinderFrame> {
+    pub(crate) fn type24_axial_interval_corner_candidates(&self) -> Option<[PositionalCylinderFrame; 4]> {
         let kind = self.kind();
         if kind != SurfaceKind::Cylinder {
-            return Vec::new();
+            return None;
         }
         cylinder_frame_readers::decode_type24_axial_interval_corner_candidates(
             &self.body,
             &scalar::ScalarCache::default(),
         )
-        .unwrap_or_default()
     }
 
     /// Decode the positional round-edge envelope carried by a type-24 row.

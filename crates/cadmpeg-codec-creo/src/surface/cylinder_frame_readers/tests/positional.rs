@@ -128,7 +128,7 @@ fn positional_cylinder_frame_rejects_conflicting_grammar_candidates() {
     )
     .expect("valid positional cylinder frame");
     assert_eq!(
-        unique_positional_cylinder_frame(&[first, first]),
+        unique_positional_cylinder_frame([first, first]),
         Some(first)
     );
 
@@ -141,7 +141,7 @@ fn positional_cylinder_frame_rejects_conflicting_grammar_candidates() {
     )
     .expect("valid positional cylinder frame");
     assert_eq!(
-        unique_positional_cylinder_frame(&[first, conflicting]),
+        unique_positional_cylinder_frame([first, conflicting]),
         None
     );
 }
