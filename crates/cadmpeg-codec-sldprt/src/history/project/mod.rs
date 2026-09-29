@@ -3,6 +3,8 @@
 
 use crate::classification::{classify, FeatureClass};
 use crate::records::{Feature, FeatureContent, FeatureHistory};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -15,6 +17,7 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::{self, Write};
 
 use crate::history::classify::{
     feature_tree_node_role, is_custom_property, is_history_metadata_record, is_offset_plane,
@@ -830,30 +833,80 @@ fn bind_native_construction_features(
     }
 }
 
-/// Project Keywords custom-property records into document-owned attributes.
-pub(crate) fn custom_property_attributes(histories: &[FeatureHistory]) -> Vec<SourceAttribute> {
-    histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| is_custom_property(feature))
-        .map(|feature| {
-            let key = feature_identity_key(&feature.id);
-            SourceAttribute {
-                id: AttributeId::compose(
-                    &cadmpeg_ir::identity_namespace!("sldprt", "history", "custom-property"),
-                    key,
-                ),
-                target: AttributeTarget::Document,
-                name: feature.name.clone(),
-                values: feature
-                    .text
-                    .iter()
-                    .cloned()
-                    .map(AttributeValue::String)
-                    .collect(),
+struct EncodedFeatureKey<'a>(&'a str);
+
+impl fmt::Display for EncodedFeatureKey<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        if self.0.is_empty() {
+            return formatter.write_str("%EMPTY");
+        }
+        for character in self.0.chars() {
+            if character == '%' || character == '#' || character.is_whitespace() {
+                let mut buffer = [0u8; 4];
+                for byte in character.encode_utf8(&mut buffer).as_bytes() {
+                    formatter.write_str("%")?;
+                    formatter.write_char(char::from(HEX[usize::from(byte >> 4)]))?;
+                    formatter.write_char(char::from(HEX[usize::from(byte & 0x0f)]))?;
+                }
+            } else {
+                formatter.write_char(character)?;
             }
-        })
-        .collect()
+        }
+        Ok(())
+    }
+}
+
+/// Project Keywords custom-property records into document-owned attributes.
+pub(crate) fn custom_property_attributes(
+    ctx: &DecodeContext<'_>,
+    histories: &[FeatureHistory],
+) -> Result<Vec<SourceAttribute>, CodecError> {
+    const OPERATION: &str = "project SLDPRT custom properties";
+    let mut attributes = Vec::new();
+    ctx.charge_work(histories.len() as u64, OPERATION)?;
+    for history in histories {
+        ctx.charge_work(history.features.len() as u64, OPERATION)?;
+        for feature in &history.features {
+            ctx.charge_work(feature.xml_tag.len() as u64, OPERATION)?;
+            if !is_custom_property(feature) {
+                continue;
+            }
+            ctx.charge_work(feature.id.len() as u64, OPERATION)?;
+            let native_id = feature
+                .id
+                .strip_prefix("sldprt:history:feature#")
+                .unwrap_or(&feature.id);
+            let id = ctx.format_retained(
+                format_args!(
+                    "sldprt:history:custom-property#{}",
+                    EncodedFeatureKey(native_id)
+                ),
+                OPERATION,
+            )?;
+            let id = AttributeId::mint(id)
+                .map_err(|_| CodecError::malformed("invalid SLDPRT custom-property ID"))?;
+            let mut name = String::new();
+            ctx.reserve_retained_string(&mut name, feature.name.len(), OPERATION)?;
+            name.push_str(&feature.name);
+            let mut values = Vec::new();
+            if let Some(text) = &feature.text {
+                let mut value = String::new();
+                ctx.reserve_retained_string(&mut value, text.len(), OPERATION)?;
+                value.push_str(text);
+                ctx.reserve_collection_vec(&mut values, 1, OPERATION)?;
+                values.push(AttributeValue::String(value));
+            }
+            ctx.reserve_collection_vec(&mut attributes, 1, OPERATION)?;
+            attributes.push(SourceAttribute {
+                id,
+                target: AttributeTarget::Document,
+                name,
+                values,
+            });
+        }
+    }
+    Ok(attributes)
 }
 
 fn unique_source_bindings(

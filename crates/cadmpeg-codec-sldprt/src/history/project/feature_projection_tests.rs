@@ -1174,7 +1174,7 @@ fn idless_legacy_principal_planes_require_an_exact_bounded_triplet() {
 
 #[test]
 fn custom_properties_are_document_attributes_not_model_features() {
-    let mut property = feature("property", None, 0);
+    let mut property = feature("property # µ%", None, 0);
     property.xml_tag = "CustomProperty".into();
     property.name = "PartNumber".into();
     property.text = Some("A-123".into());
@@ -1190,8 +1190,15 @@ fn custom_properties_are_document_attributes_not_model_features() {
     assert!(project_features(std::slice::from_ref(&history))
         .unwrap()
         .is_empty());
-    let attributes = custom_property_attributes(std::slice::from_ref(&history));
+    let attributes = with_test_ctx(|ctx| {
+        custom_property_attributes(ctx, std::slice::from_ref(&history))
+            .expect("custom-property projection")
+    });
     assert_eq!(attributes.len(), 1);
+    assert_eq!(
+        attributes[0].id.as_str(),
+        "sldprt:history:custom-property#property%20%23%20µ%25"
+    );
     assert_eq!(attributes[0].name, "PartNumber");
     assert_eq!(
         attributes[0].values,
