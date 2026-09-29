@@ -3536,12 +3536,14 @@ fn project_face_selection(
                     )
                 })
         });
-    Ok(if let Some(selection) = historical {
-        selection
-    } else {
-        resolved_face_group(ctx, group, face_operands)?
-            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
-    })
+    if let Some(selection) = historical {
+        return Ok(selection);
+    }
+    match resolved_face_group(ctx, group, face_operands)? {
+        Some(selection) => Ok(selection),
+        None => Ok(cadmpeg_ir::features::FaceSelection::Native(copy_feature_text(
+            ctx, &group.id, "f3d face selection native fallback")?)),
+    }
 }
 
 fn project_draft_face_selection(
