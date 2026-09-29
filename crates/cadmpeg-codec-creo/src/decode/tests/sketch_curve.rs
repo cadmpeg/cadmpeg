@@ -204,14 +204,16 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     let entity = SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture");
     let sketch = SketchId::mint("synthetic:test:id#sketch").expect("valid test fixture");
     assert_eq!(
-        section_segment_verhor_definition(&segment, &sketch, entity.clone()),
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(ctx, &segment, &sketch, entity.clone()))
+            .expect("service verhor admission"),
         Some(SketchConstraintDefinitionInput::Vertical {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(1);
     assert_eq!(
-        section_segment_verhor_definition(&segment, &sketch, entity.clone()),
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(ctx, &segment, &sketch, entity.clone()))
+            .expect("service verhor admission"),
         Some(SketchConstraintDefinitionInput::Horizontal {
             entity: entity.clone()
         })
@@ -222,7 +224,8 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         entities,
         operands,
         ..
-    }) = section_segment_verhor_definition(&segment, &sketch, entity.clone())
+    }) = crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(ctx, &segment, &sketch, entity.clone()))
+        .expect("service verhor admission")
     else {
         panic!("an undefined line selector must remain native");
     };
@@ -237,16 +240,18 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     segment.kind = crate::feature::definitions::FeatureSegmentKind::Arc(segment.point_ids());
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
-        section_segment_verhor_definition(&segment, &sketch, entity),
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(ctx, &segment, &sketch, entity))
+            .expect("service verhor admission"),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     segment.vertical_horizontal = None;
     assert_eq!(
-        section_segment_verhor_definition(
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
+            ctx,
             &segment,
             &sketch,
             SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture")
-        ),
+        )).expect("service verhor admission"),
         None
     );
 }

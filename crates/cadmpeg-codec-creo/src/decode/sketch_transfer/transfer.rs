@@ -22,8 +22,9 @@ use super::super::sketch::radii::{
 };
 use super::super::sketch::skamp::section_segment_rows;
 use super::super::sketch_ids::{
-    feature_definition_has_sketch_design, model_sketch_id, sketch_constraint_id, sketch_entity_id,
-    sketch_feature_id_admitted, sketch_native_ref,
+    feature_definition_has_sketch_design, model_sketch_id,
+    sketch_constraint_id_admitted, sketch_entity_id, sketch_entity_id_admitted,
+    sketch_feature_id_admitted, sketch_native_ref, sketch_native_ref_admitted,
 };
 use super::super::uniqueness::unique_feature_section_transform;
 use super::entities::transfer_section_entities;
@@ -46,7 +47,8 @@ use crate::decode::sketch_transfer::constraints::{
 };
 use crate::decode::sketch_transfer::identity::{
     ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
-    opaque_section_segment_identity_suffix, section_segment_identity_suffix,
+    opaque_section_segment_identity_suffix_admitted,
+    section_segment_identity_suffix_admitted,
     unique_saved_section_internal_ids, unique_section_segment_external_ids,
 };
 use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
@@ -62,7 +64,7 @@ use cadmpeg_ir::features::{
     FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::sketches::{Sketch, SketchConstraint, SketchEntity, SketchGeometry};
+use cadmpeg_ir::sketches::{Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchEntity, SketchGeometry, SketchId};
 use cadmpeg_ir::sketches::SketchEntityId;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
@@ -557,154 +559,76 @@ pub(in super::super) fn transfer_sketches(
         }
         let (emitted_entity_ids, emitted_entity_geometry) =
             emitted_entity_views(ctx, &entities)?;
-        let verhor_definitions = segments
-            .iter()
-            .filter_map(|segment| {
-                let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
-                let entity = sketch_entity_id(&sketch_id, &suffix)?;
-                Some((
-                    suffix,
-                    section_segment_verhor_definition(segment, &sketch_id, entity)?,
-                    segment.offset,
-                ))
-            })
-            .chain(
-                definition
-                    .segments
-                    .iter()
-                    .flat_map(|table| table.rows.centered_lines())
-                    .filter_map(|segment| {
-                        Some({
-                            let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                                segment.external_id.to_string()
-                            } else {
-                                format!("centered_line:offset:{}", segment.offset)
-                            };
-                            let entity = sketch_entity_id(&sketch_id, &suffix)?;
-                            (
-                                suffix,
-                                native_section_segment_verhor_definition(
-                                    &sketch_id,
-                                    entity,
-                                    segment.external_id,
-                                    0,
-                                )?,
-                                segment.offset,
-                            )
-                        })
-                    }),
-            )
-            .chain(
-                definition
-                    .segments
-                    .iter()
-                    .flat_map(|table| table.rows.bounded_curves())
-                    .filter_map(|segment| {
-                        let verhor = segment.vertical_horizontal?;
-                        let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                            segment.external_id.to_string()
-                        } else {
-                            format!("bounded_curve:offset:{}", segment.offset)
-                        };
-                        let entity = sketch_entity_id(&sketch_id, &suffix)?;
-                        Some((
-                            suffix,
-                            native_section_segment_verhor_definition(
-                                &sketch_id,
-                                entity,
-                                segment.external_id,
-                                verhor,
-                            )?,
-                            segment.offset,
-                        ))
-                    }),
-            )
-            .chain(
-                definition
-                    .segments
-                    .iter()
-                    .flat_map(|table| table.rows.reference_lines())
-                    .filter_map(|segment| {
-                        let verhor = segment.vertical_horizontal?;
-                        let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                            segment.external_id.to_string()
-                        } else {
-                            format!("reference_line:offset:{}", segment.offset)
-                        };
-                        let entity = sketch_entity_id(&sketch_id, &suffix)?;
-                        Some((
-                            suffix,
-                            native_section_segment_verhor_definition(
-                                &sketch_id,
-                                entity,
-                                segment.external_id,
-                                verhor,
-                            )?,
-                            segment.offset,
-                        ))
-                    }),
-            )
-            .chain(
-                definition
-                    .segments
-                    .iter()
-                    .flat_map(|table| table.rows.opaque())
-                    .filter_map(|segment| {
-                        let verhor = segment.vertical_horizontal?;
-                        let suffix =
-                            opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
-                        let entity = sketch_entity_id(&sketch_id, &suffix)?;
-                        Some((
-                            suffix,
-                            native_section_segment_verhor_definition(
-                                &sketch_id,
-                                entity,
-                                segment.external_id,
-                                verhor,
-                            )?,
-                            segment.offset,
-                        ))
-                    }),
-            );
         let mut constraints = Vec::new();
-        for (suffix, mut constraint_definition, offset) in verhor_definitions {
-            if !reconcile_constraint_entity_references(
-                &mut constraint_definition,
-                &emitted_entity_ids,
-            ) {
+        for segment in &segments {
+            if segment.vertical_horizontal.is_none() {
                 continue;
             }
-            let Some(id) = sketch_constraint_id(&sketch_id, format_args!("verhor:{suffix}")) else {
+            let suffix = section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)?;
+            let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                 continue;
             };
-            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                constraint_definition,
-            ) else {
+            if let Some(definition) = section_segment_verhor_definition(ctx, segment, &sketch_id, entity)? {
+                emit_verhor_constraint(ctx, annotations, &mut constraints, &emitted_entity_ids,
+                    &sketch_id, &suffix, definition, segment.offset)?;
+            }
+        }
+        for segment in definition.segments.iter().flat_map(|table| table.rows.centered_lines()) {
+            let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                ctx.format_retained(segment.external_id, "creo verhor entity suffix")?
+            } else {
+                ctx.format_retained(format_args!("centered_line:offset:{}", segment.offset), "creo verhor entity suffix")?
+            };
+            let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                 continue;
             };
-            annotate(
-                annotations,
-                id.as_str(),
-                "FeatDefs",
-                offset as u64,
-                "section_verhor_constraint",
-                Exactness::ByteExact,
-            );
-            admit_constraint_row(ctx, &mut constraints, SketchConstraint {
-                id,
-                sketch: sketch_id.copy_admitted(ctx, "creo constraint sketch identity")?,
-                definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(sketch_native_ref(&sketch_id)),
-            })?;
+            let definition = native_section_segment_verhor_definition(ctx, &sketch_id, entity, segment.external_id, 0)?;
+            emit_verhor_constraint(ctx, annotations, &mut constraints, &emitted_entity_ids,
+                &sketch_id, &suffix, definition, segment.offset)?;
+        }
+        for segment in definition.segments.iter().flat_map(|table| table.rows.bounded_curves()) {
+            let Some(verhor) = segment.vertical_horizontal else {
+                continue;
+            };
+            let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                ctx.format_retained(segment.external_id, "creo verhor entity suffix")?
+            } else {
+                ctx.format_retained(format_args!("bounded_curve:offset:{}", segment.offset), "creo verhor entity suffix")?
+            };
+            let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
+                continue;
+            };
+            let definition = native_section_segment_verhor_definition(ctx, &sketch_id, entity, segment.external_id, verhor)?;
+            emit_verhor_constraint(ctx, annotations, &mut constraints, &emitted_entity_ids,
+                &sketch_id, &suffix, definition, segment.offset)?;
+        }
+        for segment in definition.segments.iter().flat_map(|table| table.rows.reference_lines()) {
+            let Some(verhor) = segment.vertical_horizontal else {
+                continue;
+            };
+            let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                ctx.format_retained(segment.external_id, "creo verhor entity suffix")?
+            } else {
+                ctx.format_retained(format_args!("reference_line:offset:{}", segment.offset), "creo verhor entity suffix")?
+            };
+            let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
+                continue;
+            };
+            let definition = native_section_segment_verhor_definition(ctx, &sketch_id, entity, segment.external_id, verhor)?;
+            emit_verhor_constraint(ctx, annotations, &mut constraints, &emitted_entity_ids,
+                &sketch_id, &suffix, definition, segment.offset)?;
+        }
+        for segment in definition.segments.iter().flat_map(|table| table.rows.opaque()) {
+            let Some(verhor) = segment.vertical_horizontal else {
+                continue;
+            };
+            let suffix = opaque_section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)?;
+            let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
+                continue;
+            };
+            let definition = native_section_segment_verhor_definition(ctx, &sketch_id, entity, segment.external_id, verhor)?;
+            emit_verhor_constraint(ctx, annotations, &mut constraints, &emitted_entity_ids,
+                &sketch_id, &suffix, definition, segment.offset)?;
         }
         for (relation_index, (mut constraint, offset)) in
             section_dimension_constraints(ctx, definition, &sketch_id)?
@@ -986,6 +910,44 @@ fn admit_constraint_row(
     ctx.try_reserve_items(rows, 1, "creo sketch constraint rows")?;
     rows.push(constraint);
     Ok(())
+}
+
+fn emit_verhor_constraint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    annotations: &mut AnnotationBuilder,
+    constraints: &mut Vec<SketchConstraint>,
+    emitted_entity_ids: &BTreeSet<SketchEntityId>,
+    sketch: &SketchId,
+    suffix: &str,
+    mut constraint_definition: SketchConstraintDefinitionInput,
+    offset: usize,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !reconcile_constraint_entity_references(&mut constraint_definition, emitted_entity_ids) {
+        return Ok(());
+    }
+    let Some(id) = sketch_constraint_id_admitted(ctx, sketch, format_args!("verhor:{suffix}"))? else {
+        return Ok(());
+    };
+    let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(constraint_definition) else {
+        return Ok(());
+    };
+    annotate(annotations, id.as_str(), "FeatDefs", offset as u64, "section_verhor_constraint", Exactness::ByteExact);
+    let constraint = SketchConstraint {
+        id,
+        sketch: sketch.copy_admitted(ctx, "creo constraint sketch identity")?,
+        definition,
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: Some(sketch_native_ref_admitted(ctx, sketch)?),
+    };
+    admit_constraint_row(ctx, constraints, constraint)
 }
 
 fn available_parameter_ids<'a>(
