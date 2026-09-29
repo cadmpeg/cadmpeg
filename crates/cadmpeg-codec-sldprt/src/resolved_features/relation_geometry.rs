@@ -96,11 +96,12 @@ fn spatial_point_line_distance(point: Point3, start: Point3, end: Point3) -> Opt
 }
 
 fn ensure_spatial_relation_point(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SpatialSketchEntity>,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     marker: &crate::records::SketchInputEntity,
     position: Point3,
-) -> Option<SpatialSketchEntityId> {
+) -> Result<Option<SpatialSketchEntityId>, cadmpeg_core::CodecError> {
     let mut matches = entities
         .iter()
         .filter(|entity| {
@@ -112,42 +113,85 @@ fn ensure_spatial_relation_point(
             SpatialSketchGeometryDefinition::Point { position: candidate } if candidate == position
         )
     }) {
-        return None;
+        return Ok(None);
     }
     if let Some(entity) = first {
-        return Some(entity.id().clone());
+        return copy_spatial_entity_id(ctx, entity.id()).map(Some);
     }
-    let id = SpatialSketchEntityId::mint(format!(
+    let id_text = ctx.format_retained(format_args!(
         "{}:relation-point:{}",
         sketch.as_str(),
         marker.offset()
-    ))
-    .ok()?;
+    ), "format SLDPRT spatial relation point identity")?;
+    let Ok(id) = SpatialSketchEntityId::mint(id_text) else {
+        return Ok(None);
+    };
+    let entity_id = copy_spatial_entity_id(ctx, &id)?;
+    let sketch_id = copy_spatial_sketch_id(ctx, sketch)?;
+    let native_ref = ctx.format_retained(
+        format_args!("{}", marker.id()),
+        "copy SLDPRT spatial relation marker identity",
+    )?;
+    let Some(geometry) = SpatialSketchGeometry::try_from(
+        SpatialSketchGeometryDefinition::Point { position },
+    ).ok() else {
+        return Ok(None);
+    };
+    ctx.reserve_collection_vec(entities, 1, "append SLDPRT spatial relation point")?;
     entities.push(
         SpatialSketchEntity::new(
-            id.clone(),
-            sketch.clone(),
-            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point { position })
-                .ok()?,
+            entity_id,
+            sketch_id,
+            geometry,
         )
         .with_construction(true)
-        .with_native_ref(Some(marker.id().to_string())),
+        .with_native_ref(Some(native_ref)),
     );
-    Some(id)
+    Ok(Some(id))
+}
+
+fn copy_spatial_entity_id(
+    ctx: &DecodeContext<'_>,
+    id: &SpatialSketchEntityId,
+) -> Result<SpatialSketchEntityId, cadmpeg_core::CodecError> {
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "copy SLDPRT spatial entity identity",
+    )?;
+    SpatialSketchEntityId::mint(text).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed("SolidWorks spatial entity identity is invalid".into())
+    })
+}
+
+fn copy_spatial_sketch_id(
+    ctx: &DecodeContext<'_>,
+    id: &cadmpeg_ir::sketches::SpatialSketchId,
+) -> Result<cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_core::CodecError> {
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "copy SLDPRT spatial sketch identity",
+    )?;
+    cadmpeg_ir::sketches::SpatialSketchId::mint(text).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed("SolidWorks spatial sketch identity is invalid".into())
+    })
 }
 
 fn spatial_relation_point_line_entities(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     lane: &FeatureInputLane,
     entities: &mut Vec<SpatialSketchEntity>,
-) -> Option<(SpatialSketchEntityId, SpatialSketchEntityId)> {
-    let expected = match parameter.value.as_ref()? {
-        cadmpeg_ir::features::ParameterValue::Length(length) => length.get().abs(),
-        _ => return None,
+) -> Result<Option<(SpatialSketchEntityId, SpatialSketchEntityId)>, cadmpeg_core::CodecError> {
+    let Some(value) = parameter.value.as_ref() else {
+        return Ok(None);
     };
-    let mut point_markers = lane
+    let expected = match value {
+        cadmpeg_ir::features::ParameterValue::Length(length) => length.get().abs(),
+        _ => return Ok(None),
+    };
+    let point_candidates = lane
         .sketch_entities
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str()))
@@ -159,11 +203,17 @@ fn spatial_relation_point_line_entities(
                 marker,
                 spatial_relation_marker_coordinates(&lane.native_payload, offset)?,
             ))
-        })
-        .collect::<Vec<_>>();
+        });
+    let mut point_markers = Vec::new();
+    for candidate in point_candidates {
+        ctx.reserve_collection_vec(&mut point_markers, 1, "collect SLDPRT spatial point markers")?;
+        point_markers.push(candidate);
+    }
     point_markers.sort_unstable_by_key(|(marker, _)| marker.offset());
-    let point_operand = relation.operands.first()?;
-    let point_marker = point_operand
+    let Some(point_operand) = relation.operands.first() else {
+        return Ok(None);
+    };
+    let Some(point_marker) = point_operand
         .entity_ref
         .as_deref()
         .and_then(|entity_ref| {
@@ -171,10 +221,12 @@ fn spatial_relation_point_line_entities(
                 .iter()
                 .find(|(marker, _)| marker.id() == entity_ref)
         })
-        .or_else(|| point_markers.get(usize::from(point_operand.entity_index)))?;
+        .or_else(|| point_markers.get(usize::from(point_operand.entity_index))) else {
+        return Ok(None);
+    };
     let (point_marker, point) = *point_marker;
 
-    let mut line_markers = lane
+    let line_candidates = lane
         .sketch_entities
         .iter()
         .filter(|marker| {
@@ -188,8 +240,12 @@ fn spatial_relation_point_line_entities(
                 marker,
                 spatial_relation_marker_coordinates(&lane.native_payload, offset)?,
             ))
-        })
-        .collect::<Vec<_>>();
+        });
+    let mut line_markers = Vec::new();
+    for candidate in line_candidates {
+        ctx.reserve_collection_vec(&mut line_markers, 1, "collect SLDPRT spatial line markers")?;
+        line_markers.push(candidate);
+    }
     line_markers.sort_unstable_by_key(|(marker, _)| marker.offset());
     let mut line_matches = line_markers
         .chunks_exact(2)
@@ -202,14 +258,18 @@ fn spatial_relation_point_line_entities(
         });
     let (Some((start_marker, start, end_marker, end)), None) =
         (line_matches.next(), line_matches.next()) else {
-        return None;
+        return Ok(None);
     };
 
-    let start_id = ensure_spatial_relation_point(entities, sketch, start_marker, start)?;
-    let end_id = ensure_spatial_relation_point(entities, sketch, end_marker, end)?;
-    let point_id = ensure_spatial_relation_point(entities, sketch, point_marker, point)?;
-    let endpoint_refs = vec![start_id.as_str().to_owned(), end_id.as_str().to_owned()];
-    let reverse_endpoint_refs = vec![end_id.as_str().to_owned(), start_id.as_str().to_owned()];
+    let Some(start_id) = ensure_spatial_relation_point(ctx, entities, sketch, start_marker, start)? else {
+        return Ok(None);
+    };
+    let Some(end_id) = ensure_spatial_relation_point(ctx, entities, sketch, end_marker, end)? else {
+        return Ok(None);
+    };
+    let Some(point_id) = ensure_spatial_relation_point(ctx, entities, sketch, point_marker, point)? else {
+        return Ok(None);
+    };
     let existing_line_id = entities
         .iter()
         .find(|entity| {
@@ -218,31 +278,54 @@ fn spatial_relation_point_line_entities(
                     *entity.geometry.definition(),
                     SpatialSketchGeometryDefinition::Line { .. }
                 )
-                && (entity.endpoint_refs == endpoint_refs
-                    || entity.endpoint_refs == reverse_endpoint_refs)
+                && matches!(entity.endpoint_refs.as_slice(), [first, second]
+                    if (first == start_id.as_str() && second == end_id.as_str())
+                        || (first == end_id.as_str() && second == start_id.as_str()))
         })
-        .map(|entity| entity.id().clone());
+        .map(SpatialSketchEntity::id);
     let line_id = if let Some(line_id) = existing_line_id {
-        line_id
+        copy_spatial_entity_id(ctx, line_id)?
     } else {
-        let id = SpatialSketchEntityId::mint(format!("{}:relation-line", relation.id)).ok()?;
+        let id_text = ctx.format_retained(
+            format_args!("{}:relation-line", relation.id),
+            "format SLDPRT spatial relation line identity",
+        )?;
+        let Ok(id) = SpatialSketchEntityId::mint(id_text) else {
+            return Ok(None);
+        };
+        let entity_id = copy_spatial_entity_id(ctx, &id)?;
+        let sketch_id = copy_spatial_sketch_id(ctx, sketch)?;
+        let geometry_ref = ctx.format_retained(
+            format_args!("{}:relation-line", relation.id),
+            "copy SLDPRT spatial relation line reference",
+        )?;
+        let start_ref = ctx.format_retained(
+            format_args!("{}", start_id.as_str()),
+            "copy SLDPRT spatial line endpoint",
+        )?;
+        let end_ref = ctx.format_retained(
+            format_args!("{}", end_id.as_str()),
+            "copy SLDPRT spatial line endpoint",
+        )?;
+        let Some(geometry) = SpatialSketchGeometry::try_from(
+            SpatialSketchGeometryDefinition::Line { start, end },
+        ).ok() else {
+            return Ok(None);
+        };
+        ctx.reserve_collection_vec(entities, 1, "append SLDPRT spatial relation line")?;
         entities.push(
             SpatialSketchEntity::new(
-                id.clone(),
-                sketch.clone(),
-                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                    start,
-                    end,
-                })
-                .ok()?,
+                entity_id,
+                sketch_id,
+                geometry,
             )
             .with_construction(true)
-            .with_geometry_ref(Some(format!("{}:relation-line", relation.id)))
-            .with_endpoint_refs(endpoint_refs),
+            .with_geometry_ref(Some(geometry_ref))
+            .with_endpoint_refs(vec![start_ref, end_ref]),
         );
         id
     };
-    Some((point_id, line_id))
+    Ok(Some((point_id, line_id)))
 }
 
 /// Project spatial-feature relation records while retaining native records
@@ -256,37 +339,73 @@ pub(crate) fn project_spatial_relation_bindings(
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let spatial_sketch_ids = sketches
-        .iter()
-        .map(|sketch| &sketch.id)
-        .collect::<HashSet<_>>();
-    let sketches_by_feature = features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::SpatialSketch {
-                    sketch: Some(sketch),
-                },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            spatial_sketch_ids
-                .contains(sketch)
-                .then_some((feature.native_ref.as_deref()?, sketch))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut spatial_sketch_ids = HashSet::new();
+    for sketch in sketches {
+        let operation = "index SLDPRT spatial sketch identities";
+        ctx.charge_work(1, operation)?;
+        if !spatial_sketch_ids.contains(&sketch.id) {
+            ctx.charge_collection_items(1, operation)?;
+            spatial_sketch_ids.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        spatial_sketch_ids.insert(&sketch.id);
+    }
+    let mut sketches_by_feature = HashMap::new();
+    for feature in features {
+        let operation = "index SLDPRT spatial sketches by feature";
+        ctx.charge_work(1, operation)?;
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::SpatialSketch {
+                sketch: Some(sketch),
+            },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        if !spatial_sketch_ids.contains(sketch) {
+            continue;
+        }
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !sketches_by_feature.contains_key(native_ref) {
+            ctx.charge_collection_items(1, operation)?;
+            sketches_by_feature.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        sketches_by_feature.insert(native_ref, sketch);
+    }
     let relation_parameters = owned_relation_parameters(ctx, features, parameters, lanes)?;
-    let parameters_by_id = parameters
-        .iter()
-        .map(|parameter| (&parameter.id, parameter))
-        .collect::<HashMap<_, _>>();
+    let mut parameters_by_id = HashMap::new();
+    for parameter in parameters {
+        let operation = "index SLDPRT spatial relation parameters";
+        ctx.charge_work(1, operation)?;
+        if !parameters_by_id.contains_key(&parameter.id) {
+            ctx.charge_collection_items(1, operation)?;
+            parameters_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        parameters_by_id.insert(&parameter.id, parameter);
+    }
     let mut constraints_by_native_ref = HashMap::<String, usize>::new();
     for (index, constraint) in constraints.iter().enumerate() {
         if let Some(native_ref) = constraint.native_ref.as_deref() {
-            constraints_by_native_ref
-                .entry(native_ref.to_owned())
-                .or_insert(index);
+            let operation = "index SLDPRT spatial relation constraints";
+            ctx.charge_work(1, operation)?;
+            if !constraints_by_native_ref.contains_key(native_ref) {
+                ctx.charge_collection_items(1, operation)?;
+                constraints_by_native_ref.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+                let key = ctx.format_retained(
+                    format_args!("{native_ref}"),
+                    "copy SLDPRT spatial constraint reference",
+                )?;
+                constraints_by_native_ref.insert(key, index);
+            }
         }
     }
     for lane in lanes {
@@ -298,60 +417,73 @@ pub(crate) fn project_spatial_relation_bindings(
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
-            let parameter_id = relation_parameters.get(&relation.id).cloned().flatten();
+            let parameter_id = relation_parameters.get(&relation.id).and_then(Option::as_ref);
             let parameter = parameter_id
-                .as_ref()
                 .and_then(|parameter| parameters_by_id.get(parameter))
                 .copied();
-            let typed_definition = (relation.family
-                == FeatureInputRelationFamily::PointLineDistance)
-                .then(|| {
-                    let result = spatial_relation_point_line_entities(
-                        relation, sketch, parameter?, lane, entities,
-                    );
-                    result.and_then(|(point, line)| {
-                        Some(SpatialSketchConstraintDefinitionInput::PointLineDistance {
-                            point,
-                            line,
-                            parameter: parameter_id.clone()?,
-                        })
-                    })
-                })
-                .flatten();
+            let typed_definition = if relation.family == FeatureInputRelationFamily::PointLineDistance {
+                if let (Some(parameter), Some(parameter_id)) = (parameter, parameter_id) {
+                    spatial_relation_point_line_entities(ctx, relation, sketch, parameter, lane, entities)?
+                        .map(|(point, line)| (point, line, parameter_id))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             let native_kind = relation_native_kind(relation.family);
-            let definition = typed_definition.unwrap_or_else(|| {
+            let definition = if let Some((point, line, parameter_id)) = typed_definition {
+                SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                    point,
+                    line,
+                    parameter: copy_relation_parameter_id(ctx, parameter_id)?,
+                }
+            } else {
+                let mut operands = Vec::new();
+                for operand in &relation.operands {
+                    let native_ref = operand.entity_ref.as_deref().map(|reference| {
+                        ctx.format_retained(
+                            format_args!("{reference}"),
+                            "copy SLDPRT spatial relation operand reference",
+                        )
+                    }).transpose()?;
+                    ctx.reserve_collection_vec(
+                        &mut operands, 1, "collect SLDPRT spatial relation operands",
+                    )?;
+                    operands.push(SketchNativeOperand {
+                        native_kind: operand_kind_name(operand.kind),
+                        field: None,
+                        object_index: Some(u32::from(operand.entity_index)),
+                        native_ref,
+                    });
+                }
                 SpatialSketchConstraintDefinitionInput::Native {
                     native_kind,
                     native_state: None,
-                    parameter: parameter_id.clone(),
-                    operands: relation
-                        .operands
-                        .iter()
-                        .map(|operand| SketchNativeOperand {
-                            native_kind: operand_kind_name(operand.kind),
-                            field: None,
-                            object_index: Some(u32::from(operand.entity_index)),
-                            native_ref: operand.entity_ref.clone(),
-                        })
-                        .collect(),
+                    parameter: parameter_id.map(|id| copy_relation_parameter_id(ctx, id)).transpose()?,
+                    operands,
                 }
-            });
+            };
             let Ok(definition) =
                 cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(definition)
             else {
                 continue;
             };
-            let projected = SpatialSketchConstraint {
-                id: match SketchConstraintId::mint(format!(
+            let id_text = ctx.format_retained(format_args!(
                     "sldprt:model:spatial-sketch-constraint#relation:{lane_key}:{}",
                     relation.offset
-                )) {
+                ), "format SLDPRT spatial relation constraint identity")?;
+            let projected = SpatialSketchConstraint {
+                id: match SketchConstraintId::mint(id_text) {
                     Ok(id) => id,
                     Err(_) => continue,
                 },
-                sketch: (*sketch).clone(),
+                sketch: copy_spatial_sketch_id(ctx, sketch)?,
                 definition,
-                native_ref: Some(relation.id.clone()),
+                native_ref: Some(ctx.format_retained(
+                    format_args!("{}", relation.id),
+                    "copy SLDPRT spatial relation reference",
+                )?),
             };
             if let Some(index) = constraints_by_native_ref.get(relation.id.as_str()).copied() {
                 if matches!(
@@ -364,9 +496,17 @@ pub(crate) fn project_spatial_relation_bindings(
                     constraints[index] = projected;
                 }
             } else {
-                constraints_by_native_ref
-                    .entry(relation.id.clone())
-                    .or_insert(constraints.len());
+                let operation = "index SLDPRT spatial relation constraints";
+                ctx.charge_collection_items(1, operation)?;
+                constraints_by_native_ref.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+                let key = ctx.format_retained(
+                    format_args!("{}", relation.id),
+                    "copy SLDPRT spatial constraint reference",
+                )?;
+                constraints_by_native_ref.insert(key, constraints.len());
+                ctx.reserve_collection_vec(constraints, 1, "append SLDPRT spatial relation constraint")?;
                 constraints.push(projected);
             }
         }
@@ -3799,3 +3939,6 @@ mod point_point_distance_family_tests {
 
 #[cfg(test)]
 mod ownership_tests;
+
+#[cfg(test)]
+mod spatial_budget_tests;
