@@ -185,105 +185,158 @@ pub(super) fn bind_circular_profile_by_dimension(
 
 /// Bind neutral parameters to uniquely owned native scalar records.
 pub(crate) fn bind_parameter_scalars<'a>(
+    ctx: &DecodeContext<'_>,
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let neutral_owners = features
-        .iter()
-        .filter_map(|feature| Some((&feature.id, feature.native_ref.as_deref()?)))
-        .collect::<HashMap<_, _>>();
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    const OPERATION: &str = "bind SLDPRT parameter scalars";
+    let mut neutral_owners = HashMap::new();
+    for feature in features {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !neutral_owners.contains_key(&feature.id) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            neutral_owners.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        neutral_owners.insert(&feature.id, native_ref);
+    }
+    let mut native_features = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        if !native_features.contains_key(feature.id.as_str()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            native_features.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        native_features.insert(feature.id.as_str(), feature);
+    }
     for lane in lanes {
-        let length_scalars = lane
-            .relation_instances
-            .iter()
-            .filter(|relation| relation.family != FeatureInputRelationFamily::Angle)
-            .filter_map(|relation| relation.parameter_scalar_ref())
-            .collect::<HashSet<_>>();
-        let angle_scalars = lane
-            .relation_instances
-            .iter()
-            .filter(|relation| relation.family == FeatureInputRelationFamily::Angle)
-            .filter_map(|relation| relation.parameter_scalar_ref())
-            .collect::<HashSet<_>>();
-        let detached_scalars = lane
-            .relation_instances
-            .iter()
-            .filter_map(|relation| relation.parameter_scalar_ref())
-            .filter(|id| {
-                lane.scalars
-                    .iter()
-                    .find(|scalar| scalar.id == **id)
-                    .is_some_and(|scalar| scalar.operands.is_empty())
-            })
-            .collect::<HashSet<_>>();
-        let names_by_id = lane
-            .names
-            .iter()
-            .map(|name| (name.id.as_str(), name))
-            .collect::<HashMap<_, _>>();
+        ctx.charge_work(1, OPERATION)?;
+        let mut length_scalars = HashSet::new();
+        let mut angle_scalars = HashSet::new();
+        let mut detached_scalars = HashSet::new();
+        for relation in &lane.relation_instances {
+            ctx.charge_work(1, OPERATION)?;
+            let Some(id) = relation.parameter_scalar_ref() else {
+                continue;
+            };
+            let family = if relation.family == FeatureInputRelationFamily::Angle {
+                &mut angle_scalars
+            } else {
+                &mut length_scalars
+            };
+            if !family.contains(id) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                family.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+                family.insert(id);
+            }
+            let mut detached = false;
+            for scalar in &lane.scalars {
+                ctx.charge_work(1, OPERATION)?;
+                if scalar.id == id {
+                    detached = scalar.operands.is_empty();
+                    break;
+                }
+            }
+            if detached && !detached_scalars.contains(id) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                detached_scalars.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+                detached_scalars.insert(id);
+            }
+        }
+        let mut names_by_id = HashMap::new();
+        for name in &lane.names {
+            ctx.charge_work(1, OPERATION)?;
+            if !names_by_id.contains_key(name.id.as_str()) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                names_by_id.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            names_by_id.insert(name.id.as_str(), name);
+        }
         let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
         for feature in native_features.values() {
+            ctx.charge_work(1, OPERATION)?;
             let start = feature_object_name(feature, lane).map_or(u64::MAX, |name| name.offset);
+            ctx.reserve_collection_vec(&mut starts, 1, OPERATION)?;
             starts.push((start, feature));
         }
+        ctx.charge_work(starts.len() as u64, OPERATION)?;
         starts.sort_by_key(|start| start.0);
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
-            let owner_parameters = parameters.iter_mut().filter(|parameter| {
-                parameter
+            for parameter in parameters.iter_mut() {
+                ctx.charge_work(1, OPERATION)?;
+                let owner = parameter
                     .owner
                     .as_ref()
                     .and_then(|owner| neutral_owners.get(owner))
-                    .copied()
-                    == Some(native_feature.id.as_str())
-            });
-            for parameter in owner_parameters {
-                if parameter.native_ref.is_some() {
+                    .copied();
+                if owner != Some(native_feature.id.as_str()) || parameter.native_ref.is_some() {
                     continue;
                 }
-                let scalars = lane
-                    .scalars
-                    .iter()
-                    .filter(|scalar| match scalar.feature_ref.as_deref() {
+                let mut scalars = Vec::new();
+                for scalar in &lane.scalars {
+                    ctx.charge_work(1, OPERATION)?;
+                    let owned = match scalar.feature_ref.as_deref() {
                         Some(owner) => owner == native_feature.id,
                         None => scalar.offset > start && scalar.offset < end,
-                    })
-                    .filter(|scalar| {
-                        names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
+                    };
+                    if !owned {
+                        continue;
+                    }
+                    let name_matches = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
                             name.value == parameter.name
                                 && value_only_scalar_offset(&lane.native_payload, name)
                                     != usize::try_from(scalar.offset).ok()
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                let driving = scalars
-                    .iter()
-                    .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
-                    .copied()
-                    .collect::<Vec<_>>();
-                let candidates = if driving.is_empty() {
-                    scalars
-                        .into_iter()
-                        .filter(|scalar| scalar.role == FeatureInputScalarRole::Native)
-                        .collect::<Vec<_>>()
+                    });
+                    if name_matches {
+                        ctx.reserve_collection_vec(&mut scalars, 1, OPERATION)?;
+                        scalars.push(scalar);
+                    }
+                }
+                let mut driving = Vec::new();
+                for scalar in &scalars {
+                    ctx.charge_work(1, OPERATION)?;
+                    if scalar.role == FeatureInputScalarRole::Driving {
+                        ctx.reserve_collection_vec(&mut driving, 1, OPERATION)?;
+                        driving.push(*scalar);
+                    }
+                }
+                let mut candidates = Vec::new();
+                if driving.is_empty() {
+                    for scalar in scalars {
+                        ctx.charge_work(1, OPERATION)?;
+                        if scalar.role == FeatureInputScalarRole::Native {
+                            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                            candidates.push(scalar);
+                        }
+                    }
                 } else {
-                    driving
-                };
-                let compatible = candidates
-                    .into_iter()
-                    .filter(|scalar| match parameter.value.as_ref() {
+                    candidates = driving;
+                }
+                let mut compatible = Vec::new();
+                for scalar in candidates {
+                    ctx.charge_work(1, OPERATION)?;
+                    let matches_value = match parameter.value.as_ref() {
                         Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
                             let Some(expected) =
                                 crate::history::parameters::eval::exact_integer_f64(*expected)
                             else {
-                                return false;
+                                continue;
                             };
                             if length_scalars.contains(scalar.id.as_str())
                                 || angle_scalars.contains(scalar.id.as_str())
@@ -304,10 +357,16 @@ pub(crate) fn bind_parameter_scalars<'a>(
                             }
                         }
                         _ => true,
-                    })
-                    .collect::<Vec<_>>();
+                    };
+                    if matches_value {
+                        ctx.reserve_collection_vec(&mut compatible, 1, OPERATION)?;
+                        compatible.push(scalar);
+                    }
+                }
                 if let [scalar] = compatible.as_slice() {
-                    parameter.native_ref = Some(scalar.id.clone());
+                    parameter.native_ref = Some(ctx.format_retained(
+                        format_args!("{}", scalar.id), OPERATION,
+                    )?);
                     let scalar_is_detached = detached_scalars.contains(scalar.id.as_str());
                     let scalar_is_untyped_real = matches!(
                         parameter.value,

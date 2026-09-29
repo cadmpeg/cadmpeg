@@ -1,6 +1,7 @@
 //! Compact selection projection and resource-limit tests.
 
 use super::super::{
+    bind_parameter_scalars,
     compact_surface_selection_set_value, cut_with_surface_selection_pair, draft_face_selection,
     full_round_fillet_selection_triple,
     project_compact_body_selections, project_compact_edge_selections,
@@ -14,6 +15,145 @@ use cadmpeg_ir::features::{
     UnresolvedFamily,
 };
 use std::collections::BTreeMap;
+
+fn parameter_scalar_binding_fixture() -> (
+    Vec<cadmpeg_ir::features::DesignParameter>,
+    Vec<cadmpeg_ir::features::Feature>,
+    Vec<crate::records::FeatureHistory>,
+    Vec<FeatureInputLane>,
+) {
+    use crate::records::{FeatureInputName, FeatureInputScalar, FeatureInputScalarRole};
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+
+    let mut feature = compact_edge_projection_feature();
+    feature.native_ref = Some("native-feature".into());
+    let parameter = DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#bound-parameter").expect("identity grammar"),
+        owner: Some(feature.id.clone()),
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "1".into(),
+        display: None,
+        value: Some(ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    };
+    let history = crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::records::Feature {
+            id: "native-feature".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: None,
+            ordinal: 0,
+            name: "NativeFeature".into(),
+            kind: "Feature".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "feature-name".into(), parent: "lane".into(), ordinal: 0,
+            offset: 0, object_id: None, value: "NativeFeature".into(),
+        }, FeatureInputName {
+            id: "parameter-name".into(), parent: "lane".into(), ordinal: 1,
+            offset: 10, object_id: None, value: "D1".into(),
+        }],
+        scalars: vec![FeatureInputScalar {
+            id: "native-scalar".into(), parent: "lane".into(),
+            feature_ref: Some("native-feature".into()), ordinal: 0,
+            offset: 20, object_id: 0, name: "parameter-name".into(),
+            value: cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
+            role: FeatureInputScalarRole::Native, operands: Vec::new(),
+        }],
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    (vec![parameter], vec![feature], vec![history], vec![lane])
+}
+
+#[test]
+fn parameter_scalar_binding_preserves_native_reference_and_value() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (mut parameters, features, histories, lanes) = parameter_scalar_binding_fixture();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
+    bind_parameter_scalars(&ctx, &mut parameters, &features, &histories, &lanes)
+        .expect("scalar binding");
+    assert_eq!(parameters[0].native_ref.as_deref(), Some("native-scalar"));
+    assert!(matches!(parameters[0].value, Some(cadmpeg_ir::features::ParameterValue::Real(value))
+        if value.get() == 2.0));
+}
+
+fn parameter_scalar_limit_result(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (mut parameters, features, histories, lanes) = parameter_scalar_binding_fixture();
+    let mut policy = DecodePolicy::service();
+    match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        other => panic!("unsupported parameter scalar limit: {other:?}"),
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    bind_parameter_scalars(&ctx, &mut parameters, &features, &histories, &lanes)
+        .expect_err("scalar binding exceeds configured limit")
+}
+
+#[test]
+fn parameter_scalar_binding_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(parameter_scalar_limit_result(ResourceDimension::CollectionItems),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "bind SLDPRT parameter scalars"));
+}
+
+#[test]
+fn parameter_scalar_binding_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(parameter_scalar_limit_result(ResourceDimension::RetainedBytes),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "bind SLDPRT parameter scalars"));
+}
+
+#[test]
+fn parameter_scalar_binding_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(parameter_scalar_limit_result(ResourceDimension::WorkUnits),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "bind SLDPRT parameter scalars"));
+}
 
 fn offset_plane_fixture() -> (
     Vec<cadmpeg_ir::features::Feature>,
