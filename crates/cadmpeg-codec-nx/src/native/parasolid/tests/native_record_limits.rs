@@ -75,8 +75,11 @@ fn parasolid_scanned_records_refuse_collection_at_caller_limit() {
         &limited_policy,
     )
     .unwrap();
-    let error = crate::native::parasolid::per_parasolid_scan::<OneScannedRecord>(&limited_ctx, &scan.streams)
-        .expect_err("scanned record refusal");
+    let error = crate::native::parasolid::per_parasolid_scan::<OneScannedRecord>(
+        &limited_ctx,
+        &scan.streams,
+    )
+    .expect_err("scanned record refusal");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -95,9 +98,11 @@ fn parasolid_attribute_definitions_refuse_collection_at_caller_limit() {
     let (ctx, root) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::decode::scan(&ctx, root).unwrap();
-    assert!(!crate::native::parasolid::parasolid_attribute_definitions(&ctx, &scan.streams)
-        .unwrap()
-        .is_empty());
+    assert!(
+        !crate::native::parasolid::parasolid_attribute_definitions(&ctx, &scan.streams)
+            .unwrap()
+            .is_empty()
+    );
     let limited_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
     limited_policy.limits.max_collection_items = 0;
@@ -107,8 +112,9 @@ fn parasolid_attribute_definitions_refuse_collection_at_caller_limit() {
         &limited_policy,
     )
     .unwrap();
-    let error = crate::native::parasolid::parasolid_attribute_definitions(&limited_ctx, &scan.streams)
-        .expect_err("attribute definition collection refusal");
+    let error =
+        crate::native::parasolid::parasolid_attribute_definitions(&limited_ctx, &scan.streams)
+            .expect_err("attribute definition collection refusal");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -129,9 +135,11 @@ fn parasolid_field_names_refuse_collection_at_caller_limit() {
     let (ctx, root) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::decode::scan(&ctx, root).unwrap();
-    assert!(!crate::native::parasolid::parasolid_field_names_records(&ctx, &scan.streams)
-        .unwrap()
-        .is_empty());
+    assert!(
+        !crate::native::parasolid::parasolid_field_names_records(&ctx, &scan.streams)
+            .unwrap()
+            .is_empty()
+    );
     let limited_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
     limited_policy.limits.max_collection_items = 0;
@@ -141,8 +149,9 @@ fn parasolid_field_names_refuse_collection_at_caller_limit() {
         &limited_policy,
     )
     .unwrap();
-    let error = crate::native::parasolid::parasolid_field_names_records(&limited_ctx, &scan.streams)
-        .expect_err("field names collection refusal");
+    let error =
+        crate::native::parasolid::parasolid_field_names_records(&limited_ctx, &scan.streams)
+            .expect_err("field names collection refusal");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -161,9 +170,11 @@ fn parasolid_entity_51_refuses_collection_at_caller_limit() {
     let (ctx, root) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::decode::scan(&ctx, root).unwrap();
-    assert!(!crate::native::parasolid::parasolid_entity_51_records(&ctx, &scan.streams)
-        .unwrap()
-        .is_empty());
+    assert!(
+        !crate::native::parasolid::parasolid_entity_51_records(&ctx, &scan.streams)
+            .unwrap()
+            .is_empty()
+    );
     let limited_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
     limited_policy.limits.max_collection_items = 0;
@@ -185,28 +196,32 @@ fn parasolid_entity_51_refuses_collection_at_caller_limit() {
 #[test]
 fn unicode_record_wire_derives_exact_utf16_and_rejects_disagreement() {
     let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
-    let record: crate::native::parasolid::ParasolidEntity62UnicodeRecord = serde_json::from_str(wire).unwrap();
+    let record: crate::native::parasolid::ParasolidEntity62UnicodeRecord =
+        serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&record).unwrap(), wire);
     assert_eq!(
         serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&crate::native::parasolid::ParasolidEntity62UnicodeRecordWire::from(
-            record.clone()
-        ))
+        serde_json::to_vec(
+            &crate::native::parasolid::ParasolidEntity62UnicodeRecordWire::from(record.clone())
+        )
         .unwrap()
     );
     let inconsistent = wire.replace("[78,88,55357,56960]", "[78,88,55357]");
     assert!(
-        serde_json::from_str::<crate::native::parasolid::ParasolidEntity62UnicodeRecord>(&inconsistent).is_err()
+        serde_json::from_str::<crate::native::parasolid::ParasolidEntity62UnicodeRecord>(
+            &inconsistent
+        )
+        .is_err()
     );
 }
 
 #[test]
 fn unicode_record_native_limit_refuses_before_code_unit_copy() {
     let wire = r#"{"id":"nx:parasolid:unicode-record#0","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
-    let record: crate::native::parasolid::ParasolidEntity62UnicodeRecord = serde_json::from_str(wire).unwrap();
+    let record: crate::native::parasolid::ParasolidEntity62UnicodeRecord =
+        serde_json::from_str(wire).unwrap();
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
         serde_json::from_str::<serde_json::Value>(wire).unwrap(),
     );
 }
-

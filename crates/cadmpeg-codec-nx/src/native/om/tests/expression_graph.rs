@@ -16,19 +16,20 @@ fn nx_expression_parameter_references_preserve_formula_order() {
 
 #[test]
 fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
-    let expression = |name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
-        id: format!("nx:test:expression#{name}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-        unit: crate::native::om::ExpressionUnit::Millimeter,
-        expression: formula.into(),
-        value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
-        source_entry: "part".into(),
-        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-            .unwrap(),
-        source_offset: 0,
-    };
+    let expression =
+        |name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+            id: format!("nx:test:expression#{name}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit: crate::native::om::ExpressionUnit::Millimeter,
+            expression: formula.into(),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
+            source_entry: "part".into(),
+            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+                .unwrap(),
+            source_offset: 0,
+        };
     let mut expressions = vec![
         expression("p4", "3", Some(3.0)),
         expression("p5", "p4bad + 2", None),
@@ -56,19 +57,20 @@ fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
 
 #[test]
 fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
-    let expression = |name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
-        id: format!("nx:test:expression#{name}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-        unit: crate::native::om::ExpressionUnit::Millimeter,
-        expression: formula.into(),
-        value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
-        source_entry: "part".into(),
-        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-            .unwrap(),
-        source_offset: 0,
-    };
+    let expression =
+        |name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+            id: format!("nx:test:expression#{name}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit: crate::native::om::ExpressionUnit::Millimeter,
+            expression: formula.into(),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
+            source_entry: "part".into(),
+            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+                .unwrap(),
+            source_offset: 0,
+        };
     let mut expressions = vec![
         expression("p7", "3", Some(3.0)),
         expression("p7_radius", "5", Some(5.0)),
@@ -97,19 +99,20 @@ fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
 
 #[test]
 fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
-    let expression = |name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
-        id: format!("nx:test:expression#{name}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-        unit: crate::native::om::ExpressionUnit::Millimeter,
-        expression: formula.into(),
-        value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
-        source_entry: "part".into(),
-        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-            .unwrap(),
-        source_offset: 0,
-    };
+    let expression =
+        |name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+            id: format!("nx:test:expression#{name}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit: crate::native::om::ExpressionUnit::Millimeter,
+            expression: formula.into(),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
+            source_entry: "part".into(),
+            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+                .unwrap(),
+            source_offset: 0,
+        };
     let mut expressions = vec![
         expression("p1", "-2", Some(-2.0)),
         expression("p2", "p1^2", None),
@@ -308,10 +311,8 @@ fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
             expression: formula.into(),
             value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "part".into(),
-            source_table: cadmpeg_core::text::NonBlankString::new(
-                "nx:test:expression-table#table",
-            )
-            .unwrap(),
+            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 0,
         }
     };
@@ -379,19 +380,20 @@ fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
 
 #[test]
 fn nx_formula_dependencies_resolve_to_section_parameters() {
-    let expression = |key: u32, name: &str, text: &str, value: Option<f64>| crate::native::om::Expression {
-        id: format!("nx:test:expression#{key}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-        unit: crate::native::om::ExpressionUnit::Millimeter,
-        expression: text.into(),
-        value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
-        source_entry: "/Root/UG_PART/UG_PART".into(),
-        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-            .unwrap(),
-        source_offset: u64::from(key),
-    };
+    let expression =
+        |key: u32, name: &str, text: &str, value: Option<f64>| crate::native::om::Expression {
+            id: format!("nx:test:expression#{key}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit: crate::native::om::ExpressionUnit::Millimeter,
+            expression: text.into(),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
+            source_entry: "/Root/UG_PART/UG_PART".into(),
+            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+                .unwrap(),
+            source_offset: u64::from(key),
+        };
     let expressions = [
         expression(20, "p2", "5", Some(5.0)),
         expression(21, "p2_radius", "7", Some(7.0)),
@@ -457,28 +459,40 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
 
 #[test]
 fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
-    let expression =
-        |key: u32, name: &str, unit: crate::native::om::ExpressionUnit, text: &str, value: Option<f64>| {
-            crate::native::om::Expression {
-                id: format!("nx:test:expression#{key}"),
-                owner: None,
-                declaration: None,
-                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-                unit,
-                expression: text.into(),
-                value: value
-                    .map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
-                source_entry: "/Root/UG_PART/UG_PART".into(),
-                source_table: cadmpeg_core::text::NonBlankString::new(
-                    "nx:test:expression-table#table",
-                )
+    let expression = |key: u32,
+                      name: &str,
+                      unit: crate::native::om::ExpressionUnit,
+                      text: &str,
+                      value: Option<f64>| {
+        crate::native::om::Expression {
+            id: format!("nx:test:expression#{key}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit,
+            expression: text.into(),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
+            source_entry: "/Root/UG_PART/UG_PART".into(),
+            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
-                source_offset: u64::from(key),
-            }
-        };
+            source_offset: u64::from(key),
+        }
+    };
     let expressions = [
-        expression(10, "p1", crate::native::om::ExpressionUnit::Millimeter, "5", Some(5.0)),
-        expression(11, "p1", crate::native::om::ExpressionUnit::Degree, "45", Some(45.0)),
+        expression(
+            10,
+            "p1",
+            crate::native::om::ExpressionUnit::Millimeter,
+            "5",
+            Some(5.0),
+        ),
+        expression(
+            11,
+            "p1",
+            crate::native::om::ExpressionUnit::Degree,
+            "45",
+            Some(45.0),
+        ),
         expression(
             20,
             "p2",
@@ -555,8 +569,8 @@ fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
 
 #[test]
 fn nx_formula_dependencies_resolve_within_the_expression_table() {
-    let expression =
-        |id: &str, table: &str, name: &str, text: &str, source_offset: u64| crate::native::om::Expression {
+    let expression = |id: &str, table: &str, name: &str, text: &str, source_offset: u64| {
+        crate::native::om::Expression {
             id: format!("nx:test:expression#{id}"),
             owner: None,
             declaration: None,
@@ -567,7 +581,8 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
             source_entry: "/Root/UG_PART/UG_PART".into(),
             source_table: cadmpeg_core::text::NonBlankString::new(table).unwrap(),
             source_offset,
-        };
+        }
+    };
     let expressions = [
         expression(
             "a-p3",
@@ -643,10 +658,9 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
     .is_empty());
 
     let mut inconsistent = ir.clone();
-    inconsistent.model.parameters[1].value =
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
-        ));
+    inconsistent.model.parameters[1].value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+    ));
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| {
             feature_completeness::incomplete_expression_parameters(ctx, &inconsistent)
@@ -698,19 +712,20 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
 
 #[test]
 fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
-    let expression = |id: &str, name: &str, text: &str, source_offset| crate::native::om::Expression {
-        id: format!("nx:test:expression#{id}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-        unit: crate::native::om::ExpressionUnit::Millimeter,
-        expression: text.to_string(),
-        value: None,
-        source_entry: "part".to_string(),
-        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-            .unwrap(),
-        source_offset,
-    };
+    let expression =
+        |id: &str, name: &str, text: &str, source_offset| crate::native::om::Expression {
+            id: format!("nx:test:expression#{id}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit: crate::native::om::ExpressionUnit::Millimeter,
+            expression: text.to_string(),
+            value: None,
+            source_entry: "part".to_string(),
+            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+                .unwrap(),
+            source_offset,
+        };
     let expressions = [
         expression("p2", "p2", "p3 + 1", 10),
         expression("p3", "p3", "p2 + 1", 20),
@@ -758,19 +773,20 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
 
 #[test]
 fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
-    let expression = |id: &str, name: &str, text: &str, source_offset| crate::native::om::Expression {
-        id: format!("nx:test:expression#{id}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-        unit: crate::native::om::ExpressionUnit::Millimeter,
-        expression: text.to_string(),
-        value: None,
-        source_entry: "part".to_string(),
-        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
-            .unwrap(),
-        source_offset,
-    };
+    let expression =
+        |id: &str, name: &str, text: &str, source_offset| crate::native::om::Expression {
+            id: format!("nx:test:expression#{id}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit: crate::native::om::ExpressionUnit::Millimeter,
+            expression: text.to_string(),
+            value: None,
+            source_entry: "part".to_string(),
+            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+                .unwrap(),
+            source_offset,
+        };
     let expressions = [
         expression("p2", "p2", "p3 + 1", 10),
         expression("p3", "p3", "p2 + 1", 20),
@@ -918,8 +934,8 @@ fn nx_parameter_consumers_follow_physical_use_order() {
             .unwrap(),
         source_offset: 10,
     };
-    let parameter_use = |id: &str, operation: &str, source_offset| {
-        crate::native::features::FeatureParameterUse {
+    let parameter_use =
+        |id: &str, operation: &str, source_offset| crate::native::features::FeatureParameterUse {
             id: id.to_string(),
             operation_label: operation.to_string(),
             expression: expression.id.clone(),
@@ -927,8 +943,7 @@ fn nx_parameter_consumers_follow_physical_use_order() {
                 binding: format!("binding-{id}"),
                 source_offset,
             }],
-        }
-    };
+        };
     let uses = [
         parameter_use("later", "nx:feature-history:operation-label#0-1", 40),
         parameter_use("earlier", "nx:feature-history:operation-label#9-8", 30),
@@ -1023,15 +1038,14 @@ fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
 
 #[test]
 fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
-    use crate::native::om::DataBlockReference;
     use crate::native::features::FeatureInputBlock;
+    use crate::native::om::DataBlockReference;
 
     let input = FeatureInputBlock {
         id: "nx:feature-history:input-block#0-7-0".to_string(),
         operation_label: "nx:feature-history:operation-label#0-7".to_string(),
         input_slot: crate::om::header_references::HeaderSlot::Zero,
-        object: crate::om::reference_index::FeatureReferenceToken::from_wire(45, &[45])
-            .unwrap(),
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(45, &[45]).unwrap(),
         data_block: "nx:om-data-blocks-2:block#45".to_string(),
         source_offset: 700,
     };
@@ -1106,4 +1120,3 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
     assert_eq!(ambiguous.len(), 1);
     assert_eq!(ambiguous[0].expression, None);
 }
-

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::topology::Graph;
-use crate::test_support::test_prt::many_face_partition_stream;
 use crate::native::parasolid::{group_member, ParasolidGroupMember};
+use crate::test_support::test_prt::many_face_partition_stream;
+use crate::topology::Graph;
 use std::collections::BTreeMap;
 
-use super::{record, stream};
 use super::group_records::group_record;
+use super::{record, stream};
 use crate::native::parasolid::group_member::GroupMemberTarget;
 
 #[test]
@@ -19,7 +19,8 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
 
     let members = crate::test_support::with_decode_context(|ctx| {
         let mut members = Vec::new();
-        crate::native::parasolid::group_members_from_records(ctx, 4, &records, &mut members).unwrap();
+        crate::native::parasolid::group_members_from_records(ctx, 4, &records, &mut members)
+            .unwrap();
         members
     });
 
@@ -53,7 +54,8 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
     };
     let broken_members = crate::test_support::with_decode_context(|ctx| {
         let mut members = Vec::new();
-        crate::native::parasolid::group_members_from_records(ctx, 4, &broken, &mut members).unwrap();
+        crate::native::parasolid::group_members_from_records(ctx, 4, &broken, &mut members)
+            .unwrap();
         members
     });
     assert!(broken_members.is_empty());
@@ -65,13 +67,11 @@ fn group_member_xmt_is_checked_before_node_identity_fallback() {
         Graph::parse(ctx, &many_face_partition_stream(1_000))
     })
     .unwrap();
-    let resolve = |member: &ParasolidGroupMember| match member
-        .target
-        .resolve(&graph, member.member_xmt)
-    {
-        GroupMemberTarget::Fin => None,
-        GroupMemberTarget::Node { current_xmt, .. } => current_xmt,
-    };
+    let resolve =
+        |member: &ParasolidGroupMember| match member.target.resolve(&graph, member.member_xmt) {
+            GroupMemberTarget::Fin => None,
+            GroupMemberTarget::Node { current_xmt, .. } => current_xmt,
+        };
     let member = ParasolidGroupMember {
         id: "member".into(),
         partition_stream_ordinal: 4,
@@ -170,4 +170,3 @@ fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
     assert_eq!(groups[2].origin.partition_stream_ordinal(), None);
     assert_eq!(groups[1].origin.stream_kind().label(), "deltas");
 }
-

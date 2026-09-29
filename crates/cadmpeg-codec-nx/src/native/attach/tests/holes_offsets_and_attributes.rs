@@ -16,13 +16,13 @@ use crate::native::attach::feature_projection::cylindrical_face_witnesses;
 use crate::native::attach::feature_projection::non_boolean_feature_definition_with_parameters;
 use crate::native::attach::feature_projection::offset_surface_feature_definition;
 use crate::native::attach::feature_projection::plane_annulus_witness;
-use crate::native::attach::preceding_operation_dependency;
 use crate::native::attach::feature_projection::thicken_feature_definition;
 use crate::native::attach::feature_projection::CounterboreDimensions;
-use cadmpeg_ir::features::EdgeSelection;
 use crate::native::attach::feature_projection::HoleProjection;
 use crate::native::attach::feature_projection::NxBlendFamily;
+use crate::native::attach::preceding_operation_dependency;
 use crate::test_support::test_bytes::attach_test_body_surface;
+use cadmpeg_ir::features::EdgeSelection;
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
 use cadmpeg_ir::geometry::{
     ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,

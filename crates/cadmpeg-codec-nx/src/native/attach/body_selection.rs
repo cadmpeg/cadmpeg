@@ -100,7 +100,10 @@ pub(super) fn local_body_selection(
 }
 
 impl FeatureBodySelection<'_> {
-    pub(super) fn into_selection(self, ctx: &DecodeContext<'_>) -> Result<BodySelection, CodecError> {
+    pub(super) fn into_selection(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<BodySelection, CodecError> {
         match self {
             Self::Native(native) => Ok(BodySelection::Native(native)),
             Self::Local { bodies, native, .. } => local_body_selection(ctx, bodies, native),

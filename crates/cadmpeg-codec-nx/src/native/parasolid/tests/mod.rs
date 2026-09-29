@@ -13,7 +13,7 @@ use crate::parasolid::Stream;
 
 #[test]
 fn type38_leading_statuses_preserve_default_omission_and_nondefault_values() {
-        let base = serde_json::json!({
+    let base = serde_json::json!({
         "schema": "type38", "xmt": 3, "node_id": 7,
         "leading_references": [1, 2, 3, 4, 5], "marker": 45,
         "linked_references": [2, 3], "state_references": [6, 7, 8], "numeric_values": null
@@ -45,20 +45,15 @@ fn chart_record_route_limit_error(
     let streams = [stream(
         crate::parasolid::ParasolidSubtype::Partition,
         "SCH_TEST",
-        crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream(
-        ),
+        crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream(),
     )];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &streams[0].inflated,
-        &arena,
-        &policy,
-    )
-    .unwrap();
-    super::parasolid_chart_records(&ctx, &streams)
-        .expect_err("chart record route limit refusal")
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&streams[0].inflated, &arena, &policy)
+            .unwrap();
+    super::parasolid_chart_records(&ctx, &streams).expect_err("chart record route limit refusal")
 }
 
 #[test]
@@ -77,8 +72,7 @@ fn chart_record_route_refuses_retained_limit() {
 
 #[test]
 fn chart_record_route_refuses_scoped_limit() {
-    let error =
-        chart_record_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    let error = chart_record_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
 }
@@ -90,11 +84,7 @@ fn chart_record_route_refuses_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
-fn stream(
-    subtype: crate::parasolid::ParasolidSubtype,
-    schema: &str,
-    inflated: Vec<u8>,
-) -> Stream {
+fn stream(subtype: crate::parasolid::ParasolidSubtype, schema: &str, inflated: Vec<u8>) -> Stream {
     Stream {
         file_offset: 0,
         consumed: 0,
@@ -147,12 +137,9 @@ fn native_value_records_refuse_collection_at_caller_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(offset_count);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &streams[0].inflated,
-        &arena,
-        &policy,
-    )
-    .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&streams[0].inflated, &arena, &policy)
+            .unwrap();
     let error = super::parasolid_entity_value_records(&ctx, &streams, &[])
         .err()
         .expect("value records need an item after owner offsets");
@@ -211,11 +198,10 @@ use super::{
     parasolid_entity_51_structured_uses,
     parasolid_topology_attribute_fields_have_untransferred_values, GroupReferenceStatus,
     ParasolidAttributeClassUse, ParasolidAttributeDefinition, ParasolidAttributeFieldUse,
-    ParasolidAttributeFieldValueKind, ParasolidEntity51NumericKind,
-    ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
-    ParasolidEntity51StructuredUse, ParasolidEntity54StringRecord, ParasolidEntity58TagRecord,
-    ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidFieldNamesRecord,
-    ParasolidTopologyAttributeClassUse,
+    ParasolidAttributeFieldValueKind, ParasolidEntity51NumericKind, ParasolidEntity51NumericUse,
+    ParasolidEntity51Record, ParasolidEntity51StringUse, ParasolidEntity51StructuredUse,
+    ParasolidEntity54StringRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
+    ParasolidEntityVectorRecord, ParasolidFieldNamesRecord, ParasolidTopologyAttributeClassUse,
     ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
 };
 use crate::deltas::group::GroupSelector;
@@ -457,8 +443,7 @@ fn structured_value_uses_require_one_same_stream_family() {
         ..point
     };
     assert!(crate::test_support::with_decode_context(|ctx| {
-        parasolid_entity_51_structured_uses(ctx, &[entity], &[other_stream], &[], &[], &[])
-            .unwrap()
+        parasolid_entity_51_structured_uses(ctx, &[entity], &[other_stream], &[], &[], &[]).unwrap()
     })
     .is_empty());
 }
@@ -544,15 +529,9 @@ fn structured_value_families_match_only_their_declared_field_codes() {
 
     let mut mismatched = structured;
     mismatched[0].kind = StructuredValueKind::Vectors;
-    let uses = parasolid_attribute_field_uses(
-        &ctx,
-        &[class_use],
-        &[definition],
-        &[],
-        &[],
-        &mismatched,
-    )
-    .unwrap();
+    let uses =
+        parasolid_attribute_field_uses(&ctx, &[class_use], &[definition], &[], &[], &mismatched)
+            .unwrap();
     assert_eq!(uses.len(), 5);
     assert!(uses.iter().all(|use_| use_.position.field_ordinal() != 0));
 }
@@ -861,8 +840,7 @@ fn attribute_field_use_limit_error(
 
 #[test]
 fn attribute_field_use_refuses_collection_limit() {
-    let error =
-        attribute_field_use_limit_error(|policy| policy.limits.max_collection_items = 0);
+    let error = attribute_field_use_limit_error(|policy| policy.limits.max_collection_items = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
@@ -876,8 +854,7 @@ fn attribute_field_use_refuses_retained_limit() {
 
 #[test]
 fn attribute_field_use_refuses_scoped_limit() {
-    let error =
-        attribute_field_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    let error = attribute_field_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
 }
@@ -945,8 +922,7 @@ fn topology_class_use_refuses_retained_limit() {
 
 #[test]
 fn topology_class_use_refuses_scoped_limit() {
-    let error =
-        topology_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    let error = topology_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
 }
@@ -960,8 +936,7 @@ fn topology_class_use_refuses_work_limit() {
 
 #[test]
 fn attribute_class_use_refuses_collection_limit() {
-    let error =
-        attribute_class_use_limit_error(|policy| policy.limits.max_collection_items = 0);
+    let error = attribute_class_use_limit_error(|policy| policy.limits.max_collection_items = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
@@ -975,8 +950,7 @@ fn attribute_class_use_refuses_retained_limit() {
 
 #[test]
 fn attribute_class_use_refuses_scoped_limit() {
-    let error =
-        attribute_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    let error = attribute_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
 }
@@ -1228,8 +1202,7 @@ fn topology_list_reference_refuses_collection_limit() {
 
 #[test]
 fn topology_list_reference_refuses_retained_limit() {
-    let error =
-        topology_list_reference_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    let error = topology_list_reference_limit_error(|policy| policy.limits.max_retained_bytes = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
@@ -1251,16 +1224,14 @@ fn topology_list_reference_refuses_work_limit() {
 
 #[test]
 fn attribute_field_names_refuse_collection_limit() {
-    let error =
-        attribute_field_names_limit_error(|policy| policy.limits.max_collection_items = 0);
+    let error = attribute_field_names_limit_error(|policy| policy.limits.max_collection_items = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
 fn attribute_field_names_refuse_retained_limit() {
-    let error =
-        attribute_field_names_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    let error = attribute_field_names_limit_error(|policy| policy.limits.max_retained_bytes = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
@@ -1303,10 +1274,9 @@ fn topology_retains_entity_attribute_list_references() {
     stream.extend_from_slice(&42u16.to_be_bytes());
     stream.extend_from_slice(b"deadbeef\0");
 
-    let graph = crate::test_support::with_decode_context(|ctx| {
-        crate::topology::Graph::parse(ctx, &stream)
-    })
-    .unwrap();
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     assert_eq!(
         graph
             .get(crate::framing::node_kind::NodeKind::Face, 4)
@@ -1616,13 +1586,8 @@ fn entity_51_value_uses_exclude_fixed_leading_references() {
     }];
 
     let numeric_uses = crate::test_support::with_decode_context(|ctx| {
-        super::parasolid_entity_51_numeric_uses(
-            ctx,
-            std::slice::from_ref(&entity),
-            &integers,
-            &[],
-        )
-        .unwrap()
+        super::parasolid_entity_51_numeric_uses(ctx, std::slice::from_ref(&entity), &integers, &[])
+            .unwrap()
     });
     assert_eq!(numeric_uses.len(), 1);
     assert_eq!(numeric_uses[0].position.reference_ordinal(), 5);
@@ -1694,10 +1659,8 @@ fn entity_51_value_use_limit_error(
                 stream_ordinal: 1,
                 kind: super::ParasolidVectorValueKind::Points,
                 xmt,
-                values: crate::parasolid::counted_values::CountedValues::new(vec![[
-                    1.0, 2.0, 3.0,
-                ]])
-                .unwrap(),
+                values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]])
+                    .unwrap(),
                 byte_len: 36,
                 inflated_offset: 80,
             };

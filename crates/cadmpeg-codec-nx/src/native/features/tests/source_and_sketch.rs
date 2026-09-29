@@ -1676,7 +1676,6 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
     );
 }
 
-
 mod sketch_point_ownership;
 
 mod column_joins;

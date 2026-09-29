@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::CodecError;
 use crate::parasolid::Stream;
+use cadmpeg_core::CodecError;
 
 use crate::deltas::inline_schema_fields::InlineSchemaFields;
 
@@ -29,16 +29,19 @@ fn deltas_event_limit_error(
     let scan_arena = DecodeArena::new();
     let scan_policy = DecodePolicy::service();
     let (scan_ctx, _) =
-        DecodeContext::from_root_bytes(&streams[0].inflated, &scan_arena, &scan_policy)
-            .unwrap();
+        DecodeContext::from_root_bytes(&streams[0].inflated, &scan_arena, &scan_policy).unwrap();
     let census = crate::deltas::census::walk(&scan_ctx, &streams[0].inflated).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    crate::native::parasolid::parasolid_deltas_events_with_censuses(&ctx, &streams, vec![Some(census)])
-        .err()
-        .expect("deltas event limit refusal")
+    crate::native::parasolid::parasolid_deltas_events_with_censuses(
+        &ctx,
+        &streams,
+        vec![Some(census)],
+    )
+    .err()
+    .expect("deltas event limit refusal")
 }
 
 #[test]
@@ -104,7 +107,11 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
     })
     .unwrap();
     let events = crate::test_support::with_decode_context(|ctx| {
-        crate::native::parasolid::parasolid_deltas_events_with_censuses(ctx, &streams, vec![Some(census)])
+        crate::native::parasolid::parasolid_deltas_events_with_censuses(
+            ctx,
+            &streams,
+            vec![Some(census)],
+        )
     })
     .unwrap();
 
@@ -315,9 +322,7 @@ fn deltas_events_retain_terminal_null_references() {
     assert_eq!(trailer.inflated_offset, trailer_offset as u64);
     assert_eq!(
         serde_json::to_value(trailer).unwrap()["sha256"],
-        serde_json::json!(
-            crate::native::hex::Sha256Hex::digest(&bytes[trailer_offset..]).as_str()
-        )
+        serde_json::json!(crate::native::hex::Sha256Hex::digest(&bytes[trailer_offset..]).as_str())
     );
     assert_eq!(events.residual_spans.len(), 1);
     assert_eq!(events.residual_spans[0].inflated_offset, 0);
@@ -532,9 +537,9 @@ fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
     bytes.extend(deltas_type_45(10));
     let declaration_offset = bytes.len();
     bytes.extend([
-        0x00, 0x13, 0x09, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x05, 0x66, 0x72, 0x61,
-        0x6d, 0x65, 0x00, 0xe6, 0x00, 0x01, 0x43, 0x41, 0x05, 0x6f, 0x77, 0x6e, 0x65, 0x72,
-        0x00, 0x0c, 0x00, 0x01, 0x5a,
+        0x00, 0x13, 0x09, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x05, 0x66, 0x72, 0x61, 0x6d,
+        0x65, 0x00, 0xe6, 0x00, 0x01, 0x43, 0x41, 0x05, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x00, 0x0c,
+        0x00, 0x01, 0x5a,
     ]);
     bytes.extend_from_slice(&11u16.to_be_bytes());
     bytes.extend_from_slice(&5u32.to_be_bytes());
@@ -582,7 +587,6 @@ fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
     );
     assert_eq!(events.residual_spans[1].byte_len, 2);
 }
-
 
 #[test]
 fn deltas_events_subtract_type_150_state_packets_from_residuals() {
@@ -634,4 +638,3 @@ fn deltas_events_subtract_type_150_state_packets_from_residuals() {
     );
     assert_eq!(events.residual_spans[1].byte_len, 2);
 }
-
