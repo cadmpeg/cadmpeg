@@ -320,9 +320,9 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     })
     .is_err());
     assert!(pcurve
-        .edit_control_points(|point| {
-            point.u = f64::NAN;
-            Ok(())
+        .try_map_control_points(|_, point| {
+            crate::units::FinitePoint2::new(crate::math::Point2::new(f64::NAN, point.get().v))
+                .ok_or(())
         })
         .is_err());
     assert!(pcurve_weights(&pcurve, vec![1.0, 0.0]).is_err());

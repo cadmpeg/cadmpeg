@@ -5518,10 +5518,13 @@ fn scale_plane_pcurves(
         }
         if let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry {
             nurbs
-                .edit_control_points(|pole| {
-                    pole.u *= scale.value();
-                    pole.v *= scale.value();
-                    Ok(())
+                .try_map_control_points(|_, pole| {
+                    let pole = pole.get();
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        pole.u * scale.value(),
+                        pole.v * scale.value(),
+                    ))
+                    .ok_or_else(|| NurbsError::Structure("control_points contains a non-finite point".into()))
                 })
                 .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
         }

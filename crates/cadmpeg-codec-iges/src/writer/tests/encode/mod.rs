@@ -1251,14 +1251,13 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
         let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
             panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
         };
-        let mut pole_index = 0usize;
         nurbs
-            .edit_control_points(|point| {
+            .try_map_control_points(|pole_index, point| {
+                let mut point = point.get();
                 if pole_index == 0 {
                     point.u += 0.25;
                 }
-                pole_index += 1;
-                Ok(())
+                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
             })
             .unwrap();
     }
