@@ -9800,37 +9800,42 @@ pub(super) fn feature_block_payload_scalars(
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeaturePayloadScalar>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let projected = payloads
-        .iter()
-        .map(|payload| -> Result<Vec<FeaturePayloadScalar>, CodecError> {
-            let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
-            else {
-                return Ok(Vec::new());
+    let mut scalars = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+        else {
+            continue;
+        };
+        for (ordinal, field) in crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
+            .into_iter().enumerate()
+        {
+            let payload_offset = cadmpeg_core::decode::u64_from_index(field.offset);
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
+                continue;
             };
-            Ok(
-                crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(ordinal, field)| {
-                        let source_offset = joined.source_offset(field.offset as u64)?;
-                        Some(FeaturePayloadScalar {
-                            id: format!("{}-scalar-{ordinal}", payload.id),
-                            operation_label: payload.operation_label.clone(),
-                            payload: FeatureScalarPayload::Construction {
-                                construction_payload: payload.id.clone(),
-                            },
-                            ordinal: ordinal as u32,
-                            field_code: field.field_code,
-                            scalar: field.scalar,
-                            payload_offset: field.offset as u64,
-                            source_offset,
-                        })
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(projected.into_iter().flatten().collect())
+            let id = format_charged_text(ctx,
+                format_args!("{}-scalar-{ordinal}", payload.id),
+                "NX block payload scalar identity")?;
+            let operation_label = copy_operation_text(ctx, &payload.operation_label,
+                "NX block payload scalar operation")?;
+            let construction_payload = copy_operation_text(ctx, &payload.id,
+                "NX block payload scalar owner")?;
+            let ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
+                "NX block payload scalar ordinal", 0, 1))?;
+            ctx.charge_collection_items(1, "NX block payload scalars")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeaturePayloadScalar>()), "NX block payload scalars")?;
+            scalars.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX block payload scalars", 0, 1))?;
+            scalars.push(FeaturePayloadScalar {
+                id, operation_label,
+                payload: FeatureScalarPayload::Construction { construction_payload },
+                ordinal, field_code: field.field_code, scalar: field.scalar,
+                payload_offset, source_offset,
+            });
+        }
+    }
+    Ok(scalars)
 }
 
 /// Decode exact compact-code name fields across reconstructed `BLOCK` payloads.
@@ -9840,42 +9845,43 @@ pub(super) fn feature_block_payload_names(
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeaturePayloadName>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let projected = payloads
-        .iter()
-        .map(|payload| -> Result<Vec<FeaturePayloadName>, CodecError> {
-            let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
-            else {
-                return Ok(Vec::new());
+    let mut names = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+        else {
+            continue;
+        };
+        for (ordinal, field) in crate::om::name_field::scan(ctx, joined.bytes())?
+            .into_iter().enumerate()
+        {
+            let Some(source_offset) = joined.source_offset(cadmpeg_core::decode::u64_from_index(
+                field.offset())) else {
+                continue;
             };
-            crate::om::name_field::scan(ctx, joined.bytes())?
-                .into_iter()
-                .enumerate()
-                .map(
-                    |(ordinal, field)| -> Result<Option<FeaturePayloadName>, CodecError> {
-                        let Some(source_offset) = joined.source_offset(field.offset() as u64)
-                        else {
-                            return Ok(None);
-                        };
-                        let Some(frame) =
-                            field.into_native(ctx, |offset| joined.source_offset(offset))?
-                        else {
-                            return Ok(None);
-                        };
-                        Ok(Some(FeaturePayloadName {
-                            id: format!("{}-name-{ordinal}", payload.id),
-                            operation_label: payload.operation_label.clone(),
-                            construction_payload: payload.id.clone(),
-                            ordinal: ordinal as u32,
-                            frame,
-                            source_offset,
-                        }))
-                    },
-                )
-                .collect::<Result<Vec<_>, _>>()
-                .map(|values| values.into_iter().flatten().collect())
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(projected.into_iter().flatten().collect())
+            let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else {
+                continue;
+            };
+            let id = format_charged_text(ctx,
+                format_args!("{}-name-{ordinal}", payload.id),
+                "NX block payload name identity")?;
+            let operation_label = copy_operation_text(ctx, &payload.operation_label,
+                "NX block payload name operation")?;
+            let construction_payload = copy_operation_text(ctx, &payload.id,
+                "NX block payload name owner")?;
+            let ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
+                "NX block payload name ordinal", 0, 1))?;
+            ctx.charge_collection_items(1, "NX block payload names")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeaturePayloadName>()), "NX block payload names")?;
+            names.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX block payload names", 0, 1))?;
+            names.push(FeaturePayloadName {
+                id, operation_label, construction_payload, ordinal,
+                frame, source_offset,
+            });
+        }
+    }
+    Ok(names)
 }
 
 /// Join complete `BLOCK` payload names to scalar fields in their intervals.
