@@ -95,7 +95,7 @@ impl From<FeatureSurfaceConstructionBranch> for SurfaceBranchWire {
             witnessed: branch.witnessed(),
             members,
             terminal: SurfaceReferenceWire {
-                ordinal: u32::try_from(branch.members().len()).expect("fixture value fits u32"),
+                ordinal: u32::from(branch.members().declared_count() - 1),
                 token: branch.terminal().0,
                 data_block: branch.terminal().1.clone(),
                 source_offset: branch.terminal_offset(),
@@ -147,7 +147,7 @@ impl TryFrom<SurfaceBranchWire> for FeatureSurfaceConstructionBranch {
                 return Err("members.source_offset must follow the branch frame".to_owned());
             }
         }
-        if terminal_position.0 != u32::try_from(references.members().len()).map_err(|_| "members: count exceeds u32")? {
+        if terminal_position.0 != u32::from(references.members().declared_count() - 1) {
             return Err("terminal.ordinal must equal members length".to_owned());
         }
         if terminal_position.1 != references.terminal_offset() {

@@ -93,7 +93,7 @@ impl From<FeatureThruCurveConstructionBranchGroup> for GroupWire {
                     state_lane: branch.members.state_lane(),
                     members,
                     terminal: ReferenceWire {
-                        ordinal: u32::try_from(branch.members.len()).expect("fixture value fits u32"),
+                        ordinal: u32::from(branch.members.declared_count() - 1),
                         token: branch.terminal.0,
                         data_block: branch.terminal.1.clone(),
                         source_offset: source_offset + branch.terminal_position(),

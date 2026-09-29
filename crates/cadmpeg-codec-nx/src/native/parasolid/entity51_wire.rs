@@ -41,7 +41,7 @@ impl Serialize for ParasolidEntity51Record {
             id: &self.id,
             stream_ordinal: self.stream_ordinal,
             xmt: self.xmt.into(),
-            flags: u32::try_from(self.trailing_references.values().len()).map_err(serde::ser::Error::custom)?,
+            flags: self.trailing_references.count(),
             sequence: self.sequence.get(),
             definition_xmt: self.definition_xmt,
             leading_references: self.leading_references,
@@ -60,7 +60,7 @@ impl From<ParasolidEntity51Record> for Entity51Wire {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
             xmt: value.xmt.into(),
-            flags: u32::try_from(value.trailing_references.values().len()).expect("bounded trailing references fit u32"),
+            flags: value.trailing_references.count(),
             sequence: value.sequence.get(),
             definition_xmt: value.definition_xmt,
             leading_references: value.leading_references,
@@ -74,7 +74,7 @@ impl TryFrom<Entity51Wire> for ParasolidEntity51Record {
     type Error = &'static str;
     fn try_from(wire: Entity51Wire) -> Result<Self, Self::Error> {
         let trailing_references = EntityReferences::new(wire.trailing_references)?;
-        if wire.flags != u32::try_from(trailing_references.values().len()).map_err(|_| "trailing_references: count exceeds u32")? {
+        if wire.flags != trailing_references.count() {
             return Err("flags: must equal trailing_references length");
         }
         Ok(Self {
