@@ -7688,15 +7688,23 @@ pub(super) fn feature_surface_construction_strings(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            let ordinal = u32::try_from(ordinal).map_err(|_| {
+            let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
                 ctx.refuse_codec_limit("nx surface payload string ordinal", 0, u64::MAX)
             })?;
+            let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
+            let text = copy_operation_text(ctx, value.value.as_str(), "NX surface payload string text")?;
+            let value = crate::payload_text::PayloadText::new(text)
+                .map_err(|error| CodecError::Malformed(error.to_owned()))?;
+            ctx.charge_collection_items(1, "NX surface payload strings")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSurfaceConstructionString>()), "NX surface payload string record")?;
+            strings.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX surface payload strings", 0, 1))?;
             strings.push(FeatureSurfaceConstructionString {
-                id: format!("{}-string-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                surface_construction_payload: payload.id.clone(),
-                ordinal,
-                value: value.value.into_owned(),
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX surface payload string label")?,
+                surface_construction_payload: copy_operation_text(ctx, &payload.id, "NX surface payload string owner")?,
+                ordinal: ordinal_u32,
+                value,
                 payload_offset,
                 source_offset,
             });
