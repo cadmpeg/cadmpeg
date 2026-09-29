@@ -2376,7 +2376,7 @@ fn project_fillet_arm(
         .collect::<Vec<_>>();
     assignments.sort_by_key(|assignment| assignment.group_ordinal);
     if !assignments.is_empty() {
-        let Some(assignments) = resolved_fillet_assignments(&assignments, parameters) else {
+        let Some(assignments) = resolved_fillet_assignments(ctx, &assignments, parameters)? else {
             return native_scope_definition(scope, parameters);
         };
         let groups = assignments
@@ -2469,28 +2469,35 @@ struct ResolvedFilletAssignment<'a> {
 }
 
 fn resolved_fillet_assignments<'a>(
+    ctx: Option<&DecodeContext<'_>>,
     assignments: &[&'a DesignFilletRadiusGroup],
     parameters: &[(u32, &DesignParameter)],
-) -> Option<Vec<ResolvedFilletAssignment<'a>>> {
+) -> Result<Option<Vec<ResolvedFilletAssignment<'a>>>, CodecError> {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
-    let by_record = parameters
-        .iter()
-        .map(|(_, parameter)| (parameter.record_index, *parameter))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    if by_record.len() != parameters.len() {
-        return None;
+    let mut by_record = std::collections::BTreeMap::new();
+    for (_, parameter) in parameters {
+        if !by_record.contains_key(&parameter.record_index) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d Fillet assignment parameter index")?;
+            }
+        }
+        // discarded-value: duplicate record indices keep the last parameter.
+        let _ = by_record.insert(parameter.record_index, *parameter);
     }
-    let mut assigned = assignments
-        .iter()
-        .flat_map(|assignment| {
-            fillet_law_parameter_records(&assignment.law)
-                .into_iter()
-                .chain(assignment.tangency_weight_parameter_record_index)
-        })
-        .collect::<Vec<_>>();
+    if by_record.len() != parameters.len() {
+        return Ok(None);
+    }
+    let mut assigned = Vec::new();
+    for assignment in assignments {
+        for record in fillet_law_parameter_records(&assignment.law)
+            .chain(assignment.tangency_weight_parameter_record_index) {
+            push_feature_item(ctx, &mut assigned, record,
+                "f3d Fillet assigned parameter")?;
+        }
+    }
     assigned.sort_unstable();
     if !assigned.iter().copied().eq(by_record.keys().copied()) {
-        return None;
+        return Ok(None);
     }
     let parameter = |record, kind| {
         by_record
@@ -2499,69 +2506,87 @@ fn resolved_fillet_assignments<'a>(
             .filter(|parameter| parameter.source_kind() == kind)
     };
     let length = |record, kind| design_positive_length(parameter(record, kind)?);
-    assignments
-        .iter()
-        .map(|&assignment| {
-            let tangency_weight = assignment
+    let mut resolved = Vec::new();
+    for &assignment in assignments {
+            let Some(tangency_weight) = assignment
                 .tangency_weight_parameter_record_index
                 .map(|record| {
                     parameter(record, "TangencyWeight")
                         .map(crate::records::parameters::DesignParameter::evaluated_value)
                 })
-                .map_or(Some(None), |value| value.map(Some))?;
+                .map_or(Some(None), |value| value.map(Some)) else {
+                    return Ok(None);
+                };
             let radius = match &assignment.law {
                 DesignFilletRadiusLaw::Constant {
                     radius_parameter_record_index,
                 } => RadiusSpec::Constant {
-                    radius: length(*radius_parameter_record_index, "Radius")?,
+                    radius: match length(*radius_parameter_record_index, "Radius") {
+                        Some(value) => value,
+                        None => return Ok(None),
+                    },
                 },
                 DesignFilletRadiusLaw::Chordal {
                     chord_length_parameter_record_index,
                 } => RadiusSpec::Chordal {
-                    chord_length: length(*chord_length_parameter_record_index, "ChordLen")?,
+                    chord_length: match length(*chord_length_parameter_record_index, "ChordLen") {
+                        Some(value) => value,
+                        None => return Ok(None),
+                    },
                 },
                 DesignFilletRadiusLaw::Asymmetric {
                     offset_one_parameter_record_index,
                     offset_two_parameter_record_index,
                 } => RadiusSpec::Asymmetric {
-                    offset_one: length(*offset_one_parameter_record_index, "EdgeOffset1")?,
-                    offset_two: length(*offset_two_parameter_record_index, "EdgeOffset2")?,
+                    offset_one: match length(*offset_one_parameter_record_index, "EdgeOffset1") {
+                        Some(value) => value,
+                        None => return Ok(None),
+                    },
+                    offset_two: match length(*offset_two_parameter_record_index, "EdgeOffset2") {
+                        Some(value) => value,
+                        None => return Ok(None),
+                    },
                 },
                 DesignFilletRadiusLaw::Variable {
                     start_radius_parameter_record_index,
                     end_radius_parameter_record_index,
                     middle,
                 } => {
-                    let mut controls = vec![
-                        (
-                            0,
-                            parameter(*start_radius_parameter_record_index, "StartRadius")?,
-                        ),
-                        (
-                            1,
-                            parameter(*end_radius_parameter_record_index, "EndRadius")?,
-                        ),
-                    ];
+                    let Some(start) = parameter(*start_radius_parameter_record_index, "StartRadius")
+                        else { return Ok(None); };
+                    let Some(end) = parameter(*end_radius_parameter_record_index, "EndRadius")
+                        else { return Ok(None); };
+                    let mut controls = Vec::new();
+                    push_feature_item(ctx, &mut controls, (0, start),
+                        "f3d Fillet variable control")?;
+                    push_feature_item(ctx, &mut controls, (1, end),
+                        "f3d Fillet variable control")?;
                     for (ordinal, row) in middle.iter().enumerate() {
-                        let ordinal = u32::try_from(ordinal).ok()?;
-                        controls.push((
-                            ordinal,
-                            parameter(row.radius_parameter_record_index, "MidRadius")?,
-                        ));
-                        controls
-                            .push((ordinal, parameter(row.parameter_record_index, "MidParams")?));
+                        let Some(ordinal) = u32::try_from(ordinal).ok() else {
+                            return Ok(None);
+                        };
+                        let Some(radius) = parameter(row.radius_parameter_record_index, "MidRadius")
+                            else { return Ok(None); };
+                        let Some(position) = parameter(row.parameter_record_index, "MidParams")
+                            else { return Ok(None); };
+                        push_feature_item(ctx, &mut controls, (ordinal, radius),
+                            "f3d Fillet variable control")?;
+                        push_feature_item(ctx, &mut controls, (ordinal, position),
+                            "f3d Fillet variable control")?;
                     }
-                    let (points, _) = variable_fillet_law(&controls)?;
+                    let Some((points, _)) = variable_fillet_law(ctx, &controls)? else {
+                        return Ok(None);
+                    };
                     RadiusSpec::Variable { points }
                 }
             };
-            Some(ResolvedFilletAssignment {
+            push_feature_item(ctx, &mut resolved, ResolvedFilletAssignment {
                 assignment,
                 radius,
                 tangency_weight,
-            })
-        })
-        .collect()
+            }, "f3d Fillet resolved assignment")?;
+    }
+    Ok(Some(resolved))
 }
 
 fn project_thread_face_selection(
@@ -5964,7 +5989,7 @@ fn project_variable_fillet(
     let [group] = groups.as_slice() else {
         return Ok(None);
     };
-    let (points, tangency_weight) = or_none!(variable_fillet_law(parameters));
+    let (points, tangency_weight) = or_none!(variable_fillet_law(ctx, parameters)?);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
@@ -5988,11 +6013,12 @@ fn project_variable_fillet(
 }
 
 fn variable_fillet_law(
+    ctx: Option<&DecodeContext<'_>>,
     parameters: &[(u32, &DesignParameter)],
-) -> Option<(
+) -> Result<Option<(
     cadmpeg_ir::features::edge_treatments::VariableRadii,
     Option<cadmpeg_ir::scalar::FiniteReal>,
-)> {
+)>, CodecError> {
     use cadmpeg_ir::features::edge_treatments::VariableRadius;
 
     let unique_parameter = |kind: &str| {
@@ -6002,8 +6028,12 @@ fn variable_fillet_law(
         let parameter = matches.next()?;
         matches.next().is_none().then_some(parameter)
     };
-    let start = design_length(unique_parameter("StartRadius")?)?;
-    let end = design_length(unique_parameter("EndRadius")?)?;
+    let Some(start) = unique_parameter("StartRadius").and_then(design_length) else {
+        return Ok(None);
+    };
+    let Some(end) = unique_parameter("EndRadius").and_then(design_length) else {
+        return Ok(None);
+    };
     let tangency_weight = {
         let mut matches = parameters.iter().filter_map(|(_, parameter)| {
             (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
@@ -6011,22 +6041,21 @@ fn variable_fillet_law(
         match (matches.next(), matches.next()) {
             (None, None) => None,
             (Some(parameter), None) => Some(parameter.evaluated_value()),
-            (None, Some(_)) => return None,
-            (Some(_), Some(_)) => return None,
+            (None, Some(_)) => return Ok(None),
+            (Some(_), Some(_)) => return Ok(None),
         }
     };
-    let mut middle_radii = parameters
-        .iter()
-        .filter_map(|(ordinal, parameter)| {
-            (parameter.source_kind() == "MidRadius").then_some((*ordinal, *parameter))
-        })
-        .collect::<Vec<_>>();
-    let mut middle_parameters = parameters
-        .iter()
-        .filter_map(|(ordinal, parameter)| {
-            (parameter.source_kind() == "MidParams").then_some((*ordinal, *parameter))
-        })
-        .collect::<Vec<_>>();
+    let mut middle_radii = Vec::new();
+    let mut middle_parameters = Vec::new();
+    for (ordinal, parameter) in parameters {
+        match parameter.source_kind() {
+            "MidRadius" => push_feature_item(ctx, &mut middle_radii, (*ordinal, *parameter),
+                "f3d variable Fillet middle radii")?,
+            "MidParams" => push_feature_item(ctx, &mut middle_parameters, (*ordinal, *parameter),
+                "f3d variable Fillet middle parameters")?,
+            _ => {}
+        }
+    }
     middle_radii.sort_by_key(|(ordinal, _)| *ordinal);
     middle_parameters.sort_by_key(|(ordinal, _)| *ordinal);
     if middle_radii.len() != middle_parameters.len()
@@ -6037,26 +6066,25 @@ fn variable_fillet_law(
             )
         })
     {
-        return None;
+        return Ok(None);
     }
-    let mut points = Vec::with_capacity(middle_radii.len() + 2);
-    points.push(VariableRadius {
+    let mut points = Vec::new();
+    push_feature_item(ctx, &mut points, VariableRadius {
         parameter: 0.0,
         radius: start,
-    });
+    }, "f3d variable Fillet radius point")?;
     for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
-        let radius = design_length(radius)?;
+        let Some(radius) = design_length(radius) else { return Ok(None); };
         let parameter = parameter.evaluated_value().get();
-        points.push(VariableRadius { parameter, radius });
+        push_feature_item(ctx, &mut points, VariableRadius { parameter, radius },
+            "f3d variable Fillet radius point")?;
     }
-    points.push(VariableRadius {
+    push_feature_item(ctx, &mut points, VariableRadius {
         parameter: 1.0,
         radius: end,
-    });
-    Some((
-        cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()?,
-        tangency_weight,
-    ))
+    }, "f3d variable Fillet radius point")?;
+    Ok(cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
+        .ok().map(|points| (points, tangency_weight)))
 }
 
 fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> impl Iterator<Item = u32> + '_ {
