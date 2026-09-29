@@ -1547,31 +1547,50 @@ pub(crate) fn project_relation_solved_line_geometry(
                             .rsplit_once('#')
                             .map_or(relation.feature_ref.as_str(), |(_, key)| key);
                         for (operand, line) in relation.operands.iter().zip(selected) {
-                            let geometry_ref = solver_line_geometry_ref(
-                                &relation.feature_ref,
-                                operand.entity_index,
-                            );
+                            let geometry_ref = ctx.format_retained(
+                                format_args!(
+                                    "{}:solver-line:{}",
+                                    relation.feature_ref,
+                                    operand.entity_index
+                                ),
+                                "format SLDPRT dynamic solver-line reference",
+                            )?;
                             if entities.iter().any(|entity| {
                                 entity.sketch == *sketch
                                     && entity.geometry_ref.as_deref() == Some(geometry_ref.as_str())
                             }) {
                                 continue;
                             }
+                            let id_text = ctx.format_retained(
+                                format_args!(
+                                    "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
+                                    operand.entity_index
+                                ),
+                                "format SLDPRT dynamic solver-line entity identity",
+                            )?;
+                            let Ok(id) = SketchEntityId::mint(id_text) else {
+                                continue;
+                            };
+                            let sketch_id = copy_planar_sketch_id(ctx, &line.sketch)?;
+                            let mut endpoint_refs = Vec::new();
+                            for reference in &line.endpoint_refs {
+                                let reference = ctx.format_retained(
+                                    format_args!("{reference}"),
+                                    "copy SLDPRT dynamic solver-line endpoint reference",
+                                )?;
+                                ctx.reserve_collection_vec(
+                                    &mut endpoint_refs,
+                                    1,
+                                    "copy SLDPRT dynamic solver-line endpoints",
+                                )?;
+                                endpoint_refs.push(reference);
+                            }
+                            ctx.reserve_collection_vec(entities, 1, "append SLDPRT dynamic solver line")?;
                             entities.push(
-                                SketchEntity::new(
-                                    match SketchEntityId::mint(format!(
-                                        "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
-                                        operand.entity_index
-                                    )) {
-                                        Ok(id) => id,
-                                        Err(_) => continue,
-                                    },
-                                    line.sketch.clone(),
-                                    line.geometry.clone(),
-                                )
-                                .with_construction(true)
-                                .with_geometry_ref(Some(geometry_ref))
-                                .with_endpoint_refs(line.endpoint_refs.clone()),
+                                SketchEntity::new(id, sketch_id, line.geometry.clone())
+                                    .with_construction(true)
+                                    .with_geometry_ref(Some(geometry_ref))
+                                    .with_endpoint_refs(endpoint_refs),
                             );
                         }
                         continue;
@@ -1584,30 +1603,57 @@ pub(crate) fn project_relation_solved_line_geometry(
                 .rsplit_once('#')
                 .map_or(relation.feature_ref.as_str(), |(_, key)| key);
             for (operand, markers, line) in lines {
-                let geometry_ref =
-                    solver_line_geometry_ref(&relation.feature_ref, operand.entity_index);
+                let geometry_ref = ctx.format_retained(
+                    format_args!(
+                        "{}:solver-line:{}",
+                        relation.feature_ref,
+                        operand.entity_index
+                    ),
+                    "format SLDPRT solver-line reference",
+                )?;
                 if entities.iter().any(|entity| {
                     entity.sketch == *sketch
                         && entity.geometry_ref.as_deref() == Some(geometry_ref.as_str())
                 }) {
                     continue;
                 }
+                let id_text = ctx.format_retained(
+                    format_args!(
+                        "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
+                        operand.entity_index
+                    ),
+                    "format SLDPRT solver-line entity identity",
+                )?;
+                let Ok(id) = SketchEntityId::mint(id_text) else {
+                    continue;
+                };
+                let sketch_id = copy_planar_sketch_id(ctx, &line.sketch)?;
+                let native_ref = line
+                    .native_ref
+                    .as_deref()
+                    .map(|reference| {
+                        ctx.format_retained(
+                            format_args!("{reference}"),
+                            "copy SLDPRT solver-line native reference",
+                        )
+                    })
+                    .transpose()?;
+                let first_ref = ctx.format_retained(
+                    format_args!("{}", markers[0].id()),
+                    "copy SLDPRT solver-line first endpoint reference",
+                )?;
+                let second_ref = ctx.format_retained(
+                    format_args!("{}", markers[1].id()),
+                    "copy SLDPRT solver-line second endpoint reference",
+                )?;
+                let endpoint_refs = vec![first_ref, second_ref];
+                ctx.reserve_collection_vec(entities, 1, "append SLDPRT solver line")?;
                 entities.push(
-                    SketchEntity::new(
-                        match SketchEntityId::mint(format!(
-                            "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
-                            operand.entity_index
-                        )) {
-                            Ok(id) => id,
-                            Err(_) => continue,
-                        },
-                        line.sketch.clone(),
-                        line.geometry.clone(),
-                    )
-                    .with_construction(line.construction)
-                    .with_native_ref(line.native_ref.clone())
-                    .with_geometry_ref(Some(geometry_ref))
-                    .with_endpoint_refs(markers.map(|marker| marker.id().to_string()).into()),
+                    SketchEntity::new(id, sketch_id, line.geometry.clone())
+                        .with_construction(line.construction)
+                        .with_native_ref(native_ref)
+                        .with_geometry_ref(Some(geometry_ref))
+                        .with_endpoint_refs(endpoint_refs),
                 );
             }
         }
