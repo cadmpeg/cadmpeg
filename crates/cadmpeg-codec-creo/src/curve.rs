@@ -1231,7 +1231,7 @@ fn expression_assignment(
     let Some((name, expression)) = split_expression_assignment(source) else {
         return Ok(None);
     };
-    let Some(target) = expression_assignment_target(name.trim()) else {
+    let Some(target) = expression_assignment_target(ctx, name.trim())? else {
         return Ok(None);
     };
     let expression = expression.trim();
@@ -1562,68 +1562,123 @@ fn curve_expression_solve_unknowns(
     Ok((!unknowns.is_empty()).then_some(unknowns))
 }
 
-fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
-    if let Some((name, arguments)) = expression_target_function_call(source) {
+fn expression_assignment_target(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+) -> Result<Option<CurveExpressionTarget>, cadmpeg_core::CodecError> {
+    if let Some((name, arguments)) = expression_target_function_call(ctx, source)? {
         if name.eq_ignore_ascii_case("value") {
             let [parameter, row, rest @ ..] = arguments.as_slice() else {
-                return None;
+                return Ok(None);
             };
             let column = match rest {
                 [] => None,
-                [column] => Some((*column).to_owned()),
-                _ => return None,
+                [column] => Some(ctx.copy_retained_text(column, "creo expression table column")?),
+                _ => return Ok(None),
             };
-            valid_expression_identifier(parameter).then_some(())?;
-            return Some(CurveExpressionTarget::TableCell {
-                parameter: (*parameter).to_owned(),
-                row: (*row).to_owned(),
+            if !valid_expression_identifier(parameter) {
+                return Ok(None);
+            }
+            return Ok(Some(CurveExpressionTarget::TableCell {
+                parameter: ctx.copy_retained_text(parameter, "creo expression table parameter")?,
+                row: ctx.copy_retained_text(row, "creo expression table row")?,
                 column,
-            });
+            }));
         }
-        return Some(CurveExpressionTarget::FunctionWrite {
-            name: name.to_owned(),
-            arguments: arguments.into_iter().map(str::to_owned).collect(),
-        });
+        let mut retained_arguments = Vec::new();
+        for argument in arguments {
+            ctx.try_reserve_items(
+                &mut retained_arguments,
+                1,
+                "creo expression target arguments",
+            )?;
+            retained_arguments.push(ctx.copy_retained_text(
+                argument,
+                "creo expression target argument text",
+            )?);
+        }
+        return Ok(Some(CurveExpressionTarget::FunctionWrite {
+            name: ctx.copy_retained_text(name, "creo expression function target")?,
+            arguments: retained_arguments,
+        }));
     }
     let (name, declared_unit) = if source.ends_with(']') {
-        let unit_start = source.rfind('[')?;
-        let unit = source.get(unit_start + 1..source.len() - 1)?.trim();
-        (!unit.is_empty()).then_some(())?;
-        (source.get(..unit_start)?.trim_end(), Some(unit))
+        let Some(unit_start) = source.rfind('[') else {
+            return Ok(None);
+        };
+        let Some(unit) = source.get(unit_start + 1..source.len() - 1) else {
+            return Ok(None);
+        };
+        let unit = unit.trim();
+        if unit.is_empty() {
+            return Ok(None);
+        }
+        let Some(name) = source.get(..unit_start) else {
+            return Ok(None);
+        };
+        (name.trim_end(), Some(unit))
     } else {
         (source, None)
     };
     if name.contains(':') {
-        declared_unit.is_none().then_some(())?;
-        valid_scoped_expression_identifier(name).then(|| CurveExpressionTarget::ScopedSymbol {
-            name: name.to_owned(),
-        })
+        if declared_unit.is_some() || !valid_scoped_expression_identifier(name) {
+            return Ok(None);
+        }
+        Ok(Some(CurveExpressionTarget::ScopedSymbol {
+            name: ctx.copy_retained_text(name, "creo expression scoped target")?,
+        }))
     } else if let Some(family) = expression_system_symbol_family(name) {
-        declared_unit.is_none().then_some(())?;
-        Some(CurveExpressionTarget::SystemSymbol {
-            name: name.to_owned(),
+        if declared_unit.is_some() {
+            return Ok(None);
+        }
+        Ok(Some(CurveExpressionTarget::SystemSymbol {
+            name: ctx.copy_retained_text(name, "creo expression system target")?,
             family,
-        })
+        }))
     } else {
-        valid_expression_identifier(name).then(|| CurveExpressionTarget::Parameter {
-            name: name.to_owned(),
-            declared_unit: declared_unit.map(str::to_owned),
-        })
+        if !valid_expression_identifier(name) {
+            return Ok(None);
+        }
+        let declared_unit = match declared_unit {
+            Some(unit) => Some(ctx.copy_retained_text(unit, "creo expression declared unit")?),
+            None => None,
+        };
+        Ok(Some(CurveExpressionTarget::Parameter {
+            name: ctx.copy_retained_text(name, "creo expression parameter target")?,
+            declared_unit,
+        }))
     }
 }
 
-fn expression_target_function_call(source: &str) -> Option<(&str, Vec<&str>)> {
-    let argument_start = source.find('(')?;
-    source.ends_with(')').then_some(())?;
-    let name = source.get(..argument_start)?.trim_end();
-    valid_expression_identifier(name).then_some(())?;
-    let body = source.get(argument_start + 1..source.len().checked_sub(1)?)?;
+fn expression_target_function_call<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &'a str,
+) -> Result<Option<(&'a str, Vec<&'a str>)>, cadmpeg_core::CodecError> {
+    let Some(argument_start) = source.find('(') else {
+        return Ok(None);
+    };
+    if !source.ends_with(')') {
+        return Ok(None);
+    }
+    let Some(name) = source.get(..argument_start) else {
+        return Ok(None);
+    };
+    let name = name.trim_end();
+    if !valid_expression_identifier(name) {
+        return Ok(None);
+    }
+    let Some(body) = source.get(argument_start + 1..source.len() - 1) else {
+        return Ok(None);
+    };
     let arguments = if body.trim().is_empty() {
         Vec::new()
     } else {
-        split_assignment_target_arguments(body)?
+        let Some(arguments) = split_assignment_target_arguments(ctx, body)? else {
+            return Ok(None);
+        };
+        arguments
     };
-    Some((name, arguments))
+    Ok(Some((name, arguments)))
 }
 
 fn valid_expression_identifier(name: &str) -> bool {
@@ -1671,7 +1726,10 @@ fn expression_system_symbol_family(name: &str) -> Option<CurveExpressionSystemSy
     }
 }
 
-fn split_assignment_target_arguments(source: &str) -> Option<Vec<&str>> {
+fn split_assignment_target_arguments<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &'a str,
+) -> Result<Option<Vec<&'a str>>, cadmpeg_core::CodecError> {
     let mut arguments = Vec::new();
     let mut start = 0;
     let mut nesting = 0usize;
@@ -1685,22 +1743,32 @@ fn split_assignment_target_arguments(source: &str) -> Option<Vec<&str>> {
         }
         match byte {
             b'\'' | b'"' => delimiter = Some(byte),
-            b'(' => nesting = nesting.checked_add(1)?,
-            b')' => nesting = nesting.checked_sub(1)?,
+            b'(' => {
+                let Some(next) = nesting.checked_add(1) else { return Ok(None) };
+                nesting = next;
+            }
+            b')' => {
+                let Some(next) = nesting.checked_sub(1) else { return Ok(None) };
+                nesting = next;
+            }
             b',' if nesting == 0 => {
-                let argument = source.get(start..offset)?.trim();
-                (!argument.is_empty()).then_some(())?;
+                let Some(argument) = source.get(start..offset) else { return Ok(None) };
+                let argument = argument.trim();
+                if argument.is_empty() { return Ok(None) }
+                ctx.try_reserve_items(&mut arguments, 1, "creo expression parsed arguments")?;
                 arguments.push(argument);
                 start = offset + 1;
             }
             _ => {}
         }
     }
-    (delimiter.is_none() && nesting == 0).then_some(())?;
-    let argument = source.get(start..)?.trim();
-    (!argument.is_empty()).then_some(())?;
+    if delimiter.is_some() || nesting != 0 { return Ok(None) }
+    let Some(argument) = source.get(start..) else { return Ok(None) };
+    let argument = argument.trim();
+    if argument.is_empty() { return Ok(None) }
+    ctx.try_reserve_items(&mut arguments, 1, "creo expression parsed arguments")?;
     arguments.push(argument);
-    Some(arguments)
+    Ok(Some(arguments))
 }
 
 pub(crate) fn expression_identifier_key(name: &str) -> String {
