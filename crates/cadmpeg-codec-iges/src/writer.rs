@@ -3610,7 +3610,10 @@ fn oriented_curve_entity(
                 span.range.get(),
                 &ctx,
             )
-            .map_err(|error| CodecError::malformed(format_args!("circular: {error}")))?
+            .map_err(|error| match error {
+                crate::entities::curve_conversion::CurveConversionError::Resource(error) => error,
+                other => CodecError::malformed(format_args!("circular: {other}")),
+            })?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES reversed circular edge span is not convertible ({span:?})"
@@ -3642,7 +3645,10 @@ fn oriented_curve_entity(
                 span.range.get(),
                 &ctx,
             )
-            .map_err(|error| CodecError::malformed(format_args!("elliptical: {error}")))?
+            .map_err(|error| match error {
+                crate::entities::curve_conversion::CurveConversionError::Resource(error) => error,
+                other => CodecError::malformed(format_args!("elliptical: {other}")),
+            })?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES reversed elliptical edge span is not convertible ({span:?})"
@@ -3672,7 +3678,10 @@ fn oriented_curve_entity(
                 span.range.get(),
                 &ctx,
             )
-            .map_err(|error| CodecError::malformed(format_args!("parabolic: {error}")))?
+            .map_err(|error| match error {
+                crate::entities::curve_conversion::CurveConversionError::Resource(error) => error,
+                other => CodecError::malformed(format_args!("parabolic: {other}")),
+            })?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES reversed parabolic edge span is not convertible ({span:?})"
