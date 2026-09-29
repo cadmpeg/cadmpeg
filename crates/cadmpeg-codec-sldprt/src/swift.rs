@@ -1179,7 +1179,7 @@ fn location_projection(
                 0,
                 &mut projections,
             );
-            unique_measurement(&projections)
+            unique_measurement(projections.into_iter())
         }
         _ => None,
     }
@@ -1334,9 +1334,8 @@ fn hole_diameter_excluding_counterbore(
             direct_feature_context(candidate, feature_index, "GdtCylinder").as_ref()
                 == Some(&context)
         })
-        .filter_map(|candidate| counterbore_from_direct_geometry(candidate, feature_index))
-        .collect::<Vec<_>>();
-    let counterbore_diameter = unique_measurement(&counterbore_diameters)?;
+        .filter_map(|candidate| counterbore_from_direct_geometry(candidate, feature_index));
+    let counterbore_diameter = unique_measurement(counterbore_diameters)?;
     let contributors = diameter_contributors(annotation, feature_index);
     let remaining = contributors
         .iter()
@@ -1465,9 +1464,8 @@ fn counterbore_depth_from_sibling(
         })
         .filter_map(|candidate| unique_direct_feature(candidate, feature_index, "GdtCylinder"))
         .filter(|cylinder| plane_terminates_cylinder(plane, cylinder))
-        .filter_map(nominal_cylinder_depth)
-        .collect::<Vec<_>>();
-    unique_measurement(&candidates)
+        .filter_map(nominal_cylinder_depth);
+    unique_measurement(candidates)
 }
 
 fn unique_direct_feature<'a>(
@@ -1655,9 +1653,8 @@ fn measurement_from_applied_geometry(
         .features
         .references
         .iter()
-        .filter_map(|reference| measurement(&reference.id))
-        .collect::<Vec<_>>();
-    unique_measurement(&candidates)
+        .filter_map(|reference| measurement(&reference.id));
+    unique_measurement(candidates)
 }
 
 fn measurement_from_direct_features(
@@ -1672,9 +1669,8 @@ fn measurement_from_direct_features(
         .iter()
         .filter_map(|reference| feature_index.get(reference.id.as_str()).copied())
         .filter(|feature| short_class(&feature.class) == class)
-        .filter_map(measurement)
-        .collect::<Vec<_>>();
-    unique_measurement(&candidates)
+        .filter_map(measurement);
+    unique_measurement(candidates)
 }
 
 fn rendered_nominal(
@@ -1696,7 +1692,8 @@ fn rendered_nominal(
     ];
     let exponent = i32::try_from(decimal_places).ok()?;
     let precision = 10.0_f64.powi(exponent);
-    let mut candidates = Vec::new();
+    let mut candidate: Option<FiniteReal> = None;
+    let mut ambiguous = false;
     for scale in LENGTH_SCALES_MM {
         let rendered = (raw_mm.get() / scale * precision).round() / precision;
         for value in rendered_dimensions
@@ -1704,11 +1701,16 @@ fn rendered_nominal(
             .filter(|value| value.kind == kind && value.decimal_places == decimal_places)
         {
             if approximately_equal(value.value.get(), rendered) {
-                candidates.push(FiniteReal::new(value.value.get() * scale)?);
+                let measured = FiniteReal::new(value.value.get() * scale)?;
+                if let Some(first) = candidate {
+                    ambiguous |= !approximately_equal(measured.get(), first.get());
+                } else {
+                    candidate = Some(measured);
+                }
             }
         }
     }
-    unique_measurement(&candidates)
+    if ambiguous { None } else { candidate }
 }
 
 fn rendered_dimensions(payload: &[u8]) -> Vec<RenderedDimension> {
@@ -1868,9 +1870,8 @@ fn measurement_for_feature(
                 next_depth,
                 direct_measurement,
             )
-        })
-        .collect::<Vec<_>>();
-    unique_measurement(&candidates)
+        });
+    unique_measurement(candidates)
 }
 
 fn child_feature_ids(feature: &Entity) -> Vec<&str> {
@@ -1961,19 +1962,17 @@ fn nominal_cone_top_diameter(feature: &Entity) -> Option<PositiveReal> {
 
 fn vector<const N: usize>(entity: &Entity, names: [&str; N]) -> Option<FiniteVector<N>> {
     let values = names.map(|name| entity.doubles.get(name).copied());
-    let values = values
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
-    FiniteVector::new(values)
+    let mut components = [0.0; N];
+    for (component, value) in components.iter_mut().zip(values) {
+        *component = value?;
+    }
+    FiniteVector::new(components)
 }
 
-fn unique_measurement<T: Copy + Into<f64>>(values: &[T]) -> Option<T> {
-    let first = *values.first()?;
+fn unique_measurement<T: Copy + Into<f64>>(mut values: impl Iterator<Item = T>) -> Option<T> {
+    let first = values.next()?;
     values
-        .iter()
-        .all(|value| approximately_equal((*value).into(), first.into()))
+        .all(|value| approximately_equal(value.into(), first.into()))
         .then_some(first)
 }
 
