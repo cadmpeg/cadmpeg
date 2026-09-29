@@ -334,7 +334,7 @@ fn solve_equation_right_refuses_retained_limit() {
 fn conditional_expression_assignments_refuse_before_growth() {
     let lines = expression_lines(&["else", "a=1"]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 2;
     let error = resource_error(with_expression_policy(policy, |ctx| {
         super::super::evaluate_expression_program_details(
             ctx,
@@ -346,6 +346,35 @@ fn conditional_expression_assignments_refuse_before_growth() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo conditional expression assignments"));
+}
+
+#[test]
+fn parsed_expression_assignment_slots_refuse_before_allocation() {
+    let lines = expression_lines(&["a=1"]);
+    let evaluation = with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::evaluate_expression_program_details(
+            ctx,
+            &lines,
+            None,
+            &super::super::ExternalRelationSymbols::default(),
+        )
+    })
+    .expect("service profile");
+    assert_eq!(evaluation.assignments.len(), 1);
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::evaluate_expression_program_details(
+            ctx,
+            &lines,
+            None,
+            &super::super::ExternalRelationSymbols::default(),
+        )
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo parsed expression assignment slots"));
 }
 
 #[test]

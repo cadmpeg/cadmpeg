@@ -1968,17 +1968,23 @@ fn evaluate_expression_program_details(
         !solve_program.line_indices.contains(index)
             || solve_program.executable_line_indices.contains(index)
     };
-    if !expression_program_control_is_valid(ctx, lines)? {
+    let control_is_valid = expression_program_control_is_valid(ctx, lines)?;
+    let mut parsed_assignments = ctx.alloc_filled(
+        lines.len(),
+        None::<CurveExpressionAssignment>,
+        "creo parsed expression assignment slots",
+    )?;
+    for (index, line) in lines.iter().enumerate() {
+        if solve_line_is_executable(&index) {
+            parsed_assignments[index] = expression_assignment(ctx, line)?;
+        }
+    }
+    if !control_is_valid {
         let mut assignments = Vec::new();
-        for (index, line) in lines.iter().enumerate() {
-            if !solve_line_is_executable(&index) {
-                continue;
-            }
-            if let Some(mut assignment) = expression_assignment(ctx, line)? {
-                assignment.activation = CurveExpressionActivation::Conditional;
-                ctx.try_reserve_items(&mut assignments, 1, "creo conditional expression assignments")?;
-                assignments.push(assignment);
-            }
+        for mut assignment in parsed_assignments.into_iter().flatten() {
+            assignment.activation = CurveExpressionActivation::Conditional;
+            ctx.try_reserve_items(&mut assignments, 1, "creo conditional expression assignments")?;
+            assignments.push(assignment);
         }
         return Ok(CurveExpressionEvaluation {
             assignments,
@@ -1991,14 +1997,9 @@ fn evaluate_expression_program_details(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    for (index, line) in lines.iter().enumerate() {
-        if !solve_line_is_executable(&index) {
-            continue;
-        }
-        if let Some(assignment) = expression_assignment(ctx, line)? {
-            if let Some((name, _)) = assignment.scalar_target() {
-                existing_symbols.insert(expression_identifier_key(name));
-            }
+    for assignment in parsed_assignments.iter().flatten() {
+        if let Some((name, _)) = assignment.scalar_target() {
+            existing_symbols.insert(expression_identifier_key(name));
         }
     }
     existing_symbols.extend(
@@ -2149,7 +2150,7 @@ fn evaluate_expression_program_details(
             activity = stack.end();
             continue;
         }
-        let Some(mut assignment) = expression_assignment(ctx, line)? else {
+        let Some(mut assignment) = parsed_assignments.get_mut(index).and_then(Option::take) else {
             continue;
         };
         assignment.activation = activity;
