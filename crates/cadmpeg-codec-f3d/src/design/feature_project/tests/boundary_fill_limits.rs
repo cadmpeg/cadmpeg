@@ -10,7 +10,7 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-fn group(record_index: u32, ordinal: u32, members: &[u32], role: DesignOperandRole)
+pub(super) fn group(record_index: u32, ordinal: u32, members: &[u32], role: DesignOperandRole)
     -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
         id: format!("f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"),

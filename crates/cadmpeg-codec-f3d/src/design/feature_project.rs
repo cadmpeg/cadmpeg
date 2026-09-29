@@ -1177,7 +1177,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_offset_faces(scope, &parameters, face_operands, construction_groups)
                         .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
-                Some(DesignFeatureFamily::Move) => project_move(scope, construction_groups)
+                Some(DesignFeatureFamily::Move) => project_move(ctx, scope, construction_groups)?
                     .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Shell) => {
                     project_shell(scope, face_operands, construction_groups)
@@ -1391,14 +1391,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             }),
                         )
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody {
-                        project_remove_body(scope, construction_groups).unwrap_or_else(|| {
+                        project_remove_body(ctx, scope, construction_groups)?.unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             })
                         })
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch {
-                        project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
+                        project_surface_stitch(ctx, scope, construction_groups)?.unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
@@ -3712,19 +3712,16 @@ fn single_operand_group<'a>(
     scope: &DesignParameterScope,
     role: DesignOperandRole,
 ) -> Option<&'a DesignConstructionOperandGroup> {
-    let matching = groups
+    let mut matching = groups
         .iter()
         .filter(|group| {
             native_stream(&group.id) == native_stream(&scope.id)
                 && group.scope_record_index == scope.record_index
                 && group.role() == role
                 && !group.members().is_empty()
-        })
-        .collect::<Vec<_>>();
-    let [group] = matching.as_slice() else {
-        return None;
-    };
-    Some(*group)
+        });
+    let group = matching.next()?;
+    matching.next().is_none().then_some(group)
 }
 
 pub(super) fn project_offset_faces(
@@ -3860,38 +3857,42 @@ pub(super) fn project_shell(
 }
 
 fn project_move(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
-    let operation = scope.move_operation()?;
-    let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
-    Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
-        bodies: BodySelection::Native(group.id.clone()),
-        translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(
+    let operation = or_none!(scope.move_operation());
+    let group = or_none!(single_operand_group(groups, scope, DesignOperandRole::BODIES_A));
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
+        bodies: BodySelection::Native(copy_feature_text(ctx, &group.id,
+            "f3d Move body group id")?),
+        translation: or_none!(cadmpeg_ir::features::FiniteVector3::new(Vector3::new(
             operation.transform[0][3] * 10.0,
             operation.transform[1][3] * 10.0,
             operation.transform[2][3] * 10.0,
-        ))?,
+        ))),
         rotation: matrix_axis_angle(operation.transform.as_ref()),
         copies: 0,
-    }))
+    })))
 }
 
 pub(super) fn project_remove_body(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, FeatureDefinition, FeatureOperation,
     };
 
-    let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
-    Some(FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-        bodies: BodySelection::Native(group.id.clone()),
+    let group = or_none!(single_operand_group(groups, scope, DesignOperandRole::BODIES_A));
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+        bodies: BodySelection::Native(copy_feature_text(ctx, &group.id,
+            "f3d RemoveBody group id")?),
         mode: BodyRetentionMode::DeleteSelected,
-    }))
+    })))
 }
 
 fn project_base_flange(
@@ -3904,16 +3905,18 @@ fn project_base_flange(
     };
 
     let operation = scope.base_flange_operation()?;
-    let matching = groups
+    let mut matching = groups
         .iter()
         .filter(|group| {
             native_stream(&group.id) == native_stream(&scope.id)
                 && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    let [profile_group] = matching.as_slice() else {
+        });
+    let Some(profile_group) = matching.next() else {
         return None;
     };
+    if matching.next().is_some() {
+        return None;
+    }
     if profile_group.scope_reference_ordinal != 0
         || profile_group.record_index != operation.profile_group_record_index
         || profile_group.role() != DesignOperandRole::PROFILE
@@ -4404,22 +4407,23 @@ fn project_hem(
 }
 
 pub(super) fn project_surface_stitch(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
-    let operation = scope.surface_stitch_operation()?;
-    let input_end = scope.reference_members().len().checked_sub(2)?;
-    let mut matching = groups
-        .iter()
-        .filter(|group| {
+    let operation = or_none!(scope.surface_stitch_operation());
+    let input_end = or_none!(scope.reference_members().len().checked_sub(2));
+    let mut matching = Vec::new();
+    for group in groups.iter().filter(|group| {
             native_stream(&group.id) == native_stream(&scope.id)
                 && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
+        }) {
+        push_feature_item(ctx, &mut matching, group, "f3d SurfaceStitch group")?;
+    }
     matching.sort_by_key(|group| group.scope_reference_ordinal);
-    if matching.len().checked_mul(2)? != input_end
+    if or_none!(matching.len().checked_mul(2)) != input_end
         || matching
             .iter()
             .enumerate()
@@ -4441,18 +4445,19 @@ pub(super) fn project_surface_stitch(
                     || group.role() != DesignOperandRole::ROLE_0X5
             })
     {
-        return None;
+        return Ok(None);
     }
-    Some(FeatureDefinition::Operation(
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::KnitSurface {
-            faces: FaceSelection::Native(scope.id.clone()),
+            faces: FaceSelection::Native(copy_feature_text(ctx, &scope.id,
+                "f3d SurfaceStitch native id")?),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(
+            gap_tolerance: Some(or_none!(cadmpeg_ir::scalar::NonNegativeLength::new(
                 operation.gap_tolerance.get() * 10.0,
-            )?),
+            ))),
         },
-    ))
+    )))
 }
 
 fn project_ruled_surface(
