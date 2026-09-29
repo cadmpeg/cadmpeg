@@ -106,7 +106,7 @@ fn class_277_258_compact_split_face_frame_projects() {
             DesignOperandRole::ROLE_0X10,
         ),
     ];
-    let definition = project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[])
+    let definition = project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[]).expect("projection resource budget")
         .expect("class-277 SplitFace frame");
     assert!(matches!(
         definition,
@@ -122,13 +122,13 @@ fn class_277_258_compact_split_face_frame_projects() {
         crate::records::references::DesignClassTag::try_from("418".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
-    assert!(project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[]).is_some());
+    assert!(project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[]).expect("projection resource budget").is_some());
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
-    assert!(project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[]).is_none());
+    assert!(project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[]).expect("projection resource budget").is_none());
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         .unwrap(),
     ];
 
-    let definition = project_split_face(&scope, &[scope.clone()], &groups, &selections, &[], &[])
+    let definition = project_split_face(None, &scope, &[scope.clone()], &groups, &selections, &[], &[]).expect("projection resource budget")
         .expect("class-277 direct edge path");
     let FeatureDefinition::Operation(FeatureOperation::SplitFace {
         tool:
