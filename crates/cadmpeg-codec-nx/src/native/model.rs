@@ -1251,13 +1251,14 @@ impl NativeModel {
         let feature_block_payload_point_groups =
             feature_block_payload_point_groups(&feature_block_payload_points);
         let feature_sketch_records = feature_sketch_records(
+            ctx,
             &feature_operation_labels,
             &feature_operation_records,
             &feature_input_blocks,
             &feature_sketch_references,
-        );
+        )?;
         let feature_sketch_construction_inputs =
-            feature_sketch_construction_inputs(&feature_sketch_records, &feature_sketch_references);
+            feature_sketch_construction_inputs(ctx, &feature_sketch_records, &feature_sketch_references)?;
         let feature_sketch_construction_payloads = feature_sketch_construction_payloads(
             ctx,
             container,

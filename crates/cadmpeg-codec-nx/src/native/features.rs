@@ -6440,102 +6440,178 @@ pub(super) fn feature_datum_csys_block_uses(
 
 /// Join each sketch operation to its bounded record and ordered input blocks.
 pub(super) fn feature_sketch_records(
+    ctx: &DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     inputs: &[FeatureInputBlock],
     references: &[FeatureSketchReference],
-) -> Vec<FeatureSketchRecord> {
-    labels
-        .iter()
-        .filter(|label| label.value == "SKETCH")
-        .filter_map(|label| {
-            let mut operation_records = records
-                .iter()
-                .filter(|record| record.operation_label == label.id);
-            let record = operation_records.next()?;
-            if operation_records.next().is_some() {
-                return None;
-            }
-            let mut input_blocks = inputs
-                .iter()
-                .filter(|input| input.operation_label == label.id)
-                .collect::<Vec<_>>();
-            input_blocks.sort_by_key(|input| input.input_slot);
-            let mut payload_references = references
-                .iter()
-                .filter(|reference| reference.operation_label == label.id)
-                .collect::<Vec<_>>();
-            payload_references.sort_by_key(|reference| reference.position.ordinal());
-            Some(FeatureSketchRecord {
-                id: label.id.replacen("operation-label", "sketch-record", 1),
-                operation_label: label.id.clone(),
-                ordinal: label.ordinal,
-                operation_record: record.id.clone(),
-                input_blocks: input_blocks
-                    .into_iter()
-                    .map(|input| input.id.clone())
-                    .collect(),
-                payload_references: payload_references
-                    .into_iter()
-                    .map(|reference| reference.id.clone())
-                    .collect(),
-                source_offset: label.source_offset,
-            })
-        })
-        .collect()
+) -> Result<Vec<FeatureSketchRecord>, CodecError> {
+    let mut sketches = Vec::new();
+    for label in labels.iter().filter(|label| label.value == "SKETCH") {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(records.len()),
+            "resolve NX sketch operation record")?;
+        let mut operation_records = records.iter()
+            .filter(|record| record.operation_label == label.id);
+        let Some(record) = operation_records.next() else { continue; };
+        if operation_records.next().is_some() { continue; }
+
+        let mut input_blocks = Vec::new();
+        let mut input_reservation = ctx.reserve_scoped(0, "sort NX sketch input blocks")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(inputs.len()),
+            "resolve NX sketch input blocks")?;
+        for input in inputs.iter().filter(|input| input.operation_label == label.id) {
+            input_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&FeatureInputBlock>()))?;
+            ctx.charge_collection_items(1, "NX sketch input block order")?;
+            input_blocks.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch input block order", 0, 1))?;
+            input_blocks.push(input);
+        }
+        input_blocks.sort_by_key(|input| input.input_slot);
+
+        let mut payload_references = Vec::new();
+        let mut reference_reservation = ctx.reserve_scoped(0, "sort NX sketch references")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(references.len()),
+            "resolve NX sketch references")?;
+        for reference in references.iter().filter(|reference| reference.operation_label == label.id) {
+            reference_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&FeatureSketchReference>()))?;
+            ctx.charge_collection_items(1, "NX sketch reference order")?;
+            payload_references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch reference order", 0, 1))?;
+            payload_references.push(reference);
+        }
+        payload_references.sort_by_key(|reference| reference.position.ordinal());
+
+        let mut input_ids = Vec::new();
+        for input in input_blocks {
+            let id = copy_operation_text(ctx, &input.id, "NX sketch input identity")?;
+            ctx.charge_collection_items(1, "NX sketch input identities")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<String>()), "NX sketch input identities")?;
+            input_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch input identities", 0, 1))?;
+            input_ids.push(id);
+        }
+        drop(input_reservation);
+        let mut reference_ids = Vec::new();
+        for reference in payload_references {
+            let id = copy_operation_text(ctx, &reference.id, "NX sketch reference identity")?;
+            ctx.charge_collection_items(1, "NX sketch reference identities")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<String>()), "NX sketch reference identities")?;
+            reference_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch reference identities", 0, 1))?;
+            reference_ids.push(id);
+        }
+        drop(reference_reservation);
+        let id = replace_operation_text(ctx, &label.id,
+            "operation-label", "sketch-record", "NX sketch record identity")?;
+        let operation_label = copy_operation_text(ctx, &label.id,
+            "NX sketch record operation label")?;
+        let operation_record = copy_operation_text(ctx, &record.id,
+            "NX sketch operation record identity")?;
+        ctx.charge_collection_items(1, "NX sketch records")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureSketchRecord>()), "NX sketch records")?;
+        sketches.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX sketch records", 0, 1))?;
+        sketches.push(FeatureSketchRecord {
+            id, operation_label, ordinal: label.ordinal, operation_record,
+            input_blocks: input_ids, payload_references: reference_ids,
+            source_offset: label.source_offset,
+        });
+    }
+    Ok(sketches)
 }
 
 /// Join complete, uniquely resolved sketch construction-reference fields.
 pub(super) fn feature_sketch_construction_inputs(
+    ctx: &DecodeContext<'_>,
     sketches: &[FeatureSketchRecord],
     references: &[FeatureSketchReference],
-) -> Vec<FeatureSketchConstructionInputs> {
+) -> Result<Vec<FeatureSketchConstructionInputs>, CodecError> {
     let mut inputs = Vec::new();
     for sketch in sketches {
-        let mut field = references
-            .iter()
-            .filter(|reference| reference.operation_label == sketch.operation_label)
-            .collect::<Vec<_>>();
+        let mut field = Vec::new();
+        let mut field_reservation = ctx.reserve_scoped(0, "sort NX sketch construction references")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(references.len()),
+            "resolve NX sketch construction references")?;
+        for reference in references.iter()
+            .filter(|reference| reference.operation_label == sketch.operation_label) {
+            field_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&FeatureSketchReference>()))?;
+            ctx.charge_collection_items(1, "NX sketch construction reference order")?;
+            field.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch construction reference order", 0, 1))?;
+            field.push(reference);
+        }
         field.sort_by_key(|reference| reference.position.ordinal());
         let Some((terminal, members)) = field.split_last() else {
             continue;
         };
         let expected_len = usize::from(terminal.position.declared_count().effective().get());
-        if field.len() != expected_len
-            || field.iter().enumerate().any(|(ordinal, reference)| {
-                reference.position.declared_count() != terminal.position.declared_count()
-                    || reference.position.ordinal() != ordinal as u32
-            })
-        {
+        if field.len() != expected_len {
             continue;
         }
-        let Some(members) = members
-            .iter()
-            .map(|reference| {
-                Some(FeatureConstructionMember {
-                    reference: reference.id.clone(),
-                    data_block: reference.data_block.clone()?,
-                })
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
+        let mut valid = true;
+        for (ordinal, reference) in field.iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).map_err(|_|
+                ctx.refuse_codec_limit("NX sketch construction reference ordinal", 0, 1))?;
+            if reference.position.declared_count() != terminal.position.declared_count()
+                || reference.position.ordinal() != ordinal {
+                valid = false;
+                break;
+            }
+        }
+        if !valid || members.iter().any(|reference| reference.data_block.is_none()) {
+            continue;
+        }
+        let Some(terminal_data_block) = terminal.data_block.as_ref() else {
             continue;
         };
-        let Some(terminal_data_block) = terminal.data_block.clone() else {
-            continue;
-        };
+        let mut member_rows = Vec::new();
+        for reference in members {
+            let reference_id = copy_operation_text(ctx, &reference.id,
+                "NX sketch construction member reference")?;
+            let Some(data_block) = reference.data_block.as_ref() else { continue; };
+            let data_block = copy_operation_text(ctx, data_block,
+                "NX sketch construction member block")?;
+            ctx.charge_collection_items(1, "NX sketch construction members")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureConstructionMember>()),
+                "NX sketch construction members")?;
+            member_rows.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch construction members", 0, 1))?;
+            member_rows.push(FeatureConstructionMember { reference: reference_id, data_block });
+        }
+        let id = replace_operation_text(ctx, &sketch.id,
+            "sketch-record", "sketch-construction-inputs",
+            "NX sketch construction input identity")?;
+        let operation_label = copy_operation_text(ctx, &sketch.operation_label,
+            "NX sketch construction input label")?;
+        let sketch_record = copy_operation_text(ctx, &sketch.id,
+            "NX sketch construction sketch record")?;
+        let terminal_reference = copy_operation_text(ctx, &terminal.id,
+            "NX sketch construction terminal reference")?;
+        let terminal_data_block = copy_operation_text(ctx, terminal_data_block,
+            "NX sketch construction terminal block")?;
+        drop(field);
+        drop(field_reservation);
+        ctx.charge_collection_items(1, "NX sketch construction inputs")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureSketchConstructionInputs>()),
+            "NX sketch construction inputs")?;
+        inputs.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX sketch construction inputs", 0, 1))?;
         inputs.push(FeatureSketchConstructionInputs {
-            id: sketch
-                .id
-                .replacen("sketch-record", "sketch-construction-inputs", 1),
-            operation_label: sketch.operation_label.clone(),
-            sketch_record: sketch.id.clone(),
-            members,
-            terminal_reference: terminal.id.clone(),
+            id, operation_label, sketch_record,
+            members: member_rows,
+            terminal_reference,
             terminal_data_block,
         });
     }
-    inputs
+    Ok(inputs)
 }
 
 /// Reconstruct exact sketch payloads across offset-store block boundaries.
