@@ -2070,11 +2070,16 @@ fn retain_standard_population_model(model: &mut Model) {
     );
 }
 
-fn rescope_standard_id(text: &str, scope: &str) -> String {
-    text.strip_prefix("catia:standard:").map_or_else(
-        || text.to_owned(),
-        |rest| format!("catia:standard:{scope}/{rest}"),
-    )
+fn rescope_standard_id(
+    ctx: &DecodeContext<'_>, text: &str, scope: &str,
+) -> Result<String, CodecError> {
+    match text.strip_prefix("catia:standard:") {
+        Some(rest) => crate::resource::format_retained(ctx,
+            format_args!("catia:standard:{scope}/{rest}"),
+            "catia_standard_population_identity"),
+        None => crate::resource::copy_retained_str(ctx, text,
+            "catia_standard_population_identity"),
+    }
 }
 
 struct StandardPopulationScope<'a, 'b> {
@@ -2103,11 +2108,24 @@ impl EntityRewrite for StandardPopulationScope<'_, '_> {
         let retained = bytes.checked_mul(4)
             .ok_or_else(|| self.ctx.refuse_codec_limit("catia_standard_population_rewrite", u64::MAX, u64::MAX))?;
         self.ctx.charge_retained(retained, "catia_standard_population_rewrite")?;
+        let refusal = std::cell::RefCell::new(None);
         let rewritten = cadmpeg_ir::schema::rewrite::identities(&entity, |id| {
-            rescope_standard_id(id, self.scope)
+            if refusal.borrow().is_some() {
+                return String::new();
+            }
+            match rescope_standard_id(self.ctx, id, self.scope) {
+                Ok(value) => value,
+                Err(error) => {
+                    *refusal.borrow_mut() = Some(error);
+                    String::new()
+                }
+            }
         });
-        let value = serde_value::to_value(rewritten)
-            .map_err(CodecError::malformed)?;
+        let value = serde_value::to_value(rewritten);
+        if let Some(error) = refusal.into_inner() {
+            return Err(error);
+        }
+        let value = value.map_err(CodecError::malformed)?;
         T::deserialize(ValueDeserializer::<serde_value::DeserializerError>::new(
             value,
         ))
