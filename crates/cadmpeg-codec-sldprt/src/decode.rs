@@ -3172,7 +3172,7 @@ fn build_geometry_ir(
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     // Stamp baseline before fabricating the read-side configuration snapshot.
     stamp_configuration_baseline(&mut ir)?;
-    snapshot_active_configuration(&mut ir);
+    snapshot_active_configuration(ctx, &mut ir)?;
     let mut unknowns = brep.unknowns;
     for owned_face_color in brep.face_colors {
         let annotation_source = &owned_face_color.source_stream;
@@ -4362,7 +4362,7 @@ fn build_metadata_ir(
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(&mut ir)?;
-    snapshot_active_configuration(&mut ir);
+    snapshot_active_configuration(ctx, &mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
@@ -4599,7 +4599,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
     }
 }
 
-fn snapshot_active_configuration(ir: &mut CadIr) {
+fn snapshot_active_configuration(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     let mut active = ir
         .model
         .configurations
@@ -4608,10 +4608,10 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
         .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
-        return;
+        return Ok(());
     };
     if active.next().is_some() {
-        return;
+        return Ok(());
     }
     if !ir.model.configurations[configuration_index]
         .parameter_values
@@ -4620,20 +4620,34 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
             .feature_states
             .is_empty()
     {
-        return;
+        return Ok(());
     }
 
-    let parameter_values = ir
-        .model
-        .parameters
-        .iter()
-        .filter_map(|parameter| {
-            parameter
-                .value
-                .clone()
-                .map(|value| (parameter.id.clone(), value))
-        })
-        .collect();
+    let mut parameter_values = BTreeMap::new();
+    for parameter in &ir.model.parameters {
+        ctx.charge_work(1, "snapshot SLDPRT configuration parameters")?;
+        let Some(value) = &parameter.value else {
+            continue;
+        };
+        let value = match value {
+            cadmpeg_ir::features::ParameterValue::String(text) => {
+                cadmpeg_ir::features::ParameterValue::String(copy_retained_string(
+                    ctx,
+                    text,
+                    "retain SLDPRT configuration parameter value",
+                )?)
+            }
+            _ => value.clone(),
+        };
+        let id = cadmpeg_ir::features::ParameterId::mint(copy_retained_string(
+            ctx,
+            parameter.id.as_str(),
+            "retain SLDPRT configuration parameter ID",
+        )?)
+        .map_err(CodecError::malformed)?;
+        ctx.charge_collection_items(1, "snapshot SLDPRT configuration parameter")?;
+        parameter_values.insert(id, value);
+    }
     let feature_states = ir
         .model
         .features
@@ -4660,13 +4674,19 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     configuration.feature_states = feature_states;
     // Read-side fabricated snapshot of model-level state; tag the configuration
     // so the write path can distinguish it from feature-input lane state.
-    let id = configuration.id.as_str().to_owned();
+    let id = copy_retained_string(
+        ctx,
+        configuration.id.as_str(),
+        "retain SLDPRT snapshot configuration ID",
+    )?;
     if let Some(source) = &mut ir.source {
+        ctx.charge_collection_items(1, "mark SLDPRT configuration snapshot")?;
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_configuration_snapshot_synthesized"),
             id,
         );
     }
+    Ok(())
 }
 
 fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
