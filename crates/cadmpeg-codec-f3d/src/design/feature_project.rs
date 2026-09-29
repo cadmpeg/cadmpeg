@@ -7624,7 +7624,7 @@ pub(super) fn project_fixed_sweep(
     };
     use cadmpeg_ir::scalar::Angle;
 
-    let Some((operation, values, profile, path, paths, guide_surfaces)) = (|| {
+    let Some((operation, values, profile, path, paths, guide_surfaces)) = (|| -> Result<Option<_>, CodecError> {
         let crate::records::feature::scope::DesignScopePayload::Sweep(Some(
             crate::records::feature::scope::DesignSweepScope {
                 construction:
@@ -7637,46 +7637,43 @@ pub(super) fn project_fixed_sweep(
             },
         )) = &scope.payload()
         else {
-            return None;
+            return Ok(None);
         };
         let values = values.map(cadmpeg_ir::scalar::FiniteReal::get);
-        let stream = native_stream(&scope.id)?;
-        let groups = construction_groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == Some(stream)
-                    && group.scope_record_index == scope.record_index
-            })
-            .collect::<Vec<_>>();
-        let profiles = groups
-            .iter()
-            .copied()
-            .filter(|group| group.role() == DesignOperandRole::PROFILE)
-            .collect::<Vec<_>>();
-        let mut paths = groups
-            .iter()
-            .copied()
-            .filter(|group| group.role() == DesignOperandRole::ROLE_0X5)
-            .collect::<Vec<_>>();
+        let stream = or_none!(native_stream(&scope.id));
+        let mut groups = Vec::new();
+        for group in construction_groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        }) {
+            push_feature_item(ctx, &mut groups, group, "f3d Sweep scope group")?;
+        }
+        let mut profiles = Vec::new();
+        let mut paths = Vec::new();
+        let mut bodies = Vec::new();
+        let mut guide_surfaces = Vec::new();
+        for group in &groups {
+            match group.role() {
+                DesignOperandRole::PROFILE => push_feature_item(ctx, &mut profiles, *group,
+                    "f3d Sweep profile group")?,
+                DesignOperandRole::ROLE_0X5 => push_feature_item(ctx, &mut paths, *group,
+                    "f3d Sweep path group")?,
+                DesignOperandRole::BODIES_A => push_feature_item(ctx, &mut bodies, *group,
+                    "f3d Sweep body group")?,
+                DesignOperandRole::FACES => push_feature_item(ctx, &mut guide_surfaces, *group,
+                    "f3d Sweep guide surface group")?,
+                _ => {}
+            }
+        }
         paths.sort_by_key(|group| group.scope_reference_ordinal);
-        let bodies = groups
-            .iter()
-            .copied()
-            .filter(|group| group.role() == DesignOperandRole::BODIES_A)
-            .collect::<Vec<_>>();
-        let guide_surfaces = groups
-            .iter()
-            .copied()
-            .filter(|group| group.role() == DesignOperandRole::FACES)
-            .collect::<Vec<_>>();
         let guide_surface_form = match guide_surfaces.as_slice() {
             [] => false,
             [_] => true,
-            _ => return None,
+            _ => return Ok(None),
         };
         let profile = if guide_surface_form {
-            let sweep_profile = scope.sweep_profile()?;
-            let carriers = profiles
+            let sweep_profile = or_none!(scope.sweep_profile());
+            let mut carriers = profiles
                 .iter()
                 .filter(|group| {
                     group
@@ -7684,9 +7681,8 @@ pub(super) fn project_fixed_sweep(
                         .iter()
                         .map(|member| member.value)
                         .eq([sweep_profile.record_index])
-                })
-                .collect::<Vec<_>>();
-            let selections = profiles
+                });
+            let mut selections = profiles
                 .iter()
                 .filter(|group| {
                     !group
@@ -7694,10 +7690,11 @@ pub(super) fn project_fixed_sweep(
                         .iter()
                         .map(|member| member.value)
                         .eq([sweep_profile.record_index])
-                })
-                .collect::<Vec<_>>();
-            let ([_carrier], [selection]) = (carriers.as_slice(), selections.as_slice()) else {
-                return None;
+                });
+            let (Some(_carrier), None, Some(selection), None) = (
+                carriers.next(), carriers.next(), selections.next(), selections.next()
+            ) else {
+                return Ok(None);
             };
             if selection.members().is_empty()
                 || !selection
@@ -7713,17 +7710,17 @@ pub(super) fn project_fixed_sweep(
                         })
                     })
             {
-                return None;
+                return Ok(None);
             }
             *selection
         } else {
             let [profile] = profiles.as_slice() else {
-                return None;
+                return Ok(None);
             };
             *profile
         };
         let ([path] | [path, _]) = paths.as_slice() else {
-            return None;
+            return Ok(None);
         };
         let expected_group_count =
             profiles.len() + paths.len() + bodies.len() + guide_surfaces.len();
@@ -7734,10 +7731,10 @@ pub(super) fn project_fixed_sweep(
             || values[..4].iter().any(|value| !(0.0..=1.0).contains(value))
             || (paths.len() == 1 && values[2..4] != [1.0; 2])
         {
-            return None;
+            return Ok(None);
         }
-        Some((operation, values, profile, *path, paths, guide_surfaces))
-    })() else {
+        Ok(Some((operation, values, profile, *path, paths, guide_surfaces)))
+    })()? else {
         return Ok(None);
     };
     let path = resolved_loft_path(
@@ -7767,17 +7764,21 @@ pub(super) fn project_fixed_sweep(
     } else {
         None
     };
-    let orientation = guide_surfaces
-        .first()
-        .map(|group| SweepOrientation::GuideSurface {
-            faces: resolved_historical_face_group(
+    let orientation = match guide_surfaces.first() {
+        Some(group) => Some(SweepOrientation::GuideSurface {
+            faces: match resolved_historical_face_group(
                 scope,
                 scope.previous_history_state_id(),
                 group,
                 face_operands,
-            )
-            .unwrap_or_else(|| FaceSelection::Native(group.id.clone())),
-        });
+            ) {
+                Some(selection) => selection,
+                None => FaceSelection::Native(copy_feature_text(
+                    ctx, &group.id, "f3d Sweep guide surface id")?),
+            },
+        }),
+        None => None,
+    };
     let twist_angle = or_none!(Angle::new(values[4]));
     let taper_angle = or_none!(Angle::new(values[5]));
     Ok(Some(FeatureDefinition::Operation(
@@ -7789,7 +7790,7 @@ pub(super) fn project_fixed_sweep(
                     or_none!(fixed_boolean_operation(*operation).try_into().ok())
                 },
                 section: cadmpeg_ir::features::SweepSection::Profile(PlanarProfileRef::Native(
-                    profile.id.clone(),
+                    copy_feature_text(ctx, &profile.id, "f3d Sweep profile id")?,
                 )),
                 sections: Vec::new(),
             },
