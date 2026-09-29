@@ -4019,6 +4019,7 @@ pub(super) fn feature_operation_records(
 ) -> Result<Vec<FeatureOperationRecord>, cadmpeg_core::CodecError> {
     let block_identities = operation_header_block_identities(ctx, container)?;
     let mut identity_counts = BTreeMap::<String, usize>::new();
+    let mut counts_reservation = ctx.reserve_scoped(0, "NX operation record identity counts")?;
     let mut records = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
@@ -4028,8 +4029,6 @@ pub(super) fn feature_operation_records(
             if failure.is_some() {
                 return;
             }
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let stable_identity = match operation_header_identity_key(
                 ctx,
                 record.label().header.objects().values(),
@@ -4050,36 +4049,66 @@ pub(super) fn feature_operation_records(
             else {
                 return;
             };
-            if let Some(key) = &stable_identity {
-                *identity_counts.entry(key.clone()).or_default() += 1;
-            }
-            records.push((
-                FeatureOperationRecord {
-                    id: format!(
-                        "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-                    ),
-                    operation_label: operation_label.clone(),
-                    ordinal: operation_ordinal as u32,
+            let item = (|| -> Result<FeatureOperationRecord, CodecError> {
+                if let Some(key) = &stable_identity {
+                    if let Some(count) = identity_counts.get_mut(key.as_str()) {
+                        *count = count.checked_add(1)
+                            .ok_or_else(|| ctx.refuse_codec_limit("count NX operation record identities", 0, 1))?;
+                    } else {
+                        let bytes = (std::mem::size_of::<(String, usize)>() * 4)
+                            .checked_add(key.len())
+                            .ok_or_else(|| ctx.refuse_codec_limit("NX operation record identity counts", 0, 1))?;
+                        ctx.charge_collection_items(1, "NX operation record identity counts")?;
+                        counts_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+                        let mut copy = String::new();
+                        copy.try_reserve_exact(key.len())
+                            .map_err(|_| ctx.refuse_codec_limit("allocate NX operation record identity key", 0, 1))?;
+                        copy.push_str(key);
+                        identity_counts.insert(copy, 1);
+                    }
+                }
+                let ordinal = u32::try_from(operation_ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX operation record ordinal", 0, 1))?;
+                Ok(FeatureOperationRecord {
+                    id: format_feature_history_id(
+                        ctx, "operation-record", section_key, operation_ordinal, None,
+                    )?,
+                    operation_label: format_feature_history_id(
+                        ctx, "operation-label", section_key, operation_ordinal, None,
+                    )?,
+                    ordinal,
                     sha256: crate::native::hex::Sha256Hex::digest(record.bytes()),
                     payload_sha256: crate::native::hex::Sha256Hex::digest(record.payload()),
-                    stable_identity: None,
+                    stable_identity,
                     span,
-                },
-                stable_identity,
-            ));
+                })
+            })();
+            let item = match item {
+                Ok(item) => item,
+                Err(error) => { failure = Some(error); return; }
+            };
+            if let Err(error) = ctx.charge_collection_items(1, "NX feature operation records")
+                .and_then(|()| ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureOperationRecord>(),
+                ), "NX feature operation records"))
+                .and_then(|()| records.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX feature operation records", 0, 1))) {
+                failure = Some(error);
+                return;
+            }
+            records.push(item);
         },
     )?;
     if let Some(error) = failure {
         return Err(error);
     }
-    Ok(records
-        .into_iter()
-        .map(|(mut record, stable_identity)| {
-            record.stable_identity =
-                stable_identity.filter(|key| identity_counts.get(key) == Some(&1));
-            record
-        })
-        .collect())
+    for record in &mut records {
+        if record.stable_identity.as_ref()
+            .is_some_and(|key| identity_counts.get(key.as_str()) != Some(&1)) {
+            record.stable_identity = None;
+        }
+    }
+    Ok(records)
 }
 
 /// Retain operation records whose validated headers have no complete label.
