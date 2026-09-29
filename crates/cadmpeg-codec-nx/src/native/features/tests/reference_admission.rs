@@ -12,6 +12,7 @@ use crate::native::features::feature_extrude_payload_headers;
 use crate::native::features::feature_extrude_construction_profiles;
 use crate::native::features::FeatureExtrudeProfileReference;
 use crate::native::features::feature_extrude_payload_32_branches;
+use crate::native::features::feature_block_construction_references;
 use crate::native::features::feature_operation_terminal_discriminators;
 use crate::native::features::feature_operation_body_scalar_triples;
 use crate::native::features::feature_operation_body_members;
@@ -132,6 +133,58 @@ fn extrude_32_branch_route_refusal(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test root");
     decode(&ctx).expect_err("extrude 32 branch resource limit")
+}
+
+fn block_reference_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let mut payload = vec![0x26, 0, 0, 1, 0, 0];
+    for value in 1..=18u8 {
+        payload.extend([0xf0, value]);
+    }
+    payload.extend([0x01, 0xf1, 0x01, 0x00]);
+    payload.extend([0xff; 11]);
+    payload.extend([0; 4]);
+    let container = reference_container("BLOCK", payload);
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_block_construction_references(ctx, &container)
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted block references").len(), 19);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("block reference resource limit")
+}
+
+#[test]
+fn block_reference_route_refuses_collection_limit() {
+    let error = block_reference_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn block_reference_route_refuses_retained_limit() {
+    let error = block_reference_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn block_reference_route_refuses_scoped_limit() {
+    let error = block_reference_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn block_reference_route_refuses_work_limit() {
+    let error = block_reference_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
