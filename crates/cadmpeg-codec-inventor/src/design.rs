@@ -568,7 +568,9 @@ pub(crate) fn project_parameters(
         )?;
         let mut dependency_members = cadmpeg_ir::features::DistinctMembers::default();
         dependency_members.reserve_for_decode(
-            ctx, dependencies.len(), "collect Inventor parameter dependencies",
+            ctx,
+            dependencies.len(),
+            "collect Inventor parameter dependencies",
         )?;
         dependency_members.extend(dependencies);
         projected.push(DesignParameter {
