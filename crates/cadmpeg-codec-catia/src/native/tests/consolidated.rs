@@ -370,7 +370,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     };
     assert_eq!(
         circle.layout,
-        crate::native::CatiaCircleLayout::Identity16Bit
+        crate::native::CatiaCircleLayout::Word
     );
     assert_eq!(circle.record_id, 0x1234);
     assert_eq!(circle.frame_token, 0x05);

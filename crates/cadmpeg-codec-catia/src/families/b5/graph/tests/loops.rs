@@ -1006,10 +1006,10 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
         1,
         Some(B5Surface::RollingBall {
             carrier_object_id: 1,
-            definition: ProceduralSurfaceDefinition::Unknown {
+            definition: Box::new(ProceduralSurfaceDefinition::Unknown {
                 record: None,
                 cache: None,
-            },
+            }),
         }),
     )]);
     assert_eq!(
@@ -1130,10 +1130,10 @@ fn targeted_surface_resolution_has_no_alias_depth_limit() {
         21,
         Some(B5Surface::RollingBall {
             carrier_object_id: 21,
-            definition: ProceduralSurfaceDefinition::Unknown {
+            definition: Box::new(ProceduralSurfaceDefinition::Unknown {
                 record: None,
                 cache: None,
-            },
+            }),
         }),
     )]);
     assert_eq!(
@@ -1170,10 +1170,10 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
         1,
         Some(B5Surface::RollingBall {
             carrier_object_id: 1,
-            definition: ProceduralSurfaceDefinition::Unknown {
+            definition: Box::new(ProceduralSurfaceDefinition::Unknown {
                 record: None,
                 cache: None,
-            },
+            }),
         }),
     )]);
     let resolved = HashMap::from([(

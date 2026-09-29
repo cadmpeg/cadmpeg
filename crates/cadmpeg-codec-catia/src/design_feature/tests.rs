@@ -120,9 +120,9 @@ fn object_record(
         class: match (class_name, class_entry) {
             (None, None) => None,
             (class_name, class_entry) => Some(crate::native::CatiaObjectClass {
-                class_ref: 0,
-                class_name: class_name.map(str::to_string),
-                class_entry: class_entry.map(str::to_string),
+                ordinal: 0,
+                name: class_name.map(str::to_string),
+                entry: class_entry.map(str::to_string),
             }),
         },
         storage: None,
@@ -185,12 +185,12 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
         HeadToken::Reference(1),
     ];
     if let Some(class) = &mut record.class {
-        class.class_ref = 7;
+        class.ordinal = 7;
     } else {
         record.class = Some(crate::native::CatiaObjectClass {
-            class_ref: 7,
-            class_name: None,
-            class_entry: None,
+            ordinal: 7,
+            name: None,
+            entry: None,
         });
     }
 
@@ -248,12 +248,12 @@ fn malformed_compact_root_does_not_promote_an_operation() {
         HeadToken::Literal(0),
     ];
     if let Some(class) = &mut record.class {
-        class.class_ref = 7;
+        class.ordinal = 7;
     } else {
         record.class = Some(crate::native::CatiaObjectClass {
-            class_ref: 7,
-            class_name: None,
-            class_entry: None,
+            ordinal: 7,
+            name: None,
+            entry: None,
         });
     }
 
@@ -1670,12 +1670,12 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
         .definition
         .value = "CircPattern".to_string();
     if let Some(class) = &mut native.object_graphs[0].records[0].class {
-        class.class_name = Some("Element1".to_string());
+        class.name = Some("Element1".to_string());
     } else {
         native.object_graphs[0].records[0].class = Some(crate::native::CatiaObjectClass {
-            class_ref: 0,
-            class_name: Some("Element1".to_string()),
-            class_entry: None,
+            ordinal: 0,
+            name: Some("Element1".to_string()),
+            entry: None,
         });
     }
 
@@ -1753,13 +1753,13 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
         .find(|record| record.id == owner_record_id)
         .expect("mutable synthetic owner declaration record");
     if let Some(class) = &mut owner_record_mut.class {
-        class.class_name = Some("Sketch".to_string());
-        class.class_entry = Some(owner_class_entry.clone());
+        class.name = Some("Sketch".to_string());
+        class.entry = Some(owner_class_entry.clone());
     } else {
         owner_record_mut.class = Some(crate::native::CatiaObjectClass {
-            class_ref: 0,
-            class_name: Some("Sketch".to_string()),
-            class_entry: Some(owner_class_entry.clone()),
+            ordinal: 0,
+            name: Some("Sketch".to_string()),
+            entry: Some(owner_class_entry.clone()),
         });
     }
 

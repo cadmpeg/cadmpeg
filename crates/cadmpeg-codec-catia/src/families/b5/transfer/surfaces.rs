@@ -175,7 +175,7 @@ pub(super) fn neutral_surface(
         } => {
             procedure = Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
-                definition: copy_rolling_ball_definition(ctx, definition)?,
+                definition: Box::new(copy_rolling_ball_definition(ctx, definition)?),
             });
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(
@@ -939,7 +939,7 @@ pub(super) fn emit_surfaces(
                 )?;
                 let _attached = ir.model.add_procedural_surface(
                     &id,
-                    ProceduralSurface::new(procedural_id, definition, None),
+                    ProceduralSurface::new(procedural_id, *definition, None),
                 );
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}

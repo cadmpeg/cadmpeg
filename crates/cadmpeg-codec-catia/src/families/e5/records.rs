@@ -258,15 +258,16 @@ pub(super) fn e5_planes(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Pl
         let scalar_count = (record.size - 58) / 8;
         let scalars_finite =
             (0..scalar_count).all(|index| f64_le(data, pos + 39 + 8 * index).is_some());
+        if read_f64_array::<4>(data, record.end() - 32).is_none() {
+            continue;
+        }
+        #[cfg(test)]
         let Some(bounds) = read_f64_array::<4>(data, record.end() - 32) else {
             continue;
         };
         if !scalars_finite {
             continue;
         }
-        #[cfg(not(test))]
-        // discarded-value: reading the natural bounds admits them finite; only tests read them
-        let _ = bounds;
         ctx.push_vec(
             &mut out,
             E5Plane {

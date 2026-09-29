@@ -339,19 +339,22 @@ pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
         [range[1], range[0]]
     }
 }
+#[derive(Clone, Copy)]
+pub(crate) struct CircleParameterRangeFromSurfaceBranchInputs<'input0> {
+pub(crate) surface: &'input0 SurfaceGeometry,
+pub(crate) center: Point3,
+pub(crate) radius: f64,
+pub(crate) axis: Vector3,
+pub(crate) ref_direction: Vector3,
+pub(crate) start: Point3,
+pub(crate) end: Point3,
+pub(crate) pcurve_origin: FinitePoint2,
+pub(crate) pcurve_direction: FinitePoint2
+}
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn circle_parameter_range_from_surface_branch(
-    surface: &SurfaceGeometry,
-    center: Point3,
-    radius: f64,
-    axis: Vector3,
-    ref_direction: Vector3,
-    start: Point3,
-    end: Point3,
-    pcurve_origin: FinitePoint2,
-    pcurve_direction: FinitePoint2,
-) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+pub(crate) fn circle_parameter_range_from_surface_branch(inputs: CircleParameterRangeFromSurfaceBranchInputs<'_>) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+let CircleParameterRangeFromSurfaceBranchInputs { surface, center, radius, axis, ref_direction, start, end, pcurve_origin, pcurve_direction } = inputs;
+
     if !center.is_finite()
         || !start.is_finite()
         || !end.is_finite()
@@ -1411,17 +1414,7 @@ mod route_tests {
             )
             .expect("valid PlaneSurface fixture"),
         ));
-        let range = circle_parameter_range_from_surface_branch(
-            &surface,
-            Point3::new(0.0, 0.0, 0.0),
-            1.0,
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(sweep.cos(), sweep.sin(), 0.0),
-            FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite pcurve origin"),
-            FinitePoint2::new(Point2::new(0.0, sweep)).expect("finite pcurve direction"),
-        )
+        let range = circle_parameter_range_from_surface_branch(crate::assemble::CircleParameterRangeFromSurfaceBranchInputs { surface: &surface, center: Point3::new(0.0, 0.0, 0.0), radius: 1.0, axis: Vector3::new(0.0, 0.0, 1.0), ref_direction: Vector3::new(1.0, 0.0, 0.0), start: Point3::new(1.0, 0.0, 0.0), end: Point3::new(sweep.cos(), sweep.sin(), 0.0), pcurve_origin: FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite pcurve origin"), pcurve_direction: FinitePoint2::new(Point2::new(0.0, sweep)).expect("finite pcurve direction") })
         .expect("circle evaluation resources")
         .expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
@@ -1451,43 +1444,13 @@ mod route_tests {
         };
         let (center, radius, axis, ref_direction, start, end, pcurve_origin, pcurve_direction) =
             args();
-        assert!(circle_parameter_range_from_surface_branch(
-            &surface,
-            Point3::new(f64::NAN, center.y, center.z),
-            radius,
-            axis,
-            ref_direction,
-            start,
-            end,
-            pcurve_origin,
-            pcurve_direction,
-        )
+        assert!(circle_parameter_range_from_surface_branch(crate::assemble::CircleParameterRangeFromSurfaceBranchInputs { surface: &surface, center: Point3::new(f64::NAN, center.y, center.z), radius, axis, ref_direction, start, end, pcurve_origin, pcurve_direction })
         .expect("circle evaluation resources")
         .is_none());
-        assert!(circle_parameter_range_from_surface_branch(
-            &surface,
-            center,
-            0.0,
-            axis,
-            ref_direction,
-            start,
-            end,
-            pcurve_origin,
-            pcurve_direction,
-        )
+        assert!(circle_parameter_range_from_surface_branch(crate::assemble::CircleParameterRangeFromSurfaceBranchInputs { surface: &surface, center, radius: 0.0, axis, ref_direction, start, end, pcurve_origin, pcurve_direction })
         .expect("circle evaluation resources")
         .is_none());
-        assert!(circle_parameter_range_from_surface_branch(
-            &surface,
-            center,
-            radius,
-            axis,
-            axis,
-            start,
-            end,
-            pcurve_origin,
-            pcurve_direction,
-        )
+        assert!(circle_parameter_range_from_surface_branch(crate::assemble::CircleParameterRangeFromSurfaceBranchInputs { surface: &surface, center, radius, axis, ref_direction: axis, start, end, pcurve_origin, pcurve_direction })
         .expect("circle evaluation resources")
         .is_none());
     }

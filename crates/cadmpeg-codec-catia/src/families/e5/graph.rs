@@ -631,18 +631,7 @@ pub(crate) fn parse_topology(
                         return Some(Err(error));
                     }
                 }
-                let orientation_hint = plane_digon_orientation_hint(
-                    face.trailer_sign,
-                    by_id.get(&face.surface).map(|record| record.class),
-                    &raw.pcurves,
-                    &raw.edges,
-                    &reversed,
-                    raw.outer,
-                    &edges,
-                    &pcurves,
-                    &curve_supports,
-                    &bounds,
-                );
+                let orientation_hint = plane_digon_orientation_hint(crate::families::e5::graph::PlaneDigonOrientationHintInputs { face_trailer_sign: face.trailer_sign, surface_class: by_id.get(&face.surface).map(|record| record.class), pcurve_ids: &raw.pcurves, edge_ids: &raw.edges, reversed: &reversed, outer: raw.outer, edges: &edges, pcurves: &pcurves, curve_supports: &curve_supports, bounds: &bounds });
                 let mut members = Vec::new();
                 for ((&pcurve, &edge_use), &reversed) in
                     raw.pcurves.iter().zip(&raw.edges).zip(&reversed)
@@ -1376,20 +1365,26 @@ fn parse_jet_pcurve(
 /// This helper returns `None` for every incomplete or non-circular relation.
 /// Such a loop remains on the shared-edge parity path instead of receiving a
 /// geometric guess.
-#[allow(clippy::too_many_arguments)]
-fn plane_digon_orientation_hint(
-    face_trailer_sign: Sign,
-    surface_class: Option<u8>,
-    pcurve_ids: &[u32],
-    edge_ids: &[u32],
-    reversed: &[bool],
-    outer: Option<bool>,
-    edges: &BTreeMap<u32, E5Edge>,
-    pcurves: &BTreeMap<u32, E5Pcurve>,
-    curve_supports: &BTreeMap<u32, E5CurveSupport>,
-    bounds: &BTreeMap<u32, E5Bounds>,
-) -> Option<Sign> {
-    const EPS_PLANE_DIGON: f64 = 1.0e-8;
+#[derive(Clone, Copy)]
+struct PlaneDigonOrientationHintInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6> {
+face_trailer_sign: Sign,
+surface_class: Option<u8>,
+pcurve_ids: &'input0 [u32],
+edge_ids: &'input1 [u32],
+reversed: &'input2 [bool],
+outer: Option<bool>,
+edges: &'input3 BTreeMap<u32, E5Edge>,
+pcurves: &'input4 BTreeMap<u32, E5Pcurve>,
+curve_supports: &'input5 BTreeMap<u32, E5CurveSupport>,
+bounds: &'input6 BTreeMap<u32, E5Bounds>
+}
+
+fn plane_digon_orientation_hint(inputs: PlaneDigonOrientationHintInputs<'_, '_, '_, '_, '_, '_, '_>) -> Option<Sign> {
+const EPS_PLANE_DIGON: f64 = 1.0e-8;
+
+let PlaneDigonOrientationHintInputs { face_trailer_sign, surface_class, pcurve_ids, edge_ids, reversed, outer, edges, pcurves, curve_supports, bounds } = inputs;
+
+
     if surface_class != Some(0xc8)
         || pcurve_ids.len() != 2
         || edge_ids.len() != 2
@@ -2671,18 +2666,7 @@ mod tests {
                 },
             ),
         ]);
-        let hint = plane_digon_orientation_hint(
-            Sign::Positive,
-            Some(0xc8),
-            &[10, 11],
-            &[1, 2],
-            &[false, false],
-            Some(true),
-            &edges,
-            &pcurves,
-            &supports,
-            &bounds,
-        );
+        let hint = plane_digon_orientation_hint(crate::families::e5::graph::PlaneDigonOrientationHintInputs { face_trailer_sign: Sign::Positive, surface_class: Some(0xc8), pcurve_ids: &[10, 11], edge_ids: &[1, 2], reversed: &[false, false], outer: Some(true), edges: &edges, pcurves: &pcurves, curve_supports: &supports, bounds: &bounds });
         assert_eq!(hint, Some(Sign::Negative));
 
         let mut wide_pcurves = pcurves.clone();
@@ -2700,18 +2684,7 @@ mod tests {
             });
         }
         assert_eq!(
-            plane_digon_orientation_hint(
-                Sign::Positive,
-                Some(0xc8),
-                &[10, 11],
-                &[1, 2],
-                &[false, false],
-                Some(true),
-                &edges,
-                &wide_pcurves,
-                &supports,
-                &wide_bounds,
-            ),
+            plane_digon_orientation_hint(crate::families::e5::graph::PlaneDigonOrientationHintInputs { face_trailer_sign: Sign::Positive, surface_class: Some(0xc8), pcurve_ids: &[10, 11], edge_ids: &[1, 2], reversed: &[false, false], outer: Some(true), edges: &edges, pcurves: &wide_pcurves, curve_supports: &supports, bounds: &wide_bounds }),
             hint
         );
 

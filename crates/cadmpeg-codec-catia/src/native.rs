@@ -168,8 +168,6 @@ struct CatiaOwnerIdentityTarget {
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-// Keep typed source payloads inline without an allocation for each admitted record.
-#[allow(clippy::large_enum_variant)]
 enum CatiaOwnerPacketPayload {
     /// Nine alternating strong/weak identities followed by a fixed numeric tail.
     FixedNine {
@@ -187,11 +185,11 @@ enum CatiaOwnerPacketPayload {
         identity_targets: Vec<CatiaOwnerIdentityTarget>,
         /// Complete carrier/reference/side chart that this packet terminates.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        owner_chart: Option<CatiaOwnerChartRelation>,
+        owner_chart: Option<Box<CatiaOwnerChartRelation>>,
         /// Closed owner-local four-edge boundary, when all four resolved targets
         /// form one simple cycle in the bounded record source.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
+        boundary_cycle: Option<Box<CatiaOwnerBoundaryCycle>>,
     },
     /// Count-selected persistent identities followed by a nonempty tail.
     Counted {
@@ -258,14 +256,14 @@ impl CatiaConsolidatedOwnerPacket {
     #[cfg(test)]
     pub(crate) fn owner_chart(&self) -> Option<&CatiaOwnerChartRelation> {
         match &self.payload {
-            CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_ref(),
+            CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_deref(),
             CatiaOwnerPacketPayload::Counted { .. } => None,
         }
     }
 
     fn owner_chart_mut(&mut self) -> Option<&mut CatiaOwnerChartRelation> {
         match &mut self.payload {
-            CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_mut(),
+            CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_deref_mut(),
             CatiaOwnerPacketPayload::Counted { .. } => None,
         }
     }
@@ -273,7 +271,7 @@ impl CatiaConsolidatedOwnerPacket {
     #[cfg(test)]
     fn boundary_cycle(&self) -> Option<&CatiaOwnerBoundaryCycle> {
         match &self.payload {
-            CatiaOwnerPacketPayload::FixedNine { boundary_cycle, .. } => boundary_cycle.as_ref(),
+            CatiaOwnerPacketPayload::FixedNine { boundary_cycle, .. } => boundary_cycle.as_deref(),
             CatiaOwnerPacketPayload::Counted { .. } => None,
         }
     }
@@ -310,8 +308,8 @@ impl From<CatiaConsolidatedOwnerPacket> for CatiaConsolidatedOwnerPacketWire {
                 boundary_cycle,
             } => (
                 identity_targets,
-                owner_chart,
-                boundary_cycle,
+                owner_chart.map(|chart| *chart),
+                boundary_cycle.map(|cycle| *cycle),
                 CatiaOwnerPacketPayload::FixedNine {
                     reference_encoding,
                     references,
@@ -355,8 +353,8 @@ impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket 
                 identity_encodings,
                 numeric_tail,
                 identity_targets: wire.identity_targets,
-                owner_chart: wire.owner_chart,
-                boundary_cycle: wire.boundary_cycle,
+                owner_chart: wire.owner_chart.map(Box::new),
+                boundary_cycle: wire.boundary_cycle.map(Box::new),
             },
             counted @ CatiaOwnerPacketPayload::Counted { .. } => {
                 if !wire.identity_targets.is_empty()
@@ -414,23 +412,21 @@ pub(crate) struct CatiaConsolidatedCone {
 /// Payload-layout discriminator of a consolidated arc-length circle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-// Variant names retain the source layout width terminology.
-#[allow(clippy::enum_variant_names)]
 pub(crate) enum CatiaCircleLayout {
     /// Identity packed in six bits (`0x32`).
-    Identity6Bit,
+    PackedSix,
     /// Identity packed in one byte (`0x33`).
-    Identity8Bit,
+    Byte,
     /// Identity packed in two bytes (`0x34`).
-    Identity16Bit,
+    Word,
 }
 
 impl From<CatiaCircleLayout> for u8 {
     fn from(value: CatiaCircleLayout) -> Self {
         match value {
-            CatiaCircleLayout::Identity6Bit => 0x32,
-            CatiaCircleLayout::Identity8Bit => 0x33,
-            CatiaCircleLayout::Identity16Bit => 0x34,
+            CatiaCircleLayout::PackedSix => 0x32,
+            CatiaCircleLayout::Byte => 0x33,
+            CatiaCircleLayout::Word => 0x34,
         }
     }
 }
@@ -440,9 +436,9 @@ impl TryFrom<u8> for CatiaCircleLayout {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0x32 => Ok(Self::Identity6Bit),
-            0x33 => Ok(Self::Identity8Bit),
-            0x34 => Ok(Self::Identity16Bit),
+            0x32 => Ok(Self::PackedSix),
+            0x33 => Ok(Self::Byte),
+            0x34 => Ok(Self::Word),
             other => Err(format!("layout {other:#x} is not 0x32..=0x34")),
         }
     }
@@ -3365,28 +3361,24 @@ pub(crate) struct CatiaObjectEntity {
 
 /// Class role resolved through the graph schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
-// Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 pub(crate) struct CatiaObjectClass {
     /// Head role identifying the per-file class ordinal.
-    pub(crate) class_ref: u32,
+    pub(crate) ordinal: u32,
     /// UTF-8 class name resolved through the graph's schema catalog.
-    pub(crate) class_name: Option<String>,
+    pub(crate) name: Option<String>,
     /// Exact schema-catalog entry selected by `class_ref`.
-    pub(crate) class_entry: Option<String>,
+    pub(crate) entry: Option<String>,
 }
 
 /// Storage role resolved through the same graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
-// Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 pub(crate) struct CatiaObjectStorage {
     /// Head role selecting class-specific storage.
-    pub(crate) storage_ref: u32,
+    pub(crate) reference: u32,
     /// Same-graph field record selected by `storage_ref`.
-    pub(crate) storage_record: Option<String>,
+    pub(crate) record: Option<String>,
     /// Design object containing the selected storage record.
-    pub(crate) storage_design_object: Option<String>,
+    pub(crate) design_object: Option<String>,
 }
 
 /// One `7C09` object record.
@@ -3466,35 +3458,35 @@ impl CatiaObjectRecord {
     }
 
     fn class_ref(&self) -> Option<u32> {
-        self.class.as_ref().map(|class| class.class_ref)
+        self.class.as_ref().map(|class| class.ordinal)
     }
 
     pub(crate) fn class_name(&self) -> Option<&str> {
         self.class
             .as_ref()
-            .and_then(|class| class.class_name.as_deref())
+            .and_then(|class| class.name.as_deref())
     }
 
     pub(crate) fn class_entry(&self) -> Option<&str> {
         self.class
             .as_ref()
-            .and_then(|class| class.class_entry.as_deref())
+            .and_then(|class| class.entry.as_deref())
     }
 
     pub(crate) fn storage_ref(&self) -> Option<u32> {
-        self.storage.as_ref().map(|storage| storage.storage_ref)
+        self.storage.as_ref().map(|storage| storage.reference)
     }
 
     pub(crate) fn storage_record(&self) -> Option<&str> {
         self.storage
             .as_ref()
-            .and_then(|storage| storage.storage_record.as_deref())
+            .and_then(|storage| storage.record.as_deref())
     }
 
     fn storage_design_object(&self) -> Option<&str> {
         self.storage
             .as_ref()
-            .and_then(|storage| storage.storage_design_object.as_deref())
+            .and_then(|storage| storage.design_object.as_deref())
     }
 
     pub(crate) fn owner_entity_id(&self) -> Option<u32> {
@@ -3573,14 +3565,14 @@ impl CatiaObjectRecordWire {
             None => (None, None),
         };
         let (class_ref, class_name, class_entry) = match value.class {
-            Some(class) => (Some(class.class_ref), class.class_name, class.class_entry),
+            Some(class) => (Some(class.ordinal), class.name, class.entry),
             None => (None, None, None),
         };
         let (storage_ref, storage_record, storage_design_object) = match value.storage {
             Some(storage) => (
-                Some(storage.storage_ref),
-                storage.storage_record,
-                storage.storage_design_object,
+                Some(storage.reference),
+                storage.record,
+                storage.design_object,
             ),
             None => (None, None, None),
         };
@@ -3636,9 +3628,9 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
         };
         let class = match wire.class_ref {
             Some(class_ref) => Some(CatiaObjectClass {
-                class_ref,
-                class_name: wire.class_name,
-                class_entry: wire.class_entry,
+                ordinal: class_ref,
+                name: wire.class_name,
+                entry: wire.class_entry,
             }),
             None if wire.class_name.is_some() || wire.class_entry.is_some() => {
                 return Err("object record class name/entry requires class_ref".to_owned());
@@ -3647,9 +3639,9 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
         };
         let storage = match wire.storage_ref {
             Some(storage_ref) => Some(CatiaObjectStorage {
-                storage_ref,
-                storage_record: wire.storage_record,
-                storage_design_object: wire.storage_design_object,
+                reference: storage_ref,
+                record: wire.storage_record,
+                design_object: wire.storage_design_object,
             }),
             None if wire.storage_record.is_some() || wire.storage_design_object.is_some() => {
                 return Err("object record storage links require storage_ref".to_owned());
@@ -9795,14 +9787,14 @@ impl CatiaNative {
                 .transpose()?;
             for record in &mut graph.records {
                 if let Some(class) = &mut record.class {
-                    class.class_entry = usize::try_from(class.class_ref)
+                    class.entry = usize::try_from(class.ordinal)
                         .ok()
                         .and_then(|ordinal| catalog?.entries.get(ordinal))
                         .map(|entry| {
                             ctx.copy_retained_text(&entry.id, "catia_native_class_entry_id")
                         })
                         .transpose()?;
-                    class.class_name = usize::try_from(class.class_ref)
+                    class.name = usize::try_from(class.ordinal)
                         .ok()
                         .and_then(|ordinal| catalog?.entries.get(ordinal))
                         .map(|entry| {

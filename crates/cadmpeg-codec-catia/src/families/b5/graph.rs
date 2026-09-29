@@ -245,7 +245,6 @@ impl B5Profile {
 
 /// A resolved `b5 03` surface node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::large_enum_variant)]
 pub(in crate::families) enum B5Surface {
     /// A NURBS surface whose parameter lattice is decoded but whose pole
     /// representation remains opaque.
@@ -396,7 +395,7 @@ pub(in crate::families) enum B5Surface {
         /// Persistent object id of the `a8 03 32` result carrier.
         carrier_object_id: u32,
         /// Exact procedural definition decoded from the stored jet.
-        definition: ProceduralSurfaceDefinition,
+        definition: Box<ProceduralSurfaceDefinition>,
     },
 }
 
@@ -1123,7 +1122,7 @@ fn parse_from_records_with_class21(
                 jet.object_id,
                 B5Surface::RollingBall {
                     carrier_object_id: jet.object_id,
-                    definition,
+                    definition: Box::new(definition),
                 },
             )?;
         }
@@ -1697,8 +1696,11 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
         }
         B5Surface::RollingBall {
             carrier_object_id,
-            definition: ProceduralSurfaceDefinition::RollingBallJet(jet),
+            definition,
         } => {
+            let ProceduralSurfaceDefinition::RollingBallJet(jet) = definition.as_ref() else {
+                return Ok(surface.clone());
+            };
             let stations =
                 ctx.copy_retained_slice(jet.stations(), "catia_b5_copied_rolling_ball_stations")?;
             let jet =
@@ -1706,7 +1708,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
                     .map_err(CodecError::malformed)?;
             B5Surface::RollingBall {
                 carrier_object_id: *carrier_object_id,
-                definition: ProceduralSurfaceDefinition::RollingBallJet(jet),
+                definition: Box::new(ProceduralSurfaceDefinition::RollingBallJet(jet)),
             }
         }
         other => other.clone(),
@@ -2289,7 +2291,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
             jet.object_id,
             B5Surface::RollingBall {
                 carrier_object_id: jet.object_id,
-                definition,
+                definition: Box::new(definition),
             },
         )?;
     }
@@ -5266,17 +5268,7 @@ fn parse_circle_pcurve(
     let Some((surface, center, radius, range, angles)) = parse_circle_pcurve_fields(record) else {
         return Ok(None);
     };
-    rational_arc_pcurve(
-        ctx,
-        record,
-        surface,
-        center,
-        [1.0, 0.0],
-        [0.0, 1.0],
-        radius,
-        range,
-        angles,
-    )
+    rational_arc_pcurve(ctx, crate::families::b5::graph::RationalArcPcurveInputs { record, surface, center, reference_x: [1.0, 0.0], reference_y: [0.0, 1.0], radius, parameter_range: range, angle_range: angles })
 }
 
 fn parse_circle_pcurve_fields(record: &B5Record) -> CirclePcurveFields {
@@ -5319,17 +5311,7 @@ fn parse_class_1a_pcurve(
     else {
         return Ok(None);
     };
-    rational_arc_pcurve(
-        ctx,
-        record,
-        surface,
-        center,
-        reference_x,
-        reference_y,
-        radius,
-        range,
-        angles,
-    )
+    rational_arc_pcurve(ctx, crate::families::b5::graph::RationalArcPcurveInputs { record, surface, center, reference_x, reference_y, radius, parameter_range: range, angle_range: angles })
 }
 
 fn parse_class_1a_pcurve_fields(record: &B5Record) -> Class1aPcurveFields {
@@ -5376,19 +5358,21 @@ fn parse_class_1a_pcurve_fields(record: &B5Record) -> Class1aPcurveFields {
         angles,
     ))
 }
+#[derive(Clone, Copy)]
+struct RationalArcPcurveInputs<'input0> {
+record: &'input0 B5Record,
+surface: u32,
+center: [f64; 2],
+reference_x: [f64; 2],
+reference_y: [f64; 2],
+radius: f64,
+parameter_range: [f64; 2],
+angle_range: [f64; 2]
+}
 
-#[allow(clippy::too_many_arguments)]
-fn rational_arc_pcurve(
-    ctx: &DecodeContext<'_>,
-    record: &B5Record,
-    surface: u32,
-    center: [f64; 2],
-    reference_x: [f64; 2],
-    reference_y: [f64; 2],
-    radius: f64,
-    parameter_range: [f64; 2],
-    angle_range: [f64; 2],
-) -> Result<Option<B5Pcurve>, CodecError> {
+fn rational_arc_pcurve(ctx : &DecodeContext<'_>, inputs: RationalArcPcurveInputs<'_>) -> Result<Option<B5Pcurve>, CodecError> {
+let RationalArcPcurveInputs { record, surface, center, reference_x, reference_y, radius, parameter_range, angle_range } = inputs;
+
     let [start, end] = parameter_range;
     let [start_angle, end_angle] = angle_range;
     let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2).ceil();

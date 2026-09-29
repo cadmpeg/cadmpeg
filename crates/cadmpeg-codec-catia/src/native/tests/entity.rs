@@ -1575,7 +1575,7 @@ fn native_namespace_binds_and_validates_definition_values() {
         .storage
         .as_mut()
         .expect("decoded storage role")
-        .storage_record = None;
+        .record = None;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_storage
         .store(&mut namespace)

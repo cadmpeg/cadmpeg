@@ -1281,9 +1281,9 @@ mod tests {
             inline_body: None,
             owner: Some(CatiaObjectOwner::Entity(entity_id)),
             class: Some(crate::native::CatiaObjectClass {
-                class_ref: 0,
-                class_name: Some(class_name.to_string()),
-                class_entry: Some("entry".to_string()),
+                ordinal: 0,
+                name: Some(class_name.to_string()),
+                entry: Some("entry".to_string()),
             }),
             storage: None,
             payload: ObjectPayload {
@@ -1374,9 +1374,9 @@ mod tests {
                     ),
                 });
             source_record.storage = Some(crate::native::CatiaObjectStorage {
-                storage_ref: 10,
-                storage_record: None,
-                storage_design_object: None,
+                reference: 10,
+                record: None,
+                design_object: None,
             });
         } else {
             range_entity
@@ -2114,7 +2114,7 @@ mod tests {
             .class
             .as_mut()
             .expect("source class")
-            .class_name = Some(" \t".to_owned());
+            .name = Some(" \t".to_owned());
         native.entity_records[0]
             .constraint_range_mut()
             .expect("constraint range")

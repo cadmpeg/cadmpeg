@@ -951,17 +951,7 @@ impl MeshSelectionSearch<'_, '_> {
             let Some(port_identities) = self.port_identities else {
                 return Ok(());
             };
-            let Some(outcome) = resolve_singleton_mesh_selection(
-                self.ctx,
-                self.edge_rows,
-                self.vertex_points,
-                self.edge_candidates,
-                &selected_assignments,
-                &directions,
-                port_identities,
-                budget,
-                self.candidate_gauge,
-            )?
+            let Some(outcome) = resolve_singleton_mesh_selection(self.ctx, crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs { edge_rows: self.edge_rows, vertex_points: self.vertex_points, edge_candidates: self.edge_candidates, selected: &selected_assignments, directions: &directions, port_identities, budget, candidate_gauge: self.candidate_gauge })?
             else {
                 return Ok(());
             };
@@ -1250,17 +1240,7 @@ impl MeshSelectionSearch<'_, '_> {
                 .all(|candidates| candidates.len() == 1)
             {
                 if let Some(port_identities) = self.port_identities {
-                    let outcome = resolve_singleton_mesh_selection(
-                        self.ctx,
-                        self.edge_rows,
-                        self.vertex_points,
-                        self.edge_candidates,
-                        &selected_assignments,
-                        &directions,
-                        port_identities,
-                        budget,
-                        self.candidate_gauge,
-                    )?;
+                    let outcome = resolve_singleton_mesh_selection(self.ctx, crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs { edge_rows: self.edge_rows, vertex_points: self.vertex_points, edge_candidates: self.edge_candidates, selected: &selected_assignments, directions: &directions, port_identities, budget, candidate_gauge: self.candidate_gauge })?;
                     if let Some(outcome) = outcome {
                         match outcome {
                             MeshSolve::Solved((topology, assignment)) => {
@@ -1625,21 +1605,7 @@ pub(in crate::solve) fn parse_standard_mesh_endpoint_candidates(
         return Ok(None);
     };
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    resolve_standard_mesh_endpoint_candidates(
-        ctx,
-        &edge_rows,
-        &vertex_points,
-        edge_candidates,
-        assignments,
-        &port_identities,
-        None,
-        None,
-        &budget,
-        None,
-        None,
-        None,
-        None,
-    )
+    resolve_standard_mesh_endpoint_candidates(ctx, crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_candidates, assignments, port_identities: &port_identities, prepared_quotient: None, edge_direction_evidence: None, budget: &budget, partial_solution_valid: None, complete_solution_valid: None, candidate_gauge: None, priority_edges: None })
     .map(MeshSolve::into_option)
 }
 
@@ -2048,18 +2014,21 @@ pub(super) fn reduced_distinct_matching(
 
 // The selection owns the complete quotient inputs and the optional gauge. The
 // explicit signature keeps the two bounded materialization paths symmetric.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn resolve_singleton_mesh_selection(
-    ctx: &DecodeContext<'_>,
-    edge_rows: &[EdgeRow],
-    vertex_points: &[[f64; 3]],
-    edge_candidates: &[Vec<[usize; 2]>],
-    selected: &[MeshFaceBoundaryAssignment],
-    directions: &[Vec<Vec<bool>>],
-    port_identities: &[[u32; 2]],
-    budget: &WorkBudget<'_>,
-    candidate_gauge: Option<MeshCandidateGauge<'_>>,
-) -> Result<Option<MeshEndpointResolve>, CodecError> {
+#[derive(Clone, Copy)]
+pub(super) struct ResolveSingletonMeshSelectionInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8> {
+pub(super) edge_rows: &'input0 [EdgeRow],
+pub(super) vertex_points: &'input1 [[f64; 3]],
+pub(super) edge_candidates: &'input2 [Vec<[usize; 2]>],
+pub(super) selected: &'input3 [MeshFaceBoundaryAssignment],
+pub(super) directions: &'input4 [Vec<Vec<bool>>],
+pub(super) port_identities: &'input5 [[u32; 2]],
+pub(super) budget: &'input7 WorkBudget<'input6>,
+pub(super) candidate_gauge: Option<MeshCandidateGauge<'input8>>
+}
+
+pub(super) fn resolve_singleton_mesh_selection(ctx : &DecodeContext<'_>, inputs: ResolveSingletonMeshSelectionInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<Option<MeshEndpointResolve>, CodecError> {
+let ResolveSingletonMeshSelectionInputs { edge_rows, vertex_points, edge_candidates, selected, directions, port_identities, budget, candidate_gauge } = inputs;
+
     if selected.len() != directions.len()
         || edge_candidates.len() != edge_rows.len()
         || port_identities.len() != edge_rows.len()
