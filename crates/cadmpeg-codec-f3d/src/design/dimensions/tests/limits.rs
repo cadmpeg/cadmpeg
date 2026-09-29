@@ -287,6 +287,36 @@ fn projected_dimension_parameter_refuses_collection_limit() {
         ResourceDimension::CollectionItems);
 }
 
+#[test]
+fn group_dimension_constraint_refuses_collection_limit() {
+    assert_native_fallback_refusal(true, "f3d group dimension constraint",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn pair_dimension_output_refuses_collection_limit() {
+    assert_native_fallback_refusal(false, "f3d dimension constraint output",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn group_dimension_output_refuses_collection_limit() {
+    assert_native_fallback_refusal(true, "f3d dimension constraint output",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn annotation_dimension_output_refuses_collection_limit() {
+    assert_native_auxiliary_refusal(true, "f3d dimension constraint output",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn null_pair_dimension_output_refuses_collection_limit() {
+    assert_native_auxiliary_refusal(false, "f3d dimension constraint output",
+        ResourceDimension::CollectionItems);
+}
+
 fn assert_native_auxiliary_refusal(
     annotation: bool,
     operation: &'static str,
