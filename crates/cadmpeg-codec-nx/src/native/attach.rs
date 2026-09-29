@@ -1049,6 +1049,12 @@ fn attach_jpeg_preview_assets(
         annotations
             .derived(id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.charge_collection_items(1, "NX JPEG preview assets")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Asset>()),
+            "NX JPEG preview assets",
+        )?;
+        reserve_attach_vec(ctx, &mut ir.model.assets, 1, "NX JPEG preview assets")?;
         ir.model.assets.push(
             Asset::try_new(
                 id,
