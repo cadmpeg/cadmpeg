@@ -391,7 +391,7 @@ pub(super) fn pcurve_ranges_on_domain(
         .get(usize::try_from(candidate.degree()).ok()?)?;
     let last = *candidate.knots().get(candidate.control_points().len())?;
     (first < last).then_some(())?;
-    let mut ranges = Vec::with_capacity(3);
+    let mut ranges = Vec::new();
     for range in edge
         .and_then(edge_pcurve_parameter_ranges)
         .into_iter()

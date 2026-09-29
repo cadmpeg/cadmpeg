@@ -547,7 +547,7 @@ pub fn alloc_filled<T: Clone>(
             operation,
         ))
     })?;
-    out.resize(count, value);
+    out.extend(std::iter::repeat(value).take(count));
     Ok(out)
 }
 

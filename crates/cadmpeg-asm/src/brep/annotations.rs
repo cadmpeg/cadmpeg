@@ -102,7 +102,7 @@ pub(super) fn emit_annotation_records(
     for record in records {
         let entity_id = id(format, record.index as i64).into_string();
         if emitted_ids.contains(entity_id.as_str()) {
-            let mut derived_fields = Vec::with_capacity(2);
+            let mut derived_fields = Vec::new();
             match record.head() {
                 "plane" => {
                     derived_fields.extend(["geometry.normal", "geometry.u_axis"]);

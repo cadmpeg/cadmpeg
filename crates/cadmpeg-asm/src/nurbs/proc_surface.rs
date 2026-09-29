@@ -3730,7 +3730,7 @@ fn off_spl_sur(
         // displacement. The second leaves the point set unchanged. The revision
         // form reads these positions where the earlier form reads U/V sense
         // enums.
-        let mut flags = Vec::with_capacity(4);
+        let mut flags = Vec::new();
         for _ in 0..4 {
             flags.push(cur.take_bool()?);
         }

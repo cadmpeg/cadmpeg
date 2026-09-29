@@ -136,8 +136,8 @@ pub(super) fn decode_pcurve_block_with_end(
         read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
     // The record states a pole and its weight together, so the reader states
     // rows: there is no pole lane and no weight lane for a reader to pair.
-    let mut points = Vec::with_capacity(n_poles);
-    let mut weighted = Vec::with_capacity(n_poles);
+    let mut points = Vec::new();
+    let mut weighted = Vec::new();
     for _ in 0..n_poles {
         if *b.get(pos)? != 0x06 {
             return None;

@@ -22,12 +22,12 @@ pub(super) enum ReadPoles3 {
 }
 
 impl ReadPoles3 {
-    /// Start a read of `count` poles in the marker-selected form.
-    pub(super) fn with_capacity(count: usize, rational: bool) -> Self {
+    /// Start a read of poles in the marker-selected form.
+    pub(super) fn empty(rational: bool) -> Self {
         if rational {
-            Self::Rational(Vec::with_capacity(count))
+            Self::Rational(Vec::new())
         } else {
-            Self::Polynomial(Vec::with_capacity(count))
+            Self::Polynomial(Vec::new())
         }
     }
 
@@ -382,7 +382,7 @@ pub(super) fn read_knots(
         mults.push(take_tagged_int(b, pos, 0x04, int_width)?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    let mut expanded = Vec::with_capacity(expansion.expanded_len());
+    let mut expanded = Vec::new();
     for (index, (kv, multiplicity)) in knots.iter().zip(&mults).enumerate() {
         let run_length = usize::try_from(*multiplicity).ok()?
             + usize::from(index == 0 || index + 1 == mults.len());
@@ -401,7 +401,7 @@ pub(super) fn read_control_points(
     count: usize,
     marker: BsplineMarker,
 ) -> Option<ReadPoles3> {
-    let mut poles = ReadPoles3::with_capacity(count, marker.rational());
+    let mut poles = ReadPoles3::empty(marker.rational());
     for _ in 0..count {
         let mut comps = [0.0f64; 4];
         for comp in comps.iter_mut().take(marker.cp_dims()) {
@@ -650,7 +650,7 @@ mod string_width_tests {
     /// read instead.
     #[test]
     fn read_poles_state_rows_and_refuse_an_unusable_weight() {
-        let mut poles = ReadPoles3::with_capacity(2, true);
+        let mut poles = ReadPoles3::empty(true);
         assert!(poles.push(Point3::new(0.0, 0.0, 0.0), 1.0).is_some());
         assert!(poles.push(Point3::new(1.0, 0.0, 0.0), 0.0).is_none());
         let ReadPoles3::Rational(rows) = poles else {
@@ -658,7 +658,7 @@ mod string_width_tests {
         };
         assert_eq!(rows.len(), 1);
 
-        let mut grid = ReadPoles3::with_capacity(4, false);
+        let mut grid = ReadPoles3::empty(false);
         for index in 0..4 {
             assert!(grid
                 .push(Point3::new(f64::from(index), 0.0, 0.0), 1.0)
