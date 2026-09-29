@@ -10,7 +10,7 @@ use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
     SketchInputLink, SketchRelationKind,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[test]
 fn qualified_operand_falls_back_to_marker_family_ordinal() {
@@ -308,7 +308,7 @@ fn roster_point_operand_uses_coordinate_point_order() {
         markers.iter(),
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
         0,
-        &HashSet::from([String::from("first")]),
+        |id| id == "first",
     )
     .is_none());
     assert!(resolve_operand_marker(
@@ -700,7 +700,7 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
             &markers,
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
             10,
-            &HashSet::from(["curve-7".into()]),
+            |id| id == "curve-7",
         )
         .map(crate::records::SketchInputEntity::id),
         Some("curve-5")
@@ -733,7 +733,7 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
             &markers,
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
             3,
-            &HashSet::from(["first".into()]),
+            |id| id == "first",
         )
         .map(crate::records::SketchInputEntity::id),
         Some("second")
