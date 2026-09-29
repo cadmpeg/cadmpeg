@@ -1850,21 +1850,16 @@ fn attach_feature_operations(
         .iter()
         .map(|reference| (reference.id.as_str(), reference))
         .collect::<BTreeMap<_, _>>();
+    let mut group_reservation = ctx.reserve_scoped(0, "NX feature operation group indexes")?;
     let mut body_segment_uses_by_reference =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodySegmentUse>>::new();
     for use_ in body_segment_uses {
-        body_segment_uses_by_reference
-            .entry(use_.feature_body_reference.as_str())
-            .or_default()
-            .push(use_);
+        push_grouped_operation(ctx, &mut group_reservation, &mut body_segment_uses_by_reference, use_.feature_body_reference.as_str(), || use_, 0)?;
     }
     let mut body_data_block_uses_by_reference =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyDataBlockUse>>::new();
     for use_ in body_data_block_uses {
-        body_data_block_uses_by_reference
-            .entry(use_.feature_body_reference.as_str())
-            .or_default()
-            .push(use_);
+        push_grouped_operation(ctx, &mut group_reservation, &mut body_data_block_uses_by_reference, use_.feature_body_reference.as_str(), || use_, 0)?;
     }
     let body_writer_references_by_operation =
         crate::native::features::unique_feature_body_references(ctx, body_references)?;
@@ -1874,19 +1869,13 @@ fn attach_feature_operations(
         else {
             continue;
         };
-        offset_store_bodies_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push((reference.body.value(), body_use.data_block.clone()));
+        push_grouped_operation(ctx, &mut group_reservation, &mut offset_store_bodies_by_operation, reference.operation_label.as_str(), || (reference.body.value(), body_use.data_block.clone()), body_use.data_block.len())?;
     }
     let body_references = admitted_body_references;
     let mut body_reference_occurrences_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyReference>>::new();
     for reference in body_reference_occurrences {
-        body_reference_occurrences_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        push_grouped_operation(ctx, &mut group_reservation, &mut body_reference_occurrences_by_operation, reference.operation_label.as_str(), || reference, 0)?;
     }
     let mut body_writer_history = BodyWriterHistory::default();
     if let Some(feature) = initial_body_id
@@ -1901,10 +1890,7 @@ fn attach_feature_operations(
     let mut input_blocks_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureInputBlock>>::new();
     for input in input_blocks {
-        input_blocks_by_operation
-            .entry(input.operation_label.as_str())
-            .or_default()
-            .push(input);
+        push_grouped_operation(ctx, &mut group_reservation, &mut input_blocks_by_operation, input.operation_label.as_str(), || input, 0)?;
     }
     let input_column_row_uses_by_operation =
         records_by_operation(ctx, input_column_row_uses, |use_| &use_.operation_label)?;
@@ -1942,10 +1928,7 @@ fn attach_feature_operations(
     let mut datum_csys_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumCsysBlockUse>>::new();
     for block_use in datum_csys_block_uses {
-        datum_csys_uses_by_input_operation
-            .entry(block_use.input_operation_label.as_str())
-            .or_default()
-            .push(block_use);
+        push_grouped_operation(ctx, &mut group_reservation, &mut datum_csys_uses_by_input_operation, block_use.input_operation_label.as_str(), || block_use, 0)?;
     }
     let datum_plane_headers_by_operation = datum_plane_headers
         .iter()
@@ -1966,10 +1949,7 @@ fn attach_feature_operations(
     let mut datum_plane_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneBlockUse>>::new();
     for block_use in datum_plane_block_uses {
-        datum_plane_uses_by_input_operation
-            .entry(block_use.input_operation_label.as_str())
-            .or_default()
-            .push(block_use);
+        push_grouped_operation(ctx, &mut group_reservation, &mut datum_plane_uses_by_input_operation, block_use.input_operation_label.as_str(), || block_use, 0)?;
     }
     let chronological_labels =
         crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
@@ -1985,22 +1965,13 @@ fn attach_feature_operations(
     let mut datum_identity_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneCsysIdentityUse>>::new();
     for identity_use in datum_plane_csys_identity_uses {
-        datum_identity_uses_by_operation
-            .entry(identity_use.datum_plane_operation_label.as_str())
-            .or_default()
-            .push(identity_use);
-        datum_identity_uses_by_operation
-            .entry(identity_use.datum_csys_operation_label.as_str())
-            .or_default()
-            .push(identity_use);
+        push_grouped_operation(ctx, &mut group_reservation, &mut datum_identity_uses_by_operation, identity_use.datum_plane_operation_label.as_str(), || identity_use, 0)?;
+        push_grouped_operation(ctx, &mut group_reservation, &mut datum_identity_uses_by_operation, identity_use.datum_csys_operation_label.as_str(), || identity_use, 0)?;
     }
     let mut sketch_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchReference>>::new();
     for reference in sketch_references {
-        sketch_references_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_references_by_operation, reference.operation_label.as_str(), || reference, 0)?;
     }
     let projected_curve_references_by_operation =
         records_by_operation(ctx, projected_curve_references, |reference| {
@@ -2111,42 +2082,27 @@ fn attach_feature_operations(
     let mut sketch_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchNamedPointBlockUse>>::new();
     for block_use in sketch_named_point_block_uses {
-        sketch_named_point_uses_by_operation
-            .entry(block_use.operation_label.as_str())
-            .or_default()
-            .push(block_use);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_named_point_uses_by_operation, block_use.operation_label.as_str(), || block_use, 0)?;
     }
     let mut sketch_preceding_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPrecedingNamedPointUse>>::new();
     for point_use in sketch_preceding_named_point_uses {
-        sketch_preceding_named_point_uses_by_operation
-            .entry(point_use.operation_label.as_str())
-            .or_default()
-            .push(point_use);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_preceding_named_point_uses_by_operation, point_use.operation_label.as_str(), || point_use, 0)?;
     }
     let mut sketch_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPointUse>>::new();
     for point_use in sketch_point_uses {
-        sketch_point_uses_by_operation
-            .entry(point_use.operation_label.as_str())
-            .or_default()
-            .push(point_use);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_point_uses_by_operation, point_use.operation_label.as_str(), || point_use, 0)?;
     }
     let mut sketch_point_groups_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPointGroup>>::new();
     for group in sketch_point_groups {
-        sketch_point_groups_by_operation
-            .entry(group.operation_label.as_str())
-            .or_default()
-            .push(group);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_point_groups_by_operation, group.operation_label.as_str(), || group, 0)?;
     }
     let mut extrude_profile_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureExtrudeProfileReference>>::new();
     for reference in extrude_profile_references {
-        extrude_profile_references_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        push_grouped_operation(ctx, &mut group_reservation, &mut extrude_profile_references_by_operation, reference.operation_label.as_str(), || reference, 0)?;
     }
     let extrude_construction_profiles_by_operation = extrude_construction_profiles
         .iter()
@@ -2155,10 +2111,7 @@ fn attach_feature_operations(
     let mut operation_body_operands_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
     for operand in operation_body_operands {
-        operation_body_operands_by_operation
-            .entry(operand.operation_label.as_str())
-            .or_default()
-            .push(operand);
+        push_grouped_operation(ctx, &mut group_reservation, &mut operation_body_operands_by_operation, operand.operation_label.as_str(), || operand, 0)?;
     }
     let mut segment_body_operands_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
@@ -2166,10 +2119,7 @@ fn attach_feature_operations(
         .iter()
         .filter(|operand| !operand.segment_body_bindings.is_empty())
     {
-        segment_body_operands_by_operation
-            .entry(operand.operation_label.as_str())
-            .or_default()
-            .push(operand);
+        push_grouped_operation(ctx, &mut group_reservation, &mut segment_body_operands_by_operation, operand.operation_label.as_str(), || operand, 0)?;
     }
     let sketch_construction_inputs_by_operation = sketch_construction_inputs
         .iter()
@@ -2184,42 +2134,27 @@ fn attach_feature_operations(
     let mut sketch_coordinate_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadScalarPair>>::new();
     for pair in sketch_coordinate_pairs {
-        sketch_coordinate_pairs_by_operation
-            .entry(pair.operation_label.as_str())
-            .or_default()
-            .push(pair);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_coordinate_pairs_by_operation, pair.operation_label.as_str(), || pair, 0)?;
     }
     let mut sketch_fixed_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadFixedPair>>::new();
     for pair in sketch_fixed_pairs {
-        sketch_fixed_pairs_by_operation
-            .entry(pair.operation_label.as_str())
-            .or_default()
-            .push(pair);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_fixed_pairs_by_operation, pair.operation_label.as_str(), || pair, 0)?;
     }
     let mut sketch_mixed_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadMixedPair>>::new();
     for pair in sketch_mixed_pairs {
-        sketch_mixed_pairs_by_operation
-            .entry(pair.operation_label.as_str())
-            .or_default()
-            .push(pair);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_mixed_pairs_by_operation, pair.operation_label.as_str(), || pair, 0)?;
     }
     let mut sketch_payload_scalar_lanes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadScalarLane>>::new();
     for lane in sketch_payload_scalar_lanes {
-        sketch_payload_scalar_lanes_by_operation
-            .entry(lane.operation_label.as_str())
-            .or_default()
-            .push(lane);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_payload_scalar_lanes_by_operation, lane.operation_label.as_str(), || lane, 0)?;
     }
     let mut sketch_fixed_points_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchFixedPoint>>::new();
     for point in sketch_fixed_points {
-        sketch_fixed_points_by_operation
-            .entry(point.operation_label.as_str())
-            .or_default()
-            .push(point);
+        push_grouped_operation(ctx, &mut group_reservation, &mut sketch_fixed_points_by_operation, point.operation_label.as_str(), || point, 0)?;
     }
     let block_constructions_by_operation = block_constructions
         .iter()
@@ -2236,18 +2171,12 @@ fn attach_feature_operations(
     let mut block_payload_points_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPoint>>::new();
     for point in block_payload_points {
-        block_payload_points_by_operation
-            .entry(point.operation_label.as_str())
-            .or_default()
-            .push(point);
+        push_grouped_operation(ctx, &mut group_reservation, &mut block_payload_points_by_operation, point.operation_label.as_str(), || point, 0)?;
     }
     let mut block_payload_point_groups_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPointGroup>>::new();
     for group in block_payload_point_groups {
-        block_payload_point_groups_by_operation
-            .entry(group.operation_label.as_str())
-            .or_default()
-            .push(group);
+        push_grouped_operation(ctx, &mut group_reservation, &mut block_payload_point_groups_by_operation, group.operation_label.as_str(), || group, 0)?;
     }
     let extrude_32_constructions_by_operation = extrude_32_constructions
         .iter()
@@ -2270,10 +2199,7 @@ fn attach_feature_operations(
         Vec<&crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple>,
     >::new();
     for triple in operation_body_scalar_triples {
-        operation_body_scalar_triples_by_operation
-            .entry(triple.operation_label.as_str())
-            .or_default()
-            .push(triple);
+        push_grouped_operation(ctx, &mut group_reservation, &mut operation_body_scalar_triples_by_operation, triple.operation_label.as_str(), || triple, 0)?;
     }
     for triples in operation_body_scalar_triples_by_operation.values_mut() {
         triples.sort_by_key(|triple| triple.body_reference_ordinal);
@@ -2281,26 +2207,17 @@ fn attach_feature_operations(
     let mut operation_body_members_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyMember>>::new();
     for member in operation_body_members {
-        operation_body_members_by_operation
-            .entry(member.operation_label.as_str())
-            .or_default()
-            .push(member);
+        push_grouped_operation(ctx, &mut group_reservation, &mut operation_body_members_by_operation, member.operation_label.as_str(), || member, 0)?;
     }
     let mut operation_body_11_continuations_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBody11Continuation>>::new();
     for continuation in operation_body_11_continuations {
-        operation_body_11_continuations_by_operation
-            .entry(continuation.operation_label.as_str())
-            .or_default()
-            .push(continuation);
+        push_grouped_operation(ctx, &mut group_reservation, &mut operation_body_11_continuations_by_operation, continuation.operation_label.as_str(), || continuation, 0)?;
     }
     let mut operation_body_reference_lanes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyReferenceLane>>::new();
     for lane in operation_body_reference_lanes {
-        operation_body_reference_lanes_by_operation
-            .entry(lane.operation_label.as_str())
-            .or_default()
-            .push(lane);
+        push_grouped_operation(ctx, &mut group_reservation, &mut operation_body_reference_lanes_by_operation, lane.operation_label.as_str(), || lane, 0)?;
     }
     let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
     let mut bodies_by_segment_binding = BTreeMap::<&str, Vec<BodyId>>::new();
@@ -4864,6 +4781,29 @@ fn native_fixed_point_entities(
 struct OperationRecords<'a, 'ctx, T> {
     grouped: BTreeMap<&'a str, Vec<&'a T>>,
     _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn push_grouped_operation<K: Ord, V>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    grouped: &mut BTreeMap<K, Vec<V>>,
+    key: K,
+    value: impl FnOnce() -> V,
+    owned_bytes: usize,
+) -> Result<(), CodecError> {
+    ctx.charge_work(1, "NX feature operation group index")?;
+    if !grouped.contains_key(&key) {
+        ctx.charge_collection_items(1, "NX feature operation group key")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(K, Vec<V>)>()))?;
+    }
+    let bytes = std::mem::size_of::<V>().checked_add(owned_bytes)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX feature operation group member", 0, cadmpeg_core::decode::u64_from_index(owned_bytes)))?;
+    ctx.charge_collection_items(1, "NX feature operation group member")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+    let members = grouped.entry(key).or_default();
+    reserve_attach_vec(ctx, members, 1, "NX feature operation group member")?;
+    members.push(value());
+    Ok(())
 }
 
 impl<'a, T> std::ops::Deref for OperationRecords<'a, '_, T> {
