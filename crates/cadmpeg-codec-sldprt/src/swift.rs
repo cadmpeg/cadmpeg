@@ -1570,28 +1570,38 @@ fn hole_diameter_excluding_counterbore(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    let context = annotation
-        .features
-        .references
-        .iter()
-        .map(|reference| reference.id.clone())
-        .collect::<BTreeSet<_>>();
+    let mut context = BTreeSet::new();
+    for reference in &annotation.features.references {
+        ctx.charge_work(1, "collect SWIFT diameter context")?;
+        if !context.contains(reference.id.as_str()) {
+            ctx.charge_collection_items(1, "collect SWIFT diameter context")?;
+            context.insert(reference.id.as_str());
+        }
+    }
     if context.is_empty() {
         return Ok(None);
     }
-    let counterbore_diameters = root
-        .annotations
-        .entities
-        .iter()
-        .filter(|candidate| {
-            !suppressed(candidate) && short_class(&candidate.class) == "GdtCounterBore"
-        })
-        .filter(|candidate| {
-            direct_feature_context(candidate, feature_index, "GdtCylinder").as_ref()
-                == Some(&context)
-        })
-        .filter_map(|candidate| counterbore_from_direct_geometry(candidate, feature_index));
-    let Some(counterbore_diameter) = unique_measurement(counterbore_diameters) else { return Ok(None) };
+    let mut counterbore_diameter: Option<PositiveReal> = None;
+    for candidate in &root.annotations.entities {
+        ctx.charge_work(1, "scan SWIFT counterbore diameters")?;
+        if suppressed(candidate) || short_class(&candidate.class) != "GdtCounterBore" {
+            continue;
+        }
+        if direct_feature_context(ctx, candidate, feature_index, "GdtCylinder")?.as_ref()
+            != Some(&context)
+        {
+            continue;
+        }
+        let Some(value) = counterbore_from_direct_geometry(candidate, feature_index) else { continue };
+        if let Some(first) = counterbore_diameter {
+            if !approximately_equal(value.get(), first.get()) {
+                return Ok(None);
+            }
+        } else {
+            counterbore_diameter = Some(value);
+        }
+    }
+    let Some(counterbore_diameter) = counterbore_diameter else { return Ok(None) };
     let contributors = diameter_contributors(ctx, annotation, feature_index)?;
     let mut removed_counterbore = false;
     let remaining = contributors.into_iter().filter(|value| {
@@ -1694,7 +1704,7 @@ fn depth_nominal(
             exact,
         }));
     }
-    if let Some(exact) = counterbore_depth_from_sibling(root, annotation, feature_index) {
+    if let Some(exact) = counterbore_depth_from_sibling(ctx, root, annotation, feature_index)? {
         return Ok(Some(ImplicitNominal::RenderedOrExact {
             kind: RenderedDimensionKind::Depth,
             geometry: exact,
@@ -1710,27 +1720,38 @@ fn depth_nominal(
 }
 
 fn counterbore_depth_from_sibling(
+    ctx: &DecodeContext<'_>,
     root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
-    let plane = unique_direct_feature(annotation, feature_index, "GdtPlane")?;
-    let context = direct_feature_context(annotation, feature_index, "GdtPlane")?;
-    let candidates = root
-        .annotations
-        .entities
-        .iter()
-        .filter(|candidate| {
-            !suppressed(candidate) && short_class(&candidate.class) == "GdtCounterBore"
-        })
-        .filter(|candidate| {
-            direct_feature_context(candidate, feature_index, "GdtCylinder").as_ref()
-                == Some(&context)
-        })
-        .filter_map(|candidate| unique_direct_feature(candidate, feature_index, "GdtCylinder"))
-        .filter(|cylinder| plane_terminates_cylinder(plane, cylinder))
-        .filter_map(nominal_cylinder_depth);
-    unique_measurement(candidates)
+) -> Result<Option<PositiveReal>, CodecError> {
+    let Some(plane) = unique_direct_feature(annotation, feature_index, "GdtPlane") else { return Ok(None) };
+    let Some(context) = direct_feature_context(ctx, annotation, feature_index, "GdtPlane")? else { return Ok(None) };
+    let mut first: Option<PositiveReal> = None;
+    for candidate in &root.annotations.entities {
+        ctx.charge_work(1, "scan SWIFT counterbore depths")?;
+        if suppressed(candidate) || short_class(&candidate.class) != "GdtCounterBore" {
+            continue;
+        }
+        if direct_feature_context(ctx, candidate, feature_index, "GdtCylinder")?.as_ref()
+            != Some(&context)
+        {
+            continue;
+        }
+        let Some(cylinder) = unique_direct_feature(candidate, feature_index, "GdtCylinder") else { continue };
+        if !plane_terminates_cylinder(plane, cylinder) {
+            continue;
+        }
+        let Some(value) = nominal_cylinder_depth(cylinder) else { continue };
+        if let Some(prior) = first {
+            if !approximately_equal(value.get(), prior.get()) {
+                return Ok(None);
+            }
+        } else {
+            first = Some(value);
+        }
+    }
+    Ok(first)
 }
 
 fn unique_direct_feature<'a>(
@@ -1748,23 +1769,28 @@ fn unique_direct_feature<'a>(
     candidates.next().is_none().then_some(feature)
 }
 
-fn direct_feature_context(
-    annotation: &Entity,
+fn direct_feature_context<'a>(
+    ctx: &DecodeContext<'_>,
+    annotation: &'a Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     operation_class: &str,
-) -> Option<BTreeSet<String>> {
-    let context = annotation
-        .features
-        .references
-        .iter()
-        .filter(|reference| {
+) -> Result<Option<BTreeSet<&'a str>>, CodecError> {
+    let mut context = BTreeSet::new();
+    for reference in &annotation.features.references {
+        ctx.charge_work(1, "scan SWIFT feature context")?;
+        if !(
             feature_index
                 .get(reference.id.as_str())
                 .is_none_or(|feature| short_class(&feature.class) != operation_class)
-        })
-        .map(|reference| reference.id.clone())
-        .collect::<BTreeSet<_>>();
-    (!context.is_empty()).then_some(context)
+        ) {
+            continue;
+        }
+        if !context.contains(reference.id.as_str()) {
+            ctx.charge_collection_items(1, "collect SWIFT feature context")?;
+            context.insert(reference.id.as_str());
+        }
+    }
+    Ok((!context.is_empty()).then_some(context))
 }
 
 fn plane_terminates_cylinder(plane_feature: &Entity, cylinder_feature: &Entity) -> bool {
