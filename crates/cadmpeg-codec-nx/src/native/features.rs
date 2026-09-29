@@ -10390,21 +10390,15 @@ fn unique_offset_data_store(
 
 /// Join operation input lanes to uniquely resolved parameter declarations.
 pub(super) fn feature_parameter_bindings(
+    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     references: &[DataBlockReference],
     expressions: &[Expression],
-) -> Vec<FeatureParameterBinding> {
-    let mut expressions_by_declaration = BTreeMap::<&str, Vec<&str>>::new();
-    for expression in expressions {
-        if let Some(declaration) = expression.declaration.as_deref() {
-            expressions_by_declaration
-                .entry(declaration)
-                .or_default()
-                .push(expression.id.as_str());
-        }
-    }
+) -> Result<Vec<FeatureParameterBinding>, CodecError> {
     let mut bindings = Vec::new();
     for input in inputs {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(references.len()),
+            "scan NX parameter binding references")?;
         for reference in references
             .iter()
             .filter(|reference| reference.data_block == input.data_block)
@@ -10416,26 +10410,44 @@ pub(super) fn feature_parameter_bindings(
                 .operation_label
                 .rsplit_once('#')
                 .map_or(input.operation_label.as_str(), |(_, key)| key);
+            let id = format_charged_text(ctx, format_args!(
+                "nx:feature-history:parameter-binding#{operation_key}-{}-{}",
+                input.input_slot, reference.ordinal),
+                "NX parameter binding identity")?;
+            let operation_label = copy_operation_text(ctx, &input.operation_label,
+                "NX parameter binding operation")?;
+            let input_block = copy_operation_text(ctx, &input.data_block,
+                "NX parameter binding input block")?;
+            let declaration = copy_operation_text(ctx, expression_declaration,
+                "NX parameter binding declaration")?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(expressions.len()),
+                "scan NX parameter binding expressions")?;
+            let mut matches = expressions.iter().filter(|expression| {
+                expression.declaration.as_deref() == Some(expression_declaration.as_str())
+            });
+            let expression = match (matches.next(), matches.next()) {
+                (Some(expression), None) => Some(copy_operation_text(ctx, &expression.id,
+                    "NX parameter binding expression")?),
+                _ => None,
+            };
+            ctx.charge_collection_items(1, "NX parameter bindings")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureParameterBinding>()), "NX parameter bindings")?;
+            bindings.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX parameter bindings", 0, 1))?;
             bindings.push(FeatureParameterBinding {
-                id: format!(
-                    "nx:feature-history:parameter-binding#{operation_key}-{}-{}",
-                    input.input_slot, reference.ordinal
-                ),
-                operation_label: input.operation_label.clone(),
+                id, operation_label,
                 input_slot: input.input_slot,
-                input_block: input.data_block.clone(),
+                input_block,
                 reference_ordinal: reference.ordinal,
-                expression_declaration: expression_declaration.clone(),
-                expression: expressions_by_declaration
-                    .get(expression_declaration.as_str())
-                    .and_then(|matches| matches.as_slice().first().filter(|_| matches.len() == 1))
-                    .map(|expression| (*expression).to_string()),
+                expression_declaration: declaration,
+                expression,
                 object_id: reference.object.value(),
                 source_offset: reference.source_offset,
             });
         }
     }
-    bindings
+    Ok(bindings)
 }
 
 /// Group exact expression bindings by consuming operation and expression.

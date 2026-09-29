@@ -1407,7 +1407,7 @@ impl NativeModel {
             &data_block_target_index_rows,
         )?;
         let feature_parameter_bindings =
-            feature_parameter_bindings(&feature_input_blocks, &data_block_references, &expressions);
+            feature_parameter_bindings(ctx, &feature_input_blocks, &data_block_references, &expressions)?;
         let feature_parameter_uses = feature_parameter_uses(&feature_parameter_bindings);
         let feature_block_dimensions = feature_block_dimensions(
             ctx,
