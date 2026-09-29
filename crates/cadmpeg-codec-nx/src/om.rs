@@ -336,33 +336,29 @@ fn color_table_end(bytes: &[u8], start: usize) -> Option<usize> {
     Some(at)
 }
 
-fn color_table_at(bytes: &[u8], start: usize) -> Option<ColorTable<'_>> {
+fn color_table_at(bytes: &[u8], start: usize) -> Result<Option<ColorTable<'_>>, CodecError> {
     let mut at = start + COLOR_TABLE_NAME_HEADER.len();
-    let mut names = Vec::with_capacity(217);
+    let mut names = cadmpeg_core::decode::DecodeContext::admitted_vec(217, "NX color table names")?;
     for _ in 0..217 {
-        let (name, width) = color_name_frame(bytes, at)?;
+        let Some((name, width)) = color_name_frame(bytes, at) else { return Ok(None); };
         names.push(name);
         at += width;
     }
     at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
-
-    let background = color_components(bytes, &mut at)?;
-    let mut definitions = Vec::with_capacity(PALETTE_SIZE);
+    let Some(background) = color_components(bytes, &mut at) else { return Ok(None); };
+    let mut definitions = cadmpeg_core::decode::DecodeContext::admitted_vec(PALETTE_SIZE, "NX color table definitions")?;
     for color_index in PaletteIndex::all() {
         let offset = at;
         at += 1 + color_index.definition_token().1 + 3;
-        let components = color_components(bytes, &mut at)?;
+        let Some(components) = color_components(bytes, &mut at) else { return Ok(None); };
         definitions.push(ColorTableDefinition {
             name: names[usize::from(color_index.value())],
             components,
             offset,
         });
     }
-    Some(ColorTable {
-        offset: start,
-        background,
-        definitions: definitions.try_into().ok()?,
-    })
+    let Ok(definitions) = definitions.try_into() else { return Ok(None); };
+    Ok(Some(ColorTable { offset: start, background, definitions }))
 }
 
 /// Decode every complete NX part color table in a bounded byte region.
@@ -386,7 +382,7 @@ pub(crate) fn color_tables<'a>(
             start += 1;
             continue;
         };
-        if let Some(table) = color_table_at(bytes, start) {
+        if let Some(table) = color_table_at(bytes, start)? {
             ctx.reserve_retained_vec(&mut tables, 1, "nx part color tables")?;
             tables.push(table);
         }
@@ -1288,7 +1284,7 @@ impl<'a> Section<'a> {
         else {
             return Ok(None);
         };
-        let mut ends = Vec::with_capacity(2);
+        let mut ends = cadmpeg_core::decode::DecodeContext::admitted_vec(2, "NX operation state boundaries")?;
         if let Some(table) = &group {
             let Some(overlap_end) =
                 terminal.checked_add(table.groups().first().opener().bytes().len())
@@ -2171,26 +2167,20 @@ pub(crate) fn point_feature_payload_header(
 pub(crate) fn point_feature_scalar_lane(
     preceding_block: &[u8],
     target_block: &[u8],
-) -> Option<PointFeatureScalarLane> {
+) -> Result<Option<PointFeatureScalarLane>, CodecError> {
     const SUFFIX: [u8; 19] = [
         0x00, 0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
         0x02, 0x00, 0x01, 0x00,
     ];
-    let preceding_start = preceding_block.len().checked_sub(3)?;
-    (target_block.get(45..64) == Some(&SUFFIX)).then_some(())?;
-    let mut lane = Vec::with_capacity(48);
+    let Some(preceding_start) = preceding_block.len().checked_sub(3) else { return Ok(None); };
+    if target_block.get(45..64) != Some(&SUFFIX) { return Ok(None); }
+    let Some(target) = target_block.get(..45) else { return Ok(None); };
+    let mut lane = cadmpeg_core::decode::DecodeContext::admitted_vec(48, "NX point feature scalar lane")?;
     lane.extend_from_slice(&preceding_block[preceding_start..]);
-    lane.extend_from_slice(target_block.get(..45)?);
-    let values = lane
-        .chunks_exact(8)
-        .map(ShiftedBinary64::read)
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
-    Some(PointFeatureScalarLane {
-        values,
-        offset: preceding_start,
-    })
+    lane.extend_from_slice(target);
+    let Some(values) = lane.chunks_exact(8).map(ShiftedBinary64::read).collect::<Option<Vec<_>>>() else { return Ok(None); };
+    let Ok(values) = values.try_into() else { return Ok(None); };
+    Ok(Some(PointFeatureScalarLane { values, offset: preceding_start }))
 }
 
 /// Decode the exact leading construction branch in a bounded `SWP104`

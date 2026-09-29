@@ -1010,7 +1010,8 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     if !domain.into_iter().all(f64::is_finite) || domain[0] >= domain[1] {
         return Ok(None);
     }
-    let mut grid = Vec::with_capacity(9 * 5);
+    let mut grid = Vec::new();
+    let _grid_reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut grid, 9 * 5, "nx blend parameter grid")?;
     for u_index in 0..=8 {
         let Some(u) = cadmpeg_ir::math::interpolate(domain[0], domain[1], f64::from(u_index) / 8.0)
         else {
@@ -1475,7 +1476,7 @@ impl BlendSurfaceFrameCache {
             return Ok(());
         }
         let surface = match geometry_budget.charges { Some(ctx) => ctx.copy_retained_text_limit(surface.as_str(), "nx blend frame cache identity"), None => Ok(surface.as_str().to_owned()) }?;
-        geometry_budget.charge_collection_items(1, "nx blend frame cache entries")?;
+        geometry_budget.charges.map_or(Ok(()), |ctx| ctx.charge_collection_items_limit(cadmpeg_core::decode::u64_from_index(1), "nx blend frame cache entries"))?;
         if self.entries.len() == MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
             self.entries.pop_front();
         }
@@ -1521,7 +1522,7 @@ impl BlendSurfaceFrameCache {
             return Ok(());
         }
         let surface = match geometry_budget.charges { Some(ctx) => ctx.copy_retained_text_limit(surface.as_str(), "nx blend boundary cache identity"), None => Ok(surface.as_str().to_owned()) }?;
-        geometry_budget.charge_collection_items(1, "nx blend boundary cache entries")?;
+        geometry_budget.charges.map_or(Ok(()), |ctx| ctx.charge_collection_items_limit(cadmpeg_core::decode::u64_from_index(1), "nx blend boundary cache entries"))?;
         if self.boundary_points.len() == MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
             self.boundary_points.pop_front();
         }
@@ -1564,7 +1565,7 @@ pub(super) struct BlendContactSeedCache {
 impl Default for BlendContactSeedCache {
     fn default() -> Self {
         Self {
-            entries: Vec::with_capacity(MAX_BLEND_CONTACT_SEEDS),
+            entries: Vec::new(),
         }
     }
 }
@@ -1608,7 +1609,7 @@ impl BlendContactSeedCache {
             return Ok(());
         }
         if self.entries.len() < MAX_BLEND_CONTACT_SEEDS {
-            geometry_budget.charge_collection_items(1, "nx blend contact seed cache entries")?;
+            let _entry_reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut self.entries, 1, "nx blend contact seed cache entries")?;
             self.entries.push(seed);
             return Ok(());
         }
@@ -4619,7 +4620,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
             control.z - point.z,
         ));
     }
-    geometry_budget.charge_collection_items(count, "nx spine positive controls")?;
+    geometry_budget.charges.map_or(Ok(()), |ctx| ctx.charge_collection_items_limit(cadmpeg_core::decode::u64_from_index(count), "nx spine positive controls"))?;
     let Some(controls) = positive_controls(
         &residuals,
         (!weights.is_empty()).then_some(weights.as_slice()),
@@ -4629,7 +4630,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     };
     let Some(spans) =
         homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
-            geometry_budget.charge_collection_items(count, operation)
+            geometry_budget.charges.map_or(Ok(()), |ctx| ctx.charge_collection_items_limit(cadmpeg_core::decode::u64_from_index(count), operation))
         })?
     else {
         return Ok(None);

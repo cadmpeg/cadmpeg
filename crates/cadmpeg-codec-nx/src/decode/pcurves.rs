@@ -2413,7 +2413,11 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         )
         .then_some(())?;
         let periods = surface_parameter_periods_with_index(index, surface);
-        let mut samples = Vec::with_capacity(SAMPLE_INTERVALS + 1);
+        let mut samples = Vec::new();
+        let _samples_reservation = match cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut samples, SAMPLE_INTERVALS + 1, "nx analytic pcurve samples") {
+            Ok(reservation) => reservation,
+            Err(limit) => return Some(Err(limit)),
+        };
         for index in 0..=SAMPLE_INTERVALS {
             let parameter = finite_parameter_sample(range, index, SAMPLE_INTERVALS);
             let point = match finite_or_refusal(curve_point_with_budget(
@@ -3197,7 +3201,8 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     else {
         return Ok(None);
     };
-    let mut coarse = Vec::with_capacity(continuation_steps + 1);
+    let mut coarse = Vec::new();
+    let _coarse_reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut coarse, continuation_steps + 1, "nx transferred pcurve continuation samples")?;
     coarse.push(first);
     for sample_index in 1..=continuation_steps {
         let parameter = finite_parameter_sample(parameter_range, sample_index, continuation_steps);
@@ -3939,7 +3944,7 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache<'a>(
                     0,
                     geometry_budget,
                 )?;
-                geometry_budget.charge_collection_items(1, "nx blend parameter grid cache")?;
+                geometry_budget.charges.map_or(Ok(()), |ctx| ctx.charge_collection_items_limit(cadmpeg_core::decode::u64_from_index(1), "nx blend parameter grid cache"))?;
                 blend_parameter_grids.insert(surface.as_str(), grid);
             }
             let grid = blend_parameter_grids

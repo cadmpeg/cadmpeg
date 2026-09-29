@@ -543,7 +543,7 @@ fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
     ]);
     target.push(0xcc);
 
-    let lane = point_feature_scalar_lane(&preceding, &target).expect("complete lane");
+    let lane = point_feature_scalar_lane(&preceding, &target).unwrap().expect("complete lane");
     assert_eq!(
         lane.values.map(|scalar| scalar.value().get()),
         [1.0, -2.0, 3.5, 4.0, 5.25, -6.0]
@@ -558,13 +558,13 @@ fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
 
     let mut malformed = target.clone();
     malformed[45] = 0x01;
-    assert!(point_feature_scalar_lane(&preceding, &malformed).is_none());
-    assert!(point_feature_scalar_lane(&preceding[..2], &target).is_none());
-    assert!(point_feature_scalar_lane(&preceding, &target[..63]).is_none());
+    assert!(point_feature_scalar_lane(&preceding, &malformed).unwrap().is_none());
+    assert!(point_feature_scalar_lane(&preceding[..2], &target).unwrap().is_none());
+    assert!(point_feature_scalar_lane(&preceding, &target[..63]).unwrap().is_none());
 
     let mut nonfinite = target;
     nonfinite[5..13].copy_from_slice(&[0x6f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-    assert!(point_feature_scalar_lane(&preceding, &nonfinite).is_none());
+    assert!(point_feature_scalar_lane(&preceding, &nonfinite).unwrap().is_none());
 }
 
 #[test]
