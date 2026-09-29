@@ -5,6 +5,7 @@ use super::{
     compact_radial_circle_index, dimensioned_relation_carrier,
     project_relation_point_dimensioned_circles, radial_dimension_radius, DimensionedCurveNative,
 };
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
@@ -1535,6 +1536,8 @@ fn radial_dimensions_normalize_radius_and_diameter_displays() {
 
 #[test]
 fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"point projection", &arena, &DecodePolicy::service()).unwrap();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let feature_ref = "feature";
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
@@ -1632,6 +1635,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let mut entities = vec![center];
 
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -1660,6 +1664,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         .with_native_ref(Some(marker_id.into())),
     );
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut ambiguous,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -1672,6 +1677,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let mut missing_lane = lane.clone();
     missing_lane.relation_instances[0].operands[0].entity_ref = None;
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut missing,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -1748,6 +1754,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     .with_construction(true)
     .with_native_ref(Some("implicit-center".into()))];
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut implicit_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -1759,6 +1766,45 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         Some(SketchGeometryDefinition::Circle { center, radius: actual_radius })
             if (*center == Point2::new(3.0, 4.0)) && actual_radius.get() == 2.0
     ));
+}
+
+#[test]
+fn point_dimension_projection_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"point projection", &arena, &policy).unwrap();
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![SketchInputEntity::new(
+            "marker",
+            "lane",
+            0,
+            0,
+            SketchInputKind::Point,
+        )],
+    };
+    let error = project_relation_point_dimensioned_circles(
+        &ctx,
+        &mut Vec::new(),
+        &[],
+        &[],
+        &[lane],
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 mod direct_circle_carrier;

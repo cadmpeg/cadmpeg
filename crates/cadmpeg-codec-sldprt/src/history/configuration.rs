@@ -663,6 +663,7 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
+            ctx,
             &mut ir.model.sketch_entities,
             &features,
             &parameters,
