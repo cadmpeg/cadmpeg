@@ -49,7 +49,168 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
         false,
     )
     .expect("linear NURBS fixture");
-    assert_eq!(super::nurbs_profile_polyline(&nurbs, 0.01), Some(vec![[0.0, 0.0], [1.0, 0.0]]));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01))
+            .expect("service profile resources"),
+        Some(vec![[0.0, 0.0], [1.0, 0.0]])
+    );
+}
+
+fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0), cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("linear NURBS fixture")
+}
+
+fn linear_profile_polyline_with_policy(
+    policy: cadmpeg_core::decode::DecodePolicy,
+) -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::CodecError> {
+    let curve = linear_profile_curve();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    super::nurbs_profile_polyline(&ctx, &curve, 0.01)
+}
+
+#[test]
+fn nurbs_profile_polyline_first_point_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let error = linear_profile_polyline_with_policy(policy).expect_err("first point exceeds zero items");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo NURBS profile polyline points"));
+    assert_eq!(linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"), Some(vec![[0.0, 0.0], [1.0, 0.0]]));
+}
+
+#[test]
+fn nurbs_profile_polyline_next_point_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let error = linear_profile_polyline_with_policy(policy).expect_err("second point exceeds one item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo NURBS profile polyline points"));
+    assert_eq!(linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"), Some(vec![[0.0, 0.0], [1.0, 0.0]]));
+}
+
+#[test]
+fn nurbs_profile_polyline_depth_refuses_before_recursive_span() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let error = linear_profile_polyline_with_policy(policy).expect_err("first span exceeds zero depth");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::RecursionDepth
+            && refusal.operation == "creo NURBS profile sampling depth"));
+    assert_eq!(linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"), Some(vec![[0.0, 0.0], [1.0, 0.0]]));
+}
+
+#[test]
+fn nurbs_profile_polyline_work_refuses_before_span_evaluation() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let error = linear_profile_polyline_with_policy(policy).expect_err("first span exceeds zero work");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::WorkUnits
+            && refusal.operation == "creo NURBS profile sampling spans"));
+    assert_eq!(linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"), Some(vec![[0.0, 0.0], [1.0, 0.0]]));
+}
+
+fn profile_sketch_copy_with_limit(
+    limit: u64,
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+    let geometry = super::ProfileGeometry::Nurbs {
+        curve: PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("linear pcurve fixture"),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    geometry.to_sketch(&ctx)
+}
+
+#[test]
+fn profile_sketch_copy_knots_refuse_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let error = profile_sketch_copy_with_limit(0).expect_err("four knots exceed zero items");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo profile sketch NURBS knots"));
+    assert!(profile_sketch_copy_with_limit(6).expect("service sized copy").is_some());
+}
+
+#[test]
+fn profile_sketch_copy_poles_refuse_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let error = profile_sketch_copy_with_limit(4).expect_err("two poles exceed four knot items");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo profile sketch NURBS poles"));
+    assert!(profile_sketch_copy_with_limit(6).expect("service sized copy").is_some());
+}
+
+fn ordered_circle_with_limit(
+    limit: u64,
+) -> Result<Option<Vec<super::ValidatedProfile>>, cadmpeg_core::CodecError> {
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        center: Point2::new(0.0, 0.0),
+        radius: cadmpeg_ir::scalar::Length::new(1.0).expect("positive radius"),
+    })
+    .expect("valid circle fixture");
+    let entity = crate::decode::with_test_decode_ctx(|ctx| super::ProfileEntity::new(ctx, geometry, false))
+        .expect("service entity resources")
+        .expect("circle profile entity");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    super::ordered_extrusion_profiles(&ctx, vec![vec![entity]])
+}
+
+#[test]
+fn outer_extrusion_candidate_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let error = ordered_circle_with_limit(0).expect_err("one outer candidate exceeds zero items");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo outer extrusion profile candidates"));
+    assert!(ordered_circle_with_limit(2).expect("service ordering").is_some());
+}
+
+#[test]
+fn validated_extrusion_profile_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let error = ordered_circle_with_limit(1).expect_err("validation exceeds the outer candidate item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo validated extrusion profiles"));
+    assert!(ordered_circle_with_limit(2).expect("service ordering").is_some());
 }
 
 #[test]
@@ -245,8 +406,11 @@ fn nurbs_profile_area_uses_finite_gauss_samples_on_a_wide_domain() {
         )
         .expect("wide finite sketch NURBS"),
     );
-    let area =
-        super::nurbs_profile_signed_area_twice(&geometry, false).expect("finite wide-domain area");
+    let area = crate::decode::with_test_decode_ctx(|ctx| {
+        super::nurbs_profile_signed_area_twice(ctx, &geometry, false)
+    })
+    .expect("service area resources")
+    .expect("finite wide-domain area");
     assert!((area - 1.0).abs() <= EPS_WIDE_NURBS_AREA);
 }
 
@@ -410,8 +574,13 @@ fn circular_pcurve_refuses_unbounded_span_before_allocation() {
 
 #[test]
 fn overflowing_profile_area_is_not_validated() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
     let edge = |start: [f64; 2], end: [f64; 2]| {
         super::ProfileEntity::new(
+            &ctx,
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start[0], start[1]),
                 end: Point2::new(end[0], end[1]),
@@ -419,6 +588,7 @@ fn overflowing_profile_area_is_not_validated() {
             .expect("finite sketch line"),
             false,
         )
+        .expect("service profile resources")
         .expect("profile entity")
     };
     let origin = [0.0, 0.0];
@@ -426,8 +596,12 @@ fn overflowing_profile_area_is_not_validated() {
     let upper = [0.0, 1.0e154];
     let circuit = [edge(origin, right), edge(right, upper), edge(upper, origin)];
     let profile: Vec<_> = circuit.clone().into_iter().chain(circuit).collect();
-    assert!(super::extrusion_profile_signed_area(&profile).is_none());
-    assert!(super::ValidatedProfile::new(profile).is_none());
+    assert!(super::extrusion_profile_signed_area(&ctx, &profile)
+        .expect("service area resources")
+        .is_none());
+    assert!(super::ValidatedProfile::new(&ctx, profile)
+        .expect("service validation resources")
+        .is_none());
 }
 
 #[test]

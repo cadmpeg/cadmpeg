@@ -12,6 +12,8 @@ use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::topology::ParameterInterval;
 use crate::transform::Transform2;
 use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1805,6 +1807,59 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
+    /// Copy finite knot and pole lanes after charging both collections.
+    pub fn copy_admitted(
+        &self,
+        ctx: &DecodeContext<'_>,
+        knot_operation: &'static str,
+        pole_operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let knots = ctx.try_collection(self.knots.len(), knot_operation, || self.knots.try_clone())?;
+        let poles = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                let mut copy = Vec::new();
+                ctx.try_reserve_items(&mut copy, points.len(), pole_operation)?;
+                copy.extend_from_slice(points);
+                PcurveNurbsPoles::Polynomial { points: copy }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                let mut copy = Vec::new();
+                ctx.try_reserve_items(&mut copy, points.len(), pole_operation)?;
+                copy.extend_from_slice(points);
+                PcurveNurbsPoles::Rational { points: copy }
+            }
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
+    /// Build a pcurve from finite knots and pole rows that the caller already
+    /// admitted through its decode context. This checks the same structural
+    /// relationships without copying the pole collection.
+    pub fn new_admitted_poles(
+        degree: u32,
+        knots: KnotVector,
+        poles: PcurveNurbsPoles<FinitePoint2>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure(
+                "pcurve NURBS degree must be positive".into(),
+            ));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
     /// Scale admitted pole positions in place without copying the knot or pole lanes.
     ///
     /// Every scaled position is checked before any position changes, so a

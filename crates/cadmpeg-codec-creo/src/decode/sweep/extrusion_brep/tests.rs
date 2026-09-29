@@ -157,7 +157,9 @@ fn closed_extrusion_reaches_brep_admission() {
             ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id, 1,
         ).expect("profile resources").expect("profile geometry");
-        assert!(super::ordered_extrusion_profiles(profiles).is_some());
+        assert!(super::ordered_extrusion_profiles(ctx, profiles)
+            .expect("service ordering resources")
+            .is_some());
     });
     let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
     let count = crate::decode::with_test_decode_ctx(|ctx| {

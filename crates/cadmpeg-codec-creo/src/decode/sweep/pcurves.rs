@@ -269,7 +269,7 @@ pub(in super::super) fn revolved_brep_surface(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let Some(directrix) = oriented_sketch_nurbs_curve(geometry, reversed) else {
+        let Some(directrix) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
             return Ok(None);
         };
         let Some(placed_directrix) = placed_section_nurbs(ctx, transform, &directrix)? else {
@@ -322,20 +322,21 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
         segment.geometry(),
         super::profiles::ProfileGeometry::Nurbs { .. }
     ) {
-        return Ok((|| {
-            let nurbs = oriented_sketch_nurbs_curve(
-                &segment.geometry().to_sketch()?,
-                segment.reversed(),
-            )?;
-            let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(
-                nurbs_intrinsic_parameter_range(&nurbs)?,
-            );
-            let parameter = match boundary {
-                RevolutionBoundary::Start => lower,
-                RevolutionBoundary::End => upper,
-            };
-            line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU])
-        })());
+        let Some(sketch) = segment.geometry().to_sketch(ctx)? else {
+            return Ok(None);
+        };
+        let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed())? else {
+            return Ok(None);
+        };
+        let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {
+            return Ok(None);
+        };
+        let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
+        let parameter = match boundary {
+            RevolutionBoundary::Start => lower,
+            RevolutionBoundary::End => upper,
+        };
+        return Ok(line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU]));
     }
     revolution_boundary_pcurve(
         ctx,
@@ -370,8 +371,8 @@ pub(in super::super) fn revolution_face_sense(
         super::profiles::ProfileGeometry::Nurbs { .. }
     );
     let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
-        let geometry = require_some!(segment.geometry().to_sketch());
-        let nurbs = require_some!(oriented_sketch_nurbs_curve(&geometry, segment.reversed()));
+        let geometry = require_some!(segment.geometry().to_sketch(ctx)?);
+        let nurbs = require_some!(oriented_sketch_nurbs_curve(ctx, &geometry, segment.reversed())?);
         let [lower, upper] =
             cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(nurbs_intrinsic_parameter_range(&nurbs)));
         let (parameter, u_epsilon) = nurbs_sense_sample(lower, upper);
@@ -414,8 +415,8 @@ pub(in super::super) fn revolution_face_sense(
     })));
     let model_point = section_point_in_model(transform, point);
     let pcurve = if is_nurbs {
-        let geometry = require_some!(segment.geometry().to_sketch());
-        let nurbs = require_some!(oriented_sketch_nurbs_curve(&geometry, segment.reversed()));
+        let geometry = require_some!(segment.geometry().to_sketch(ctx)?);
+        let nurbs = require_some!(oriented_sketch_nurbs_curve(ctx, &geometry, segment.reversed())?);
         let [lower, upper] =
             cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(nurbs_intrinsic_parameter_range(&nurbs)));
         let (parameter, _) = nurbs_sense_sample(lower, upper);

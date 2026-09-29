@@ -1422,6 +1422,24 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
+    /// Build a curve from finite knots and pole rows that the caller already
+    /// admitted through its decode context. This checks cardinality without
+    /// copying the pole collection.
+    pub fn new_admitted_poles(
+        degree: u32,
+        knots: KnotVector,
+        poles: NurbsPoles3<FinitePoint3>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
     /// Copy the retained knot and pole lanes after charging both collections.
     pub fn copy_admitted(
         &self,

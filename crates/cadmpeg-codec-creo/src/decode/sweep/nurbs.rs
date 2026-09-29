@@ -694,54 +694,67 @@ pub(in super::super) fn extruded_nurbs_surface(
     }
 }
 
-pub(super) fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<NurbsCurve> {
+pub(super) fn sketch_nurbs_curve(
+    ctx: &DecodeContext<'_>,
+    geometry: &SketchGeometry,
+) -> Result<Option<NurbsCurve>, CodecError> {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoles3, WeightedPole3};
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
+    use cadmpeg_ir::scalar::FiniteReal;
+
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
-        return None;
+        return Ok(None);
     };
-    let nurbs = curve
-        .lift(|point| Point3::new(point.u, point.v, 0.0))
-        .ok()?;
-    valid_positive_nurbs_curve(&nurbs).map(|()| nurbs)
+    let knots = ctx.try_collection(curve.knots().len(), "creo sketch NURBS lift knots", || {
+        curve.knots().try_clone()
+    })?;
+    let poles = match curve.pole_rows() {
+        PcurveNurbsPoles::Polynomial { points } => {
+            let mut lifted = Vec::new();
+            ctx.try_reserve_items(&mut lifted, points.len(), "creo sketch NURBS lift poles")?;
+            for point in points {
+                let [x, y] = point.coordinates();
+                lifted.push(FinitePoint3::from_coordinates(x, y, FiniteReal::ZERO));
+            }
+            NurbsPoles3::Polynomial { points: lifted }
+        }
+        PcurveNurbsPoles::Rational { points } => {
+            let mut lifted = Vec::new();
+            ctx.try_reserve_items(&mut lifted, points.len(), "creo sketch NURBS lift poles")?;
+            for pole in points {
+                let [x, y] = pole.point.coordinates();
+                lifted.push(WeightedPole3 {
+                    point: FinitePoint3::from_coordinates(x, y, FiniteReal::ZERO),
+                    weight: pole.weight,
+                });
+            }
+            NurbsPoles3::Rational { points: lifted }
+        }
+    };
+    let Some(nurbs) = NurbsCurve::new_admitted_poles(curve.degree(), knots, poles, curve.periodic()).ok() else {
+        return Ok(None);
+    };
+    Ok(valid_positive_nurbs_curve(&nurbs).map(|()| nurbs))
 }
 
 pub(super) fn oriented_sketch_nurbs_curve(
+    ctx: &DecodeContext<'_>,
     geometry: &SketchGeometry,
     reversed: bool,
-) -> Option<NurbsCurve> {
-    let nurbs = sketch_nurbs_curve(geometry)?;
-    if !reversed {
-        return Some(nurbs);
-    }
-    let [lower, upper] =
-        cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
-    let mut reversed = nurbs;
-    let knots = reversed
-        .knots()
-        .iter()
-        .rev()
-        .map(|knot| lower + upper - knot)
-        .collect::<Vec<_>>();
-    let knots = if knots.iter().all(|knot| knot.is_finite()) {
-        knots
-    } else {
-        let interval = cadmpeg_ir::topology::IncreasingParameterInterval::new([lower, upper])?;
-        reversed
-            .knots()
-            .iter()
-            .rev()
-            .map(|knot| {
-                interval
-                    .map_from(interval, cadmpeg_ir::scalar::FiniteReal::new(*knot)?, true)
-                    .ok()
-                    .map(cadmpeg_ir::scalar::FiniteReal::get)
-            })
-            .collect::<Option<Vec<_>>>()?
+) -> Result<Option<NurbsCurve>, CodecError> {
+    let Some(mut nurbs) = sketch_nurbs_curve(ctx, geometry)? else {
+        return Ok(None);
     };
-    reversed.reverse_parameterization();
-    reversed
-        .edit_knots(|target| target.copy_from_slice(&knots))
-        .ok()?;
-    Some(reversed)
+    if !reversed {
+        return Ok(Some(nurbs));
+    }
+    let Some([lower, upper]) = nurbs_intrinsic_parameter_range(&nurbs) else {
+        return Ok(None);
+    };
+    Ok(nurbs
+        .reverse_parameterization_in_range(lower, upper)
+        .map(|()| nurbs))
 }
 
 pub(super) fn sketch_nurbs_pcurve(
@@ -750,29 +763,52 @@ pub(super) fn sketch_nurbs_pcurve(
     reversed: bool,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<PcurveGeometry> {
-    let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
-        nurbs.degree(),
-        nurbs.knots().clone(),
-        nurbs
-            .control_points()
-            .iter()
-            .map(|point| {
+) -> Result<Option<PcurveGeometry>, CodecError> {
+    use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
+    use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles, WeightedPole2};
+
+    let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
+        return Ok(None);
+    };
+    let knots = ctx.try_collection(nurbs.knots().len(), "creo sketch NURBS pcurve knots", || {
+        nurbs.knots().try_clone()
+    })?;
+    let poles = match nurbs.pole_rows() {
+        NurbsPoles3::Polynomial { points } => {
+            let mut projected = Vec::new();
+            ctx.try_reserve_items(&mut projected, points.len(), "creo sketch NURBS pcurve poles")?;
+            for point in points {
                 let [x, y, _] = point.coordinates();
-                cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y)
-            })
-            .collect(),
-        nurbs.weights(),
+                projected.push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
+            }
+            PcurveNurbsPoles::Polynomial { points: projected }
+        }
+        NurbsPoles3::Rational { points } => {
+            let mut projected = Vec::new();
+            ctx.try_reserve_items(&mut projected, points.len(), "creo sketch NURBS pcurve poles")?;
+            for pole in points {
+                let [x, y, _] = pole.point.coordinates();
+                projected.push(WeightedPole2 {
+                    point: cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y),
+                    weight: pole.weight,
+                });
+            }
+            PcurveNurbsPoles::Rational { points: projected }
+        }
+    };
+    match PcurveNurbs::new_admitted_poles(
+        nurbs.degree(),
+        knots,
+        poles,
         nurbs.periodic(),
     ) {
-        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
             refusal.note_checked(ctx,
                 format_args!("creo sketch NURBS pcurve record for {record}"),
                 &error,
             );
-            None
+            Ok(None)
         }
     }
 }
@@ -791,7 +827,7 @@ pub(in super::super) fn extrusion_brep_side_surface(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let Some(directrix) = oriented_sketch_nurbs_curve(geometry, reversed) else {
+        let Some(directrix) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
             return Ok(None);
         };
         let lower_translation = transform.normal().map(|value| value * span.lower());
@@ -1158,6 +1194,79 @@ mod tests {
         run(&ctx)
     }
 
+    fn sketch_line_nurbs() -> SketchGeometry {
+        SketchGeometry::nurbs(
+            PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("linear sketch NURBS"),
+        )
+    }
+
+    #[test]
+    fn sketch_nurbs_lift_knots_refuse_collection_limit() {
+        let geometry = sketch_line_nurbs();
+        let error = with_collection_limit(0, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
+            .expect_err("four knots exceed zero items");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo sketch NURBS lift knots"));
+        assert!(with_collection_limit(6, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
+            .expect("service sized collection")
+            .is_some());
+    }
+
+    #[test]
+    fn sketch_nurbs_lift_poles_refuse_collection_limit() {
+        let geometry = sketch_line_nurbs();
+        let error = with_collection_limit(4, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
+            .expect_err("two poles exceed the four knot items");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo sketch NURBS lift poles"));
+        assert!(with_collection_limit(6, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
+            .expect("service sized collection")
+            .is_some());
+    }
+
+    #[test]
+    fn sketch_nurbs_pcurve_knots_refuse_collection_limit() {
+        let geometry = sketch_line_nurbs();
+        let error = with_collection_limit(6, |ctx| {
+            super::sketch_nurbs_pcurve(ctx, &geometry, false, &"linear sketch", &mut crate::lane_refusal::LaneRefusals::new())
+        })
+        .expect_err("pcurve knots exceed the lifted curve items");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo sketch NURBS pcurve knots"));
+        assert!(with_collection_limit(12, |ctx| {
+            super::sketch_nurbs_pcurve(ctx, &geometry, false, &"linear sketch", &mut crate::lane_refusal::LaneRefusals::new())
+        })
+        .expect("service sized collection")
+        .is_some());
+    }
+
+    #[test]
+    fn sketch_nurbs_pcurve_poles_refuse_collection_limit() {
+        let geometry = sketch_line_nurbs();
+        let error = with_collection_limit(10, |ctx| {
+            super::sketch_nurbs_pcurve(ctx, &geometry, false, &"linear sketch", &mut crate::lane_refusal::LaneRefusals::new())
+        })
+        .expect_err("pcurve poles exceed the ten prior items");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo sketch NURBS pcurve poles"));
+        assert!(with_collection_limit(12, |ctx| {
+            super::sketch_nurbs_pcurve(ctx, &geometry, false, &"linear sketch", &mut crate::lane_refusal::LaneRefusals::new())
+        })
+        .expect("service sized collection")
+        .is_some());
+    }
+
     fn interpolation_grid() -> crate::interpolation_grid::InterpolationGrid {
         crate::interpolation_grid::InterpolationGrid::try_new(
             vec![
@@ -1287,8 +1396,11 @@ mod tests {
             )
             .expect("wide finite sketch NURBS"),
         );
-        let reversed =
-            oriented_sketch_nurbs_curve(&geometry, true).expect("finite reversed sketch NURBS");
+        let reversed = crate::decode::with_test_decode_ctx(|ctx| {
+            oriented_sketch_nurbs_curve(ctx, &geometry, true)
+        })
+        .expect("service resources")
+        .expect("finite reversed sketch NURBS");
         assert_eq!(reversed.knots().as_slice(), [lower, lower, upper, upper]);
         assert_eq!(reversed.control_points()[0], Point3::new(1.0, 0.0, 0.0));
     }
