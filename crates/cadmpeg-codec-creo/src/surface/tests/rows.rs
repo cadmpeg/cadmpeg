@@ -1474,11 +1474,14 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
     assert_eq!(frame_end, body.len() - 3);
 
     assert_eq!(
-        surface_body_compound_close(
-            SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
-            &body,
-            &scalar::ScalarCache::default(),
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            surface_body_compound_close(
+                ctx,
+                SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
+                &body,
+                &scalar::ScalarCache::default(),
+            )
+        }).expect("compound-close scan is admitted"),
         Some(body.len() - 1)
     );
 }
