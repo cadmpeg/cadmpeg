@@ -6239,7 +6239,8 @@ fn append_text_curve(
             )
             .unwrap_or(*parameter_range);
             ctx.reserve_vec(&mut transfer.procedural, 1, "FreeCAD procedural curves")?;
-            let procedural_id: CurveId = id.try_clone_for_decode(ctx, "FreeCAD procedural curve identity copy")?;
+            let procedural_id: CurveId =
+                id.try_clone_for_decode(ctx, "FreeCAD procedural curve identity copy")?;
             let admitted_payload =
                 cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::from_finite_parts(
                     basis_id,
@@ -6284,7 +6285,8 @@ fn append_text_curve(
                 transfer,
             )?;
             ctx.reserve_vec(&mut transfer.procedural, 1, "FreeCAD procedural curves")?;
-            let procedural_id: CurveId = id.try_clone_for_decode(ctx, "FreeCAD procedural curve identity copy")?;
+            let procedural_id: CurveId =
+                id.try_clone_for_decode(ctx, "FreeCAD procedural curve identity copy")?;
             let admitted_payload = cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::from_admitted_direction(
                 basis_id, *distance, *direction,
             ).map_err(cadmpeg_core::CodecError::malformed)?;
@@ -6518,7 +6520,8 @@ fn append_text_surface(
             append_text_curve(
                 ctx,
                 directrix.curve(),
-                directrix_id.try_clone_for_decode(ctx, "FreeCAD surface directrix identity copy")?,
+                directrix_id
+                    .try_clone_for_decode(ctx, "FreeCAD surface directrix identity copy")?,
                 association,
                 curve_transfer,
             )?;
@@ -6531,7 +6534,8 @@ fn append_text_surface(
                     None,
                 );
             ctx.reserve_vec(&mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
-            let procedural_id: SurfaceId = id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
+            let procedural_id: SurfaceId =
+                id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
             let construction_id: ProceduralSurfaceId = model_identity(
                 ctx,
                 "surface",
@@ -6564,12 +6568,14 @@ fn append_text_surface(
             append_text_curve(
                 ctx,
                 directrix.curve(),
-                directrix_id.try_clone_for_decode(ctx, "FreeCAD surface directrix identity copy")?,
+                directrix_id
+                    .try_clone_for_decode(ctx, "FreeCAD surface directrix identity copy")?,
                 association,
                 curve_transfer,
             )?;
             ctx.reserve_vec(&mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
-            let procedural_id: SurfaceId = id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
+            let procedural_id: SurfaceId =
+                id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
             let admitted_payload =
                 cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_from_parts(
                     *axis_origin,
@@ -6637,7 +6643,8 @@ fn append_text_surface(
                 transfer,
             )?;
             ctx.reserve_vec(&mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
-            let procedural_id: SurfaceId = id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
+            let procedural_id: SurfaceId =
+                id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
             let admitted_payload =
                 cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
                     basis_id,
@@ -6691,7 +6698,8 @@ fn append_text_surface(
                     None,
                 );
             ctx.reserve_vec(&mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
-            let procedural_id: SurfaceId = id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
+            let procedural_id: SurfaceId =
+                id.try_clone_for_decode(ctx, "FreeCAD procedural surface identity copy")?;
             let construction_id: ProceduralSurfaceId = model_identity(
                 ctx,
                 "surface",

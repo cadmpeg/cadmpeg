@@ -134,7 +134,8 @@ pub(super) fn b5_edge_support_definition(
         let Some(surface_id) = surface_ids.get(surface) else {
             return Ok(None);
         };
-        side.surface = Some(surface_id.try_clone_for_decode(ctx, "catia_b5_edge_support_surface_id")?);
+        side.surface =
+            Some(surface_id.try_clone_for_decode(ctx, "catia_b5_edge_support_surface_id")?);
         let support_range = support_range.map(FiniteReal::get);
         let mapped_range = (support_range != parameter_range)
             .then(|| DirectedParameterRange::new(support_range).ok())
@@ -365,18 +366,22 @@ pub(super) fn emit_edges(
         )?;
         let endpoints = graph.vertices.edges()[&edge_id]
             .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len()));
-        let curve_plan = if let Some(plan) = plan.edge_curve_plan.remove(&edge_id) {
-            plan
-        } else {
-            CurvePlan {
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                    record: Some(payload.try_clone_for_decode(admission.context(), "catia_b5_edge_unknown_id")?),
-                }),
-                parameter_range: None,
-                edge_tolerance: None,
-                cache_fit_tolerance: None,
-            }
-        };
+        let curve_plan =
+            if let Some(plan) = plan.edge_curve_plan.remove(&edge_id) {
+                plan
+            } else {
+                CurvePlan {
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                        record: Some(payload.try_clone_for_decode(
+                            admission.context(),
+                            "catia_b5_edge_unknown_id",
+                        )?),
+                    }),
+                    parameter_range: None,
+                    edge_tolerance: None,
+                    cache_fit_tolerance: None,
+                }
+            };
 
         let helix = plan.edge_helix_plan.remove(&edge_id);
         let edge_range = curve_plan.parameter_range;
@@ -411,7 +416,8 @@ pub(super) fn emit_edges(
                 "catia_b5_curve_geometry_annotation",
             )?;
         }
-        let model_curve_id = curve_id.try_clone_for_decode(admission.context(), "catia_b5_model_edge_curve_id")?;
+        let model_curve_id =
+            curve_id.try_clone_for_decode(admission.context(), "catia_b5_model_edge_curve_id")?;
         admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
         ir.model.curves.push(Curve {
             id: model_curve_id,
@@ -483,7 +489,8 @@ pub(super) fn emit_edges(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            let owner = curve_id.try_clone_for_decode(admission.context(), "catia_b5_edge_procedural_owner_id")?;
+            let owner = curve_id
+                .try_clone_for_decode(admission.context(), "catia_b5_edge_procedural_owner_id")?;
             admission.reserve_entity(
                 &mut ir.model.procedural_curves,
                 "catia_b5_emit_procedural_curves",

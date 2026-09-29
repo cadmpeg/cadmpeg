@@ -241,7 +241,9 @@ impl CompositeIndex {
         let mut curve_positions = BTreeMap::new();
         for (position, curve) in ir.model.curves.iter().enumerate() {
             if !curve_positions.contains_key(&curve.id) {
-                let key = curve.id.try_clone_for_decode(ctx, "iges composite curve index keys")?;
+                let key = curve
+                    .id
+                    .try_clone_for_decode(ctx, "iges composite curve index keys")?;
                 cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                     ctx,
                     &mut curve_positions,
@@ -274,8 +276,12 @@ impl CompositeIndex {
                     "iges composite indexed edges",
                 )?;
                 indexed.push(CompositeEdge {
-                    start: edge.start.try_clone_for_decode(ctx, "iges composite indexed start ids")?,
-                    end: edge.end.try_clone_for_decode(ctx, "iges composite indexed end ids")?,
+                    start: edge
+                        .start
+                        .try_clone_for_decode(ctx, "iges composite indexed start ids")?,
+                    end: edge
+                        .end
+                        .try_clone_for_decode(ctx, "iges composite indexed end ids")?,
                     param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
                 });
             }
@@ -283,7 +289,9 @@ impl CompositeIndex {
         let mut points = BTreeMap::<PointId, FinitePoint3>::new();
         for point in &ir.model.points {
             if !points.contains_key(&point.id) {
-                let key = point.id.try_clone_for_decode(ctx, "iges composite point index keys")?;
+                let key = point
+                    .id
+                    .try_clone_for_decode(ctx, "iges composite point index keys")?;
                 cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                     ctx,
                     &mut points,
@@ -297,7 +305,9 @@ impl CompositeIndex {
         for vertex in &ir.model.vertices {
             if let Some(point) = points.get(&vertex.point).copied() {
                 if !vertex_points.contains_key(&vertex.id) {
-                    let key = vertex.id.try_clone_for_decode(ctx, "iges composite vertex index keys")?;
+                    let key = vertex
+                        .id
+                        .try_clone_for_decode(ctx, "iges composite vertex index keys")?;
                     cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                         ctx,
                         &mut vertex_points,
@@ -329,7 +339,8 @@ impl CompositeIndex {
         endpoints: [(VertexId, FinitePoint3); 2],
         ctx: Option<&DecodeContext<'_>>,
     ) -> Result<(), CodecError> {
-        let position_key = curve_id.try_clone_for_decode(ctx, "iges composite added curve index key")?;
+        let position_key =
+            curve_id.try_clone_for_decode(ctx, "iges composite added curve index key")?;
         cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             ctx,
             &mut self.curve_positions,
@@ -338,7 +349,8 @@ impl CompositeIndex {
             "iges composite added curve index node",
         )?;
         if !self.edges.contains_key(curve_id) {
-            let edge_key = curve_id.try_clone_for_decode(ctx, "iges composite added edge index key")?;
+            let edge_key =
+                curve_id.try_clone_for_decode(ctx, "iges composite added edge index key")?;
             cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                 ctx,
                 &mut self.edges,
@@ -1768,8 +1780,12 @@ fn bounded_edge_for_curve(
             )?;
             for edge in edges {
                 candidates.push(CompositeEdge {
-                    start: edge.start.try_clone_for_decode(ctx, "iges composite scanned edge start ID")?,
-                    end: edge.end.try_clone_for_decode(ctx, "iges composite scanned edge end ID")?,
+                    start: edge
+                        .start
+                        .try_clone_for_decode(ctx, "iges composite scanned edge start ID")?,
+                    end: edge
+                        .end
+                        .try_clone_for_decode(ctx, "iges composite scanned edge end ID")?,
                     param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
                 });
             }
@@ -2235,7 +2251,8 @@ fn project_native_composite(
     crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
     ir.model.vertices.extend([
         Vertex {
-            id: start_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+            id: start_vertex
+                .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             point: start_point,
             tolerance: None,
         },
@@ -2292,7 +2309,8 @@ fn project_native_composite(
         &curve_id,
         ir.model.curves.len() - 1,
         CompositeEdge {
-            start: start_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+            start: start_vertex
+                .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             end: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             param_range: None,
         },
@@ -2674,7 +2692,8 @@ fn project_with_type_130_policy(
                 missing_curve = true;
                 break;
             };
-            curve_ids.push(curve.try_clone_for_decode(ctx, "iges composite child curve ID copies")?);
+            curve_ids
+                .push(curve.try_clone_for_decode(ctx, "iges composite child curve ID copies")?);
         }
         if missing_curve {
             super::push_optional_entity_loss(
@@ -2709,7 +2728,8 @@ fn project_with_type_130_policy(
                 Ok(Some((curve, range))) => children.push((
                     curve,
                     range,
-                    curve_id.try_clone_for_decode(ctx, "iges composite projected child curve IDs")?,
+                    curve_id
+                        .try_clone_for_decode(ctx, "iges composite projected child curve IDs")?,
                 )),
                 Ok(None) => {
                     child_refusal = Some(CompositeRefusal::NoChildCarrier);
@@ -2916,12 +2936,14 @@ fn project_with_type_130_policy(
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                id: start_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                id: end_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
                 point: end_point,
                 tolerance: None,
             },
@@ -2949,11 +2971,15 @@ fn project_with_type_130_policy(
         ir.model.edges.push(Edge {
             id: edge.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                Some(curve_id.try_clone_for_decode(ctx, "iges composite projection identity copy")?),
+                Some(
+                    curve_id
+                        .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                ),
                 Some([0.0, cursor]),
             )
             .map_err(CodecError::malformed)?,
-            start: start_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+            start: start_vertex
+                .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             end: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             tolerance: None,
         });
@@ -2961,8 +2987,10 @@ fn project_with_type_130_policy(
             &curve_id,
             ir.model.curves.len() - 1,
             CompositeEdge {
-                start: start_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
-                end: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                start: start_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                end: end_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
                 param_range: Some([0.0, cursor]),
             },
             [(start_vertex, start), (end_vertex, end)],

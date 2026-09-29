@@ -16,7 +16,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::scalar::PositiveReal;
 
-
 fn copy_nurbs_curve(
     curve: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
@@ -193,7 +192,8 @@ pub(super) fn copy_surface_geometry(
             construction,
             cache,
         } => SurfaceGeometry::Procedural {
-            construction: construction.try_clone_for_decode(ctx, "iges copied support construction ID")?,
+            construction: construction
+                .try_clone_for_decode(ctx, "iges copied support construction ID")?,
             cache: cache
                 .as_ref()
                 .map(|solved| copy_solved_surface(solved, ctx))
@@ -264,7 +264,9 @@ pub(super) fn copy_solved_curve(
             )?;
             for segment in segments {
                 copied.push(cadmpeg_ir::geometry::CompositeCurveSegment {
-                    curve: segment.curve.try_clone_for_decode(ctx, "iges solved curve copied composite ID")?,
+                    curve: segment
+                        .curve
+                        .try_clone_for_decode(ctx, "iges solved curve copied composite ID")?,
                     same_sense: segment.same_sense,
                     transition: segment.transition,
                 });

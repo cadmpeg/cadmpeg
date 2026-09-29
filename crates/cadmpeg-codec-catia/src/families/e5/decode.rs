@@ -1146,9 +1146,15 @@ fn attach_e5_free_vertices(
     annotations: &mut AnnotationBuilder,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let body_id = ctx.copy_retained_text("catia:e5:body#unbound-points", "catia_e5_free_body_id").and_then(|text| BodyId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
-    let region_id = ctx.copy_retained_text("catia:e5:region#unbound-points", "catia_e5_free_region_id").and_then(|text| RegionId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
-    let shell_id = ctx.copy_retained_text("catia:e5:shell#unbound-points", "catia_e5_free_shell_id").and_then(|text| ShellId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
+    let body_id = ctx
+        .copy_retained_text("catia:e5:body#unbound-points", "catia_e5_free_body_id")
+        .and_then(|text| BodyId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
+    let region_id = ctx
+        .copy_retained_text("catia:e5:region#unbound-points", "catia_e5_free_region_id")
+        .and_then(|text| RegionId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
+    let shell_id = ctx
+        .copy_retained_text("catia:e5:shell#unbound-points", "catia_e5_free_shell_id")
+        .and_then(|text| ShellId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             ctx,
@@ -1174,7 +1180,9 @@ fn attach_e5_free_vertices(
     )?;
     let free_vertices = ctx.try_collect_vec(
         ir.model.vertices.iter().map(|vertex| {
-            vertex.id.try_clone_for_decode(ctx, "catia_e5_free_vertex_id")
+            vertex
+                .id
+                .try_clone_for_decode(ctx, "catia_e5_free_vertex_id")
         }),
         "catia_e5_free_vertices",
     )?;
@@ -1587,8 +1595,11 @@ fn plan_e5_boundary<'a>(
                 };
                 if support.is_intersection() {
                     let side = E5OccurrenceIntersectionSide {
-                        surface: surface_for_ref[&face.surface].0.try_clone_for_decode(ctx, "catia_e5_occurrence_surface_id")?,
-                        pcurve: oriented_pcurve.try_clone_for_decode(ctx, "catia_e5_occurrence_pcurve")?,
+                        surface: surface_for_ref[&face.surface]
+                            .0
+                            .try_clone_for_decode(ctx, "catia_e5_occurrence_surface_id")?,
+                        pcurve: oriented_pcurve
+                            .try_clone_for_decode(ctx, "catia_e5_occurrence_pcurve")?,
                         pcurve_range: range,
                         curve: lifted_curve
                             .as_ref()
@@ -1631,7 +1642,9 @@ fn plan_e5_boundary<'a>(
                     }
                 } else if !support.is_intersection() && !surface_curve_plan.contains_key(&edge_ref)
                 {
-                    let surface_id = surface_for_ref[&face.surface].0.try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
+                    let surface_id = surface_for_ref[&face.surface]
+                        .0
+                        .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
                     ctx.insert_btree_map(
                         &mut surface_curve_plan,
                         edge_ref,
@@ -1755,7 +1768,8 @@ fn plan_e5_boundary<'a>(
                 intersection_sides.entry(edge_ref).or_default(),
                 *pcurve_ref,
                 E5IntersectionSidePlan {
-                    surface: surface_id.try_clone_for_decode(ctx, "catia_e5_intersection_surface_id")?,
+                    surface: surface_id
+                        .try_clone_for_decode(ctx, "catia_e5_intersection_surface_id")?,
                     pcurve,
                     pcurve_range: range,
                     curve,
@@ -1800,9 +1814,13 @@ fn plan_e5_boundary<'a>(
         )?;
         let [left_side, right_side] = [left, right].map(|side| {
             Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                surface: Some(side.surface.try_clone_for_decode(ctx, "catia_e5_intersection_context_surface_id")?),
+                surface: Some(
+                    side.surface
+                        .try_clone_for_decode(ctx, "catia_e5_intersection_context_surface_id")?,
+                ),
                 pcurve: Some(SupportPcurve::new(
-                    side.pcurve.try_clone_for_decode(ctx, "catia_e5_intersection_context_pcurve")?,
+                    side.pcurve
+                        .try_clone_for_decode(ctx, "catia_e5_intersection_context_pcurve")?,
                     DirectedParameterRange::new(side.pcurve_range).ok(),
                 )),
             })
@@ -1840,8 +1858,12 @@ fn plan_e5_boundary<'a>(
         else {
             if let [side] = sides.as_slice() {
                 if !surface_curve_plan.contains_key(&edge_ref) {
-                    let surface_id = side.surface.try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
-                    let pcurve = side.pcurve.try_clone_for_decode(ctx, "catia_e5_surface_curve_pcurve")?;
+                    let surface_id = side
+                        .surface
+                        .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
+                    let pcurve = side
+                        .pcurve
+                        .try_clone_for_decode(ctx, "catia_e5_surface_curve_pcurve")?;
                     ctx.insert_btree_map(
                         &mut surface_curve_plan,
                         edge_ref,
@@ -2008,7 +2030,8 @@ fn emit_e5_curves_and_edges(
         )?;
     }
     for (&record_id, (geometry, _)) in edge_curve_plan {
-        let id = edge_curve_ids[&record_id].try_clone_for_decode(ctx, "catia_e5_curve_record_id")?;
+        let id =
+            edge_curve_ids[&record_id].try_clone_for_decode(ctx, "catia_e5_curve_record_id")?;
         annotate(
             ctx,
             annotations,
@@ -2033,7 +2056,8 @@ fn emit_e5_curves_and_edges(
         });
     }
     for (&record_id, context) in intersection_plan {
-        let curve = edge_curve_ids[&record_id].try_clone_for_decode(ctx, "catia_e5_intersection_curve_id")?;
+        let curve = edge_curve_ids[&record_id]
+            .try_clone_for_decode(ctx, "catia_e5_intersection_curve_id")?;
         let id = crate::resource::compose_u32_id(
             ctx,
             &cadmpeg_ir::identity_namespace!("catia", "e5", "intersection"),
@@ -2089,7 +2113,8 @@ fn emit_e5_curves_and_edges(
         if intersection_plan.contains_key(&record_id) {
             continue;
         }
-        let curve = edge_curve_ids[&record_id].try_clone_for_decode(ctx, "catia_e5_surface_curve_id")?;
+        let curve =
+            edge_curve_ids[&record_id].try_clone_for_decode(ctx, "catia_e5_surface_curve_id")?;
         let id = crate::resource::compose_u32_id(
             ctx,
             &cadmpeg_ir::identity_namespace!("catia", "e5", "surface-curve"),
@@ -2134,9 +2159,15 @@ fn emit_e5_curves_and_edges(
                         context: IntcurveSupportContext::try_new(
                             [
                                 IntcurveSupportSide {
-                                    surface: Some(surface.try_clone_for_decode(ctx, "catia_e5_surface_curve_support_id")?),
+                                    surface: Some(surface.try_clone_for_decode(
+                                        ctx,
+                                        "catia_e5_surface_curve_support_id",
+                                    )?),
                                     pcurve: Some(SupportPcurve::new(
-                                        pcurve.try_clone_for_decode(ctx, "catia_e5_surface_curve_support_pcurve")?,
+                                        pcurve.try_clone_for_decode(
+                                            ctx,
+                                            "catia_e5_surface_curve_support_pcurve",
+                                        )?,
                                         None,
                                     )),
                                 },
@@ -2197,15 +2228,15 @@ fn emit_e5_curves_and_edges(
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 edge_curve_ids
                     .get(&record_id)
-                    .map(|id| {
-                        id.try_clone_for_decode(ctx, "catia_e5_edge_carrier_id")
-                    })
+                    .map(|id| id.try_clone_for_decode(ctx, "catia_e5_edge_carrier_id"))
                     .transpose()?,
                 edge_curve_plan.get(&record_id).map(|(_, range)| *range),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: vertex_for_ref[&edge.start_vertex].try_clone_for_decode(ctx, "catia_e5_edge_start_id")?,
-            end: vertex_for_ref[&edge.end_vertex].try_clone_for_decode(ctx, "catia_e5_edge_end_id")?,
+            start: vertex_for_ref[&edge.start_vertex]
+                .try_clone_for_decode(ctx, "catia_e5_edge_start_id")?,
+            end: vertex_for_ref[&edge.end_vertex]
+                .try_clone_for_decode(ctx, "catia_e5_edge_end_id")?,
             tolerance: None,
         });
     }
@@ -2331,9 +2362,9 @@ fn emit_e5_bodies(
             id: body_id.try_clone_for_decode(ctx, "catia_e5_body_record_id")?,
             kind: plan.kind,
             regions: ctx.try_collect_vec(
-                region_ids.iter().map(|id| {
-                    id.try_clone_for_decode(ctx, "catia_e5_body_region_id")
-                }),
+                region_ids
+                    .iter()
+                    .map(|id| id.try_clone_for_decode(ctx, "catia_e5_body_region_id")),
                 "catia_e5_body_regions",
             )?,
             transform: None,
@@ -2342,7 +2373,8 @@ fn emit_e5_bodies(
             visible: None,
         });
         for (component, component_faces) in plan.components.iter().enumerate() {
-            let region_id = region_ids[component].try_clone_for_decode(ctx, "catia_e5_region_record_id")?;
+            let region_id =
+                region_ids[component].try_clone_for_decode(ctx, "catia_e5_region_record_id")?;
             let shell_id = ShellId::mint(ctx.format_retained(
                 format_args!("catia:e5:shell#{body_index}-{component}"),
                 "catia_e5_shell_id",
@@ -2496,8 +2528,11 @@ fn emit_e5_faces_loops_coedges(
         admission.reserve_entity(&mut ir.model.faces, "catia_e5_model_faces")?;
         ir.model.faces.push(Face {
             id: face_id.try_clone_for_decode(ctx, "catia_e5_face_record_id")?,
-            shell: face_shell[&face.record_id].try_clone_for_decode(ctx, "catia_e5_face_shell_id")?,
-            surface: surface_for_ref[&face.surface].0.try_clone_for_decode(ctx, "catia_e5_face_surface_id")?,
+            shell: face_shell[&face.record_id]
+                .try_clone_for_decode(ctx, "catia_e5_face_shell_id")?,
+            surface: surface_for_ref[&face.surface]
+                .0
+                .try_clone_for_decode(ctx, "catia_e5_face_surface_id")?,
             sense: if face.trailer_sign == crate::families::e5::graph::Sign::Positive {
                 Sense::Forward
             } else {
@@ -2508,9 +2543,9 @@ fn emit_e5_faces_loops_coedges(
                 Some((outer, inner)) => cadmpeg_ir::topology::FaceLoops::classified(
                     outer.try_clone_for_decode(ctx, "catia_e5_outer_loop_id")?,
                     ctx.try_collect_vec(
-                        inner.iter().map(|id| {
-                            id.try_clone_for_decode(ctx, "catia_e5_inner_loop_id")
-                        }),
+                        inner
+                            .iter()
+                            .map(|id| id.try_clone_for_decode(ctx, "catia_e5_inner_loop_id")),
                         "catia_e5_inner_loop_ids",
                     )?,
                 ),
@@ -2536,7 +2571,9 @@ fn emit_e5_faces_loops_coedges(
             for member in members {
                 ctx.push_vec(
                     &mut coedge_ids,
-                    member.id.try_clone_for_decode(ctx, "catia_e5_loop_coedge_id")?,
+                    member
+                        .id
+                        .try_clone_for_decode(ctx, "catia_e5_loop_coedge_id")?,
                     "catia_e5_loop_coedge_ids",
                 )?;
                 let edge_ref = member.source.edge_use;
@@ -2553,7 +2590,9 @@ fn emit_e5_faces_loops_coedges(
                 };
                 let vertex_use = AnchoredVertexUse {
                     vertex: vertex_id.try_clone_for_decode(ctx, "catia_e5_vertex_use_id")?,
-                    after: member.id.try_clone_for_decode(ctx, "catia_e5_vertex_use_coedge_id")?,
+                    after: member
+                        .id
+                        .try_clone_for_decode(ctx, "catia_e5_vertex_use_coedge_id")?,
                     pcurves: Vec::new(),
                 };
                 ctx.push_vec(&mut vertex_uses, vertex_use, "catia_e5_loop_vertex_uses")?;
@@ -2655,7 +2694,8 @@ fn emit_e5_faces_loops_coedges(
                 ir.model.coedges.push(Coedge {
                     id: id.try_clone_for_decode(ctx, "catia_e5_coedge_record_id")?,
                     owner_loop: loop_id.try_clone_for_decode(ctx, "catia_e5_coedge_loop_id")?,
-                    edge: edge_ids[&edge_ref].try_clone_for_decode(ctx, "catia_e5_coedge_edge_id")?,
+                    edge: edge_ids[&edge_ref]
+                        .try_clone_for_decode(ctx, "catia_e5_coedge_edge_id")?,
                     radial_next: id,
                     sense: if member.orientation.reversed {
                         Sense::Reversed
@@ -2671,7 +2711,9 @@ fn emit_e5_faces_loops_coedges(
     for occurrences in coedges_by_edge.values() {
         for (position, &arena_index) in occurrences.iter().enumerate() {
             let radial = occurrences[(position + 1) % occurrences.len()];
-            let next = ir.model.coedges[radial].id.try_clone_for_decode(ctx, "catia_e5_coedge_radial_next_id")?;
+            let next = ir.model.coedges[radial]
+                .id
+                .try_clone_for_decode(ctx, "catia_e5_coedge_radial_next_id")?;
             ir.model.coedges[arena_index].radial_next = next;
         }
     }
@@ -3029,8 +3071,9 @@ fn e5_lift_plane_nurbs(
             NurbsPoles3::Rational { points }
         }
     };
-    let knots =
-        nurbs.knots().try_clone_for_decode(ctx, "catia_e5_boundary_lifted_knots")?;
+    let knots = nurbs
+        .knots()
+        .try_clone_for_decode(ctx, "catia_e5_boundary_lifted_knots")?;
     crate::nurbs::note_refusal(
         ctx,
         NurbsCurve::new(nurbs.degree(), knots, poles, nurbs.periodic()),
@@ -3256,9 +3299,13 @@ fn e5_support_occurrence_intersection_context(
     }
     let [left_side, right_side] = [left, right].map(|side| {
         Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-            surface: Some(side.surface.try_clone_for_decode(ctx, "catia_e5_occurrence_context_surface_id")?),
+            surface: Some(
+                side.surface
+                    .try_clone_for_decode(ctx, "catia_e5_occurrence_context_surface_id")?,
+            ),
             pcurve: Some(SupportPcurve::new(
-                side.pcurve.try_clone_for_decode(ctx, "catia_e5_occurrence_context_pcurve")?,
+                side.pcurve
+                    .try_clone_for_decode(ctx, "catia_e5_occurrence_context_pcurve")?,
                 DirectedParameterRange::new(side.pcurve_range).ok(),
             )),
         })

@@ -138,7 +138,9 @@ fn topology_vertex(
 ) -> Result<Option<VertexId>, CodecError> {
     let (list, index) = vertex_key;
     if let Some(existing) = vertex_ids.get(&(list, index)) {
-        return Ok(Some(existing.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?));
+        return Ok(Some(
+            existing.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+        ));
     }
     let Some(position) = FinitePoint3::new(vertex_lists[&list][index]) else {
         return Ok(None);
@@ -172,7 +174,12 @@ fn topology_vertex(
         point: point_id,
         tolerance: None,
     });
-    Ok(Some(vertex_ids.entry((list, index)).or_insert(vertex_id).try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?))
+    Ok(Some(
+        vertex_ids
+            .entry((list, index))
+            .or_insert(vertex_id)
+            .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+    ))
 }
 
 fn source_edge_for_vertices<'a>(
@@ -1144,7 +1151,8 @@ pub(super) fn project(
                                 Some(ctx),
                                 &mut coedge_by_use,
                                 index,
-                                coedge_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                coedge_id
+                                    .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
                                 "iges B-rep coedge use nodes",
                             )?;
                             coedge_ids.push(coedge_id);
@@ -1450,14 +1458,15 @@ pub(super) fn project(
                                 "iges_geometry_brep",
                             )?;
                             candidate.model_mut().edges.push(Edge {
-                                id: id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                id: id
+                                    .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
                                 carrier,
-                                start: vertex_ids[&(
-                                        edge_definition.start_list,
-                                        edge_definition.start_index,
-                                    )].try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                start: vertex_ids
+                                    [&(edge_definition.start_list, edge_definition.start_index)]
+                                    .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
                                 end: vertex_ids
-                                        [&(edge_definition.end_list, edge_definition.end_index)].try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                    [&(edge_definition.end_list, edge_definition.end_index)]
+                                    .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
                                 tolerance: None,
                             });
                             cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
@@ -1497,14 +1506,18 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let coedge_id = coedge_ids[coedge_position].try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?;
+                        let coedge_id = coedge_ids[coedge_position]
+                            .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?;
                         let radial_key = (shell_sequence, edge_key.0, edge_key.1);
                         if !radial.contains_key(&radial_key) {
                             ctx.charge_collection_items(1, "iges B-rep radial index nodes")?;
                         }
                         let ring = radial.entry(radial_key).or_default();
                         ctx.reserve_vec(ring, 1, "iges B-rep radial coedge ids")?;
-                        ring.push(coedge_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?);
+                        ring.push(
+                            coedge_id
+                                .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                        );
                         ctx.reserve_vec(
                             &mut candidate.model_mut().coedges,
                             1,
@@ -1516,10 +1529,13 @@ pub(super) fn project(
                             "iges_geometry_brep",
                         )?;
                         candidate.model_mut().coedges.push(Coedge {
-                            id: coedge_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
-                            owner_loop: loop_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                            id: coedge_id
+                                .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                            owner_loop: loop_id
+                                .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
                             edge: edge_id,
-                            radial_next: coedge_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                            radial_next: coedge_id
+                                .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
                             sense: *sense,
                             pcurves: projected,
                             use_curve: None,
@@ -1594,7 +1610,8 @@ pub(super) fn project(
                     )?;
                     candidate.model_mut().loops.push(Loop {
                         id: loop_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
-                        face: face_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                        face: face_id
+                            .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
                         boundary,
                     });
                     cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
@@ -1740,7 +1757,8 @@ pub(super) fn project(
                     .iter_mut()
                     .find(|coedge| coedge.id == *id)
                 {
-                    coedge.radial_next = ring[(index + 1) % ring.len()].try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?;
+                    coedge.radial_next = ring[(index + 1) % ring.len()]
+                        .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?;
                 }
             }
         }

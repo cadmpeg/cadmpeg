@@ -689,7 +689,8 @@ fn transfer_schema_one(
                     format_args!("fcstd:appearance:binding#{provider_key}:{index}"),
                 )?,
                 target: AppearanceTarget::Body(body),
-                appearance: appearance_id.try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+                appearance: appearance_id
+                    .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
                 source_entity_id: Some(
                     ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
                 ),
@@ -1255,7 +1256,10 @@ fn transfer_primitive_appearance(
                     .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))
             }) {
                 ctx.reserve_vec(&mut targets, 1, "FCStd GUI primitive targets")?;
-                targets.push(AppearanceTarget::Edge(edge.id.try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?));
+                targets.push(AppearanceTarget::Edge(
+                    edge.id
+                        .try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?,
+                ));
             }
         }
         PrimitiveStyle::Point(_) => {
@@ -1265,7 +1269,11 @@ fn transfer_primitive_appearance(
                     .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))
             }) {
                 ctx.reserve_vec(&mut targets, 1, "FCStd GUI primitive targets")?;
-                targets.push(AppearanceTarget::Vertex(vertex.id.try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?));
+                targets.push(AppearanceTarget::Vertex(
+                    vertex
+                        .id
+                        .try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?,
+                ));
             }
         }
     }
@@ -1347,7 +1355,8 @@ fn transfer_primitive_appearance(
                 format_args!("fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"),
             )?,
             target,
-            appearance: appearance_id.try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+            appearance: appearance_id
+                .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
             source_entity_id: Some(
                 ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
             ),
@@ -4514,8 +4523,11 @@ fn transfer_shape_appearances(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
                         ),
                         )?,
-                        target: AppearanceTarget::Body(body.try_clone_for_decode(ctx, "FCStd GUI binding body identity")?),
-                        appearance: appearance_id.try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+                        target: AppearanceTarget::Body(
+                            body.try_clone_for_decode(ctx, "FCStd GUI binding body identity")?,
+                        ),
+                        appearance: appearance_id
+                            .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
                         source_entity_id: Some(
                             ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
                         ),
@@ -4568,7 +4580,10 @@ fn select_shape_bodies<'a>(
                 .is_some_and(|suffix| suffix.starts_with(':'))
             {
                 ctx.reserve_vec(&mut body_ids, 1, "FCStd GUI displayed shape bodies")?;
-                body_ids.push(body.id.try_clone_for_decode(ctx, "FCStd GUI displayed body identity")?);
+                body_ids.push(
+                    body.id
+                        .try_clone_for_decode(ctx, "FCStd GUI displayed body identity")?,
+                );
             }
         }
     }
@@ -4740,7 +4755,9 @@ fn bind_material_faces(
         else {
             continue;
         };
-        let face = face.id.try_clone_for_decode(ctx, "FCStd GUI binding face identity")?;
+        let face = face
+            .id
+            .try_clone_for_decode(ctx, "FCStd GUI binding face identity")?;
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         ctx.reserve_vec(&mut plan.bindings, 1, "FCStd GUI planned bindings")?;
         plan.bindings.push(AppearanceBinding {
@@ -4751,7 +4768,8 @@ fn bind_material_faces(
                 ),
             )?,
             target: AppearanceTarget::Face(face),
-            appearance: appearance_id.try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+            appearance: appearance_id
+                .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
             source_entity_id: Some(
                 ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
             ),
@@ -4911,7 +4929,8 @@ fn transfer_topology_colors(
             if !emitted_appearance {
                 ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")?;
                 plan.appearances.push(Appearance {
-                    id: appearance_id.try_clone_for_decode(ctx, "FCStd GUI appearance identity copy")?,
+                    id: appearance_id
+                        .try_clone_for_decode(ctx, "FCStd GUI appearance identity copy")?,
                     name: Some(ctx.format_retained(
                         format_args!("{provider_name} {}{} appearance", kind.name(), index + 1),
                         "FCStd GUI appearance name",
@@ -4940,8 +4959,9 @@ fn transfer_topology_colors(
                     .iter()
                     .find(|face| face.id.as_str() == topology_id.as_str())
                     .map(|face| {
-                        face.id.try_clone_for_decode(ctx, "FCStd GUI binding topology identity")
-                        .map(AppearanceTarget::Face)
+                        face.id
+                            .try_clone_for_decode(ctx, "FCStd GUI binding topology identity")
+                            .map(AppearanceTarget::Face)
                     })
                     .transpose()?,
                 TopologyColorKind::Edge => ir
@@ -4950,8 +4970,9 @@ fn transfer_topology_colors(
                     .iter()
                     .find(|edge| edge.id.as_str() == topology_id.as_str())
                     .map(|edge| {
-                        edge.id.try_clone_for_decode(ctx, "FCStd GUI binding topology identity")
-                        .map(AppearanceTarget::Edge)
+                        edge.id
+                            .try_clone_for_decode(ctx, "FCStd GUI binding topology identity")
+                            .map(AppearanceTarget::Edge)
                     })
                     .transpose()?,
                 TopologyColorKind::Vertex => ir
@@ -4960,8 +4981,10 @@ fn transfer_topology_colors(
                     .iter()
                     .find(|vertex| vertex.id.as_str() == topology_id.as_str())
                     .map(|vertex| {
-                        vertex.id.try_clone_for_decode(ctx, "FCStd GUI binding topology identity")
-                        .map(AppearanceTarget::Vertex)
+                        vertex
+                            .id
+                            .try_clone_for_decode(ctx, "FCStd GUI binding topology identity")
+                            .map(AppearanceTarget::Vertex)
                     })
                     .transpose()?,
             };
@@ -4980,7 +5003,8 @@ fn transfer_topology_colors(
                     ),
                 )?,
                 target,
-                appearance: appearance_id.try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
+                appearance: appearance_id
+                    .try_clone_for_decode(ctx, "FCStd GUI binding appearance identity")?,
                 source_entity_id: Some(
                     ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
                 ),

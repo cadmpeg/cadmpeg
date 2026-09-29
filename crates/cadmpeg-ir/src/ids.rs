@@ -76,7 +76,7 @@ impl schemars::JsonSchema for Identity {
 }
 
 impl Identity {
-    /// Copies an admitted identity under the decode retained-byte budget.
+    /// Copies an admitted identity with a fallible optional decode budget.
     pub fn try_clone_for_decode<'ctx, 'arena>(
         &self,
         ctx: impl Into<Option<&'ctx DecodeContext<'arena>>>,
@@ -941,7 +941,7 @@ macro_rules! id_type {
         }
 
         impl $name {
-            /// Copies an admitted identity under the decode retained-byte budget.
+            /// Copies an admitted identity with a fallible optional decode budget.
             pub fn try_clone_for_decode<'ctx, 'arena>(
                 &self,
                 ctx: impl Into<Option<&'ctx cadmpeg_core::decode::DecodeContext<'arena>>>,

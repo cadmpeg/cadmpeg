@@ -1692,7 +1692,9 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
             class: *class,
             payload: ctx.copy_retained_slice(payload, "catia_b5_copied_unknown_surface_payload")?,
         },
-        B5Surface::Nurbs(nurbs) => B5Surface::Nurbs(nurbs.try_clone_for_decode(ctx, "catia_b5_copied_nurbs_surface")?),
+        B5Surface::Nurbs(nurbs) => {
+            B5Surface::Nurbs(nurbs.try_clone_for_decode(ctx, "catia_b5_copied_nurbs_surface")?)
+        }
         B5Surface::RollingBall {
             carrier_object_id,
             definition: ProceduralSurfaceDefinition::RollingBallJet(jet),

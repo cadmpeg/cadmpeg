@@ -751,7 +751,9 @@ fn build_plan(
                         edge_id,
                         CurvePlan {
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(admitted!(
-                                helix.cache.try_clone_for_decode(ctx, "catia_b5_helix_plan_curve")
+                                helix
+                                    .cache
+                                    .try_clone_for_decode(ctx, "catia_b5_helix_plan_curve")
                             ))),
                             parameter_range: Some(helix.parameter_range),
                             edge_tolerance: Some(cadmpeg_ir::scalar::PositiveReal::new(
@@ -1201,15 +1203,19 @@ fn copy_resolved_extrusion_support(
     support: &ResolvedExtrusionSupport,
 ) -> Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError> {
     let surface = match &support.surface {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => SurfaceGeometry::Solved(
-            SolvedSurfaceGeometry::Nurbs(nurbs.try_clone_for_decode(ctx, "catia_b5_extrusion_support_surface_copy")?),
-        ),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                nurbs.try_clone_for_decode(ctx, "catia_b5_extrusion_support_surface_copy")?,
+            ))
+        }
         other => other.clone(),
     };
     Ok(ResolvedExtrusionSupport {
         surface_object_id: support.surface_object_id,
         surface,
-        pcurve: support.pcurve.try_clone_for_decode(ctx, "catia_b5_extrusion_support_pcurve_copy")?,
+        pcurve: support
+            .pcurve
+            .try_clone_for_decode(ctx, "catia_b5_extrusion_support_pcurve_copy")?,
         pcurve_parameter_range: support.pcurve_parameter_range,
         curve: support
             .curve
@@ -1516,9 +1522,11 @@ fn copy_lifted_curve(
     curve: &CurveGeometry,
 ) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
     Ok(match curve {
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => CurveGeometry::Solved(
-            SolvedCurveGeometry::Nurbs(nurbs.try_clone_for_decode(ctx, "catia_b5_extrusion_lifted_curve_copy")?),
-        ),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                nurbs.try_clone_for_decode(ctx, "catia_b5_extrusion_lifted_curve_copy")?,
+            ))
+        }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(*line))
         }

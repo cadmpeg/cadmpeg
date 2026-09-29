@@ -688,7 +688,9 @@ pub(super) fn project(
             continue;
         };
         let body = &mut ir.model.bodies[index];
-        let body_id = body.id.try_clone_for_decode(Some(ctx), "iges appearance body ID copy")?;
+        let body_id = body
+            .id
+            .try_clone_for_decode(Some(ctx), "iges appearance body ID copy")?;
         body.color = Some(color);
         body.visible = Some(visible);
         appearance(
@@ -787,7 +789,9 @@ pub(super) fn project(
             continue;
         };
         let face = &mut ir.model.faces[index];
-        let face_id = face.id.try_clone_for_decode(Some(ctx), "iges appearance face ID copy")?;
+        let face_id = face
+            .id
+            .try_clone_for_decode(Some(ctx), "iges appearance face ID copy")?;
         face.color = Some(color);
         appearance(
             ir,

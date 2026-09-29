@@ -281,7 +281,8 @@ fn create_boundary_vertices(
             source_endpoints: derivation_endpoints,
         });
         for member in cluster.members {
-            vertex_ids[member] = Some(vertex_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?);
+            vertex_ids[member] =
+                Some(vertex_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?);
         }
     }
     let mut result_ids = ctx.collection_vec(vertex_ids.len(), "iges boundary result vertex ids")?;
@@ -639,8 +640,7 @@ fn source_curve_control_intervals(
     if active.contains(curve_id) {
         return Ok(None);
     }
-    let active_id =
-        curve_id.try_clone_for_decode(Some(ctx), "iges source active curve ID")?;
+    let active_id = curve_id.try_clone_for_decode(Some(ctx), "iges source active curve ID")?;
     cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
         Some(ctx),
         active,
@@ -1648,7 +1648,8 @@ fn surface_parameter_bounds(
         if visiting.contains(surface_id) {
             return Ok(None);
         }
-        let visited_id = surface_id.try_clone_for_decode(Some(ctx), "iges support-bound visiting surface ID")?;
+        let visited_id =
+            surface_id.try_clone_for_decode(Some(ctx), "iges support-bound visiting surface ID")?;
         cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             Some(ctx),
             visiting,
@@ -1905,7 +1906,9 @@ pub(super) fn clone_boundary_edge(
             cadmpeg_ir::topology::EdgeCarrier::Endpoints(*range)
         }
         cadmpeg_ir::topology::EdgeCarrier::Curve(curve) => {
-            cadmpeg_ir::topology::EdgeCarrier::Curve(curve.try_clone_for_decode(Some(ctx), "iges selected edge curve ID")?)
+            cadmpeg_ir::topology::EdgeCarrier::Curve(
+                curve.try_clone_for_decode(Some(ctx), "iges selected edge curve ID")?,
+            )
         }
         cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, range) => {
             cadmpeg_ir::topology::EdgeCarrier::Bounded(
@@ -1915,10 +1918,16 @@ pub(super) fn clone_boundary_edge(
         }
     };
     Ok(Edge {
-        id: edge.id.try_clone_for_decode(Some(ctx), "iges selected edge ID")?,
+        id: edge
+            .id
+            .try_clone_for_decode(Some(ctx), "iges selected edge ID")?,
         carrier,
-        start: edge.start.try_clone_for_decode(Some(ctx), "iges selected edge start ID")?,
-        end: edge.end.try_clone_for_decode(Some(ctx), "iges selected edge end ID")?,
+        start: edge
+            .start
+            .try_clone_for_decode(Some(ctx), "iges selected edge start ID")?,
+        end: edge
+            .end
+            .try_clone_for_decode(Some(ctx), "iges selected edge end ID")?,
         tolerance: edge.tolerance,
     })
 }
@@ -2710,7 +2719,12 @@ pub(super) fn project(
                     "iges implicit boundary curve IDs",
                 )?;
                 for item in &items {
-                    implicit_boundary_curves.push(item.model_curve.try_clone_for_decode(Some(ctx), "iges implicit boundary curve ID text")?);
+                    implicit_boundary_curves.push(
+                        item.model_curve.try_clone_for_decode(
+                            Some(ctx),
+                            "iges implicit boundary curve ID text",
+                        )?,
+                    );
                 }
             }
             let traversal = |item: &BoundaryItem| {
@@ -2835,8 +2849,10 @@ pub(super) fn project(
             for (segment_index, item) in items.into_iter().enumerate() {
                 let edge_id =
                     crate::ids::edge_admitted(&stem.slot(boundary_index).slot(segment_index), ctx)?;
-                let start_vertex = vertex_ids[segment_index * 2].try_clone_for_decode(Some(ctx), "iges trimming identity copy")?;
-                let end_vertex = vertex_ids[segment_index * 2 + 1].try_clone_for_decode(Some(ctx), "iges trimming identity copy")?;
+                let start_vertex = vertex_ids[segment_index * 2]
+                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?;
+                let end_vertex = vertex_ids[segment_index * 2 + 1]
+                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?;
                 let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(item.model_curve),
                     item.source_edge
@@ -2899,7 +2915,10 @@ pub(super) fn project(
                             1,
                             "iges implicit boundary pcurve IDs",
                         )?;
-                        implicit_boundary_pcurves.push(id.try_clone_for_decode(Some(ctx), "iges implicit boundary pcurve ID text")?);
+                        implicit_boundary_pcurves.push(id.try_clone_for_decode(
+                            Some(ctx),
+                            "iges implicit boundary pcurve ID text",
+                        )?);
                     }
                     ctx.reserve_vec(
                         &mut candidate.model_mut().pcurves,
@@ -2926,7 +2945,8 @@ pub(super) fn project(
                         parameter_range: None,
                     });
                 }
-                let coedge_id = coedge_ids[segment_index].try_clone_for_decode(Some(ctx), "iges trimming identity copy")?;
+                let coedge_id = coedge_ids[segment_index]
+                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?;
                 crate::decode_resource::admit_optional_entities(
                     Some(ctx),
                     1,
@@ -2934,7 +2954,8 @@ pub(super) fn project(
                 )?;
                 candidate.model_mut().coedges.push(Coedge {
                     id: coedge_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
-                    owner_loop: loop_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                    owner_loop: loop_id
+                        .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
                     edge: edge_id,
                     radial_next: coedge_id,
                     sense: item.segment.sense,
@@ -2965,7 +2986,8 @@ pub(super) fn project(
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             if explicit_outer_sequence == Some(sequence) {
-                explicit_outer_loop = Some(loop_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?);
+                explicit_outer_loop =
+                    Some(loop_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?);
             }
             ctx.reserve_vec(&mut loop_ids, 1, "iges trimming face loop IDs")?;
             loop_ids.push(loop_id);
@@ -3019,7 +3041,8 @@ pub(super) fn project(
                 "iges_geometry_trimming",
             )?;
             candidate.model_mut().surfaces.push(Surface {
-                id: derived_surface_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                id: derived_surface_id
+                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
                 geometry: support_geometry,
                 source_object: Some(match source_object(entry, Some(ctx)) {
                     Ok(source) => source,
@@ -3060,7 +3083,8 @@ pub(super) fn project(
                 "iges_geometry_trimming",
             )?;
             let _attached = candidate.model_mut().add_procedural_surface(
-                &derived_surface_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                &derived_surface_id
+                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
                 ProceduralSurface::new(
                     crate::ids::procedural_surface_admitted(
                         &crate::ids::Stem::directory(entry.sequence)
@@ -3068,7 +3092,8 @@ pub(super) fn project(
                         ctx,
                     )?,
                     ProceduralSurfaceDefinition::CurveBounded {
-                        support: surface_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                        support: surface_id
+                            .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
                         boundaries: implicit_boundary_curves,
                         boundary_pcurves: implicit_boundary_pcurves,
                         implicit_outer: true,

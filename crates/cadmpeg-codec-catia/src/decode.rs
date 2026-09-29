@@ -1930,7 +1930,9 @@ fn finish_decode(
             .is_some_and(|name| design_feature::NativeOperationClass::try_from(name).is_ok())
     }) {
         if !native_operation_feature_ids.contains(&feature.id) {
-            let id = feature.id.try_clone_for_decode(ctx, "catia_native_operation_feature_id")?;
+            let id = feature
+                .id
+                .try_clone_for_decode(ctx, "catia_native_operation_feature_id")?;
             ctx.insert_hash_set(
                 &mut native_operation_feature_ids,
                 id,

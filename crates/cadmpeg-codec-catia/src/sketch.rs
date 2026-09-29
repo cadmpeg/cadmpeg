@@ -64,7 +64,9 @@ pub(crate) fn transfer_native_sketch_entities(
         let Some(native_ref) = sketch.native_ref.as_deref() else {
             continue;
         };
-        let id = sketch.id.try_clone_for_decode(ctx, "catia_sketch_entity_sketch_id")?;
+        let id = sketch
+            .id
+            .try_clone_for_decode(ctx, "catia_sketch_entity_sketch_id")?;
         let native_ref = ctx.copy_retained_text(native_ref, "catia_sketch_entity_sketch_ref")?;
         ctx.push_vec(
             &mut sketches,
@@ -143,7 +145,8 @@ pub(crate) fn transfer_native_sketch_entities(
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA sketch entity")?;
-            let sketch_copy = sketch_id.try_clone_for_decode(ctx, "catia_sketch_entity_owner_id")?;
+            let sketch_copy =
+                sketch_id.try_clone_for_decode(ctx, "catia_sketch_entity_owner_id")?;
             let field_copy =
                 ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_native_ref")?;
             ctx.push_vec(
@@ -216,7 +219,9 @@ pub(crate) fn transfer_native_sketch_constraints(
         let Some(native_ref) = sketch.native_ref.as_deref() else {
             continue;
         };
-        let id = sketch.id.try_clone_for_decode(ctx, "catia_sketch_constraint_sketch_id")?;
+        let id = sketch
+            .id
+            .try_clone_for_decode(ctx, "catia_sketch_constraint_sketch_id")?;
         let native_ref =
             ctx.copy_retained_text(native_ref, "catia_sketch_constraint_sketch_ref")?;
         ctx.push_vec(
@@ -274,7 +279,9 @@ pub(crate) fn transfer_native_sketch_constraints(
                 continue;
             };
             let key = ctx.copy_retained_text(native_ref, "catia_sketch_constraint_entity_key")?;
-            let id = entity.id().try_clone_for_decode(ctx, "catia_sketch_constraint_entity_id")?;
+            let id = entity
+                .id()
+                .try_clone_for_decode(ctx, "catia_sketch_constraint_entity_id")?;
             sketch_entities.insert(ctx, key, id, "catia_sketch_constraint_entity_index")?;
         }
 
@@ -339,7 +346,8 @@ pub(crate) fn transfer_native_sketch_constraints(
                         continue;
                     }
 
-                    let key_id = sketch_id.try_clone_for_decode(ctx, "catia_sketch_candidate_key_id")?;
+                    let key_id =
+                        sketch_id.try_clone_for_decode(ctx, "catia_sketch_candidate_key_id")?;
                     let key = (key_id, target_record.id.as_str());
                     ctx.admit_hash_map_entry(
                         &mut candidates,
@@ -349,7 +357,8 @@ pub(crate) fn transfer_native_sketch_constraints(
                     let candidate = match candidates.entry(key) {
                         std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                         std::collections::hash_map::Entry::Vacant(entry) => {
-                            let owner = sketch_id.try_clone_for_decode(ctx, "catia_sketch_candidate_owner_id")?;
+                            let owner = sketch_id
+                                .try_clone_for_decode(ctx, "catia_sketch_candidate_owner_id")?;
                             entry.insert(NativeSketchConstraintCandidate {
                                 sketch: owner,
                                 target_record,
@@ -361,7 +370,8 @@ pub(crate) fn transfer_native_sketch_constraints(
                         }
                     };
                     if !candidate.entities.contains(sketch_entity) {
-                        let id = sketch_entity.try_clone_for_decode(ctx, "catia_sketch_candidate_entity_id")?;
+                        let id = sketch_entity
+                            .try_clone_for_decode(ctx, "catia_sketch_candidate_entity_id")?;
                         ctx.push_vec(
                             &mut candidate.entities,
                             id,
@@ -903,8 +913,12 @@ fn sketch_entities_by_native_ref(
             continue;
         };
         let key = ctx.copy_retained_text(native_ref, "catia_sketch_entity_native_key")?;
-        let id = entity.id().try_clone_for_decode(ctx, "catia_sketch_entity_index_id")?;
-        let sketch = entity.sketch.try_clone_for_decode(ctx, "catia_sketch_entity_index_sketch")?;
+        let id = entity
+            .id()
+            .try_clone_for_decode(ctx, "catia_sketch_entity_index_id")?;
+        let sketch = entity
+            .sketch
+            .try_clone_for_decode(ctx, "catia_sketch_entity_index_sketch")?;
         index.insert(ctx, key, (id, sketch), "catia_sketch_entity_native_index")?;
     }
     Ok(index)
@@ -988,7 +1002,9 @@ fn constraint_binding(
         .get(source_record_id)
         .filter(|(_, entity_sketch)| entity_sketch == &sketch)
     {
-        Some((entity, _)) => Some(entity.try_clone_for_decode(ctx, "catia_sketch_range_entity_id")?),
+        Some((entity, _)) => {
+            Some(entity.try_clone_for_decode(ctx, "catia_sketch_range_entity_id")?)
+        }
         None => None,
     };
     let Some(object_index) = u32::try_from(source_record.ordinal).ok() else {
@@ -1048,7 +1064,9 @@ fn sketch_owner_for_design_object<'a>(
         };
         if feature_transfer.feature_ids.contains_key(current_id) {
             return match sketch_ids.get(current_id) {
-                Some(id) => Ok(Some(id.try_clone_for_decode(ctx, "catia_sketch_range_owner_id")?)),
+                Some(id) => Ok(Some(
+                    id.try_clone_for_decode(ctx, "catia_sketch_range_owner_id")?,
+                )),
                 None => Ok(None),
             };
         }
@@ -1202,7 +1220,9 @@ fn sketch_ids_by_native_ref(
             continue;
         };
         let key = ctx.copy_retained_text(native_ref, "catia_sketch_native_key")?;
-        let id = sketch.id.try_clone_for_decode(ctx, "catia_sketch_native_id")?;
+        let id = sketch
+            .id
+            .try_clone_for_decode(ctx, "catia_sketch_native_id")?;
         index.insert(ctx, key, id, "catia_sketch_native_index")?;
     }
     Ok(index)

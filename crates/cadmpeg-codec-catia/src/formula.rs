@@ -121,7 +121,10 @@ pub(crate) fn transfer_parameters(
                     *existing = None;
                 }
             } else {
-                let id = candidate.parameter.id.try_clone_for_decode(ctx, "catia_relation_program_index_id")?;
+                let id = candidate
+                    .parameter
+                    .id
+                    .try_clone_for_decode(ctx, "catia_relation_program_index_id")?;
                 let parameter = copy_design_parameter(ctx, &candidate.parameter)?;
                 ctx.insert_btree_map(
                     &mut relation_program_parameters,
@@ -140,7 +143,10 @@ pub(crate) fn transfer_parameters(
                 }
                 Some(_) => {}
                 None => {
-                    let id = candidate.parameter.id.try_clone_for_decode(ctx, "catia_formula_candidate_index_id")?;
+                    let id = candidate
+                        .parameter
+                        .id
+                        .try_clone_for_decode(ctx, "catia_formula_candidate_index_id")?;
                     ctx.insert_btree_map(
                         &mut candidates,
                         id,
@@ -222,7 +228,10 @@ pub(crate) fn transfer_parameters(
             if dependencies.contains(&candidate.parameter.id) {
                 continue;
             }
-            let id = candidate.parameter.id.try_clone_for_decode(ctx, "catia_formula_dependency_id")?;
+            let id = candidate
+                .parameter
+                .id
+                .try_clone_for_decode(ctx, "catia_formula_dependency_id")?;
             ctx.push_vec(&mut dependencies, id, "catia_formula_dependencies")?;
             let type_value = static_formula_value(candidate.parameter_type);
             ctx.insert_btree_map(
@@ -333,7 +342,8 @@ pub(crate) fn transfer_parameters(
                                 &expression_entity.id,
                                 "catia_formula_program_expression",
                             )?;
-                            let program_output = output_id.try_clone_for_decode(ctx, "catia_formula_program_output")?;
+                            let program_output = output_id
+                                .try_clone_for_decode(ctx, "catia_formula_program_output")?;
                             let program_inputs = copy_parameter_ids(
                                 ctx,
                                 &dependencies,
@@ -538,9 +548,7 @@ pub(crate) fn transfer_parameters(
                         .iter()
                         .any(|dependency| !candidates.contains_key(dependency))
                 })
-                .map(|(id, _)| {
-                    id.try_clone_for_decode(ctx, "catia_formula_invalid_dependency_id")
-                }),
+                .map(|(id, _)| id.try_clone_for_decode(ctx, "catia_formula_invalid_dependency_id")),
             "catia_formula_invalid_dependencies",
         )?;
         if invalid.is_empty() {
@@ -706,7 +714,10 @@ fn collect_definition_chain_parameters(
         let Some(candidate) = definition_chain_parameter_candidate(ctx, entity, chain)? else {
             continue;
         };
-        let id = candidate.parameter.id.try_clone_for_decode(ctx, "catia_formula_chain_index_id")?;
+        let id = candidate
+            .parameter
+            .id
+            .try_clone_for_decode(ctx, "catia_formula_chain_index_id")?;
         match candidates.get(&id) {
             None => {
                 ctx.insert_btree_map(candidates, id, candidate, "catia_formula_chain_candidates")?;
@@ -1296,7 +1307,8 @@ fn legacy_relation_evaluation<'a>(
             evaluated,
             "catia_legacy_formula_bindings",
         )?;
-        let dependency = parameter_id.try_clone_for_decode(ctx, "catia_legacy_formula_dependency_id")?;
+        let dependency =
+            parameter_id.try_clone_for_decode(ctx, "catia_legacy_formula_dependency_id")?;
         ctx.push_vec(
             &mut dependencies,
             dependency,
@@ -1573,13 +1585,19 @@ fn merge_formula_parameter_candidate(
                     )?;
                 }
                 (false, true) => {
-                    let conflict = candidate.parameter.id.try_clone_for_decode(ctx, "catia_formula_conflict_id")?;
+                    let conflict = candidate
+                        .parameter
+                        .id
+                        .try_clone_for_decode(ctx, "catia_formula_conflict_id")?;
                     ctx.insert_btree_set(
                         conflicting_inputs,
                         conflict,
                         "catia_formula_conflicting_inputs",
                     )?;
-                    let key = candidate.parameter.id.try_clone_for_decode(ctx, "catia_formula_candidate_index_id")?;
+                    let key = candidate
+                        .parameter
+                        .id
+                        .try_clone_for_decode(ctx, "catia_formula_candidate_index_id")?;
                     ctx.insert_btree_map(candidates, key, candidate, "catia_formula_candidates")?;
                 }
                 (false, false) => {
@@ -1600,7 +1618,10 @@ fn merge_formula_parameter_candidate(
                     existing.parameter_type,
                 )),
             };
-            let key = candidate.parameter.id.try_clone_for_decode(ctx, "catia_formula_candidate_index_id")?;
+            let key = candidate
+                .parameter
+                .id
+                .try_clone_for_decode(ctx, "catia_formula_candidate_index_id")?;
             ctx.insert_btree_map(candidates, key, candidate, "catia_formula_candidates")?;
         }
         Some(existing)
@@ -1612,7 +1633,10 @@ fn merge_formula_parameter_candidate(
         }
         Some(_) => {}
         None => {
-            let key = candidate.parameter.id.try_clone_for_decode(ctx, "catia_formula_candidate_index_id")?;
+            let key = candidate
+                .parameter
+                .id
+                .try_clone_for_decode(ctx, "catia_formula_candidate_index_id")?;
             ctx.insert_btree_map(candidates, key, candidate, "catia_formula_candidates")?;
         }
     }
@@ -1660,7 +1684,10 @@ fn relation_program_output_candidate(
         if dependencies.contains(&candidate.parameter.id) {
             return Ok(None);
         }
-        let dependency = candidate.parameter.id.try_clone_for_decode(ctx, "catia_relation_program_dependency_id")?;
+        let dependency = candidate
+            .parameter
+            .id
+            .try_clone_for_decode(ctx, "catia_relation_program_dependency_id")?;
         ctx.push_vec(
             &mut dependencies,
             dependency,
@@ -1752,7 +1779,8 @@ fn relation_program_output_candidate(
         return Ok(None);
     }
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
-    let candidate_id = output_id.try_clone_for_decode(ctx, "catia_relation_program_candidate_id")?;
+    let candidate_id =
+        output_id.try_clone_for_decode(ctx, "catia_relation_program_candidate_id")?;
     let output_name = ctx.copy_retained_text(
         &output_value.name.value,
         "catia_relation_program_output_name",
@@ -1781,7 +1809,10 @@ fn relation_program_output_candidate(
                     ),
                 )
             })?;
-            output_dependencies.insert(dependency.try_clone_for_decode(ctx, "catia_relation_program_output_dependency_id")?);
+            output_dependencies.insert(
+                dependency
+                    .try_clone_for_decode(ctx, "catia_relation_program_output_dependency_id")?,
+            );
         }
     }
     let candidate = FormulaParameterCandidate {
@@ -1934,9 +1965,7 @@ fn copy_design_parameter(
     let owner = source
         .owner
         .as_ref()
-        .map(|owner| {
-            owner.try_clone_for_decode(ctx, operation)
-        })
+        .map(|owner| owner.try_clone_for_decode(ctx, operation))
         .transpose()?;
     let name = ctx.copy_retained_text(&source.name, operation)?;
     let expression = ctx.copy_retained_text(&source.expression, operation)?;
@@ -2024,8 +2053,7 @@ fn copy_parameter_ids(
     operation: &'static str,
 ) -> Result<Vec<ParameterId>, cadmpeg_core::CodecError> {
     ctx.try_collect_vec(
-        ids.iter()
-            .map(|id| id.try_clone_for_decode(ctx, operation)),
+        ids.iter().map(|id| id.try_clone_for_decode(ctx, operation)),
         operation,
     )
 }

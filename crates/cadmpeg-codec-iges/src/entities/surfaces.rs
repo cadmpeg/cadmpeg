@@ -2211,7 +2211,8 @@ pub(super) fn project(
             ir.model.surfaces.push(Surface {
                 id: surface_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
                 geometry: SurfaceGeometry::Procedural {
-                    construction: procedural_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
+                    construction: procedural_id
+                        .try_clone_for_decode(ctx, "iges surface identity copy")?,
                     cache: None,
                 },
                 source_object: Some(source_object(entry, ctx)?),
@@ -2688,7 +2689,8 @@ pub(super) fn project(
                 continue;
             };
             let source_interval = source_parameter_interval(directrix_geometry, carrier_interval);
-            let mut procedural_directrix = generatrix_id.try_clone_for_decode(ctx, "iges surface identity copy")?;
+            let mut procedural_directrix =
+                generatrix_id.try_clone_for_decode(ctx, "iges surface identity copy")?;
             let mut procedural_axis = admitted_axis;
             let placed_solved = (entry.transform != 0)
                 .then(|| super::geometry_copy::copy_solved_curve(directrix_solved, ctx))
@@ -2723,7 +2725,8 @@ pub(super) fn project(
                 )?;
                 crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
-                    id: procedural_directrix.try_clone_for_decode(ctx, "iges surface identity copy")?,
+                    id: procedural_directrix
+                        .try_clone_for_decode(ctx, "iges surface identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
                         cadmpeg_ir::geometry::PlacedCurve::try_new(
                             Box::new(placed_solved),
@@ -2773,7 +2776,8 @@ pub(super) fn project(
             ir.model.surfaces.push(Surface {
                 id: surface_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
                 geometry: SurfaceGeometry::Procedural {
-                    construction: procedural_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
+                    construction: procedural_id
+                        .try_clone_for_decode(ctx, "iges surface identity copy")?,
                     cache: None,
                 },
                 source_object: Some(source_object(entry, ctx)?),
