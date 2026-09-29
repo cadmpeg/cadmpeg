@@ -673,8 +673,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     );
 }
 
-#[test]
-fn body_recipe_history_resolves_the_complete_input_body_boundary() {
+fn body_recipe_history_fixture() -> (crate::records::feature::scope::DesignParameterScope, AsmHistory, Vec<crate::records::topology::body_recipe::DesignBodyRecipeOperand>, cadmpeg_ir::ids::FaceId) {
     use cadmpeg_ir::ids::FaceId;
 
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -688,7 +687,7 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         })
         .unwrap();
     let candidate = FaceId::mint("f3d:brep:entity#10").expect("identity grammar");
-    let mut operands = vec![
+    let operands = vec![
         crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
             crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
                 id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
@@ -814,6 +813,12 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         states: vec![current, previous],
     };
 
+    (scope, history, operands, candidate)
+}
+
+#[test]
+fn body_recipe_history_resolves_the_complete_input_body_boundary() {
+    let (scope, history, mut operands, candidate) = body_recipe_history_fixture();
     bind_body_recipe_operand_history_candidates(
         None,
         &mut operands,
@@ -831,6 +836,19 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     assert_eq!(operands[0].resolved_body_state_id, Some(1));
     assert_eq!(operands[0].resolved_body_slot, Some(1));
     assert_eq!(operands[0].resolved_body_face_slots, [10, 11, 12]);
+}
+
+#[test]
+fn body_recipe_history_refuses_collection_limit() {
+    let (scope, history, mut operands, _) = body_recipe_history_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = bind_body_recipe_operand_history_candidates(
+        Some(&ctx), &mut operands, &[], &[scope], &[history],
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
