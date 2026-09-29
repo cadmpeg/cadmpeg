@@ -14,11 +14,6 @@ use std::num::NonZeroU32;
 
 use crate::curve::CurveTopologyRow;
 
-/// Return rows whose native curve identifier occurs exactly once.
-pub(crate) fn uniquely_identified_rows(rows: &[CurveTopologyRow]) -> Vec<&CurveTopologyRow> {
-    crate::identity::uniquely_identified_rows(rows, |row| row.id)
-}
-
 /// One of the two native curve suffix sides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Side {

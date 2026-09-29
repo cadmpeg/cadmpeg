@@ -281,7 +281,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         })
         .sum::<usize>();
     let skamp_constraint_coverage =
-        design_constraint_transfer_coverage(&ir.model.sketch_constraints, ":skamp:", "creo:skamp:");
+        design_constraint_transfer_coverage(ctx, &ir.model.sketch_constraints, ":skamp:", "creo:skamp:")?;
     let decoded_feature_relation_count = scan
         .features
         .definitions
@@ -323,20 +323,23 @@ pub(super) fn transfer_and_record_scanned_geometry(
         })
         .sum::<usize>();
     let relation_constraint_coverage = design_constraint_transfer_coverage(
+        ctx,
         &ir.model.sketch_constraints,
         ":relation:",
         "creo:relation:",
-    );
+    )?;
     let equation_constraint_coverage = design_constraint_transfer_coverage(
+        ctx,
         &ir.model.sketch_constraints,
         ":equation:",
         "creo:equation:",
-    );
+    )?;
     let surface_coverage = surface_transfer_coverage(
+        ctx,
         &scan.surfaces.rows,
         &ir.model.surfaces,
         &ir.model.procedural_surfaces,
-    );
+    )?;
     let decoded_type24_round_edge_envelope_count = scan
         .surfaces
         .parameters
@@ -352,7 +355,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             record.type24_round_edge_envelope()
         })
         .count();
-    let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves);
+    let curve_coverage = curve_transfer_coverage(ctx, &scan.curves.topology_rows, &ir.model.curves)?;
     {
         coverage.record(
             crate::coverage::UNIQUE_VISIBLE_SURFACE_ROW_COUNT,

@@ -642,7 +642,7 @@ pub(super) fn transfer_curve_expression_features(
         .filter(|record| !record.backup)
         .enumerate()
     {
-        let source_section = source_section(scan, record.offset);
+        let source_section = source_section(ctx, scan, record.offset)?;
         let ordinal = ordinal_base + expression_ordinal as u64;
         let feature_id = IrFeatureId::compose(
             &crate::identity::DEPDB_CURVE_EXPRESSION_FEATURE,
