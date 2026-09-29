@@ -455,9 +455,14 @@ fn bspline_surface_edit_refusal_keeps_control_points() {
     let knots = vec![0.0, 0.0, 1.0, 1.0];
     let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
     let original = surface.clone();
-    let refusal = surface.edit_control_points(|point| {
-        point.z = 3.0;
-        Err(NurbsError::EditRefused("caller refused this pole".into()))
+    let refusal = surface.try_map_control_points(|index, point| {
+        if index == 3 {
+            return Err(NurbsError::EditRefused("caller refused this pole".into()));
+        }
+        let mut moved = point.get();
+        moved.z = 3.0;
+        crate::features::FinitePoint3::new(moved)
+            .ok_or_else(|| NurbsError::Structure("non-finite pole".into()))
     });
     assert_eq!(
         refusal,
@@ -483,9 +488,10 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
     let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
     let original = surface.clone();
     assert!(surface
-        .edit_control_points(|point| {
-            point.x = f64::NAN;
-            Ok(())
+        .try_map_control_points(|_, point| {
+            let mut moved = point.get();
+            moved.x = f64::NAN;
+            crate::features::FinitePoint3::new(moved).ok_or(())
         })
         .is_err());
     assert_eq!(surface, original);
@@ -493,9 +499,10 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
     wire["u_knots"] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
     assert!(serde_json::from_value::<BsplineSurface>(wire).is_err());
     surface
-        .edit_control_points(|point| {
-            point.z = 2.0;
-            Ok(())
+        .try_map_control_points(|_, point| {
+            let mut moved = point.get();
+            moved.z = 2.0;
+            crate::features::FinitePoint3::new(moved).ok_or(())
         })
         .unwrap();
     assert!(surface
