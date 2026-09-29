@@ -159,7 +159,7 @@ pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
     limited
         .read_to_string(&mut text)
         .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
-    if text.len() as u64 > max_bytes {
+    if cadmpeg_core::decode::u64_from_index(text.len()) > max_bytes {
         return Err(anyhow!(
             "{} exceeds the configured {}-byte input limit",
             path.display(),
@@ -566,7 +566,7 @@ mod tests {
         let path = directory.path().join("remote-directory.prt");
         std::fs::write(&path, &bytes).unwrap();
         let cli_prefix =
-            read_detection_input(&path, DETECTION_PREFIX_LEN, bytes.len() as u64).unwrap();
+            read_detection_input(&path, DETECTION_PREFIX_LEN, cadmpeg_core::decode::u64_from_index(bytes.len())).unwrap();
         assert_eq!(cli_prefix, bytes);
 
         let cli_candidates = InputCatalog::with_builtins()
@@ -620,7 +620,7 @@ mod tests {
         put_u16(&mut file, 30, 9);
         put_u16(&mut file, 32, 6);
         put_u32(&mut file, 44, 3);
-        put_u32(&mut file, 48, DIRECTORY_SECTOR as u32);
+        put_u32(&mut file, 48, u32::try_from(DIRECTORY_SECTOR).expect("test directory sector fits u32"));
         put_u32(&mut file, 56, 4096);
         put_u32(&mut file, 60, END);
         put_u32(&mut file, 68, END);
@@ -628,7 +628,7 @@ mod tests {
             put_u32(&mut file, 76 + index * 4, FREE);
         }
         for index in 0..3 {
-            put_u32(&mut file, 76 + index * 4, index as u32);
+            put_u32(&mut file, 76 + index * 4, u32::try_from(index).expect("test FAT index fits u32"));
             file[SECTOR * (index + 1)..SECTOR * (index + 2)].fill(0xff);
             put_u32(&mut file, SECTOR + index * 4, FAT);
         }
@@ -678,7 +678,7 @@ mod tests {
         for (offset, word) in encoded.iter().enumerate() {
             put_u16(entry, offset * 2, *word);
         }
-        put_u16(entry, 64, (encoded.len() * 2) as u16);
+        put_u16(entry, 64, u16::try_from(encoded.len() * 2).expect("test name length fits u16"));
         entry[66] = kind;
         entry[67] = 1;
         put_u32(entry, 68, FREE);

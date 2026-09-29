@@ -34,11 +34,11 @@ pub(super) fn render_default_width(base: u64, bytes: &[u8]) -> String {
 /// as a `NonZeroUsize` and the other as the literal beside this walk, so the
 /// row length is at least one byte.
 fn rows(base: u64, bytes: &[u8], width: usize) -> String {
-    let last = base.saturating_add(bytes.len().saturating_sub(1) as u64);
+    let last = base.saturating_add(cadmpeg_core::decode::u64_from_index(bytes.len().saturating_sub(1)));
     let digits = offset_digits(last);
     let mut out = String::new();
     for (index, chunk) in bytes.chunks(width).enumerate() {
-        let offset = base.saturating_add((index * width) as u64);
+        let offset = base.saturating_add(cadmpeg_core::decode::u64_from_index(index * width));
         let rendered_offset = format!("{offset:0digits$x}  ");
         out.push_str(&rendered_offset);
         for column in 0..width {
@@ -64,9 +64,9 @@ fn rows(base: u64, bytes: &[u8], width: usize) -> String {
 }
 
 /// Maps one byte to its ASCII gutter character.
-const fn printable(byte: u8) -> char {
+fn printable(byte: u8) -> char {
     if byte.is_ascii_graphic() || byte == b' ' {
-        byte as char
+        char::from(byte)
     } else {
         '.'
     }

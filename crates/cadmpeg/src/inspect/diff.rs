@@ -112,15 +112,15 @@ pub(super) fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
             continue;
         }
         differing += 1;
-        let offset = offset as u64;
+        let offset = cadmpeg_core::decode::u64_from_index(offset);
         match runs.last_mut() {
             Some(last) if offset <= last.end().saturating_add(gap) => last.extend_to(offset),
             _ => runs.push(DiffRun::single(offset)),
         }
     }
     DiffSummary {
-        len_a: a.len() as u64,
-        len_b: b.len() as u64,
+        len_a: cadmpeg_core::decode::u64_from_index(a.len()),
+        len_b: cadmpeg_core::decode::u64_from_index(b.len()),
         differing,
         runs,
     }

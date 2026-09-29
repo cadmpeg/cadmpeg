@@ -3,7 +3,6 @@
 
 use clap::ValueEnum;
 
-use cadmpeg_core::bytes::assemble_u64_le;
 
 /// Parses a byte count or file offset written in hexadecimal or decimal.
 ///
@@ -216,18 +215,17 @@ impl ScalarWindow<'_> {
         if endian == Endian::Be {
             raw[..bytes.len()].reverse();
         }
-        let bits = assemble_u64_le(raw);
         match self.ty {
-            ScalarType::U8 => ScalarValue::U8(bits as u8),
-            ScalarType::I8 => ScalarValue::I8(bits as i8),
-            ScalarType::U16 => ScalarValue::U16(bits as u16),
-            ScalarType::I16 => ScalarValue::I16(bits as i16),
-            ScalarType::U32 => ScalarValue::U32(bits as u32),
-            ScalarType::I32 => ScalarValue::I32(bits as i32),
-            ScalarType::U64 => ScalarValue::U64(bits),
-            ScalarType::I64 => ScalarValue::I64(bits as i64),
-            ScalarType::F32 => ScalarValue::F32(f32::from_bits(bits as u32)),
-            ScalarType::F64 => ScalarValue::F64(f64::from_bits(bits)),
+            ScalarType::U8 => ScalarValue::U8(raw[0]),
+            ScalarType::I8 => ScalarValue::I8(i8::from_le_bytes([raw[0]])),
+            ScalarType::U16 => ScalarValue::U16(u16::from_le_bytes([raw[0], raw[1]])),
+            ScalarType::I16 => ScalarValue::I16(i16::from_le_bytes([raw[0], raw[1]])),
+            ScalarType::U32 => ScalarValue::U32(u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])),
+            ScalarType::I32 => ScalarValue::I32(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])),
+            ScalarType::U64 => ScalarValue::U64(u64::from_le_bytes(raw)),
+            ScalarType::I64 => ScalarValue::I64(i64::from_le_bytes(raw)),
+            ScalarType::F32 => ScalarValue::F32(f32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])),
+            ScalarType::F64 => ScalarValue::F64(f64::from_le_bytes(raw)),
         }
     }
 }
@@ -287,13 +285,13 @@ impl ScalarValue {
     pub(super) fn hex(self) -> String {
         let bits = match self {
             Self::U8(value) => u64::from(value),
-            Self::I8(value) => u64::from(value as u8),
+            Self::I8(value) => u64::from(u8::from_ne_bytes(value.to_ne_bytes())),
             Self::U16(value) => u64::from(value),
-            Self::I16(value) => u64::from(value as u16),
+            Self::I16(value) => u64::from(u16::from_ne_bytes(value.to_ne_bytes())),
             Self::U32(value) => u64::from(value),
-            Self::I32(value) => u64::from(value as u32),
+            Self::I32(value) => u64::from(u32::from_ne_bytes(value.to_ne_bytes())),
             Self::U64(value) => value,
-            Self::I64(value) => value as u64,
+            Self::I64(value) => u64::from_ne_bytes(value.to_ne_bytes()),
             Self::F32(value) => u64::from(value.to_bits()),
             Self::F64(value) => value.to_bits(),
         };
