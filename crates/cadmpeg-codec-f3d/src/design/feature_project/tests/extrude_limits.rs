@@ -15,6 +15,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
 fn scope() -> DesignParameterScope {
+    scope_with_extent(DesignExtrudeExtent::OneSidedDistance)
+}
+
+fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterScope {
     DesignParameterScope::try_new(DesignParameterScopeDraft {
         id: "f3d:Design/BulkStream.dat:scope#12".into(),
         byte_offset: 100,
@@ -31,7 +35,7 @@ fn scope() -> DesignParameterScope {
                 side_extent_discriminators: [1, 0],
                 side_extent_discriminator_offsets: [177, 190],
                 first_side_target_ordinal: None,
-                extent: DesignExtrudeExtent::OneSidedDistance,
+                extent,
                 direction_face_extend_offsets: [132, 136],
                 direction_reversed: false,
                 direction_reversed_offset: 140,
@@ -149,4 +153,64 @@ fn extrude_multiple_profile_fallback_scope_id_refuses_retained_limit() {
     let groups = [profile_group(100, 0), profile_group(101, 1)];
     assert_profile_fallback(&groups, "f3d:Design/BulkStream.dat:scope#12",
         "f3d Extrude fallback scope id");
+}
+
+fn assert_face_fallback(
+    role: DesignConstructionOperandRole,
+    operation: &'static str,
+) {
+    let scope = scope_with_extent(DesignExtrudeExtent::OneSidedToFace);
+    let profile = profile_group(100, 0);
+    let mut selection = profile_group(101, 1);
+    selection.operand_role = role;
+    let groups = [profile, selection];
+    let side_offset = parse_design_parameter_record(&parameter_record(
+        Some(44), "value", "Side1Offset", Some("mm"), "d3", 0.0,
+    )).unwrap();
+    let taper = parse_design_parameter_record(&parameter_record(
+        Some(44), "value", "TaperAngle", Some("deg"), "d2", 0.2,
+    )).unwrap();
+    let owned = [(0, &side_offset), (1, &taper)];
+    let definition = project_extrude(None, &scope, &owned, &groups, &[], &[], &[])
+        .unwrap().unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+    ));
+    for limit in 0..256 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            project_extrude(Some(&ctx), &scope, &owned, &groups, &[], &[], &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ) {
+            return;
+        }
+    }
+    panic!("no Extrude face refusal at {operation}");
+}
+
+#[test]
+fn extrude_selected_face_group_id_refuses_retained_limit() {
+    assert_face_fallback(
+        DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
+            usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+        },
+        "f3d Extrude selected face group id",
+    );
+}
+
+#[test]
+fn extrude_target_shape_group_id_refuses_retained_limit() {
+    assert_face_fallback(
+        DesignConstructionOperandRole::Other(
+            crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
+        ),
+        "f3d Extrude target shape group id",
+    );
 }
