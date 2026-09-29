@@ -498,19 +498,34 @@ impl<'a> ScopeHistoryGraph<'a> {
 }
 
 fn ensure_feature_dependencies_precede(
+    ctx: Option<&DecodeContext<'_>>,
     features: &[cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
-    let ordinals = features
-        .iter()
-        .map(|feature| (feature.id.clone(), feature.ordinal))
-        .collect::<HashMap<_, _>>();
+    let mut ordinals = HashMap::new();
+    for feature in features {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d feature dependency ordinal index")?;
+            ordinals.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d feature dependency ordinal index allocation", 0, 1)
+            })?;
+        }
+        ordinals.insert(&feature.id, feature.ordinal);
+    }
     if ordinals.len() != features.len() {
         return Err(CodecError::Malformed(
             "projected Design feature identity is not unique".into(),
         ));
     }
-    let mut unique_ordinals = HashSet::with_capacity(features.len());
+    let mut unique_ordinals = HashSet::new();
     for feature in features {
+        if !unique_ordinals.contains(&feature.ordinal) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d feature unique ordinal index")?;
+                unique_ordinals.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d feature unique ordinal index allocation", 0, 1)
+                })?;
+            }
+        }
         if !unique_ordinals.insert(feature.ordinal) {
             return Err(CodecError::Malformed(
                 "projected Design feature ordinal is not unique".into(),
@@ -1586,7 +1601,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 .cloned(),
         );
     }
-    ensure_feature_dependencies_precede(&features)?;
+    ensure_feature_dependencies_precede(ctx, &features)?;
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok((features, parameters))
 }
