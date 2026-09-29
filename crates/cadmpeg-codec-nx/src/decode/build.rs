@@ -258,8 +258,8 @@ pub(super) fn try_decode_geometry(
                 .len()
         })
         .sum::<usize>();
-    let transfer_limit = completion_transfer_budget_limit(chart_count);
-    let support_uv_limit = support_uv_completion_budget_limit(chart_count);
+    let transfer_limit = completion_transfer_budget_limit(ctx, chart_count)?;
+    let support_uv_limit = support_uv_completion_budget_limit(ctx, chart_count)?;
     let exact_transfer_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(
         MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
     ));
