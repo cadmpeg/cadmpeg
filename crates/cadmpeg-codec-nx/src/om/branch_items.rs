@@ -89,26 +89,6 @@ impl<T> BranchItems<T> {
 }
 
 impl<T> BranchItems<Option<T>> {
-    pub(crate) fn transpose_charged(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<BranchItems<T>>, CodecError> {
-        let mut values = Vec::new();
-        for value in self.0 {
-            let Some(value) = value else { return Ok(None) };
-            ctx.charge_collection_items(1, "NX branch transpose")?;
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<T>()),
-                "NX branch transpose",
-            )?;
-            values
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX branch transpose", 0, 1))?;
-            values.push(value);
-        }
-        Ok(Some(BranchItems(values)))
-    }
-
     #[cfg(test)]
     pub(crate) fn transpose(self) -> Option<BranchItems<T>> {
         Some(BranchItems(self.0.into_iter().collect::<Option<Vec<_>>>()?))
