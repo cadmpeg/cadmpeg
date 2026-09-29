@@ -38,6 +38,34 @@ use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
+fn revolution_unit_axis(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature_id: u32,
+    direction: cadmpeg_ir::features::FeatureDirection3,
+) -> Result<cadmpeg_ir::units::UnitVector3, cadmpeg_core::CodecError> {
+    let Some(axis) = cadmpeg_ir::units::UnitVector3::new(direction.get()) else {
+        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!("feature {feature_id} revolution axis direction does not have unit length"),
+            "creo revolution axis error text",
+        )?));
+    };
+    Ok(axis)
+}
+
+fn directrix_parameter_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    offset: usize,
+    knots: &[f64],
+) -> Result<[f64; 2], cadmpeg_core::CodecError> {
+    let Some((first, last)) = knots.first().zip(knots.last()) else {
+        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!("FeatDefs saved spline at offset {offset} has no knots"),
+            "creo revolution knot error text",
+        )?));
+    };
+    Ok([*first, *last])
+}
+
 fn push_revolution_surface_loss(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -446,31 +474,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     curve_id,
                     (
                         axis.origin,
-                        cadmpeg_ir::units::UnitVector3::new(axis.direction.get()).ok_or_else(
-                            || {
-                                cadmpeg_core::CodecError::malformed(format!(
-                                    "feature {feature_id} revolution axis direction does not have unit length"
-                                ))
-                            },
-                        )?,
+                        revolution_unit_axis(ctx, feature_id, axis.direction)?,
                     ),
                     [0.0, std::f64::consts::TAU],
                     None,
-                    [
-                        *directrix.knots().first().ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(format!(
-                                "FeatDefs saved spline at offset {} has no knots",
-                                spline.offset
-                            ))
-                        })?,
-                        *directrix.knots().last().ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(format!(
-                                "FeatDefs saved spline at offset {} has no knots",
-                                spline.offset
-                            ))
-                        })?,
-                    ]
-                    .into(),
+                    directrix_parameter_range(ctx, spline.offset, directrix.knots())?.into(),
                     false,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )

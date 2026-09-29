@@ -8,6 +8,54 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::AnnotationBuilder;
 
 #[test]
+fn revolution_axis_error_refuses_retained_text_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let direction = cadmpeg_ir::features::FeatureDirection3::new(
+        cadmpeg_ir::math::Vector3::new(2.0, 0.0, 0.0),
+    ).expect("finite nonzero direction");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::revolution_unit_axis(&ctx, 40, direction)
+        .expect_err("axis error text exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo revolution axis error text"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::revolution_unit_axis(ctx, 40, direction)
+            .expect_err("nonunit direction is malformed");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "feature 40 revolution axis direction does not have unit length"));
+        Ok::<(), CodecError>(())
+    }).expect("service error text admitted");
+}
+
+#[test]
+fn revolution_knot_error_refuses_retained_text_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::directrix_parameter_range(&ctx, 17, &[])
+        .expect_err("knot error text exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo revolution knot error text"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::directrix_parameter_range(ctx, 17, &[])
+            .expect_err("empty knot list is malformed");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "FeatDefs saved spline at offset 17 has no knots"));
+        assert_eq!(super::directrix_parameter_range(ctx, 17, &[0.0, 1.0])?, [0.0, 1.0]);
+        Ok::<(), CodecError>(())
+    }).expect("service error text admitted");
+}
+
+#[test]
 fn revolved_saved_spline_loss_refuses_text_and_row_below_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
