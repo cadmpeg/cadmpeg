@@ -145,6 +145,23 @@ fn copy_feature_id(
         .map_err(CodecError::malformed)
 }
 
+fn insert_feature_dependency(
+    ctx: Option<&DecodeContext<'_>>,
+    dependencies: &mut cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
+    dependency: &cadmpeg_ir::features::FeatureId,
+) -> Result<(), CodecError> {
+    if dependencies.contains(dependency) { return Ok(()); }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "f3d feature dependency")?;
+        dependencies.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "f3d feature dependency", 0, 1))?;
+    }
+    let id = copy_feature_id(ctx, dependency, "f3d feature dependency id")?;
+    // discarded-value: the preceding membership check admits this dependency.
+    let _ = dependencies.insert(id);
+    Ok(())
+}
+
 /// Design record slices projected together into the neutral construction
 /// history: the parameter, owner, and scope tables plus the construction
 /// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
@@ -1424,8 +1441,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         let Some(predecessor) = scope_ids.get(&(stream, predecessor_scope.record_index)) else {
             continue;
         };
-        if predecessor != &feature.id && !feature.dependencies.contains(predecessor) {
-            feature.dependencies.insert(predecessor.clone());
+        if predecessor != &feature.id {
+            insert_feature_dependency(ctx, &mut feature.dependencies, predecessor)?;
         }
     }
     for feature in &mut features {
@@ -1438,47 +1455,70 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             cadmpeg_ir::features::patterns::PatternSeed::Feature(feature) => Some(feature),
             _ => None,
         }) {
-            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                feature.dependencies.insert(dependency.clone());
+            if dependency != &feature.id {
+                insert_feature_dependency(ctx, &mut feature.dependencies, dependency)?;
             }
         }
     }
     for feature in &mut features {
-        let dependencies = match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Draft { anchor, .. }) => anchor
-                .pull()
-                .and_then(|pull| pull.plane.as_ref())
-                .into_iter()
-                .collect(),
+        let feature_id = &feature.id;
+        let dependencies = &mut feature.dependencies;
+        let mut add_dependency = |dependency: &cadmpeg_ir::features::FeatureId| {
+            if dependency != feature_id {
+                insert_feature_dependency(ctx, dependencies, dependency)?;
+            }
+            Ok::<_, CodecError>(())
+        };
+        match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Draft { anchor, .. }) => {
+                if let Some(plane) = anchor.pull().and_then(|pull| pull.plane.as_ref()) {
+                    add_dependency(plane)?;
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::SplitFace {
                 tool: cadmpeg_ir::features::SplitFaceTool::Plane { plane },
                 ..
-            }) => vec![plane],
+            }) => add_dependency(plane)?,
             FeatureDefinition::Operation(FeatureOperation::SplitFace {
                 tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
                 ..
-            }) => planes.iter().collect(),
+            }) => {
+                for plane in planes {
+                    add_dependency(plane)?;
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 construction: Some(construction),
                 ..
-            }) => construction.feature_references(),
+            }) => {
+                use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction, VertexSelection};
+                match construction.as_ref() {
+                    DatumPointConstruction::ThreePlaneIntersection { planes } => {
+                        for plane in planes.iter() {
+                            if let DatumPlaneReference::Feature { feature } = plane {
+                                add_dependency(feature)?;
+                            }
+                        }
+                    }
+                    DatumPointConstruction::EdgePlaneIntersection {
+                        plane: DatumPlaneReference::Feature { feature }, ..
+                    } => add_dependency(feature)?,
+                    DatumPointConstruction::Vertex {
+                        vertex: VertexSelection::Generated { vertex, .. },
+                    } => add_dependency(&vertex.feature)?,
+                    _ => {}
+                }
+            }
             FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane {
                 points, ..
-            }) => points
-                .iter()
-                .filter_map(|point| match point {
-                    cadmpeg_ir::features::VertexSelection::Generated { vertex, .. } => {
-                        Some(&vertex.feature)
+            }) => {
+                for point in points.iter() {
+                    if let cadmpeg_ir::features::VertexSelection::Generated { vertex, .. } = point {
+                        add_dependency(&vertex.feature)?;
                     }
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        for dependency in dependencies {
-            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                feature.dependencies.insert(dependency.clone());
+                }
             }
+            _ => {}
         }
     }
     let mut history_state_features = HashMap::<
@@ -1496,10 +1536,19 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         let Some(feature_id) = scope_ids.get(&(stream, scope.record_index)) else {
             continue;
         };
-        history_state_features
-            .entry(key)
-            .and_modify(|candidate| *candidate = None)
-            .or_insert_with(|| Some(feature_id.clone()));
+        if let Some(candidate) = history_state_features.get_mut(&key) {
+            *candidate = None;
+        } else {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d feature history state index")?;
+                history_state_features.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "f3d feature history state index", 0, 1))?;
+            }
+            let id = copy_feature_id(ctx, feature_id,
+                "f3d feature history state id")?;
+            // discarded-value: the vacant-key check admits this state.
+            let _ = history_state_features.insert(key, Some(id));
+        }
     }
     for feature in &mut features {
         let Some(scope) = feature
@@ -1524,8 +1573,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let Some(Some(dependency)) = history_state_features.get(&key) else {
                 continue;
             };
-            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                feature.dependencies.insert(dependency.clone());
+            if dependency != &feature.id {
+                insert_feature_dependency(ctx, &mut feature.dependencies, dependency)?;
             }
         }
     }
