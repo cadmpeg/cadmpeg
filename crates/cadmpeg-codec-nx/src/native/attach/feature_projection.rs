@@ -295,20 +295,6 @@ pub(super) fn projection_string(
     Ok(text)
 }
 
-pub(super) fn projection_surface_copy(
-    ctx: &DecodeContext<'_>,
-    surface: &SurfaceId,
-) -> Result<SurfaceId, CodecError> {
-    let bytes = std::mem::size_of::<SurfaceId>()
-        .checked_add(surface.as_str().len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX feature projection surface identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX feature projection surface identity",
-    )?;
-    Ok(surface.clone())
-}
-
 pub(super) fn selection_scoped_string(
     ctx: &DecodeContext<'_>,
     reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
@@ -520,7 +506,7 @@ pub(super) fn blend_feature_definition(
         }
         ctx.charge_collection_items(1, "NX blend result surfaces")?;
         reserve_attach_vec(ctx, &mut surfaces, 1, "NX blend result surfaces")?;
-        surfaces.push(projection_surface_copy(ctx, owner)?);
+        surfaces.push(owner.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
         match radius {
             BlendRadiusLaw::Constant { signed_radius } if signed_radius.get() != 0.0 => {
                 let magnitude = signed_radius.get().abs();
@@ -850,7 +836,7 @@ pub(super) fn unique_carrier_supports(
         }
         ctx.charge_collection_items(1, "NX offset support output")?;
         reserve_attach_vec(ctx, &mut supports, 1, "NX offset support output")?;
-        supports.push(projection_surface_copy(ctx, support)?);
+        supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
     let sort_work = supports
         .len()
@@ -1047,7 +1033,7 @@ pub(super) fn owned_thicken_surface_data<'a>(
     for support in positive {
         ctx.charge_collection_items(1, "NX thicken support output")?;
         reserve_attach_vec(ctx, &mut supports, 1, "NX thicken support output")?;
-        supports.push(projection_surface_copy(ctx, support)?);
+        supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
     Ok(Some(OwnedThickenSurfaceData {
         body,

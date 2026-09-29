@@ -38,7 +38,7 @@ use std::num::NonZeroU8;
 
 mod borrowed_wires;
 
-use super::copy_operation_text;
+
 use super::format_feature_child_id;
 use super::format_feature_history_id;
 use super::offset_data_block_bytes;
@@ -1189,11 +1189,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             data_blocks.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("allocate NX pattern construction block IDs", 0, 1)
             })?;
-            data_blocks.push(copy_operation_text(
-                ctx,
-                block,
-                "NX pattern construction block ID",
-            )?);
+            data_blocks.push(ctx.copy_retained_text(block, "NX pattern construction block ID")?);
         }
         let Some(store) = data_blocks
             .first()
@@ -1241,19 +1237,11 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             construction_references.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("allocate NX pattern construction reference IDs", 0, 1)
             })?;
-            construction_references.push(copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX pattern construction reference ID",
-            )?);
+            construction_references.push(ctx.copy_retained_text(&reference.id, "NX pattern construction reference ID")?);
         }
         let record = FeatureConstructionPayload {
             id,
-            operation_label: copy_operation_text(
-                ctx,
-                operation_label,
-                "NX pattern construction operation label",
-            )?,
+            operation_label: ctx.copy_retained_text(operation_label, "NX pattern construction operation label")?,
             owner: FeatureConstructionOwner::Pattern {
                 operation_kind,
                 reference_layout: graph[0].layout,
@@ -1291,20 +1279,12 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX pattern string ordinal", 0, 1))?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
-            let value = copy_operation_text(
-                ctx,
-                value.value.as_str(),
-                "NX pattern construction string value",
-            )?;
+            let value = ctx.copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
             let value = PrintableString::new(value)
                 .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &payload.operation_label,
-                "NX pattern construction string label",
-            )?;
+            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX pattern construction string label")?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX pattern construction string payload")?;
+                ctx.copy_retained_text(&payload.id, "NX pattern construction string payload")?;
             reserve_pattern_output(ctx, &mut strings, "NX pattern construction strings")?;
             strings.push(FeaturePatternConstructionString {
                 id,
@@ -1350,9 +1330,9 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
                 .map_err(|_| ctx.refuse_codec_limit("NX pattern fixed lane ordinal", 0, 1))?;
             let id = format_feature_child_id(ctx, &payload.id, "-fixed-lane-", ordinal)?;
             let operation_label =
-                copy_operation_text(ctx, &payload.operation_label, "NX pattern fixed lane label")?;
+                ctx.copy_retained_text(&payload.operation_label, "NX pattern fixed lane label")?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX pattern fixed lane payload")?;
+                ctx.copy_retained_text(&payload.id, "NX pattern fixed lane payload")?;
             reserve_pattern_output(ctx, &mut lanes, "NX pattern construction fixed lanes")?;
             lanes.push(FeaturePatternConstructionFixedLane {
                 id,

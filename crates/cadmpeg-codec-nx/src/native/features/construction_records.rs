@@ -10,7 +10,7 @@ use super::reference::ConstructionReference;
 use super::swp104_branch::FeatureSwp104LeadingBranch;
 use super::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 use super::{
-    construction_payload_frames, copy_operation_text, copy_payload_source_blocks,
+    construction_payload_frames, copy_payload_source_blocks,
     format_charged_text, format_feature_child_id, format_feature_history_id,
     offset_data_block_bytes, parse_sketch_point_name, visit_feature_history_operation_records,
     FeatureBlockConstruction, FeatureBlockDimension, FeatureBlockDimensions,
@@ -72,11 +72,7 @@ pub(super) fn resolved_feature_payload_references(
                 for (ordinal, (token, source_offset)) in decoded.into_iter().enumerate() {
                     let data_block =
                         charged_unique_offset_data_block(ctx, &indexed, token.value())?;
-                    let section_key = copy_operation_text(
-                        ctx,
-                        section_key,
-                        "NX resolved feature reference section",
-                    )?;
+                    let section_key = ctx.copy_retained_text(section_key, "NX resolved feature reference section")?;
                     ctx.charge_collection_items(1, "NX resolved feature payload references")?;
                     ctx.charge_retained(
                         cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -297,14 +293,10 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             "NX projected curve payload identity",
         )?;
         let operation_label =
-            copy_operation_text(ctx, operation_label, "NX projected curve payload operation")?;
+            ctx.copy_retained_text(operation_label, "NX projected curve payload operation")?;
         let mut construction_references = Vec::new();
         for reference in field {
-            let identity = copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX projected curve construction reference",
-            )?;
+            let identity = ctx.copy_retained_text(&reference.id, "NX projected curve construction reference")?;
             ctx.charge_collection_items(1, "NX projected curve construction references")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
@@ -362,15 +354,11 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
                 format_args!("{}-string-{ordinal:010}", payload.id),
                 "NX projected curve string identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &payload.operation_label,
-                "NX projected curve string operation",
-            )?;
+            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX projected curve string operation")?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX projected curve string payload")?;
+                ctx.copy_retained_text(&payload.id, "NX projected curve string payload")?;
             let text =
-                copy_operation_text(ctx, value.value.as_str(), "NX projected curve string value")?;
+                ctx.copy_retained_text(value.value.as_str(), "NX projected curve string value")?;
             let value = crate::printable_string::PrintableString::new(text)
                 .map_err(|error| CodecError::Malformed(error.into()))?;
             ctx.charge_collection_items(1, "NX projected curve strings")?;
@@ -572,13 +560,9 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
             "point-construction-scalar-lane#",
             "NX point scalar lane identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &header.operation_label,
-            "NX point scalar lane operation",
-        )?;
+        let operation_label = ctx.copy_retained_text(&header.operation_label, "NX point scalar lane operation")?;
         let construction_header =
-            copy_operation_text(ctx, &header.id, "NX point scalar lane header")?;
+            ctx.copy_retained_text(&header.id, "NX point scalar lane header")?;
         let first_block = format_charged_text(
             ctx,
             format_args!(
@@ -919,11 +903,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             let Some(block) = reference.data_block.as_deref() else {
                 break;
             };
-            data_blocks.push(copy_operation_text(
-                ctx,
-                block,
-                "NX surface construction source block",
-            )?);
+            data_blocks.push(ctx.copy_retained_text(block, "NX surface construction source block")?);
         }
         if data_blocks.len() != 14 {
             continue;
@@ -966,11 +946,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         id.push_str(operation_key);
         let mut construction_references: [String; 14] = std::array::from_fn(|_| String::new());
         for (slot, reference) in graph.into_iter().enumerate() {
-            construction_references[slot] = copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX surface construction reference identity",
-            )?;
+            construction_references[slot] = ctx.copy_retained_text(&reference.id, "NX surface construction reference identity")?;
         }
         ctx.charge_collection_items(1, "NX surface construction payloads")?;
         ctx.charge_retained(
@@ -984,11 +960,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         })?;
         output.push(FeatureSurfaceConstructionPayload {
             id,
-            operation_label: copy_operation_text(
-                ctx,
-                operation_label,
-                "NX surface construction operation label",
-            )?,
+            operation_label: ctx.copy_retained_text(operation_label, "NX surface construction operation label")?,
             construction_references,
             content,
         });
@@ -1024,17 +996,9 @@ pub(in crate::native) fn feature_surface_construction_scalar_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX surface scalar pair ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX surface scalar pair label",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX surface scalar pair label")?,
                 payload: FeatureScalarPairPayload::SurfaceConstruction {
-                    surface_construction_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX surface scalar pair payload",
-                    )?,
+                    surface_construction_payload: ctx.copy_retained_text(&payload.id, "NX surface scalar pair payload")?,
                     frame,
                 },
                 ordinal,
@@ -1071,7 +1035,7 @@ pub(in crate::native) fn feature_surface_construction_strings(
             })?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
             let text =
-                copy_operation_text(ctx, value.value.as_str(), "NX surface payload string text")?;
+                ctx.copy_retained_text(value.value.as_str(), "NX surface payload string text")?;
             let value = crate::payload_text::PayloadText::new(text)
                 .map_err(|error| CodecError::Malformed(error.to_owned()))?;
             ctx.charge_collection_items(1, "NX surface payload strings")?;
@@ -1086,16 +1050,8 @@ pub(in crate::native) fn feature_surface_construction_strings(
                 .map_err(|_| ctx.refuse_codec_limit("allocate NX surface payload strings", 0, 1))?;
             strings.push(FeatureSurfaceConstructionString {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX surface payload string label",
-                )?,
-                surface_construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX surface payload string owner",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX surface payload string label")?,
+                surface_construction_payload: ctx.copy_retained_text(&payload.id, "NX surface payload string owner")?,
                 ordinal: ordinal_u32,
                 value,
                 payload_offset,
@@ -1574,11 +1530,7 @@ pub(in crate::native) fn feature_operation_body_operands(
                 segment_body_bindings.try_reserve_exact(1).map_err(|_| {
                     ctx.refuse_codec_limit("allocate NX operation operand bindings", 0, 1)
                 })?;
-                segment_body_bindings.push(copy_operation_text(
-                    ctx,
-                    &binding.id,
-                    "retain NX operation operand binding id",
-                )?);
+                segment_body_bindings.push(ctx.copy_retained_text(&binding.id, "retain NX operation operand binding id")?);
             }
         }
         if !same_namespace_reference && segment_body_bindings.is_empty() {
@@ -1597,11 +1549,7 @@ pub(in crate::native) fn feature_operation_body_operands(
                 "operation-body-operand",
                 "retain NX operation body operand id",
             )?,
-            operation_label: copy_operation_text(
-                ctx,
-                &member.operation_label,
-                "retain NX operation body operand label",
-            )?,
+            operation_label: ctx.copy_retained_text(&member.operation_label, "retain NX operation body operand label")?,
             body_object_index: member.body_object_index,
             body_reference_ordinal: member.body_reference_ordinal,
             ordinal: member.ordinal,
@@ -1971,7 +1919,7 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
                 continue;
             };
             let data_block =
-                copy_operation_text(ctx, block, "NX extrude construction profile block")?;
+                ctx.copy_retained_text(block, "NX extrude construction profile block")?;
             ctx.charge_collection_items(1, "NX extrude construction profile references")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -1996,11 +1944,7 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             "extrude-construction-profile",
             "NX extrude construction profile identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            operation_label,
-            "NX extrude construction profile operation",
-        )?;
+        let operation_label = ctx.copy_retained_text(operation_label, "NX extrude construction profile operation")?;
         ctx.charge_collection_items(1, "NX extrude construction profiles")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -2122,7 +2066,7 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             let Some(binding) = binding.as_deref() else {
                 return Ok(None);
             };
-            let id = copy_operation_text(ctx, binding, operation)?;
+            let id = ctx.copy_retained_text(binding, operation)?;
             ctx.charge_collection_items(1, operation)?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
@@ -2213,12 +2157,8 @@ pub(in crate::native) fn feature_extrude_32_constructions(
                 return Err(ctx.refuse_codec_limit("NX extrude 32 profile block", 0, 1));
             };
             Ok(FeatureConstructionMember {
-                reference: copy_operation_text(
-                    ctx,
-                    &reference.id,
-                    "NX extrude 32 profile reference",
-                )?,
-                data_block: copy_operation_text(ctx, block, "NX extrude 32 profile block")?,
+                reference: ctx.copy_retained_text(&reference.id, "NX extrude 32 profile reference")?,
+                data_block: ctx.copy_retained_text(block, "NX extrude 32 profile block")?,
             })
         })?;
         let Some(atom_data_blocks) = copy_bindings(
@@ -2252,12 +2192,8 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             "extrude-32-construction",
             "NX extrude 32 construction identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &branch.operation_label,
-            "NX extrude 32 construction operation",
-        )?;
-        let branch_id = copy_operation_text(ctx, &branch.id, "NX extrude 32 construction branch")?;
+        let operation_label = ctx.copy_retained_text(&branch.operation_label, "NX extrude 32 construction operation")?;
+        let branch_id = ctx.copy_retained_text(&branch.id, "NX extrude 32 construction branch")?;
         ctx.charge_collection_items(1, "NX extrude 32 constructions")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
@@ -2436,12 +2372,8 @@ pub(in crate::native) fn feature_block_constructions(
                 continue;
             };
             owned_members.push(FeatureConstructionMember {
-                reference: copy_operation_text(
-                    ctx,
-                    &reference.id,
-                    "NX block construction member reference",
-                )?,
-                data_block: copy_operation_text(ctx, block, "NX block construction member block")?,
+                reference: ctx.copy_retained_text(&reference.id, "NX block construction member reference")?,
+                data_block: ctx.copy_retained_text(block, "NX block construction member block")?,
             });
         }
         let Ok(members): Result<[FeatureConstructionMember; 18], _> = owned_members.try_into()
@@ -2453,12 +2385,8 @@ pub(in crate::native) fn feature_block_constructions(
             continue;
         };
         let terminal_data_block =
-            copy_operation_text(ctx, terminal_block, "NX block construction terminal block")?;
-        let terminal_reference = copy_operation_text(
-            ctx,
-            &terminal.id,
-            "NX block construction terminal reference",
-        )?;
+            ctx.copy_retained_text(terminal_block, "NX block construction terminal block")?;
+        let terminal_reference = ctx.copy_retained_text(&terminal.id, "NX block construction terminal reference")?;
         let id = replace_operation_text(
             ctx,
             operation_label,
@@ -2467,7 +2395,7 @@ pub(in crate::native) fn feature_block_constructions(
             "NX block construction identity",
         )?;
         let operation_label =
-            copy_operation_text(ctx, operation_label, "NX block construction operation")?;
+            ctx.copy_retained_text(operation_label, "NX block construction operation")?;
         ctx.charge_collection_items(1, "NX block constructions")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBlockConstruction>()),
@@ -2517,13 +2445,9 @@ pub(in crate::native) fn feature_block_construction_payloads(
             "block-construction-payload",
             "NX block construction payload identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &construction.operation_label,
-            "NX block construction payload operation",
-        )?;
+        let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX block construction payload operation")?;
         let construction_id =
-            copy_operation_text(ctx, &construction.id, "NX block construction payload owner")?;
+            ctx.copy_retained_text(&construction.id, "NX block construction payload owner")?;
         ctx.charge_collection_items(1, "NX block construction payloads")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureConstructionPayload>()),
@@ -2570,13 +2494,9 @@ pub(in crate::native) fn feature_block_payload_scalars(
                 format_args!("{}-scalar-{ordinal}", payload.id),
                 "NX block payload scalar identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &payload.operation_label,
-                "NX block payload scalar operation",
-            )?;
+            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX block payload scalar operation")?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX block payload scalar owner")?;
+                ctx.copy_retained_text(&payload.id, "NX block payload scalar owner")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX block payload scalar ordinal", 0, 1))?;
             ctx.charge_collection_items(1, "NX block payload scalars")?;
@@ -2634,13 +2554,9 @@ pub(in crate::native) fn feature_block_payload_names(
                 format_args!("{}-name-{ordinal}", payload.id),
                 "NX block payload name identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &payload.operation_label,
-                "NX block payload name operation",
-            )?;
+            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX block payload name operation")?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX block payload name owner")?;
+                ctx.copy_retained_text(&payload.id, "NX block payload name owner")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX block payload name ordinal", 0, 1))?;
             ctx.charge_collection_items(1, "NX block payload names")?;
@@ -2732,22 +2648,14 @@ pub(in crate::native) fn feature_block_payload_named_records(
                 format_args!("{}-record-{ordinal}", payload.id),
                 "NX block payload named record identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &payload.operation_label,
-                "NX block payload named record operation",
-            )?;
+            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX block payload named record operation")?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX block payload named record owner")?;
+                ctx.copy_retained_text(&payload.id, "NX block payload named record owner")?;
             let name_field =
-                copy_operation_text(ctx, &name.id, "NX block payload named record name field")?;
+                ctx.copy_retained_text(&name.id, "NX block payload named record name field")?;
             let mut scalar_ids = Vec::new();
             for scalar in scalar_fields {
-                let scalar_id = copy_operation_text(
-                    ctx,
-                    &scalar.id,
-                    "NX block payload named record scalar field",
-                )?;
+                let scalar_id = ctx.copy_retained_text(&scalar.id, "NX block payload named record scalar field")?;
                 ctx.charge_collection_items(1, "NX block payload named record scalar fields")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
@@ -2829,17 +2737,13 @@ pub(in crate::native) fn feature_block_payload_points(
             format_args!("{}-point", record.id),
             "NX block payload point identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &record.operation_label,
-            "NX block payload point operation",
-        )?;
+        let operation_label = ctx.copy_retained_text(&record.operation_label, "NX block payload point operation")?;
         let named_record =
-            copy_operation_text(ctx, &record.id, "NX block payload point named record")?;
-        let name = copy_operation_text(ctx, name.frame.value(), "NX block payload point name")?;
-        let first_id = copy_operation_text(ctx, &first.id, "NX block payload point first scalar")?;
+            ctx.copy_retained_text(&record.id, "NX block payload point named record")?;
+        let name = ctx.copy_retained_text(name.frame.value(), "NX block payload point name")?;
+        let first_id = ctx.copy_retained_text(&first.id, "NX block payload point first scalar")?;
         let second_id =
-            copy_operation_text(ctx, &second.id, "NX block payload point second scalar")?;
+            ctx.copy_retained_text(&second.id, "NX block payload point second scalar")?;
         ctx.charge_collection_items(1, "NX block payload points")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBlockPayloadPoint>()),
@@ -2900,7 +2804,7 @@ pub(in crate::native) fn feature_block_payload_point_groups(
         for witness in points.iter().filter(|candidate| {
             candidate.operation_label == point.operation_label && candidate.name == point.name
         }) {
-            let id = copy_operation_text(ctx, &witness.id, "NX block payload point group witness")?;
+            let id = ctx.copy_retained_text(&witness.id, "NX block payload point group witness")?;
             ctx.charge_collection_items(1, "NX block payload point group witnesses")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
@@ -2916,12 +2820,8 @@ pub(in crate::native) fn feature_block_payload_point_groups(
             format_args!("{}-group", point.id),
             "NX block payload point group identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &point.operation_label,
-            "NX block payload point group operation",
-        )?;
-        let name = copy_operation_text(ctx, &point.name, "NX block payload point group name")?;
+        let operation_label = ctx.copy_retained_text(&point.operation_label, "NX block payload point group operation")?;
+        let name = ctx.copy_retained_text(&point.name, "NX block payload point group name")?;
         ctx.charge_collection_items(1, "NX block payload point groups")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
@@ -3070,18 +2970,14 @@ pub(in crate::native) fn feature_block_dimensions(
                 "NX block dimensions identity",
             )?
         } else {
-            copy_operation_text(ctx, &construction.id, "NX block dimensions identity")?
+            ctx.copy_retained_text(&construction.id, "NX block dimensions identity")?
         };
-        let operation_label = copy_operation_text(
-            ctx,
-            &construction.operation_label,
-            "NX block dimensions operation",
-        )?;
+        let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX block dimensions operation")?;
         let construction_id =
-            copy_operation_text(ctx, &construction.id, "NX block dimensions construction")?;
+            ctx.copy_retained_text(&construction.id, "NX block dimensions construction")?;
         let mut anchor_bindings = Vec::new();
         for binding in operation_bindings {
-            let id = copy_operation_text(ctx, &binding.id, "NX block dimension anchor binding")?;
+            let id = ctx.copy_retained_text(&binding.id, "NX block dimension anchor binding")?;
             ctx.charge_collection_items(1, "NX block dimension anchor bindings")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
@@ -3094,16 +2990,8 @@ pub(in crate::native) fn feature_block_dimensions(
         }
         let dimension = |slot: usize| -> Result<FeatureBlockDimension, CodecError> {
             Ok(FeatureBlockDimension {
-                declaration: copy_operation_text(
-                    ctx,
-                    &run[slot].id,
-                    "NX block dimension declaration",
-                )?,
-                expression: copy_operation_text(
-                    ctx,
-                    &resolved[slot].0.id,
-                    "NX block dimension expression",
-                )?,
+                declaration: ctx.copy_retained_text(&run[slot].id, "NX block dimension declaration")?,
+                expression: ctx.copy_retained_text(&resolved[slot].0.id, "NX block dimension expression")?,
                 value: resolved[slot].1,
             })
         };
@@ -3141,7 +3029,7 @@ pub(in crate::native) fn data_block_object_frames(
         {
             let id = data_block_object_frame_id(ctx, data_block, ordinal)?;
             let data_block =
-                copy_operation_text(ctx, data_block, "retain NX data block object frame source")?;
+                ctx.copy_retained_text(data_block, "retain NX data block object frame source")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX data block object frame ordinal", 0, 1))?;
             let offset = source_offset

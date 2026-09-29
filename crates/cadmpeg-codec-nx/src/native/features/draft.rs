@@ -33,7 +33,7 @@ use super::offset_data_block_bytes;
 use super::construction_records::format_offset_data_block_id;
 use super::construction_records::resolved_feature_payload_references;
 use super::construction_records::unique_offset_data_store;
-use super::copy_operation_text;
+
 use super::format_feature_child_id;
 use super::format_feature_history_id;
 use super::replace_operation_text;
@@ -883,11 +883,7 @@ pub(in crate::native) fn feature_draft_construction_payloads(
             )
         })?;
         for row in tokens.indices() {
-            data_blocks.push(copy_operation_text(
-                ctx,
-                row.target,
-                "NX draft construction source block",
-            )?);
+            data_blocks.push(ctx.copy_retained_text(row.target, "NX draft construction source block")?);
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
@@ -899,12 +895,8 @@ pub(in crate::native) fn feature_draft_construction_payloads(
             "draft-construction-payload#",
             "NX draft construction payload identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &lane.operation_label,
-            "NX draft construction operation label",
-        )?;
-        let index_lane = copy_operation_text(ctx, &lane.id, "NX draft construction index lane")?;
+        let operation_label = ctx.copy_retained_text(&lane.operation_label, "NX draft construction operation label")?;
+        let index_lane = ctx.copy_retained_text(&lane.id, "NX draft construction index lane")?;
         ctx.charge_collection_items(1, "NX draft construction payloads")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureConstructionPayload>()),
@@ -1010,11 +1002,7 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
             let Some(block) = reference.data_block.as_deref() else {
                 break;
             };
-            data_blocks.push(copy_operation_text(
-                ctx,
-                block,
-                "NX draft graph source block",
-            )?);
+            data_blocks.push(ctx.copy_retained_text(block, "NX draft graph source block")?);
         }
         if data_blocks.len() != 4 {
             continue;
@@ -1050,7 +1038,7 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         let mut construction_references: [String; 4] = std::array::from_fn(|_| String::new());
         for (slot, reference) in graph.into_iter().enumerate() {
             construction_references[slot] =
-                copy_operation_text(ctx, &reference.id, "NX draft graph reference identity")?;
+                ctx.copy_retained_text(&reference.id, "NX draft graph reference identity")?;
         }
         ctx.charge_collection_items(1, "NX draft construction graph payloads")?;
         ctx.charge_retained(
@@ -1064,12 +1052,8 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         })?;
         output.push(FeatureDraftConstructionGraphPayload {
             id,
-            operation_label: copy_operation_text(
-                ctx,
-                &lane.operation_label,
-                "NX draft graph operation label",
-            )?,
-            index_lane: copy_operation_text(ctx, &lane.id, "NX draft graph index lane")?,
+            operation_label: ctx.copy_retained_text(&lane.operation_label, "NX draft graph operation label")?,
+            index_lane: ctx.copy_retained_text(&lane.id, "NX draft graph index lane")?,
             construction_references,
             content,
         });
@@ -1104,12 +1088,8 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(
                 continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-fixed-lane-", ordinal)?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &payload.operation_label,
-                "NX draft fixed lane operation",
-            )?;
-            let graph_payload = copy_operation_text(ctx, &payload.id, "NX draft fixed lane graph")?;
+            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX draft fixed lane operation")?;
+            let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft fixed lane graph")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft fixed lane ordinal", 0, 1))?;
             ctx.charge_collection_items(1, "NX draft construction fixed lanes")?;
@@ -1162,13 +1142,9 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(
                 continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-binary32-lane-", ordinal)?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &payload.operation_label,
-                "NX draft binary32 lane operation",
-            )?;
+            let operation_label = ctx.copy_retained_text(&payload.operation_label, "NX draft binary32 lane operation")?;
             let graph_payload =
-                copy_operation_text(ctx, &payload.id, "NX draft binary32 lane graph")?;
+                ctx.copy_retained_text(&payload.id, "NX draft binary32 lane graph")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft binary32 lane ordinal", 0, 1))?;
             ctx.charge_collection_items(1, "NX draft construction binary32 lanes")?;
@@ -1217,15 +1193,11 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             };
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
             let operation_label =
-                copy_operation_text(ctx, &payload.operation_label, "NX draft string operation")?;
-            let graph_payload = copy_operation_text(ctx, &payload.id, "NX draft string graph")?;
+                ctx.copy_retained_text(&payload.operation_label, "NX draft string operation")?;
+            let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft string graph")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft string ordinal", 0, 1))?;
-            let value = PrintableString::new(copy_operation_text(
-                ctx,
-                value.value.as_str(),
-                "NX draft construction string",
-            )?)
+            let value = PrintableString::new(ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?)
             .map_err(|reason| CodecError::Malformed(reason.into()))?;
             ctx.charge_collection_items(1, "NX draft construction graph strings")?;
             ctx.charge_retained(
@@ -1278,9 +1250,9 @@ pub(in crate::native) fn feature_draft_construction_identity_frames(
             };
             let id = format_feature_child_id(ctx, &payload.id, "-identity-frame-", ordinal)?;
             let operation_label =
-                copy_operation_text(ctx, &payload.operation_label, "NX draft identity operation")?;
+                ctx.copy_retained_text(&payload.operation_label, "NX draft identity operation")?;
             let draft_construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX draft identity payload")?;
+                ctx.copy_retained_text(&payload.id, "NX draft identity payload")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft identity ordinal", 0, 1))?;
             ctx.charge_collection_items(1, "NX draft construction identity frames")?;

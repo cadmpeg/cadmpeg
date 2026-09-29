@@ -38,7 +38,7 @@ pub(crate) mod report;
 mod support_uv;
 
 use build::try_decode_geometry;
-use emit::{render_retained_text, source_meta, unknown_stream};
+use emit::{source_meta, unknown_stream};
 
 const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 /// Parsed container data shared by inspection and entity decoding.
@@ -152,14 +152,10 @@ fn report_untransferred_streams(
         offset_store_control_counts(ctx, &scan.container)?;
     if classified_control_count != control_count {
         charge_loss_code(ctx, NxLossCode::OffsetStoreControlUntyped)?;
-        push_loss(ctx, body, NxLossCode::OffsetStoreControlUntyped.note(render_retained_text(
-            ctx,
-            format_args!(
+        push_loss(ctx, body, NxLossCode::OffsetStoreControlUntyped.note(ctx.format_retained(format_args!(
                 "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
                 control_count - classified_control_count
-            ),
-            "nx offset control loss text",
-        )?))?;
+            ), "nx offset control loss text")?))?;
     }
     for entry in &scan.container.entries {
         let content = entry.content();
@@ -169,15 +165,11 @@ fn report_untransferred_streams(
                 && crate::native::toggle::has_complete_saved_toggle_stream(&scan.container))
         {
             charge_loss_code(ctx, NxLossCode::ContainerStreamOpaque)?;
-            push_loss(ctx, body, NxLossCode::ContainerStreamOpaque.note(render_retained_text(
-                ctx,
-                format_args!(
+            push_loss(ctx, body, NxLossCode::ContainerStreamOpaque.note(ctx.format_retained(format_args!(
                     "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
                     entry.name,
                     content.label()
-                ),
-                "nx opaque stream loss text",
-            )?))?;
+                ), "nx opaque stream loss text")?))?;
         }
     }
     for (index, stream) in scan.streams.iter().enumerate() {
@@ -186,14 +178,10 @@ fn report_untransferred_streams(
             push_loss(
                 ctx,
                 body,
-                NxLossCode::NonParasolidStreamOmitted.note(render_retained_text(
-                    ctx,
-                    format_args!(
+                NxLossCode::NonParasolidStreamOmitted.note(ctx.format_retained(format_args!(
                         "Non-Parasolid {} stream #{index} was classified but not transferred.",
                         stream.kind().label()
-                    ),
-                    "nx omitted stream loss text",
-                )?),
+                    ), "nx omitted stream loss text")?),
             )?;
         }
     }
