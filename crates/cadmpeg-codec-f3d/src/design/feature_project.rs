@@ -1232,11 +1232,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         || native_scope_definition(scope, &parameters),
                         |(construction, nominal_size)| {
                             let face = project_thread_face_selection(
+                                ctx,
                                 scope,
                                 &construction.face_group_record_indices,
                                 construction_groups,
                                 face_operands,
-                            );
+                            )?;
                             let has_parameter_owners = owners.iter().any(|owner| {
                                 native_stream(owner.id()) == Some(native_scope)
                                     && owner.scope_record_index() == scope.record_index
@@ -2594,20 +2595,21 @@ fn resolved_fillet_assignments<'a>(
 }
 
 fn project_thread_face_selection(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     face_group_record_indices: &[u32],
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
-) -> cadmpeg_ir::features::FaceSelection {
+) -> Result<cadmpeg_ir::features::FaceSelection, CodecError> {
     use cadmpeg_ir::features::FaceSelection;
 
     let Some(stream) = native_stream(&scope.id) else {
-        return FaceSelection::Unresolved;
+        return Ok(FaceSelection::Unresolved);
     };
     if face_group_record_indices.is_empty() {
-        return FaceSelection::Unresolved;
+        return Ok(FaceSelection::Unresolved);
     }
-    let mut ordered_groups = Vec::with_capacity(face_group_record_indices.len());
+    let mut ordered_groups = Vec::new();
     for record_index in face_group_record_indices {
         let mut matching = groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream)
@@ -2616,18 +2618,19 @@ fn project_thread_face_selection(
                 && group.role() == DesignOperandRole::ROLE_0X10
         });
         let Some(group) = matching.next() else {
-            return FaceSelection::Unresolved;
+            return Ok(FaceSelection::Unresolved);
         };
         if matching.next().is_some() {
-            return FaceSelection::Unresolved;
+            return Ok(FaceSelection::Unresolved);
         }
-        ordered_groups.push(group);
+        push_feature_item(ctx, &mut ordered_groups, group, "f3d Thread face group")?;
     }
-    let native = if let [group] = ordered_groups.as_slice() {
-        group.id.clone()
+    let native_source = if let [group] = ordered_groups.as_slice() {
+        group.id.as_str()
     } else {
-        scope.id.clone()
+        scope.id.as_str()
     };
+    let native = copy_feature_text(ctx, native_source, "f3d Thread face native id")?;
     let mut state = None;
     let mut faces = Vec::new();
     for group in ordered_groups {
@@ -2642,25 +2645,35 @@ fn project_thread_face_selection(
             face_operands,
         )
         else {
-            return FaceSelection::Native(native);
+            return Ok(FaceSelection::Native(native));
         };
         if state
             .as_ref()
             .is_some_and(|expected| expected != &group_state)
         {
-            return FaceSelection::Native(native);
+            return Ok(FaceSelection::Native(native));
         }
         state.get_or_insert(group_state);
-        for face in group_faces.iter().cloned() {
-            if !faces.contains(&face) {
-                faces.push(face);
+        for face in group_faces.as_slice() {
+            if !faces.contains(face) {
+                let face = copy_feature_identity(ctx, face.as_str(),
+                    "f3d Thread historical face id")?;
+                push_feature_item(ctx, &mut faces, face, "f3d Thread historical face")?;
             }
         }
     }
     let Some(state) = state else {
-        return FaceSelection::Native(native);
+        return Ok(FaceSelection::Native(native));
     };
-    FaceSelection::historical(state, faces, native.clone()).unwrap_or(FaceSelection::Native(native))
+    if let Some(ctx) = ctx {
+        let count = u64::try_from(faces.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d Thread historical face uniqueness", 0, 1)
+        })?;
+        ctx.charge_collection_items(count, "f3d Thread historical face uniqueness")?;
+    }
+    let historical_native = copy_feature_text(ctx, &native, "f3d Thread historical native id")?;
+    Ok(FaceSelection::historical(state, faces, historical_native)
+        .unwrap_or(FaceSelection::Native(native)))
 }
 
 /// Project Fusion's role-`0x4` full-round face construction.
