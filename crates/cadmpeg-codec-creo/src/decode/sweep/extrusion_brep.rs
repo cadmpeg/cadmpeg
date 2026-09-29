@@ -22,6 +22,7 @@ use super::profiles::{
 use crate::container::ContainerScan;
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
+use crate::lane_refusal::JoinedLaneRecords;
 use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -46,6 +47,40 @@ const GENERATED_EXTRUSION_SIDE_KINDS: &[crate::surface::SurfaceKind] = &[
     crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
 ];
 
+fn cap_record<'a>(
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
+    feature_id: u32,
+    profile_index: usize,
+    cap: &str,
+    entity_index: usize,
+) -> Result<(String, cadmpeg_core::decode::ScopedReservation<'a>), cadmpeg_core::CodecError> {
+    ctx.format_scoped(
+        format_args!("extrusion feature {feature_id} profile {profile_index} {cap} cap at entity {entity_index}"),
+        "creo extrusion cap record text",
+    )
+}
+
+fn refused_lane_message(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &str,
+    records: &[String],
+) -> Result<String, cadmpeg_core::CodecError> {
+    ctx.format_retained(
+        format_args!("Refused lanes on {record}: {}", JoinedLaneRecords(records)),
+        "creo extrusion refused lane error",
+    )
+}
+
+fn missing_cap_message(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    ctx.format_retained(
+        format_args!("{record} states no pcurve geometry"),
+        "creo extrusion missing cap error",
+    )
+}
+
 fn generated_extrusion_identity<I>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     key: impl std::fmt::Display,
@@ -69,20 +104,6 @@ where
     I: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>,
 {
     crate::identity::copy_checked_id(ctx, source, "creo extrusion entity ID copies")
-}
-
-struct JoinedLaneRecords<'a>(&'a [String]);
-
-impl std::fmt::Display for JoinedLaneRecords<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (index, record) in self.0.iter().enumerate() {
-            if index != 0 {
-                formatter.write_str("; ")?;
-            }
-            formatter.write_str(record)?;
-        }
-        Ok(())
-    }
 }
 
 fn push_rejected_extrusion(
@@ -679,10 +700,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     {
                         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                        let record = format!(
-                            "extrusion feature {feature_id} profile {profile_index} bottom cap \
-                             at entity {edge_index}"
-                        );
+                        let (record, _record_reservation) =
+                            cap_record(ctx, feature_id, profile_index, "bottom", edge_index)?;
                         let cap = extrusion_cap_pcurve(
                             ctx,
                             &sketch_geometry,
@@ -696,16 +715,16 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         if !records.is_empty() {
                             // The shell of this body already declares this cap
                             // face, so the model cannot omit the pcurve.
-                            return Err(cadmpeg_core::CodecError::malformed(format!(
-                                "Refused lanes on {record}: {}",
-                                records.join("; ")
-                            )));
+                            return Err(cadmpeg_core::CodecError::malformed(
+                                refused_lane_message(ctx, &record, &records)?,
+                            ));
                         }
-                        cap.ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(format!(
-                                "{record} states no pcurve geometry"
-                            ))
-                        })?
+                        let Some(cap) = cap else {
+                            return Err(cadmpeg_core::CodecError::malformed(
+                                missing_cap_message(ctx, &record)?,
+                            ));
+                        };
+                        cap
                     },
                 )?;
                 ctx.charge_entities(1, "admit Creo model coedges")?;
@@ -745,10 +764,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     {
                         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                        let record = format!(
-                            "extrusion feature {feature_id} profile {profile_index} top cap \
-                             at entity {ring_index}"
-                        );
+                        let (record, _record_reservation) =
+                            cap_record(ctx, feature_id, profile_index, "top", ring_index)?;
                         let cap = extrusion_cap_pcurve(
                             ctx,
                             &sketch_geometry,
@@ -762,16 +779,16 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         if !records.is_empty() {
                             // The shell of this body already declares this cap
                             // face, so the model cannot omit the pcurve.
-                            return Err(cadmpeg_core::CodecError::malformed(format!(
-                                "Refused lanes on {record}: {}",
-                                records.join("; ")
-                            )));
+                            return Err(cadmpeg_core::CodecError::malformed(
+                                refused_lane_message(ctx, &record, &records)?,
+                            ));
                         }
-                        cap.ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(format!(
-                                "{record} states no pcurve geometry"
-                            ))
-                        })?
+                        let Some(cap) = cap else {
+                            return Err(cadmpeg_core::CodecError::malformed(
+                                missing_cap_message(ctx, &record)?,
+                            ));
+                        };
+                        cap
                     },
                 )?;
                 ctx.charge_entities(1, "admit Creo model coedges")?;
@@ -827,10 +844,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 if !records.is_empty() {
                     // The shell of this body already declares this side face,
                     // so the model cannot omit the surface.
-                    return Err(cadmpeg_core::CodecError::malformed(format!(
-                        "Refused lanes on {record}: {}",
-                        records.join("; ")
-                    )));
+                    return Err(cadmpeg_core::CodecError::malformed(
+                        refused_lane_message(ctx, &record, &records)?,
+                    ));
                 }
                 let Some(surface_geometry) = surface_geometry else {
                     break;

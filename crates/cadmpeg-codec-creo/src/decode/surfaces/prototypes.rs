@@ -12,6 +12,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 use crate::legacy_geometry::LegacySurfaceNamespace;
+use crate::lane_refusal::JoinedLaneRecords;
 use crate::surface::SurfaceParameterRecord;
 
 use super::super::native::annotate;
@@ -19,20 +20,6 @@ use super::super::sweep::nurbs::interpolation_spline_surface;
 use crate::vecmath::{cross, dot, local_system_lanes};
 
 const EPS_PROTOTYPE_AGREEMENT: f64 = 1.0e-10;
-
-struct JoinedLaneRecords<'a>(&'a [String]);
-
-impl std::fmt::Display for JoinedLaneRecords<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (index, record) in self.0.iter().enumerate() {
-            if index != 0 {
-                formatter.write_str("; ")?;
-            }
-            formatter.write_str(record)?;
-        }
-        Ok(())
-    }
-}
 
 fn push_prototype_loss(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,

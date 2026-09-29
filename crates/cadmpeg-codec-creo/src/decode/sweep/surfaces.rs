@@ -25,6 +25,7 @@ use super::nurbs::{
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
 use crate::decode::source_carriers::SourceUnitCarriers;
+use crate::lane_refusal::JoinedLaneRecords;
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
@@ -45,20 +46,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::BTreeSet;
-
-struct JoinedLaneRecords<'a>(&'a [String]);
-
-impl std::fmt::Display for JoinedLaneRecords<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (index, record) in self.0.iter().enumerate() {
-            if index != 0 {
-                formatter.write_str("; ")?;
-            }
-            formatter.write_str(record)?;
-        }
-        Ok(())
-    }
-}
 
 fn push_saved_spline_loss(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
