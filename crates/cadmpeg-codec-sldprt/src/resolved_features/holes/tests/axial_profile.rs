@@ -43,6 +43,20 @@ fn profiled_hole_histories_report_collection_limit() {
 }
 
 #[test]
+fn profiled_hole_histories_refuse_retained_copy() {
+    let histories = [native_history()];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
+        .expect_err("history text requires retained storage");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "clone SLDPRT history text"));
+}
+
+#[test]
 fn axial_profile_resolves_counterbore_roles() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [

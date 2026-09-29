@@ -8,6 +8,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub(crate) mod charged_clone;
 mod debug;
 pub(crate) mod operand_tag;
 pub(crate) mod relation_scalars;

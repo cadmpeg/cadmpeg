@@ -586,10 +586,13 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
 }
 
 pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_constructions(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
-    let mut projection = histories.to_vec();
+) -> Result<(), CodecError> {
+    let mut projection = crate::records::charged_clone::clone_histories_charged(
+        ctx, histories, "clone SLDPRT cosmetic thread histories",
+    )?;
     enrich_history_hole_constructions(&mut projection, lanes);
     enrich_history_cosmetic_thread_diameters(&mut projection, lanes);
     let fallback_parameters = projection
@@ -611,6 +614,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("D2"), diameter.clone());
     }
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -1140,18 +1144,17 @@ pub(crate) fn project_profiled_hole_constructions(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(histories.len() as u64, "SLDPRT profiled-hole history copy")?;
-    let mut enriched_histories = histories.to_vec();
+    let mut enriched_histories = crate::records::charged_clone::clone_histories_charged(
+        ctx, histories, "SLDPRT unowned incomplete-hole histories",
+    )?;
     crate::history::configuration::enrich_history_parameters_semantic(
         ctx,
         &mut enriched_histories,
         lanes,
     )?;
-    ctx.charge_collection_items(
-        histories.len() as u64,
-        "SLDPRT profiled-hole ownership copy",
+    let mut ownership_histories = crate::records::charged_clone::clone_histories_charged(
+        ctx, &enriched_histories, "SLDPRT unowned incomplete-hole histories",
     )?;
-    let mut ownership_histories = enriched_histories.clone();
     enrich_history_hole_constructions(&mut ownership_histories, lanes);
     let histories = enriched_histories.as_slice();
     let incomplete =
