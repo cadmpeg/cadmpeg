@@ -152,7 +152,7 @@ impl From<CatiaOwnerChartBridgeReference> for CatiaOwnerChartBridgeReferenceWire
         let (alias_row, canonical_surface_tag) = match value.address {
             CatiaOwnerChartAddress::WidthCoded {
                 alias: Some(binding),
-            } => (Some(binding.row().to_owned()), binding.canonical_tag()),
+            } => (Some(binding.row.into_string()), binding.canonical_tag),
             _ => (None, None),
         };
         Self {
