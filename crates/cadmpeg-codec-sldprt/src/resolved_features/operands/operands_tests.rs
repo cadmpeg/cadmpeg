@@ -305,7 +305,7 @@ fn roster_point_operand_uses_coordinate_point_order() {
         Some("second")
     );
     assert!(resolve_operand_marker_excluding(
-        markers.iter(),
+        &markers.iter().collect::<Vec<_>>(),
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
         0,
         |id| id == "first",
@@ -697,7 +697,7 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
     .is_none());
     assert_eq!(
         resolve_operand_marker_excluding(
-            &markers,
+            &markers.iter().collect::<Vec<_>>(),
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
             10,
             |id| id == "curve-7",
@@ -730,7 +730,7 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
     let markers = [point("first", 0), point("second", 1)];
     assert_eq!(
         resolve_operand_marker_excluding(
-            &markers,
+            &markers.iter().collect::<Vec<_>>(),
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
             3,
             |id| id == "first",
