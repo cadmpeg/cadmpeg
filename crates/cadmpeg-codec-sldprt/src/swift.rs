@@ -963,7 +963,7 @@ fn project_with_topology(
         if suppressed(entity) || short_class(&entity.class) == "GdtDatum" {
             continue;
         }
-        if let Some(tolerance) = project_tolerance(entity, &datum_ids) {
+        if let Some(tolerance) = project_tolerance(ctx, entity, &datum_ids)? {
             let Some(targets) = targets(ctx, entity, &feature_index, topology)? else {
                 continue;
             };
@@ -1072,16 +1072,18 @@ struct ProjectedTolerance {
 }
 
 fn project_tolerance(
+    ctx: &DecodeContext<'_>,
     entity: &Entity,
     datum_ids: &BTreeMap<&str, PmiId>,
-) -> Option<ProjectedTolerance> {
-    let kind = tolerance_kind(short_class(&entity.class))?;
-    let magnitude = NonNegativeReal::new(entity.doubles.get("Tolerance").copied()?)?;
-    Some(ProjectedTolerance {
+) -> Result<Option<ProjectedTolerance>, CodecError> {
+    let Some(kind) = tolerance_kind(short_class(&entity.class)) else { return Ok(None) };
+    let Some(magnitude) = entity.doubles.get("Tolerance").copied().and_then(NonNegativeReal::new) else { return Ok(None) };
+    let Some(references) = datum_references(ctx, entity, datum_ids)?.try_into().ok() else { return Ok(None) };
+    Ok(Some(ProjectedTolerance {
         kind,
         magnitude: cadmpeg_ir::pmi::PmiMagnitude::from_parts(magnitude, PmiQuantity::Length),
-        references: datum_references(entity, datum_ids).try_into().ok()?,
-    })
+        references,
+    }))
 }
 
 fn project_lower_profile_tier(
@@ -2336,7 +2338,11 @@ fn deviation(
     tolerance
 }
 
-fn datum_references(entity: &Entity, datum_ids: &BTreeMap<&str, PmiId>) -> Vec<DatumReference> {
+fn datum_references(
+    ctx: &DecodeContext<'_>,
+    entity: &Entity,
+    datum_ids: &BTreeMap<&str, PmiId>,
+) -> Result<Vec<DatumReference>, CodecError> {
     let mut result = Vec::new();
     for (name, precedence) in [
         ("PrimaryDatums", NonZeroU32::MIN),
@@ -2346,28 +2352,31 @@ fn datum_references(entity: &Entity, datum_ids: &BTreeMap<&str, PmiId>) -> Vec<D
         let Some(collection) = unique_related(entity, name) else {
             continue;
         };
-        let applied = collection
+        ctx.charge_work(u64_from_index(collection.entity.related.len()), "count SWIFT applied datums")?;
+        let applied_count = collection
             .entity
             .related
             .iter()
             .filter(|object| object.class.ends_with(".GdtAppliedDatum"))
-            .collect::<Vec<_>>();
-        for datum in &applied {
+            .count();
+        for datum in collection.entity.related.iter().filter(|object| object.class.ends_with(".GdtAppliedDatum")) {
+            ctx.charge_work(1, "project SWIFT datum references")?;
             let [reference] = datum.entity.annotations.references.as_slice() else {
                 continue;
             };
             let Some(id) = datum_ids.get(reference.id.as_str()) else {
                 continue;
             };
+            ctx.reserve_collection_vec(&mut result, 1, "collect SWIFT datum references")?;
             result.push(DatumReference {
-                datum: (*id).clone(),
+                datum: copy_pmi_id(ctx, id)?,
                 precedence,
-                common_group: (applied.len() > 1).then_some(precedence.get()),
+                common_group: (applied_count > 1).then_some(precedence.get()),
                 modifiers: integer_modifier(datum.entity.integers.get("Modifier").copied()),
             });
         }
     }
-    result
+    Ok(result)
 }
 
 fn unique_related<'a>(entity: &'a Entity, name: &str) -> Option<&'a RelatedObject> {
