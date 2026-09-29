@@ -29,15 +29,17 @@ use super::intersection_resolve::{
 };
 use super::intersection_candidates::FixedCandidates;
 use super::intersections::carrier_intersection_curve;
+use super::intersection_resolve::curve_contains_points;
 use super::nurbs_boundaries::{
     cubic_extrusion_plane_generator_curve, nurbs_plane_boundary_curve,
     shared_extrusion_generator_curve,
 };
 
 pub(in super::super) fn analytic_curve_branches(
+    ctx: &DecodeContext<'_>,
     geometry: &CurveGeometry,
     tag: &'static str,
-) -> FixedCandidates<(CurveGeometry, &'static str)> {
+) -> Result<FixedCandidates<(CurveGeometry, &'static str)>, CodecError> {
     let opposite = if let CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) = geometry {
         Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
@@ -48,27 +50,36 @@ pub(in super::super) fn analytic_curve_branches(
     } else {
         None
     };
-    std::iter::once((geometry.clone(), tag))
+    Ok(std::iter::once((geometry.copy_admitted(ctx, "creo analytic curve branch geometry")?, tag))
         .chain(opposite)
-        .collect()
+        .collect())
 }
 
 fn resolve_carrier_intersection_curve(
+    ctx: &DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
     points: Option<[[f64; 3]; 2]>,
     allow_unresolved_endpoint_witness: bool,
-) -> Option<(CurveGeometry, &'static str)> {
-    let (geometry, tag) = carrier_intersection_curve(first, second)?;
-    let candidates = analytic_curve_branches(&geometry, tag);
-    resolve_curve_candidates(candidates.clone(), points).or_else(|| {
+) -> Result<Option<(CurveGeometry, &'static str)>, CodecError> {
+    let Some((geometry, tag)) = carrier_intersection_curve(first, second) else { return Ok(None) };
+    let candidates = analytic_curve_branches(ctx, &geometry, tag)?;
+    let selected = match points {
+        Some(points) => exactly_one(candidates.iter().enumerate()
+            .filter(|(_, (geometry, _))| curve_contains_points(geometry, points))
+            .map(|(index, _)| index)),
+        None => (candidates.len() == 1).then_some(0),
+    };
+    let selected = selected.or_else(|| {
         // A one-sided pcurve on an unresolved adjacent face supplies only a
         // finite-edge witness. It does not veto the exact infinite plane line.
         (tag == "plane_intersection_line"
             && (points.is_none() || allow_unresolved_endpoint_witness))
-            .then(|| resolve_curve_candidates(candidates, None))
-            .flatten()
-    })
+            .then_some(())
+            .filter(|_| candidates.len() == 1)
+            .map(|_| 0)
+    });
+    Ok(selected.and_then(|index| candidates.into_iter().nth(index)))
 }
 
 pub(in super::super) fn transfer_carrier_intersection_curves(
@@ -121,11 +132,12 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             .is_some_and(|evidence| !evidence.complete)
             && !nurbs_endpoint_witnesses.contains(&curve_id);
         let resolved = resolve_carrier_intersection_curve(
+            ctx,
             first,
             second,
             points,
             allow_unresolved_endpoint_witness,
-        )
+        )?
         .or_else(|| {
             let candidates = multi_component_intersection_candidates(first, second);
             if points.is_some() {
@@ -448,6 +460,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
 
 #[cfg(test)]
 mod tests {
+    use super::resolve_carrier_intersection_curve as resolve_carrier_intersection_curve_admitted;
     use std::collections::BTreeSet;
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -461,10 +474,51 @@ mod tests {
     use cadmpeg_ir::AnnotationBuilder;
 
     use super::transfer_nurbs_boundary_curves;
-    use super::{resolve_carrier_intersection_curve, transfer_carrier_intersection_curves};
+    use super::transfer_carrier_intersection_curves;
+
+    fn resolve_carrier_intersection_curve(
+        first: CarrierEquation,
+        second: CarrierEquation,
+        points: Option<[[f64; 3]; 2]>,
+        allow_unresolved_endpoint_witness: bool,
+    ) -> Option<(CurveGeometry, &'static str)> {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            resolve_carrier_intersection_curve_admitted(
+                ctx, first, second, points, allow_unresolved_endpoint_witness,
+            )
+        })
+        .expect("carrier intersection admission")
+    }
     use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
     use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
     use crate::{container, curve, surface};
+
+    #[test]
+    fn analytic_curve_branch_copy_refuses_below_retained_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_ir::ids::ProceduralCurveId;
+
+        let identity = "test:model:procedural#curve";
+        let geometry = CurveGeometry::Procedural {
+            construction: ProceduralCurveId::mint(identity).expect("valid construction ID"),
+            cache: None,
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = identity.len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = super::analytic_curve_branches(&ctx, &geometry, "procedural")
+            .expect_err("copy exceeds retained limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo analytic curve branch geometry"));
+        policy.limits.max_retained_bytes = identity.len() as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let branches = super::analytic_curve_branches(&ctx, &geometry, "procedural")
+            .expect("exact cap admits branch");
+        assert_eq!(branches.len(), 1);
+        assert_eq!(branches[0].0, geometry);
+    }
 
     fn carrier_transfer_with_limits(
         policy: DecodePolicy,
