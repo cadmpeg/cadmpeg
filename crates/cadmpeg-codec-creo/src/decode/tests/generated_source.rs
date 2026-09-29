@@ -381,23 +381,25 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
     ];
 
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service stepped form"),
         Some(HoleForm::Counterbore)
     );
     assert_eq!(
-        stepped_hole_form(9, &[table.clone(), table.clone()], &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, &[table.clone(), table.clone()], &rows)).expect("service stepped ambiguity"),
         None
     );
 
     rows[4].kind = crate::surface::SurfaceKind::Cone;
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service stepped form"),
         None
     );
 }
 
-#[test]
-fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
+fn split_patch_counterbore_fixture() -> (
+    crate::feature::entity::FeatureEntityTable,
+    Vec<crate::surface::SurfaceRow>,
+) {
     let entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
@@ -440,7 +442,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         next_surface: 0,
         offset: 0,
     };
-    let mut rows = vec![
+    let rows = vec![
         row(15, crate::surface::SurfaceKind::Cylinder),
         row(16, crate::surface::SurfaceKind::Cylinder),
         row(30, crate::surface::SurfaceKind::Plane),
@@ -448,12 +450,19 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         row(33, crate::surface::SurfaceKind::Cylinder),
     ];
 
+    (table, rows)
+}
+
+#[test]
+fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
+    let (table, mut rows) = split_patch_counterbore_fixture();
+
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service split-patch form"),
         Some(HoleForm::Counterbore)
     );
     assert_eq!(
-        stepped_hole_form(9, &[table.clone(), table.clone()], &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, &[table.clone(), table.clone()], &rows)).expect("service split-patch ambiguity"),
         None
     );
 
@@ -462,16 +471,97 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         .entries
         .retain(|entry| entry.entity_id != 32);
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&missing_plane_companion), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&missing_plane_companion), &rows)).expect("service missing companion"),
         None
     );
 
     rows[2].kind = crate::surface::SurfaceKind::Cylinder;
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service nonplanar form"),
         None
     );
 }
+
+fn assert_split_patch_collection_refusal(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (table, rows) = split_patch_counterbore_fixture();
+    let run = |policy: DecodePolicy| {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        stepped_hole_form(&ctx, 9, std::slice::from_ref(&table), &rows)
+    };
+    assert_eq!(run(DecodePolicy::service()).expect("service split-patch form"), Some(HoleForm::Counterbore));
+    let refusal = (0..256).find_map(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        match run(policy) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == operation => Some(refusal),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+            other => panic!("{operation} was not reached before {other:?}"),
+        }
+    }).expect("named split-patch allocation reached");
+    assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(refusal.limit, refusal.used);
+}
+
+macro_rules! split_patch_collection_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_split_patch_collection_refusal($operation);
+        }
+    };
+}
+
+split_patch_collection_test!(split_patch_materialized_ids_refuse_limit, "creo split-patch materialized surface ID nodes");
+split_patch_collection_test!(split_patch_cylinder_sources_refuse_limit, "creo split-patch cylinder source nodes");
+split_patch_collection_test!(split_patch_cylinder_ids_refuse_limit, "creo split-patch cylinder IDs");
+split_patch_collection_test!(split_patch_plane_sources_refuse_limit, "creo split-patch plane source nodes");
+split_patch_collection_test!(split_patch_plane_ids_refuse_limit, "creo split-patch plane IDs");
+split_patch_collection_test!(split_patch_rowless_sources_refuse_limit, "creo split-patch rowless source nodes");
+
+fn assert_paired_hole_collection_refusal(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let table = simple_drilled_recipe_table(9);
+    let rows = simple_drilled_recipe_surface_rows(9);
+    let run = |policy: DecodePolicy| {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        simple_drilled_hole_recipe(&ctx, 9, std::slice::from_ref(&table), &rows)
+            .map(|recipe| recipe.map(|recipe| recipe.dimension_family))
+    };
+    assert_eq!(run(DecodePolicy::service()).expect("service drilled recipe"), Some(SimpleDrilledDimensionFamily::ExternalId2Depth));
+    let refusal = (0..256).find_map(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        match run(policy) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == operation => Some(refusal),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+            other => panic!("{operation} was not reached before {other:?}"),
+        }
+    }).expect("named paired-hole allocation reached");
+    assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(refusal.limit, refusal.used);
+}
+
+macro_rules! paired_hole_collection_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_paired_hole_collection_refusal($operation);
+        }
+    };
+}
+
+paired_hole_collection_test!(paired_hole_run_sources_refuse_limit, "creo paired-hole run source nodes");
+paired_hole_collection_test!(paired_hole_runs_refuse_limit, "creo paired-hole runs");
+paired_hole_collection_test!(paired_hole_result_sources_refuse_limit, "creo paired-hole result source nodes");
 
 #[test]
 fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
@@ -479,11 +569,11 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     let mut rows = simple_drilled_recipe_surface_rows(9);
 
     assert_eq!(
-        simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows)
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service drilled recipe")
             .map(|recipe| recipe.dimension_family),
         Some(SimpleDrilledDimensionFamily::ExternalId2Depth)
     );
-    assert!(simple_drilled_hole_recipe(9, &[table.clone(), table.clone()], &rows,).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, &[table.clone(), table.clone()], &rows).map(|recipe| recipe.is_none())).expect("service drilled ambiguity"));
 
     let mut extended = table.clone();
     let mut extra = extended.entries[3].clone();
@@ -495,7 +585,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     extra.entity_id = 27;
     extended.entries.insert(14, extra);
     assert_eq!(
-        simple_drilled_hole_recipe(9, std::slice::from_ref(&extended), &rows)
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&extended), &rows)).expect("service extended recipe")
             .map(|recipe| recipe.dimension_family),
         Some(SimpleDrilledDimensionFamily::ExternalId4Depth)
     );
@@ -506,20 +596,20 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     unknown_family.entries.insert(8, extra.clone());
     extra.entity_id = 29;
     unknown_family.entries.insert(16, extra);
-    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&unknown_family), &rows).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&unknown_family), &rows)).expect("service unknown family").is_none());
 
     let mut bottom = table.entries[2].clone();
     bottom.entity_id = 20;
     bottom.payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) };
     table.entries.insert(2, bottom.clone());
-    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_some());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service source-zero recipe").is_some());
     bottom.entity_id = 25;
     table.entries.insert(3, bottom);
-    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, std::slice::from_ref(&table), &rows)).expect("service duplicate source-zero recipe").is_none());
 
     let table = simple_drilled_recipe_table(9);
     rows[1].kind = crate::surface::SurfaceKind::Cylinder;
-    assert!(simple_drilled_hole_recipe(9, &[table], &rows).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(ctx, 9, &[table], &rows).map(|recipe| recipe.is_none())).expect("service missing cone recipe"));
 }
 
 #[test]
