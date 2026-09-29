@@ -209,6 +209,101 @@ fn block_named_record_refuses_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
+fn block_point_input() -> (
+    Vec<crate::native::features::FeatureBlockPayloadNamedRecord>,
+    Vec<crate::native::features::payload_name::FeaturePayloadName>,
+    Vec<crate::native::features::FeaturePayloadScalar>,
+) {
+    let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
+    let (container, construction) = block_payload_input(bytes);
+    crate::test_support::with_decode_context(|ctx| {
+        let payloads = crate::native::features::feature_block_construction_payloads(
+            ctx, &container, std::slice::from_ref(&construction))?;
+        let names = crate::native::features::feature_block_payload_names(ctx, &container, &payloads)?;
+        let mut scalars = crate::native::features::feature_block_payload_scalars(ctx, &container, &payloads)?;
+        let mut records = crate::native::features::feature_block_payload_named_records(
+            ctx, &payloads, &names, &scalars)?;
+        assert_eq!((records.len(), scalars.len()), (1, 1));
+        let mut second = scalars[0].clone();
+        second.id = "second-scalar".into();
+        records[0].scalar_fields.push(second.id.clone());
+        scalars.push(second);
+        Ok::<_, cadmpeg_core::CodecError>((records, names, scalars))
+    }).expect("block point inputs")
+}
+
+#[derive(Clone, Copy)]
+enum BlockPointRoute { Point, Group }
+
+fn block_point_refusal(
+    route: BlockPointRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (records, names, scalars) = block_point_input();
+    let points = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::feature_block_payload_points(ctx, &records, &names, &scalars)
+    }).expect("admitted block point");
+    assert_eq!(points.len(), 1);
+    let mut second = points[0].clone();
+    second.id = "second-point".into();
+    let group_points = [points[0].clone(), second];
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        match route {
+            BlockPointRoute::Point => crate::native::features::feature_block_payload_points(
+                ctx, &records, &names, &scalars).map(|rows| rows.len()),
+            BlockPointRoute::Group => crate::native::features::feature_block_payload_point_groups(
+                ctx, &group_points).map(|rows| rows.len()),
+        }
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted block point route"), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("block point resource limit")
+}
+
+macro_rules! block_point_limit_tests {
+    ($collection:ident, $retained:ident, $work:ident, $route:expr) => {
+        #[test]
+        fn $collection() {
+            let error = block_point_refusal($route,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+        #[test]
+        fn $retained() {
+            let error = block_point_refusal($route,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+        #[test]
+        fn $work() {
+            let error = block_point_refusal($route,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+block_point_limit_tests!(
+    block_point_refuses_collection_limit,
+    block_point_refuses_retained_limit,
+    block_point_refuses_work_limit,
+    BlockPointRoute::Point
+);
+block_point_limit_tests!(
+    block_point_group_refuses_collection_limit,
+    block_point_group_refuses_retained_limit,
+    block_point_group_refuses_work_limit,
+    BlockPointRoute::Group
+);
+
 #[test]
 fn block_payload_refuses_collection_limit() {
     let error = block_payload_refusal(|policy| policy.limits.max_collection_items = 0);

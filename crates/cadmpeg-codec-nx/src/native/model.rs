@@ -1245,12 +1245,13 @@ impl NativeModel {
             &feature_block_payload_scalars,
         )?;
         let feature_block_payload_points = feature_block_payload_points(
+            ctx,
             &feature_block_payload_named_records,
             &feature_block_payload_names,
             &feature_block_payload_scalars,
-        );
+        )?;
         let feature_block_payload_point_groups =
-            feature_block_payload_point_groups(&feature_block_payload_points);
+            feature_block_payload_point_groups(ctx, &feature_block_payload_points)?;
         let feature_sketch_records = feature_sketch_records(
             ctx,
             &feature_operation_labels,
