@@ -77,6 +77,7 @@ use cadmpeg_core::decode::u64_from_index;
 // All sketch arenas and their annotations must be updated in one operation.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bind_sketch_profiles(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
@@ -85,8 +86,8 @@ pub(crate) fn bind_sketch_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     annotations: &mut Annotations,
-) {
-    let declared_carriers = declared_entity_handle_circular_carriers(features, parameters, lanes);
+) -> Result<(), CodecError> {
+    let declared_carriers = declared_entity_handle_circular_carriers(ctx, features, parameters, lanes)?;
     let mut superseded = HashSet::new();
     let metadata_ids = history_metadata_ids(histories);
     let native_features = histories
@@ -198,14 +199,16 @@ pub(crate) fn bind_sketch_profiles(
     builder.retain_exactness(|id| !removed.contains(id));
     *annotations = builder.build();
     bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
+    Ok(())
 }
 
 fn declared_entity_handle_circular_carriers(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) -> HashMap<String, Vec<([f64; 2], f64)>> {
-    let ownership = owned_relation_parameters(features, parameters, lanes);
+) -> Result<HashMap<String, Vec<([f64; 2], f64)>>, CodecError> {
+    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let parameters_by_id = parameters
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -252,7 +255,7 @@ fn declared_entity_handle_circular_carriers(
                 .push((coordinates.get(), encoded_radius));
         }
     }
-    carriers
+    Ok(carriers)
 }
 
 pub(super) fn nested_profile_contains_declared_circular_carriers(

@@ -35,7 +35,7 @@ use crate::records::{
     FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
     SketchInputKind, SketchRelationKind,
 };
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
@@ -248,13 +248,14 @@ fn spatial_relation_point_line_entities(
 /// Project spatial-feature relation records while retaining native records
 /// whenever the source marker roster cannot identify complete neutral geometry.
 pub(crate) fn project_spatial_relation_bindings(
+    ctx: &DecodeContext<'_>,
     constraints: &mut Vec<SpatialSketchConstraint>,
     entities: &mut Vec<SpatialSketchEntity>,
     sketches: &[SpatialSketch],
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let spatial_sketch_ids = sketches
         .iter()
         .map(|sketch| &sketch.id)
@@ -275,7 +276,7 @@ pub(crate) fn project_spatial_relation_bindings(
                 .then_some((feature.native_ref.as_deref()?, sketch))
         })
         .collect::<HashMap<_, _>>();
-    let relation_parameters = owned_relation_parameters(features, parameters, lanes);
+    let relation_parameters = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let parameters_by_id = parameters
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -370,6 +371,7 @@ pub(crate) fn project_spatial_relation_bindings(
             }
         }
     }
+    Ok(())
 }
 
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
@@ -804,12 +806,13 @@ pub(super) fn relation_uses_solver_line_operand(
 }
 
 pub(crate) fn project_relation_solved_line_geometry(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
@@ -827,7 +830,7 @@ pub(crate) fn project_relation_solved_line_geometry(
             Some((feature.native_ref.as_deref()?, sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
-    let ownership = owned_relation_parameters(features, parameters, lanes);
+    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let parameters_by_id = parameters
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -1290,6 +1293,7 @@ pub(crate) fn project_relation_solved_line_geometry(
             }
         }
     }
+    Ok(())
 }
 
 /// The point-to-point distance relation families that project a missing endpoint.
@@ -1384,12 +1388,13 @@ fn dynamic_line_geometry_key(entity: &SketchEntity, quantum: f64) -> Option<[Gri
 }
 
 pub(crate) fn project_relation_solved_point_geometry(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
@@ -1408,7 +1413,7 @@ pub(crate) fn project_relation_solved_point_geometry(
         })
         .collect::<HashMap<_, _>>();
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
-    let ownership = owned_relation_parameters(features, parameters, lanes);
+    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let parameters_by_id = parameters
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -1615,6 +1620,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             );
         }
     }
+    Ok(())
 }
 
 pub(super) fn implicit_circle_marker<'a>(
@@ -2326,13 +2332,14 @@ fn declared_entity_handle_linked_pairs<'a>(
 }
 
 pub(crate) fn project_relation_bindings(
+    ctx: &DecodeContext<'_>,
     constraints: &mut Vec<SketchConstraint>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     sketch_entities: &[SketchEntity],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
@@ -2355,7 +2362,7 @@ pub(crate) fn project_relation_bindings(
         .flat_map(|lane| &lane.sketch_entities)
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let relation_parameters = owned_relation_parameters(features, parameters, lanes);
+    let relation_parameters = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let parameters_by_id = parameters
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -2579,40 +2586,110 @@ pub(crate) fn project_relation_bindings(
             }
         }
     }
+    Ok(())
+}
+
+fn copy_relation_parameter_id(
+    ctx: &DecodeContext<'_>,
+    id: &cadmpeg_ir::features::ParameterId,
+) -> Result<cadmpeg_ir::features::ParameterId, cadmpeg_core::CodecError> {
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "copy SLDPRT relation parameter identity",
+    )?;
+    cadmpeg_ir::features::ParameterId::mint(text).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed("SolidWorks relation parameter identity is invalid".into())
+    })
+}
+
+fn claim_relation_parameter(
+    ctx: &DecodeContext<'_>,
+    claimed: &mut HashSet<cadmpeg_ir::features::ParameterId>,
+    id: &cadmpeg_ir::features::ParameterId,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if claimed.contains(id) {
+        return Ok(false);
+    }
+    let operation = "claim SLDPRT relation parameter";
+    ctx.charge_collection_items(1, operation)?;
+    claimed.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+    })?;
+    Ok(claimed.insert(copy_relation_parameter_id(ctx, id)?))
+}
+
+fn record_relation_parameter(
+    ctx: &DecodeContext<'_>,
+    owned: &mut HashMap<String, Option<cadmpeg_ir::features::ParameterId>>,
+    relation_id: &str,
+    parameter: Option<&cadmpeg_ir::features::ParameterId>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let operation = "index SLDPRT relation parameter ownership";
+    if !owned.contains_key(relation_id) {
+        ctx.charge_collection_items(1, operation)?;
+        owned.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+        })?;
+    }
+    let relation_id = ctx.format_retained(
+        format_args!("{relation_id}"),
+        "copy SLDPRT relation identity",
+    )?;
+    let parameter = parameter.map(|id| copy_relation_parameter_id(ctx, id)).transpose()?;
+    owned.insert(relation_id, parameter);
+    Ok(())
 }
 
 pub(crate) fn owned_relation_parameters<'a>(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
-) -> HashMap<String, Option<cadmpeg_ir::features::ParameterId>> {
-    let lanes = lanes.into_iter().collect::<Vec<_>>();
-    let parameters_by_scalar = parameters
-        .iter()
-        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
-        .collect::<HashMap<_, _>>();
+) -> Result<HashMap<String, Option<cadmpeg_ir::features::ParameterId>>, cadmpeg_core::CodecError> {
+    let mut lane_refs = Vec::new();
+    for lane in lanes {
+        ctx.reserve_collection_vec(&mut lane_refs, 1, "collect SLDPRT relation lanes")?;
+        lane_refs.push(lane);
+    }
+    let mut parameters_by_scalar = HashMap::new();
+    for parameter in parameters {
+        let Some(native_ref) = parameter.native_ref.as_deref() else {
+            continue;
+        };
+        let operation = "index SLDPRT relation scalars";
+        ctx.charge_work(1, operation)?;
+        if !parameters_by_scalar.contains_key(native_ref) {
+            ctx.charge_collection_items(1, operation)?;
+            parameters_by_scalar.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        parameters_by_scalar.insert(native_ref, parameter);
+    }
     let mut claimed = HashSet::new();
     let mut owned = HashMap::new();
-    for lane in &lanes {
+    for lane in &lane_refs {
         for relation in &lane.relation_instances {
+            ctx.charge_work(1, "scan SLDPRT relation ownership")?;
             let Some(scalar) = relation.parameter_scalar_ref() else {
                 continue;
             };
             let parameter = parameters_by_scalar
                 .get(scalar)
-                .map(|parameter| parameter.id.clone())
+                .map(|parameter| &parameter.id)
                 .or_else(|| {
                     relation_parameter_by_driving_name(relation, lane, features, parameters)
-                        .map(|parameter| parameter.id.clone())
+                        .map(|parameter| &parameter.id)
                 });
-            if let Some(parameter) = &parameter {
-                claimed.insert(parameter.clone());
+            if let Some(parameter) = parameter {
+                claim_relation_parameter(ctx, &mut claimed, parameter)?;
             }
-            owned.insert(relation.id.clone(), parameter);
+            record_relation_parameter(ctx, &mut owned, &relation.id, parameter)?;
         }
     }
-    for lane in &lanes {
+    for lane in &lane_refs {
         for relation in &lane.relation_instances {
+            ctx.charge_work(1, "scan SLDPRT relation ownership")?;
             if relation.parameter_scalar_ref().is_some() {
                 continue;
             }
@@ -2621,8 +2698,8 @@ pub(crate) fn owned_relation_parameters<'a>(
                 .iter()
                 .filter_map(|scalar| parameters_by_scalar.get(scalar.as_str()).copied());
             if let (Some(parameter), None) = (exact_matches.next(), exact_matches.next()) {
-                if claimed.insert(parameter.id.clone()) {
-                    owned.insert(relation.id.clone(), Some(parameter.id.clone()));
+                if claim_relation_parameter(ctx, &mut claimed, &parameter.id)? {
+                    record_relation_parameter(ctx, &mut owned, &relation.id, Some(&parameter.id))?;
                 }
                 continue;
             }
@@ -2640,12 +2717,12 @@ pub(crate) fn owned_relation_parameters<'a>(
             let Some(parameter) = parameter else {
                 continue;
             };
-            if claimed.insert(parameter.id.clone()) {
-                owned.insert(relation.id.clone(), Some(parameter.id.clone()));
+            if claim_relation_parameter(ctx, &mut claimed, &parameter.id)? {
+                record_relation_parameter(ctx, &mut owned, &relation.id, Some(&parameter.id))?;
             }
         }
     }
-    owned
+    Ok(owned)
 }
 
 fn relation_display_scalar<'a>(
@@ -2880,6 +2957,10 @@ mod relation_geometry_tests {
 
     #[test]
     fn solver_point_relation_projects_graph_resolved_operands() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
         use cadmpeg_ir::sketches::{Sketch, SketchLocus, SketchPlacement};
         use cadmpeg_ir::{
             features::{
@@ -3015,12 +3096,13 @@ mod relation_geometry_tests {
         let mut entities = Vec::new();
 
         project_relation_solved_point_geometry(
+            &ctx,
             &mut entities,
             &sketches,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&lane),
-        );
+        ).unwrap();
 
         let mut positions = entities
             .iter()
@@ -3045,13 +3127,14 @@ mod relation_geometry_tests {
 
         let mut constraints = Vec::new();
         project_relation_bindings(
+            &ctx,
             &mut constraints,
             &sketches,
             std::slice::from_ref(&feature),
             &entities,
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&lane),
-        );
+        ).unwrap();
         let [constraint] = constraints.as_slice() else {
             panic!("one solver-point constraint");
         };
@@ -3068,6 +3151,10 @@ mod relation_geometry_tests {
 
     #[test]
     fn solver_line_relation_prefers_marker_endpoint_join() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
         use cadmpeg_ir::math::{Point3, Vector3};
         use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
         use cadmpeg_ir::{
@@ -3310,12 +3397,13 @@ mod relation_geometry_tests {
         let mut entities = Vec::new();
 
         project_relation_solved_line_geometry(
+            &ctx,
             &mut entities,
             &sketches,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&lane),
-        );
+        ).unwrap();
 
         let solver_lines = entities
             .iter()
@@ -3335,12 +3423,13 @@ mod relation_geometry_tests {
 
         let mut fallback_entities = Vec::new();
         project_relation_solved_line_geometry(
+            &ctx,
             &mut fallback_entities,
             &sketches,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&fallback_parameter),
             std::slice::from_ref(&fallback_lane),
-        );
+        ).unwrap();
         let fallback_lines = fallback_entities
             .iter()
             .filter(|entity| entity.geometry_ref.is_some())
@@ -3407,6 +3496,10 @@ mod relation_geometry_tests {
 
     #[test]
     fn spatial_point_line_relation_uses_unique_tagged_marker_roster() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
         use cadmpeg_ir::sketches::{
             SpatialSketch, SpatialSketchConstraintDefinitionInput, SpatialSketchGeometryDefinition,
             SpatialSketchId,
@@ -3578,13 +3671,14 @@ mod relation_geometry_tests {
         let mut entities = Vec::new();
         let mut constraints = Vec::new();
         project_spatial_relation_bindings(
+            &ctx,
             &mut constraints,
             &mut entities,
             std::slice::from_ref(&sketch),
             std::slice::from_ref(&feature),
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&lane),
-        );
+        ).unwrap();
 
         let [constraint] = constraints.as_slice() else {
             panic!("one spatial relation constraint");
@@ -3653,3 +3747,6 @@ mod point_point_distance_family_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod ownership_tests;

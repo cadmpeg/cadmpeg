@@ -577,6 +577,7 @@ pub(crate) fn project_configuration_sketch_states(
             }
         }
         crate::resolved_features::profiles::bind_sketch_profiles(
+            ctx,
             &mut features,
             &mut ir.model.sketches,
             &mut ir.model.sketch_entities,
@@ -585,7 +586,7 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
             annotations,
-        );
+        )?;
         crate::resolved_features::profiles::project_compact_sketch_profiles(
             ctx,
             &mut features,
@@ -642,6 +643,7 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
+            ctx,
             &mut ir.model.sketch_entities,
             &ir.model.sketches,
             &surfaces,
@@ -670,27 +672,30 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         )?;
         crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
+            ctx,
             &mut ir.model.sketch_entities,
             &ir.model.sketches,
             &features,
             &parameters,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::relation_geometry::project_relation_solved_point_geometry(
+            ctx,
             &mut ir.model.sketch_entities,
             &ir.model.sketches,
             &features,
             &parameters,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::relation_geometry::project_relation_bindings(
+            ctx,
             &mut ir.model.sketch_constraints,
             &ir.model.sketches,
             &features,
             &ir.model.sketch_entities,
             &parameters,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::holes::project_profiled_hole_constructions(
             ctx,
             &mut features,
@@ -742,13 +747,14 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         )?;
         crate::resolved_features::relation_geometry::project_relation_bindings(
+            ctx,
             &mut ir.model.sketch_constraints,
             &ir.model.sketches,
             &features,
             &ir.model.sketch_entities,
             &parameters,
             scoped_lanes,
-        );
+        )?;
         for feature in features {
             let Some(state) = ir.model.configurations[configuration_index]
                 .feature_states
