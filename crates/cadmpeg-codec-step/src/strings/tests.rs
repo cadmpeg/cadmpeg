@@ -15,59 +15,246 @@ use crate::StepCodec;
 #[test]
 pub(crate) fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
     use crate::parse::implementation_level::ImplementationLevel;
-    use crate::strings::{decode, decode_with_level, encode};
+    use crate::strings::encode;
 
-    assert_eq!(decode(b"it''s").unwrap(), "it's");
-    assert_eq!(decode(b"a\\\\b").unwrap(), "a\\b");
-    assert_eq!(decode(b"\\X\\E9").unwrap(), "é");
-    assert_eq!(decode(b"\\X2\\03A9\\X0\\").unwrap(), "Ω");
-    assert_eq!(decode(b"\\X4\\0001F642\\X0\\").unwrap(), "🙂");
-    assert_eq!(decode(b"\\S\\D").unwrap(), "Ä");
-    assert_eq!(decode(b"\\PA\\\\S\\D").unwrap(), "Ä");
-    assert_eq!(decode(b"\\PB\\\\S\\A").unwrap(), "Á");
-    assert_eq!(decode(b"\\PC\\\\S\\!").unwrap(), "Ħ");
-    assert_eq!(decode(b"\\PD\\\\S\\!").unwrap(), "Ą");
-    assert_eq!(decode(b"\\PE\\\\S\\0").unwrap(), "А");
-    assert_eq!(decode(b"\\PF\\\\S\\G").unwrap(), "ا");
-    assert_eq!(decode(b"\\PG\\\\S\\A").unwrap(), "Α");
-    assert_eq!(decode(b"\\PH\\\\S\\`").unwrap(), "א");
-    assert_eq!(decode(b"\\PI\\\\S\\P").unwrap(), "Ğ");
-    assert_eq!(decode(b"line\\N\\text\\F\\tail").unwrap(), "linetexttail");
     assert_eq!(
-        decode_with_level(b"caf\xC3\xA9", ImplementationLevel::Edition3Class1).unwrap(),
+        crate::test_support::with_service_context(b"it''s", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "it's"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"a\\\\b", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "a\\b"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\X\\E9", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "é"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\X2\\03A9\\X0\\", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "Ω"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\X4\\0001F642\\X0\\", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "🙂"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\S\\D", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "Ä"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\PA\\\\S\\D", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "Ä"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\PB\\\\S\\A", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "Á"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\PC\\\\S\\!", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "Ħ"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\PD\\\\S\\!", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "Ą"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\PE\\\\S\\0", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "А"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\PF\\\\S\\G", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "ا"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\PG\\\\S\\A", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "Α"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\PH\\\\S\\`", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "א"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"\\PI\\\\S\\P", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "Ğ"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"line\\N\\text\\F\\tail", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        "linetexttail"
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(b"caf\xC3\xA9", |input, ctx| {
+            crate::strings::decode_with_context(input, ImplementationLevel::Edition3Class1, ctx)
+        })
+        .unwrap(),
         "café"
     );
     assert_eq!(
-        decode_with_level(
-            b"caf\xC3\xA9\\X2\\03A9\\X0\\",
-            ImplementationLevel::Edition3Class1
-        )
+        crate::test_support::with_service_context(b"caf\xC3\xA9\\X2\\03A9\\X0\\", |input, ctx| {
+            crate::strings::decode_with_context(input, ImplementationLevel::Edition3Class1, ctx)
+        })
         .unwrap(),
         "caféΩ"
     );
-    assert_eq!(
-        decode_with_level(b"caf\xE9", ImplementationLevel::Edition3Class1)
-            .unwrap_err()
-            .message,
-        "invalid UTF-8 direct string bytes"
-    );
+    let crate::strings::StringDecodeFailure::Invalid(error) =
+        crate::test_support::with_service_context(b"caf\xE9", |input, ctx| {
+            crate::strings::decode_with_context(input, ImplementationLevel::Edition3Class1, ctx)
+        })
+        .unwrap_err()
+    else {
+        panic!("invalid string must return its syntax error");
+    };
+    assert_eq!(error.message, "invalid UTF-8 direct string bytes");
 
     for text in ["ASCII", "it's \\ quoted", "café Ω 🙂"] {
-        assert_eq!(decode(encode(text).as_bytes()).unwrap(), text);
+        assert_eq!(
+            crate::test_support::with_service_context(encode(text).as_bytes(), |input, ctx| {
+                crate::strings::decode_with_context(
+                    input,
+                    crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                    ctx,
+                )
+            })
+            .unwrap(),
+            text
+        );
     }
 }
 
 #[test]
 fn writer_and_lexer_preserve_apostrophes_and_backslashes_once() {
-    use crate::lex::{lex, TokenKind};
+    use crate::lex::TokenKind;
 
     let source = "O'Brien \\ fixtures";
     let encoded = crate::writer::string(source);
-    let tokens = lex(encoded.as_bytes()).expect("lex encoded string");
+    let tokens =
+        crate::test_support::with_service_context(encoded.as_bytes(), crate::lex::lex_with_context)
+            .expect("lex encoded string");
     let TokenKind::String(bytes) = &tokens[0].kind else {
         panic!("encoded text did not lex as a string")
     };
-    assert_eq!(crate::strings::decode(bytes).unwrap(), source);
+    assert_eq!(
+        crate::test_support::with_service_context(bytes, |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .unwrap(),
+        source
+    );
     assert!(encoded.contains("O''Brien"));
     assert!(encoded.contains("\\\\"));
 }
@@ -75,21 +262,42 @@ fn writer_and_lexer_preserve_apostrophes_and_backslashes_once() {
 #[test]
 fn wide_escape_streams_surrogate_pairs_and_rejects_isolated_surrogates() {
     assert_eq!(
-        crate::strings::decode(b"\\X2\\D83DDE42\\X0\\").expect("valid UTF-16 surrogate pair"),
+        crate::test_support::with_service_context(b"\\X2\\D83DDE42\\X0\\", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .expect("valid UTF-16 surrogate pair"),
         "🙂"
     );
-    assert_eq!(
-        crate::strings::decode(b"\\X2\\D83D\\X0\\")
-            .expect_err("isolated high surrogate")
-            .message,
-        "wide escape contains an isolated surrogate"
-    );
-    assert_eq!(
-        crate::strings::decode(b"\\X2\\DE42\\X0\\")
-            .expect_err("isolated low surrogate")
-            .message,
-        "wide escape contains an isolated surrogate"
-    );
+    let crate::strings::StringDecodeFailure::Invalid(error) =
+        crate::test_support::with_service_context(b"\\X2\\D83D\\X0\\", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .expect_err("isolated high surrogate")
+    else {
+        panic!("invalid string must return its syntax error");
+    };
+    assert_eq!(error.message, "wide escape contains an isolated surrogate");
+    let crate::strings::StringDecodeFailure::Invalid(error) =
+        crate::test_support::with_service_context(b"\\X2\\DE42\\X0\\", |input, ctx| {
+            crate::strings::decode_with_context(
+                input,
+                crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+                ctx,
+            )
+        })
+        .expect_err("isolated low surrogate")
+    else {
+        panic!("invalid string must return its syntax error");
+    };
+    assert_eq!(error.message, "wide escape contains an isolated surrogate");
 }
 
 #[test]

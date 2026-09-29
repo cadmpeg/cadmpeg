@@ -77,12 +77,19 @@ fn abr_lane_positions_include_null_and_extended_widths() {
             offsets.map(|offset| base + offset as u64)
         );
         assert!(lane.clone().into_absolute(base + 1).is_none());
-        let resolved = lane.clone().try_resolve(|atom| Some(atom.value())).unwrap();
+        let resolved = lane
+            .clone()
+            .try_resolve(|atom| Ok(Some(atom.value())))
+            .unwrap()
+            .unwrap();
         assert!(resolved
             .slots()
             .iter()
             .all(|slot| slot.atom.map(|index| index.target)
                 == if raw == [0xff] { None } else { Some(2) }));
-        assert_eq!(lane.try_resolve(|_| None::<()>).is_some(), raw == [0xff]);
+        assert_eq!(
+            lane.try_resolve(|_| Ok(None::<()>)).unwrap().is_some(),
+            raw == [0xff]
+        );
     }
 }

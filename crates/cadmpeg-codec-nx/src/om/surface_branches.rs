@@ -164,15 +164,15 @@ impl SurfaceBranch<()> {
         self,
         ctx: &DecodeContext<'_>,
         file_base: u64,
-        mut target: impl FnMut(PayloadIndexToken) -> B,
+        mut target: impl FnMut(PayloadIndexToken) -> Result<B, CodecError>,
     ) -> Result<Option<SurfaceBranch<B>>, CodecError> {
         let Some(offset) = self.offset.checked_add(file_base) else {
             return Ok(None);
         };
         let members = self
             .members
-            .map_indexed_charged(ctx, |_, (token, ())| (token, target(token)))?;
-        let terminal = (self.terminal.0, target(self.terminal.0));
+            .try_map_indexed_charged(ctx, |_, (token, ())| Ok((token, target(token)?)))?;
+        let terminal = (self.terminal.0, target(self.terminal.0)?);
         Ok(SurfaceBranch::new(
             offset,
             self.mode,

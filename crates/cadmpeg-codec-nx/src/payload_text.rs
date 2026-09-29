@@ -19,6 +19,7 @@ impl<S: AsRef<str>> PayloadText<S> {
     }
 }
 
+#[cfg(test)]
 impl PayloadText<&str> {
     pub(crate) fn into_owned(self) -> PayloadText<String> {
         PayloadText(self.0.to_owned())

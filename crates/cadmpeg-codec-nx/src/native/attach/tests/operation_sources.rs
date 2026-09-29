@@ -4,6 +4,27 @@ use crate::native::attach::operation_source_properties;
 use std::collections::BTreeMap;
 #[test]
 fn operation_source_properties_require_unique_owned_structures() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let properties_for =
+        |operation_label: &str,
+         records: &[crate::native::features::operation_record::FeatureOperationRecord],
+         common_frames: &[crate::native::features::FeatureOperationCommonFrame],
+         terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame]| {
+            let mut properties = BTreeMap::new();
+            operation_source_properties(
+                &ctx,
+                &mut properties,
+                operation_label,
+                records,
+                common_frames,
+                terminal_frames,
+            )
+            .unwrap();
+            properties
+        };
     let record = crate::native::features::operation_record::FeatureOperationRecord {
         id: "record".into(),
         operation_label: "operation".into(),
@@ -45,7 +66,7 @@ fn operation_source_properties_require_unique_owned_structures() {
         .unwrap(),
     };
     assert_eq!(
-        operation_source_properties(
+        properties_for(
             &record.operation_label,
             std::slice::from_ref(&record),
             std::slice::from_ref(&common),
@@ -57,9 +78,9 @@ fn operation_source_properties_require_unique_owned_structures() {
             ("operation_terminal_frame".into(), "frame".into()),
         ])
     );
-    assert!(operation_source_properties("missing", &[], &[], &[]).is_empty());
+    assert!(properties_for("missing", &[], &[], &[]).is_empty());
     assert_eq!(
-        operation_source_properties(
+        properties_for(
             &record.operation_label,
             std::slice::from_ref(&record),
             &[],
@@ -70,7 +91,7 @@ fn operation_source_properties_require_unique_owned_structures() {
     let mut noncontiguous_common = common.clone();
     noncontiguous_common.ordinal = 1;
     assert_eq!(
-        operation_source_properties(
+        properties_for(
             &record.operation_label,
             std::slice::from_ref(&record),
             std::slice::from_ref(&noncontiguous_common),
@@ -81,7 +102,7 @@ fn operation_source_properties_require_unique_owned_structures() {
             ("operation_terminal_frame".into(), "frame".into()),
         ])
     );
-    assert!(operation_source_properties(
+    assert!(properties_for(
         &record.operation_label,
         &[record.clone(), record.clone()],
         std::slice::from_ref(&common),
@@ -89,7 +110,7 @@ fn operation_source_properties_require_unique_owned_structures() {
     )
     .is_empty());
     assert_eq!(
-        operation_source_properties(
+        properties_for(
             &record.operation_label,
             std::slice::from_ref(&record),
             &[],

@@ -1,12 +1,12 @@
 use crate::decode::feature_completeness::combine_definition_is_incomplete;
 
 use crate::native::attach::attach_initial_segment_bodies;
+use crate::native::attach::body_selection::boolean_participant_writer;
+use crate::native::attach::body_selection::boolean_target_writer;
+use crate::native::attach::body_selection::feature_body_selection;
+use crate::native::attach::body_selection::feature_body_selection_with_offset_blocks;
 use crate::native::attach::boolean_feature_definition;
-use crate::native::attach::boolean_participant_writer;
-use crate::native::attach::boolean_target_writer;
 use crate::native::attach::feature_body_outputs;
-use crate::native::attach::feature_body_selection;
-use crate::native::attach::feature_body_selection_with_offset_blocks;
 use crate::native::attach::native_primary_body_references;
 use crate::native::attach::AnnotationBuilder;
 use crate::native::attach::CadIr;
@@ -14,23 +14,30 @@ use crate::native::attach::FeatureId;
 use crate::native::history::BodyWriterHistory;
 use crate::native::segments::BooleanOffsetStoreResolution;
 use cadmpeg_ir::annotations::StreamHandle;
+use cadmpeg_ir::features::BodySelection;
+use cadmpeg_ir::ids::BodyId;
+use std::collections::BTreeMap;
 
 #[test]
 fn feature_body_selection_retains_complete_input_local_identities_atomically() {
-    use cadmpeg_ir::features::BodySelection;
-    use cadmpeg_ir::ids::BodyId;
-    use std::collections::BTreeMap;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
 
     let first = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
     let roots = BTreeMap::from([(94, 94), (122, 122)]);
     assert_eq!(
         feature_body_selection(
+            &ctx,
             &[94, 122],
             &roots,
             &BTreeMap::new(),
             "nx:om-object-indices#94,122".to_string(),
         )
-        .into_selection(),
+        .expect("resource admission")
+        .into_selection(&ctx)
+        .expect("resource admission"),
         BodySelection::local(
             vec![
                 "nx:om-body-object#94".to_string(),
@@ -42,23 +49,29 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     );
     assert!(matches!(
         feature_body_selection(
+            &ctx,
             &[94, 123],
             &roots,
             &BTreeMap::new(),
             "nx:om-object-indices#94,123".to_string(),
         )
-        .into_selection(),
+        .expect("resource admission")
+        .into_selection(&ctx)
+        .expect("resource admission"),
         BodySelection::Native(_)
     ));
     let aliases = BTreeMap::from([(94, 94), (150, 94)]);
     assert_eq!(
         feature_body_selection(
+            &ctx,
             &[94, 150],
             &aliases,
             &BTreeMap::new(),
             "nx:om-object-indices#94,150".to_string(),
         )
-        .into_selection(),
+        .expect("resource admission")
+        .into_selection(&ctx)
+        .expect("resource admission"),
         BodySelection::local(
             vec!["nx:om-body-object#94".to_string()],
             "nx:om-object-indices#94,150".to_string()
@@ -81,19 +94,22 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     let segment_bindings = [segment_binding("binding#0", 0, 94, 150)];
     assert_eq!(
         feature_body_selection(
+            &ctx,
             &[94],
             &roots,
             &bindings,
             "nx:om-object-index#94".to_string(),
         )
-        .into_selection(),
+        .expect("resource admission")
+        .into_selection(&ctx)
+        .expect("resource admission"),
         BodySelection::Resolved {
             bodies: vec![first.clone()].try_into().expect("distinct bodies"),
             native: "nx:om-object-index#94".to_string(),
         }
     );
     assert_eq!(
-        feature_body_outputs(94, &segment_bindings, &bindings),
+        feature_body_outputs(&ctx, 94, &segment_bindings, &bindings).unwrap(),
         vec![first]
     );
     let ambiguous_body_bindings = BTreeMap::from([(
@@ -103,21 +119,80 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             BodyId::mint("nx:s2:body#4".to_string()).expect("identity grammar"),
         ],
     )]);
-    assert!(feature_body_outputs(94, &segment_bindings, &ambiguous_body_bindings).is_empty());
-    assert!(feature_body_outputs(123, &segment_bindings, &bindings).is_empty());
+    assert!(
+        feature_body_outputs(&ctx, 94, &segment_bindings, &ambiguous_body_bindings)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        feature_body_outputs(&ctx, 123, &segment_bindings, &bindings)
+            .unwrap()
+            .is_empty()
+    );
     let ambiguous_bindings = [
         segment_binding("binding#0", 0, 94, 150),
         segment_binding("binding#1", 1, 94, 151),
     ];
-    assert!(feature_body_outputs(94, &ambiguous_bindings, &bindings).is_empty());
+    assert!(
+        feature_body_outputs(&ctx, 94, &ambiguous_bindings, &bindings)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+fn feature_body_output_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<Vec<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
+    let body = BodyId::mint("test:model:entity#selected-body").unwrap();
+    let bindings = [crate::native::segments::SegmentBodyBinding {
+        id: "binding".into(),
+        stream_link: "stream".into(),
+        stream_ordinal: 0,
+        stream_kind: crate::parasolid::StreamKind::Partition,
+        body_object_index: 94,
+        body_alias_object_index: 94,
+        stream_role: 0,
+        source_offset: 0,
+    }];
+    let bodies = BTreeMap::from([(94, vec![body])]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    feature_body_outputs(&ctx, 94, &bindings, &bodies)
+}
+
+#[test]
+fn feature_body_output_refuses_collection_limit() {
+    let error = feature_body_output_with_limit(|policy| policy.limits.max_collection_items = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn feature_body_output_refuses_retained_limit() {
+    let error =
+        feature_body_output_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]
 fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index() {
     use cadmpeg_ir::features::BodySelection;
-    use std::collections::BTreeMap;
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let selection = feature_body_selection_with_offset_blocks(
+        &ctx,
         &[94],
         &BTreeMap::from([(94, 94)]),
         &BTreeMap::from([(94, "nx:om-data-blocks-3:block#94".to_string())]),
@@ -125,7 +200,10 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
         "nx:om-object-index#94".to_string(),
     );
     assert_eq!(
-        selection.into_selection(),
+        selection
+            .expect("resource admission")
+            .into_selection(&ctx)
+            .expect("resource admission"),
         BodySelection::local(
             vec!["nx:om-data-blocks-3:block#94".to_string()],
             "nx:om-object-index#94".to_string()
@@ -248,17 +326,21 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         ),
     ];
 
-    let native = native_primary_body_references(
-        &references,
-        &data_block_uses,
-        &[FeatureBodySegmentUse {
-            id: "segment-use#exact".to_string(),
-            feature_body_reference: references[1].id.clone(),
-            segment_body_binding: "binding#exact".to_string(),
-        }],
-        &inputs,
-        &blocks,
-    );
+    let native = crate::test_support::with_decode_context(|ctx| {
+        native_primary_body_references(
+            ctx,
+            &references,
+            &data_block_uses,
+            &[FeatureBodySegmentUse {
+                id: "segment-use#exact".to_string(),
+                feature_body_reference: references[1].id.clone(),
+                segment_body_binding: "binding#exact".to_string(),
+            }],
+            &inputs,
+            &blocks,
+        )
+    })
+    .expect("admitted primary body references");
     assert_eq!(native.get("operation#segment"), Some(&10));
     assert_eq!(native.get("operation#exact"), Some(&99));
     assert!(!native.contains_key("operation#missing"));
@@ -311,8 +393,11 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
-    let id = attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream)
-        .expect("one emitted body has an exact segment binding");
+    let id = crate::test_support::with_decode_context(|ctx| {
+        attach_initial_segment_bodies(ctx, &mut ir, &[binding], &mut annotations, &stream)
+    })
+    .expect("admitted retained-history input")
+    .expect("one emitted body has an exact segment binding");
 
     assert_eq!(
         id,
@@ -357,10 +442,91 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
     assert!(
-        attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream,).is_none()
+        crate::test_support::with_decode_context(|ctx| attach_initial_segment_bodies(
+            ctx,
+            &mut ir,
+            &[binding],
+            &mut annotations,
+            &stream
+        ))
+        .expect("admitted retained-history input")
+        .is_none()
     );
     assert!(ir.model.bodies.is_empty());
     assert!(ir.model.features.is_empty());
+}
+
+fn retained_history_input_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<Option<FeatureId>, cadmpeg_core::CodecError> {
+    let mut ir = CadIr::empty();
+    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        id: cadmpeg_ir::ids::BodyId::mint("nx:s2:body#3").unwrap(),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    let binding = crate::native::segments::SegmentBodyBinding {
+        id: "nx:segment-body-bindings:binding#0".to_string(),
+        stream_link: "nx:segment-stream-links:link#0".to_string(),
+        stream_ordinal: 2,
+        stream_kind: crate::parasolid::StreamKind::Partition,
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 19,
+        source_offset: 100,
+    };
+    let mut annotations = AnnotationBuilder::new();
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    attach_initial_segment_bodies(&ctx, &mut ir, &[binding], &mut annotations, &stream)
+}
+
+#[test]
+fn retained_history_input_refuses_collection_limit() {
+    let error =
+        retained_history_input_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn retained_history_input_refuses_retained_limit() {
+    let error =
+        retained_history_input_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn retained_history_input_refuses_scoped_limit() {
+    let error = retained_history_input_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn retained_history_input_refuses_work_limit() {
+    let error =
+        retained_history_input_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -368,8 +534,11 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
     use cadmpeg_ir::features::{
         BodySelection, BooleanKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
-    use cadmpeg_ir::ids::BodyId;
-    use std::collections::BTreeMap;
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
 
     let operation = crate::native::features::FeatureBooleanOperation {
         id: "boolean#0".to_string(),
@@ -383,6 +552,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
     };
     let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
     let definition = boolean_feature_definition(
+        &ctx,
         &operation,
         &BTreeMap::from([(94, 94), (122, 122)]),
         &BooleanOffsetStoreResolution::None,
@@ -433,7 +603,11 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
 #[test]
 fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
     use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
-    use std::collections::BTreeMap;
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
 
     let operation = crate::native::features::FeatureBooleanOperation {
         id: "boolean#offset".to_string(),
@@ -454,6 +628,7 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
 
     assert_eq!(
         boolean_feature_definition(
+            &ctx,
             &operation,
             &BTreeMap::new(),
             &BooleanOffsetStoreResolution::Complete(blocks.clone()),
@@ -489,7 +664,11 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
     use cadmpeg_ir::features::{
         BodySelection, BooleanKind, FeatureDefinition, FeatureId, FeatureOperation,
     };
-    use std::collections::BTreeMap;
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
 
     let operation = crate::native::features::FeatureBooleanOperation {
         id: "boolean#writer-namespace".to_string(),
@@ -506,6 +685,7 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         (402, "nx:om-data-blocks-3:block#402".to_string()),
     ]);
     let definition = boolean_feature_definition(
+        &ctx,
         &operation,
         &BTreeMap::new(),
         &BooleanOffsetStoreResolution::Complete(blocks.clone()),
@@ -524,9 +704,15 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
     let offset_prior =
         FeatureId::mint("synthetic:test:id#offset-prior".to_string()).expect("identity grammar");
     let mut history = BodyWriterHistory::default();
-    history.record_writer(Some(401), None, &[], &native_prior);
-    history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);
-    history.record_writer(None, Some(&blocks[&402]), &[], &offset_prior);
+    history
+        .record_writer(&ctx, Some(401), None, &[], &native_prior)
+        .expect("admitted writer history");
+    history
+        .record_writer(&ctx, None, Some(&blocks[&401]), &[], &offset_prior)
+        .expect("admitted writer history");
+    history
+        .record_writer(&ctx, None, Some(&blocks[&402]), &[], &offset_prior)
+        .expect("admitted writer history");
 
     assert_eq!(
         boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),
@@ -561,7 +747,6 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
 fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
     use crate::native::features::FeatureBooleanKind;
     use crate::native::om::{DataBlock, DataBlockRole};
-    use std::collections::BTreeMap;
 
     let operation = crate::native::features::FeatureBooleanOperation {
         id: "boolean#offset-store".to_string(),
@@ -586,9 +771,16 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         source_entry: String::new(),
         source_offset: 0,
     };
+    let resolution = |operation: &crate::native::features::FeatureBooleanOperation,
+                      blocks: &[DataBlock]| {
+        crate::test_support::with_decode_context(|ctx| {
+            crate::native::segments::boolean_offset_store_resolution(ctx, operation, blocks)
+        })
+        .expect("admitted Boolean offset-store resolution")
+    };
     let same_store = vec![block(3, 401), block(3, 402), block(3, 403)];
     assert_eq!(
-        crate::native::segments::boolean_offset_store_resolution(&operation, &same_store),
+        resolution(&operation, &same_store),
         crate::native::segments::BooleanOffsetStoreResolution::Complete(BTreeMap::from([
             (401, "nx:om-data-blocks-3:block#401".to_string()),
             (402, "nx:om-data-blocks-3:block#402".to_string()),
@@ -597,11 +789,11 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
     );
     let mixed_store = vec![block(3, 401), block(4, 402), block(4, 403)];
     assert!(matches!(
-        crate::native::segments::boolean_offset_store_resolution(&operation, &mixed_store),
+        resolution(&operation, &mixed_store),
         crate::native::segments::BooleanOffsetStoreResolution::Unresolved
     ));
     assert!(matches!(
-        crate::native::segments::boolean_offset_store_resolution(&operation, &[]),
+        resolution(&operation, &[]),
         crate::native::segments::BooleanOffsetStoreResolution::None
     ));
     let mut control = block(3, 0);
@@ -621,10 +813,74 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         ..operation.clone()
     };
     assert!(matches!(
-        crate::native::segments::boolean_offset_store_resolution(
-            &control_operation,
-            &[control, block(3, 401), block(3, 402)],
-        ),
+        resolution(&control_operation, &[control, block(3, 401), block(3, 402)],),
         crate::native::segments::BooleanOffsetStoreResolution::Unresolved
     ));
+}
+
+fn boolean_offset_store_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    use crate::native::features::{FeatureBooleanKind, FeatureBooleanOperation};
+    use crate::native::om::{DataBlock, DataBlockRole};
+    let operation = FeatureBooleanOperation {
+        id: "boolean#resource".to_string(),
+        operation_label: "operation#resource".to_string(),
+        kind: FeatureBooleanKind::Unite,
+        target: crate::test_support::native_references::boolean_reference(1, 0),
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            2, 1,
+        )],
+        source_offset: 0,
+    };
+    let blocks = [1, 2].map(|index| DataBlock {
+        id: format!("block#{index}"),
+        section_ordinal: 0,
+        block_ordinal: index,
+        role: DataBlockRole::Column,
+        section_offset: 0,
+        byte_len: 0,
+        sha256: crate::native::hex::Sha256Hex::digest(&[]),
+        stable_identity: None,
+        source_entry: String::new(),
+        source_offset: 0,
+    });
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::segments::boolean_offset_store_resolution(ctx, &operation, &blocks)
+    })
+    .expect("admitted Boolean offset-store participants");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    crate::native::segments::boolean_offset_store_resolution(&ctx, &operation, &blocks)
+        .expect_err("Boolean offset-store resource refusal")
+}
+
+#[test]
+fn boolean_offset_store_refuses_collection_limit() {
+    let error = boolean_offset_store_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn boolean_offset_store_refuses_retained_limit() {
+    let error = boolean_offset_store_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn boolean_offset_store_refuses_work_limit() {
+    let error = boolean_offset_store_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }

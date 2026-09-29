@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::non_boolean_feature_definition;
+use crate::native::attach::feature_projection::non_boolean_feature_definition;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]

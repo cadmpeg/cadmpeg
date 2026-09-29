@@ -3,6 +3,7 @@
 
 use super::operation_record::OperationPayload;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FsetReferences<B> {
@@ -118,17 +119,78 @@ impl FsetReferences<()> {
     pub(crate) fn resolve<B>(
         self,
         file_base: u64,
-        mut target: impl FnMut(u16) -> B,
-    ) -> Result<FsetReferences<B>, &'static str> {
-        let offset = self
-            .offset
-            .checked_add(file_base)
-            .ok_or("source_offset: FSET frame overflows")?;
-        FsetReferences::new(
+        mut target: impl FnMut(u16) -> Result<B, CodecError>,
+    ) -> Result<Option<FsetReferences<B>>, CodecError> {
+        let Some(offset) = self.offset.checked_add(file_base) else {
+            return Ok(None);
+        };
+        let [(first_head, ()), (first_tail, ())] = self.first;
+        let [(second_head, ()), (second_middle, ()), (second_tail, ())] = self.second;
+        Ok(FsetReferences::new(
             offset,
             self.selector,
-            self.first.map(|(index, ())| (index, target(index))),
-            self.second.map(|(index, ())| (index, target(index))),
+            [
+                (first_head, target(first_head)?),
+                (first_tail, target(first_tail)?),
+            ],
+            [
+                (second_head, target(second_head)?),
+                (second_middle, target(second_middle)?),
+                (second_tail, target(second_tail)?),
+            ],
         )
+        .ok())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FsetReferences;
+    use crate::om::operation_record::OperationPayload;
+
+    fn graph() -> FsetReferences<()> {
+        let payload = [
+            1, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3', 0x90,
+            0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90, 0x19,
+            0x32, 0, 3, 0,
+        ];
+        let record = OperationPayload::new(&payload, 100, "FSET").expect("test FSET payload");
+        FsetReferences::read(record).expect("complete FSET graph")
+    }
+
+    #[test]
+    fn fset_resolution_returns_collection_refusal() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        let error = graph()
+            .resolve(0, |index| {
+                ctx.charge_collection_items(1, "NX FSET target")?;
+                Ok(Some(index))
+            })
+            .expect_err("target resolution refusal");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn fset_resolution_preserves_both_groups() {
+        let resolved = graph()
+            .resolve(20, |index| Ok::<_, cadmpeg_core::CodecError>(Some(index)))
+            .expect("target resolution")
+            .expect("valid relocated graph");
+        assert_eq!(resolved.offset(), 120);
+        assert_eq!(
+            resolved.first().map(|(index, value)| (index, value)),
+            [(6464, Some(6464)), (6465, Some(6465))]
+        );
+        assert_eq!(
+            resolved.second().map(|(index, value)| (index, value)),
+            [(6448, Some(6448)), (6449, Some(6449)), (6450, Some(6450))]
+        );
     }
 }

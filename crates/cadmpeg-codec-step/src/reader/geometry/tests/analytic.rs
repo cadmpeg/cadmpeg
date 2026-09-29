@@ -34,7 +34,9 @@ fn apll_point_name_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
 
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=APLL_POINT('leader',(1.,2.,3.),.NONE.);ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid APLL exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid APLL exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
@@ -55,7 +57,9 @@ fn tessellated_curve_name_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
 
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.)));#2=TESSELLATED_CURVE_SET('curve name',#1,((1,2)));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid tessellation exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid tessellation exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
@@ -84,7 +88,9 @@ fn assert_association_name_refuses(
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, _) = crate::parse::parse(source).expect("valid association exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid association exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;

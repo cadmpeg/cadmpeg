@@ -9,7 +9,7 @@ use std::io::{self, Read};
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
-use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
+use cadmpeg_core::decode::{ByteRange, DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
@@ -731,7 +731,7 @@ impl CompoundState {
             }
         };
         let directory_chain = chain(
-            Some(ctx),
+            ctx,
             &fat,
             sector_count,
             directory_start,
@@ -753,11 +753,11 @@ impl CompoundState {
             sector_count,
             directory_chain.iter().flat_map(SectorChain::iter),
         )?;
-        let directory = parse_directory(Some(ctx), &directory_bytes, version)?;
+        let directory = parse_directory(ctx, &directory_bytes, version)?;
         drop(directory_scratch);
         validate_root(&directory)?;
         let mini_fat_chain = chain(
-            Some(ctx),
+            ctx,
             &fat,
             sector_count,
             mini_fat_start,
@@ -805,7 +805,7 @@ impl CompoundState {
             })?
             .div_ceil(sector_size);
         let root_mini_chain = chain(
-            Some(ctx),
+            ctx,
             &fat,
             sector_count,
             root.start_sector,
@@ -980,7 +980,7 @@ impl CompoundState {
                                 })?
                                 .div_ceil(width);
                             let sectors = chain(
-                                Some(ctx),
+                                ctx,
                                 fat,
                                 count,
                                 entry.start_sector,
@@ -1103,6 +1103,16 @@ pub enum CompoundPrefixProbe {
 impl CompoundPrefixProbe {
     /// Parses only complete structures available in `prefix`.
     pub fn inspect(prefix: &[u8]) -> Self {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            match DecodeContext::from_root_bytes(prefix, &arena, &DecodePolicy::default()) {
+                Ok(session) => session,
+                Err(error) => return Self::Malformed(error.to_string()),
+            };
+        Self::inspect_with_context(&ctx, prefix)
+    }
+
+    fn inspect_with_context(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Self {
         if prefix.get(..8) != Some(&MAGIC) {
             return Self::NotCompound;
         }
@@ -1152,6 +1162,12 @@ impl CompoundPrefixProbe {
             || (version == CompoundVersion::V4 && directory_sector_count == 0)
         {
             return Self::Malformed("invalid CFB header counts".into());
+        }
+        if let Err(error) = ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(fat_count),
+            "probe CFB FAT sectors",
+        ) {
+            return Self::Malformed(error.to_string());
         }
         let available = (prefix.len() - sector_size) / sector_size;
         let mut fat_sectors = Vec::new();
@@ -1279,7 +1295,7 @@ impl CompoundPrefixProbe {
         else {
             return Self::Incomplete;
         };
-        let directory = match parse_directory(None, &directory_bytes, version) {
+        let directory = match parse_directory(ctx, &directory_bytes, version) {
             Ok(value) => value,
             Err(error) => return Self::Malformed(error.to_string()),
         };
@@ -1425,7 +1441,7 @@ const _: () = assert!(DIRECTORY_START_SECTOR.is_multiple_of(4));
 const _: () = assert!(DIRECTORY_SIZE.is_multiple_of(8));
 
 fn parse_directory(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     version: CompoundVersion,
 ) -> Result<Vec<DirectorySlot>, CodecError> {
@@ -1434,20 +1450,18 @@ fn parse_directory(
         return malformed("CFB directory stream has a partial entry");
     }
     let entry_count = records.len();
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(entry_count),
-            "parse CFB directory entries",
-        )?;
-        let retained = entry_count
-            .checked_mul(std::mem::size_of::<DirectorySlot>())
-            .and_then(|size| size.checked_add(bytes.len()))
-            .ok_or_else(|| CodecError::Malformed("CFB directory storage size overflow".into()))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(retained),
-            "retain CFB directory",
-        )?;
-    }
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(entry_count),
+        "parse CFB directory entries",
+    )?;
+    let retained = entry_count
+        .checked_mul(std::mem::size_of::<DirectorySlot>())
+        .and_then(|size| size.checked_add(bytes.len()))
+        .ok_or_else(|| CodecError::Malformed("CFB directory storage size overflow".into()))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(retained),
+        "retain CFB directory",
+    )?;
     let mut entries = cadmpeg_core::decode::DecodeContext::admitted_vec(
         entry_count,
         "parse CFB directory entries",
@@ -1652,7 +1666,7 @@ impl ChainRole {
 }
 
 fn chain(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     fat: &[u32],
     sector_count: usize,
     start: u32,
@@ -1675,7 +1689,7 @@ fn chain(
         Some(ChainLength::Unbounded) => None,
     };
     let limit = expected.map_or(sector_count, NonZeroUsize::get);
-    if let (Some(ctx), Some(count)) = (ctx, expected) {
+    if let Some(count) = expected {
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(count.get()),
             "retain CFB sector chain",
@@ -1692,9 +1706,7 @@ fn chain(
             "retain CFB sector chain",
         )?;
     }
-    let mut traversal_scratch = ctx
-        .map(|ctx| ctx.reserve_scoped(0, "walk CFB sector chain"))
-        .transpose()?;
+    let mut traversal_scratch = ctx.reserve_scoped(0, "walk CFB sector chain")?;
     if start == END_OF_CHAIN {
         return if expected.is_some() {
             malformed(format!(
@@ -1723,19 +1735,15 @@ fn chain(
             ));
         }
         if expected.is_none() {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "retain CFB sector chain")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
-                    "retain CFB sector chain",
-                )?;
-            }
+            ctx.charge_collection_items(1, "retain CFB sector chain")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
+                "retain CFB sector chain",
+            )?;
         }
-        if let Some(scratch) = &mut traversal_scratch {
-            scratch.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<u32>(),
-            ))?;
-        }
+        traversal_scratch.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<u32>(),
+        ))?;
         if current != start {
             output.rest.push(current);
         }
@@ -1847,6 +1855,16 @@ mod tests {
     };
 
     const SECTOR_SIZE: usize = 512;
+
+    fn with_service_context<T>(
+        bytes: &[u8],
+        use_context: impl FnOnce(&DecodeContext<'_>) -> T,
+    ) -> T {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("fixture fits service profile");
+        use_context(&ctx)
+    }
 
     struct CountingReader {
         inner: &'static [u8],
@@ -2031,6 +2049,43 @@ mod tests {
     }
 
     #[test]
+    fn prefix_probe_reports_directory_budget_refusal_as_malformed() {
+        let file = fixture();
+        assert!(matches!(
+            CompoundPrefixProbe::inspect(&file),
+            CompoundPrefixProbe::DirectoryEvidence(_)
+        ));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+            .expect("fixture fits input limit");
+        assert!(matches!(
+            CompoundPrefixProbe::inspect_with_context(&ctx, &file),
+            CompoundPrefixProbe::Malformed(detail)
+                if detail.contains("resource limit on CollectionItems")
+        ));
+    }
+
+    #[test]
+    fn prefix_probe_uses_default_fat_count_limit() {
+        let mut file = fixture();
+        assert!(matches!(
+            CompoundPrefixProbe::inspect(&file),
+            CompoundPrefixProbe::DirectoryEvidence(_)
+        ));
+        let limit = DecodePolicy::default().limits.max_collection_items;
+        let count = u32::try_from(limit + 1).expect("default limit fits FAT count");
+        put_u32(&mut file, 44, count);
+        assert!(matches!(
+            CompoundPrefixProbe::inspect(&file),
+            CompoundPrefixProbe::Malformed(detail)
+                if detail.contains("resource limit on CollectionItems")
+                    && detail.contains(&format!("limit {limit}, used 0, requested {count}"))
+        ));
+    }
+
+    #[test]
     fn prefix_probe_follows_available_difat_sectors() {
         let mut file = fixture();
         file.resize(file.len() + SECTOR_SIZE, 0xff);
@@ -2117,14 +2172,24 @@ mod tests {
             0x1_0000_0001,
         );
         assert_eq!(
-            parse_directory(None, &directory, CompoundVersion::V4).expect("v4 directory parses")[0]
+            with_service_context(&directory, |ctx| parse_directory(
+                ctx,
+                &directory,
+                CompoundVersion::V4
+            ))
+            .expect("v4 directory parses")[0]
                 .live()
                 .expect("live root")
                 .size,
             0x1_0000_0001
         );
         assert_eq!(
-            parse_directory(None, &directory, CompoundVersion::V3).expect("v3 directory parses")[0]
+            with_service_context(&directory, |ctx| parse_directory(
+                ctx,
+                &directory,
+                CompoundVersion::V3
+            ))
+            .expect("v3 directory parses")[0]
                 .live()
                 .expect("live root")
                 .size,
@@ -2219,8 +2284,10 @@ mod tests {
         let mut directory = vec![0_u8; 128];
         directory[68..80].fill(0xff);
         directory[8] = 1;
-        let entries = parse_directory(None, &directory, CompoundVersion::V3)
-            .expect("unallocated slot is skipped");
+        let entries = with_service_context(&directory, |ctx| {
+            parse_directory(ctx, &directory, CompoundVersion::V3)
+        })
+        .expect("unallocated slot is skipped");
         assert_eq!(entries.len(), 1);
         assert!(matches!(entries[0], DirectorySlot::Free));
     }

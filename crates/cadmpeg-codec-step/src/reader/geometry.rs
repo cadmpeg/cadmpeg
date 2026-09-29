@@ -695,7 +695,7 @@ pub(super) fn decode(
                                 id,
                                 "APLL point name",
                                 StepLossCode::MetadataStringInvalid,
-                                Some(ctx),
+                                ctx,
                             )
                         })
                         .transpose()?
@@ -3098,7 +3098,7 @@ fn decode_tessellated_curve_sets(
                     id,
                     "tessellated curve name",
                     StepLossCode::MetadataStringInvalid,
-                    Some(ctx),
+                    ctx,
                 )
             })
             .transpose()?
@@ -3237,7 +3237,7 @@ pub(super) fn associate_free_geometric_set_members(
                         member,
                         "geometric-set member name",
                         StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
+                        ctx,
                     )
                 })
                 .transpose()?
@@ -3319,7 +3319,7 @@ pub(super) fn associate_free_representation_members(
                         member,
                         "representation member name",
                         StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
+                        ctx,
                     )
                 })
                 .transpose()?
@@ -3433,7 +3433,7 @@ fn associate_presentation_carrier(
                 target,
                 "presentation carrier name",
                 StepLossCode::MetadataStringInvalid,
-                Some(ctx),
+                ctx,
             )
         })
         .transpose()?
@@ -4324,10 +4324,10 @@ fn context_unit_scales(
     let mut length_values = Vec::new();
     let mut angle_values = Vec::new();
     for unit in units.iter().filter_map(Value::reference) {
-        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new(), Some(ctx))? {
+        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new(), ctx)? {
             push_geometry_vec(&mut length_values, scale, ctx, "step_context_length_scales")?;
         }
-        if let Some(scale) = unit_scale_radians(unit, exchange, &mut BTreeSet::new(), Some(ctx))? {
+        if let Some(scale) = unit_scale_radians(unit, exchange, &mut BTreeSet::new(), ctx)? {
             push_geometry_vec(&mut angle_values, scale, ctx, "step_context_angle_scales")?;
         }
     }
@@ -4470,8 +4470,8 @@ impl UnitScaleKind {
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<PositiveReal>, CodecError> {
         match self {
-            Self::Length => unit_scale_mm(id, exchange, active, Some(ctx)),
-            Self::Angle => unit_scale_radians(id, exchange, active, Some(ctx)),
+            Self::Length => unit_scale_mm(id, exchange, active, ctx),
+            Self::Angle => unit_scale_radians(id, exchange, active, ctx),
         }
     }
 }
@@ -4550,7 +4550,7 @@ pub(super) fn unit_scale_radians(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     unit_scale_radians_inner(id, exchange, active, 0, ctx)
 }
@@ -4560,20 +4560,16 @@ fn unit_scale_radians_inner(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     if depth >= 256 {
         return Ok(None);
     }
-    let _depth = ctx
-        .map(|ctx| ctx.enter_nested("step_angle_unit_scale_walk"))
-        .transpose()?;
+    let _depth = ctx.enter_nested("step_angle_unit_scale_walk")?;
     if active.contains(&id) {
         return Ok(None);
     }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, "step_angle_unit_active")?;
-    }
+    ctx.charge_collection_items(1, "step_angle_unit_active")?;
     active.insert(id);
     let result = (|| -> Result<Option<f64>, CodecError> {
         let Some(record) = exchange.records().get(&id) else {
@@ -4619,7 +4615,7 @@ pub(super) fn unit_scale_mm(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     unit_scale_mm_inner(id, exchange, active, 0, ctx)
 }
@@ -4629,20 +4625,16 @@ fn unit_scale_mm_inner(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     if depth >= 256 {
         return Ok(None);
     }
-    let _depth = ctx
-        .map(|ctx| ctx.enter_nested("step_length_unit_scale_walk"))
-        .transpose()?;
+    let _depth = ctx.enter_nested("step_length_unit_scale_walk")?;
     if active.contains(&id) {
         return Ok(None);
     }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, "step_length_unit_active")?;
-    }
+    ctx.charge_collection_items(1, "step_length_unit_active")?;
     active.insert(id);
     let result = (|| -> Result<Option<f64>, CodecError> {
         let Some(record) = exchange.records().get(&id) else {
@@ -4753,7 +4745,7 @@ fn context_length_uncertainties(
             unresolved += 1;
             continue;
         };
-        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new(), Some(ctx))? {
+        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new(), ctx)? {
             let Some(result) = PositiveLength::new(value * scale.get()) else {
                 unresolved += 1;
                 continue;
@@ -4777,7 +4769,7 @@ fn context_length_uncertainties(
                 ctx,
                 "step_uncertainty_context_measures",
             )?;
-        } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new(), Some(ctx))?.is_none() {
+        } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new(), ctx)?.is_none() {
             unresolved += 1;
         }
     }
@@ -4864,7 +4856,7 @@ fn string_value(
     let Value::String(bytes) = value else {
         return Ok(None);
     };
-    match exchange.decode_string_with_context(bytes, Some(ctx)) {
+    match exchange.decode_string_with_context(bytes, ctx) {
         Ok(value) => Ok(Some(value)),
         Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(None),
         Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),

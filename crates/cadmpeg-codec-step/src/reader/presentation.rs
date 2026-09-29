@@ -32,7 +32,7 @@ pub(super) fn decode(
     topology: &TopologyData,
     ir: &mut CadIr,
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
@@ -104,10 +104,9 @@ pub(super) fn decode(
         }
         let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            push_presentation_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
-                ctx,
                 "step_presentation_losses",
             )?;
             continue;
@@ -121,18 +120,18 @@ pub(super) fn decode(
                 .get(&target)
                 .is_some_and(|record| record.partial("PRESENTATION_LAYER_ASSIGNMENT").is_some())
             {
-                insert_presentation_set(
+                ctx.insert_btree_set(
                     &mut hidden_layer_ids,
                     target,
-                    ctx,
                     "step_presentation_hidden_layer_ids",
-                )?;
-                insert_presentation_set(
+                )
+                .map(|_| ())?;
+                ctx.insert_btree_set(
                     &mut layer_targets,
                     target,
-                    ctx,
                     "step_presentation_invisibility_layer_targets",
-                )?;
+                )
+                .map(|_| ())?;
                 continue;
             }
             if exchange
@@ -140,18 +139,18 @@ pub(super) fn decode(
                 .get(&target)
                 .is_some_and(|record| styled_item_parts(record).is_some())
             {
-                insert_presentation_set(
+                ctx.insert_btree_set(
                     &mut hidden_style_ids,
                     target,
-                    ctx,
                     "step_presentation_hidden_style_ids",
-                )?;
-                insert_presentation_set(
+                )
+                .map(|_| ())?;
+                ctx.insert_btree_set(
                     &mut style_targets,
                     target,
-                    ctx,
                     "step_presentation_invisibility_style_targets",
-                )?;
+                )
+                .map(|_| ())?;
                 continue;
             }
             if exchange
@@ -178,27 +177,27 @@ pub(super) fn decode(
                 }
             }
             if !target_supported || !hidden {
-                push_presentation_vec(
+                ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(format!(
                         "INVISIBILITY #{id} targets unsupported item #{target}"
                     )),
-                    ctx,
                     "step_presentation_losses",
                 )?;
                 supported = false;
             }
         }
         if style_targets.is_empty() && layer_targets.is_empty() && supported {
-            claim_presentation_typed(&mut typed, id, ctx)?;
+            ctx.insert_hash_set(&mut typed, id, "step_presentation_typed_claims")
+                .map(|_| ())?;
         } else if !style_targets.is_empty() || !layer_targets.is_empty() {
-            insert_presentation_map(
+            ctx.insert_btree_map(
                 &mut deferred_invisibility,
                 id,
                 (supported, style_targets, layer_targets),
-                ctx,
                 "step_presentation_deferred_invisibility",
-            )?;
+            )
+            .map(|_| ())?;
         }
     }
     for (&layer_id, layer) in exchange.records() {
@@ -208,23 +207,21 @@ pub(super) fn decode(
         let Some(assigned_items) =
             named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            push_presentation_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
                     "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
                 )),
-                ctx,
                 "step_presentation_losses",
             )?;
             continue;
         };
         if assigned_items.is_empty() {
-            push_presentation_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
                     "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
                 )),
-                ctx,
                 "step_presentation_losses",
             )?;
             continue;
@@ -244,12 +241,11 @@ pub(super) fn decode(
             .transpose()?
             .flatten()
         else {
-            push_presentation_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
                     "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
                 )),
-                ctx,
                 "step_presentation_losses",
             )?;
             continue;
@@ -281,7 +277,7 @@ pub(super) fn decode(
                 ctx,
             )?;
         }
-        push_presentation_vec(
+        ctx.push_vec(
             &mut ir.model.presentation_layers,
             PresentationLayer {
                 id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
@@ -290,34 +286,35 @@ pub(super) fn decode(
                 visible: hidden_layer_ids.contains(&layer_id).then_some(false),
                 items,
             },
-            ctx,
             "step_presentation_layer_records",
         )?;
-        claim_presentation_typed(&mut typed, layer_id, ctx)?;
+        ctx.insert_hash_set(&mut typed, layer_id, "step_presentation_typed_claims")
+            .map(|_| ())?;
     }
     let mut styles = Vec::new();
     for (&id, record) in exchange.records() {
         if styled_item_parts(record).is_some() {
             let order = style_application_order(id, exchange, graph_limit, ctx)?;
-            push_presentation_vec(&mut styles, (id, order), ctx, "step_presentation_style_ids")?;
+            ctx.push_vec(&mut styles, (id, order), "step_presentation_style_ids")?;
         }
     }
     let mut overridden_styles = BTreeSet::new();
     for (id, _) in &styles {
         if let Some(overridden) = overridden_style(&exchange.records()[id]) {
-            insert_presentation_set(
+            ctx.insert_btree_set(
                 &mut overridden_styles,
                 overridden,
-                ctx,
                 "step_presentation_overridden_styles",
-            )?;
+            )
+            .map(|_| ())?;
         }
     }
     styles.sort_by_key(|(_, order)| *order);
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
-            claim_presentation_typed(&mut typed, style_id, ctx)?;
+            ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")
+                .map(|_| ())?;
             continue;
         }
         let style = &exchange.records()[&style_id];
@@ -325,17 +322,17 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            push_presentation_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning
                     .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
-                ctx,
                 "step_presentation_losses",
             )?;
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
-            claim_presentation_typed(&mut typed, style_id, ctx)?;
+            ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")
+                .map(|_| ())?;
             continue;
         }
         let domain = style_domain(target_step, exchange, ctx)?;
@@ -350,10 +347,9 @@ pub(super) fn decode(
             .flatten()
             .flat_map(references)
         {
-            push_presentation_vec(
+            ctx.push_vec(
                 &mut style_references,
                 reference,
-                ctx,
                 "step_presentation_style_references",
             )?;
         }
@@ -364,20 +360,19 @@ pub(super) fn decode(
                 .get(reference)
                 .is_some_and(is_presentation_style_by_context)
             {
-                insert_presentation_set(
+                ctx.insert_btree_set(
                     &mut context_style_ids,
                     *reference,
-                    ctx,
                     "step_presentation_context_style_ids",
-                )?;
+                )
+                .map(|_| ())?;
             }
         }
         if !context_style_ids.is_empty() {
             let message = context_style_message(style_id, &context_style_ids, exchange, ctx)?;
-            push_presentation_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::ContextDependentStyleUnresolved.note(message),
-                ctx,
                 "step_presentation_losses",
             )?;
             continue;
@@ -420,20 +415,19 @@ pub(super) fn decode(
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                push_presentation_vec(&mut losses, StepLossCode::ConflictingScalarColors.note(format!(
+                ctx.push_vec(&mut losses, StepLossCode::ConflictingScalarColors.note(format!(
                     "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
-                )), ctx, "step_presentation_losses")?;
+                )), "step_presentation_losses")?;
                 continue;
             }
             None => {
                 let mut visited = BTreeSet::new();
                 if !contains_null_style(parts.styles, exchange, &mut visited, 0, ctx)? {
-                    push_presentation_vec(
+                    ctx.push_vec(
                         &mut losses,
                         StepLossCode::DecodeWarning.note(format!(
                             "STYLED_ITEM #{style_id} has no resolved surface color"
                         )),
-                        ctx,
                         "step_presentation_losses",
                     )?;
                 }
@@ -458,7 +452,7 @@ pub(super) fn decode(
                     .dash(color.a().to_bits())
             };
             let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
-            push_presentation_vec(
+            ctx.push_vec(
                 &mut ir.model.appearances,
                 Appearance {
                     id: id.clone(),
@@ -473,16 +467,15 @@ pub(super) fn decode(
                     textures: Vec::new(),
                     properties: BTreeMap::new(),
                 },
-                ctx,
                 "step_presentation_appearance_records",
             )?;
-            insert_presentation_map(
+            ctx.insert_btree_map(
                 &mut appearance_ids,
                 appearance_key,
                 id.clone(),
-                ctx,
                 "step_presentation_appearance_ids",
-            )?;
+            )
+            .map(|_| ())?;
             id
         };
         let target_steps = expand_style_targets(
@@ -498,19 +491,18 @@ pub(super) fn decode(
             let targets =
                 appearance_targets(target_step, exchange, topology, &entity_ids, indices, ctx)?;
             if targets.is_empty() {
-                push_presentation_vec(
+                ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(format!(
                         "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
                     )),
-                    ctx,
                     "step_presentation_losses",
                 )?;
                 continue;
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
                 push_scalar_candidate(&mut scalar_color_candidates, &target, style_id, color, ctx)?;
-                push_presentation_vec(
+                ctx.push_vec(
                     &mut ir.model.appearance_bindings,
                     AppearanceBinding {
                         id: ids::presentation(
@@ -534,21 +526,24 @@ pub(super) fn decode(
                         .then_some(false),
                         channels: BTreeMap::new(),
                     },
-                    ctx,
                     "step_presentation_appearance_bindings",
                 )?;
             }
         }
-        claim_presentation_typed(&mut typed, style_id, ctx)?;
+        ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")
+            .map(|_| ())?;
         if let Some(overridden) = overridden_style(style) {
-            claim_presentation_typed(&mut typed, overridden, ctx)?;
+            ctx.insert_hash_set(&mut typed, overridden, "step_presentation_typed_claims")
+                .map(|_| ())?;
         }
         for &(id, _) in color_cache.keys() {
             if !invalid_surface_sides.contains(&id) {
-                claim_presentation_typed(&mut typed, id, ctx)?;
+                ctx.insert_hash_set(&mut typed, id, "step_presentation_typed_claims")
+                    .map(|_| ())?;
             }
         }
-        claim_presentation_typed(&mut typed, color_id, ctx)?;
+        ctx.insert_hash_set(&mut typed, color_id, "step_presentation_typed_claims")
+            .map(|_| ())?;
     }
     for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
         for style_id in style_targets {
@@ -574,12 +569,11 @@ pub(super) fn decode(
                 }
             }
             if !matched {
-                push_presentation_vec(
+                ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(format!(
                         "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
                     )),
-                    ctx,
                     "step_presentation_losses",
                 )?;
                 supported = false;
@@ -596,19 +590,23 @@ pub(super) fn decode(
                 }
             }
             if !matched {
-                push_presentation_vec(
+                ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(format!(
                         "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
                     )),
-                    ctx,
                     "step_presentation_losses",
                 )?;
                 supported = false;
             }
         }
         if supported {
-            claim_presentation_typed(&mut typed, invisibility_id, ctx)?;
+            ctx.insert_hash_set(
+                &mut typed,
+                invisibility_id,
+                "step_presentation_typed_claims",
+            )
+            .map(|_| ())?;
         }
     }
     for (target, candidates) in scalar_color_candidates {
@@ -617,12 +615,7 @@ pub(super) fn decode(
             let Some(existing) = colors.iter_mut().find(|existing| {
                 existing.r() == color.r() && existing.g() == color.g() && existing.b() == color.b()
             }) else {
-                push_presentation_vec(
-                    &mut colors,
-                    *color,
-                    ctx,
-                    "step_presentation_distinct_colors",
-                )?;
+                ctx.push_vec(&mut colors, *color, "step_presentation_distinct_colors")?;
                 continue;
             };
             if color.a() < existing.a() {
@@ -645,10 +638,9 @@ pub(super) fn decode(
             }
         } else {
             let message = scalar_conflict_message(&candidates, &target, ctx)?;
-            push_presentation_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::ConflictingScalarColors.note(message),
-                ctx,
                 "step_presentation_losses",
             )?;
         }
@@ -666,7 +658,7 @@ fn invisible_body_ids(
     exchange: &Exchange,
     topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(BTreeSet<BodyId>, bool), CodecError> {
     let mut body_ids = BTreeSet::new();
     let mut active = BTreeSet::new();
@@ -689,15 +681,14 @@ fn collect_invisible_body_ids(
     body_indices: &BTreeMap<String, usize>,
     active: &mut BTreeSet<u64>,
     body_ids: &mut BTreeSet<BodyId>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if active.contains(&id) {
         return Ok(false);
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_presentation_invisible_body_walk"))
-        .transpose()?;
-    insert_presentation_set(active, id, ctx, "step_presentation_invisible_body_active")?;
+    let _nested = ctx.enter_nested("step_presentation_invisible_body_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_invisible_body_active")
+        .map(|_| ())?;
     if let Some(ids) = topology.body_by_root.get(&id) {
         for body in ids {
             if !body_ids.contains(body) {
@@ -706,12 +697,8 @@ fn collect_invisible_body_ids(
                     ctx,
                     "step_presentation_invisible_body_identity",
                 )?;
-                insert_presentation_set(
-                    body_ids,
-                    body,
-                    ctx,
-                    "step_presentation_invisible_body_ids",
-                )?;
+                ctx.insert_btree_set(body_ids, body, "step_presentation_invisible_body_ids")
+                    .map(|_| ())?;
             }
         }
         active.remove(&id);
@@ -719,12 +706,8 @@ fn collect_invisible_body_ids(
     }
     let fallback = BodyId::from(ids::data(kind!("body"), id));
     if body_indices.contains_key(fallback.as_str()) {
-        insert_presentation_set(
-            body_ids,
-            fallback,
-            ctx,
-            "step_presentation_invisible_body_ids",
-        )?;
+        ctx.insert_btree_set(body_ids, fallback, "step_presentation_invisible_body_ids")
+            .map(|_| ())?;
         active.remove(&id);
         return Ok(true);
     }
@@ -789,24 +772,18 @@ fn expand_style_targets(
     active: &mut BTreeSet<u64>,
     depth: usize,
     graph_limit: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u64>, CodecError> {
     if depth >= graph_limit || active.contains(&id) {
         return Ok(Vec::new());
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_presentation_style_target_walk"))
-        .transpose()?;
-    insert_presentation_set(active, id, ctx, "step_presentation_style_target_active")?;
+    let _nested = ctx.enter_nested("step_presentation_style_target_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_style_target_active")
+        .map(|_| ())?;
     let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
         let mut targets = Vec::new();
-        push_presentation_vec(
-            &mut targets,
-            id,
-            ctx,
-            "step_presentation_style_target_items",
-        )?;
+        ctx.push_vec(&mut targets, id, "step_presentation_style_target_items")?;
         return Ok(targets);
     };
     let Some(set_name) = record.partials.iter().find_map(|partial| {
@@ -818,15 +795,11 @@ fn expand_style_targets(
     }) else {
         active.remove(&id);
         let mut targets = Vec::new();
-        push_presentation_vec(
-            &mut targets,
-            id,
-            ctx,
-            "step_presentation_style_target_items",
-        )?;
+        ctx.push_vec(&mut targets, id, "step_presentation_style_target_items")?;
         return Ok(targets);
     };
-    claim_presentation_typed(typed, id, ctx)?;
+    ctx.insert_hash_set(typed, id, "step_presentation_typed_claims")
+        .map(|_| ())?;
     let mut targets = Vec::new();
     for item in named_parameter(record, set_name, 1)
         .and_then(ValueExt::list)
@@ -837,12 +810,7 @@ fn expand_style_targets(
         for target in
             expand_style_targets(item, exchange, typed, active, depth + 1, graph_limit, ctx)?
         {
-            push_presentation_vec(
-                &mut targets,
-                target,
-                ctx,
-                "step_presentation_style_target_items",
-            )?;
+            ctx.push_vec(&mut targets, target, "step_presentation_style_target_items")?;
         }
     }
     active.remove(&id);
@@ -855,7 +823,7 @@ fn appearance_targets(
     topology: &TopologyData,
     entity_ids: &EntityIds<'_>,
     indices: PresentationIndices<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<AppearanceTarget>, CodecError> {
     let mut targets = Vec::new();
     if let Some(bodies) = topology.body_by_root.get(&id) {
@@ -866,10 +834,9 @@ fn appearance_targets(
                     ctx,
                     "step_presentation_appearance_body_identity",
                 )?;
-                push_presentation_vec(
+                ctx.push_vec(
                     &mut targets,
                     AppearanceTarget::Body(body),
-                    ctx,
                     "step_presentation_appearance_targets",
                 )?;
             }
@@ -884,10 +851,9 @@ fn appearance_targets(
                     ctx,
                     "step_presentation_appearance_face_identity",
                 )?;
-                push_presentation_vec(
+                ctx.push_vec(
                     &mut targets,
                     AppearanceTarget::Face(face),
-                    ctx,
                     "step_presentation_appearance_targets",
                 )?;
             }
@@ -902,10 +868,9 @@ fn appearance_targets(
                     ctx,
                     "step_presentation_appearance_edge_identity",
                 )?;
-                push_presentation_vec(
+                ctx.push_vec(
                     &mut targets,
                     AppearanceTarget::Edge(edge),
-                    ctx,
                     "step_presentation_appearance_targets",
                 )?;
             }
@@ -920,10 +885,9 @@ fn appearance_targets(
                     ctx,
                     "step_presentation_appearance_vertex_identity",
                 )?;
-                push_presentation_vec(
+                ctx.push_vec(
                     &mut targets,
                     AppearanceTarget::Vertex(vertex),
-                    ctx,
                     "step_presentation_appearance_targets",
                 )?;
             }
@@ -961,12 +925,7 @@ fn appearance_targets(
         None
     };
     if let Some(target) = target {
-        push_presentation_vec(
-            &mut targets,
-            target,
-            ctx,
-            "step_presentation_appearance_targets",
-        )?;
+        ctx.push_vec(&mut targets, target, "step_presentation_appearance_targets")?;
     }
     Ok(targets)
 }
@@ -978,7 +937,7 @@ fn append_presentation_items(
     entity_ids: &EntityIds<'_>,
     indices: PresentationIndices<'_>,
     items: &mut Vec<PresentationItem>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if let Some(bodies) = topology.body_by_root.get(&id) {
         for body in bodies {
@@ -988,10 +947,9 @@ fn append_presentation_items(
                     ctx,
                     "step_presentation_layer_body_identity",
                 )?;
-                push_presentation_vec(
+                ctx.push_vec(
                     items,
                     PresentationItem::Body { body },
-                    ctx,
                     "step_presentation_layer_items",
                 )?;
             }
@@ -1006,10 +964,9 @@ fn append_presentation_items(
                     ctx,
                     "step_presentation_layer_face_identity",
                 )?;
-                push_presentation_vec(
+                ctx.push_vec(
                     items,
                     PresentationItem::Face { face },
-                    ctx,
                     "step_presentation_layer_items",
                 )?;
             }
@@ -1024,10 +981,9 @@ fn append_presentation_items(
                     ctx,
                     "step_presentation_layer_edge_identity",
                 )?;
-                push_presentation_vec(
+                ctx.push_vec(
                     items,
                     PresentationItem::Edge { edge },
-                    ctx,
                     "step_presentation_layer_items",
                 )?;
             }
@@ -1042,10 +998,9 @@ fn append_presentation_items(
                     ctx,
                     "step_presentation_layer_vertex_identity",
                 )?;
-                push_presentation_vec(
+                ctx.push_vec(
                     items,
                     PresentationItem::Vertex { vertex },
-                    ctx,
                     "step_presentation_layer_items",
                 )?;
             }
@@ -1059,19 +1014,17 @@ fn append_presentation_items(
                 ctx,
                 "step_presentation_layer_product_identity",
             )?;
-            push_presentation_vec(
+            ctx.push_vec(
                 items,
                 PresentationItem::Product { product },
-                ctx,
                 "step_presentation_layer_items",
             )?;
         }
         return Ok(());
     }
-    push_presentation_vec(
+    ctx.push_vec(
         items,
         presentation_item_one(id, exchange, entity_ids, indices),
-        ctx,
         "step_presentation_layer_items",
     )
 }
@@ -1190,126 +1143,26 @@ struct PresentationIndices<'a> {
 
 fn collect_borrowed_identity_set<'a>(
     identities: impl IntoIterator<Item = &'a str>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<BTreeSet<&'a str>, CodecError> {
     let mut result = BTreeSet::new();
     for identity in identities {
-        insert_presentation_set(&mut result, identity, ctx, operation)?;
+        ctx.insert_btree_set(&mut result, identity, operation)
+            .map(|_| ())?;
     }
     Ok(result)
 }
 
-fn insert_presentation_set<T: Ord>(
-    values: &mut BTreeSet<T>,
-    value: T,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains(&value) {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, operation)?;
-        }
-        values.insert(value);
-    }
-    Ok(())
-}
-
-fn insert_presentation_map<K: Ord, V>(
-    values: &mut BTreeMap<K, V>,
-    key: K,
-    value: V,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains_key(&key) {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, operation)?;
-        }
-    }
-    values.insert(key, value);
-    Ok(())
-}
-
 fn clone_presentation_identity<T: From<Identity>>(
     value: &str,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let copy = match ctx {
-        Some(ctx) => ctx.copy_retained_text(value, operation),
-        None => Ok::<String, CodecError>(value.to_owned()),
-    }?;
+    let copy = ctx.copy_retained_text(value, operation)?;
     Identity::new(copy)
         .map(T::from)
         .map_err(|_| CodecError::malformed("presentation identity is invalid"))
-}
-
-fn push_presentation_vec<T>(
-    values: &mut Vec<T>,
-    value: T,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    values.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                1,
-                operation,
-            ),
-        ),
-        None => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                1,
-                operation,
-            ),
-        ),
-    })?;
-    values.push(value);
-    Ok(())
-}
-
-fn claim_presentation_typed(
-    typed: &mut HashSet<u64>,
-    id: u64,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(), CodecError> {
-    if !typed.contains(&id) {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_presentation_typed_claims")?;
-        }
-        typed.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(
-                        "step_presentation_typed_claims",
-                    ),
-                    0,
-                    1,
-                    "step_presentation_typed_claims",
-                ),
-            ),
-            None => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(
-                        "step_presentation_typed_claims",
-                    ),
-                    0,
-                    1,
-                    "step_presentation_typed_claims",
-                ),
-            ),
-        })?;
-        typed.insert(id);
-    }
-    Ok(())
 }
 
 fn push_scalar_candidate(
@@ -1317,7 +1170,7 @@ fn push_scalar_candidate(
     target: &AppearanceTarget,
     style_id: u64,
     color: Color,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if !matches!(
         target,
@@ -1339,11 +1192,9 @@ fn push_scalar_candidate(
             )?),
             _ => return Ok(()),
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_presentation_scalar_color_groups")?;
-        }
-        candidates.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+        ctx.charge_collection_items(1, "step_presentation_scalar_color_groups")?;
+        candidates.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec(
                         "step_presentation_scalar_color_groups",
@@ -1352,34 +1203,23 @@ fn push_scalar_candidate(
                     1,
                     "step_presentation_scalar_color_groups",
                 ),
-            ),
-            None => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(
-                        "step_presentation_scalar_color_groups",
-                    ),
-                    0,
-                    1,
-                    "step_presentation_scalar_color_groups",
-                ),
-            ),
+            )
         })?;
         candidates.insert(key, Vec::new());
     }
     let values = candidates
         .get_mut(target)
         .ok_or_else(|| CodecError::malformed("presentation scalar target was not indexed"))?;
-    push_presentation_vec(
+    ctx.push_vec(
         values,
         (style_id, color),
-        ctx,
         "step_presentation_scalar_color_members",
     )
 }
 
 fn collect_identity_indices<'a>(
     identities: impl IntoIterator<Item = &'a str>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<BTreeMap<String, usize>, CodecError> {
     let mut result = BTreeMap::new();
@@ -1388,13 +1228,8 @@ fn collect_identity_indices<'a>(
             *existing = index;
             continue;
         }
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, operation)?;
-        }
-        let copy = match ctx {
-            Some(ctx) => ctx.copy_retained_text(identity, operation),
-            None => Ok::<String, CodecError>(identity.to_owned()),
-        }?;
+        ctx.charge_collection_items(1, operation)?;
+        let copy = ctx.copy_retained_text(identity, operation)?;
         result.insert(copy, index);
     }
     Ok(result)
@@ -1487,13 +1322,10 @@ fn context_style_message(
     style_id: u64,
     ids: &BTreeSet<u64>,
     exchange: &Exchange,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
     let details = ContextStyleDetails { ids, exchange };
-    Ok(match ctx {
-        Some(ctx) => ctx.format_retained(format_args!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"), "step_presentation_context_style_text")?,
-        None => format!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"),
-    })
+    ctx.format_retained(format_args!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"), "step_presentation_context_style_text")
 }
 
 struct ScalarStyleIds<'a>(&'a [(u64, Color)]);
@@ -1513,13 +1345,10 @@ impl std::fmt::Display for ScalarStyleIds<'_> {
 fn scalar_conflict_message(
     candidates: &[(u64, Color)],
     target: &AppearanceTarget,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
     let style_ids = ScalarStyleIds(candidates);
-    Ok(match ctx {
-        Some(ctx) => ctx.format_retained(format_args!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"), "step_presentation_scalar_conflict_text")?,
-        None => format!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"),
-    })
+    ctx.format_retained(format_args!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"), "step_presentation_scalar_conflict_text")
 }
 
 pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {
@@ -1535,7 +1364,7 @@ fn style_application_order(
     id: u64,
     exchange: &Exchange,
     graph_limit: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(bool, Option<u32>), CodecError> {
     let depth = style_depth(id, exchange, &mut BTreeSet::new(), 0, graph_limit, ctx)?;
     Ok((depth.is_none(), depth))
@@ -1547,15 +1376,14 @@ fn style_depth(
     active: &mut BTreeSet<u64>,
     depth: usize,
     graph_limit: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<u32>, CodecError> {
     if depth >= graph_limit || active.contains(&id) {
         return Ok(None);
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_presentation_style_depth_walk"))
-        .transpose()?;
-    insert_presentation_set(active, id, ctx, "step_presentation_style_depth_active")?;
+    let _nested = ctx.enter_nested("step_presentation_style_depth_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_style_depth_active")
+        .map(|_| ())?;
     let result = if let Some(style) = exchange.records().get(&id) {
         if let Some(base) = overridden_style(style) {
             style_depth(base, exchange, active, depth + 1, graph_limit, ctx)?
@@ -1594,7 +1422,7 @@ type CachedColor = Option<ColorResolution>;
 
 fn clone_color_resolution(
     resolution: &CachedColor,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<CachedColor, CodecError> {
     Ok(match resolution {
@@ -1606,10 +1434,7 @@ fn clone_color_resolution(
                 name: candidate
                     .name
                     .as_deref()
-                    .map(|name| match ctx {
-                        Some(ctx) => ctx.copy_retained_text(name, operation),
-                        None => Ok::<String, CodecError>(name.to_owned()),
-                    })
+                    .map(|name| ctx.copy_retained_text(name, operation))
                     .transpose()?,
             }))
         }
@@ -1710,7 +1535,7 @@ fn find_color(
     domain: StyleDomain,
     state: ColorSearchState<'_>,
     depth: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<CachedColor, CodecError> {
     let ColorSearchState {
         active,
@@ -1733,10 +1558,9 @@ fn find_color(
     if active.contains(&id) {
         return Ok(None);
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_presentation_color_walk"))
-        .transpose()?;
-    insert_presentation_set(active, id, ctx, "step_presentation_color_active")?;
+    let _nested = ctx.enter_nested("step_presentation_color_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_color_active")
+        .map(|_| ())?;
     let transparency = if domain == StyleDomain::Surface {
         surface_transparency(id, record, exchange, losses, ctx)?
     } else {
@@ -1934,13 +1758,13 @@ fn find_color(
         }
     }
     let cached = clone_color_resolution(&result, ctx, "step_presentation_color_cache_value")?;
-    insert_presentation_map(
+    ctx.insert_btree_map(
         cache,
         (id, domain),
         cached,
-        ctx,
         "step_presentation_color_cache_entries",
-    )?;
+    )
+    .map(|_| ())?;
     Ok(result)
 }
 
@@ -1963,7 +1787,7 @@ fn surface_transparency(
     record: &RawRecord,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Fraction>, CodecError> {
     let mut candidates = Vec::new();
     for property_id in record
@@ -1985,10 +1809,9 @@ fn surface_transparency(
         else {
             continue;
         };
-        push_presentation_vec(
+        ctx.push_vec(
             &mut candidates,
             (property_id, transparency),
-            ctx,
             "step_presentation_transparency_candidates",
         )?;
     }
@@ -1997,14 +1820,10 @@ fn surface_transparency(
         [(_, transparency)] => Ok(Some(*transparency)),
         _ => {
             let details = TransparencyDetails(&candidates);
-            let message = match ctx {
-                Some(ctx) => ctx.format_retained(format_args!("surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"), "step_presentation_transparency_conflict_text")?,
-                None => format!("surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"),
-            };
-            push_presentation_vec(
+            let message = ctx.format_retained(format_args!("surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"), "step_presentation_transparency_conflict_text")?;
+            ctx.push_vec(
                 losses,
                 StepLossCode::SurfaceTransparencyConflict.note(message),
-                ctx,
                 "step_presentation_losses",
             )?;
             Ok(None)
@@ -2017,7 +1836,7 @@ fn surface_side_rank(
     record: &RawRecord,
     losses: &mut Vec<LossNote>,
     invalid_surface_sides: &mut BTreeSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<SurfaceSideRank>, CodecError> {
     let Some(partial) = record
         .partials
@@ -2027,18 +1846,17 @@ fn surface_side_rank(
         return Ok(Some(SurfaceSideRank::NoUsage));
     };
     let Some(side) = partial.parameters.first().and_then(ValueExt::enumeration) else {
-        insert_presentation_set(
+        ctx.insert_btree_set(
             invalid_surface_sides,
             id,
-            ctx,
             "step_presentation_invalid_surface_sides",
-        )?;
-        push_presentation_vec(
+        )
+        .map(|_| ())?;
+        ctx.push_vec(
             losses,
             StepLossCode::SurfaceSideInvalid.note(format!(
                 "SURFACE_STYLE_USAGE #{id} has no valid surface_side; style omitted"
             )),
-            ctx,
             "step_presentation_losses",
         )?;
         return Ok(None);
@@ -2048,20 +1866,21 @@ fn surface_side_rank(
         "POSITIVE" => Ok(Some(SurfaceSideRank::Positive)),
         "NEGATIVE" => Ok(Some(SurfaceSideRank::Negative)),
         _ => {
-            insert_presentation_set(
+            ctx.insert_btree_set(
                 invalid_surface_sides,
                 id,
-                ctx,
                 "step_presentation_invalid_surface_sides",
+            )
+            .map(|_| ())?;
+            let message = ctx.format_retained(
+                format_args!(
+                    "SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"
+                ),
+                "step_presentation_invalid_surface_side_text",
             )?;
-            let message = match ctx {
-                Some(ctx) => ctx.format_retained(format_args!("SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"), "step_presentation_invalid_surface_side_text")?,
-                None => format!("SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"),
-            };
-            push_presentation_vec(
+            ctx.push_vec(
                 losses,
                 StepLossCode::SurfaceSideInvalid.note(message),
-                ctx,
                 "step_presentation_losses",
             )?;
             Ok(None)
@@ -2080,7 +1899,7 @@ enum StyleDomain {
 fn style_domain(
     id: u64,
     exchange: &Exchange,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
     style_domain_at(id, exchange, &mut BTreeSet::new(), ctx)
 }
@@ -2089,15 +1908,14 @@ fn style_domain_at(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
     if active.contains(&id) {
         return Ok(StyleDomain::Any);
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_presentation_style_domain_walk"))
-        .transpose()?;
-    insert_presentation_set(active, id, ctx, "step_presentation_style_domain_active")?;
+    let _nested = ctx.enter_nested("step_presentation_style_domain_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_style_domain_active")
+        .map(|_| ())?;
     let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
         return Ok(StyleDomain::Any);
@@ -2177,15 +1995,14 @@ fn style_is_hidden(
     hidden_style_ids: &BTreeSet<u64>,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if hidden_style_ids.contains(&id) || active.contains(&id) {
         return Ok(hidden_style_ids.contains(&id));
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_presentation_hidden_style_walk"))
-        .transpose()?;
-    insert_presentation_set(active, id, ctx, "step_presentation_hidden_style_active")?;
+    let _nested = ctx.enter_nested("step_presentation_hidden_style_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_hidden_style_active")
+        .map(|_| ())?;
     let hidden = if let Some(base) = exchange.records().get(&id).and_then(overridden_style) {
         style_is_hidden(base, hidden_style_ids, exchange, active, ctx)?
     } else {
@@ -2200,20 +2017,14 @@ fn style_inherits_from(
     ancestor: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if id == ancestor || active.contains(&id) {
         return Ok(id == ancestor);
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_presentation_style_inheritance_walk"))
-        .transpose()?;
-    insert_presentation_set(
-        active,
-        id,
-        ctx,
-        "step_presentation_style_inheritance_active",
-    )?;
+    let _nested = ctx.enter_nested("step_presentation_style_inheritance_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_style_inheritance_active")
+        .map(|_| ())?;
     let inherits = if let Some(base) = exchange.records().get(&id).and_then(overridden_style) {
         style_inherits_from(base, ancestor, exchange, active, ctx)?
     } else {
@@ -2228,14 +2039,12 @@ fn contains_null_style(
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
     depth: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if depth >= 256 {
         return Ok(false);
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_presentation_null_style_walk"))
-        .transpose()?;
+    let _nested = ctx.enter_nested("step_presentation_null_style_walk")?;
     match value {
         Value::Typed(name, _) if name == "NULL_STYLE" => Ok(true),
         Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1, ctx),
@@ -2248,7 +2057,8 @@ fn contains_null_style(
             Ok(false)
         }
         Value::Reference(id) if !visited.contains(id) => {
-            insert_presentation_set(visited, *id, ctx, "step_presentation_null_style_visited")?;
+            ctx.insert_btree_set(visited, *id, "step_presentation_null_style_visited")
+                .map(|_| ())?;
             if let Some(record) = exchange.records().get(id) {
                 for value in record
                     .partials

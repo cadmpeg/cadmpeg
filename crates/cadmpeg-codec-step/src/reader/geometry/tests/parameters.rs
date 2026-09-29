@@ -27,7 +27,9 @@ fn source_curve_refusal(
 ) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CIRCLE();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source).expect("valid source curve exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid source curve exchange");
     let scales = super::super::UnitScales {
         default_length: PositiveReal::ONE,
         default_angle: PositiveReal::ONE,
@@ -926,33 +928,36 @@ fn every_iso_si_prefix_resolves_to_its_exact_factor() {
 
 #[test]
 fn prefixed_plane_angle_units_scale_to_radians() {
-    let (exchange, _) = crate::parse::parse(
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let (exchange, _) = crate::test_support::with_service_context(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=(NAMED_UNIT(*) SI_UNIT(.MILLI.,.RADIAN.));\
 #2=(NAMED_UNIT(*) SI_UNIT($,.RADIAN.));\
 ENDSEC;END-ISO-10303-21;",
-    )
+        crate::parse::parse_inner)
     .expect("parse plane-angle units");
-    let mut active = BTreeSet::new();
-    assert_eq!(
-        unit_scale_radians(1, &exchange, &mut active, None)
-            .expect("unit scale evaluation")
-            .map(PositiveReal::get),
-        Some(1.0e-3)
-    );
-    assert!(active.is_empty());
-    assert_eq!(
-        unit_scale_radians(2, &exchange, &mut active, None)
-            .expect("unit scale evaluation")
-            .map(PositiveReal::get),
-        Some(1.0)
-    );
-    assert!(active.is_empty());
+        let mut active = BTreeSet::new();
+        assert_eq!(
+            unit_scale_radians(1, &exchange, &mut active, ctx)
+                .expect("unit scale evaluation")
+                .map(PositiveReal::get),
+            Some(1.0e-3)
+        );
+        assert!(active.is_empty());
+        assert_eq!(
+            unit_scale_radians(2, &exchange, &mut active, ctx)
+                .expect("unit scale evaluation")
+                .map(PositiveReal::get),
+            Some(1.0)
+        );
+        assert!(active.is_empty());
+    });
 }
 
 #[test]
 fn conversion_based_plane_angle_units_multiply_prefixed_base_scales() {
-    let (exchange, _) = crate::parse::parse(
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let (exchange, _) = crate::test_support::with_service_context(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT(.MILLI.,.RADIAN.));\
 #2=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(2.),#1);\
@@ -961,30 +966,31 @@ fn conversion_based_plane_angle_units_multiply_prefixed_base_scales() {
 #5=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(2.),#4);\
 #6=(CONVERSION_BASED_UNIT('two radians',#5) NAMED_UNIT(*) PLANE_ANGLE_UNIT());\
 ENDSEC;END-ISO-10303-21;",
-    )
+        crate::parse::parse_inner)
     .expect("parse conversion-based plane-angle units");
-    let mut active = BTreeSet::new();
-    assert_eq!(
-        unit_scale_radians(3, &exchange, &mut active, None)
-            .expect("unit scale evaluation")
-            .map(PositiveReal::get),
-        Some(2.0e-3)
-    );
-    assert!(active.is_empty());
-    assert_eq!(
-        unit_scale_radians(6, &exchange, &mut active, None)
-            .expect("unit scale evaluation")
-            .map(PositiveReal::get),
-        Some(2.0)
-    );
-    assert!(active.is_empty());
+        let mut active = BTreeSet::new();
+        assert_eq!(
+            unit_scale_radians(3, &exchange, &mut active, ctx)
+                .expect("unit scale evaluation")
+                .map(PositiveReal::get),
+            Some(2.0e-3)
+        );
+        assert!(active.is_empty());
+        assert_eq!(
+            unit_scale_radians(6, &exchange, &mut active, ctx)
+                .expect("unit scale evaluation")
+                .map(PositiveReal::get),
+            Some(2.0)
+        );
+        assert!(active.is_empty());
+    });
 }
 
 #[test]
 fn recursive_unit_and_pcurve_failures_release_active_ids() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let (exchange, _) = crate::parse::parse(
+    let (exchange, _) = crate::test_support::with_service_context(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=CONVERSION_BASED_UNIT('',#2);\
 #2=UNKNOWN_FACTOR();\
@@ -994,22 +1000,22 @@ fn recursive_unit_and_pcurve_failures_release_active_ids() {
 #6=CURVE_REPLICA('',#6,#7);\
 #7=UNKNOWN_OPERATOR();\
 ENDSEC;END-ISO-10303-21;",
-    )
+        crate::parse::parse_inner)
     .expect("parse recursive failure graph");
-    let mut active = BTreeSet::new();
-    assert!(unit_scale_mm(1, &exchange, &mut active, None)
-        .expect("unit scale evaluation")
-        .is_none());
-    assert!(active.is_empty());
-    assert!(unit_scale_radians(1, &exchange, &mut active, None)
-        .expect("unit scale evaluation")
-        .is_none());
-    assert!(active.is_empty());
-
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    let mut active = BTreeSet::new();
+    assert!(unit_scale_mm(1, &exchange, &mut active, &ctx)
+        .expect("unit scale evaluation")
+        .is_none());
+    assert!(active.is_empty());
+    assert!(unit_scale_radians(1, &exchange, &mut active, &ctx)
+        .expect("unit scale evaluation")
+        .is_none());
+    assert!(active.is_empty());
+
     let mut losses = Vec::new();
     assert!(decode_pcurve_geometry(
         3,

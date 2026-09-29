@@ -24,7 +24,7 @@ fn nested_value_copy_refuses_inner_collection_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
-        super::super::try_clone_value(&value, Some(&ctx), "step_test_value_copy"),
+        super::super::try_clone_value(&value, &ctx, "step_test_value_copy"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_test_value_copy"
@@ -40,7 +40,7 @@ fn typed_value_copy_refuses_nested_slot_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
-        super::super::try_clone_value(&value, Some(&ctx), "step_test_typed_copy"),
+        super::super::try_clone_value(&value, &ctx, "step_test_typed_copy"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_test_typed_copy"
@@ -50,14 +50,16 @@ fn typed_value_copy_refuses_nested_slot_limit() {
 #[test]
 fn header_string_validation_refuses_retained_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid header");
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid header");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
     let (ctx, _) =
         DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
     assert!(matches!(
-        super::super::validate_header(exchange.header(), Some(&ctx)),
+        super::super::validate_header(exchange.header(), &ctx),
         Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_string_text"
@@ -89,7 +91,9 @@ fn header_string_refusal_reaches_parse_caller() {
 #[test]
 fn section_language_string_validation_refuses_retained_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SECTION_LANGUAGE($,'ENG');ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid section language");
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid section language");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
@@ -100,7 +104,7 @@ fn section_language_string_validation_refuses_retained_limit() {
             super::super::ImplementationLevel::Edition3Class2,
             exchange.header(),
             &[String::from("AP242")],
-            Some(&ctx),
+            &ctx,
         ),
         Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
             if refusal.dimension == ResourceDimension::RetainedBytes
@@ -126,7 +130,7 @@ fn data_section_name_validation_refuses_retained_limit() {
             &[String::from("AP242")],
             super::super::ImplementationLevel::LegacyEdition1,
             &mut section_names,
-            Some(&ctx),
+            &ctx,
         ),
         Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
             if refusal.dimension == ResourceDimension::RetainedBytes
@@ -145,7 +149,9 @@ fn validation_refuses(
         &DecodeContext<'_>,
     ) -> Result<(), super::super::ValidationError>,
 ) {
-    let (exchange, _) = crate::parse::parse(source).expect("valid header source");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid header source");
     let refused = (0..=1024).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -170,7 +176,7 @@ fn header_validation_refuses(operation: &str, dimension: ResourceDimension) {
         operation,
         dimension,
         EXTENDED_HEADER_SOURCE,
-        |exchange, ctx| super::super::validate_header(exchange.header(), Some(ctx)).map(|_| ()),
+        |exchange, ctx| super::super::validate_header(exchange.header(), ctx).map(|_| ()),
     );
 }
 
@@ -184,7 +190,7 @@ fn header_section_validation_refuses(operation: &str, dimension: ResourceDimensi
                 super::super::ImplementationLevel::Edition3Class2,
                 exchange.header(),
                 &[String::from("AP242")],
-                Some(ctx),
+                ctx,
             )
             .map(|_| ())
         },
@@ -261,14 +267,17 @@ fn implementation_level_diagnostic_text_refuses_retained_limit() {
         "step_implementation_level_diagnostic_text",
         ResourceDimension::RetainedBytes,
         UNVERIFIED_LEVEL_SOURCE,
-        |exchange, ctx| super::super::validate_header(exchange.header(), Some(ctx)).map(|_| ()),
+        |exchange, ctx| super::super::validate_header(exchange.header(), ctx).map(|_| ()),
     );
 }
 
 #[test]
 fn schema_oid_diagnostic_text_refuses_retained_limit() {
-    let (exchange, _) = crate::parse::parse(SCHEMA_DIAGNOSTIC_SOURCE)
-        .expect("valid out-of-range schema identifier");
+    let (exchange, _) = crate::test_support::with_service_context(
+        SCHEMA_DIAGNOSTIC_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid out-of-range schema identifier");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -278,7 +287,7 @@ fn schema_oid_diagnostic_text_refuses_retained_limit() {
         super::super::schema_object_identifier_diagnostics(
             &exchange.schema_identifiers,
             exchange.header()[2].offset,
-            Some(&ctx),
+            &ctx,
         )
         .next(),
         Some(Err(CodecError::ResourceLimit(refusal)))
@@ -295,7 +304,7 @@ fn schema_name_matching_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"AP242", &arena, &policy)
         .expect("root fits retained policy");
     assert!(matches!(
-        super::super::schema_identifier_matches(&[String::from("AP242")], "AP242", Some(&ctx)),
+        super::super::schema_identifier_matches(&[String::from("AP242")], "AP242", &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_schema_name_matching"
@@ -304,14 +313,18 @@ fn schema_name_matching_refuses_retained_limit() {
 
 #[test]
 fn matching_schema_names_refuse_collection_limit() {
-    let (exchange, _) = crate::parse::parse(EXTENDED_HEADER_SOURCE).expect("valid schema header");
+    let (exchange, _) = crate::test_support::with_service_context(
+        EXTENDED_HEADER_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid schema header");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(EXTENDED_HEADER_SOURCE, &arena, &policy)
         .expect("root fits collection policy");
     assert!(matches!(
-        super::super::schema_names_for_matching(&exchange.schema_identifiers, Some(&ctx)),
+        super::super::schema_names_for_matching(&exchange.schema_identifiers, &ctx),
         Err(super::super::ParseError::Resource(CodecError::ResourceLimit(refusal)))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_schema_matching_names"
@@ -320,14 +333,18 @@ fn matching_schema_names_refuse_collection_limit() {
 
 #[test]
 fn matching_schema_name_text_refuses_retained_limit() {
-    let (exchange, _) = crate::parse::parse(EXTENDED_HEADER_SOURCE).expect("valid schema header");
+    let (exchange, _) = crate::test_support::with_service_context(
+        EXTENDED_HEADER_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid schema header");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(EXTENDED_HEADER_SOURCE, &arena, &policy)
         .expect("root fits retained policy");
     assert!(matches!(
-        super::super::schema_names_for_matching(&exchange.schema_identifiers, Some(&ctx)),
+        super::super::schema_names_for_matching(&exchange.schema_identifiers, &ctx),
         Err(super::super::ParseError::Resource(CodecError::ResourceLimit(refusal)))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_schema_matching_name"
@@ -352,7 +369,7 @@ fn data_section_name_set_refuses_collection_limit() {
             &[String::from("AP242")],
             super::super::ImplementationLevel::LegacyEdition1,
             &mut section_names,
-            Some(&ctx),
+            &ctx,
         ),
         Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
             if refusal.dimension == ResourceDimension::CollectionItems
@@ -570,7 +587,7 @@ fn anchor_list_slots_are_admitted_before_vector_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        AnchorResolver::new(&anchors, Some(&ctx))
+        AnchorResolver::new(&anchors, &ctx)
             .resolve_root(&value)
             .expect("service admits list"),
         value
@@ -579,7 +596,7 @@ fn anchor_list_slots_are_admitted_before_vector_allocation() {
     limited.limits.max_collection_items = 8;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, Some(&ctx))
+    let error = AnchorResolver::new(&anchors, &ctx)
         .resolve_root(&value)
         .expect_err("one list node plus eight slots exceed eight items");
     assert!(
@@ -599,7 +616,7 @@ fn anchor_memo_entry_is_admitted_before_the_clone() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        AnchorResolver::new(&anchors, Some(&ctx))
+        AnchorResolver::new(&anchors, &ctx)
             .resolve_root(&value)
             .expect("service admits memo"),
         anchors["a"]
@@ -608,7 +625,7 @@ fn anchor_memo_entry_is_admitted_before_the_clone() {
     limited.limits.max_collection_items = 9;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, Some(&ctx))
+    let error = AnchorResolver::new(&anchors, &ctx)
         .resolve_root(&value)
         .expect_err("memo entry exceeds nine prior admitted items");
     assert!(
@@ -625,7 +642,7 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        AnchorResolver::new(&anchors, Some(&ctx))
+        AnchorResolver::new(&anchors, &ctx)
             .resolve_root(&value)
             .expect("service admits typed value"),
         value
@@ -635,7 +652,7 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
         cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Value>());
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, Some(&ctx))
+    let error = AnchorResolver::new(&anchors, &ctx)
         .resolve_root(&value)
         .expect_err("typed wrapper exceeds the leaf's retained bytes");
     assert!(
@@ -652,7 +669,7 @@ fn anchor_reference_stack_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, Some(&ctx))
+    let error = AnchorResolver::new(&anchors, &ctx)
         .resolve_root(&value)
         .expect_err("reference stack needs one item");
     assert!(matches!(
@@ -674,7 +691,7 @@ fn cyclic_anchor_error_text_refuses_retained_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
             .expect("root fits retained policy");
         matches!(
-            AnchorResolver::new(&anchors, Some(&ctx)).resolve_root(&value),
+            AnchorResolver::new(&anchors, &ctx).resolve_root(&value),
             Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "step_cyclic_anchor_error_text"
@@ -695,7 +712,7 @@ fn anchor_reference_stack_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
         .expect("root fits selected profile");
-    let error = AnchorResolver::new(&anchors, Some(&ctx))
+    let error = AnchorResolver::new(&anchors, &ctx)
         .resolve_root(&value)
         .expect_err("reference stack needs retained pointer storage");
     assert!(matches!(
@@ -717,13 +734,12 @@ fn reference_bindings_are_admitted_before_map_allocation() {
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
         .expect("root fits service profile");
-    ReferenceResolver::new(&references, &anchors, Some(&ctx))
-        .expect("service admits the binding map");
+    ReferenceResolver::new(&references, &anchors, &ctx).expect("service admits the binding map");
     let mut limited = service;
     limited.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
         .expect("root fits selected profile");
-    let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))
+    let error = ReferenceResolver::new(&references, &anchors, &ctx)
         .err()
         .expect("binding must be admitted before collection");
     assert!(
@@ -744,7 +760,7 @@ fn reference_stack_item_is_admitted_before_push() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        ReferenceResolver::new(&references, &anchors, Some(&ctx))
+        ReferenceResolver::new(&references, &anchors, &ctx)
             .expect("create resolver")
             .resolve_value(&value, 0)
             .expect("service admits reference"),
@@ -754,7 +770,7 @@ fn reference_stack_item_is_admitted_before_push() {
     limited.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
         .expect("root fits selected profile");
-    let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))
+    let error = ReferenceResolver::new(&references, &anchors, &ctx)
         .expect("binding fits selected profile")
         .resolve_value(&value, 0)
         .expect_err("stack item exceeds the remaining collection allowance");
@@ -776,7 +792,7 @@ fn reference_stack_refuses_retained_limit() {
         super::super::btree_node_storage::<ReferenceName, &str>().expect("node size fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
         .expect("root fits selected profile");
-    let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))
+    let error = ReferenceResolver::new(&references, &anchors, &ctx)
         .expect("binding storage fits selected profile")
         .resolve_value(&Value::ExternalReference(2), 0)
         .expect_err("reference stack needs retained storage");
@@ -801,7 +817,7 @@ fn reference_list_slots_are_admitted_before_vector_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        ReferenceResolver::new(&[], &anchors, Some(&ctx))
+        ReferenceResolver::new(&[], &anchors, &ctx)
             .expect("create resolver")
             .resolve_value(&value, 0)
             .expect("service admits list"),
@@ -811,7 +827,7 @@ fn reference_list_slots_are_admitted_before_vector_allocation() {
     limited.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
         .expect("root fits selected profile");
-    let error = ReferenceResolver::new(&[], &anchors, Some(&ctx))
+    let error = ReferenceResolver::new(&[], &anchors, &ctx)
         .expect("create resolver")
         .resolve_value(&value, 0)
         .expect_err("three list slots exceed two admitted items");
@@ -829,7 +845,7 @@ fn reference_typed_wrapper_is_charged_before_its_clone() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
         .expect("root fits service profile");
     assert_eq!(
-        ReferenceResolver::new(&[], &anchors, Some(&ctx))
+        ReferenceResolver::new(&[], &anchors, &ctx)
             .expect("create resolver")
             .resolve_value(&value, 0)
             .expect("service admits typed value"),
@@ -840,7 +856,7 @@ fn reference_typed_wrapper_is_charged_before_its_clone() {
         cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Value>());
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
         .expect("root fits selected profile");
-    let error = ReferenceResolver::new(&[], &anchors, Some(&ctx))
+    let error = ReferenceResolver::new(&[], &anchors, &ctx)
         .expect("create resolver")
         .resolve_value(&value, 0)
         .expect_err("typed wrapper exceeds the leaf's retained bytes");
@@ -867,7 +883,7 @@ fn reference_anchor_copy_is_charged_before_building_bindings() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
         .expect("root fits selected profile");
     let error =
-        super::super::resolve_local_references(&mut anchors, &mut records, &references, Some(&ctx))
+        super::super::resolve_local_references(&mut anchors, &mut records, &references, &ctx)
             .expect_err("anchor copy must be admitted before cloning");
     assert!(
         matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_reference_anchor_copies")
@@ -945,7 +961,8 @@ fn parser_accounts_for_record_table_storage() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
-    crate::parse::parse(source.as_bytes()).expect("record-table fixture must parse");
+    crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+        .expect("record-table fixture must parse");
     let mut record_table_limit = None;
     for max_retained_bytes in (1..=131_072).step_by(64) {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -979,7 +996,8 @@ fn parser_accounts_for_record_table_storage() {
 #[test]
 fn parser_accounts_for_anchor_tag_collection_storage() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=1 {tag:2};ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    crate::parse::parse(source).expect("anchor-tag fixture must parse");
+    crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("anchor-tag fixture must parse");
     let mut tag_limit = None;
     for max_retained_bytes in 1..=8192 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1039,7 +1057,8 @@ fn anchor_materialization_uses_the_decode_session_budget() {
 #[test]
 fn local_reference_materialization_uses_the_decode_session_budget() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;REFERENCE;@2=<#a>;ENDSEC;DATA;#1=ITEM(@2);ENDSEC;END-ISO-10303-21;";
-    crate::parse::parse(source).expect("local-reference fixture must parse");
+    crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("local-reference fixture must parse");
     let mut materialization_limit = None;
     for max_work_units in 1..=2048 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1077,8 +1096,16 @@ fn parser_bounds_exponential_anchor_expansion() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
     );
-    let error = crate::parse::parse(source.as_bytes()).unwrap_err();
-    assert!(error.to_string().contains("expanded anchor value exceeds"));
+    let error =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .unwrap_err();
+    assert!(matches!(
+        error,
+        crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.used <= limit.limit
+                && limit.additional > limit.limit - limit.used
+    ));
 }
 
 #[test]
@@ -1095,6 +1122,14 @@ fn parser_bounds_aggregate_anchor_materialization() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
-    let error = crate::parse::parse(source.as_bytes()).unwrap_err();
-    assert!(error.to_string().contains("expanded anchor"));
+    let error =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .unwrap_err();
+    assert!(matches!(
+        error,
+        crate::parse::ParseError::Resource(CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.used <= limit.limit
+                && limit.additional > limit.limit - limit.used
+    ));
 }
