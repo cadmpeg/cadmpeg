@@ -1688,13 +1688,11 @@ fn hole_position_feature<'a>(
 ) -> Option<&'a crate::records::Feature> {
     let mut sources = lanes
         .iter()
-        .filter_map(|lane| hole_position_sketch_source(hole, lane))
-        .collect::<Vec<_>>();
-    sources.sort_unstable();
-    sources.dedup();
-    let [source] = sources.as_slice() else {
+        .filter_map(|lane| hole_position_sketch_source(hole, lane));
+    let source = sources.next()?;
+    if sources.any(|candidate| candidate != source) {
         return None;
-    };
+    }
     let mut position_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1704,7 +1702,7 @@ fn hole_position_feature<'a>(
                     candidate.source_value().or_else(|| {
                         feature_object_name(candidate, lane)
                             .and_then(|name| name.object_id.and_then(ObjectId::value))
-                    }) == Some(*source)
+                    }) == Some(source)
                 })
         });
     let position = position_features.next()?;
