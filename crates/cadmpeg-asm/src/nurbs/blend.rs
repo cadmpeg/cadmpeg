@@ -666,11 +666,7 @@ fn rolling_ball_third_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedRollingBallThirdSide, cadmpeg_core::CodecError>> {
-    let label = propagate_resource!(crate::decode_alloc::copy_string(
-        ctx,
-        cur.take_str()?,
-        "ASM rolling ball third-side label"
-    ));
+    let label = propagate_resource!(ctx.copy_retained_text(cur.take_str()?, "ASM rolling ball third-side label"));
     let surface = propagate_resource!(embedded_surface(ctx, cur)?);
     let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
     cur.set_pos(curve_end);
@@ -762,11 +758,7 @@ fn variable_blend_value(
             let terminal = if matches!(cur.peek(), Some(Token::Double(_))) {
                 VariableBlendTerminal::Double(cur.take_f64()?)
             } else {
-                VariableBlendTerminal::Text(propagate_resource!(crate::decode_alloc::copy_string(
-                    ctx,
-                    blend_value_name(cur)?,
-                    "ASM variable blend terminal text",
-                )))
+                VariableBlendTerminal::Text(propagate_resource!(ctx.copy_retained_text(blend_value_name(cur)?, "ASM variable blend terminal text")))
             };
             VariableBlendValuePayload::Functional {
                 discriminator,

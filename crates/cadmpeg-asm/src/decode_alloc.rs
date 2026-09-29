@@ -125,7 +125,7 @@ pub(crate) fn insert_string_set(
         return Ok(false);
     }
     ctx.charge_collection_items(1, operation)?;
-    let owned = copy_string(ctx, value, operation)?;
+    let owned = ctx.copy_retained_text(value, operation)?;
     values
         .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
@@ -220,16 +220,7 @@ pub(crate) trait CountedIteratorExt: Iterator + Sized {
 
 impl<I: Iterator> CountedIteratorExt for I {}
 
-pub(crate) fn copy_string(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let bytes = ctx.copy_retained(value.as_bytes(), operation)?;
-    String::from_utf8(bytes).map_err(|error| {
-        CodecError::malformed(format_args!("invalid UTF-8 after copying string: {error}"))
-    })
-}
+
 
 pub(crate) fn try_collect_vec<T, E: From<CodecError>>(
     ctx: &DecodeContext<'_>,
