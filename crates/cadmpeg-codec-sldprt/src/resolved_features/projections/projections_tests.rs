@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 
 mod limits;
 
-fn with_variable_fillet_context<R>(test: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R) -> R {
+fn with_projection_context<R>(test: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R) -> R {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -620,14 +620,15 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         sketch_entities: Vec::new(),
     };
 
-    project_compact_surface_selections(
+    with_projection_context(|ctx| project_compact_surface_selections(
+        ctx,
         &mut features,
         std::slice::from_ref(&history),
         &[
             lane("one", selection("one", first_tail)),
             lane("two", selection("two", second_tail)),
         ],
-    )
+    ))
     .unwrap();
 
     assert!(matches!(
@@ -694,7 +695,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    project_compact_surface_selections(&mut features, &[], &[lane]).unwrap();
+    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[], &[lane])).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, .. }) =
         features[0].evaluation.definition()
@@ -785,7 +786,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     for selection in &mut lane_two.surface_selections {
         selection.parent = lane_two.id.clone();
     }
-    project_compact_surface_selections(&mut features, &[], &[lane, lane_two]).unwrap();
+    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane_two])).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) =
         features[1].evaluation.definition()
@@ -915,7 +916,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         selection.parent = lane2.id.clone();
     }
 
-    project_compact_surface_selections(&mut features, &[], &[lane, lane2]).unwrap();
+    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane2])).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
         targets,
@@ -1027,7 +1028,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         sketch_entities: Vec::new(),
     };
 
-    project_compact_surface_selections(&mut features, &[], &[lane]).unwrap();
+    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[], &[lane])).unwrap();
 
     assert!(matches!(
         features[2].evaluation.definition(),
@@ -1148,14 +1149,15 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         sketch_entities: Vec::new(),
     };
 
-    project_compact_surface_selections(
+    with_projection_context(|ctx| project_compact_surface_selections(
+        ctx,
         &mut features,
         std::slice::from_ref(&history),
         &[
             lane("one", selection("one", first_signature)),
             lane("two", selection("two", second_signature)),
         ],
-    )
+    ))
     .unwrap();
 
     let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1183,14 +1185,15 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     });
     let mut conflicting = selection("conflicting", first_signature);
     conflicting.components[0].local_id = Some(8);
-    project_compact_surface_selections(
+    with_projection_context(|ctx| project_compact_surface_selections(
+        ctx,
         &mut features,
         std::slice::from_ref(&history),
         &[
             lane("one", selection("one", first_signature)),
             lane("conflicting", conflicting),
         ],
-    )
+    ))
     .unwrap();
     assert!(matches!(
         features[1].evaluation.definition(),
@@ -1324,7 +1327,7 @@ fn split_face_collects_distinct_generated_target_faces() {
         sketch_entities: Vec::new(),
     };
 
-    project_compact_surface_selections(&mut features, &[history], &[lane]).unwrap();
+    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[history], &[lane])).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
         features[2].evaluation.definition()
@@ -1479,7 +1482,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_variable_fillet_context(|ctx| variable_fillet_radius_groups(
+    let groups = with_projection_context(|ctx| variable_fillet_radius_groups(
         ctx,
         "variable",
         std::slice::from_ref(&history),
@@ -1676,7 +1679,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let groups = with_variable_fillet_context(|ctx| variable_fillet_radius_groups(ctx, "variable", &[history], &[lane], &[&selection]))
+    let groups = with_projection_context(|ctx| variable_fillet_radius_groups(ctx, "variable", &[history], &[lane], &[&selection]))
         .expect("fillet resource limits")
         .expect("legacy edge-control join");
     assert!(matches!(
@@ -1742,7 +1745,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_variable_fillet_context(|ctx| variable_fillet_radius_groups(
+    let groups = with_projection_context(|ctx| variable_fillet_radius_groups(
         ctx,
         "variable",
         std::slice::from_ref(&history),
@@ -1762,7 +1765,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
-    assert!(with_variable_fillet_context(|ctx| variable_fillet_radius_groups(ctx, "variable", &[history], &[], &[&collision]))
+    assert!(with_projection_context(|ctx| variable_fillet_radius_groups(ctx, "variable", &[history], &[], &[&collision]))
         .expect("fillet resource limits")
         .is_none());
 }

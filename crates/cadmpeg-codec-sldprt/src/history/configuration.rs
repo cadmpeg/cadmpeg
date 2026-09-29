@@ -147,6 +147,7 @@ pub(crate) fn project_compact_and_generated(
         features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_compact_surface_selections(
+        ctx,
         features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_draft_operands(ctx, features, projection, lanes)?;
