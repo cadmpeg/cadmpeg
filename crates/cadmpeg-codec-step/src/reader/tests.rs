@@ -1318,40 +1318,6 @@ fn opaque_kind_count_refuses_collection_limit() {
 }
 
 #[test]
-fn opaque_link_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"link", &arena, &policy)
-        .expect("root fits collection policy");
-    let error = super::push_opaque_link(&mut Vec::new(), "step:data:point#1", &ctx)
-        .expect_err("link needs one vector item");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "step_opaque_links"));
-}
-
-#[test]
-fn opaque_link_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"link", &arena, &policy)
-        .expect("root fits retained policy");
-    let error = super::push_opaque_link(&mut Vec::new(), "step:data:point#1", &ctx)
-        .expect_err("link identity exceeds four retained bytes");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "step_opaque_link_text"));
-}
-
-#[test]
 fn opaque_record_collections_refuse_caller_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

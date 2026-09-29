@@ -110,7 +110,7 @@ fn compressed_global_workspace_refuses_materialized_limit_before_copy() {
     policy.limits.max_materialized_bytes = u64::try_from(global_cards * 2 * 72 - 1).unwrap();
     let error = normalize_with_policy(&source, &policy).unwrap_err();
     assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "iges_compressed_global_stream")
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "iges_compressed_global_digits")
     );
 }
 

@@ -3,7 +3,6 @@
 
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
@@ -46,155 +45,6 @@ use super::StageOutcome;
 const EPS_TOPOLOGY_READ_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 
-fn push_topology_vec<T>(
-    values: &mut Vec<T>,
-    value: T,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    values.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                1,
-                operation,
-            ),
-        )
-    })?;
-    values.push(value);
-    Ok(())
-}
-
-fn one_topology_vec<T>(
-    value: T,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut values = Vec::new();
-    push_topology_vec(&mut values, value, ctx, operation)?;
-    Ok(values)
-}
-
-fn append_topology_vec<T>(
-    target: &mut Vec<T>,
-    source: &mut Vec<T>,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = source.len();
-    ctx.charge_collection_items(u64_from_index(count), operation)?;
-    target.try_reserve(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                u64_from_index(count),
-                operation,
-            ),
-        )
-    })?;
-    target.append(source);
-    Ok(())
-}
-
-fn push_topology_group<K: Ord, V>(
-    values: &mut BTreeMap<K, Vec<V>>,
-    key: K,
-    value: V,
-    ctx: &DecodeContext<'_>,
-    group_operation: &'static str,
-    member_operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains_key(&key) {
-        ctx.charge_collection_items(1, group_operation)?;
-    }
-    push_topology_vec(values.entry(key).or_default(), value, ctx, member_operation)
-}
-
-fn insert_topology_set<T: Ord>(
-    values: &mut BTreeSet<T>,
-    value: T,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains(&value) {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    values.insert(value);
-    Ok(())
-}
-
-fn insert_topology_hash_set<T: Eq + Hash>(
-    values: &mut HashSet<T>,
-    value: T,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains(&value) {
-        ctx.charge_collection_items(1, operation)?;
-        values.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    1,
-                    operation,
-                ),
-            )
-        })?;
-    }
-    values.insert(value);
-    Ok(())
-}
-
-fn insert_topology_map<K: Ord, V>(
-    values: &mut BTreeMap<K, V>,
-    key: K,
-    value: V,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains_key(&key) {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    values.insert(key, value);
-    Ok(())
-}
-
-fn copy_topology_id<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
-    identity: &str,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<T, CodecError> {
-    let text = ctx.copy_retained_text(identity, operation)?;
-    T::try_from(text).map_err(CodecError::malformed)
-}
-
-fn copy_topology_body_ids(
-    bodies: &[BodyId],
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<Vec<BodyId>, CodecError> {
-    let mut copies = Vec::new();
-    for body in bodies {
-        ctx.charge_collection_items(1, operation)?;
-        copies.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    1,
-                    operation,
-                ),
-            )
-        })?;
-        copies.push(body.try_clone_for_decode(ctx, operation)?);
-    }
-    Ok(copies)
-}
-
 fn push_topology_body_group(
     groups: &mut BTreeMap<u64, Vec<BodyId>>,
     key: u64,
@@ -207,7 +57,7 @@ fn push_topology_body_group(
         ctx.charge_collection_items(1, group_operation)?;
     }
     let copy = body.try_clone_for_decode(ctx, member_operation)?;
-    push_topology_vec(groups.entry(key).or_default(), copy, ctx, member_operation)
+    ctx.push_vec(groups.entry(key).or_default(), copy, member_operation)
 }
 
 fn insert_topology_body_group(
@@ -228,21 +78,6 @@ fn insert_topology_body_group(
     let copy = body.try_clone_for_decode(ctx, member_operation)?;
     groups.entry(key).or_default().insert(copy);
     Ok(())
-}
-
-fn push_topology_id_group<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
-    groups: &mut BTreeMap<u64, Vec<T>>,
-    key: u64,
-    identity: &str,
-    ctx: &DecodeContext<'_>,
-    group_operation: &'static str,
-    member_operation: &'static str,
-) -> Result<(), CodecError> {
-    if !groups.contains_key(&key) {
-        ctx.charge_collection_items(1, group_operation)?;
-    }
-    let copy = copy_topology_id(identity, ctx, member_operation)?;
-    push_topology_vec(groups.entry(key).or_default(), copy, ctx, member_operation)
 }
 
 mod admissions;
@@ -312,18 +147,11 @@ fn admitted_body_clone<'a>(
         ctx.reserve_scoped(bytes, operation)?
     };
     let mut values = Vec::new();
-    values.try_reserve_exact(bodies.len()).map_err(|_| {
-        let requested = u64_from_index(bodies.len());
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                requested,
-                operation,
-            ),
-        )
-    })?;
-    values.extend_from_slice(bodies);
+
+    DecodeContext::reserve_admitted_vec(&mut values, bodies.len(), operation)?;
+    for body in bodies {
+        values.push(body.try_clone_for_decode(ctx, operation)?);
+    }
     Ok(AdmittedRepresentationBodies {
         values,
         reservation: bytes,
@@ -450,28 +278,15 @@ pub(super) fn representation_bodies<'a>(
             insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
         }
     }
-    ctx.charge_collection_items(
-        u64_from_index(body_ids.len()),
+
+    let mut bodies = Vec::new();
+
+    ctx.reserve_scoped_vec(
+        &mut body_ids_bytes,
+        &mut bodies,
+        body_ids.len(),
         "step_representation_body_output",
     )?;
-    body_ids_bytes.grow(
-        u64_from_index(body_ids.len())
-            .checked_mul(u64_from_index(std::mem::size_of::<BodyId>()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("step_representation_body_output", u64::MAX - 1, u64::MAX)
-            })?,
-    )?;
-    let mut bodies = Vec::new();
-    bodies.try_reserve_exact(body_ids.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_representation_body_output"),
-                0,
-                u64_from_index(body_ids.len()),
-                "step_representation_body_output",
-            ),
-        )
-    })?;
     bodies.extend(body_ids);
     active.remove(&representation);
     drop(active_bytes);
@@ -515,19 +330,17 @@ fn shape_representation_relationships(
                 (first, second)
             }
         };
-        push_topology_group(
+        ctx.push_btree_group(
             &mut related,
             first,
             second,
-            ctx,
             "step_shape_relationship_groups",
             "step_shape_relationship_members",
         )?;
-        push_topology_group(
+        ctx.push_btree_group(
             &mut related,
             second,
             first,
-            ctx,
             "step_shape_relationship_groups",
             "step_shape_relationship_members",
         )?;
@@ -615,7 +428,7 @@ pub(super) fn decode(
         if record.partials.len() != 1 || matches!(record.parameter(1), Some(Value::Derived)) {
             continue;
         }
-        push_topology_vec(
+        ctx.push_vec(
             &mut result.losses,
             StepLossCode::OrientedShellOmitsCfsFaces
                 .note(format!(
@@ -629,7 +442,6 @@ pub(super) fn decode(
                     )
                     .with_tag("oriented_shell"),
                 ),
-            ctx,
             "step_topology_losses",
         )?;
     }
@@ -640,23 +452,21 @@ pub(super) fn decode(
     let point_positions = carrier_index;
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
-            push_topology_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
                     "VERTEX_POINT #{vertex_id} has no resolvable point carrier"
                 )),
-                ctx,
                 "step_topology_losses",
             )?;
             continue;
         };
         if !carrier_index.points.contains_key(&point_id) {
-            push_topology_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
                     "VERTEX_POINT #{vertex_id} has unresolved point carrier #{point_id}"
                 )),
-                ctx,
                 "step_topology_losses",
             )?;
         }
@@ -675,20 +485,19 @@ pub(super) fn decode(
                 continue;
             }
             if built_wire_models.contains(&model) {
-                insert_topology_hash_set(
-                    &mut result.claims,
-                    representation,
-                    ctx,
-                    "step_topology_claims",
-                )?;
+                ctx.insert_hash_set(&mut result.claims, representation, "step_topology_claims")?;
                 if let Some(body_ids) = result.body_by_root.get(&model) {
-                    let copies =
-                        copy_topology_body_ids(body_ids, ctx, "step_topology_root_bodies")?;
-                    insert_topology_map(
+                    let copies = ctx.collect_indexed_vec(
+                        body_ids.len(),
+                        "step_topology_root_bodies",
+                        |index| {
+                            body_ids[index].try_clone_for_decode(ctx, "step_topology_root_bodies")
+                        },
+                    )?;
+                    ctx.insert_btree_map(
                         &mut result.body_by_root,
                         representation,
                         copies,
-                        ctx,
                         "step_topology_root_groups",
                     )?;
                 }
@@ -707,30 +516,19 @@ pub(super) fn decode(
             let mut committed = 0;
             for mut built in built {
                 if let Err(error) = commit_session.commit_model(built.draft) {
-                    push_topology_vec(
+                    ctx.push_vec(
                         &mut losses,
                         StepLossCode::DecodeWarning.note(topology_commit_error(
                             &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
                             &error,
                             ctx,
                         )?),
-                        ctx,
                         "step_topology_losses",
                     )?;
                 } else {
                     committed += 1;
-                    insert_topology_set(
-                        &mut built_wire_models,
-                        model,
-                        ctx,
-                        "step_built_wire_models",
-                    )?;
-                    insert_topology_hash_set(
-                        &mut built.typed,
-                        representation,
-                        ctx,
-                        "step_wire_typed",
-                    )?;
+                    ctx.insert_btree_set(&mut built_wire_models, model, "step_built_wire_models")?;
+                    ctx.insert_hash_set(&mut built.typed, representation, "step_wire_typed")?;
                     push_topology_body_group(
                         &mut result.body_by_root,
                         model,
@@ -740,32 +538,25 @@ pub(super) fn decode(
                         "step_topology_root_bodies",
                     )?;
                     for typed in std::mem::take(&mut built.typed) {
-                        insert_topology_hash_set(
-                            &mut result.claims,
-                            typed,
-                            ctx,
-                            "step_topology_claims",
-                        )?;
+                        ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
                     }
                 }
             }
             if committed == 0 {
-                push_topology_vec(
+                ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(format!(
                         "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
                     )),
-                    ctx,
                     "step_topology_losses",
                 )?;
             } else if let Some(failures) = failures {
-                push_topology_vec(
+                ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
                 failures.count
             )),
-                    ctx,
                     "step_topology_losses",
                 )?;
             }
@@ -790,14 +581,13 @@ pub(super) fn decode(
         let mut committed = 0;
         for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft) {
-                push_topology_vec(
+                ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
                         &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
                         &error,
                         ctx,
                     )?),
-                    ctx,
                     "step_topology_losses",
                 )?;
             } else {
@@ -821,32 +611,25 @@ pub(super) fn decode(
                     "step_topology_root_bodies",
                 )?;
                 for typed in std::mem::take(&mut built.typed) {
-                    insert_topology_hash_set(
-                        &mut result.claims,
-                        typed,
-                        ctx,
-                        "step_topology_claims",
-                    )?;
+                    ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
                 }
             }
         }
         if committed == 0 {
-            push_topology_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
                     "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
                 )),
-                ctx,
                 "step_topology_losses",
             )?;
         } else if let Some(failures) = failures {
-            push_topology_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
                     "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
                     failures.count
                 )),
-                ctx,
                 "step_topology_losses",
             )?;
         }
@@ -854,12 +637,7 @@ pub(super) fn decode(
     let mut decoded_pcurves = BTreeSet::new();
     for pcurve in &commit_session.document().model.pcurves {
         if let Some(id) = source_numeric_id(pcurve.id.as_str(), "pcurve") {
-            insert_topology_set(
-                &mut decoded_pcurves,
-                id,
-                ctx,
-                "step_decoded_topology_pcurves",
-            )?;
+            ctx.insert_btree_set(&mut decoded_pcurves, id, "step_decoded_topology_pcurves")?;
         }
     }
     let topology_root_types = [
@@ -872,12 +650,7 @@ pub(super) fn decode(
     let mut distinct_roots = BTreeSet::new();
     for (_, record) in exchange.entities_any(&topology_root_types) {
         if let Some(key) = root_key(record, exchange, &shells, ctx)? {
-            insert_topology_set(
-                &mut distinct_roots,
-                key,
-                ctx,
-                "step_distinct_topology_roots",
-            )?;
+            ctx.insert_btree_set(&mut distinct_roots, key, "step_distinct_topology_roots")?;
         }
     }
     let distinct_root_count = distinct_roots.len();
@@ -887,25 +660,29 @@ pub(super) fn decode(
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
     for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells, ctx)? else {
-            push_topology_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
                 "STEP topology root #{id} does not resolve to a complete connected topology graph",
             )),
-                ctx,
                 "step_topology_losses",
             )?;
             continue;
         };
         if let Some(root_built) = built_roots.get(&key) {
-            insert_topology_hash_set(&mut result.claims, id, ctx, "step_topology_claims")?;
-            let copies =
-                copy_topology_body_ids(&root_built.body_ids, ctx, "step_topology_root_bodies")?;
-            insert_topology_map(
+            ctx.insert_hash_set(&mut result.claims, id, "step_topology_claims")?;
+            let copies = ctx.collect_indexed_vec(
+                root_built.body_ids.len(),
+                "step_topology_root_bodies",
+                |index| {
+                    root_built.body_ids[index]
+                        .try_clone_for_decode(ctx, "step_topology_root_bodies")
+                },
+            )?;
+            ctx.insert_btree_map(
                 &mut result.body_by_root,
                 id,
                 copies,
-                ctx,
                 "step_topology_root_groups",
             )?;
             for (&shell, body_ids) in &root_built.body_by_shell {
@@ -955,14 +732,13 @@ pub(super) fn decode(
         for mut built in built {
             drop_committed_surfaces(&mut built.draft, &mut commit_session);
             if let Err(error) = commit_session.commit_model(built.draft) {
-                push_topology_vec(
+                ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
                         &format!("STEP topology root #{id}"),
                         &error,
                         ctx,
                     )?),
-                    ctx,
                     "step_topology_losses",
                 )?;
             } else {
@@ -984,65 +760,58 @@ pub(super) fn decode(
                         "step_topology_built_shell_bodies",
                     )?;
                 }
-                push_topology_vec(
+                ctx.push_vec(
                     &mut body_ids,
                     built
                         .body_id
                         .try_clone_for_decode(ctx, "step_topology_built_bodies")?,
-                    ctx,
                     "step_topology_built_bodies",
                 )?;
                 for typed in std::mem::take(&mut built.typed) {
-                    insert_topology_hash_set(
-                        &mut result.claims,
-                        typed,
-                        ctx,
-                        "step_topology_claims",
-                    )?;
+                    ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
                 }
                 // A rejected draft transfers no relation, so only a committed
                 // body contributes its admitted relations to the document.
-                append_topology_vec(
+                ctx.append_vec(
                     &mut admissions,
                     &mut built.pcurve_admissions,
-                    ctx,
                     "step_topology_admissions",
                 )?;
             }
         }
         if body_ids.is_empty() {
             if let Some(message) = failure_message {
-                push_topology_vec(
+                ctx.push_vec(
                     &mut result.losses,
                     StepLossCode::TopologyRootRejected.note(ctx.format_retained(
                         format_args!("STEP topology root #{id} rejected: {message}"),
                         "step_topology_root_rejected_text",
                     )?),
-                    ctx,
                     "step_topology_losses",
                 )?;
             } else {
-                push_topology_vec(&mut result.losses, StepLossCode::TopologyRootIncomplete.note(format!(
+                ctx.push_vec(&mut result.losses, StepLossCode::TopologyRootIncomplete.note(format!(
                         "STEP topology root #{id} does not resolve to a complete connected topology graph",
-                    )), ctx, "step_topology_losses")?;
+                    )), "step_topology_losses")?;
             }
         } else {
-            let copies = copy_topology_body_ids(&body_ids, ctx, "step_topology_root_bodies")?;
-            insert_topology_map(
+            let copies =
+                ctx.collect_indexed_vec(body_ids.len(), "step_topology_root_bodies", |index| {
+                    body_ids[index].try_clone_for_decode(ctx, "step_topology_root_bodies")
+                })?;
+            ctx.insert_btree_map(
                 &mut result.body_by_root,
                 id,
                 copies,
-                ctx,
                 "step_topology_root_groups",
             )?;
-            insert_topology_map(
+            ctx.insert_btree_map(
                 &mut built_roots,
                 key,
                 RootBuilt {
                     body_ids,
                     body_by_shell,
                 },
-                ctx,
                 "step_topology_built_roots",
             )?;
             if let Some(failures) = failures {
@@ -1056,13 +825,12 @@ pub(super) fn decode(
                     })
                     .transpose()?
                     .unwrap_or_default();
-                push_topology_vec(
+                ctx.push_vec(
                     &mut losses,
                     StepLossCode::DecodeWarning.note(format!(
                         "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
                         failures.count,
                     )),
-                    ctx,
                     "step_topology_losses",
                 )?;
             }
@@ -1071,7 +839,7 @@ pub(super) fn decode(
     // Every admitted relation shares one class of unproved invariant, so the
     // document reports the class once with its count and named examples.
     if let Some(note) = pcurve_admission_note(&admissions) {
-        push_topology_vec(&mut result.losses, note, ctx, "step_topology_losses")?;
+        ctx.push_vec(&mut result.losses, note, "step_topology_losses")?;
     }
     for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
         let omitted = geometric_set_omissions(record, exchange, carrier_index, ctx)?;
@@ -1082,10 +850,9 @@ pub(super) fn decode(
                 &omitted,
                 ctx,
             )?;
-            push_topology_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(note),
-                ctx,
                 "step_topology_losses",
             )?;
         }
@@ -1102,20 +869,19 @@ pub(super) fn decode(
             )? {
                 continue;
             }
-            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
+            ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
-            )), ctx, "step_topology_losses")?;
+            )), "step_topology_losses")?;
             continue;
         };
         if let Err(error) = commit_session.commit_model(built.draft) {
-            push_topology_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
                     &error,
                     ctx,
                 )?),
-                ctx,
                 "step_topology_losses",
             )?;
         } else {
@@ -1128,7 +894,7 @@ pub(super) fn decode(
                 "step_topology_root_bodies",
             )?;
             for typed in std::mem::take(&mut built.typed) {
-                insert_topology_hash_set(&mut result.claims, typed, ctx, "step_topology_claims")?;
+                ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
             }
         }
     }
@@ -1150,10 +916,9 @@ pub(super) fn decode(
         let omitted = geometric_set_omissions(record, exchange, carrier_index, ctx)?;
         if !omitted.is_empty() {
             let note = geometric_set_omission_message(representation_type, id, &omitted, ctx)?;
-            push_topology_vec(
+            ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(note),
-                ctx,
                 "step_topology_losses",
             )?;
         }
@@ -1195,16 +960,16 @@ pub(super) fn decode(
         )?
         .is_empty();
         if has_body {
-            insert_topology_hash_set(&mut result.claims, id, ctx, "step_topology_claims")?;
+            ctx.insert_hash_set(&mut result.claims, id, "step_topology_claims")?;
         }
     }
     for face in &commit_session.document().model.faces {
         if let Some(source) = source_numeric_id(face.id.as_str(), "face") {
-            push_topology_id_group(
+            ctx.push_btree_group(
                 &mut result.faces_by_source,
                 source,
-                face.id.as_str(),
-                ctx,
+                face.id
+                    .try_clone_for_decode(ctx, "step_topology_source_faces")?,
                 "step_topology_source_face_groups",
                 "step_topology_source_faces",
             )?;
@@ -1212,11 +977,11 @@ pub(super) fn decode(
     }
     for edge in &commit_session.document().model.edges {
         if let Some(source) = source_numeric_id(edge.id.as_str(), "edge") {
-            push_topology_id_group(
+            ctx.push_btree_group(
                 &mut result.edges_by_source,
                 source,
-                edge.id.as_str(),
-                ctx,
+                edge.id
+                    .try_clone_for_decode(ctx, "step_topology_source_edges")?,
                 "step_topology_source_edge_groups",
                 "step_topology_source_edges",
             )?;
@@ -1224,22 +989,18 @@ pub(super) fn decode(
     }
     for vertex in &commit_session.document().model.vertices {
         if let Some(source) = source_numeric_id(vertex.id.as_str(), "vertex") {
-            push_topology_id_group(
+            ctx.push_btree_group(
                 &mut result.vertices_by_source,
                 source,
-                vertex.id.as_str(),
-                ctx,
+                vertex
+                    .id
+                    .try_clone_for_decode(ctx, "step_topology_source_vertices")?,
                 "step_topology_source_vertex_groups",
                 "step_topology_source_vertices",
             )?;
         }
     }
-    append_topology_vec(
-        &mut result.losses,
-        &mut losses,
-        ctx,
-        "step_topology_loss_merge",
-    )?;
+    ctx.append_vec(&mut result.losses, &mut losses, "step_topology_loss_merge")?;
     Ok(result)
 }
 
@@ -1268,7 +1029,7 @@ fn geometric_set_omissions(
                 && !carrier_index.curves.contains_key(&member)
                 && !carrier_index.surfaces.contains_key(&member)
             {
-                push_topology_vec(&mut omitted, member, ctx, "step_geometric_set_omissions")?;
+                ctx.push_vec(&mut omitted, member, "step_geometric_set_omissions")?;
             }
         }
     }
@@ -1321,7 +1082,7 @@ impl BuildOutcome {
     fn push(&mut self, value: Built, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         match self {
             Self::Built(built) | Self::Partial { built, .. } => {
-                push_topology_vec(built, value, ctx, "step_topology_built_outcome")
+                ctx.push_vec(built, value, "step_topology_built_outcome")
             }
         }
     }
@@ -1571,8 +1332,8 @@ fn build_wire_set(
         IdentityKeyTail::empty()
     };
     let mut typed = HashSet::new();
-    insert_topology_hash_set(&mut typed, id, ctx, "step_wire_typed")?;
-    insert_topology_hash_set(&mut typed, set_id, ctx, "step_wire_typed")?;
+    ctx.insert_hash_set(&mut typed, id, "step_wire_typed")?;
+    ctx.insert_hash_set(&mut typed, set_id, "step_wire_typed")?;
     if set_type == "CONNECTED_EDGE_SUB_SET"
         && !validate_subset_parent(set_id, set, set_type, exchange, losses, ctx)?
     {
@@ -1600,13 +1361,12 @@ fn build_wire_set(
             .dash(id)
             .dash(key_word!("set"))
             .dash(set_id);
-        push_topology_vec(
+        ctx.push_vec(
             &mut wire_edges,
-            copy_topology_id(ir_id.as_str(), ctx, "step_wire_edge_ids")?,
-            ctx,
+            ir_id.try_clone_for_decode(ctx, "step_wire_edge_ids")?,
             "step_wire_edge_ids",
         )?;
-        push_topology_vec(
+        ctx.push_vec(
             &mut built_edges,
             Edge {
                 id: ir_id,
@@ -1623,14 +1383,13 @@ fn build_wire_set(
                 )),
                 tolerance: None,
             },
-            ctx,
             "step_wire_edges",
         )?;
-        insert_topology_set(&mut used_vertices, start, ctx, "step_wire_used_vertices")?;
-        insert_topology_set(&mut used_vertices, end, ctx, "step_wire_used_vertices")?;
-        insert_topology_hash_set(&mut typed, edge_id, ctx, "step_wire_typed")?;
+        ctx.insert_btree_set(&mut used_vertices, start, "step_wire_used_vertices")?;
+        ctx.insert_btree_set(&mut used_vertices, end, "step_wire_used_vertices")?;
+        ctx.insert_hash_set(&mut typed, edge_id, "step_wire_typed")?;
         if let Some(parent) = edge.parent() {
-            insert_topology_hash_set(&mut typed, parent, ctx, "step_wire_typed")?;
+            ctx.insert_hash_set(&mut typed, parent, "step_wire_typed")?;
         }
     }
     let vertex_suffix = IdentityKeyTail::empty()
@@ -1646,7 +1405,7 @@ fn build_wire_set(
         if point_positions.get(vertex.point).is_none() {
             return Ok(None);
         }
-        push_topology_vec(
+        ctx.push_vec(
             &mut built_vertices,
             Vertex {
                 id: VertexId::from(ids::data(
@@ -1656,10 +1415,9 @@ fn build_wire_set(
                 point: PointId::from(ids::data(kind!("point"), vertex.point)),
                 tolerance: None,
             },
-            ctx,
             "step_wire_vertices",
         )?;
-        insert_topology_hash_set(&mut typed, vertex_id, ctx, "step_wire_typed")?;
+        ctx.insert_hash_set(&mut typed, vertex_id, "step_wire_typed")?;
     }
     let body = BodyId::from(ids::data(
         kind!("body"),
@@ -1674,18 +1432,17 @@ fn build_wire_set(
         IdentityKey::from(id).with_tail(&suffix),
     ));
     let shell_value = match Shell::new(
-        copy_topology_id(shell.as_str(), ctx, "step_wire_shell_id_copy")?,
-        copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+        shell.try_clone_for_decode(ctx, "step_wire_shell_id_copy")?,
+        region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
         Vec::new(),
         wire_edges,
         Vec::new(),
     ) {
         Ok(shell) => shell,
         Err(error) => {
-            push_topology_vec(
+            ctx.push_vec(
                 losses,
                 StepLossCode::DecodeWarning.note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
-                ctx,
                 "step_topology_losses",
             )?;
             return Ok(None);
@@ -1700,16 +1457,16 @@ fn build_wire_set(
             loops: Vec::new(),
             faces: Vec::new(),
             surfaces: Vec::new(),
-            shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?,
+            shells: ctx.collect_vec([shell_value], "step_wire_shells")?,
             region: Region {
-                id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+                id: region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
                 body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
-                shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
+                shells: ctx.collect_vec([shell], "step_wire_region_shells")?,
             },
             body: Body {
                 id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
                 kind: BodyKind::Wire,
-                regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
+                regions: ctx.collect_vec([region], "step_wire_body_regions")?,
                 transform: None,
                 name: None,
                 color: None,
@@ -1721,22 +1478,16 @@ fn build_wire_set(
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
-            push_topology_vec(
+            ctx.push_vec(
                 losses,
                 StepLossCode::DecodeWarning.note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
-                ctx,
                 "step_topology_losses",
             )?;
             return Ok(None);
         }
         Err(StageError::Resource(error)) => return Err(error),
     };
-    insert_topology_set(
-        &mut built.shell_sources,
-        set_id,
-        ctx,
-        "step_wire_shell_sources",
-    )?;
+    ctx.insert_btree_set(&mut built.shell_sources, set_id, "step_wire_shell_sources")?;
     Ok(Some(built))
 }
 
@@ -1816,8 +1567,8 @@ fn build_shell_wire_set(
         return Ok(None);
     };
     let mut typed = HashSet::new();
-    insert_topology_hash_set(&mut typed, id, ctx, "step_wire_typed")?;
-    insert_topology_hash_set(&mut typed, shell_id, ctx, "step_wire_typed")?;
+    ctx.insert_hash_set(&mut typed, id, "step_wire_typed")?;
+    ctx.insert_hash_set(&mut typed, shell_id, "step_wire_typed")?;
     let mut edge_uses = Vec::new();
     let mut used_vertices = BTreeSet::new();
     let mut free_vertices = BTreeSet::new();
@@ -1846,39 +1597,36 @@ fn build_shell_wire_set(
                     let Some(forward) = oriented_edge_forward(oriented) else {
                         return Ok(None);
                     };
-                    push_topology_vec(
+                    ctx.push_vec(
                         &mut edge_uses,
                         (edge_id, oriented_id, forward),
-                        ctx,
                         "step_wire_edge_uses",
                     )?;
-                    insert_topology_set(
+                    ctx.insert_btree_set(
                         &mut used_vertices,
                         edge.vertices().0,
-                        ctx,
                         "step_wire_used_vertices",
                     )?;
-                    insert_topology_set(
+                    ctx.insert_btree_set(
                         &mut used_vertices,
                         edge.vertices().1,
-                        ctx,
                         "step_wire_used_vertices",
                     )?;
                     for claim in [loop_id, oriented_id, edge_id] {
-                        insert_topology_hash_set(&mut typed, claim, ctx, "step_wire_typed")?;
+                        ctx.insert_hash_set(&mut typed, claim, "step_wire_typed")?;
                     }
                     if let Some(parent) = edge.parent() {
-                        insert_topology_hash_set(&mut typed, parent, ctx, "step_wire_typed")?;
+                        ctx.insert_hash_set(&mut typed, parent, "step_wire_typed")?;
                     }
                 }
             } else if loop_record.partial("VERTEX_LOOP").is_some() {
                 let Some(vertex) = named_reference(loop_record, "VERTEX_LOOP", 1, 0) else {
                     return Ok(None);
                 };
-                insert_topology_set(&mut used_vertices, vertex, ctx, "step_wire_used_vertices")?;
-                insert_topology_set(&mut free_vertices, vertex, ctx, "step_wire_free_vertices")?;
+                ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices")?;
+                ctx.insert_btree_set(&mut free_vertices, vertex, "step_wire_free_vertices")?;
                 for claim in [loop_id, vertex] {
-                    insert_topology_hash_set(&mut typed, claim, ctx, "step_wire_typed")?;
+                    ctx.insert_hash_set(&mut typed, claim, "step_wire_typed")?;
                 }
             } else {
                 return Ok(None);
@@ -1897,10 +1645,10 @@ fn build_shell_wire_set(
         let Some(vertex) = named_reference(loop_record, "VERTEX_LOOP", 1, 0) else {
             return Ok(None);
         };
-        insert_topology_set(&mut used_vertices, vertex, ctx, "step_wire_used_vertices")?;
-        insert_topology_set(&mut free_vertices, vertex, ctx, "step_wire_free_vertices")?;
+        ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices")?;
+        ctx.insert_btree_set(&mut free_vertices, vertex, "step_wire_free_vertices")?;
         for claim in [loop_id, vertex] {
-            insert_topology_hash_set(&mut typed, claim, ctx, "step_wire_typed")?;
+            ctx.insert_hash_set(&mut typed, claim, "step_wire_typed")?;
         }
     } else {
         return Ok(None);
@@ -1938,13 +1686,12 @@ fn build_shell_wire_set(
                 .dash(oriented_id)
                 .dash(index),
         ));
-        push_topology_vec(
+        ctx.push_vec(
             &mut wire_edges,
-            copy_topology_id(ir_id.as_str(), ctx, "step_wire_edge_ids")?,
-            ctx,
+            ir_id.try_clone_for_decode(ctx, "step_wire_edge_ids")?,
             "step_wire_edge_ids",
         )?;
-        push_topology_vec(
+        ctx.push_vec(
             &mut edges,
             Edge {
                 id: ir_id,
@@ -1961,7 +1708,6 @@ fn build_shell_wire_set(
                 )),
                 tolerance: None,
             },
-            ctx,
             "step_wire_edges",
         )?;
     }
@@ -1973,7 +1719,7 @@ fn build_shell_wire_set(
         if point_positions.get(vertex.point).is_none() {
             return Ok(None);
         }
-        push_topology_vec(
+        ctx.push_vec(
             &mut vertices,
             Vertex {
                 id: VertexId::from(ids::data(
@@ -1983,7 +1729,6 @@ fn build_shell_wire_set(
                 point: PointId::from(ids::data(kind!("point"), vertex.point)),
                 tolerance: None,
             },
-            ctx,
             "step_wire_vertices",
         )?;
     }
@@ -1998,29 +1743,27 @@ fn build_shell_wire_set(
     let shell = shell_identity(id, shell_id, scope_root);
     let mut free_vertex_ids = Vec::new();
     for vertex in free_vertices {
-        push_topology_vec(
+        ctx.push_vec(
             &mut free_vertex_ids,
             VertexId::from(ids::data(
                 kind!("vertex"),
                 IdentityKey::from(vertex).with_tail(&vertex_suffix),
             )),
-            ctx,
             "step_wire_free_vertex_ids",
         )?;
     }
     let shell_value = match Shell::new(
-        copy_topology_id(shell.as_str(), ctx, "step_wire_shell_id_copy")?,
-        copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+        shell.try_clone_for_decode(ctx, "step_wire_shell_id_copy")?,
+        region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
         Vec::new(),
         wire_edges,
         free_vertex_ids,
     ) {
         Ok(shell) => shell,
         Err(error) => {
-            push_topology_vec(
+            ctx.push_vec(
                 losses,
                 StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")),
-                ctx,
                 "step_topology_losses",
             )?;
             return Ok(None);
@@ -2035,16 +1778,16 @@ fn build_shell_wire_set(
             loops: Vec::new(),
             faces: Vec::new(),
             surfaces: Vec::new(),
-            shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?,
+            shells: ctx.collect_vec([shell_value], "step_wire_shells")?,
             region: Region {
-                id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+                id: region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
                 body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
-                shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
+                shells: ctx.collect_vec([shell], "step_wire_region_shells")?,
             },
             body: Body {
                 id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
                 kind: BodyKind::Wire,
-                regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
+                regions: ctx.collect_vec([region], "step_wire_body_regions")?,
                 transform: None,
                 name: None,
                 color: None,
@@ -2056,20 +1799,18 @@ fn build_shell_wire_set(
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
-            push_topology_vec(
+            ctx.push_vec(
                 losses,
                 StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")),
-                ctx,
                 "step_topology_losses",
             )?;
             return Ok(None);
         }
         Err(StageError::Resource(error)) => return Err(error),
     };
-    insert_topology_set(
+    ctx.insert_btree_set(
         &mut built.shell_sources,
         shell_id,
-        ctx,
         "step_wire_shell_sources",
     )?;
     Ok(Some(built))
@@ -2103,12 +1844,12 @@ fn mark_standalone_geometric_set(
                 || carrier_index.surfaces.contains_key(&item)
         });
         if has_decoded_member {
-            insert_topology_hash_set(typed, set_id, ctx, "step_topology_claims")?;
+            ctx.insert_hash_set(typed, set_id, "step_topology_claims")?;
             decoded = true;
         }
     }
     if decoded {
-        insert_topology_hash_set(typed, id, ctx, "step_topology_claims")?;
+        ctx.insert_hash_set(typed, id, "step_topology_claims")?;
     }
     Ok(decoded)
 }
@@ -2122,18 +1863,17 @@ fn build_geometric_set(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Built>, CodecError> {
     let Some(set_ids) = representation_item_values(representation) else {
-        push_topology_vec(
+        ctx.push_vec(
             losses,
             StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no item list"
             )),
-            ctx,
             "step_topology_losses",
         )?;
         return Ok(None);
     };
     let mut typed = HashSet::new();
-    insert_topology_hash_set(&mut typed, id, ctx, "step_geometric_set_typed")?;
+    ctx.insert_hash_set(&mut typed, id, "step_geometric_set_typed")?;
     let body = BodyId::from(ids::data(kind!("body"), id));
     let region = RegionId::from(ids::data(kind!("region"), id));
     let shell_id = ShellId::from(ids::data(
@@ -2144,24 +1884,24 @@ fn build_geometric_set(
     let mut faces = Vec::new();
     for set_id in set_ids.iter().filter_map(ValueExt::reference) {
         let Some(set) = exchange.records().get(&set_id) else {
-            push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
+            ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped missing set #{set_id}"
-            )), ctx, "step_topology_losses")?;
+            )), "step_topology_losses")?;
             continue;
         };
         let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
-            push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
+            ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped non-set member #{set_id}"
-            )), ctx, "step_topology_losses")?;
+            )), "step_topology_losses")?;
             continue;
         };
         let Some(items) = named_reference_values(set, set_type, 1) else {
-            push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
+            ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
-            )), ctx, "step_topology_losses")?;
+            )), "step_topology_losses")?;
             continue;
         };
-        insert_topology_hash_set(&mut typed, set_id, ctx, "step_geometric_set_typed")?;
+        ctx.insert_hash_set(&mut typed, set_id, "step_geometric_set_typed")?;
         for surface_step in items.iter().filter_map(ValueExt::reference) {
             let surface = SurfaceId::from(ids::data(kind!("surface"), surface_step));
             if carrier_index.surfaces.contains_key(&surface_step) {
@@ -2181,20 +1921,20 @@ fn build_geometric_set(
                     color: None,
                     tolerance: None,
                 };
-                push_topology_vec(
+                ctx.push_vec(
                     &mut shell_faces,
-                    copy_topology_id(face.id.as_str(), ctx, "step_geometric_set_shell_faces")?,
-                    ctx,
+                    face.id
+                        .try_clone_for_decode(ctx, "step_geometric_set_shell_faces")?,
                     "step_geometric_set_shell_faces",
                 )?;
-                push_topology_vec(&mut faces, face, ctx, "step_geometric_set_faces")?;
+                ctx.push_vec(&mut faces, face, "step_geometric_set_faces")?;
             }
         }
     }
     if shell_faces.is_empty() {
-        push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
+        ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no indexed surface member; set dropped"
-        )), ctx, "step_topology_losses")?;
+        )), "step_topology_losses")?;
         return Ok(None);
     }
     let shell = Shell::new(
@@ -2214,16 +1954,16 @@ fn build_geometric_set(
             loops: Vec::new(),
             faces,
             surfaces: Vec::new(),
-            shells: one_topology_vec(shell, ctx, "step_geometric_set_shells")?,
+            shells: ctx.collect_vec([shell], "step_geometric_set_shells")?,
             region: Region {
                 id: region.clone(),
                 body: body.clone(),
-                shells: one_topology_vec(shell_id, ctx, "step_geometric_set_region_shells")?,
+                shells: ctx.collect_vec([shell_id], "step_geometric_set_region_shells")?,
             },
             body: Body {
                 id: body,
                 kind: BodyKind::Sheet,
-                regions: one_topology_vec(region, ctx, "step_geometric_set_body_regions")?,
+                regions: ctx.collect_vec([region], "step_geometric_set_body_regions")?,
                 transform: None,
                 name: None,
                 color: None,
@@ -2235,12 +1975,11 @@ fn build_geometric_set(
     match staged {
         Ok(built) => Ok(Some(built)),
         Err(StageError::Draft(error)) => {
-            push_topology_vec(
+            ctx.push_vec(
                 losses,
                 StepLossCode::DecodeWarning.note(format!(
                     "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}: {error}"
                 )),
-                ctx,
                 "step_topology_losses",
             )?;
             Ok(None)
@@ -2357,11 +2096,10 @@ fn vertex_defs(
         let Some(point) = named_reference(record, "VERTEX_POINT", 1, 0) else {
             continue;
         };
-        insert_topology_map(
+        ctx.insert_btree_map(
             &mut vertices,
             id,
             VertexDef { point },
-            ctx,
             "step_vertex_definitions",
         )?;
     }
@@ -2382,7 +2120,7 @@ fn edge_defs(
         "EDGE",
     ]) {
         if let Some(edge) = edge_def_for(id, exchange, &mut active, &mut cache, ctx)? {
-            insert_topology_map(&mut edges, id, edge, ctx, "step_edge_definitions")?;
+            ctx.insert_btree_map(&mut edges, id, edge, "step_edge_definitions")?;
         }
     }
     Ok(edges)
@@ -2402,7 +2140,7 @@ fn edge_def_for(
     if active.contains(&id) {
         return Ok(None);
     }
-    insert_topology_set(active, id, ctx, "step_edge_definition_active")?;
+    ctx.insert_btree_set(active, id, "step_edge_definition_active")?;
     let result = if let Some(record) = exchange.records().get(&id) {
         match most_specific(
             record,
@@ -2470,11 +2208,10 @@ fn edge_def_for(
     } else {
         None
     };
-    insert_topology_map(
+    ctx.insert_btree_map(
         &mut *cache,
         id,
         result.clone(),
-        ctx,
         "step_edge_definition_cache",
     )?;
     Ok(result)
@@ -2488,12 +2225,11 @@ fn edge_curve_id_reported(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<CurveId>, CodecError> {
     let Some(curve_step) = edge.curve() else {
-        push_topology_vec(
+        ctx.push_vec(
             losses,
             StepLossCode::DecodeWarning.note(format!(
                 "STEP edge #{edge_id} has no 3D curve carrier; edge committed without a curve"
             )),
-            ctx,
             "step_topology_losses",
         )?;
         return Ok(None);
@@ -2510,9 +2246,9 @@ fn edge_curve_id_reported(
             })
         })
     {
-        push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
+        ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
             "STEP edge curve #{edge_id}: surface-curve #{curve_step} has no resolvable basis; edge committed without a curve"
-        )), ctx, "step_topology_losses")?;
+        )), "step_topology_losses")?;
     }
     Ok(carrier.map(|curve| CurveId::from(ids::data(kind!("curve"), curve))))
 }
@@ -2541,7 +2277,7 @@ fn oriented_defs(
         } else {
             OrientedKind::Plain
         };
-        insert_topology_map(
+        ctx.insert_btree_map(
             &mut oriented,
             id,
             OrientedDef {
@@ -2549,7 +2285,6 @@ fn oriented_defs(
                 forward,
                 kind,
             },
-            ctx,
             "step_oriented_edge_definitions",
         )?;
     }
@@ -2850,7 +2585,7 @@ fn root_shell_steps(
             return Ok(None);
         };
         for reference in values.iter().filter_map(ValueExt::reference) {
-            push_topology_vec(&mut ids, reference, ctx, "step_root_shell_steps")?;
+            ctx.push_vec(&mut ids, reference, "step_root_shell_steps")?;
         }
         return Ok(Some(ids));
     }
@@ -2865,7 +2600,7 @@ fn root_shell_steps(
             if connected_face_set_type(set).is_none() {
                 return Ok(None);
             }
-            push_topology_vec(&mut ids, set_step, ctx, "step_root_shell_steps")?;
+            ctx.push_vec(&mut ids, set_step, "step_root_shell_steps")?;
         }
         return Ok(Some(ids));
     }
@@ -2880,7 +2615,7 @@ fn root_shell_steps(
         let Some(shell) = named_reference(root, root_type, 1, 0) else {
             return Ok(None);
         };
-        push_topology_vec(&mut ids, shell, ctx, "step_root_shell_steps")?;
+        ctx.push_vec(&mut ids, shell, "step_root_shell_steps")?;
         return Ok(Some(ids));
     }
     if root.partial("BREP_WITH_VOIDS").is_some() {
@@ -2890,9 +2625,9 @@ fn root_shell_steps(
         let Some(values) = named_reference_values(root, "BREP_WITH_VOIDS", 2) else {
             return Ok(None);
         };
-        push_topology_vec(&mut ids, outer, ctx, "step_root_shell_steps")?;
+        ctx.push_vec(&mut ids, outer, "step_root_shell_steps")?;
         for reference in values.iter().filter_map(ValueExt::reference) {
-            push_topology_vec(&mut ids, reference, ctx, "step_root_shell_steps")?;
+            ctx.push_vec(&mut ids, reference, "step_root_shell_steps")?;
         }
         // `voids` is a STEP SET. CADIR keeps the outer shell at index zero
         // and canonicalizes the void suffix by resolved shell identity.
@@ -2946,7 +2681,7 @@ fn root_key(
         let Some(key) = key else {
             return Ok(None);
         };
-        push_topology_vec(&mut shell_keys, key, ctx, "step_root_shell_keys")?;
+        ctx.push_vec(&mut shell_keys, key, "step_root_shell_keys")?;
     }
     if resolved == 0 {
         return Ok(None);
@@ -3036,7 +2771,7 @@ fn build(
         );
         return Ok(match built {
             Ok(built) => {
-                BuildOutcome::Built(one_topology_vec(built, ctx, "step_topology_built_outcome")?)
+                BuildOutcome::Built(ctx.collect_vec([built], "step_topology_built_outcome")?)
             }
             Err(BuildError::Absent) => BuildOutcome::Partial {
                 built: Vec::new(),
@@ -3152,7 +2887,7 @@ fn build_one(
         || root.partial("BREP_WITH_VOIDS").is_some()
         || root.partial("FACETED_BREP").is_some();
     let mut typed = HashSet::new();
-    insert_topology_hash_set(&mut typed, id, ctx, "step_brep_typed")?;
+    ctx.insert_hash_set(&mut typed, id, "step_brep_typed")?;
     let mut vertices = Vec::new();
     let mut edges = Vec::new();
     let mut coedges = Vec::new();
@@ -3172,7 +2907,7 @@ fn build_one(
         } else {
             BodyKind::Sheet
         },
-        regions: one_topology_vec(rid.clone(), ctx, "step_brep_body_regions")?,
+        regions: ctx.collect_vec([rid.clone()], "step_brep_body_regions")?,
         transform: None,
         name: None,
         color: None,
@@ -3189,7 +2924,7 @@ fn build_one(
     let mut admissions = Vec::new();
     for &shell_reference in shell_steps {
         let (shell_step, shell_forward) = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
-            insert_topology_hash_set(&mut typed, shell_reference, ctx, "step_brep_typed")?;
+            ctx.insert_hash_set(&mut typed, shell_reference, "step_brep_typed")?;
             (shell_reference, true)
         } else {
             require_carrier(
@@ -3203,7 +2938,7 @@ fn build_one(
         if used_shells.contains(&shell_step) {
             continue;
         }
-        insert_topology_set(&mut used_shells, shell_step, ctx, "step_brep_used_shells")?;
+        ctx.insert_btree_set(&mut used_shells, shell_step, "step_brep_used_shells")?;
         let sr = require_carrier(
             exchange.records().get(&shell_step),
             failure,
@@ -3259,10 +2994,9 @@ fn build_one(
             if used_faces.contains(&(shell_step, face_step)) {
                 continue;
             }
-            insert_topology_set(
+            ctx.insert_btree_set(
                 &mut used_faces,
                 (shell_step, face_step),
-                ctx,
                 "step_brep_used_faces",
             )?;
             let fr = require_carrier(
@@ -3297,7 +3031,7 @@ fn build_one(
                 let note = StepLossCode::FaceMultipleOuterBounds.note(format!(
                     "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; omitting the containing topology shell without assigning an outer role or deriving an implicit face carrier and retaining the source face, bounds, loops, and enclosing records as opaque"
                 ));
-                push_topology_vec(
+                ctx.push_vec(
                     losses,
                     note.with_provenance(
                         cadmpeg_ir::SourceProvenance::root(
@@ -3306,14 +3040,13 @@ fn build_one(
                         )
                         .with_tag("face"),
                     ),
-                    ctx,
                     "step_topology_losses",
                 )?;
                 note_failure(failure, face_step, CarrierKind::FaceWithMultipleOuterBounds);
                 return Err(BuildError::Absent);
             }
             for claim in face_info.typed {
-                insert_topology_hash_set(&mut typed, claim, ctx, "step_brep_typed")?;
+                ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
             }
             let face_suffix = if scope_faces {
                 if scope_root {
@@ -3341,13 +3074,12 @@ fn build_one(
                         .with_tail(&face_suffix),
                 ));
                 if !implicit_surface_ids.contains(&surface_id) {
-                    insert_topology_set(
+                    ctx.insert_btree_set(
                         &mut implicit_surface_ids,
                         surface_id.clone(),
-                        ctx,
                         "step_brep_implicit_surface_ids",
                     )?;
-                    push_topology_vec(
+                    ctx.push_vec(
                         &mut surfaces,
                         Surface {
                             id: surface_id.clone(),
@@ -3366,7 +3098,6 @@ fn build_one(
                             .ok_or(BuildError::Absent)?,
                             source_object: None,
                         },
-                        ctx,
                         "step_brep_surfaces",
                     )?;
                 }
@@ -3448,7 +3179,7 @@ fn build_one(
                         note_failure(failure, vertex_step, CarrierKind::VertexPoint);
                         return Err(BuildError::Absent);
                     }
-                    push_topology_vec(
+                    ctx.push_vec(
                         &mut loops,
                         Loop {
                             id: lid.clone(),
@@ -3464,23 +3195,16 @@ fn build_one(
                                 pcurves: Vec::new(),
                             },
                         },
-                        ctx,
                         "step_brep_loops",
                     )?;
-                    push_topology_vec(
-                        &mut loop_ids,
-                        (is_outer_bound, lid),
-                        ctx,
-                        "step_brep_loop_ids",
-                    )?;
-                    insert_topology_set(
+                    ctx.push_vec(&mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
+                    ctx.insert_btree_set(
                         &mut used_v,
                         (shell_step, vertex_step),
-                        ctx,
                         "step_brep_used_vertices",
                     )?;
                     for claim in [bound_step, loop_step] {
-                        insert_topology_hash_set(&mut typed, claim, ctx, "step_brep_typed")?;
+                        ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
                     }
                     continue;
                 }
@@ -3506,7 +3230,7 @@ fn build_one(
                     .ok_or(BuildError::Absent)?;
                     let mut points = Vec::new();
                     for point in point_values.iter().filter_map(ValueExt::reference) {
-                        push_topology_vec(&mut points, point, ctx, "step_brep_poly_loop_points")?;
+                        ctx.push_vec(&mut points, point, "step_brep_poly_loop_points")?;
                     }
                     if points.first() == points.last() {
                         points.pop();
@@ -3514,10 +3238,9 @@ fn build_one(
                     points.dedup();
                     let mut distinct_points = BTreeSet::new();
                     for &point in &points {
-                        insert_topology_set(
+                        ctx.insert_btree_set(
                             &mut distinct_points,
                             point,
-                            ctx,
                             "step_brep_poly_loop_distinct_points",
                         )?;
                     }
@@ -3547,19 +3270,17 @@ fn build_one(
                             scope_root,
                         );
                         if !poly_edges.contains_key(&(shell_step, edge_id.clone())) {
-                            insert_topology_map(
+                            ctx.insert_btree_map(
                                 &mut poly_edges,
                                 (shell_step, edge_id.clone()),
                                 (canonical_start, canonical_end),
-                                ctx,
                                 "step_brep_poly_edges",
                             )?;
                         }
                         for point in [start_point, end_point] {
-                            insert_topology_set(
+                            ctx.insert_btree_set(
                                 &mut poly_points,
                                 (shell_step, point),
-                                ctx,
                                 "step_brep_poly_points",
                             )?;
                         }
@@ -3572,13 +3293,8 @@ fn build_one(
                                 .dash(face_step)
                                 .with_tail(&face_suffix),
                         ));
-                        push_topology_vec(
-                            &mut coedge_ids,
-                            cid.clone(),
-                            ctx,
-                            "step_brep_coedge_ids",
-                        )?;
-                        push_topology_vec(
+                        ctx.push_vec(&mut coedge_ids, cid.clone(), "step_brep_coedge_ids")?;
+                        ctx.push_vec(
                             &mut coedges,
                             Coedge {
                                 id: cid.clone(),
@@ -3595,18 +3311,16 @@ fn build_one(
                                 pcurves: Vec::new(),
                                 use_curve: None,
                             },
-                            ctx,
                             "step_brep_coedges",
                         )?;
-                        push_topology_group(
+                        ctx.push_btree_group(
                             &mut radial,
                             edge_id,
                             coedges.len() - 1,
-                            ctx,
                             "step_brep_radial_groups",
                             "step_brep_radial_members",
                         )?;
-                        insert_topology_hash_set(&mut typed, loop_step, ctx, "step_brep_typed")?;
+                        ctx.insert_hash_set(&mut typed, loop_step, "step_brep_typed")?;
                     }
                     ctx.charge_collection_items(
                         u64_from_index(coedge_ids.len()),
@@ -3617,23 +3331,17 @@ fn build_one(
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
                         return Err(BuildError::Absent);
                     };
-                    push_topology_vec(
+                    ctx.push_vec(
                         &mut loops,
                         Loop {
                             id: lid.clone(),
                             face: fid.clone(),
                             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                         },
-                        ctx,
                         "step_brep_loops",
                     )?;
-                    push_topology_vec(
-                        &mut loop_ids,
-                        (is_outer_bound, lid),
-                        ctx,
-                        "step_brep_loop_ids",
-                    )?;
-                    insert_topology_hash_set(&mut typed, bound_step, ctx, "step_brep_typed")?;
+                    ctx.push_vec(&mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
+                    ctx.insert_hash_set(&mut typed, bound_step, "step_brep_typed")?;
                     continue;
                 }
                 if lr.partial("EDGE_LOOP").is_none() {
@@ -3661,7 +3369,7 @@ fn build_one(
                 .ok_or(BuildError::Absent)?;
                 let mut uses = Vec::new();
                 for use_step in use_values.iter().filter_map(ValueExt::reference) {
-                    push_topology_vec(&mut uses, use_step, ctx, "step_brep_edge_loop_uses")?;
+                    ctx.push_vec(&mut uses, use_step, "step_brep_edge_loop_uses")?;
                 }
                 if !bound_forward {
                     uses.reverse();
@@ -3718,11 +3426,11 @@ fn build_one(
                                 .then_some(pcurve_id)
                         });
                         if let Some(pcurve) = explicit_pcurve {
-                            one_topology_vec((pcurve, None), ctx, "step_brep_pcurve_candidates")?
+                            ctx.collect_vec([(pcurve, None)], "step_brep_pcurve_candidates")?
                         } else {
-                            push_topology_vec(losses, StepLossCode::SeamEdgePcurveUnresolved.note(format!(
+                            ctx.push_vec(losses, StepLossCode::SeamEdgePcurveUnresolved.note(format!(
                                     "SEAM_EDGE #{use_step} has no decoded pcurve reference that belongs to its edge curve and face surface; the coedge has no pcurve"
-                                )), ctx, "step_topology_losses")?;
+                                )), "step_topology_losses")?;
                             Vec::new()
                         }
                     } else if let (Some(surface), Some(curve)) = (surface_step, edge.curve()) {
@@ -3744,19 +3452,17 @@ fn build_one(
                                 ctx,
                             ) {
                                 Ok(selected) => {
-                                    push_topology_vec(
+                                    ctx.push_vec(
                                         &mut admissions,
                                         PcurveAdmission {
                                             curve,
                                             surface,
                                             coedge_use: use_step,
                                         },
-                                        ctx,
                                         "step_brep_pcurve_admissions",
                                     )?;
-                                    one_topology_vec(
-                                        (selected.id, selected.parameter_range),
-                                        ctx,
+                                    ctx.collect_vec(
+                                        [(selected.id, selected.parameter_range)],
                                         "step_brep_pcurve_candidates",
                                     )?
                                 }
@@ -3791,16 +3497,16 @@ fn build_one(
                                             return Err(error.into());
                                         }
                                     };
-                                    push_topology_vec(losses, note, ctx, "step_topology_losses")?;
+                                    ctx.push_vec(losses, note, "step_topology_losses")?;
                                     Vec::new()
                                 }
                             }
                         }
                     } else {
-                        push_topology_vec(losses, StepLossCode::EdgeNoSurfaceOrCurveForPcurve.note(format!(
+                        ctx.push_vec(losses, StepLossCode::EdgeNoSurfaceOrCurveForPcurve.note(format!(
                             "edge #{} has no decoded surface or curve carrier, so its coedge has no pcurve",
                             o.edge
-                        )), ctx, "step_topology_losses")?;
+                        )), "step_topology_losses")?;
                         Vec::new()
                     };
                     let mut pcurve_uses = Vec::new();
@@ -3811,29 +3517,27 @@ fn build_one(
                         {
                             Ok(range) => range,
                             Err(error) => {
-                                push_topology_vec(
+                                ctx.push_vec(
                                     losses,
                                     StepLossCode::DecodeWarning
                                         .note(format!("coedge pcurve parameter_range: {error}")),
-                                    ctx,
                                     "step_topology_losses",
                                 )?;
                                 return Err(BuildError::Absent);
                             }
                         };
-                        push_topology_vec(
+                        ctx.push_vec(
                             &mut pcurve_uses,
                             PcurveUse {
                                 pcurve,
                                 isoparametric: None,
                                 parameter_range,
                             },
-                            ctx,
                             "step_brep_pcurve_uses",
                         )?;
                     }
-                    push_topology_vec(&mut coedge_ids, cid.clone(), ctx, "step_brep_coedge_ids")?;
-                    push_topology_vec(
+                    ctx.push_vec(&mut coedge_ids, cid.clone(), "step_brep_coedge_ids")?;
+                    ctx.push_vec(
                         &mut coedges,
                         Coedge {
                             id: cid.clone(),
@@ -3848,36 +3552,32 @@ fn build_one(
                             pcurves: pcurve_uses,
                             use_curve: None,
                         },
-                        ctx,
                         "step_brep_coedges",
                     )?;
-                    push_topology_group(
+                    ctx.push_btree_group(
                         &mut radial,
                         scoped_edge_id(o.edge, id, shell_step, scope_edges, scope_root),
                         coedges.len() - 1,
-                        ctx,
                         "step_brep_radial_groups",
                         "step_brep_radial_members",
                     )?;
-                    insert_topology_set(
+                    ctx.insert_btree_set(
                         &mut used_e,
                         (shell_step, o.edge),
-                        ctx,
                         "step_brep_used_edges",
                     )?;
                     for vertex in [edge.vertices().0, edge.vertices().1] {
-                        insert_topology_set(
+                        ctx.insert_btree_set(
                             &mut used_v,
                             (shell_step, vertex),
-                            ctx,
                             "step_brep_used_vertices",
                         )?;
                     }
                     for claim in [use_step, o.edge] {
-                        insert_topology_hash_set(&mut typed, claim, ctx, "step_brep_typed")?;
+                        ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
                     }
                     if let Some(parent) = edge.parent() {
-                        insert_topology_hash_set(&mut typed, parent, ctx, "step_brep_typed")?;
+                        ctx.insert_hash_set(&mut typed, parent, "step_brep_typed")?;
                     }
                 }
                 ctx.charge_collection_items(
@@ -3888,24 +3588,18 @@ fn build_one(
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
                     return Err(BuildError::Absent);
                 };
-                push_topology_vec(
+                ctx.push_vec(
                     &mut loops,
                     Loop {
                         id: lid.clone(),
                         face: fid.clone(),
                         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                     },
-                    ctx,
                     "step_brep_loops",
                 )?;
-                push_topology_vec(
-                    &mut loop_ids,
-                    (is_outer_bound, lid),
-                    ctx,
-                    "step_brep_loop_ids",
-                )?;
+                ctx.push_vec(&mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
                 for claim in [bound_step, loop_step] {
-                    insert_topology_hash_set(&mut typed, claim, ctx, "step_brep_typed")?;
+                    ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
                 }
             }
             // A face with more than one FACE_OUTER_BOUND is refused above, so
@@ -3919,7 +3613,7 @@ fn build_one(
                         outer = Some(id);
                     }
                 } else {
-                    push_topology_vec(&mut inner, id, ctx, "step_brep_inner_loops")?;
+                    ctx.push_vec(&mut inner, id, "step_brep_inner_loops")?;
                 }
             }
             let face_loops = match outer {
@@ -3927,7 +3621,7 @@ fn build_one(
                 None => cadmpeg_ir::topology::FaceLoops::unspecified(inner),
             };
             let face_forward = face_same_sense == shell_forward;
-            push_topology_vec(
+            ctx.push_vec(
                 &mut faces,
                 Face {
                     id: fid.clone(),
@@ -3943,11 +3637,10 @@ fn build_one(
                     color: None,
                     tolerance: None,
                 },
-                ctx,
                 "step_brep_faces",
             )?;
-            push_topology_vec(&mut face_ids, fid, ctx, "step_brep_face_ids")?;
-            insert_topology_hash_set(&mut typed, face_step, ctx, "step_brep_typed")?;
+            ctx.push_vec(&mut face_ids, fid, "step_brep_face_ids")?;
+            ctx.insert_hash_set(&mut typed, face_step, "step_brep_typed")?;
         }
         let mut component_edge_vertices = BTreeMap::new();
         for (used_shell, edge_id) in &used_e {
@@ -3958,14 +3651,13 @@ fn build_one(
                 continue;
             };
             let (start, end) = edge.curve_vertices();
-            insert_topology_map(
+            ctx.insert_btree_map(
                 &mut component_edge_vertices,
                 scoped_edge_id(*edge_id, id, shell_step, scope_edges, scope_root).into_string(),
                 (
                     scoped_vertex_id(start, id, shell_step, scope_edges, scope_root).into_string(),
                     scoped_vertex_id(end, id, shell_step, scope_edges, scope_root).into_string(),
                 ),
-                ctx,
                 "step_brep_component_edges",
             )?;
         }
@@ -3973,7 +3665,7 @@ fn build_one(
             if *used_shell != shell_step {
                 continue;
             }
-            insert_topology_map(
+            ctx.insert_btree_map(
                 &mut component_edge_vertices,
                 edge_id.as_str().to_owned(),
                 (
@@ -3982,7 +3674,6 @@ fn build_one(
                     scoped_poly_vertex_id(*end, id, shell_step, scope_edges, scope_root)
                         .into_string(),
                 ),
-                ctx,
                 "step_brep_component_edges",
             )?;
         }
@@ -3994,7 +3685,7 @@ fn build_one(
                     components.len(),
                     face_ids.len(),
                 ));
-            push_topology_vec(
+            ctx.push_vec(
                 losses,
                 note.with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
@@ -4003,7 +3694,6 @@ fn build_one(
                     )
                     .with_tag(shell_type.to_ascii_lowercase()),
                 ),
-                ctx,
                 "step_topology_losses",
             )?;
         }
@@ -4035,24 +3725,16 @@ fn build_one(
             };
             let mut component_faces = Vec::new();
             for face_index in component {
-                let face_id = copy_topology_id(
-                    face_ids[face_index].as_str(),
-                    ctx,
-                    "step_brep_component_faces",
-                )?;
+                let face_id =
+                    face_ids[face_index].try_clone_for_decode(ctx, "step_brep_component_faces")?;
                 faces[face_index].shell = component_shell.clone();
-                push_topology_vec(
-                    &mut component_faces,
-                    face_id,
-                    ctx,
-                    "step_brep_component_faces",
-                )?;
+                ctx.push_vec(&mut component_faces, face_id, "step_brep_component_faces")?;
             }
             ctx.charge_collection_items(
                 u64_from_index(component_faces.len()),
                 "step_brep_shell_validation",
             )?;
-            push_topology_vec(
+            ctx.push_vec(
                 &mut shells,
                 match Shell::new(
                     component_shell.clone(),
@@ -4063,27 +3745,24 @@ fn build_one(
                 ) {
                     Ok(shell) => shell,
                     Err(error) => {
-                        push_topology_vec(
+                        ctx.push_vec(
                             losses,
                             StepLossCode::DecodeWarning
                                 .note(format!("{shell_type} #{shell_step}: {error}")),
-                            ctx,
                             "step_topology_losses",
                         )?;
                         return Err(BuildError::Absent);
                     }
                 },
-                ctx,
                 "step_brep_shells",
             )?;
-            push_topology_vec(
+            ctx.push_vec(
                 &mut region.shells,
                 component_shell,
-                ctx,
                 "step_brep_region_shells",
             )?;
         }
-        insert_topology_hash_set(&mut typed, shell_step, ctx, "step_brep_typed")?;
+        ctx.insert_hash_set(&mut typed, shell_step, "step_brep_typed")?;
     }
     for (shell_step, edge_id) in used_e {
         let e = require_carrier(
@@ -4094,7 +3773,7 @@ fn build_one(
         )
         .ok_or(BuildError::Absent)?;
         let (start, end) = e.curve_vertices();
-        push_topology_vec(
+        ctx.push_vec(
             &mut edges,
             Edge {
                 id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
@@ -4105,12 +3784,11 @@ fn build_one(
                 end: scoped_vertex_id(end, id, shell_step, scope_edges, scope_root),
                 tolerance: None,
             },
-            ctx,
             "step_brep_edges",
         )?;
     }
     for ((shell_step, edge_identity), (start, end)) in poly_edges {
-        push_topology_vec(
+        ctx.push_vec(
             &mut edges,
             Edge {
                 id: edge_identity,
@@ -4119,7 +3797,6 @@ fn build_one(
                 end: scoped_poly_vertex_id(end, id, shell_step, scope_edges, scope_root),
                 tolerance: None,
             },
-            ctx,
             "step_brep_edges",
         )?;
     }
@@ -4138,17 +3815,16 @@ fn build_one(
             CarrierKind::VertexPoint,
         )
         .ok_or(BuildError::Absent)?;
-        push_topology_vec(
+        ctx.push_vec(
             &mut vertices,
             Vertex {
                 id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
                 point: PointId::from(ids::data(kind!("point"), v.point)),
                 tolerance: None,
             },
-            ctx,
             "step_brep_vertices",
         )?;
-        insert_topology_hash_set(&mut typed, vertex_id, ctx, "step_brep_typed")?;
+        ctx.insert_hash_set(&mut typed, vertex_id, "step_brep_typed")?;
     }
     for (shell_step, point_id) in poly_points {
         require_carrier(
@@ -4158,17 +3834,16 @@ fn build_one(
             CarrierKind::PolyVertexPoint,
         )
         .ok_or(BuildError::Absent)?;
-        push_topology_vec(
+        ctx.push_vec(
             &mut vertices,
             Vertex {
                 id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
                 point: PointId::from(ids::data(kind!("point"), point_id)),
                 tolerance: None,
             },
-            ctx,
             "step_brep_vertices",
         )?;
-        insert_topology_hash_set(&mut typed, point_id, ctx, "step_brep_typed")?;
+        ctx.insert_hash_set(&mut typed, point_id, "step_brep_typed")?;
     }
     for indices in radial.values() {
         for (position, &index) in indices.iter().enumerate() {
@@ -4178,21 +3853,22 @@ fn build_one(
     }
     let mut edge_by_id = BTreeMap::<EdgeId, &Edge>::new();
     for edge in &edges {
-        insert_topology_map(
+        ctx.insert_btree_map(
             &mut edge_by_id,
-            copy_topology_id::<EdgeId>(edge.id.as_str(), ctx, "step_brep_edge_index_ids")?,
+            edge.id
+                .try_clone_for_decode(ctx, "step_brep_edge_index_ids")?,
             edge,
-            ctx,
             "step_brep_edge_index",
         )?;
     }
     let mut coedge_by_id = BTreeMap::<CoedgeId, &Coedge>::new();
     for coedge in &coedges {
-        insert_topology_map(
+        ctx.insert_btree_map(
             &mut coedge_by_id,
-            copy_topology_id::<CoedgeId>(coedge.id.as_str(), ctx, "step_brep_coedge_index_ids")?,
+            coedge
+                .id
+                .try_clone_for_decode(ctx, "step_brep_coedge_index_ids")?,
             coedge,
-            ctx,
             "step_brep_coedge_index",
         )?;
     }
@@ -4283,10 +3959,9 @@ fn build_one(
             .ok_or(BuildError::Absent)?
             .0
         };
-        insert_topology_set(
+        ctx.insert_btree_set(
             &mut built.shell_sources,
             shell_step,
-            ctx,
             "step_brep_shell_sources",
         )?;
     }
@@ -4362,28 +4037,18 @@ fn connected_face_components(
         reached[start] = true;
         let mut component = Vec::new();
         let mut pending = Vec::new();
-        push_connected_face_item(&mut pending, start, ctx, "STEP connected-face pending")?;
+        ctx.push_vec(&mut pending, start, "STEP connected-face pending")?;
         while let Some(face) = pending.pop() {
-            push_connected_face_item(&mut component, face, ctx, "STEP connected-face component")?;
+            ctx.push_vec(&mut component, face, "STEP connected-face component")?;
             for &neighbor in &neighbors[face] {
                 if !reached[neighbor] {
                     reached[neighbor] = true;
-                    push_connected_face_item(
-                        &mut pending,
-                        neighbor,
-                        ctx,
-                        "STEP connected-face pending",
-                    )?;
+                    ctx.push_vec(&mut pending, neighbor, "STEP connected-face pending")?;
                 }
             }
         }
         component.sort_unstable();
-        push_connected_face_item(
-            &mut components,
-            component,
-            ctx,
-            "STEP connected-face components",
-        )?;
+        ctx.push_vec(&mut components, component, "STEP connected-face components")?;
     }
     Ok(components)
 }
@@ -4402,27 +4067,6 @@ fn insert_connected_face_group<'a>(
         ctx.charge_collection_items(1, "STEP connected-face group faces")?;
         group.insert(face);
     }
-    Ok(())
-}
-
-fn push_connected_face_item<T>(
-    values: &mut Vec<T>,
-    value: T,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    values.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                u64_from_index(values.len()),
-                1,
-                operation,
-            ),
-        )
-    })?;
-    values.push(value);
     Ok(())
 }
 
@@ -4606,12 +4250,7 @@ fn implicit_face_points(
         };
         let mut point_steps = Vec::new();
         for point in point_values.iter().filter_map(ValueExt::reference) {
-            push_topology_vec(
-                &mut point_steps,
-                point,
-                ctx,
-                "step_implicit_face_point_steps",
-            )?;
+            ctx.push_vec(&mut point_steps, point, "step_implicit_face_point_steps")?;
         }
         if point_steps.first() == point_steps.last() {
             point_steps.pop();
@@ -4619,12 +4258,7 @@ fn implicit_face_points(
         point_steps.dedup();
         let mut distinct = BTreeSet::new();
         for &point in &point_steps {
-            insert_topology_set(
-                &mut distinct,
-                point,
-                ctx,
-                "step_implicit_face_distinct_points",
-            )?;
+            ctx.insert_btree_set(&mut distinct, point, "step_implicit_face_distinct_points")?;
         }
         if point_steps.len() < 3 || distinct.len() != point_steps.len() {
             return Ok(None);
@@ -4641,7 +4275,7 @@ fn implicit_face_points(
                 return Ok(None);
             };
             if points.last().is_none_or(|previous| *previous != point) {
-                push_topology_vec(&mut points, point, ctx, "step_implicit_face_points")?;
+                ctx.push_vec(&mut points, point, "step_implicit_face_points")?;
             }
         }
         if points.len() > 1 && points.first() == points.last() {
@@ -4650,7 +4284,7 @@ fn implicit_face_points(
         if points.len() < 3 {
             return Ok(None);
         }
-        push_topology_vec(&mut loops, points, ctx, "step_implicit_face_loops")?;
+        ctx.push_vec(&mut loops, points, "step_implicit_face_loops")?;
     }
     Ok((!loops.is_empty()).then_some(loops))
 }
@@ -4671,7 +4305,7 @@ fn implicit_face_plane(
     };
     let mut points = Vec::new();
     for point in loops.iter().flatten().copied() {
-        push_topology_vec(&mut points, point, ctx, "step_implicit_face_plane_points")?;
+        ctx.push_vec(&mut points, point, "step_implicit_face_plane_points")?;
     }
     points.sort_by(|left, right| {
         left.x
@@ -4723,10 +4357,9 @@ fn implicit_face_plane(
         let Some(normal) = UnitVector3::normalized(area_normal) else {
             return Ok(None);
         };
-        push_topology_vec(
+        ctx.push_vec(
             &mut loop_normals,
             (normal, area),
-            ctx,
             "step_implicit_face_loop_normals",
         )?;
     }
@@ -4818,7 +4451,7 @@ fn associated_pcurves(
             && decoded_pcurves.contains(&pcurve_step)
         {
             let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
-            push_topology_vec(&mut associated, pcurve_id, ctx, "step_associated_pcurves")?;
+            ctx.push_vec(&mut associated, pcurve_id, "step_associated_pcurves")?;
         }
     }
     Ok(associated)
@@ -4893,7 +4526,7 @@ fn select_associated_pcurve(
             count: candidates.len(),
         });
     };
-    let candidate = copy_topology_id(candidate.as_str(), ctx, "step_selected_pcurve_id")?;
+    let candidate = candidate.try_clone_for_decode(ctx, "step_selected_pcurve_id")?;
     let surface_identity = ids::data(kind!("surface"), surface_step);
     let surface = ir
         .model
@@ -5042,13 +4675,12 @@ fn pcurve_locus_witness(
     };
     let mut fractions = Vec::new();
     for step in 0..PCURVE_LOCUS_SAMPLE_COUNT {
-        push_topology_vec(
+        ctx.push_vec(
             &mut fractions,
             cadmpeg_core::convert::f64_from_index(step)
                 .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?
                 / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
                     .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?,
-            ctx,
             "step_pcurve_locus_fractions",
         )?;
     }
@@ -5059,10 +4691,9 @@ fn pcurve_locus_witness(
         &mut break_fractions,
         ctx,
     )?;
-    append_topology_vec(
+    ctx.append_vec(
         &mut fractions,
         &mut break_fractions,
-        ctx,
         "step_pcurve_locus_fractions",
     )?;
     fractions.sort_by(f64::total_cmp);
@@ -5454,12 +5085,7 @@ fn add_pcurve_break_fraction(
         cadmpeg_ir::math::parameter_fraction(parameter, parameters[0], parameters[1])
     {
         if fraction.get() > 0.0 && fraction.get() < 1.0 {
-            push_topology_vec(
-                fractions,
-                fraction.get(),
-                ctx,
-                "step_pcurve_break_fractions",
-            )?;
+            ctx.push_vec(fractions, fraction.get(), "step_pcurve_break_fractions")?;
         }
     }
     Ok(())
@@ -5517,7 +5143,7 @@ fn pcurve_selection_seeds(
     surface: &SurfaceGeometry,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<f64>, CodecError> {
-    let mut seeds = one_topology_vec(0.0, ctx, "step_pcurve_selection_seeds")?;
+    let mut seeds = ctx.collect_vec([0.0], "step_pcurve_selection_seeds")?;
     if let Some([start, end]) = pcurve_selection_parameter_domain(geometry) {
         let at_fraction = |fraction: f64| {
             let ordinary = start + (end - start) * fraction;
@@ -5528,28 +5154,23 @@ fn pcurve_selection_seeds(
                     .map(cadmpeg_ir::scalar::FiniteReal::get)
             }
         };
-        push_topology_vec(&mut seeds, start, ctx, "step_pcurve_selection_seeds")?;
+        ctx.push_vec(&mut seeds, start, "step_pcurve_selection_seeds")?;
         if let Some(seed) = at_fraction(0.5) {
-            push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+            ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
-        push_topology_vec(&mut seeds, end, ctx, "step_pcurve_selection_seeds")?;
+        ctx.push_vec(&mut seeds, end, "step_pcurve_selection_seeds")?;
         for step in 0..=PCURVE_ENDPOINT_GRID_DIVISIONS {
             let fraction = cadmpeg_core::convert::f64_from_index(step)
                 .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?
                 / cadmpeg_core::convert::f64_from_index(PCURVE_ENDPOINT_GRID_DIVISIONS)
                     .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?;
             if let Some(seed) = at_fraction(fraction) {
-                push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+                ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
             }
         }
         let mut fractions = Vec::new();
         for fraction in [0.0, 1.0] {
-            push_topology_vec(
-                &mut fractions,
-                fraction,
-                ctx,
-                "step_pcurve_selection_fractions",
-            )?;
+            ctx.push_vec(&mut fractions, fraction, "step_pcurve_selection_fractions")?;
         }
         pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions, ctx)?;
         fractions.sort_by(f64::total_cmp);
@@ -5558,14 +5179,14 @@ fn pcurve_selection_seeds(
             .iter()
             .filter_map(|fraction| at_fraction(*fraction))
         {
-            push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+            ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
         for seed in fractions.windows(2).filter_map(|window| {
             let lower = window[0];
             let upper = window[1];
             at_fraction(lower + (upper - lower) * 0.5)
         }) {
-            push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+            ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
     }
     if pcurve_has_angular_parameterization(geometry) {
@@ -5574,7 +5195,7 @@ fn pcurve_selection_seeds(
             std::f64::consts::PI,
             std::f64::consts::PI * 1.5,
         ] {
-            push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+            ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
     }
     if let Some((origin, direction)) = geometry.line_parameters() {
@@ -5585,10 +5206,9 @@ fn pcurve_selection_seeds(
             if direction.u != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
                     if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
-                        push_topology_vec(
+                        ctx.push_vec(
                             &mut seeds,
                             (coordinate - origin.u) / direction.u,
-                            ctx,
                             "step_pcurve_selection_seeds",
                         )?;
                     }
@@ -5602,10 +5222,9 @@ fn pcurve_selection_seeds(
             if direction.v != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
                     if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
-                        push_topology_vec(
+                        ctx.push_vec(
                             &mut seeds,
                             (coordinate - origin.v) / direction.v,
-                            ctx,
                             "step_pcurve_selection_seeds",
                         )?;
                     }
@@ -5616,10 +5235,9 @@ fn pcurve_selection_seeds(
         if let Some([u_lower, u_upper]) = u_domain {
             for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
                 if direction.u != 0.0 {
-                    push_topology_vec(
+                    ctx.push_vec(
                         &mut seeds,
                         (boundary - origin.u) / direction.u,
-                        ctx,
                         "step_pcurve_selection_seeds",
                     )?;
                 }
@@ -5628,10 +5246,9 @@ fn pcurve_selection_seeds(
         if let Some([v_lower, v_upper]) = v_domain {
             for boundary in [v_lower, v_lower.midpoint(v_upper), v_upper] {
                 if direction.v != 0.0 {
-                    push_topology_vec(
+                    ctx.push_vec(
                         &mut seeds,
                         (boundary - origin.v) / direction.v,
-                        ctx,
                         "step_pcurve_selection_seeds",
                     )?;
                 }
@@ -5641,7 +5258,7 @@ fn pcurve_selection_seeds(
     let mut unique = Vec::new();
     for seed in seeds.into_iter().filter(|seed| seed.is_finite()) {
         if !unique.contains(&seed) {
-            push_topology_vec(&mut unique, seed, ctx, "step_pcurve_unique_seeds")?;
+            ctx.push_vec(&mut unique, seed, "step_pcurve_unique_seeds")?;
         }
     }
     Ok(unique)
@@ -5859,7 +5476,7 @@ fn shell_defs(
     let mut shells = BTreeMap::new();
     for (id, definition) in cache {
         if let Some(definition) = definition {
-            insert_topology_map(&mut shells, id, definition, ctx, "step_shell_definitions")?;
+            ctx.insert_btree_map(&mut shells, id, definition, "step_shell_definitions")?;
         }
     }
     Ok(shells)
@@ -5868,7 +5485,7 @@ fn shell_defs(
 fn copy_shell_def(definition: &ShellDef, ctx: &DecodeContext<'_>) -> Result<ShellDef, CodecError> {
     let mut typed = HashSet::new();
     for &id in &definition.typed {
-        insert_topology_hash_set(&mut typed, id, ctx, "step_shell_definition_typed_copy")?;
+        ctx.insert_hash_set(&mut typed, id, "step_shell_definition_typed_copy")?;
     }
     Ok(ShellDef {
         base: definition.base,
@@ -5894,7 +5511,7 @@ fn shell_def_cached(
     if active.contains(&reference) {
         return Ok(None);
     }
-    insert_topology_set(active, reference, ctx, "step_shell_definition_active")?;
+    ctx.insert_btree_set(active, reference, "step_shell_definition_active")?;
     let result = if let Some(record) = exchange.records().get(&reference) {
         match most_specific(
             record,
@@ -5936,10 +5553,9 @@ fn shell_def_cached(
                         shell_def_cached(element, exchange, active, cache, ctx)?
                     {
                         definition.forward = definition.forward == orientation;
-                        insert_topology_hash_set(
+                        ctx.insert_hash_set(
                             &mut definition.typed,
                             reference,
-                            ctx,
                             "step_shell_definition_typed",
                         )?;
                         Some(definition)
@@ -5960,7 +5576,7 @@ fn shell_def_cached(
         .as_ref()
         .map(|definition| copy_shell_def(definition, ctx))
         .transpose()?;
-    insert_topology_map(cache, reference, cached, ctx, "step_shell_definition_cache")?;
+    ctx.insert_btree_map(cache, reference, cached, "step_shell_definition_cache")?;
     Ok(result)
 }
 
@@ -5974,7 +5590,7 @@ fn shell_def_for(
         return Ok(None);
     };
     for &id in &definition.typed {
-        insert_topology_hash_set(typed, id, ctx, "step_shell_definition_claims")?;
+        ctx.insert_hash_set(typed, id, "step_shell_definition_claims")?;
     }
     Ok(Some((definition.base, definition.forward)))
 }
@@ -6008,7 +5624,7 @@ fn face_attributes<'a>(
     if active.contains(&id) {
         return Ok(None);
     }
-    insert_topology_set(active, id, ctx, "step_face_attribute_active")?;
+    ctx.insert_btree_set(active, id, "step_face_attribute_active")?;
     let result = face_attributes_inner(id, record, exchange, active, ctx);
     active.remove(&id);
     result
@@ -6056,12 +5672,7 @@ fn face_attributes_inner<'a>(
             if let Some(name) = face_name_value(record) {
                 base.name = Some(name);
             }
-            insert_topology_hash_set(
-                &mut base.typed,
-                face_element,
-                ctx,
-                "step_face_attribute_typed",
-            )?;
+            ctx.insert_hash_set(&mut base.typed, face_element, "step_face_attribute_typed")?;
             Some(base)
         }
         "SUBFACE" => {
@@ -6079,12 +5690,7 @@ fn face_attributes_inner<'a>(
             let Some(bounds) = direct_face_bounds(record, exchange, ctx)? else {
                 return Ok(None);
             };
-            insert_topology_hash_set(
-                &mut parent_info.typed,
-                parent,
-                ctx,
-                "step_face_attribute_typed",
-            )?;
+            ctx.insert_hash_set(&mut parent_info.typed, parent, "step_face_attribute_typed")?;
             if let Some(name) = face_name_value(record) {
                 parent_info.name = Some(name);
             }
@@ -6202,7 +5808,7 @@ fn direct_face_bounds(
         }
         let mut bounds = Vec::new();
         for id in items.iter().filter_map(ValueExt::reference) {
-            push_topology_vec(&mut bounds, id, ctx, "step_face_attribute_bounds")?;
+            ctx.push_vec(&mut bounds, id, "step_face_attribute_bounds")?;
         }
         return Ok(Some(bounds));
     }
@@ -6357,12 +5963,11 @@ fn validate_subset_parent(
             .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
     };
     let Some(parent) = parent else {
-        push_topology_vec(
+        ctx.push_vec(
             losses,
             StepLossCode::DecodeWarning.note(format!(
                 "{subset_type} #{id} has no resolvable parent {base_type}"
             )),
-            ctx,
             "step_topology_losses",
         )?;
         return Ok(false);
@@ -6374,12 +5979,11 @@ fn validate_subset_parent(
     {
         Ok(true)
     } else {
-        push_topology_vec(
+        ctx.push_vec(
             losses,
             StepLossCode::DecodeWarning.note(format!(
                 "{subset_type} #{id} parent #{parent} does not resolve to {base_type}"
             )),
-            ctx,
             "step_topology_losses",
         )?;
         Ok(false)

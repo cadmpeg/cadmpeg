@@ -3,7 +3,9 @@
 
 use std::io::Read;
 
-use cadmpeg_core::decode::{DecodeContext, ExpandSpec, ExpandWriter, View};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ExpandWriter, View,
+};
 use cadmpeg_core::CodecError;
 use flate2::read::{DeflateDecoder, ZlibDecoder};
 use flate2::{Decompress, FlushDecompress, Status};
@@ -130,23 +132,28 @@ fn inflate_deflate_writer<'ctx, 'a>(
 
 /// Inflates at most `cap` raw-DEFLATE output bytes for format detection.
 ///
-/// This helper is context-free because detection runs before a decode session
-/// exists. Output beyond the cap is discarded and reported as failure.
+/// Detection uses a default decode budget. Output beyond the cap or budget is
+/// discarded and reported as failure.
 pub fn inflate_bounded_probe(bytes: &[u8], cap: usize) -> Option<Vec<u8>> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).ok()?;
     let mut decoder = DeflateDecoder::new(bytes);
-    probe_decoder(|chunk| decoder.read(chunk).ok(), cap)
+    probe_decoder(&ctx, |chunk| decoder.read(chunk).ok(), cap)
 }
 
-/// Inflates at most `cap` zlib output bytes without a decode session.
+/// Inflates at most `cap` zlib output bytes under a default decode budget.
 ///
 /// The walk stops at stream end. Leftover input after the member is allowed.
 /// Output beyond the cap, or any decode error, is reported as failure.
 pub fn inflate_zlib_probe(bytes: &[u8], cap: usize) -> Option<Vec<u8>> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).ok()?;
     let mut decoder = ZlibDecoder::new(bytes);
-    probe_decoder(|chunk| decoder.read(chunk).ok(), cap)
+    probe_decoder(&ctx, |chunk| decoder.read(chunk).ok(), cap)
 }
 
 fn probe_decoder(
+    ctx: &DecodeContext<'_>,
     mut read_chunk: impl FnMut(&mut [u8]) -> Option<usize>,
     cap: usize,
 ) -> Option<Vec<u8>> {
@@ -163,8 +170,8 @@ fn probe_decoder(
         {
             return None;
         }
-        output.try_reserve(read).ok()?;
-        output.extend_from_slice(&chunk[..read]);
+        ctx.extend_retained_bytes(&mut output, &chunk[..read], "retain format probe output")
+            .ok()?;
     }
 }
 

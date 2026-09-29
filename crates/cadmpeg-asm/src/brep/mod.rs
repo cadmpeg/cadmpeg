@@ -340,18 +340,9 @@ fn insert_adjacency(
     reference: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if !out.contains_key(owner) {
-        ctx.charge_collection_items(1, "ASM adjacency owners")?;
         let key = ctx.copy_retained_text(owner, "ASM adjacency owner")?;
-        out.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("ASM adjacency owners"),
-                    0,
-                    1,
-                    "ASM adjacency owners",
-                ),
-            )
-        })?;
+
+        ctx.reserve_map(out, 1, "ASM adjacency owners")?;
         out.insert(key, HashSet::new());
     }
     if let Some(references) = out.get_mut(owner) {
@@ -585,7 +576,6 @@ pub fn decode_with_header(
 
     // Index records by RecordTable index (== position for a framed slice).
     let record_slots = cadmpeg_core::decode::u64_from_index(records.len());
-    ctx.charge_collection_items(record_slots, "index ASM records")?;
     let record_slot_bytes =
         cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(i64, &Record)>());
     let record_index_bytes = record_slots
@@ -593,16 +583,8 @@ pub fn decode_with_header(
         .ok_or_else(|| ctx.refuse_codec_limit("ASM record index bytes", u64::MAX, u64::MAX))?;
     let _record_index_reservation = ctx.reserve_scoped(record_index_bytes, "index ASM records")?;
     let mut by_index: HashMap<i64, &Record> = HashMap::new();
-    by_index.try_reserve(records.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("index ASM records"),
-                0,
-                record_slots,
-                "index ASM records",
-            ),
-        )
-    })?;
+
+    ctx.reserve_map(&mut by_index, records.len(), "index ASM records")?;
     for record in records {
         by_index.insert(
             i64::try_from(record.index).map_err(|_| {

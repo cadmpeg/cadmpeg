@@ -153,72 +153,6 @@ fn pmi_target_items_refuse_collection_limit() {
     ));
 }
 
-fn source_index_refusal(
-    limit: u64,
-    group_operation: &'static str,
-    item_operation: &'static str,
-) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits collection policy");
-    let mut groups = BTreeMap::new();
-    super::super::push_source_id(&mut groups, 1, 1u64, &ctx, group_operation, item_operation)
-        .expect_err("source group exceeds the limit")
-}
-
-fn source_identity_refusal(operation: &'static str) -> CodecError {
-    let id = crate::ids::data(crate::ids::kind!("point"), 1);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(id.as_str().len() - 1).expect("ID fits u64");
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits retained policy");
-    super::super::copy_pmi_identity::<cadmpeg_ir::ids::PointId>(id.as_str(), &ctx, operation)
-        .expect_err("source identity copy exceeds retained limit")
-}
-
-#[test]
-fn pmi_point_source_identity_refuses_retained_limit() {
-    assert!(matches!(
-        source_identity_refusal("step_pmi_point_source_identity"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_pmi_point_source_identity"
-    ));
-}
-
-#[test]
-fn pmi_curve_source_identity_refuses_retained_limit() {
-    assert!(matches!(
-        source_identity_refusal("step_pmi_curve_source_identity"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_pmi_curve_source_identity"
-    ));
-}
-
-#[test]
-fn pmi_topology_identity_refuses_retained_limit() {
-    let id = crate::ids::data(crate::ids::kind!("point"), 1);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(id.as_str().len() - 1).expect("ID fits u64");
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits retained policy");
-    assert!(matches!(
-        super::super::copy_pmi_identity::<cadmpeg_ir::ids::PointId>(
-            id.as_str(),
-            &ctx,
-            "step_pmi_topology_identity"
-        ),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_pmi_topology_identity"
-    ));
-}
-
 #[test]
 fn pmi_geometric_usage_identity_refuses_retained_limit() {
     let id = crate::ids::data(crate::ids::kind!("body"), 1);
@@ -235,74 +169,6 @@ fn pmi_geometric_usage_identity_refuses_retained_limit() {
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_pmi_geometric_usage_identity"
-    ));
-}
-
-#[test]
-fn pmi_point_source_groups_refuse_collection_limit() {
-    assert!(matches!(
-        source_index_refusal(0, "step_pmi_point_source_groups", "step_pmi_point_source_items"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_point_source_groups"
-    ));
-}
-
-#[test]
-fn pmi_point_source_items_refuse_collection_limit() {
-    assert!(matches!(
-        source_index_refusal(1, "step_pmi_point_source_groups", "step_pmi_point_source_items"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_point_source_items"
-    ));
-}
-
-#[test]
-fn pmi_curve_source_groups_refuse_collection_limit() {
-    assert!(matches!(
-        source_index_refusal(0, "step_pmi_curve_source_groups", "step_pmi_curve_source_items"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_curve_source_groups"
-    ));
-}
-
-#[test]
-fn pmi_curve_source_items_refuse_collection_limit() {
-    assert!(matches!(
-        source_index_refusal(1, "step_pmi_curve_source_groups", "step_pmi_curve_source_items"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_curve_source_items"
-    ));
-}
-
-#[test]
-fn pmi_presentation_semantic_groups_refuse_collection_limit() {
-    assert!(matches!(
-        source_index_refusal(
-            0,
-            "step_pmi_presentation_semantic_groups",
-            "step_pmi_presentation_semantic_members",
-        ),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_presentation_semantic_groups"
-    ));
-}
-
-#[test]
-fn pmi_presentation_semantic_members_refuse_collection_limit() {
-    assert!(matches!(
-        source_index_refusal(
-            1,
-            "step_pmi_presentation_semantic_groups",
-            "step_pmi_presentation_semantic_members",
-        ),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_presentation_semantic_members"
     ));
 }
 
@@ -412,21 +278,6 @@ fn pmi_datum_id_walk_refuses_depth_limit() {
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_pmi_datum_id_walk"
-    ));
-}
-
-#[test]
-fn pmi_datum_modifier_copy_refuses_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits retained policy");
-    assert!(matches!(
-        super::super::clone_pmi_modifiers(&["ABC".into()], &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_pmi_datum_modifier_copy"
     ));
 }
 
@@ -607,67 +458,6 @@ fn pmi_placement_walk_refuses_depth_limit() {
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_pmi_placement_walk"
-    ));
-}
-
-fn nested_set_refusal(
-    limit: u64,
-    group_operation: &'static str,
-    item_operation: &'static str,
-) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits collection policy");
-    super::super::insert_pmi_nested_set(
-        &mut BTreeMap::new(),
-        1u64,
-        2u64,
-        &ctx,
-        group_operation,
-        item_operation,
-    )
-    .expect_err("nested set exceeds collection limit")
-}
-
-#[test]
-fn pmi_aspect_annotation_groups_refuse_collection_limit() {
-    assert!(matches!(
-        nested_set_refusal(0, "step_pmi_aspect_annotation_groups", "step_pmi_aspect_annotation_members"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_aspect_annotation_groups"
-    ));
-}
-
-#[test]
-fn pmi_aspect_annotation_members_refuse_collection_limit() {
-    assert!(matches!(
-        nested_set_refusal(1, "step_pmi_aspect_annotation_groups", "step_pmi_aspect_annotation_members"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_aspect_annotation_members"
-    ));
-}
-
-#[test]
-fn pmi_relationship_aspect_groups_refuse_collection_limit() {
-    assert!(matches!(
-        nested_set_refusal(0, "step_pmi_relationship_aspect_groups", "step_pmi_relationship_aspect_members"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_relationship_aspect_groups"
-    ));
-}
-
-#[test]
-fn pmi_relationship_aspect_members_refuse_collection_limit() {
-    assert!(matches!(
-        nested_set_refusal(1, "step_pmi_relationship_aspect_groups", "step_pmi_relationship_aspect_members"),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_relationship_aspect_members"
     ));
 }
 

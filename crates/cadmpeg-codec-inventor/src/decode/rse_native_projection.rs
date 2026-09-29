@@ -12,7 +12,7 @@ use crate::native::{
 };
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentMetaState};
 
-use super::{admit_native_items, retained_format, retained_hex, retained_sha256};
+use super::{admit_native_items, retained_hex, retained_sha256};
 
 pub(super) struct RseNativeProjection {
     pub(super) identity_issues: Vec<StructuralIssueRecord>,
@@ -48,13 +48,11 @@ pub(super) fn project(
         for (ordinal, detail) in segment.identity_issues.iter().enumerate() {
             admit_native_items(ctx, 1)?;
             projection.identity_issues.push(StructuralIssueRecord {
-                id: retained_format(
-                    ctx,
+                id: ctx.format_retained(
                     format_args!("inventor:rse:structural-issue#segment-{token}-{ordinal}"),
                     "retain Inventor segment identity issue id",
                 )?,
-                scope: retained_format(
-                    ctx,
+                scope: ctx.format_retained(
                     format_args!("segment:{token}"),
                     "retain Inventor segment identity issue scope",
                 )?,
@@ -64,8 +62,7 @@ pub(super) fn project(
         }
         admit_native_items(ctx, 1)?;
         projection.segment_pairs.push(SegmentPairRecord {
-            id: retained_format(
-                ctx,
+            id: ctx.format_retained(
                 format_args!("inventor:rse:segment#{token}"),
                 "retain Inventor segment pair id",
             )?,
@@ -77,8 +74,7 @@ pub(super) fn project(
             SegmentMetaState::Parsed(meta) => {
                 admit_native_items(ctx, 1)?;
                 projection.segment_meta.push(SegmentMetaRecord {
-                    id: retained_format(
-                        ctx,
+                    id: ctx.format_retained(
                         format_args!("inventor:rse:segment-meta#{token}"),
                         "retain Inventor segment metadata id",
                     )?,
@@ -127,8 +123,7 @@ pub(super) fn project(
                 for section in &meta.tables.sections {
                     admit_native_items(ctx, 1)?;
                     projection.meta_sections.push(MetaSectionRecord {
-                        id: retained_format(
-                            ctx,
+                        id: ctx.format_retained(
                             format_args!("inventor:rse:meta-section#{token}-{}", section.number),
                             "retain Inventor metadata section id",
                         )?,
@@ -149,8 +144,7 @@ pub(super) fn project(
                 for descriptor in &meta.tables.types {
                     admit_native_items(ctx, 1)?;
                     projection.meta_types.push(MetaTypeRecord {
-                        id: retained_format(
-                            ctx,
+                        id: ctx.format_retained(
                             format_args!("inventor:rse:meta-type#{token}-{}", descriptor.index),
                             "retain Inventor metadata type id",
                         )?,
@@ -169,8 +163,7 @@ pub(super) fn project(
             SegmentMetaState::Malformed { detail, .. } => {
                 admit_native_items(ctx, 1)?;
                 projection.segment_meta_issues.push(SegmentMetaIssueRecord {
-                    id: retained_format(
-                        ctx,
+                    id: ctx.format_retained(
                         format_args!("inventor:rse:segment-meta-issue#{token}"),
                         "retain Inventor metadata issue id",
                     )?,
@@ -209,8 +202,7 @@ pub(super) fn project(
                 };
                 admit_native_items(ctx, 1)?;
                 projection.segment_bulk.push(SegmentBulkRecord {
-                    id: retained_format(
-                        ctx,
+                    id: ctx.format_retained(
                         format_args!("inventor:rse:segment-bulk#{token}"),
                         "retain Inventor segment bulk id",
                     )?,
@@ -239,8 +231,7 @@ pub(super) fn project(
             SegmentBulkState::Malformed(detail) => {
                 admit_native_items(ctx, 1)?;
                 projection.segment_bulk_issues.push(SegmentBulkIssueRecord {
-                    id: retained_format(
-                        ctx,
+                    id: ctx.format_retained(
                         format_args!("inventor:rse:segment-bulk-issue#{token}"),
                         "retain Inventor bulk issue id",
                     )?,
@@ -253,8 +244,7 @@ pub(super) fn project(
     for token in &container.rse.unpaired_metadata {
         admit_native_items(ctx, 1)?;
         projection.unpaired_segments.push(UnpairedSegmentRecord {
-            id: retained_format(
-                ctx,
+            id: ctx.format_retained(
                 format_args!("inventor:rse:unpaired-metadata#{}", token.as_str()),
                 "retain Inventor unpaired metadata id",
             )?,
@@ -266,8 +256,7 @@ pub(super) fn project(
     for token in &container.rse.unpaired_bulk {
         admit_native_items(ctx, 1)?;
         projection.unpaired_segments.push(UnpairedSegmentRecord {
-            id: retained_format(
-                ctx,
+            id: ctx.format_retained(
                 format_args!("inventor:rse:unpaired-bulk#{}", token.as_str()),
                 "retain Inventor unpaired bulk id",
             )?,
