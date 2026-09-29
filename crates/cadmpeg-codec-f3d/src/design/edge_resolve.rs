@@ -2332,21 +2332,18 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
         .collect::<Vec<_>>();
     let references_unavailable = !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty();
     let reference_candidates =
-        (shared_edge_sets.len() >= 2).then(|| edge_set_intersection(&shared_edge_sets));
+        (shared_edge_sets.len() >= 2).then(|| unique_edge_set_intersection(&shared_edge_sets));
     // Disjoint contextual face references do not name a common edge. An exact
     // recipe-clause/history proof remains independent of that context.
-    if reference_candidates
-        .as_deref()
-        .is_some_and(<[i64]>::is_empty)
-    {
+    if reference_candidates == Some(EdgeSetIntersection::Disjoint) {
         let edge = disjoint_reference_proof?;
         return extra_proofs
             .iter()
             .all(|proof| *proof == edge)
             .then_some(edge);
     }
-    let reference = match reference_candidates.as_deref() {
-        Some(&[edge]) => Some(edge),
+    let reference = match reference_candidates {
+        Some(EdgeSetIntersection::Unique(edge)) => Some(edge),
         _ => None,
     };
     let incidence = (!references_unavailable)
@@ -2450,24 +2447,28 @@ fn corroborated_edge_set_intersection(
     }
 }
 
-/// Edges every reference set shares, ascending and without repeats. An empty
-/// result from a nonempty input is a disjoint reference set, which the caller
-/// separates from a set that shares more than one edge.
-fn edge_set_intersection(edge_sets: &[&[i64]]) -> Vec<i64> {
+#[derive(Clone, Copy, PartialEq)]
+enum EdgeSetIntersection {
+    Disjoint,
+    Unique(i64),
+    Ambiguous,
+}
+
+fn unique_edge_set_intersection(edge_sets: &[&[i64]]) -> EdgeSetIntersection {
     let mut sets = edge_sets.iter();
     let Some(first) = sets.next() else {
-        return Vec::new();
+        return EdgeSetIntersection::Disjoint;
     };
-    let mut candidates = first.to_vec();
-    candidates.sort_unstable();
-    candidates.dedup();
-    for edge_set in sets {
-        candidates.retain(|candidate| edge_set.contains(candidate));
-        if candidates.is_empty() {
-            break;
+    let mut candidate = None;
+    for &edge in *first {
+        if edge_sets.iter().all(|set| set.contains(&edge)) {
+            if candidate.is_some_and(|selected| selected != edge) {
+                return EdgeSetIntersection::Ambiguous;
+            }
+            candidate = Some(edge);
         }
     }
-    candidates
+    candidate.map_or(EdgeSetIntersection::Disjoint, EdgeSetIntersection::Unique)
 }
 
 #[derive(Clone, Copy)]
