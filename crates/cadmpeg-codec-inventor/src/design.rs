@@ -566,10 +566,11 @@ pub(crate) fn project_parameters(
             ),
             "retain Inventor parameter native reference",
         )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(dependencies.len()),
-            "collect Inventor parameter dependencies",
+        let mut dependency_members = cadmpeg_ir::features::DistinctMembers::default();
+        dependency_members.reserve_for_decode(
+            ctx, dependencies.len(), "collect Inventor parameter dependencies",
         )?;
+        dependency_members.extend(dependencies);
         projected.push(DesignParameter {
             id,
             owner: None,
@@ -578,7 +579,7 @@ pub(crate) fn project_parameters(
             expression,
             display: None,
             value: Some(value),
-            dependencies: dependencies.into_iter().collect(),
+            dependencies: dependency_members,
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(parameter.id()),
