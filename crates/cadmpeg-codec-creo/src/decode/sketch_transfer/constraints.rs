@@ -28,7 +28,10 @@ use super::super::sketch::equations_scalar::{
 };
 use super::super::sketch::radii::section_radius_relation_arc;
 use super::super::sketch::skamp::{section_segment_rows, unique_decoded_section_segment};
-use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
+use super::super::sketch_ids::{
+    sketch_constraint_id, sketch_constraint_id_admitted, sketch_entity_id, sketch_native_ref,
+    sketch_native_ref_admitted,
+};
 use crate::decode::sketch_transfer::identity::{
     opaque_section_segment_identity_suffix, section_entity_external_ids,
     section_segment_identity_suffix, unique_section_segment_external_ids,
@@ -1317,6 +1320,106 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
     Ok(constraints)
 }
 
+struct EquationArgumentSlots<'a>(&'a [Option<u32>]);
+
+impl std::fmt::Display for EquationArgumentSlots<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (slot, argument) in self.0.iter().enumerate() {
+            if slot != 0 {
+                f.write_str(",")?;
+            }
+            match argument {
+                Some(argument) => write!(f, "{slot}:{argument}")?,
+                None => write!(f, "{slot}:null")?,
+            }
+        }
+        Ok(())
+    }
+}
+
+struct EquationNullOrdinals<'a>(&'a [Option<u32>]);
+
+impl std::fmt::Display for EquationNullOrdinals<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for (slot, argument) in self.0.iter().enumerate() {
+            if argument.is_some() {
+                continue;
+            }
+            if !first {
+                f.write_str(",")?;
+            }
+            write!(f, "{slot}")?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
+fn insert_native_equation_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: &'static str,
+    value: impl std::fmt::Display,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !properties.contains_key(key) {
+        ctx.charge_collection_items(1, "creo native equation property nodes")?;
+    }
+    let key = ctx.copy_retained_text(key, "creo native equation property keys")?;
+    let value = ctx.format_retained(
+        format_args!("{value}"),
+        "creo native equation property values",
+    )?;
+    properties.insert(key, value);
+    Ok(())
+}
+
+fn native_equation_nonblank(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<cadmpeg_core::text::NonBlankString, cadmpeg_core::CodecError> {
+    cadmpeg_core::text::NonBlankString::new(ctx.format_retained(value, operation)?)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("native equation text must not be blank"))
+}
+
+fn native_equation_operands(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    equation_id: u32,
+    arguments: &[Option<u32>],
+    native_ref: &str,
+) -> Result<Vec<SketchNativeOperand>, cadmpeg_core::CodecError> {
+    let mut operands = Vec::new();
+    ctx.try_reserve_items(&mut operands, 1, "creo native equation operands")?;
+    operands.push(SketchNativeOperand {
+        native_kind: native_equation_nonblank(ctx, format_args!("eqtn_arr"), "creo equation operand kind")?,
+        field: Some(NativeOperandField {
+            name: native_equation_nonblank(ctx, format_args!("equation_id"), "creo equation operand field")?,
+            role: None,
+        }),
+        object_index: Some(equation_id),
+        native_ref: Some(ctx.copy_retained_text(native_ref, "creo equation operand reference")?),
+    });
+    for (slot, argument) in arguments.iter().enumerate() {
+        let Some(object_index) = *argument else {
+            continue;
+        };
+        ctx.try_reserve_items(&mut operands, 1, "creo native equation operands")?;
+        operands.push(SketchNativeOperand {
+            native_kind: native_equation_nonblank(ctx, format_args!("var_arr"), "creo equation operand kind")?,
+            field: Some(NativeOperandField {
+                name: native_equation_nonblank(
+                    ctx, format_args!("arguments[{slot}]"), "creo equation operand field",
+                )?,
+                role: None,
+            }),
+            object_index: Some(object_index),
+            native_ref: Some(ctx.copy_retained_text(native_ref, "creo equation operand reference")?),
+        });
+    }
+    Ok(operands)
+}
+
 pub(in super::super) fn section_equation_native_constraints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
@@ -1328,120 +1431,76 @@ pub(in super::super) fn section_equation_native_constraints(
     else {
         return Ok(Vec::new());
     };
-    crate::decode::collect_items(ctx, table
-        .rows
-        .into_iter()
-        .filter(|equation| !typed_offsets.contains(&equation.offset))
-        .filter_map(|equation| {
-            Some({
-                let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
-                let native_ref = sketch_native_ref(sketch);
-                let argument_slots = equation
-                    .arguments
-                    .iter()
-                    .enumerate()
-                    .map(|(slot, argument)| match argument {
-                        Some(argument) => format!("{slot}:{argument}"),
-                        None => format!("{slot}:null"),
-                    })
-                    .collect::<Vec<_>>();
-                let null_argument_ordinals = equation
-                    .arguments
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(slot, argument)| argument.is_none().then_some(slot.to_string()))
-                    .collect::<Vec<_>>();
-                let mut native_properties = BTreeMap::from([
-                    ("equation_id".to_string(), equation.equation_id.to_string()),
-                    ("function_id".to_string(), equation.function_id.to_string()),
-                    ("offset".to_string(), equation.offset.to_string()),
-                    ("table_offset".to_string(), table.offset.to_string()),
-                    (
-                        "table_declared_count".to_string(),
-                        table.declared_count.to_string(),
-                    ),
-                    ("active".to_string(), active.to_string()),
-                    ("argument_slots".to_string(), argument_slots.join(",")),
-                ]);
-                if let Some(explicit_argument_count) = equation.explicit_argument_count {
-                    native_properties.insert(
-                        "explicit_argument_count".to_string(),
-                        explicit_argument_count.to_string(),
-                    );
-                }
-                if let Some(entity_ref) = table.entity_ref {
-                    native_properties
-                        .insert("table_entity_ref".to_string(), entity_ref.to_string());
-                }
-                if !null_argument_ordinals.is_empty() {
-                    native_properties.insert(
-                        "null_argument_ordinals".to_string(),
-                        null_argument_ordinals.join(","),
-                    );
-                }
-                let mut operands = vec![SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("eqtn_arr")?,
-                    field: Some(NativeOperandField {
-                        name: cadmpeg_core::text::NonBlankString::new("equation_id")?,
-                        role: None,
-                    }),
-                    object_index: Some(equation.equation_id),
-                    native_ref: Some(native_ref.clone()),
-                }];
-                operands.extend(equation.arguments.iter().enumerate().filter_map(
-                    |(slot, argument)| {
-                        let object_index = (*argument)?;
-                        Some(SketchNativeOperand {
-                            native_kind: cadmpeg_core::text::NonBlankString::new("var_arr")?,
-                            field: Some(NativeOperandField {
-                                name: cadmpeg_core::text::NonBlankString::new(format!(
-                                    "arguments[{slot}]"
-                                ))?,
-                                role: None,
-                            }),
-                            object_index: Some(object_index),
-                            native_ref: Some(native_ref.clone()),
-                        })
-                    },
-                ));
-                (
-                    SketchConstraint {
-                        id: sketch_constraint_id(
-                            sketch,
-                            format_args!("equation:offset:{}", equation.offset),
-                        )?,
-                        sketch: sketch.clone(),
-                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                            SketchConstraintDefinitionInput::Native {
-                                native_kind: cadmpeg_core::text::NonBlankString::new(format!(
-                                    "creo:equation:{}",
-                                    equation.function_id
-                                ))?,
-                                native_state: Some(u64::from(active)),
-                                native_flags: None,
-                                native_properties,
-                                entities: Vec::new(),
-                                parameter: None,
-                                operands,
-                            },
-                        )
-                        .ok()?,
-                        name: None,
-                        driving: None,
-                        active: Some(active),
-                        virtual_space: None,
-                        visible: None,
-                        orientation: None,
-                        label_distance: None,
-                        label_position: None,
-                        metadata: None,
-                        native_ref: Some(native_ref),
-                    },
-                    equation.offset,
-                )
-            })
-        })
-        , "creo native equation constraints")
+    let mut constraints = Vec::new();
+    for equation in table.rows {
+        if typed_offsets.contains(&equation.offset) {
+            continue;
+        }
+        let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+        let native_ref = sketch_native_ref_admitted(ctx, sketch)?;
+        let mut native_properties = BTreeMap::new();
+        insert_native_equation_property(ctx, &mut native_properties, "equation_id", equation.equation_id)?;
+        insert_native_equation_property(ctx, &mut native_properties, "function_id", equation.function_id)?;
+        insert_native_equation_property(ctx, &mut native_properties, "offset", equation.offset)?;
+        insert_native_equation_property(ctx, &mut native_properties, "table_offset", table.offset)?;
+        insert_native_equation_property(ctx, &mut native_properties, "table_declared_count", table.declared_count)?;
+        insert_native_equation_property(ctx, &mut native_properties, "active", active)?;
+        insert_native_equation_property(
+            ctx, &mut native_properties, "argument_slots", EquationArgumentSlots(&equation.arguments),
+        )?;
+        if let Some(count) = equation.explicit_argument_count {
+            insert_native_equation_property(ctx, &mut native_properties, "explicit_argument_count", count)?;
+        }
+        if let Some(entity_ref) = table.entity_ref {
+            insert_native_equation_property(ctx, &mut native_properties, "table_entity_ref", entity_ref)?;
+        }
+        if equation.arguments.iter().any(Option::is_none) {
+            insert_native_equation_property(
+                ctx, &mut native_properties, "null_argument_ordinals", EquationNullOrdinals(&equation.arguments),
+            )?;
+        }
+        let operands = native_equation_operands(
+            ctx, equation.equation_id, &equation.arguments, &native_ref,
+        )?;
+        let Some(id) = sketch_constraint_id_admitted(ctx, sketch, format_args!("equation:offset:{}", equation.offset))? else {
+            continue;
+        };
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
+                native_kind: native_equation_nonblank(
+                    ctx, format_args!("creo:equation:{}", equation.function_id), "creo equation native kind",
+                )?,
+                native_state: Some(u64::from(active)),
+                native_flags: None,
+                native_properties,
+                entities: Vec::new(),
+                parameter: None,
+                operands,
+            },
+        ) else {
+            continue;
+        };
+        ctx.try_reserve_items(&mut constraints, 1, "creo native equation constraints")?;
+        constraints.push((
+            SketchConstraint {
+                id,
+                sketch: sketch.copy_admitted(ctx, "creo native equation sketch identity")?,
+                definition,
+                name: None,
+                driving: None,
+                active: Some(active),
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: Some(native_ref),
+            },
+            equation.offset,
+        ));
+    }
+    Ok(constraints)
 }
 
 pub(in super::super) fn section_equation_same_coordinate_constraints(
@@ -2221,13 +2280,91 @@ pub(in super::super) fn section_linear_distance_vectors(vectors: [[Option<u32>; 
 #[cfg(test)]
 mod tests {
     use super::{
-        close_sketch_constraint_parameter_references, reconcile_section_dimension_constraint,
+        close_sketch_constraint_parameter_references, insert_native_equation_property,
+        native_equation_operands, reconcile_section_dimension_constraint,
         section_equation_function_five_scalar_equality_constraints,
         section_equation_function_sixteen_angle_difference_constraints,
     };
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId, SketchId};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn native_equation_properties_refuse_node_key_and_value() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut properties = std::collections::BTreeMap::new();
+        let error = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
+            .expect_err("one property exceeds zero nodes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native equation property nodes"));
+        assert!(properties.is_empty());
+        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
+        policy.limits.max_retained_bytes = "equation_id".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
+            .expect_err("property key exceeds retained cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native equation property keys"));
+        policy.limits.max_retained_bytes = "equation_id".len() as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
+            .expect_err("property value exceeds remaining retained cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native equation property values"));
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
+            .expect("service property");
+        assert_eq!(properties.get("equation_id").map(String::as_str), Some("7"));
+    }
+
+    #[test]
+    fn native_equation_operands_refuse_each_nested_boundary() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let arena = DecodeArena::new();
+        let arguments = [None, Some(2), Some(3)];
+        for cap in 0..3 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let error = native_equation_operands(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
+                .expect_err("next operand exceeds collection cap");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::CollectionItems
+                    && resource.operation == "creo native equation operands"));
+        }
+        for (cap, operation) in [
+            (0, "creo equation operand kind"),
+            ("eqtn_arr".len() as u64, "creo equation operand field"),
+            (("eqtn_arr".len() + "equation_id".len()) as u64, "creo equation operand reference"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let error = native_equation_operands(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
+                .expect_err("next operand string exceeds retained cap");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::RetainedBytes
+                    && resource.operation == operation));
+        }
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        let operands = native_equation_operands(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
+            .expect("service operands");
+        assert_eq!(operands.len(), 3);
+        assert_eq!(operands[0].object_index, Some(1));
+        assert_eq!(operands[1].field.as_ref().map(|field| field.name.as_str()), Some("arguments[1]"));
+        assert_eq!(operands[2].object_index, Some(3));
+    }
 
     #[test]
     fn emitted_parameter_ids_refuse_node_and_identity_copy() {

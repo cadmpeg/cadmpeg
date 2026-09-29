@@ -2,7 +2,10 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-use super::{feature_sketch_record_id_in_scan, model_sketch_id, owning_feature_definition_ref, sketch_table_headers};
+use super::{
+    feature_sketch_record_id_in_scan, model_sketch_id, owning_feature_definition_ref,
+    sketch_constraint_id_admitted, sketch_native_ref_admitted, sketch_table_headers,
+};
 use crate::decode::native_records::CreoSketchTableKind;
 use crate::feature::definitions::{
     DefinitionIdentity, FeatureDefinition, FeatureTrimBucket, FeatureTrimEntityTable,
@@ -29,6 +32,40 @@ fn definition() -> FeatureDefinition {
         saved_section: None,
         offset: 0,
     }
+}
+
+#[test]
+fn sketch_constraint_identity_and_native_ref_refuse_retained_bytes() {
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40")
+        .expect("sketch ID");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        "creo:featdefs:sketch_constraint#40:equation:offset:28".len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = sketch_constraint_id_admitted(&ctx, &sketch, "equation:offset:28")
+        .expect_err("constraint ID exceeds retained cap");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo sketch constraint identity"));
+    policy.limits.max_retained_bytes = "creo:featdefs:sketch#40".len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = sketch_native_ref_admitted(&ctx, &sketch)
+        .expect_err("native ref exceeds retained cap");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo sketch native reference"));
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+    assert_eq!(
+        sketch_constraint_id_admitted(&ctx, &sketch, "equation:offset:28")
+            .expect("service constraint ID")
+            .expect("valid constraint ID")
+            .as_str(),
+        "creo:featdefs:sketch_constraint#40:equation:offset:28"
+    );
+    assert_eq!(sketch_native_ref_admitted(&ctx, &sketch).expect("service native ref"),
+        "creo:featdefs:sketch#40");
 }
 
 #[test]
