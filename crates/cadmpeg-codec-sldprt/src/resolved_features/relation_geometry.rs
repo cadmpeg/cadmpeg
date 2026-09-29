@@ -22,7 +22,7 @@ use super::relation_records::{
     circle_dimension_handle_driver, relation_uses_dynamic_operands, relation_uses_solver_points,
 };
 use super::transforms::{
-    marker_entities, marker_transforms_with_frame_fallback, sketch_entity_loci,
+    marker_entities, sketch_entity_loci,
     sketch_frame_marker_transform, ProfileAxis,
 };
 use super::typed_relations::{
@@ -1341,18 +1341,18 @@ pub(crate) fn project_relation_solved_line_geometry(
                     position.1 as f64 * QUANTUM,
                 )))
             })()?;
-            let candidate = |start, end| {
-                Some(
-                    SketchEntity::new(
-                        SketchEntityId::mint("sldprt:model:sketch-entity#solver-line").ok()?,
-                        sketch.clone(),
-                        SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end })
-                            .ok()?,
-                    )
-                    .with_construction(true),
-                )
+            let candidate = |start, end| -> Result<Option<SketchEntity>, cadmpeg_core::CodecError> {
+                let Ok(id) = SketchEntityId::mint("sldprt:model:sketch-entity#solver-line") else {
+                    return Ok(None);
+                };
+                let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end })
+                else {
+                    return Ok(None);
+                };
+                let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
+                Ok(Some(SketchEntity::new(id, sketch_id, geometry).with_construction(true)))
             };
-            let transformed_line = |markers: [&SketchInputEntity; 2]| {
+            let transformed_line = |markers: [&SketchInputEntity; 2]| -> Result<Option<(Point2, Point2)>, cadmpeg_core::CodecError> {
                 let native = markers.map(|marker| {
                     marker.coordinates_m.map(|coordinates| {
                         let [u, v] = coordinates.get();
@@ -1360,59 +1360,69 @@ pub(crate) fn project_relation_solved_line_geometry(
                     })
                 });
                 let [Some(first), Some(second)] = native else {
-                    return None;
+                    return Ok(None);
                 };
                 let transform_candidates = transforms
                     .get(relation.feature_ref.as_str())
                     .map_or(&[][..], Vec::as_slice);
-                let transform_candidates = sketches
-                    .iter()
-                    .find(|candidate| candidate.id == *sketch)
-                    .map_or_else(
-                        || transform_candidates.to_vec(),
-                        |sketch| {
-                            marker_transforms_with_frame_fallback(
-                                transform_candidates,
-                                sketch,
-                                QUANTUM,
-                            )
-                        },
-                    );
-                let candidates = transform_candidates
-                    .into_iter()
-                    .filter_map(|transform| {
-                        Some((transform.apply(first)?, transform.apply(second)?))
+                let fallback = transform_candidates
+                    .is_empty()
+                    .then(|| {
+                        sketches
+                            .iter()
+                            .find(|candidate| candidate.id == *sketch)
+                            .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
                     })
-                    .filter(|(start, end)| start != end)
-                    .fold(Vec::new(), |mut candidates, candidate| {
-                        if !candidates.contains(&candidate) {
-                            candidates.push(candidate);
-                        }
-                        candidates
-                    });
+                    .flatten();
+                let mut candidates = Vec::new();
+                for transform in transform_candidates.iter().chain(fallback.iter()) {
+                    ctx.charge_work(1, "scan SLDPRT solved-line transforms")?;
+                    let (Some(start), Some(end)) =
+                        (transform.apply(first), transform.apply(second))
+                    else {
+                        continue;
+                    };
+                    let pair = (start, end);
+                    if start != end && !candidates.contains(&pair) {
+                        ctx.reserve_collection_vec(
+                            &mut candidates,
+                            1,
+                            "collect SLDPRT solved-line transform candidates",
+                        )?;
+                        candidates.push(pair);
+                    }
+                }
                 let candidates = if relation.family == FeatureInputRelationFamily::PointLineDistance
                 {
-                    let mut candidates = candidates
-                        .into_iter()
-                        .filter(|(start, end)| {
-                            let Some(line) = candidate(
+                    let mut filtered = Vec::new();
+                    for (start, end) in candidates {
+                        ctx.charge_work(1, "filter SLDPRT solved-line candidates")?;
+                        let Some(line) = candidate(
                                 Point2::new(start.0 as f64 * QUANTUM, start.1 as f64 * QUANTUM),
                                 Point2::new(end.0 as f64 * QUANTUM, end.1 as f64 * QUANTUM),
-                            ) else {
-                                return false;
-                            };
-                            point_position.is_some_and(|point| {
-                                point_line_distance_value(point, &line).is_some_and(|measured| {
-                                    same_dimension_length(measured, expected)
-                                })
+                        )? else {
+                            continue;
+                        };
+                        if point_position.is_some_and(|point| {
+                            point_line_distance_value(point, &line).is_some_and(|measured| {
+                                same_dimension_length(measured, expected)
                             })
-                        })
-                        .collect::<Vec<_>>();
-                    let &(first_start, first_end) = candidates.first()?;
-                    let orientation_is_ambiguous = candidates
+                        }) {
+                            ctx.reserve_collection_vec(
+                                &mut filtered,
+                                1,
+                                "filter SLDPRT solved-line candidates",
+                            )?;
+                            filtered.push((start, end));
+                        }
+                    }
+                    let Some(&(first_start, first_end)) = filtered.first() else {
+                        return Ok(None);
+                    };
+                    let orientation_is_ambiguous = filtered
                         .iter()
                         .any(|(start, end)| *start == first_end && *end == first_start);
-                    if candidates.iter().all(|(start, end)| {
+                    if filtered.iter().all(|(start, end)| {
                         (*start == first_start && *end == first_end)
                             || (*start == first_end && *end == first_start)
                     }) {
@@ -1425,24 +1435,24 @@ pub(crate) fn project_relation_solved_line_geometry(
                         } else {
                             (first_start, first_end)
                         };
-                        candidates.truncate(1);
-                        candidates[0] = representative;
+                        filtered.truncate(1);
+                        filtered[0] = representative;
                     } else {
-                        return None;
+                        return Ok(None);
                     }
-                    candidates
+                    filtered
                 } else {
                     candidates
                 };
                 let [(start, end)] = candidates.as_slice() else {
-                    return None;
+                    return Ok(None);
                 };
-                Some((
+                Ok(Some((
                     Point2::new(start.0 as f64 * QUANTUM, start.1 as f64 * QUANTUM),
                     Point2::new(end.0 as f64 * QUANTUM, end.1 as f64 * QUANTUM),
-                ))
+                )))
             };
-            let build_lines = |prefer_marker_endpoints: bool| {
+            let build_lines = |prefer_marker_endpoints: bool| -> Result<Vec<_>, cadmpeg_core::CodecError> {
                 let mut lines = Vec::with_capacity(line_operands.len());
                 for &(operand_index, operand) in &line_operands {
                     let markers = if prefer_marker_endpoints {
@@ -1452,17 +1462,17 @@ pub(crate) fn project_relation_solved_line_geometry(
                         fallback_line_markers(operand.entity_index)
                     };
                     let Some(markers) = markers else {
-                        return Vec::new();
+                        return Ok(Vec::new());
                     };
-                    let Some((start, end)) = transformed_line(markers) else {
-                        return Vec::new();
+                    let Some((start, end)) = transformed_line(markers)? else {
+                        return Ok(Vec::new());
                     };
-                    let Some(line) = candidate(start, end) else {
-                        return Vec::new();
+                    let Some(line) = candidate(start, end)? else {
+                        return Ok(Vec::new());
                     };
                     lines.push((operand, markers, line));
                 }
-                lines
+                Ok(lines)
             };
             let relation_lines_valid =
                 |lines: &[(&FeatureInputOperand, [&SketchInputEntity; 2], SketchEntity)]| {
@@ -1496,10 +1506,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                         _ => false,
                     }
                 };
-            let mut lines = build_lines(true);
+            let mut lines = build_lines(true)?;
             let mut valid = relation_lines_valid(&lines);
             if !valid {
-                let fallback_lines = build_lines(false);
+                let fallback_lines = build_lines(false)?;
                 if !fallback_lines.is_empty() {
                     lines = fallback_lines;
                     valid = relation_lines_valid(&lines);
