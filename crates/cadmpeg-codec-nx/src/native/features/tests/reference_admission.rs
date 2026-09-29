@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::native::features::feature_projected_curve_references;
+use crate::native::features::feature_projected_curve_construction_payloads;
+use crate::native::features::feature_operation_labels;
 use crate::native::features::feature_surface_construction_references;
 use crate::native::features::feature_surface_construction_payloads;
 use crate::native::features::feature_thru_curve_construction_envelopes;
@@ -29,6 +31,68 @@ fn reference_container(label: &'static str, payload: Vec<u8>) -> crate::containe
 fn projected_curve_container() -> crate::container::Container<'static> {
     let payload = b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0".to_vec();
     reference_container("CPROJ", payload)
+}
+
+fn projected_curve_payload_container() -> crate::container::Container<'static> {
+    let payload = b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0".to_vec();
+    let store = (0..715).map(|_| b"A".as_slice()).collect::<Vec<_>>();
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "CPROJ", payload)], &store,
+    );
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("synthetic projected curve payload container")
+}
+
+fn projected_curve_payload_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = projected_curve_payload_container();
+    let (labels, references) = crate::test_support::with_decode_context(|ctx| {
+        Ok::<_, cadmpeg_core::CodecError>((
+            feature_operation_labels(ctx, &container)?,
+            feature_projected_curve_references(ctx, &container)?,
+        ))
+    }).expect("projected curve payload inputs");
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_projected_curve_construction_payloads(ctx, &container, &labels, &references)
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted projected curve payloads").len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("projected curve payload resource limit")
+}
+
+#[test]
+fn projected_curve_payload_refuses_collection_limit() {
+    let error = projected_curve_payload_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn projected_curve_payload_refuses_retained_limit() {
+    let error = projected_curve_payload_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn projected_curve_payload_refuses_scoped_limit() {
+    let error = projected_curve_payload_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn projected_curve_payload_refuses_work_limit() {
+    let error = projected_curve_payload_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn surface_container() -> crate::container::Container<'static> {

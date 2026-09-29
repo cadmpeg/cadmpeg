@@ -8078,68 +8078,129 @@ pub(super) fn feature_projected_curve_construction_payloads(
     references: &[FeatureProjectedCurveReference],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let kinds = labels
-        .iter()
-        .map(|label| (label.id.as_str(), label.value.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    Ok(references
-        .iter()
-        .map(|reference| reference.operation_label.as_str())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|operation_label| {
-            let (operation_kind, expected_len) = match *kinds.get(operation_label)? {
+    let mut kinds = BTreeMap::new();
+    let mut kind_reservation = ctx.reserve_scoped(0, "NX projected curve kinds")?;
+    for label in labels {
+        ctx.charge_collection_items(1, "NX projected curve kinds")?;
+        kind_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, &str)>() * 4))?;
+        kinds.insert(label.id.as_str(), label.value.as_str());
+    }
+    let mut operations = BTreeSet::new();
+    let mut operation_reservation = ctx.reserve_scoped(0, "NX projected curve operations")?;
+    for reference in references {
+        ctx.charge_collection_items(1, "NX projected curve operations")?;
+        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4))?;
+        operations.insert(reference.operation_label.as_str());
+    }
+    let mut payloads = Vec::new();
+    for operation_label in operations {
+        let Some(kind) = kinds.get(operation_label) else {
+            continue;
+        };
+        let (operation_kind, expected_len) = match *kind {
                 "CPROJ" => (FeatureProjectedCurveKind::Projected, 3),
                 "CPROJ_CMB" => (FeatureProjectedCurveKind::Combined, 8),
-                _ => return None,
+                _ => continue,
+        };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(references.len()),
+            "join NX projected curve references")?;
+        let mut field = Vec::new();
+        let mut field_reservation = ctx.reserve_scoped(0, "NX projected curve reference field")?;
+        for reference in references.iter().filter(|reference| {
+            reference.operation_label == operation_label
+        }) {
+            ctx.charge_collection_items(1, "NX projected curve reference field")?;
+            field_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&FeatureProjectedCurveReference>()))?;
+            field.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX projected curve reference field", 0, 1))?;
+            field.push(reference);
+        }
+        let sort_work = field.len().checked_mul(field.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX projected curve references", 0, 1))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work),
+            "sort NX projected curve references")?;
+        field.sort_by_key(|reference| reference.ordinal);
+        if field.len() != expected_len || field.iter().enumerate().any(|(ordinal, reference)| {
+            u32::try_from(ordinal).ok() != Some(reference.ordinal)
+        }) {
+            continue;
+        }
+        let mut data_blocks = Vec::new();
+        let mut block_reservation = ctx.reserve_scoped(0, "NX projected curve block IDs")?;
+        let mut complete = true;
+        for reference in &field {
+            let Some(block) = reference.data_block.as_deref() else {
+                complete = false;
+                break;
             };
-            let mut field = references
-                .iter()
-                .filter(|reference| reference.operation_label == operation_label)
-                .collect::<Vec<_>>();
-            field.sort_by_key(|reference| reference.ordinal);
-            if field.len() != expected_len
-                || field
-                    .iter()
-                    .enumerate()
-                    .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
-            {
-                return None;
-            }
-            let data_blocks = field
-                .iter()
-                .map(|reference| reference.data_block.clone())
-                .collect::<Option<Vec<_>>>()?;
-            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
-            if data_blocks.iter().any(|block| {
+            block_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<String>().checked_add(block.len())
+                    .ok_or_else(|| ctx.refuse_codec_limit(
+                        "retain NX projected curve block IDs", 0, 1))?))?;
+            ctx.charge_collection_items(1, "NX projected curve block IDs")?;
+            data_blocks.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX projected curve block IDs", 0, 1))?;
+            let mut copy = String::new();
+            copy.try_reserve_exact(block.len()).map_err(|_| ctx.refuse_codec_limit(
+                "copy NX projected curve block ID", 0, 1))?;
+            copy.push_str(block);
+            data_blocks.push(copy);
+        }
+        if !complete {
+            continue;
+        }
+        let Some(store) = data_blocks.first().and_then(|block| block.rsplit_once(":block#"))
+            .map(|(store, _)| store) else {
+            continue;
+        };
+        if data_blocks.iter().any(|block| {
                 block
                     .rsplit_once(":block#")
                     .is_none_or(|(prefix, _)| prefix != store)
-            }) {
-                return None;
-            }
-            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
-                Ok(Some(content)) => content,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            let (_, operation_key) = operation_label.rsplit_once('#')?;
-            Some(Ok(FeatureConstructionPayload {
-                id: format!(
-                    "nx:feature-history:projected-curve-construction-payload#{operation_key}"
-                ),
-                operation_label: operation_label.to_string(),
-                owner: FeatureConstructionOwner::ProjectedCurve {
-                    operation_kind,
-                    construction_references: field
-                        .iter()
-                        .map(|reference| reference.id.clone())
-                        .collect(),
-                },
-                content,
-            }))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
+        }) {
+            continue;
+        }
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+            continue;
+        };
+        drop(block_reservation);
+        let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
+            continue;
+        };
+        let id = format_charged_text(ctx,
+            format_args!("nx:feature-history:projected-curve-construction-payload#{operation_key}"),
+            "NX projected curve payload identity")?;
+        let operation_label = copy_operation_text(ctx, operation_label,
+            "NX projected curve payload operation")?;
+        let mut construction_references = Vec::new();
+        for reference in field {
+            let identity = copy_operation_text(ctx, &reference.id,
+                "NX projected curve construction reference")?;
+            ctx.charge_collection_items(1, "NX projected curve construction references")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<String>()), "NX projected curve construction references")?;
+            construction_references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX projected curve construction references", 0, 1))?;
+            construction_references.push(identity);
+        }
+        ctx.charge_collection_items(1, "NX projected curve payloads")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureConstructionPayload>()),
+            "NX projected curve payloads")?;
+        payloads.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX projected curve payloads", 0, 1))?;
+        payloads.push(FeatureConstructionPayload {
+            id, operation_label,
+            owner: FeatureConstructionOwner::ProjectedCurve {
+                operation_kind, construction_references,
+            },
+            content,
+        });
+    }
+    Ok(payloads)
 }
 
 /// Decode canonical printable strings from reconstructed projected-curve payloads.
