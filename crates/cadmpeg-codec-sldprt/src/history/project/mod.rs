@@ -129,6 +129,7 @@ impl FeatureProjection {
 }
 
 pub(crate) fn project_feature_model(
+    ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
     let (mut features, parents): (Vec<_>, Vec<_>) = histories
@@ -207,12 +208,13 @@ pub(crate) fn project_feature_model(
 
                             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                                 project_definition(
+                                    ctx,
                                     feature,
                                     &by_source,
                                     &native_by_source,
                                     &features_by_source,
                                     &history.features,
-                                ),
+                                )?,
                             ),
                             native_ref: Some(feature.id.clone()),
                         },
@@ -266,9 +268,10 @@ pub(crate) fn project_feature_model(
 }
 
 pub(crate) fn project_features(
+    ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
-    project_feature_model(histories).map(|projection| projection.features)
+    project_feature_model(ctx, histories).map(|projection| projection.features)
 }
 
 /// Project standalone history notes into the semantic-annotation arena.
@@ -1170,27 +1173,34 @@ pub(crate) fn project_configurations_charged(
 
 /// Project every native feature dimension into the neutral parameter arena.
 fn project_definition(
+    ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
     native_by_source: &HashMap<String, &str>,
     features_by_source: &HashMap<FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> FeatureDefinition {
+) -> Result<FeatureDefinition, CodecError> {
     if feature.input_class.as_deref() == Some("moBaseBody_c") {
-        return FeatureDefinition::Operation(FeatureOperation::StoredGeometry {});
+        return Ok(FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}));
     }
     if feature.input_class.as_deref() == Some("moPlanarSurface_c") {
-        return FeatureDefinition::Operation(FeatureOperation::Unresolved {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        });
+        }));
     }
     if let Some(role) = feature_tree_node_role(feature, history_features) {
-        return FeatureDefinition::Operation(FeatureOperation::TreeNode {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role,
             children: cadmpeg_ir::features::TreeChildren::default(),
-        });
+        }));
     }
     let class = classify(feature);
+    let projected_pattern = if class == Some(FeatureClass::Pattern) {
+        Some(project_pattern(ctx, feature, by_source, native_by_source)?)
+    } else {
+        None
+    };
+    let definition = (|| {
     if class == Some(FeatureClass::CosmeticThread) {
         return project_cosmetic_thread(feature);
     }
@@ -1323,7 +1333,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(feature, native_by_source)
     } else if class == Some(FeatureClass::Pattern) {
-        project_pattern(feature, by_source, native_by_source)
+        projected_pattern.unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Sweep) {
         project_sweep(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Loft) {
@@ -1333,6 +1343,8 @@ fn project_definition(
     } else {
         native_definition(feature)
     }
+    })();
+    Ok(definition)
 }
 
 fn parameter_names(feature: &Feature) -> Vec<String> {

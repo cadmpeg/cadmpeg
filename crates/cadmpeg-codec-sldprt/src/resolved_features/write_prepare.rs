@@ -285,7 +285,6 @@ fn patch_spatial_sketches(
         }
     }
 
-    let mut features = crate::history::project::project_features(&native.feature_histories)?;
     let projection_bytes = native
         .feature_input_lanes
         .iter()
@@ -297,6 +296,7 @@ fn patch_spatial_sketches(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
+    let mut features = crate::history::project::project_features(&ctx, &native.feature_histories)?;
     let (projected_sketches, mut projected_entities) = spatial_sketches(
         &ctx,
         &mut features,
