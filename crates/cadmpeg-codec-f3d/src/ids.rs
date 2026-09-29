@@ -387,19 +387,37 @@ pub(crate) fn neutral_component_insert_occurrence_id(
 
 /// Neutral assembly-joint key projected from one Design parameter scope.
 pub(crate) fn neutral_assembly_joint_id(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     scope: &crate::records::feature::scope::DesignParameterScope,
-) -> cadmpeg_ir::products::JointId {
-    let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
-    let key = cadmpeg_ir::ids::IdentityKey::from(stream.len())
-        .then(cadmpeg_ir::identity_key!(":"))
-        .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(
-            native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
-        ))
-        .then(scope.record_index);
-    cadmpeg_ir::products::JointId::compose(
-        &cadmpeg_ir::identity_namespace!("f3d", "model", "joint"),
-        key,
-    )
+) -> Result<cadmpeg_ir::products::JointId, cadmpeg_core::CodecError> {
+    struct JointKey<'a> {
+        stream: &'a str,
+        encoded_len: usize,
+        record_index: u32,
+    }
+    impl std::fmt::Display for JointKey<'_> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(formatter, "{}:", self.encoded_len)?;
+            write_escaped_identity_component(formatter, self.stream)?;
+            write!(formatter, "{}", self.record_index)
+        }
+    }
+    let stream = native_stream(&scope.id).unwrap_or(DEFAULT_STREAM);
+    let Some(ctx) = ctx else {
+        let encoded = identity_key_component(stream);
+        let key = cadmpeg_ir::ids::IdentityKey::from(encoded.len())
+            .then(cadmpeg_ir::identity_key!(":"))
+            .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(stream))
+            .then(scope.record_index);
+        return Ok(cadmpeg_ir::products::JointId::compose(
+            &cadmpeg_ir::identity_namespace!("f3d", "model", "joint"), key,
+        ));
+    };
+    let encoded_len = escaped_scope_len(ctx, stream, "retain F3D neutral joint ID")?;
+    let id = native_scoped_id_charged(ctx, "model", "joint", JointKey {
+        stream, encoded_len, record_index: scope.record_index,
+    })?;
+    cadmpeg_ir::products::JointId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 /// The Design configuration record key for the archive entry `entry_name`.
@@ -1535,6 +1553,37 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "retain F3D native record ID"
         ));
+    }
+
+    #[test]
+    fn neutral_assembly_joint_id_charged_matches_context_free_bytes() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#7",
+            crate::records::feature::scope::DesignFeatureKind::Assemble,
+            7,
+        );
+        assert_eq!(
+            super::neutral_assembly_joint_id(Some(&ctx), &scope).unwrap(),
+            super::neutral_assembly_joint_id(None, &scope).unwrap(),
+        );
+    }
+
+    #[test]
+    fn neutral_assembly_joint_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#7",
+            crate::records::feature::scope::DesignFeatureKind::Assemble,
+            7,
+        );
+        let error = super::neutral_assembly_joint_id(Some(&ctx), &scope).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native record ID"));
     }
 
     #[test]

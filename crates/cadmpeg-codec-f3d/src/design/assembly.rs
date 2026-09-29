@@ -242,6 +242,7 @@ pub(crate) fn legacy_as_built_421_generation(
 
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
 pub(crate) fn project_assembly_joints(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     features: &[Feature],
@@ -322,7 +323,7 @@ pub(crate) fn project_assembly_joints(
             }
             None => (None, None),
         };
-        let id = crate::ids::neutral_assembly_joint_id(scope);
+        let id = crate::ids::neutral_assembly_joint_id(ctx, scope)?;
         let [first_operand, second_operand] = operands;
         let first_frame = super::components::neutral_transform(frames[0].transform)?;
         let second_frame = super::components::neutral_transform(frames[1].transform)?;
