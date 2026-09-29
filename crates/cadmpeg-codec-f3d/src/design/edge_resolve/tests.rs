@@ -6,16 +6,32 @@
     clippy::uninlined_format_args
 )]
 
-use super::{
-    contextual_deleted_edge_group_candidates, deleted_boundary_edge_group_candidates,
-    partial_historical_edge_selection, project_fixed_fillet, radius_edge_identity_group_candidates,
-    resolved_edge_candidate_intersection, resolved_edge_flange_group, resolved_edge_group,
-    resolved_edge_operand, resolved_edge_treatment_group,
-    resolved_edge_treatment_group_with_corners, resolved_surface_patch_edge_group,
-    result_boundary_reference_edge_group_candidates, surface_patch_grouped_recipe_edges,
-    transition_chain_is_supported_by_recipe, unique_hem_transition_edge_candidate,
-    SurfacePatchRecipeEdges,
-};
+use super::contextual_deleted_edge_group_candidates;
+use super::deleted_boundary_edge_group_candidates;
+use super::partial_historical_edge_selection;
+use super::project_fixed_fillet;
+use super::radius_edge_identity_group_candidates;
+use super::resolved_edge_flange_group;
+use super::resolved_edge_group;
+use super::resolved_edge_operand;
+use super::resolved_edge_treatment_group;
+use super::resolved_edge_treatment_group_with_corners;
+use super::resolved_surface_patch_edge_group;
+use super::result_boundary_reference_edge_group_candidates;
+use super::surface_patch_grouped_recipe_edges;
+use super::transition_chain_is_supported_by_recipe;
+use super::unique_hem_transition_edge_candidate;
+use super::SurfacePatchRecipeEdges;
+use crate::records::dimensions::DesignRecipeReference;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
+use crate::records::topology::edge_identity::DesignEdgeOperand;
+use cadmpeg_core::decode::DecodeArena;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::DecodePolicy;
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_ir::ids::EdgeId;
 
 mod surface_patch_allocation;
 mod edge_flange_allocation;
@@ -32,16 +48,6 @@ mod boundary_candidate_allocation;
 mod contextual_deleted_allocation;
 mod unique_assignment_allocation;
 mod main_group_allocation;
-use crate::records::{
-    dimensions::DesignRecipeReference,
-    feature::scope::DesignParameterScope,
-    topology::{
-        construction::DesignConstructionOperandGroup, edge_identity::DesignEdgeIdentityOperand,
-        edge_identity::DesignEdgeOperand,
-    },
-};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_ir::ids::EdgeId;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
     serde_json::from_value(serde_json::json!({
@@ -1286,259 +1292,6 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
 }
 
 #[test]
-fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
-    use crate::records::topology::{
-        edge_recipe::DesignEdgeRecipeSelectorContext, edge_recipe::DesignTopologyIncidentSide,
-        edge_recipe::DesignTopologyRecipeEntry, edge_recipe::DesignTopologyRecipeTriplet,
-    };
-
-    let selector = |selector, edges: &[i64]| DesignEdgeRecipeSelectorContext {
-        selector,
-        clauses: vec![None, None],
-        incidence_matching_edge_slots: edges.to_vec(),
-
-        boundary_count_matching_edge_slots: Vec::new(),
-    };
-    let selector_with_counts = |ordinal: i32, incidence: &[i64], counts: &[i64]| {
-        let mut context = selector(ordinal, incidence);
-        context.boundary_count_matching_edge_slots = counts.to_vec();
-        context
-    };
-    assert_eq!(
-        resolved_edge_candidate_intersection(
-            &[selector(0, &[17, 18]), selector(1, &[17, 19])],
-            [&[17, 20][..], &[15, 17][..]],
-        ),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(
-            &[selector(0, &[17, 18]), selector(1, &[17, 18])],
-            [&[17, 18][..]],
-        ),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(
-            &[selector(0, &[17]), selector(1, &[18])],
-            [&[17, 18][..]],
-        ),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[selector(0, &[17]), selector(1, &[])], [&[17][..]],),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[selector(0, &[17])], [&[][..]]),
-        None
-    );
-    assert_eq!(resolved_edge_candidate_intersection(&[], [&[17][..]]), None);
-    assert_eq!(
-        resolved_edge_candidate_intersection(
-            &[
-                selector_with_counts(0, &[17, 18], &[17, 19]),
-                selector_with_counts(1, &[17, 20], &[17, 21]),
-            ],
-            std::iter::empty::<&[i64]>(),
-        ),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(
-            &[
-                selector_with_counts(0, &[17, 18], &[17, 18]),
-                selector_with_counts(1, &[17, 18], &[17, 18]),
-            ],
-            std::iter::empty::<&[i64]>(),
-        ),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(
-            &[
-                selector_with_counts(0, &[17], &[18]),
-                selector_with_counts(1, &[17], &[18]),
-            ],
-            std::iter::empty::<&[i64]>(),
-        ),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[], [&[17, 18][..], &[17, 19][..]]),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[], [&[][..], &[17, 18][..], &[][..], &[17, 19][..]],),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[], [&[17, 18][..], &[17, 18][..]]),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[selector(0, &[18])], [&[17, 18][..], &[17, 19][..]],),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(
-            &[
-                selector_with_counts(0, &[], &[17, 18]),
-                selector_with_counts(1, &[], &[17, 19]),
-            ],
-            [&[17, 20][..]],
-        ),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(
-            &[selector_with_counts(0, &[17], &[18])],
-            [&[17, 18][..]],
-        ),
-        None
-    );
-    assert_eq!(
-        crate::design::edge_resolve::edge_assignment_candidates(
-            &[selector_with_counts(0, &[], &[17, 18])],
-            [&[17][..]],
-            None,
-        ).unwrap(),
-        Some(vec![17])
-    );
-    assert_eq!(
-        crate::design::edge_resolve::edge_assignment_candidates(
-            &[selector_with_counts(0, &[18], &[17, 18])],
-            [&[17, 18][..]],
-            None,
-        ).unwrap(),
-        Some(vec![18])
-    );
-    assert_eq!(
-        crate::design::edge_resolve::edge_assignment_candidates(
-            &[selector_with_counts(0, &[18], &[17, 18])],
-            [&[17][..]],
-            None,
-        ).unwrap(),
-        None
-    );
-    let assignment_candidates = [
-        crate::design::edge_resolve::edge_assignment_candidates(
-            &[selector_with_counts(0, &[], &[17, 18])],
-            [&[17, 18][..]],
-            None,
-        )
-        .unwrap()
-        .unwrap(),
-        crate::design::edge_resolve::edge_assignment_candidates(
-            &[selector_with_counts(0, &[18], &[17, 18])],
-            [&[17, 18][..]],
-            None,
-        )
-        .unwrap()
-        .unwrap(),
-    ];
-    assert_eq!(
-        crate::design::edge_resolve::unique_bipartite_assignment(&assignment_candidates, None)
-            .unwrap(),
-        Some(vec![17, 18])
-    );
-    let triplet = DesignTopologyRecipeTriplet {
-        outer: std::num::NonZeroU32::new(3).unwrap(),
-        middle: 2,
-        incident: Some(
-            crate::records::topology::edge_recipe::DesignTopologyIncident {
-                ordinal: 1,
-                side: DesignTopologyIncidentSide::Preceding,
-            },
-        ),
-    };
-    let mut common = selector(0, &[]);
-    common.clauses[0] = Some(
-        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
-            entry: DesignTopologyRecipeEntry {
-                selector: 0,
-                boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-                topology_triplets: [triplet, triplet],
-            },
-            triplet_edge_slots: [vec![17, 18], vec![17]],
-        },
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[common.clone()], [&[17, 18][..]]),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[common], [&[][..]]),
-        Some(17)
-    );
-    let mut common = selector(0, &[]);
-    common.clauses[0] = Some(
-        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
-            entry: DesignTopologyRecipeEntry {
-                selector: 0,
-                boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-                topology_triplets: [triplet, triplet],
-            },
-            triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]],
-        },
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[common.clone()], [&[17][..]]),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[common], [&[19][..]]),
-        None
-    );
-    let clause = |triplet_edge_slots| {
-        Some(
-            crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
-                entry: DesignTopologyRecipeEntry {
-                    selector: 0,
-                    boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-                    topology_triplets: [
-                        triplet,
-                        DesignTopologyRecipeTriplet {
-                            outer: std::num::NonZeroU32::new(4).unwrap(),
-                            incident: Some(
-                                crate::records::topology::edge_recipe::DesignTopologyIncident {
-                                    ordinal: 2,
-                                    side: DesignTopologyIncidentSide::Preceding,
-                                },
-                            ),
-                            ..triplet
-                        },
-                    ],
-                },
-                triplet_edge_slots,
-            },
-        )
-    };
-    let mut cross_clause = selector(0, &[]);
-    cross_clause.clauses = vec![
-        clause([vec![18], vec![17, 19]]),
-        clause([vec![20], vec![17]]),
-    ];
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[cross_clause.clone()], std::iter::empty::<&[i64]>(),),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[cross_clause.clone()], [&[17, 21][..]],),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[cross_clause.clone()], [&[18][..]]),
-        None
-    );
-    cross_clause.clauses = vec![clause([vec![18], vec![17]]), clause([vec![18], vec![17]])];
-    assert_eq!(
-        resolved_edge_candidate_intersection(&[cross_clause], std::iter::empty::<&[i64]>(),),
-        None
-    );
-}
-
-#[test]
 fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
     let selector = |candidates: &[i64]| {
         crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
@@ -1992,3 +1745,5 @@ fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
         None
     );
 }
+
+mod candidate_intersection;
