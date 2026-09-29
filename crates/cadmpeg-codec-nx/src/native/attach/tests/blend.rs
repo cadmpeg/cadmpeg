@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::body_writing_unresolved_feature_definition;
-use crate::native::attach::EdgeSelection;
-use crate::native::attach::FaceSelection;
-use crate::native::attach::RadiusSpec;
+use crate::native::attach::feature_projection::body_writing_unresolved_feature_definition;
+use cadmpeg_ir::features::EdgeSelection;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};

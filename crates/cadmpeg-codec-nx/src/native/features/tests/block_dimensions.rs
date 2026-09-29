@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::features::feature_block_dimensions;
+use crate::native::features::construction_records::feature_block_dimensions;
 use crate::native::features::FeatureConstructionMember;
 
 fn block_dimensions_for_test(

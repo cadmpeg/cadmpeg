@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::hole_body_projection;
-use crate::native::attach::simple_hole_operations;
+use crate::native::attach::feature_projection::hole_body_projection;
+use crate::native::attach::feature_projection::simple_hole_operations;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::scalar::Length;

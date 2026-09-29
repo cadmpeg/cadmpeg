@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::features::data_block_object_frames;
+use crate::native::features::construction_records::data_block_object_frames;
 use crate::test_support::test_prt::prt_with_named_payloads;
 
 fn data_block_object_frame_route_refusal(

@@ -2,23 +2,23 @@
 
 use crate::native::attach::attach_active_configuration_feature_states;
 use crate::native::attach::attach_active_configuration_parameter_values;
-use crate::native::attach::attach_block_dimension_parameter_consumers;
 use crate::native::attach::attach_current_feature_states;
-use crate::native::attach::attach_expression_parameters;
 use crate::native::attach::attach_sketch_graph;
-use crate::native::attach::blind_hole_operations;
-use crate::native::attach::boolean_target_output;
-use crate::native::attach::copy_feature_output_bodies;
-use crate::native::attach::expression_parameter_id;
+use crate::native::attach::feature_projection::blind_hole_operations;
+use crate::native::attach::body_selection::boolean_target_output;
+use crate::native::attach::body_selection::copy_feature_output_bodies;
+use crate::native::attach::expressions::attach_block_dimension_parameter_consumers;
+use crate::native::attach::expressions::attach_expression_parameters;
+use crate::native::attach::expressions::expression_parameter_id;
 use crate::native::attach::extrude_boolean_op;
 use crate::native::attach::extrude_feature_definition;
-use crate::native::attach::hole_package_projection;
-use crate::native::attach::native_feature_parameters;
+use crate::native::attach::feature_projection::hole_package_projection;
+use crate::native::attach::feature_projection::native_feature_parameters;
 use crate::native::attach::native_result_body_identity;
-use crate::native::attach::non_boolean_feature_definition_with_parameters;
+use crate::native::attach::feature_projection::non_boolean_feature_definition_with_parameters;
 use crate::native::attach::parameter_owner_dependencies;
 use crate::native::attach::resolve_rm_source_color_bindings;
-use crate::native::attach::simple_hole_operations;
+use crate::native::attach::feature_projection::simple_hole_operations;
 use crate::native::attach::Angle;
 use crate::native::attach::AnnotationBuilder;
 use crate::native::attach::BodyId;
@@ -31,8 +31,8 @@ use crate::native::attach::FeatureDefinition;
 use crate::native::attach::FeatureId;
 use crate::native::attach::FeatureOperation;
 use crate::native::attach::FeatureTreeNodeRole;
-use crate::native::attach::HolePackageSources;
-use crate::native::attach::HoleProjection;
+use crate::native::attach::feature_projection::HolePackageSources;
+use crate::native::attach::feature_projection::HoleProjection;
 use crate::native::attach::Length;
 use crate::native::attach::ParameterId;
 use crate::native::attach::ParameterValue;
@@ -243,7 +243,7 @@ fn hole_selector_result(
         HoleSelectorRoute::Simple => simple_hole_operations(&ctx, &[template], &[], &positions),
         HoleSelectorRoute::Blind => blind_hole_operations(&ctx, &[template], &positions),
         HoleSelectorRoute::Counterbore => {
-            crate::native::attach::counterbore_operations(&ctx, &[template], &positions)
+            crate::native::attach::feature_projection::counterbore_operations(&ctx, &[template], &positions)
         }
     }
 }

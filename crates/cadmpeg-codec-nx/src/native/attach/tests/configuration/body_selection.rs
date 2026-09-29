@@ -2,11 +2,11 @@ use crate::decode::feature_completeness::combine_definition_is_incomplete;
 
 use crate::native::attach::attach_initial_segment_bodies;
 use crate::native::attach::boolean_feature_definition;
-use crate::native::attach::boolean_participant_writer;
-use crate::native::attach::boolean_target_writer;
+use crate::native::attach::body_selection::boolean_participant_writer;
+use crate::native::attach::body_selection::boolean_target_writer;
 use crate::native::attach::feature_body_outputs;
-use crate::native::attach::feature_body_selection;
-use crate::native::attach::feature_body_selection_with_offset_blocks;
+use crate::native::attach::body_selection::feature_body_selection;
+use crate::native::attach::body_selection::feature_body_selection_with_offset_blocks;
 use crate::native::attach::native_primary_body_references;
 use crate::native::attach::AnnotationBuilder;
 use crate::native::attach::CadIr;

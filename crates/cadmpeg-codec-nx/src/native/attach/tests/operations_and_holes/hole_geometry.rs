@@ -1,15 +1,15 @@
-use crate::native::attach::hole_axis_placements_for_operations;
-use crate::native::attach::hole_body_projection;
-use crate::native::attach::hole_operations_are_unique;
-use crate::native::attach::hole_operations_by_body;
-use crate::native::attach::insert_hole_output_body;
-use crate::native::attach::primary_hole_outputs;
-use crate::native::attach::simple_hole_chamfers;
-use crate::native::attach::simple_hole_native_properties;
+use crate::native::attach::feature_projection::hole_axis_placements_for_operations;
+use crate::native::attach::feature_projection::hole_body_projection;
+use crate::native::attach::feature_projection::hole_operations_are_unique;
+use crate::native::attach::feature_projection::hole_operations_by_body;
+use crate::native::attach::feature_projection::insert_hole_output_body;
+use crate::native::attach::feature_projection::primary_hole_outputs;
+use crate::native::attach::feature_projection::simple_hole_chamfers;
+use crate::native::attach::feature_projection::simple_hole_native_properties;
 use crate::native::attach::tests::hole_diameters_for_operations;
 use crate::native::attach::tests::simple_hole_diameters;
-use crate::native::attach::SolvedSurfaceGeometry;
-use crate::native::attach::SurfaceGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 
 fn simple_hole_property_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),

@@ -2,26 +2,26 @@
 
 use cadmpeg_test_support::edit;
 
-use crate::native::attach::blend_feature_definition;
-use crate::native::attach::blend_support_bipartition;
-use crate::native::attach::blind_hole_axis_placements_for_operations;
-use crate::native::attach::blind_hole_body_projection;
-use crate::native::attach::blind_hole_operations;
-use crate::native::attach::connected_solid_body_faces;
-use crate::native::attach::counterbore_axis_placements_for_operations;
-use crate::native::attach::counterbore_body_projection;
-use crate::native::attach::counterbore_cylinders;
-use crate::native::attach::counterbore_operations;
-use crate::native::attach::cylindrical_face_witnesses;
-use crate::native::attach::non_boolean_feature_definition_with_parameters;
-use crate::native::attach::offset_surface_feature_definition;
-use crate::native::attach::plane_annulus_witness;
+use crate::native::attach::feature_projection::blend_feature_definition;
+use crate::native::attach::feature_projection::blend_support_bipartition;
+use crate::native::attach::feature_projection::blind_hole_axis_placements_for_operations;
+use crate::native::attach::feature_projection::blind_hole_body_projection;
+use crate::native::attach::feature_projection::blind_hole_operations;
+use crate::native::attach::feature_projection::connected_solid_body_faces;
+use crate::native::attach::feature_projection::counterbore_axis_placements_for_operations;
+use crate::native::attach::feature_projection::counterbore_body_projection;
+use crate::native::attach::feature_projection::counterbore_cylinders;
+use crate::native::attach::feature_projection::counterbore_operations;
+use crate::native::attach::feature_projection::cylindrical_face_witnesses;
+use crate::native::attach::feature_projection::non_boolean_feature_definition_with_parameters;
+use crate::native::attach::feature_projection::offset_surface_feature_definition;
+use crate::native::attach::feature_projection::plane_annulus_witness;
 use crate::native::attach::preceding_operation_dependency;
-use crate::native::attach::thicken_feature_definition;
-use crate::native::attach::CounterboreDimensions;
-use crate::native::attach::EdgeSelection;
-use crate::native::attach::HoleProjection;
-use crate::native::attach::NxBlendFamily;
+use crate::native::attach::feature_projection::thicken_feature_definition;
+use crate::native::attach::feature_projection::CounterboreDimensions;
+use cadmpeg_ir::features::EdgeSelection;
+use crate::native::attach::feature_projection::HoleProjection;
+use crate::native::attach::feature_projection::NxBlendFamily;
 use crate::test_support::test_bytes::attach_test_body_surface;
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
 use cadmpeg_ir::geometry::{
