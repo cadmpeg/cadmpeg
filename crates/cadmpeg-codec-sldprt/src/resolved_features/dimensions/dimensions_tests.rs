@@ -1313,6 +1313,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
 
 #[test]
 fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
+    const EPS_FRAME: f64 = 1.0e-8;
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
@@ -1327,7 +1328,7 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
-    let transform = super::super::transforms::sketch_frame_marker_transform(&sketch, 1.0e-8)
+    let transform = super::super::transforms::sketch_frame_marker_transform(&sketch, EPS_FRAME)
         .expect("axis-aligned sketch has a marker transform");
     let arc = super::DimensionedArcNative {
         center: [0.0, 0.0],
@@ -1336,7 +1337,8 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         endpoints: Some(["start".into(), "end".into()]),
     };
 
-    let arc = super::transformed_dimensioned_arc(transform, &arc, 1000.0, 1.0e-8)
+    let arc = super::transformed_dimensioned_arc(&cadmpeg_test_support::service_decode_context(), transform, &arc, 1000.0, EPS_FRAME)
+        .expect("endpoint copy resources")
         .expect("valid dimensioned arc");
     assert_eq!(arc.endpoint_refs, vec!["end", "start"]);
     let SketchGeometryDefinition::Arc {
