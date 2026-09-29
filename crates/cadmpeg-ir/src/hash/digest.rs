@@ -11,7 +11,7 @@ pub struct Sha256Digest(String);
 
 /// Text that does not spell a lowercase hexadecimal SHA-256 digest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("SHA-256 digest must contain exactly 64 lowercase hexadecimal characters")]
+#[error("sha256 digest must contain exactly 64 lowercase hexadecimal characters")]
 pub struct InvalidSha256Digest;
 
 impl Sha256Digest {
