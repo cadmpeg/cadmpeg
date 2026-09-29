@@ -161,7 +161,7 @@ pub(super) fn transfer_section_entities(
         let Some(geometry) = segment_geometry(segment)? else { continue; };
         let suffix = section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)?;
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else { continue; };
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -178,7 +178,7 @@ pub(super) fn transfer_section_entities(
             } else {
                 Exactness::Derived
             },
-        );
+        )?;
         let construction = matches!(geometry.definition(), SketchGeometryDefinition::ReferenceLine { .. })
             || !unique_segment_ids.contains(&segment.external_id)
             || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
@@ -215,14 +215,14 @@ pub(super) fn transfer_section_entities(
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "unresolved_section_segment",
             Exactness::ByteExact,
-        );
+        )?;
         let point_ids = segment.point_ids();
         let reverse = [point_ids[1], point_ids[0]];
         let endpoints = match segment.kind {
@@ -269,7 +269,7 @@ pub(super) fn transfer_section_entities(
             geometry.definition(),
             SketchGeometryDefinition::Circle { .. }
         );
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -284,7 +284,7 @@ pub(super) fn transfer_section_entities(
             } else {
                 Exactness::ByteExact
             },
-        );
+        )?;
         let construction = !unique_external_id || !profile_entities.contains(&id);
         let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
         let sketch_copy = sketch_id.copy_admitted(ctx, "creo section entity sketch identity")?;
@@ -316,7 +316,7 @@ pub(super) fn transfer_section_entities(
             geometry.definition(),
             SketchGeometryDefinition::Point { .. }
         );
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -331,7 +331,7 @@ pub(super) fn transfer_section_entities(
             } else {
                 Exactness::ByteExact
             },
-        );
+        )?;
         let construction = !unique_external_id || !profile_entities.contains(&id);
         let sketch_copy = sketch_id.copy_admitted(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
@@ -361,7 +361,7 @@ pub(super) fn transfer_section_entities(
         let geometry = copied_or_native_geometry(ctx, centered_line_geometries, segment.offset, "line")?;
         let solved_geometry =
             matches!(geometry.definition(), SketchGeometryDefinition::Line { .. });
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -376,7 +376,7 @@ pub(super) fn transfer_section_entities(
             } else {
                 Exactness::ByteExact
             },
-        );
+        )?;
         let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
         let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, [0, 1])?;
         let sketch_copy = sketch_id.copy_admitted(ctx, "creo section entity sketch identity")?;
@@ -409,7 +409,7 @@ pub(super) fn transfer_section_entities(
             geometry.definition(),
             SketchGeometryDefinition::ReferenceLine { .. }
         );
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -424,7 +424,7 @@ pub(super) fn transfer_section_entities(
             } else {
                 Exactness::ByteExact
             },
-        );
+        )?;
         let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
         let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, segment.point_ids.into_iter().flatten())?;
         let sketch_copy = sketch_id.copy_admitted(ctx, "creo section entity sketch identity")?;
@@ -453,14 +453,14 @@ pub(super) fn transfer_section_entities(
             continue;
         };
         let construction = !unique_external_id || !profile_entities.contains(&id);
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "unresolved_section_bounded_curve",
             Exactness::ByteExact,
-        );
+        )?;
         let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, segment.point_ids)?;
         let sketch_copy = sketch_id.copy_admitted(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
@@ -491,14 +491,14 @@ pub(super) fn transfer_section_entities(
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, suffix)? else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "unresolved_section_conic",
             Exactness::ByteExact,
-        );
+        )?;
         let sketch_copy = sketch_id.copy_admitted(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let geometry = native_section_geometry(ctx, "conic")?;
@@ -546,14 +546,14 @@ pub(super) fn transfer_section_entities(
             })?)
         };
         let construction = !unique_external_id || !profile_entities.contains(&id);
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "opaque_section_segment",
             Exactness::ByteExact,
-        );
+        )?;
         let geometry_ref = placed_sketch_curve_ref(
             ctx,
             transform,
@@ -617,14 +617,14 @@ pub(super) fn transfer_section_entities(
         let Some(curve_id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             entity_id.as_str(),
             "FeatDefs",
             offset as u64,
             "saved_section_entity",
             Exactness::Derived,
-        );
+        )?;
         if let Some(external_id) = external_id.filter(|_| generated) {
             let copied = geometry.copy_admitted(ctx, "creo generated saved geometry copy")?;
             ctx.try_reserve_items(&mut generated_saved_geometries, 1, "creo generated saved geometry rows")?;
@@ -705,14 +705,14 @@ pub(super) fn transfer_section_entities(
         if entities.iter().any(|entity| entity.id() == &entity_id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             entity_id.as_str(),
             "FeatDefs",
             spline.offset as u64,
             "saved_interpolation_spline",
             Exactness::Derived,
-        );
+        )?;
         let native_ref = ctx.format_retained(format_args!("{}:saved_spline#{suffix}", sketch_native_ref_admitted(ctx, sketch_id)?), "creo saved spline native reference")?;
         let geometry_ref = transform.map(|_| ctx.copy_retained_text(curve_id.as_str(), "creo saved spline geometry reference")).transpose()?;
         let entity = SketchEntity::new(entity_id, sketch_id.copy_admitted(ctx, "creo saved spline sketch identity")?, geometry.copy_admitted(ctx, "creo saved spline geometry copy")?)
@@ -739,14 +739,14 @@ pub(super) fn transfer_section_entities(
         if entities.iter().any(|existing| existing.id() == entity.id()) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             entity.id().as_str(),
             "FeatDefs",
             offset as u64,
             "unresolved_saved_section_entity",
             Exactness::ByteExact,
-        );
+        )?;
         push_section_entity(ctx, &mut entities, entity)?;
     }
     let saved_profiles = saved_profile_chains(ctx, sketch_id, &generated_saved_geometries)?;
@@ -781,14 +781,14 @@ pub(super) fn transfer_section_entities(
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "FeatDefs",
                 segment.offset as u64,
                 "placed_section_curve",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
                 ctx,
@@ -821,14 +821,14 @@ pub(super) fn transfer_section_entities(
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "FeatDefs",
                 segment.offset as u64,
                 "placed_section_circle",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
                 ctx,
@@ -862,14 +862,14 @@ pub(super) fn transfer_section_entities(
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "FeatDefs",
                 segment.offset as u64,
                 "placed_section_line",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
                 ctx,
@@ -891,14 +891,14 @@ pub(super) fn transfer_section_entities(
             let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {
                 continue;
             };
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "FeatDefs",
                 offset as u64,
                 "placed_saved_section_curve",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
                 ctx,

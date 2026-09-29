@@ -717,14 +717,14 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         source_carriers.replace_surface_geometry(ctx, surface, mirrored)?;
         reconciled += 1;
         if let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, face_id) {
-            annotate(
+            annotate(ctx,
                 annotations,
                 &surface.id,
                 "VisibGeom",
                 row.offset as u64,
                 "support_apex_cone_pcurve_branch",
                 Exactness::Derived,
-            );
+            )?;
         }
     }
     Ok(reconciled)
@@ -1599,14 +1599,14 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             continue;
         }
         ctx.charge_collection_items(1, "creo transferred analytic pcurve nodes")?;
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             offset as u64,
             "analytic_pcurve_carrier",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,

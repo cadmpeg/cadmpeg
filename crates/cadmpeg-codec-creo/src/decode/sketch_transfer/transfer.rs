@@ -521,14 +521,14 @@ pub(in super::super) fn transfer_sketches(
             if entities.iter().any(|entity| entity.id() == &id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "solver_only_section_entity",
                 Exactness::ByteExact,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model sketch_entities")?;
             ctx.try_reserve_items(&mut entities, 1, "creo solver-only sketch entities")?;
             let native_kind = match solver_only_section_entity_family(definition, external_id) {
@@ -662,14 +662,14 @@ pub(in super::super) fn transfer_sketches(
             if !reconciled {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_dimension_constraint",
                 Exactness::ByteExact,
-            );
+            )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         for (constraint, offset) in section_segment_radius_constraints_for_emitted(
@@ -679,14 +679,14 @@ pub(in super::super) fn transfer_sketches(
             &emitted_entity_ids,
             &available_parameter_ids,
         )? {
-            annotate(
+            annotate(ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_segment_radius_constraint",
                 Exactness::ByteExact,
-            );
+            )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         let equation_constraints = crate::decode::collect_items(ctx,
@@ -763,14 +763,14 @@ pub(in super::super) fn transfer_sketches(
             if rejected_equation_offsets.contains(&offset) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_equation_constraint",
                 Exactness::ByteExact,
-            );
+            )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         let typed_equation_offsets = collect_numeric_set(
@@ -782,14 +782,14 @@ pub(in super::super) fn transfer_sketches(
         for (constraint, offset) in
             section_equation_native_constraints(ctx, definition, &sketch_id, &typed_equation_offsets)?
         {
-            annotate(
+            annotate(ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_native_equation_constraint",
                 Exactness::ByteExact,
-            );
+            )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         for (mut constraint, offset) in section_skamp_constraints_for_geometry(
@@ -805,20 +805,20 @@ pub(in super::super) fn transfer_sketches(
             {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_solver_constraint",
                 Exactness::ByteExact,
-            );
+            )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         source_carriers.admit_sketch_entities(ctx, ir, entities)?;
         source_carriers.admit_sketch_constraints(ctx, ir, constraints)?;
         let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
-        annotate(
+        annotate(ctx,
             annotations,
             sketch_id.as_str(),
             "FeatDefs",
@@ -829,7 +829,7 @@ pub(in super::super) fn transfer_sketches(
                 "unplaced_section"
             },
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model sketches")?;
         source_carriers.admit_sketch(
             ctx,
@@ -848,14 +848,14 @@ pub(in super::super) fn transfer_sketches(
             let Some(feature_id) = sketch_feature_id_admitted(ctx, &sketch_id)? else {
                 continue;
             };
-            annotate(
+            annotate(ctx,
                 annotations,
                 feature_id.as_str(),
                 "FeatDefs",
                 source_offset as u64,
                 "section_sketch_feature",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model features")?;
             let feature = Feature {
                 id: feature_id,
@@ -931,7 +931,7 @@ fn emit_verhor_constraint(
     let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(constraint_definition) else {
         return Ok(());
     };
-    annotate(annotations, id.as_str(), "FeatDefs", offset as u64, "section_verhor_constraint", Exactness::ByteExact);
+    annotate(ctx, annotations, id.as_str(), "FeatDefs", offset as u64, "section_verhor_constraint", Exactness::ByteExact)?;
     let constraint = SketchConstraint {
         id,
         sketch: sketch.copy_admitted(ctx, "creo constraint sketch identity")?,

@@ -492,14 +492,14 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             section.name(),
             record.offset as u64,
             "first_instance_surface_prototype",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -646,14 +646,14 @@ pub(in super::super) fn transfer_positional_spline_replays(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             section.name(),
             parameter.body_offset as u64,
             "positional_spline_prototype_replay",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -815,14 +815,14 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "legacy_ascii",
             carrier.offset as u64,
             "legacy_surface_prototype_carrier",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,

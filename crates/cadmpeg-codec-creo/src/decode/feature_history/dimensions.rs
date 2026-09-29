@@ -411,14 +411,14 @@ pub(in super::super) fn transfer_feature_dimensions(
                 id.copy_admitted(ctx, "creo relation parameter identities")?,
             );
         }
-        annotate(
+        annotate(ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
             dimension.offset as u64,
             "section_dimension",
             Exactness::Derived,
-        );
+        )?;
         let mut properties = BTreeMap::new();
         insert_dimension_property(ctx, &mut properties, "definition_id", definition.identity.id())?;
         insert_dimension_property(ctx, &mut properties, "source_ordinal", source_ordinal)?;

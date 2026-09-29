@@ -90,14 +90,14 @@ pub(super) fn preserve_passthrough_sections(
         let namespace = cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section")
             .map_err(CodecError::malformed)?;
         let id = UnknownId::compose(&namespace, offset);
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             section.name(),
             offset as u64,
             tag,
             exactness,
-        );
+        )?;
         unknowns.push(UnknownRecord::retained(
             id,
             offset as u64,
@@ -129,14 +129,15 @@ where
     K::Payload: Serialize,
 {
     emit_arena(ctx, ir, annotations, key, records, |annotations, record| {
-        annotate(
+        annotate(ctx,
             annotations,
             record.id(),
             legacy_source_stream(scan, record.offset),
             record.offset as u64,
             tag,
             Exactness::ByteExact,
-        );
+        )?;
+        Ok(())
     })
 }
 
@@ -156,14 +157,15 @@ pub(super) fn emit_legacy_arenas(
         "legacy_objects",
         &legacy.persistence.objects,
         |annotations, record| {
-            annotate(
+            annotate(ctx,
                 annotations,
                 record.id(),
                 legacy_source_stream(scan, record.offset),
                 record.offset as u64,
                 "legacy_type_0_object",
                 Exactness::ByteExact,
-            );
+            )?;
+            Ok(())
         },
     )?;
     emit_legacy_value_arena(
@@ -264,14 +266,15 @@ pub(super) fn emit_legacy_arenas(
             "configuration_driver_tables",
             std::slice::from_ref(table),
             |annotations, record| {
-                annotate(
+                annotate(ctx,
                     annotations,
                     record.id(),
                     legacy_source_stream(scan, record.offset),
                     record.offset as u64,
                     "legacy_configuration_driver_table",
                     Exactness::ByteExact,
-                );
+                )?;
+                Ok(())
             },
         )?;
     }

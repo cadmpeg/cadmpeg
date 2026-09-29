@@ -342,14 +342,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             (&bottom_surface, span.lower()),
             (&top_surface, span.upper()),
         ] {
-            annotate(
+            annotate(ctx,
                 annotations,
                 id,
                 "FeatDefs",
                 transform.offset as u64,
                 "extrusion_cap_plane",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,

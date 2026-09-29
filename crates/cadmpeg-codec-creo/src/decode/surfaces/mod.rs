@@ -281,22 +281,22 @@ pub(super) fn transfer_part_product(
         &crate::identity::MODEL_OCCURRENCE,
         cadmpeg_ir::identity_key!("root"),
     );
-    annotate(
+    annotate(ctx,
         annotations,
         &product_id,
         "archive_header",
         model_name_offset as u64,
         "part_product",
         Exactness::Derived,
-    );
-    annotate(
+    )?;
+    annotate(ctx,
         annotations,
         &occurrence_id,
         "archive_header",
         model_name_offset as u64,
         "part_product_occurrence",
         Exactness::Derived,
-    );
+    )?;
     ctx.charge_entities(1, "admit Creo model product_definitions")?;
     let mut bodies = Vec::new();
     ctx.try_reserve_items(&mut bodies, ir.model.bodies.len(), "creo product body references")?;
@@ -572,14 +572,14 @@ pub(super) fn transfer_fc05_cap_circles(
             ) else {
                 continue;
             };
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "VisibGeom",
                 circle.offset as u64,
                 "fc05_cap_circle",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
                 ctx,
@@ -627,14 +627,14 @@ pub(super) fn transfer_fc05_cap_circles(
         ) else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &surface_id,
             "VisibGeom",
             circle.offset as u64,
             "fc05_axis_cylinder",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,

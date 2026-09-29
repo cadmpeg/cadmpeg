@@ -311,14 +311,14 @@ pub(in super::super) fn transfer_saved_spline_curves(
             let Some(placed) = placed_section_nurbs(ctx, transform, &nurbs)? else {
                 continue;
             };
-            annotate(
+            annotate(ctx,
                 annotations,
                 &curve_id,
                 "FeatDefs",
                 spline.offset as u64,
                 "placed_saved_interpolation_spline",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
                 ctx,
@@ -604,14 +604,14 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "FeatDefs",
                 segment.offset as u64,
                 "protextrude_section_carrier",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
@@ -674,14 +674,14 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "FeatDefs",
                 offset as u64,
                 "protextrude_saved_section_carrier",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
@@ -796,14 +796,14 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 IdentityKey::from(feature_id).colon(suffix_key.clone()),
             );
             if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
-                annotate(
+                annotate(ctx,
                     annotations,
                     &curve_id,
                     "FeatDefs",
                     spline.offset as u64,
                     "protextrude_spline_directrix",
                     Exactness::Derived,
-                );
+                )?;
                 ctx.charge_entities(1, "admit Creo model curves")?;
                 source_carriers.admit_curve(
                     ctx,
@@ -844,22 +844,22 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
                 IdentityKey::from(feature_id).colon(suffix_key),
             );
-            annotate(
+            annotate(ctx,
                 annotations,
                 &surface_id,
                 "FeatDefs",
                 spline.offset as u64,
                 "protextrude_spline_surface",
                 Exactness::Derived,
-            );
-            annotate(
+            )?;
+            annotate(ctx,
                 annotations,
                 &procedural_id,
                 "FeatDefs",
                 spline.offset as u64,
                 "protextrude_spline_surface_construction",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
