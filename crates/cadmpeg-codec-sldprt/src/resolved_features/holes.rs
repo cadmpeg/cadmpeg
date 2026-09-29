@@ -2403,12 +2403,13 @@ fn project_drilled_hole_topology_axes(
             continue;
         }
         let Some(placements) = drilled_hole_topology_candidates(
+            ctx,
             diameter,
             length,
             drill_point_angle,
             cylinders,
             topology.surfaces,
-        ) else {
+        )? else {
             continue;
         };
         set_hole_placements(&mut features[index], placements);
@@ -2417,18 +2418,20 @@ fn project_drilled_hole_topology_axes(
 }
 
 fn drilled_hole_topology_candidates(
+    ctx: &DecodeContext<'_>,
     diameter: f64,
     length: f64,
     drill_point_angle: f64,
     cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
     surfaces: &[Surface],
-) -> Option<Vec<HolePlacement>> {
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     let radius = diameter * 0.5;
     let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let length_tolerance = (length.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_POSITION);
-    let cone_keys = surfaces
-        .iter()
-        .filter_map(|surface| match surface.geometry {
+    let mut cone_keys = HashSet::new();
+    for surface in surfaces {
+        ctx.charge_work(1, "scan SLDPRT drilled hole cone surfaces")?;
+        let key = match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let candidate_radius = cone_surface.radius().get();
@@ -2445,23 +2448,38 @@ fn drilled_hole_topology_candidates(
                 })
             }
             _ => None,
-        })
-        .collect::<HashSet<_>>();
-    if cone_keys.is_empty() {
-        return None;
+        };
+        if let Some(key) = key {
+            if !cone_keys.contains(&key) {
+                ctx.charge_collection_items(1, "index SLDPRT drilled hole cone axes")?;
+                cone_keys.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT drilled hole cone axes", u64::MAX - 1, u64::MAX)
+                })?;
+                cone_keys.insert(key);
+            }
+        }
     }
-    let placements = carrier_placements(cylinders.iter().filter_map(
+    if cone_keys.is_empty() {
+        return Ok(None);
+    }
+    let Some(placements) = carrier_placements(cylinders.iter().filter_map(
         |(origin, axis, candidate_radius, candidate_span, _)| {
             ((candidate_radius - radius).abs() <= radius_tolerance
                 && (candidate_span - length).abs() <= length_tolerance)
                 .then_some((*origin, *axis))
         },
-    ))?;
-    let placements = placements
-        .into_iter()
-        .filter(|placement| hole_axis_key(placement).is_some_and(|key| cone_keys.contains(&key)))
-        .collect::<Vec<_>>();
-    (!placements.is_empty()).then_some(placements)
+    )) else {
+        return Ok(None);
+    };
+    let mut matched = Vec::new();
+    for placement in placements {
+        ctx.charge_work(1, "match SLDPRT drilled hole cone axes")?;
+        if hole_axis_key(&placement).is_some_and(|key| cone_keys.contains(&key)) {
+            ctx.reserve_collection_vec(&mut matched, 1, "collect SLDPRT drilled hole cone axes")?;
+            matched.push(placement);
+        }
+    }
+    Ok((!matched.is_empty()).then_some(matched))
 }
 
 fn expand_seeded_drilled_hole_topology_axes(
@@ -2549,12 +2567,13 @@ fn expand_seeded_drilled_hole_topology_axes(
             continue;
         }
         let primary = drilled_hole_topology_candidates(
+            ctx,
             diameter,
             length,
             drill_point_angle,
             cylinders,
             topology.surfaces,
-        );
+        )?;
         let primary = primary
             .map(|candidates| {
                 unclaimed_seeded_hole_candidates(ctx, features, &siblings, diameter, candidates)
