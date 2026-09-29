@@ -327,16 +327,15 @@ pub(crate) fn enrich_history_move_body_translations(
             let Some(start) = usize::try_from(start).ok().filter(|start| *start < end) else {
                 continue;
             };
-            let data_classes = lane
+            let mut data_classes = lane
                 .classes
                 .iter()
                 .filter(|class| {
                     class.name == "moMoveCopyBodyData_c"
                         && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-                })
-                .collect::<Vec<_>>();
-            let candidate = match data_classes.as_slice() {
-                [class] => {
+                });
+            let candidate = match (data_classes.next(), data_classes.next()) {
+                (Some(class), None) => {
                     move_body_translation_record(&lane.native_payload, start, end, class.offset)
                         .map(|record| record.translation_m)
                 }

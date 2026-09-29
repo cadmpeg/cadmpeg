@@ -85,16 +85,15 @@ pub(super) fn compact_body_selections(
                 .get(start..end)
                 .and_then(|payload| compact_body_selection_vector(payload, start, next_token))
         } else if kind == NativeClassKind::Operation(FeatureClass::MoveBody) {
-            let data_classes = lane
+            let mut data_classes = lane
                 .classes
                 .iter()
                 .filter(|class| {
                     class.name == "moMoveCopyBodyData_c"
                         && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-                })
-                .collect::<Vec<_>>();
-            match data_classes.as_slice() {
-                [class] => super::direct_edits::move_body_translation_record(
+                });
+            match (data_classes.next(), data_classes.next()) {
+                (Some(class), None) => super::direct_edits::move_body_translation_record(
                     &lane.native_payload,
                     start,
                     end,
