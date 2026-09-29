@@ -3787,6 +3787,27 @@ fn copy_operation_text(
     Ok(text)
 }
 
+fn copy_payload_source_blocks<'a>(
+    ctx: &'a DecodeContext<'_>,
+    blocks: impl IntoIterator<Item = &'a str>,
+    operation: &'static str,
+) -> Result<(Vec<String>, cadmpeg_core::decode::ScopedReservation<'a>), CodecError> {
+    let mut ids = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, operation)?;
+    for block in blocks {
+        let bytes = std::mem::size_of::<String>().checked_add(block.len())
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        ctx.charge_collection_items(1, operation)?;
+        ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        let mut id = String::new();
+        id.try_reserve_exact(block.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        id.push_str(block);
+        ids.push(id);
+    }
+    Ok((ids, reservation))
+}
+
 fn format_charged_text(
     ctx: &DecodeContext<'_>,
     args: std::fmt::Arguments<'_>,
@@ -5874,21 +5895,9 @@ pub(super) fn feature_datum_plane_payloads(
         {
             continue;
         }
-        let mut data_blocks = Vec::new();
-        let mut reservation = ctx.reserve_scoped(0, "copy NX datum plane source blocks")?;
-        for block in header.resolved_data_blocks(DatumPlaneBlockLane::Object) {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<String>().checked_add(block.len()).ok_or_else(||
-                    ctx.refuse_codec_limit("copy NX datum plane source blocks", 0, 1))?))?;
-            ctx.charge_collection_items(1, "NX datum plane source blocks")?;
-            data_blocks.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
-                "allocate NX datum plane source blocks", 0, 1))?;
-            let mut id = String::new();
-            id.try_reserve_exact(block.len()).map_err(|_| ctx.refuse_codec_limit(
-                "allocate NX datum plane source block identity", 0, 1))?;
-            id.push_str(block);
-            data_blocks.push(id);
-        }
+        let (data_blocks, reservation) = copy_payload_source_blocks(ctx,
+            header.resolved_data_blocks(DatumPlaneBlockLane::Object).map(String::as_str),
+            "copy NX datum plane source blocks")?;
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)?
         else {
             continue;
@@ -6622,34 +6631,35 @@ pub(super) fn feature_sketch_construction_payloads(
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
 
-    Ok(constructions
-        .iter()
-        .filter_map(|construction| {
-            let mut data_blocks = construction
-                .members
-                .iter()
-                .map(|member| member.data_block.clone())
-                .collect::<Vec<_>>();
-            data_blocks.push(construction.terminal_data_block.clone());
-            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
-                Ok(Some(content)) => content,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            Some(Ok(FeatureConstructionPayload {
-                id: construction.id.replacen(
-                    "sketch-construction-inputs",
-                    "sketch-construction-payload",
-                    1,
-                ),
-                operation_label: construction.operation_label.clone(),
-                owner: FeatureConstructionOwner::Sketch {
-                    construction_inputs: construction.id.clone(),
-                },
-                content,
-            }))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
+    let mut output = Vec::new();
+    for construction in constructions {
+        let source_ids = construction.members.iter().map(|member| member.data_block.as_str())
+            .chain(std::iter::once(construction.terminal_data_block.as_str()));
+        let (data_blocks, reservation) = copy_payload_source_blocks(ctx, source_ids,
+            "copy NX sketch construction source blocks")?;
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)?
+        else { continue; };
+        drop(reservation);
+        let id = replace_operation_text(ctx, &construction.id,
+            "sketch-construction-inputs", "sketch-construction-payload",
+            "NX sketch construction payload identity")?;
+        let operation_label = copy_operation_text(ctx, &construction.operation_label,
+            "NX sketch construction payload label")?;
+        let construction_inputs = copy_operation_text(ctx, &construction.id,
+            "NX sketch construction payload input identity")?;
+        ctx.charge_collection_items(1, "NX sketch construction payloads")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureConstructionPayload>()),
+            "NX sketch construction payloads")?;
+        output.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX sketch construction payloads", 0, 1))?;
+        output.push(FeatureConstructionPayload {
+            id, operation_label,
+            owner: FeatureConstructionOwner::Sketch { construction_inputs },
+            content,
+        });
+    }
+    Ok(output)
 }
 
 /// Decode exact coordinate-pair frames from reconstructed sketch payloads.

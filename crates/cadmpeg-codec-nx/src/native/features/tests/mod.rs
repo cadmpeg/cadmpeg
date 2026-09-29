@@ -14,4 +14,5 @@ mod reference_admission;
 mod record_wire;
 mod sketch_admission;
 mod sketch_record_limits;
+mod sketch_payload_limits;
 mod source_and_sketch;
