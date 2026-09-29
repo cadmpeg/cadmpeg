@@ -515,6 +515,84 @@ fn assert_native_fallback_refusal(
     panic!("no {operation} refusal");
 }
 
+fn assert_exact_group_variant_refusal(
+    variant: &str,
+    operation: &'static str,
+    dimension: ResourceDimension,
+) {
+    let mut fixture = fixture();
+    let curves = native_fallback_curves(&mut fixture);
+    let mut group = native_fallback_group();
+    if variant == "offset" {
+        group.state = 0x20;
+    }
+    if variant == "angular" {
+        let mut parameter = parse_design_parameter_record(&parameter_record(
+            Some(21), "0.1 rad", "Angular Dimension", Some("rad"), "a1", 0.1,
+        )).unwrap();
+        parameter.id = fixture.parameter.id.clone();
+        parameter.record_index = fixture.parameter.record_index;
+        fixture.parameter = parameter;
+    }
+    let mut inputs = fixture.inputs();
+    inputs.curves = &curves;
+    inputs.groups = std::slice::from_ref(&group);
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            _ => panic!("unsupported exact group limit"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn exact_group_locus_entity_refuses_collection_limit() {
+    assert_exact_group_variant_refusal("linear", "f3d exact group locus entity",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn exact_group_directional_parameter_refuses_retained_limit() {
+    assert_exact_group_variant_refusal("linear", "f3d exact group directional parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn exact_group_offset_entity_index_refuses_collection_limit() {
+    assert_exact_group_variant_refusal("offset", "f3d exact group offset entity index",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn exact_group_offset_secondary_index_refuses_collection_limit() {
+    assert_exact_group_variant_refusal("offset", "f3d exact group offset secondary index",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn exact_group_angular_index_refuses_collection_limit() {
+    assert_exact_group_variant_refusal("angular", "f3d exact group angular index",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn exact_group_angular_parameter_refuses_retained_limit() {
+    assert_exact_group_variant_refusal("angular", "f3d exact group angular parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
 fn assert_projected_companion_refusal(kind: &str, operation: &'static str) {
     let mut fixture = fixture();
     let curves = native_fallback_curves(&mut fixture);

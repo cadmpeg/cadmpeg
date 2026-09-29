@@ -680,22 +680,28 @@ fn project_all_dimension_constraints(
         if !design_dimension_unit(parameter) {
             return None;
         }
-        let locus_entities = group
-            .loci
-            .iter()
-            .map(|locus| {
-                projected
-                    .get(&(scope, locus.geometry_record_index))
-                    .copied()
-            })
-            .collect::<Option<Vec<_>>>()?;
+        let mut locus_entities = Vec::new();
+        for locus in &group.loci {
+            let entity = projected.get(&(scope, locus.geometry_record_index)).copied()?;
+            if let Err(error) = push_dimension_item(ctx, &mut locus_entities, entity,
+                "f3d exact group locus entity") {
+                return Some(Err(error));
+            }
+        }
         if parameter.source_kind().starts_with("Angular Dimension") {
-            let indices = group
-                .loci
-                .iter()
-                .map(|locus| locus.geometry_record_index)
-                .collect::<Vec<_>>();
-            match exact_definition(scope, parameter, &indices, parameter_id.clone()) {
+            let mut indices = Vec::new();
+            for locus in &group.loci {
+                if let Err(error) = push_dimension_item(ctx, &mut indices,
+                    locus.geometry_record_index, "f3d exact group angular index") {
+                    return Some(Err(error));
+                }
+            }
+            let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
+                "f3d exact group angular parameter id") {
+                Ok(copied) => copied,
+                Err(error) => return Some(Err(error)),
+            };
+            match exact_definition(scope, parameter, &indices, copied) {
                 Ok(Some(definition)) => return Some(Ok(definition)),
                 Ok(None) => {},
                 Err(error) => return Some(Err(error)),
@@ -725,22 +731,23 @@ fn project_all_dimension_constraints(
         }
         if parameter.source_kind().starts_with("Linear Dimension") {
             if group.state == 0x20 {
-                let entities_by_record = group
-                    .loci
-                    .iter()
-                    .zip(&locus_entities)
-                    .map(|(locus, entity)| (locus.geometry_record_index, *entity))
-                    .collect::<HashMap<_, _>>();
-                let secondary_ids = group
-                    .loci
-                    .iter()
-                    .filter_map(|locus| {
-                        curve_secondary_ids
-                            .get(&(scope, locus.geometry_record_index))
-                            .copied()
-                            .map(|secondary_id| (locus.geometry_record_index, secondary_id))
-                    })
-                    .collect::<HashMap<_, _>>();
+                let mut entities_by_record = HashMap::new();
+                let mut secondary_ids = HashMap::new();
+                for (locus, entity) in group.loci.iter().zip(&locus_entities) {
+                    if let Err(error) = insert_dimension_index(ctx, &mut entities_by_record,
+                        locus.geometry_record_index, *entity,
+                        "f3d exact group offset entity index") {
+                        return Some(Err(error));
+                    }
+                    if let Some(secondary_id) = curve_secondary_ids
+                        .get(&(scope, locus.geometry_record_index)).copied() {
+                        if let Err(error) = insert_dimension_index(ctx, &mut secondary_ids,
+                            locus.geometry_record_index, secondary_id,
+                            "f3d exact group offset secondary index") {
+                            return Some(Err(error));
+                        }
+                    }
+                }
                 let CountedOffset { pairs, distance } = exact_counted_offset(
                     &group.loci,
                     &entities_by_record,
@@ -761,10 +768,15 @@ fn project_all_dimension_constraints(
                     parameter,
                 }));
             }
+            let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
+                "f3d exact group directional parameter id") {
+                Ok(copied) => copied,
+                Err(error) => return Some(Err(error)),
+            };
             if let Some(definition) = directional_point_dimension(
                 &locus_entities,
                 parameter.evaluated_value().get() * 10.0,
-                parameter_id.clone(),
+                copied,
                 linear_tolerance,
             ) {
                 return Some(Ok(definition));
