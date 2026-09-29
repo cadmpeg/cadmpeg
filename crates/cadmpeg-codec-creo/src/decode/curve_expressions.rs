@@ -664,6 +664,77 @@ fn curve_expression_feature_labels(
     ))
 }
 
+fn curve_expression_parameter_dependencies(
+    ctx: &DecodeContext<'_>,
+    record: &crate::curve::CurveExpressionRecord,
+    assignment_ordinal: usize,
+    assignment_indices_by_name: &BTreeMap<String, Option<usize>>,
+    unique_assignment_indices: &BTreeMap<String, usize>,
+    cyclic_edges: &HashSet<(usize, usize)>,
+    dimension_parameters: &BTreeMap<String, ParameterId>,
+) -> Result<Vec<ParameterId>, CodecError> {
+    let assignment = &record.assignments[assignment_ordinal];
+    let mut seen = BTreeSet::new();
+    let mut dependencies = Vec::new();
+    let mut dimension_dependencies = Vec::new();
+    for name in &assignment.dependencies {
+        let (mut key, _key_reservation) =
+            ctx.copy_scoped_text(name, "creo curve-expression dependency key")?;
+        key.make_ascii_lowercase();
+        if let Some(&dependency) = unique_assignment_indices.get(&key) {
+            if cyclic_edges.contains(&(assignment_ordinal, dependency))
+                || seen.contains(&dependency)
+            {
+                continue;
+            }
+            ctx.charge_collection_items(1, "creo curve-expression seen dependencies")?;
+            seen.insert(dependency);
+            ctx.try_reserve_items(
+                &mut dependencies,
+                1,
+                "creo curve-expression parameter dependencies",
+            )?;
+            dependencies.push(crate::identity::compose_checked::<ParameterId>(
+                ctx,
+                &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
+                format_args!("{}-{}-{dependency}", record.entity_id, record.offset),
+                "creo curve-expression dependency identity",
+            )?);
+        }
+        if assignment_indices_by_name.contains_key(&key) {
+            continue;
+        }
+        let Some(parameter) = dimension_parameters.get(&key) else {
+            continue;
+        };
+        if dependencies.contains(parameter) || dimension_dependencies.contains(&parameter) {
+            continue;
+        }
+        ctx.try_reserve_items(
+            &mut dimension_dependencies,
+            1,
+            "creo curve-expression dimension candidates",
+        )?;
+        dimension_dependencies.push(parameter);
+    }
+    for parameter in dimension_dependencies {
+        ctx.try_reserve_items(
+            &mut dependencies,
+            1,
+            "creo curve-expression dimension dependencies",
+        )?;
+        let copied = ctx.copy_retained_text(
+            parameter.as_str(),
+            "creo curve-expression dimension parameter id",
+        )?;
+        let copied = ParameterId::try_from(copied).map_err(|_| {
+            CodecError::malformed("curve expression dimension parameter id is invalid")
+        })?;
+        dependencies.push(copied);
+    }
+    Ok(dependencies)
+}
+
 pub(super) fn transfer_curve_expression_features(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -736,64 +807,15 @@ pub(super) fn transfer_curve_expression_features(
                 format_args!("{}-{}-{assignment_ordinal}", record.entity_id, record.offset),
                 "creo curve-expression parameter identity",
             )?;
-            let mut seen = BTreeSet::new();
-            let mut dependencies = Vec::new();
-            let mut dimension_dependencies = Vec::new();
-            for name in &assignment.dependencies {
-                let (mut key, _key_reservation) =
-                    ctx.copy_scoped_text(name, "creo curve-expression dependency key")?;
-                key.make_ascii_lowercase();
-                if let Some(&dependency) = unique_assignment_indices.get(&key) {
-                    if cyclic_edges.contains(&(assignment_ordinal, dependency))
-                        || seen.contains(&dependency)
-                    {
-                        continue;
-                    }
-                    ctx.charge_collection_items(1, "creo curve-expression seen dependencies")?;
-                    seen.insert(dependency);
-                    ctx.try_reserve_items(
-                        &mut dependencies,
-                        1,
-                        "creo curve-expression parameter dependencies",
-                    )?;
-                    dependencies.push(crate::identity::compose_checked::<ParameterId>(
-                        ctx,
-                        &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
-                        format_args!("{}-{}-{dependency}", record.entity_id, record.offset),
-                        "creo curve-expression dependency identity",
-                    )?);
-                }
-                if assignment_indices_by_name.contains_key(&key) {
-                    continue;
-                }
-                let Some(parameter) = dimension_parameters.get(&key) else {
-                    continue;
-                };
-                if dependencies.contains(parameter) || dimension_dependencies.contains(&parameter) {
-                    continue;
-                }
-                ctx.try_reserve_items(
-                    &mut dimension_dependencies,
-                    1,
-                    "creo curve-expression dimension candidates",
-                )?;
-                dimension_dependencies.push(parameter);
-            }
-            for parameter in dimension_dependencies {
-                ctx.try_reserve_items(
-                    &mut dependencies,
-                    1,
-                    "creo curve-expression dimension dependencies",
-                )?;
-                let copied = ctx.copy_retained_text(
-                    parameter.as_str(),
-                    "creo curve-expression dimension parameter id",
-                )?;
-                let copied = ParameterId::try_from(copied).map_err(|_| {
-                    CodecError::malformed("curve expression dimension parameter id is invalid")
-                })?;
-                dependencies.push(copied);
-            }
+            let dependencies = curve_expression_parameter_dependencies(
+                ctx,
+                record,
+                assignment_ordinal,
+                &assignment_indices_by_name,
+                &unique_assignment_indices,
+                &cyclic_edges,
+                dimension_parameters,
+            )?;
             annotate(ctx,
                 annotations,
                 parameter_id.as_str(),
