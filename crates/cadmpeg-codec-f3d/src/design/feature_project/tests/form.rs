@@ -1,10 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::feature_project::{
-    distinct_form_cage_ids, form_cage_lists, form_cage_objects, form_cage_serializers, form_cage_surface, form_class_325_cage_objects,
+    distinct_form_cage_ids, form_cage_lists, form_cage_objects, form_cage_serializers, form_cage_surface, form_cage_surfaces, form_class_325_cage_objects,
     form_class_325_cage_surface, form_class_328_envelope, legacy_form_cage_count,
-    project_parameter_design,
+    project_parameter_design, push_form_cage_id,
 };
+
+#[test]
+fn form_resolved_cage_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let id = cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(push_form_cage_id(&ctx, &mut Vec::new(), &id),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d form cage id"
+                && failure.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn form_resolved_cage_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let id = cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(push_form_cage_id(&ctx, &mut Vec::new(), &id),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d form resolved cage"
+                && failure.dimension == ResourceDimension::CollectionItems));
+}
 
 #[test]
 fn form_cage_uniqueness_index_refuses_collection_limit() {
@@ -215,6 +247,40 @@ fn resolves_cage_surface_through_owned_object_chain() {
         ),
         None
     );
+}
+
+#[test]
+fn form_cage_surface_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut object = indexed_frame(b"301", 8300, 200);
+    object[189] = 1;
+    object[190..198].copy_from_slice(&8301u64.to_le_bytes());
+    let mut first_wrapper = indexed_frame(b"373", 8301, 33);
+    first_wrapper[21] = 1;
+    first_wrapper[22..30].copy_from_slice(&8302u64.to_le_bytes());
+    let mut second_wrapper = indexed_frame(b"362", 8302, 29);
+    second_wrapper[21..29].copy_from_slice(&8303u64.to_le_bytes());
+    let mut carrier = indexed_frame(b"457", 8303, 665);
+    carrier[317] = 1;
+    carrier[318..326].copy_from_slice(&2190u64.to_le_bytes());
+    carrier[339] = 1;
+    carrier[340..348].copy_from_slice(&8304u64.to_le_bytes());
+    let paired = indexed_frame(b"264", 8303, 15);
+    let bytes = [object, first_wrapper, second_wrapper, carrier, paired].concat();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(form_cage_surfaces(&ctx, &bytes, &records, &[8300], 2190),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d form cage surface"
+                && failure.dimension == ResourceDimension::CollectionItems));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    assert!(form_cage_surfaces(&ctx, &bytes, &records, &[8300], 2191).unwrap().is_none());
 }
 
 #[test]

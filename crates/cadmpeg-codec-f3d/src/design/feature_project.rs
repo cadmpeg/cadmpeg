@@ -4684,6 +4684,15 @@ fn distinct_form_cage_ids<T: Eq + Hash>(
     Ok(true)
 }
 
+fn push_form_cage_id(
+    ctx: &DecodeContext<'_>,
+    ids: &mut Vec<cadmpeg_ir::ids::SubdId>,
+    id: &cadmpeg_ir::ids::SubdId,
+) -> Result<(), CodecError> {
+    let copy = copy_feature_identity(Some(ctx), id.as_str(), "f3d form cage id")?;
+    push_feature_item(Some(ctx), ids, copy, "f3d form resolved cage")
+}
+
 /// Replace a resolved Form scope's native definition with its committed cages.
 ///
 /// The Form's cage-list record owns ordered cage-object references. Each object
@@ -4696,7 +4705,7 @@ pub(crate) fn bind_form_cages(
     features: &mut [cadmpeg_ir::features::Feature],
     cages: &[cadmpeg_ir::subd::SubdSurface],
 ) -> Result<(), CodecError> {
-    for scope in scopes
+    'scope: for scope in scopes
         .iter()
         .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form)
     {
@@ -4743,7 +4752,7 @@ pub(crate) fn bind_form_cages(
                         valid = false;
                         break;
                     }
-                    resolved.push(cage.id.clone());
+                    push_form_cage_id(ctx, &mut resolved, &cage.id)?;
                 }
                 if valid
                     && !resolved.is_empty()
@@ -4783,7 +4792,7 @@ pub(crate) fn bind_form_cages(
             && form_class_328_envelope(bytes, &records, scope)
         {
             let serializers = form_cage_serializers(bytes, &records);
-            let mut resolved = Vec::with_capacity(serializers.ordered.len());
+            let mut resolved = Vec::new();
             let mut valid = true;
             for surface in &serializers.ordered {
                 let Some(entry_name) = serializers.entry_name(*surface) else {
@@ -4803,7 +4812,7 @@ pub(crate) fn bind_form_cages(
                     valid = false;
                     break;
                 }
-                resolved.push(cage.id.clone());
+                push_form_cage_id(ctx, &mut resolved, &cage.id)?;
             }
             if valid
                 && !resolved.is_empty()
@@ -4850,7 +4859,11 @@ pub(crate) fn bind_form_cages(
                     feature.evaluation.set_definition(
                         cadmpeg_ir::features::FeatureDefinition::Operation(
                             cadmpeg_ir::features::FeatureOperation::Form {
-                                cages: vec![cages[0].id.clone()],
+                                cages: {
+                                    let mut ids = Vec::new();
+                                    push_form_cage_id(ctx, &mut ids, &cages[0].id)?;
+                                    ids
+                                },
                             },
                         ),
                     );
@@ -4861,31 +4874,23 @@ pub(crate) fn bind_form_cages(
         let [cage_objects] = cage_lists.as_slice() else {
             continue;
         };
-        let surfaces = cage_objects
-            .iter()
-            .map(|object| form_cage_surface(bytes, &records, *object, scope.record_index))
-            .collect::<Option<Vec<_>>>();
-        let Some(surfaces) = surfaces else {
-            continue;
-        };
+        let Some(surfaces) = form_cage_surfaces(
+            ctx, bytes, &records, cage_objects, scope.record_index,
+        )? else { continue; };
         let serializers = form_cage_serializers(bytes, &records);
-        let resolved = surfaces
-            .iter()
-            .map(|surface| {
-                let entry_name = serializers.entry_name(*surface)?;
+        let mut resolved = Vec::new();
+        for surface in &surfaces {
+                let Some(entry_name) = serializers.entry_name(*surface) else { continue 'scope; };
                 let mut matches = cages.iter().filter(|cage| {
                     cage.source_object
                         .as_ref()
                         .and_then(|source| source.object_id.as_str().rsplit('/').next())
                         == Some(entry_name)
                 });
-                let cage = matches.next()?;
-                matches.next().is_none().then(|| cage.id.clone())
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(resolved) = resolved else {
-            continue;
-        };
+                let Some(cage) = matches.next() else { continue 'scope; };
+                if matches.next().is_some() { continue 'scope; }
+                push_form_cage_id(ctx, &mut resolved, &cage.id)?;
+        }
         if !distinct_form_cage_ids(ctx, &resolved)? {
             continue;
         }
@@ -5540,6 +5545,22 @@ fn form_cage_surface(
         return None;
     }
     u32::try_from(View::u64_le_at(bytes, carrier_at + 340)?).ok()
+}
+
+fn form_cage_surfaces(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    objects: &[u32],
+    scope_record_index: u32,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let mut surfaces = Vec::new();
+    for object in objects {
+        let Some(surface) = form_cage_surface(bytes, records, *object, scope_record_index)
+            else { return Ok(None); };
+        push_feature_item(Some(ctx), &mut surfaces, surface, "f3d form cage surface")?;
+    }
+    Ok(Some(surfaces))
 }
 
 struct FormCageSerializers {
