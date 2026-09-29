@@ -9606,33 +9606,54 @@ pub(super) fn feature_block_construction_references(
 ) -> Result<Vec<FeatureBlockConstructionReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(field) =
                 crate::om::block_construction::block_construction_references(record.payload_view())
                     .and_then(|field| field.relocate(entry_offset))
             else {
                 return;
             };
-            references.extend(BlockReferencePosition::enumerate(field.references()).map(
-                |(position, (token, source_offset))| FeatureBlockConstructionReference {
-                    id: format!(
-                        "nx:feature-history:block-construction-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}", ordinal = position.ordinal()
-                    ),
-                    operation_label: format!(
-                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                    ),
-                    control: field.control(),
-                    position,
-                    token,
-                    data_block: unique_offset_data_block(&indexed, token.value()),
-                    source_offset,
-                },
-            ));
+            let projected = (|| -> Result<(), CodecError> {
+                for (position, (token, source_offset)) in
+                    BlockReferencePosition::enumerate(field.references())
+                {
+                    let ordinal = usize::try_from(position.ordinal()).map_err(|_| {
+                        ctx.refuse_codec_limit("NX block reference ordinal", 0, 1)
+                    })?;
+                    let id = format_feature_history_id(ctx, "block-construction-reference",
+                        section_key, operation_ordinal, Some(ordinal))?;
+                    let operation_label = format_feature_history_id(ctx, "operation-label",
+                        section_key, operation_ordinal, None)?;
+                    let data_block = charged_unique_offset_data_block(ctx, &indexed,
+                        token.value())?;
+                    ctx.charge_collection_items(1, "NX block construction references")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureBlockConstructionReference>()),
+                        "NX block construction references")?;
+                    references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX block construction references", 0, 1))?;
+                    references.push(FeatureBlockConstructionReference {
+                        id, operation_label, control: field.control(), position,
+                        token, data_block, source_offset,
+                    });
+                }
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(references)
 }
 
