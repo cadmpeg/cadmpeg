@@ -2471,10 +2471,36 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         ctx.reserve_collection_vec(&mut history_features, 1, OPERATION)?;
         history_features.push(native_feature);
     }
-    let feature_ids_by_native = features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
-        .collect::<HashMap<_, _>>();
+    const ID_OPERATION: &str = "index SLDPRT cosmetic thread feature IDs";
+    let mut feature_ids_by_native = HashMap::new();
+    let mut scoped_ids = Vec::new();
+    for feature in features.iter() {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        ctx.charge_work(1, ID_OPERATION)?;
+        let (mut id_text, id_reservation) =
+            ctx.reserve_scoped_string(feature.id.as_str().len(), ID_OPERATION)?;
+        id_text.push_str(feature.id.as_str());
+        let id = cadmpeg_ir::features::FeatureId::mint(id_text)
+            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT cosmetic thread feature id"))?;
+        ctx.reserve_collection_vec(&mut scoped_ids, 1, ID_OPERATION)?;
+        scoped_ids.push(id_reservation);
+        if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
+            *previous = id;
+            continue;
+        }
+        ctx.charge_collection_items(1, ID_OPERATION)?;
+        feature_ids_by_native.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(ID_OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
+        let (mut native_key, key_reservation) =
+            ctx.reserve_scoped_string(native_ref.len(), ID_OPERATION)?;
+        native_key.push_str(native_ref);
+        ctx.reserve_collection_vec(&mut scoped_ids, 1, ID_OPERATION)?;
+        scoped_ids.push(key_reservation);
+        feature_ids_by_native.insert(native_key, id);
+    }
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
