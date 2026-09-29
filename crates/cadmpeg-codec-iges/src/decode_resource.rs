@@ -1,73 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IGES identity conversion and text decoding.
 
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
-use std::fmt::{self, Write};
-
-struct TextLength(usize);
-
-impl Write for TextLength {
-    fn write_str(&mut self, text: &str) -> fmt::Result {
-        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
-        Ok(())
-    }
-}
-
-pub(crate) fn copy_optional_identity<T: TryFrom<String>>(
-    ctx: Option<&DecodeContext<'_>>,
-    value: &str,
-    operation: &'static str,
-) -> Result<T, CodecError> {
-    let text = match ctx {
-        Some(ctx) => ctx.copy_retained_text(value, operation)?,
-        None => {
-            let mut text = String::new();
-            text.try_reserve_exact(value.len()).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                        u64_from_index(value.len()),
-                        u64_from_index(value.len()),
-                        operation,
-                    ),
-                )
-            })?;
-            text.push_str(value);
-            text
-        }
-    };
-    T::try_from(text).map_err(|_| CodecError::Malformed("IGES identity copy is invalid".into()))
-}
-
-pub(crate) fn clone_optional_identity<T: fmt::Display + TryFrom<String>>(
-    ctx: Option<&DecodeContext<'_>>,
-    value: &T,
-    operation: &'static str,
-) -> Result<T, CodecError> {
-    let text = match ctx {
-        Some(ctx) => ctx.format_retained(format_args!("{value}"), operation)?,
-        None => {
-            let mut length = TextLength(0);
-            fmt::write(&mut length, format_args!("{value}"))
-                .map_err(|_| refuse_local_limit(operation, u64::MAX, 1))?;
-            let count = u64_from_index(length.0);
-            let mut text = String::new();
-            text.try_reserve_exact(length.0).map_err(|_| {
-                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    count,
-                    count,
-                    operation,
-                ))
-            })?;
-            fmt::write(&mut text, format_args!("{value}"))
-                .map_err(|_| CodecError::Malformed("IGES identity cannot be rendered".into()))?;
-            text
-        }
-    };
-    T::try_from(text).map_err(|_| CodecError::Malformed("IGES identity copy is invalid".into()))
-}
 
 pub(crate) fn lossy_retained(
     ctx: &DecodeContext<'_>,
@@ -126,7 +61,7 @@ pub(crate) fn admit_optional_entities(
 #[cfg(test)]
 mod tests {
     use super::{
-        admit_optional_entities, clone_optional_identity, copy_optional_identity, lossy_retained,
+        admit_optional_entities, lossy_retained,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -192,11 +127,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(source.len() - 1).expect("test setup");
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-        let refused = copy_optional_identity::<cadmpeg_ir::ids::CurveId>(
-            Some(&ctx),
-            source,
-            "iges identity copy test",
-        );
+        let source_id = cadmpeg_ir::ids::CurveId::mint(source).expect("test setup");
+        let refused = source_id.try_clone_for_decode(&ctx, "iges identity copy test");
         assert!(matches!(refused,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
@@ -207,11 +139,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("test setup");
-        let copied = copy_optional_identity::<cadmpeg_ir::ids::CurveId>(
-            Some(&ctx),
-            source,
-            "iges identity copy test",
-        )
+        let copied = source_id.try_clone_for_decode(&ctx, "iges identity copy test")
         .expect("test setup");
         assert_eq!(copied.as_str(), source);
     }
@@ -224,7 +152,7 @@ mod tests {
         policy.limits.max_retained_bytes =
             u64::try_from(source.as_str().len() - 1).expect("test setup");
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-        let result = clone_optional_identity(Some(&ctx), &source, "iges cloned identity test");
+        let result = source.try_clone_for_decode(&ctx, "iges cloned identity test");
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes

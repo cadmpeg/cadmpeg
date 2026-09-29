@@ -50,18 +50,6 @@ pub(crate) fn named_entries_charged<V>(
     Ok(keyed)
 }
 
-pub(crate) fn copied_identity<I>(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<I, CodecError>
-where
-    I: TryFrom<String>,
-    I::Error: std::fmt::Display,
-{
-    I::try_from(ctx.copy_retained_text(value, operation)?).map_err(CodecError::malformed)
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
@@ -72,8 +60,12 @@ mod tests {
         policy.limits.max_retained_bytes = id.len() as u64 - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        let result: Result<cadmpeg_ir::ids::BodyId, _> =
-            super::copied_identity(&ctx, id, "test identity copy");
+        let result: Result<cadmpeg_ir::ids::BodyId, _> = ctx
+            .copy_retained_text(id, "test identity copy")
+            .and_then(|text| {
+                cadmpeg_ir::ids::BodyId::try_from(text)
+                    .map_err(cadmpeg_core::CodecError::malformed)
+            });
         assert!(
             matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "test identity copy")

@@ -16,7 +16,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::scalar::PositiveReal;
 
-use crate::decode_resource::clone_optional_identity;
 
 fn copy_nurbs_curve(
     curve: &NurbsCurve,
@@ -176,7 +175,7 @@ pub(super) fn copy_solved_surface(
         SolvedSurfaceGeometry::Unknown { record } => SolvedSurfaceGeometry::Unknown {
             record: record
                 .as_ref()
-                .map(|id| clone_optional_identity(ctx, id, "iges copied support unknown ID"))
+                .map(|id| id.try_clone_for_decode(ctx, "iges copied support unknown ID"))
                 .transpose()?,
         },
     })
@@ -194,11 +193,7 @@ pub(super) fn copy_surface_geometry(
             construction,
             cache,
         } => SurfaceGeometry::Procedural {
-            construction: clone_optional_identity(
-                ctx,
-                construction,
-                "iges copied support construction ID",
-            )?,
+            construction: construction.try_clone_for_decode(ctx, "iges copied support construction ID")?,
             cache: cache
                 .as_ref()
                 .map(|solved| copy_solved_surface(solved, ctx))
@@ -269,11 +264,7 @@ pub(super) fn copy_solved_curve(
             )?;
             for segment in segments {
                 copied.push(cadmpeg_ir::geometry::CompositeCurveSegment {
-                    curve: clone_optional_identity(
-                        ctx,
-                        &segment.curve,
-                        "iges solved curve copied composite ID",
-                    )?,
+                    curve: segment.curve.try_clone_for_decode(ctx, "iges solved curve copied composite ID")?,
                     same_sense: segment.same_sense,
                     transition: segment.transition,
                 });
@@ -302,7 +293,7 @@ pub(super) fn copy_solved_curve(
         SolvedCurveGeometry::Unknown { record } => SolvedCurveGeometry::Unknown {
             record: record
                 .as_ref()
-                .map(|id| clone_optional_identity(ctx, id, "iges solved curve copied unknown ID"))
+                .map(|id| id.try_clone_for_decode(ctx, "iges solved curve copied unknown ID"))
                 .transpose()?,
         },
     })

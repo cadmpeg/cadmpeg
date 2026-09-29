@@ -5,7 +5,6 @@ use super::curve_conversion::angularly_equal;
 use super::geometry::{
     admit, declared_unit_vector, resolve_transform, source_object, WireProjectionOutcome,
 };
-use crate::decode_resource::clone_optional_identity;
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -485,7 +484,7 @@ pub(super) fn project(
             continue;
         }
         let mut offset_source_id =
-            clone_optional_identity(ctx, &source_id, "iges offset source identity copy")?;
+            source_id.try_clone_for_decode(ctx, "iges offset source identity copy")?;
         let mut offset_source_geometry = Cow::Borrowed(source_geometry);
         if entry.transform != 0 {
             let transform = match resolve_transform(
@@ -1212,11 +1211,7 @@ pub(super) fn project(
             });
         let payload = match range {
             Ok(range) => {
-                let source_id = clone_optional_identity(
-                    ctx,
-                    &offset_source_id,
-                    "iges offset procedural source identity",
-                )?;
+                let source_id = offset_source_id.try_clone_for_decode(ctx, "iges offset procedural source identity")?;
                 cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::with_unit_plane_normal(
                     source_id, distance, normal, Some(range),
                 )
@@ -1255,11 +1250,7 @@ pub(super) fn project(
             )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
             ir.model.curves.push(Curve {
-                id: clone_optional_identity(
-                    ctx,
-                    &offset_source_id,
-                    "iges offset placed source identity",
-                )?,
+                id: offset_source_id.try_clone_for_decode(ctx, "iges offset placed source identity")?,
                 geometry: CurveGeometry::Solved(placed_geometry),
                 source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
@@ -1284,12 +1275,12 @@ pub(super) fn project(
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
         ir.model.points.extend([
             Point::new(
-                clone_optional_identity(ctx, &start_point, "iges offset start point identity")?,
+                start_point.try_clone_for_decode(ctx, "iges offset start point identity")?,
                 start_position,
                 None,
             ),
             Point::new(
-                clone_optional_identity(ctx, &end_point, "iges offset end point identity")?,
+                end_point.try_clone_for_decode(ctx, "iges offset end point identity")?,
                 end_position,
                 None,
             ),
@@ -1303,16 +1294,12 @@ pub(super) fn project(
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
         ir.model.vertices.extend([
             Vertex {
-                id: clone_optional_identity(
-                    ctx,
-                    &start_vertex,
-                    "iges offset start vertex identity",
-                )?,
+                id: start_vertex.try_clone_for_decode(ctx, "iges offset start vertex identity")?,
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: clone_optional_identity(ctx, &end_vertex, "iges offset end vertex identity")?,
+                id: end_vertex.try_clone_for_decode(ctx, "iges offset end vertex identity")?,
                 point: end_point,
                 tolerance: None,
             },
@@ -1326,7 +1313,7 @@ pub(super) fn project(
         )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         ir.model.curves.push(Curve {
-            id: clone_optional_identity(ctx, &curve_id, "iges offset curve identity")?,
+            id: curve_id.try_clone_for_decode(ctx, "iges offset curve identity")?,
             geometry,
             source_object: Some(match source_object(entry, ctx) {
                 Ok(source) => source,
@@ -1342,11 +1329,7 @@ pub(super) fn project(
             }),
         });
         let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
-            Some(clone_optional_identity(
-                ctx,
-                &curve_id,
-                "iges offset edge carrier identity",
-            )?),
+            Some(curve_id.try_clone_for_decode(ctx, "iges offset edge carrier identity")?),
             Some([start, end]),
         ) {
             Ok(carrier) => carrier,
@@ -1363,7 +1346,7 @@ pub(super) fn project(
         )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         ir.model.edges.push(Edge {
-            id: clone_optional_identity(ctx, &edge_id, "iges offset edge identity")?,
+            id: edge_id.try_clone_for_decode(ctx, "iges offset edge identity")?,
             carrier,
             start: start_vertex,
             end: end_vertex,

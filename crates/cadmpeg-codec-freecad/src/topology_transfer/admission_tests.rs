@@ -777,7 +777,7 @@ macro_rules! direct_identity_copy_refusal {
             let mut policy = DecodePolicy::default();
             policy.limits.max_retained_bytes = $id.len() as u64 - 1;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result: Result<$type, _> = crate::resource::copied_identity(&ctx, $id, $operation);
+            let result: Result<$type, _> = ctx.copy_retained_text($id, $operation).and_then(|text| <$type>::try_from(text).map_err(cadmpeg_core::CodecError::malformed));
             assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
                 if limit.operation == $operation));
         }
