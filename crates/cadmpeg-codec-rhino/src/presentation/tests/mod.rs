@@ -1638,14 +1638,14 @@ fn rendering_material_reference_consumes_obsolete_mapping_channels() {
     );
     assert_eq!(
         value.materials[0]
-            .back_face
+            .back_face.0
             .as_ref()
             .and_then(|value| value.back_material_uuid.clone()),
         Some(Uuid::from_wire([0x44; 16]).to_string())
     );
     assert_eq!(
         value.materials[0]
-            .back_face
+            .back_face.0
             .as_ref()
             .map(|value| value.material_source),
         Some(3)

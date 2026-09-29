@@ -674,7 +674,7 @@ fn legacy_render_settings_gate_each_v5_suffix() {
     assert_eq!(value_100.image_dpi, None);
     assert_eq!(value_100.image_unit_system, None);
     assert_eq!(value_100.background_bottom_color, None);
-    assert!(!value_100.scale_background_to_fit);
+    assert!(!value_100.image_flags.scale_background_to_fit);
 
     let value_101 = legacy_body(101);
     let value_101 = render_settings(
@@ -701,7 +701,7 @@ fn legacy_render_settings_gate_each_v5_suffix() {
     )
     .expect("legacy version 102 settings");
     assert_eq!(value_102.background_bottom_color, Some([9, 10, 11, 12]));
-    assert!(!value_102.scale_background_to_fit);
+    assert!(!value_102.image_flags.scale_background_to_fit);
 
     let value_103 = legacy_body(103);
     let value_103 = render_settings(
@@ -713,7 +713,7 @@ fn legacy_render_settings_gate_each_v5_suffix() {
         crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("legacy version 103 settings");
-    assert!(value_103.scale_background_to_fit);
+    assert!(value_103.image_flags.scale_background_to_fit);
     assert_eq!(value_103.shadowmap_size_pixels, [2048, 1024]);
 }
 
@@ -857,8 +857,8 @@ fn modern_render_settings_consumes_known_prefix_and_future_suffix() {
     assert_eq!(value.named_view, "named-view");
     assert_eq!(value.snapshot, "snapshot");
     assert_eq!(value.force_viewport_aspect_ratio, Some(true));
-    assert!(value.use_hidden_lights && value.flat_shade);
-    assert!(!value.depth_cue && !value.transparent_background);
+    assert!(value.lighting_flags.use_hidden_lights && value.lighting_flags.flat_shade);
+    assert!(!value.lighting_flags.depth_cue && !value.image_flags.transparent_background);
 }
 
 #[test]

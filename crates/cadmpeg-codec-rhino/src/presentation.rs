@@ -156,10 +156,6 @@ struct GroupRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent material render switches"
-)]
 struct MaterialRecord {
     id: String,
     source_offset: u64,
@@ -182,8 +178,8 @@ struct MaterialRecord {
     textures: Vec<TextureRecord>,
     shareable: bool,
     disable_lighting: bool,
-    #[serde(flatten, serialize_with = "serialize_material_fresnel")]
-    fresnel: Option<MaterialFresnelSettings>,
+    #[serde(flatten)]
+    fresnel: MaterialFresnelSlot,
     rdk_instance_uuid: Option<String>,
     diffuse_texture_alpha_transparency: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -198,14 +194,14 @@ struct MaterialFresnelSettings {
     index_of_refraction: FiniteReal,
 }
 
-// Serde passes the field by reference to this adapter.
-#[allow(clippy::ref_option)]
-fn serialize_material_fresnel<S: serde::Serializer>(
-    settings: &Option<MaterialFresnelSettings>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
+#[derive(Debug)]
+struct MaterialFresnelSlot(Option<MaterialFresnelSettings>);
+
+impl Serialize for MaterialFresnelSlot {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeMap;
 
+    let settings = self.0.as_ref();
     let mut fields = serializer.serialize_map(Some(4))?;
     fields.serialize_entry(
         "fresnel_reflections",
@@ -224,6 +220,7 @@ fn serialize_material_fresnel<S: serde::Serializer>(
         &settings.as_ref().map(|value| value.index_of_refraction),
     )?;
     fields.end()
+    }
 }
 
 fn serialize_material_textures<S: serde::Serializer>(
@@ -794,8 +791,8 @@ struct TextureMappingRecord {
 struct RenderingMaterialReference {
     plugin_uuid: String,
     front_material_uuid: String,
-    #[serde(flatten, serialize_with = "serialize_material_back_face")]
-    back_face: Option<RenderingMaterialBackFace>,
+    #[serde(flatten)]
+    back_face: RenderingMaterialBackFaceSlot,
 }
 
 #[derive(Debug)]
@@ -804,13 +801,13 @@ struct RenderingMaterialBackFace {
     material_source: u8,
 }
 
-// Serde passes the field by reference to this adapter.
-#[allow(clippy::ref_option)]
-fn serialize_material_back_face<S: serde::Serializer>(
-    back_face: &Option<RenderingMaterialBackFace>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
+#[derive(Debug)]
+struct RenderingMaterialBackFaceSlot(Option<RenderingMaterialBackFace>);
+
+impl Serialize for RenderingMaterialBackFaceSlot {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeStruct;
+    let back_face = self.0.as_ref();
     let mut fields = serializer.serialize_struct("RenderingMaterialBackFace", 2)?;
     fields.serialize_field(
         "back_material_uuid",
@@ -823,6 +820,7 @@ fn serialize_material_back_face<S: serde::Serializer>(
         &back_face.as_ref().map(|value| value.material_source),
     )?;
     fields.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -863,7 +861,6 @@ struct MeshModifiersRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct DisplacementRecord {
     xml_version: i32,
     on: bool,
@@ -886,7 +883,6 @@ struct DisplacementRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct DisplacementSubItemRecord {
     face_index: i32,
     on: bool,
@@ -897,30 +893,25 @@ struct DisplacementSubItemRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct EdgeSofteningRecord {
     xml_version: i32,
     on: bool,
     softening: FiniteReal,
-    chamfer: bool,
-    faceted: bool,
-    force_softening: bool,
+    #[serde(flatten)]
+    options: crate::mesh_modifiers::EdgeSofteningOptions,
     edge_angle_threshold: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct ThickeningRecord {
     xml_version: i32,
     on: bool,
-    solid: bool,
-    both_sides: bool,
-    offset_only: bool,
+    #[serde(flatten)]
+    options: crate::mesh_modifiers::ThickeningOptions,
     distance: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct CurvePipingRecord {
     xml_version: i32,
     on: bool,
@@ -932,18 +923,15 @@ struct CurvePipingRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct ShutLiningRecord {
     xml_version: i32,
     on: bool,
-    faceted: bool,
-    auto_update: bool,
-    force_update: bool,
+    #[serde(flatten)]
+    options: crate::mesh_modifiers::ShutLiningOptions,
     curves: Vec<ShutLiningCurveRecord>,
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct ShutLiningCurveRecord {
     uuid: Option<String>,
     radius: FiniteReal,
@@ -1040,9 +1028,7 @@ fn edge_softening_record(
         xml_version: edge_softening.xml_version,
         on: edge_softening.on,
         softening: edge_softening.softening,
-        chamfer: edge_softening.chamfer,
-        faceted: edge_softening.faceted,
-        force_softening: edge_softening.force_softening,
+        options: edge_softening.options.clone(),
         edge_angle_threshold: edge_softening.edge_angle_threshold,
     }
 }
@@ -1051,9 +1037,7 @@ fn thickening_record(thickening: &crate::mesh_modifiers::ThickeningModifier) -> 
     ThickeningRecord {
         xml_version: thickening.xml_version,
         on: thickening.on,
-        solid: thickening.solid,
-        both_sides: thickening.both_sides,
-        offset_only: thickening.offset_only,
+        options: thickening.options.clone(),
         distance: thickening.distance,
     }
 }
@@ -1103,9 +1087,7 @@ fn shut_lining_record(
     Ok(ShutLiningRecord {
         xml_version: shut_lining.xml_version,
         on: shut_lining.on,
-        faceted: shut_lining.faceted,
-        auto_update: shut_lining.auto_update,
-        force_update: shut_lining.force_update,
+        options: shut_lining.options.clone(),
         curves,
     })
 }
@@ -1134,14 +1116,14 @@ impl Serialize for settings::LayerPerViewportSettings {
     }
 }
 
-// Serde passes the field by reference to this adapter.
-#[allow(clippy::ref_option)]
-fn serialize_layer_hierarchy<S: serde::Serializer>(
-    hierarchy: &Option<settings::LayerHierarchy>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
+#[derive(Debug)]
+struct LayerHierarchySlot(Option<settings::LayerHierarchy>);
+
+impl Serialize for LayerHierarchySlot {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeStruct;
 
+    let hierarchy = self.0.as_ref();
     let mut record = serializer.serialize_struct("LayerHierarchy", 2)?;
     record.serialize_field(
         "parent_uuid",
@@ -1152,20 +1134,22 @@ fn serialize_layer_hierarchy<S: serde::Serializer>(
     )?;
     record.serialize_field("expanded", &hierarchy.map(|value| value.expanded))?;
     record.end()
+    }
 }
 
-// Serde passes the field by reference to this adapter.
-#[allow(clippy::ref_option)]
-fn serialize_layer_plot<S: serde::Serializer>(
-    plot: &Option<settings::LayerPlot>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
+#[derive(Debug)]
+struct LayerPlotSlot(Option<settings::LayerPlot>);
+
+impl Serialize for LayerPlotSlot {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeStruct;
 
+    let plot = self.0.as_ref();
     let mut record = serializer.serialize_struct("LayerPlot", 2)?;
     record.serialize_field("plot_color", &plot.map(|value| value.color))?;
     record.serialize_field("plot_weight_mm", &plot.map(|value| value.weight_mm))?;
     record.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1174,8 +1158,8 @@ struct LayerPresentationRecord {
     source_offset: u64,
     archive_index: i32,
     source_uuid: Option<String>,
-    #[serde(flatten, serialize_with = "serialize_layer_hierarchy")]
-    hierarchy: Option<settings::LayerHierarchy>,
+    #[serde(flatten)]
+    hierarchy: LayerHierarchySlot,
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
@@ -1186,8 +1170,8 @@ struct LayerPresentationRecord {
     color: [u8; 4],
     material_index: i32,
     linetype_index: Option<i32>,
-    #[serde(flatten, serialize_with = "serialize_layer_plot")]
-    plot: Option<settings::LayerPlot>,
+    #[serde(flatten)]
+    plot: LayerPlotSlot,
     display_material_uuid: Option<String>,
     clipping_planes_enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1198,10 +1182,6 @@ struct LayerPresentationRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent serialized object display flags"
-)]
 struct ObjectAttributesPresentation {
     source_uuid: String,
     name: String,
@@ -1369,21 +1349,26 @@ fn first_user_string_records(
     Ok((geometry, attributes))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the projection keeps source data, both userdata owners, and loss reporting explicit"
-)]
+struct ObjectPresentationSource {
+    archive: ArchiveVersion,
+    offset: usize,
+    uuid: Uuid,
+}
+
 fn object_attributes_presentation(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     attributes: &ObjectAttributes,
     class_userdata: &[UserdataDescriptor],
     attribute_userdata: &[AttributeUserdataDescriptor],
-    archive: ArchiveVersion,
-    source_offset: usize,
-    source_uuid: Uuid,
+    source: ObjectPresentationSource,
     losses: &mut Vec<LossNote>,
 ) -> Result<ObjectAttributesPresentation, CodecError> {
+    let ObjectPresentationSource {
+        archive,
+        offset: source_offset,
+        uuid: source_uuid,
+    } = source;
     let rendering = match rendering_attributes(
         ctx,
         data,
@@ -1487,15 +1472,15 @@ fn object_attributes_presentation(
         active_space: attributes.active_space,
         viewport_uuid,
         display_order: attributes.display_order,
-        clipping_proof: attributes.clipping_proof,
+        clipping_proof: attributes.clipping.proof,
         clipping_plane_uuids,
         hatch_pattern_index: attributes.hatch_pattern_index,
         section_hatch_scale: attributes.section_hatch_scale,
         section_hatch_rotation: attributes.section_hatch_rotation,
         linetype_pattern_scale: attributes.linetype_pattern_scale,
         hatch_background: attributes.hatch_background,
-        hatch_boundary_visible: attributes.hatch_boundary_visible,
-        detail_background_visible: attributes.detail_background_visible.then_some(true),
+        hatch_boundary_visible: attributes.display.hatch_boundary_visible,
+        detail_background_visible: attributes.display.detail_background_visible.then_some(true),
         section_fill_rule: attributes.section_fill_rule,
         clipping_plane_label_style: attributes.clipping_plane_label_style,
         rendering_materials: rendering.materials,
@@ -2087,9 +2072,11 @@ fn parse_light_record_attributes(
         attributes,
         &[],
         &attributes_userdata,
-        archive,
-        record.range.start,
-        attributes.object_id,
+        ObjectPresentationSource {
+            archive,
+            offset: record.range.start,
+            uuid: attributes.object_id,
+        },
         losses,
     )
     .map_err(FramingError::from)?;
@@ -2608,7 +2595,7 @@ fn parse_v2_v3_material(
         textures,
         shareable: false,
         disable_lighting: false,
-        fresnel: None,
+        fresnel: MaterialFresnelSlot(None),
         rdk_instance_uuid: None,
         diffuse_texture_alpha_transparency: None,
         physically_based,
@@ -2806,7 +2793,7 @@ fn parse_material(
         textures,
         shareable,
         disable_lighting,
-        fresnel,
+        fresnel: MaterialFresnelSlot(fresnel),
         rdk_instance_uuid: rdk
             .filter(|id| !id.is_nil())
             .map(|id| {
@@ -4703,7 +4690,7 @@ fn rendering_attributes(
                 Ok(RenderingMaterialReference {
                     plugin_uuid,
                     front_material_uuid,
-                    back_face,
+                    back_face: RenderingMaterialBackFaceSlot(back_face),
                 })
             })();
             presentation.materials.push(parsed?);
@@ -5759,9 +5746,11 @@ pub(crate) fn install(
                 attributes,
                 &object.userdata,
                 &object.attributes_userdata,
-                scan.archive,
-                object.range.start,
-                identity.object_id,
+                ObjectPresentationSource {
+                    archive: scan.archive,
+                    offset: object.range.start,
+                    uuid: identity.object_id,
+                },
                 &mut losses,
             )?;
             let mut links =
@@ -5881,7 +5870,7 @@ pub(crate) fn install(
                     )
                 })
                 .transpose()?,
-            hierarchy: layer.hierarchy,
+            hierarchy: LayerHierarchySlot(layer.hierarchy),
             name: crate::wire::copy_retained_string(
                 ctx,
                 &layer.name,
@@ -5904,7 +5893,7 @@ pub(crate) fn install(
             color: layer.color,
             material_index: layer.render_material_index,
             linetype_index: layer.linetype_index,
-            plot: layer.plot,
+            plot: LayerPlotSlot(layer.plot),
             display_material_uuid: layer
                 .display_material_id
                 .filter(|id| !id.is_nil())

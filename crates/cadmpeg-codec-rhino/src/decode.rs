@@ -2585,9 +2585,7 @@ impl<'a> DecodeContext<'a> {
             self.expand,
             self.scan.data,
             object.class_data_range.clone(),
-            self.archive(),
-            self.scan.metadata.properties.writer_version,
-            scale,
+            crate::extrusion::ExtrusionFormat { archive: self.archive(), writer_version: self.scan.metadata.properties.writer_version, scale: scale },
             &object.userdata,
             &mut self.mesh_budget,
         );
