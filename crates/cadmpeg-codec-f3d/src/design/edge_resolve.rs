@@ -2362,64 +2362,53 @@ fn corroborated_common_triplet_intersection(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
-    let edge_sets = selector_contexts.iter().flat_map(|selector| {
+    let edge_pairs = selector_contexts.iter().flat_map(|selector| {
         selector.clauses.iter().flatten().filter_map(|clause| {
             clause.entry.common_incident_edge_ordinal()?;
             let [first, second] = &clause.triplet_edge_slots;
-            let mut common = first.clone();
-            common.retain(|edge| second.contains(edge));
-            common.sort_unstable();
-            common.dedup();
-            (!common.is_empty()).then_some(common)
+            Some((first.as_slice(), second.as_slice()))
         })
     });
-    corroborated_edge_set_intersection(edge_sets, shared_edge_sets)
+    corroborated_edge_pair_intersection(edge_pairs, shared_edge_sets)
 }
 
 fn corroborated_cross_clause_triplet_intersection(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
-    let edge_sets = selector_contexts.iter().flat_map(|selector| {
+    let edge_pairs = selector_contexts.iter().filter_map(|selector| {
         let [Some(left), Some(right)] = selector.clauses.as_slice() else {
-            return Vec::new();
+            return None;
         };
-        left.triplet_edge_slots
-            .iter()
-            .zip(&right.triplet_edge_slots)
-            .filter_map(|(left, right)| {
-                let mut common = left.clone();
-                common.retain(|edge| right.contains(edge));
-                common.sort_unstable();
-                common.dedup();
-                (!common.is_empty()).then_some(common)
-            })
-            .collect::<Vec<_>>()
-    });
-    corroborated_edge_set_intersection(edge_sets, shared_edge_sets)
+        Some(left.triplet_edge_slots.iter().zip(&right.triplet_edge_slots)
+            .map(|(left, right)| (left.as_slice(), right.as_slice())))
+    }).flatten();
+    corroborated_edge_pair_intersection(edge_pairs, shared_edge_sets)
 }
 
-fn corroborated_edge_set_intersection(
-    mut edge_sets: impl Iterator<Item = Vec<i64>>,
+fn corroborated_edge_pair_intersection<'a>(
+    edge_pairs: impl Iterator<Item = (&'a [i64], &'a [i64])> + Clone,
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
-    let mut candidates = edge_sets.next()?;
-    for edges in edge_sets {
-        candidates.retain(|candidate| edges.contains(candidate));
-        if candidates.is_empty() {
-            return None;
+    let active_pairs = edge_pairs.filter(|(left, right)| {
+        left.iter().any(|edge| right.contains(edge))
+    });
+    let (first, second) = active_pairs.clone().next()?;
+    let mut candidate = None;
+    for &edge in first {
+        if second.contains(&edge)
+            && active_pairs.clone().all(|(left, right)| {
+                left.contains(&edge) && right.contains(&edge)
+            })
+            && shared_edge_sets.iter().all(|set| set.contains(&edge))
+        {
+            if candidate.is_some_and(|selected| selected != edge) {
+                return None;
+            }
+            candidate = Some(edge);
         }
     }
-    for edges in shared_edge_sets {
-        candidates.retain(|candidate| edges.contains(candidate));
-        if candidates.is_empty() {
-            return None;
-        }
-    }
-    match candidates.as_slice() {
-        [candidate] => Some(*candidate),
-        _ => None,
-    }
+    candidate
 }
 
 #[derive(Clone, Copy, PartialEq)]
