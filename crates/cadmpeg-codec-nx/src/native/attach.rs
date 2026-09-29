@@ -2462,9 +2462,7 @@ fn attach_feature_operations(
         };
         for write in operation_body_writes {
             if let Some(writer) = body_identity_writers.get(&write.frame.body_identity()) {
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
             }
         }
         if let (
@@ -2491,9 +2489,7 @@ fn attach_feature_operations(
                     &body_alias_roots,
                     &body_writer_history,
                 ) {
-                    if !dependencies.contains(writer) {
-                        dependencies.push(writer.clone());
-                    }
+                    push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
                 }
                 for body in &operation.tools {
                     if let Some(writer) = boolean_participant_writer(
@@ -2503,9 +2499,7 @@ fn attach_feature_operations(
                         &body_alias_roots,
                         &body_writer_history,
                     ) {
-                        if !dependencies.contains(writer) {
-                            dependencies.push(writer.clone());
-                        }
+                        push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
                     }
                 }
             }
@@ -2518,9 +2512,7 @@ fn attach_feature_operations(
             if let Some(writer) =
                 body_writer_history.native_writer(canonical_body(operand.operand.atom.value()))
             {
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
             }
         }
         for operand in operation_body_operands_by_operation
@@ -2534,9 +2526,7 @@ fn attach_feature_operations(
             let Some(writer) = body_writer_history.offset_store_writer(data_block) else {
                 continue;
             };
-            if !dependencies.contains(writer) {
-                dependencies.push(writer.clone());
-            }
+            push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
         }
         for block_use in datum_plane_uses_by_input_operation
             .get(label.id.as_str())
@@ -2551,9 +2541,7 @@ fn attach_feature_operations(
             ) else {
                 continue;
             };
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
+            push_unique_feature_dependency(ctx, &mut dependencies, dependency)?;
         }
         for block_use in datum_csys_uses_by_input_operation
             .get(label.id.as_str())
@@ -2568,9 +2556,7 @@ fn attach_feature_operations(
             ) else {
                 continue;
             };
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
+            push_unique_feature_dependency(ctx, &mut dependencies, dependency)?;
         }
         for identity_use in datum_identity_uses_by_operation
             .get(label.id.as_str())
@@ -2590,18 +2576,13 @@ fn attach_feature_operations(
             ) else {
                 continue;
             };
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
+            push_unique_feature_dependency(ctx, &mut dependencies, dependency)?;
         }
         if let Some(dependency) = sketch_datum_csys_dependencies.get(label.id.as_str()) {
             if let Some(feature) = feature_ids_by_operation
                 .get(dependency.sketch_operation_label.as_str())
-                .cloned()
             {
-                if !dependencies.contains(&feature) {
-                    dependencies.push(feature);
-                }
+                push_unique_feature_dependency(ctx, &mut dependencies, feature)?;
             }
         }
         let mut source_properties = BTreeMap::new();
@@ -3773,22 +3754,18 @@ fn attach_feature_operations(
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
         let source_content = feature_source_content(ctx, operation_payload_string_records)?;
-        let mut referenced_parameters = operation_parameter_uses
-            .iter()
-            .filter_map(|parameter_use| expression_parameter_id(&parameter_use.expression))
-            .collect::<Vec<_>>();
+        let mut referenced_parameters = Vec::new();
+        let mut parameter_reservation = ctx.reserve_scoped(0, "NX referenced parameters")?;
+        for parameter_use in operation_parameter_uses {
+            push_referenced_parameter(ctx, &mut parameter_reservation, &mut referenced_parameters, &parameter_use.expression)?;
+        }
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
-            referenced_parameters.extend(
-                dimensions
-                    .dimensions
-                    .iter()
-                    .filter_map(|dimension| expression_parameter_id(&dimension.expression)),
-            );
+            for dimension in &dimensions.dimensions {
+                push_referenced_parameter(ctx, &mut parameter_reservation, &mut referenced_parameters, &dimension.expression)?;
+            }
         }
         for owner in parameter_owner_dependencies(ctx, &parameter_owners, &referenced_parameters)? {
-            if !dependencies.contains(&owner) {
-                dependencies.push(owner);
-            }
+            push_unique_feature_dependency(ctx, &mut dependencies, &owner)?;
         }
         if !source_content.is_empty() {
             annotations
@@ -3820,12 +3797,16 @@ fn attach_feature_operations(
                 body_writer_history.record_writer(ctx, native_target, offset_store_target, &[], &id)?;
             }
         }
+        let dependency_check_work = dependencies.len().checked_mul(dependencies.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX feature dependency validation", 0, cadmpeg_core::decode::u64_from_index(dependencies.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(dependency_check_work), "NX feature dependency validation")?;
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies: (dependencies).into_iter().collect(),
+            dependencies: DistinctMembers::try_from_unique_vec(dependencies)
+                .map_err(CodecError::malformed)?,
             source_properties: cadmpeg_core::text::named_entries(&label.id, source_properties)?,
             source_tag: Some(label.value.clone()),
             source_text: None,
@@ -5483,17 +5464,54 @@ fn attach_parasolid_topology_structured_attributes(
     Ok(())
 }
 
-fn preceding_operation_dependency(
+fn push_referenced_parameter(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    referenced: &mut Vec<ParameterId>,
+    expression: &str,
+) -> Result<(), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(expression.len()), "NX referenced parameter identity")?;
+    let bytes = std::mem::size_of::<ParameterId>().checked_add(expression.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX referenced parameter", 0, cadmpeg_core::decode::u64_from_index(expression.len())))?;
+    ctx.charge_collection_items(1, "NX referenced parameters")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+    let Some(id) = expression_parameter_id(expression) else {
+        return Ok(());
+    };
+    reserve_attach_vec(ctx, referenced, 1, "NX referenced parameters")?;
+    referenced.push(id);
+    Ok(())
+}
+
+fn push_unique_feature_dependency(
+    ctx: &DecodeContext<'_>,
+    dependencies: &mut Vec<FeatureId>,
+    candidate: &FeatureId,
+) -> Result<(), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(dependencies.len()), "NX feature dependency uniqueness")?;
+    if dependencies.contains(candidate) {
+        return Ok(());
+    }
+    let bytes = std::mem::size_of::<FeatureId>().checked_add(candidate.as_str().len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX feature dependency", 0, cadmpeg_core::decode::u64_from_index(candidate.as_str().len())))?;
+    ctx.charge_collection_items(1, "NX feature dependencies")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX feature dependency")?;
+    reserve_attach_vec(ctx, dependencies, 1, "NX feature dependencies")?;
+    dependencies.push(candidate.clone());
+    Ok(())
+}
+
+fn preceding_operation_dependency<'a>(
     operation: &str,
     consumer_position: usize,
     operation_positions: &BTreeMap<&str, usize>,
-    feature_ids: &BTreeMap<&str, FeatureId>,
-) -> Option<FeatureId> {
+    feature_ids: &'a BTreeMap<&str, FeatureId>,
+) -> Option<&'a FeatureId> {
     let position = operation_positions.get(operation)?;
     if *position >= consumer_position {
         return None;
     }
-    feature_ids.get(operation).cloned()
+    feature_ids.get(operation)
 }
 
 fn projects_neutral_feature(label: &str) -> bool {

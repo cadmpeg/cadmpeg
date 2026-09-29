@@ -1336,7 +1336,7 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
 
     assert_eq!(
         preceding_operation_dependency("csys", 2, &positions, &features),
-        Some(FeatureId::mint("nx:test:feature#csys").expect("identity grammar"))
+        Some(&FeatureId::mint("nx:test:feature#csys").expect("identity grammar"))
     );
     assert_eq!(
         preceding_operation_dependency("consumer", 2, &positions, &features),
