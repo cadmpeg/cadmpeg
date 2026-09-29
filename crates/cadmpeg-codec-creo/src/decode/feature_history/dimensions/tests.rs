@@ -197,6 +197,65 @@ fn dimension_hex_token_keeps_lowercase_byte_order() {
 }
 
 #[test]
+fn planned_dimension_ids_refuse_before_tree_node_and_identity_copy() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.definitions.push(crate::feature::definitions::FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: Some(40),
+        },
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![crate::feature::definitions::FeatureDimension {
+                dimension_type: 2,
+                value: crate::feature::definitions::DimensionValue::Resolved(5.0),
+                value_body: Vec::new(),
+                direction_byte: 0,
+                auxiliary_value: None,
+                auxiliary_body: Vec::new(),
+                external_id: 3,
+                references: None,
+                offset: 10,
+            }],
+            offset: 9,
+        }),
+        relations: None,
+        saved_section: None,
+        offset: 8,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = "creo:model:sketch#917".len() as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = planned_feature_dimension_parameter_ids(&ctx, &scan)
+        .expect_err("parameter identity exceeds remaining retained cap");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo planned dimension parameter identity"));
+    policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = planned_feature_dimension_parameter_ids(&ctx, &scan)
+        .expect_err("one parameter needs one tree node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo planned dimension parameter ID nodes"));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| {
+        planned_feature_dimension_parameter_ids(ctx, &scan)
+    }).expect("service IDs admitted").len(), 1);
+}
+
+#[test]
 fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::rows::FeatureRow {
@@ -245,7 +304,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         });
 
     assert_eq!(
-        planned_feature_dimension_parameter_ids(&scan),
+        crate::decode::with_test_decode_ctx(|ctx| planned_feature_dimension_parameter_ids(ctx, &scan)).expect("planned IDs admitted"),
         BTreeSet::from([
             ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("identity grammar")

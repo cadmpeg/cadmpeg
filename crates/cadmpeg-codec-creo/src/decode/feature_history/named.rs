@@ -85,8 +85,8 @@ fn name_only_feature_definition(
     }
     if numbered_feature_name_has_family(kind, "Fill") {
         return Ok(Some(filled_surface_feature_definition(
-            scan, ir, feature_id,
-        )));
+            ctx, scan, ir, feature_id,
+        )?));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
         return Ok(Some(thicken_feature_definition(ctx, scan, ir, feature_id)?));

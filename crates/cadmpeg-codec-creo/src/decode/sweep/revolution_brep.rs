@@ -79,7 +79,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         else {
             continue;
         };
-        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+        let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
         let Some(mut profiles) = resolved_sketch_profiles(ctx, ir, source_carriers, &sketch_id, 2)?

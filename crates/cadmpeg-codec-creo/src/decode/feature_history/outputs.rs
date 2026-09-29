@@ -656,7 +656,7 @@ pub(in super::super) fn feature_parameters(
         else {
             continue;
         };
-        let Some(profile_sketch) = model_sketch_id(scan, definition) else {
+        let Some(profile_sketch) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
         insert_feature_parameter(

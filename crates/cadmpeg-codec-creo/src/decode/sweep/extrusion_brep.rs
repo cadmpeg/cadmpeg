@@ -221,7 +221,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         else {
             continue;
         };
-        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+        let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
         let Some(span) =
