@@ -1037,7 +1037,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     second_target_operand.resolved_body_face_slots = vec![30, 31];
     let operands = [target_shape_operand.clone(), second_target_operand.clone()];
     assert!(matches!(
-        resolved_body_recipe_shape(&scope, &multi_target_group, &operands),
+        resolved_body_recipe_shape(None, &scope, &multi_target_group, &operands).unwrap(),
         Some(FaceSelection::Historical { faces, .. })
             if faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 12),
@@ -1049,10 +1049,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
     second_target_operand.resolved_body_state_id = Some(8);
     assert!(resolved_body_recipe_shape(
+        None,
         &scope,
         &multi_target_group,
         &[target_shape_operand.clone(), second_target_operand],
     )
+    .unwrap()
     .is_none());
 
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);

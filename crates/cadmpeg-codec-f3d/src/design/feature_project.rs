@@ -1017,11 +1017,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     parameters: BTreeMap::new(),
                 })),
                 Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
+                    ctx,
                     scope,
                     construction_groups,
                     face_operands,
                     body_recipe_operands,
-                )
+                )?
                 .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
                     scope,
@@ -8406,11 +8407,12 @@ fn project_hole(
 }
 
 fn project_replace_face(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
     body_recipe_operands: &[DesignBodyRecipeOperand],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::ReplaceFace
@@ -8419,9 +8421,9 @@ fn project_replace_face(
         || scope.frame_length() != 290
         || scope.reference_members().len() != 4
     {
-        return None;
+        return Ok(None);
     }
-    let stream = native_stream(&scope.id)?;
+    let stream = or_none!(native_stream(&scope.id));
     let mut groups = construction_groups
         .iter()
         .filter(|group| {
@@ -8429,7 +8431,7 @@ fn project_replace_face(
                 && group.scope_record_index == scope.record_index
         });
     let (Some(first), Some(second), None) = (groups.next(), groups.next(), groups.next()) else {
-        return None;
+        return Ok(None);
     };
     let (replacement_group, target_group) = if first.scope_reference_ordinal <= second.scope_reference_ordinal {
         (first, second)
@@ -8438,7 +8440,8 @@ fn project_replace_face(
     };
     let references = scope
         .reference_members()
-        .values_array::<4>()?
+        .values_array::<4>();
+    let references = or_none!(references)
         .map(|value| *value);
     if replacement_group.scope_reference_ordinal != 0
         || replacement_group.record_index != references[0]
@@ -8457,21 +8460,21 @@ fn project_replace_face(
             .map(|member| member.value)
             .eq(references[3..4].iter().copied())
     {
-        return None;
+        return Ok(None);
     }
-    let replacements =
-        resolved_body_recipe_selection(scope, replacement_group, body_recipe_operands)?;
-    let targets = resolved_historical_face_group(
+    let replacements = or_none!(resolved_body_recipe_selection(
+        ctx, scope, replacement_group, body_recipe_operands)?);
+    let targets = or_none!(resolved_historical_face_group(
         scope,
         scope.previous_history_state_id(),
         target_group,
         face_operands,
-    )?;
-    Some(FeatureDefinition::Operation(
+    ));
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(targets, replacements).ok()?,
+            operands: or_none!(cadmpeg_ir::features::ReplaceFaceOperands::new(targets, replacements).ok()),
         },
-    ))
+    )))
 }
 
 /// Project the source selections of a `SurfaceTrim` scope.
@@ -8532,7 +8535,7 @@ fn project_surface_trim(
     {
         return Ok(None);
     }
-    let faces = or_none!(resolved_body_recipe_selection(scope, target_group, body_recipe_operands));
+    let faces = or_none!(resolved_body_recipe_selection(ctx, scope, target_group, body_recipe_operands)?);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::TrimSurface {
             faces,
@@ -9338,7 +9341,7 @@ fn project_extrude(
                     )
                 }
                 ([], [target]) if effective_side_one_offset.is_none() => {
-                    let target = match resolved_body_recipe_shape(scope, target, body_recipe_operands) {
+                    let target = match resolved_body_recipe_shape(ctx, scope, target, body_recipe_operands)? {
                         Some(selection) => selection,
                         None => FaceSelection::Native(copy_feature_text(
                             ctx, &target.id, "f3d Extrude target shape group id")?),
