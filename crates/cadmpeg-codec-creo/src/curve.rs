@@ -6446,26 +6446,36 @@ fn decode_two_chart_scalar(
 }
 
 fn complete_two_chart_samples(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &[u8],
     start: usize,
     count: u32,
     cache: &scalar::ScalarCache,
-) -> Option<Vec<[[f64; 2]; 2]>> {
-    let sample_count = bounded_len(u64::from(count), 4, body.len().saturating_sub(start))?;
-    (sample_count >= 2).then_some(())?;
+) -> Result<Option<Vec<[[f64; 2]; 2]>>, cadmpeg_core::CodecError> {
+    let Some(sample_count) = bounded_len(u64::from(count), 4, body.len().saturating_sub(start)) else {
+        return Ok(None);
+    };
+    if sample_count < 2 {
+        return Ok(None);
+    }
     let mut cursor = start;
-    let mut samples = Vec::with_capacity(sample_count);
+    let mut samples = Vec::new();
+    ctx.try_reserve_items(&mut samples, sample_count, "creo two-chart sample points")?;
     for _ in 0..sample_count {
         let mut sample = [[0.0; 2]; 2];
         for (slot, value) in sample.iter_mut().flatten().enumerate() {
-            let (decoded, next) = decode_two_chart_scalar(body, cursor, slot % 2 == 0, cache)?;
-            (next > cursor && decoded.is_finite()).then_some(())?;
+            let Some((decoded, next)) = decode_two_chart_scalar(body, cursor, slot % 2 == 0, cache) else {
+                return Ok(None);
+            };
+            if next <= cursor || !decoded.is_finite() {
+                return Ok(None);
+            }
             *value = decoded;
             cursor = next;
         }
         samples.push(sample);
     }
-    (cursor == body.len()).then_some(samples)
+    Ok((cursor == body.len()).then_some(samples))
 }
 
 /// Decode byte-complete two-chart sample bodies from one curve namespace.
@@ -6474,10 +6484,11 @@ fn complete_two_chart_samples(
 /// raw curve family replay the canonical sample extent without the prefix.
 /// Every admitted row consumes exactly four finite scalars per sample.
 pub(crate) fn two_chart_pcurve_samples(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
-) -> Vec<TwoChartPcurveSamples> {
-    let cache = scalar::ScalarCache::from_section(payload);
+) -> Result<Vec<TwoChartPcurveSamples>, cadmpeg_core::CodecError> {
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let framed = framed_rows_with_face_ids(payload, face_ids);
     let mut canonical_counts = BTreeMap::<(usize, u32, u8), BTreeSet<u32>>::new();
     for row in &framed {
@@ -6492,12 +6503,19 @@ pub(crate) fn two_chart_pcurve_samples(
         let (count, start) = compact_int(body, 1);
         if prefix.feature_id != 0
             && start > 1
-            && complete_two_chart_samples(body, start, count, &cache).is_some()
+            && complete_two_chart_samples(ctx, body, start, count, &cache)?.is_some()
         {
-            canonical_counts
-                .entry((row.namespace_start, prefix.feature_id, prefix.type_byte))
-                .or_default()
-                .insert(count);
+            let counts = match canonical_counts.entry((row.namespace_start, prefix.feature_id, prefix.type_byte)) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo two-chart canonical group nodes")?;
+                    entry.insert(BTreeSet::new())
+                }
+            };
+            if !counts.contains(&count) {
+                ctx.charge_collection_items(1, "creo two-chart canonical count nodes")?;
+                counts.insert(count);
+            }
         }
     }
 
@@ -6513,28 +6531,34 @@ pub(crate) fn two_chart_pcurve_samples(
                 continue;
             }
             let (count, start) = compact_int(body, 1);
-            (start > 1)
-                .then(|| complete_two_chart_samples(body, start, count, &cache))
-                .flatten()
+            if start > 1 {
+                complete_two_chart_samples(ctx, body, start, count, &cache)?
+            } else {
+                None
+            }
         } else {
             let Some(counts) =
                 canonical_counts.get(&(row.namespace_start, prefix.feature_id, prefix.type_byte))
             else {
                 continue;
             };
-            let mut candidates = counts
-                .iter()
-                .filter_map(|count| complete_two_chart_samples(body, 0, *count, &cache));
-            let candidate = candidates.next();
-            if candidates.next().is_some() {
-                None
-            } else {
-                candidate
+            let mut candidate = None;
+            let mut ambiguous = false;
+            for count in counts {
+                if let Some(samples) = complete_two_chart_samples(ctx, body, 0, *count, &cache)? {
+                    if candidate.is_some() {
+                        ambiguous = true;
+                        break;
+                    }
+                    candidate = Some(samples);
+                }
             }
+            if ambiguous { None } else { candidate }
         };
         let Some(samples) = samples else {
             continue;
         };
+        ctx.try_reserve_items(&mut result, 1, "creo two-chart sample rows")?;
         result.push(TwoChartPcurveSamples {
             curve_id: prefix.id,
             faces: [row.suffix[0], row.suffix[1]],
@@ -6545,10 +6569,17 @@ pub(crate) fn two_chart_pcurve_samples(
     result.sort_by_key(|record| record.offset);
     let mut counts = BTreeMap::new();
     for record in &result {
-        *counts.entry(record.curve_id).or_insert(0usize) += 1;
+        let count = match counts.entry(record.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo two-chart result count nodes")?;
+                entry.insert(0usize)
+            }
+        };
+        *count += 1;
     }
     result.retain(|record| counts.get(&record.curve_id) == Some(&1));
-    result
+    Ok(result)
 }
 
 fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[f64; 2]; 2]> {

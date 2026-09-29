@@ -1757,7 +1757,7 @@ fn two_chart_pcurves(
     let mut records = collect_section_records_result(
         ctx,
         sections.iter(),
-        |bytes| Ok(curve::two_chart_pcurve_samples(bytes, Some(face_ids))),
+        |bytes| curve::two_chart_pcurve_samples(ctx, bytes, Some(face_ids)),
         |record, base| record.offset += base,
         |record| record.offset,
     )?;
