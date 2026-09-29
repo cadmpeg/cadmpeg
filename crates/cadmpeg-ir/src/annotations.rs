@@ -567,7 +567,7 @@ impl Annotations {
             .chain(self.exactness.keys())
             .collect::<std::collections::BTreeSet<_>>();
         let mut targets = std::collections::BTreeSet::new();
-        let mut remapping = Vec::with_capacity(ids.len());
+        let mut remapping = Vec::new();
         for id in ids {
             let target = map(id);
             if !targets.insert(target.clone()) {

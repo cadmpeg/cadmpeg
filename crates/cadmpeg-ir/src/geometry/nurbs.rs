@@ -788,7 +788,7 @@ impl BsplineSurface {
         &mut self,
         mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
-        let mut points = Vec::with_capacity(self.control_points.len());
+        let mut points = Vec::new();
         for row in &self.control_points {
             let mut row: Vec<Point3> = row.iter().map(|point| point.get()).collect();
             for point in &mut row {

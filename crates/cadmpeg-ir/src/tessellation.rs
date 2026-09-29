@@ -183,7 +183,7 @@ impl<V> Strips<V> {
     #[must_use]
     pub fn from_spans(vertices: Vec<V>, spans: &[u32]) -> Option<Self> {
         let mut remaining = vertices.into_iter();
-        let mut strips = Vec::with_capacity(spans.len());
+        let mut strips = Vec::new();
         for span in spans {
             let span = usize::try_from(*span).ok()?;
             let run: Vec<V> = remaining.by_ref().take(span).collect();
@@ -1033,7 +1033,7 @@ fn require_triangle_groups(
     if triangle_groups.is_empty() {
         return Ok(());
     }
-    let mut memberships = std::iter::repeat_n(false, triangle_count).collect::<Vec<_>>();
+    let mut memberships = std::iter::repeat(false).take(triangle_count).collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
     let valid = triangle_groups.iter().all(|group| {
         !group.triangles.is_empty()
@@ -1072,7 +1072,7 @@ fn require_texture_assignments(
     if texture_assignments.is_empty() {
         return Ok(());
     }
-    let mut memberships = std::iter::repeat_n(false, triangle_count).collect::<Vec<_>>();
+    let mut memberships = std::iter::repeat(false).take(triangle_count).collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
     let mut anonymous_textures = std::collections::BTreeSet::new();
     let valid = texture_assignments.iter().all(|assignment| {
