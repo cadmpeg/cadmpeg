@@ -14,7 +14,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
-fn scope() -> DesignParameterScope {
+pub(super) fn scope() -> DesignParameterScope {
     scope_with_extent(DesignExtrudeExtent::OneSidedDistance)
 }
 
@@ -61,7 +61,7 @@ fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterScope {
     }.with_fixture_layout()).unwrap()
 }
 
-fn profile_group(index: u32, ordinal: u32) -> DesignConstructionOperandGroup {
+pub(super) fn profile_group(index: u32, ordinal: u32) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
         id: format!("f3d:Design/BulkStream.dat:operand-group#{index}"),
         scope_record_index: 12,

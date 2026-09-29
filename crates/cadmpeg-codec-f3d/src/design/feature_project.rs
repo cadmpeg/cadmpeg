@@ -6958,24 +6958,23 @@ pub(super) fn project_fixed_loft(
         return Ok(None);
     };
     let stream = or_none!(native_stream(&scope.id));
-    let mut groups = construction_groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
+    let mut groups = Vec::new();
+    for group in construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+    }) {
+        push_feature_item(ctx, &mut groups, group, "f3d Loft scope group")?;
+    }
     groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let matching_legacy_carriers = legacy_body_carriers
+    let mut matching_legacy_carriers = legacy_body_carriers
         .iter()
         .filter(|carrier| {
             native_stream(&carrier.id) == Some(stream)
                 && carrier.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    let legacy_body_group_identity = match matching_legacy_carriers.as_slice() {
-        [] => None,
-        [_] => {
+        });
+    let legacy_body_group_identity = match (matching_legacy_carriers.next(), matching_legacy_carriers.next()) {
+        (None, _) => None,
+        (Some(_), None) => {
             if groups
                 .iter()
                 .any(|group| group.role() == DesignOperandRole::BODIES_A)
@@ -7003,21 +7002,16 @@ pub(super) fn project_fixed_loft(
     if body_count != expected_body_count {
         return Ok(None);
     }
-    let operands = groups
-        .iter()
-        .filter(|group| !is_body_group(group))
-        .copied()
-        .collect::<Vec<_>>();
-    let profile_groups = operands
-        .iter()
-        .filter(|group| {
-            matches!(
-                group.role(),
-                DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
-            )
-        })
-        .copied()
-        .collect::<Vec<_>>();
+    let mut operands = Vec::new();
+    for group in groups.iter().filter(|group| !is_body_group(group)) {
+        push_feature_item(ctx, &mut operands, *group, "f3d Loft operand group")?;
+    }
+    let mut profile_groups = Vec::new();
+    for group in operands.iter().filter(|group| matches!(
+        group.role(), DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
+    )) {
+        push_feature_item(ctx, &mut profile_groups, *group, "f3d Loft profile group")?;
+    }
     let (sections, guides, centerline) = if profile_groups.len() >= 2 {
         if operands.iter().any(|group| {
             !matches!(
@@ -7030,49 +7024,32 @@ pub(super) fn project_fixed_loft(
         }) {
             return Ok(None);
         }
-        let sections = profile_groups
-            .iter()
-            .map(|group| {
-                LoftSection::Profile(
-                    resolved_loft_edge_profile_group(scope, group, edge_operands)
-                        .or_else(|| resolved_profile_face_group(scope, group, face_operands))
-                        .unwrap_or_else(|| {
-                            ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone()))
-                        }),
-                )
-            })
-            .collect::<Vec<_>>();
-        let guides = operands
-            .iter()
-            .filter(|group| group.role() == DesignOperandRole::ROLE_0X5)
-            .map(|group| {
-                resolved_loft_path(
-                    group,
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                    scope,
-                    ctx,
-                )
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        let centerlines = operands
-            .iter()
-            .filter(|group| group.role() == DesignOperandRole::ROLE_0X7)
-            .map(|group| {
-                resolved_loft_path(
-                    group,
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                    scope,
-                    ctx,
-                )
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        let centerline = match centerlines.as_slice() {
-            [] => None,
-            [centerline] if guides.is_empty() => Some(centerline.clone()),
+        let mut sections = Vec::new();
+        for group in &profile_groups {
+            let profile = match resolved_loft_edge_profile_group(scope, group, edge_operands)
+                .or_else(|| resolved_profile_face_group(scope, group, face_operands)) {
+                Some(profile) => profile,
+                None => ProfileRef::Planar(PlanarProfileRef::Native(copy_feature_text(
+                    ctx, &group.id, "f3d Loft profile group id")?)),
+            };
+            push_feature_item(ctx, &mut sections, LoftSection::Profile(profile),
+                "f3d Loft section")?;
+        }
+        let mut guides = Vec::new();
+        for group in operands.iter().filter(|group| group.role() == DesignOperandRole::ROLE_0X5) {
+            let path = resolved_loft_path(group, construction_groups, edge_operands,
+                edge_identity_operands, scope, ctx)?;
+            push_feature_item(ctx, &mut guides, path, "f3d Loft guide")?;
+        }
+        let mut centerlines = Vec::new();
+        for group in operands.iter().filter(|group| group.role() == DesignOperandRole::ROLE_0X7) {
+            let path = resolved_loft_path(group, construction_groups, edge_operands,
+                edge_identity_operands, scope, ctx)?;
+            push_feature_item(ctx, &mut centerlines, path, "f3d Loft centerline")?;
+        }
+        let centerline = match centerlines.len() {
+            0 => None,
+            1 if guides.is_empty() => centerlines.pop(),
             _ => return Ok(None),
         };
         (sections, guides, centerline)
@@ -7099,25 +7076,19 @@ pub(super) fn project_fixed_loft(
             }) {
                 return Ok(None);
             }
-            (
-                or_none!(operands
-                    .iter()
-                    .enumerate()
-                    .map(|(ordinal, group)| {
-                        Some(if ordinal == point_ordinal {
-                            LoftSection::Point(LoftPointSection::Native(
-                                cadmpeg_core::text::NonBlankString::new(group.id.clone())?,
-                            ))
-                        } else {
-                            LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(
-                                group.id.clone(),
-                            )))
-                        })
-                    })
-                    .collect::<Option<Vec<_>>>()),
-                Vec::new(),
-                None,
-            )
+            let mut sections = Vec::new();
+            for (ordinal, group) in operands.iter().enumerate() {
+                let id = copy_feature_text(ctx, &group.id, "f3d Loft section group id")?;
+                let section = if ordinal == point_ordinal {
+                    LoftSection::Point(LoftPointSection::Native(or_none!(
+                        cadmpeg_core::text::NonBlankString::new(id)
+                    )))
+                } else {
+                    LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
+                };
+                push_feature_item(ctx, &mut sections, section, "f3d Loft section")?;
+            }
+            (sections, Vec::new(), None)
         } else if profile_groups.is_empty() {
             let role = if operands
                 .iter()
@@ -7132,19 +7103,14 @@ pub(super) fn project_fixed_loft(
             } else {
                 return Ok(None);
             };
-            (
-                operands
-                    .iter()
-                    .filter(|group| group.role() == role)
-                    .map(|group| {
-                        LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(
-                            group.id.clone(),
-                        )))
-                    })
-                    .collect::<Vec<_>>(),
-                Vec::new(),
-                None,
-            )
+            let mut sections = Vec::new();
+            for group in operands.iter().filter(|group| group.role() == role) {
+                let id = copy_feature_text(ctx, &group.id, "f3d Loft section group id")?;
+                push_feature_item(ctx, &mut sections,
+                    LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id))),
+                    "f3d Loft section")?;
+            }
+            (sections, Vec::new(), None)
         } else {
             return Ok(None);
         }
