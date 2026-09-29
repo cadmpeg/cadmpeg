@@ -271,7 +271,7 @@ fn affine_sketch_frame_marker_transform(
 }
 
 pub(super) fn marker_transforms_with_frame_fallback(
-    candidates: &[MarkerTransform],
+    candidates: Vec<MarkerTransform>,
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Vec<MarkerTransform> {
@@ -280,7 +280,7 @@ pub(super) fn marker_transforms_with_frame_fallback(
             .into_iter()
             .collect()
     } else {
-        candidates.to_vec()
+        candidates
     }
 }
 
