@@ -108,6 +108,30 @@ impl DecodeContext<'_> {
         Self::reserve_admitted_vec(values, count, operation)
     }
 
+    /// Creates retained storage whose collection slots are admitted separately.
+    pub fn retained_admitted_vec<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        let mut values = Vec::new();
+        self.reserve_retained_admitted_vec(&mut values, count, operation)?;
+        Ok(values)
+    }
+
+    /// Creates scoped storage whose collection slots are admitted separately.
+    pub fn scoped_admitted_vec<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(Vec<T>, ScopedReservation<'_>), CodecError> {
+        let bytes = count.checked_mul(std::mem::size_of::<T>())
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let reservation = self.reserve_scoped(u64_from_index(bytes), operation)?;
+        let values = Self::admitted_vec(count, operation)?;
+        Ok((values, reservation))
+    }
+
     /// Grows scoped storage and admits additional vector slots.
     pub fn reserve_scoped_vec<T>(
         &self,
@@ -2872,6 +2896,40 @@ mod tests {
         assert_eq!(values[&1], BTreeSet::from([7]));
         ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member").expect("duplicate member");
         assert_eq!(values[&1], BTreeSet::from([7]));
+    }
+
+    #[test]
+    fn retained_admitted_vec_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 3);
+        assert!(matches!(ctx.retained_admitted_vec::<u16>(2, "test retained admitted storage"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn retained_admitted_vec_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let mut values = ctx.retained_admitted_vec(2, "test retained admitted storage").expect("service admission");
+        values.extend([7u16, 9]);
+        assert_eq!(values, [7, 9]);
+    }
+
+    #[test]
+    fn scoped_admitted_vec_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 3);
+        assert!(matches!(ctx.scoped_admitted_vec::<u16>(2, "test scoped admitted storage"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn scoped_admitted_vec_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let (mut values, _reservation) = ctx.scoped_admitted_vec(2, "test scoped admitted storage").expect("service admission");
+        values.extend([7u16, 9]);
+        assert_eq!(values, [7, 9]);
     }
 
 }

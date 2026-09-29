@@ -5,7 +5,7 @@ use crate::card::{CardScan, PhysicalLine, Section};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
@@ -502,21 +502,9 @@ fn quarantine(
         .chain(rest.iter().map(|(_, line)| *line))
         .try_fold(0_usize, |total, line| total.checked_add(line.payload.len()))
         .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
-    ctx.charge_retained(
-        u64_from_index(bytes_len),
-        "iges quarantined directory bytes",
-    )?;
-    let mut bytes = Vec::new();
-    bytes.try_reserve_exact(bytes_len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("iges quarantined directory bytes"),
-                u64_from_index(bytes_len),
-                u64_from_index(bytes_len),
-                "iges quarantined directory bytes",
-            ),
-        )
-    })?;
+    let mut bytes = ctx.retained_admitted_vec(bytes_len, "iges quarantined directory bytes")?;
+
+
     for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
         bytes.extend_from_slice(&line.payload);
     }

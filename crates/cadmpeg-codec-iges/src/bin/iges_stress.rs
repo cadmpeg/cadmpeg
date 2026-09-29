@@ -651,7 +651,11 @@ fn trailing_groups(scale: Scale) -> Result<Vec<u8>, &'static str> {
 
 fn text_run(seed: &mut Lcg, length: usize) -> Result<String, &'static str> {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:+*/#";
-    let mut text = String::with_capacity(length);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).map_err(|_| "text generation context refused")?;
+    let mut text = ctx.retained_string(length, "IGES stress text").map_err(|_| "text generation storage refused")?;
     for _ in 0..length {
         let pick = cadmpeg_core::decode::index_from_u64(
             seed.below(cadmpeg_core::decode::u64_from_index(ALPHABET.len())),
