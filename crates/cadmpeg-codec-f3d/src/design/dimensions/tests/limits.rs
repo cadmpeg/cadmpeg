@@ -729,6 +729,89 @@ fn assert_exact_group_variant_refusal(
     panic!("no {operation} refusal");
 }
 
+fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceDimension) {
+    let mut fixture = fixture();
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(21), "1 mm", "Radial Dimension-2", Some("mm"), "r1", 0.1,
+    )).unwrap();
+    parameter.id = fixture.parameter.id.clone();
+    parameter.record_index = fixture.parameter.record_index;
+    fixture.parameter = parameter;
+    let [line_curve, point_curve] = native_fallback_curves(&mut fixture);
+    let mut circle_curve = line_curve.clone();
+    circle_curve.id = "f3d:Design/BulkStream.dat:sketch-curve#32".into();
+    circle_curve.record_index = 32;
+    let curves = [line_curve, point_curve, circle_curve];
+    fixture.entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0), end: Point2::new(6.0, 0.0),
+    }).unwrap();
+    let point = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#radial-extension-point").unwrap(),
+        fixture.entity.sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(6.5, 0.0),
+        }).unwrap(),
+    ).with_native_ref(Some(curves[1].id.clone()));
+    let circle = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#radial-measurement-circle").unwrap(),
+        fixture.entity.sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+        }).unwrap(),
+    ).with_native_ref(Some(curves[2].id.clone()));
+    let entities = [fixture.entity.clone(), point, circle];
+    let mut group = native_fallback_group();
+    group.state = 0;
+    let mut point_locus = group.loci[0].clone();
+    point_locus.geometry_record_index = 31;
+    point_locus.role = 1;
+    let mut line_locus = group.loci[0].clone();
+    line_locus.geometry_record_index = 30;
+    line_locus.role = 2;
+    group.loci = vec![point_locus, line_locus];
+    let mut inputs = fixture.inputs();
+    inputs.curves = &curves;
+    inputs.entities = &entities;
+    inputs.groups = std::slice::from_ref(&group);
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            _ => panic!("unsupported radial extension limit"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn radial_extension_locus_index_refuses_collection_limit() {
+    assert_radial_extension_refusal("f3d radial dimension locus index",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn radial_extension_group_refuses_collection_limit() {
+    assert_radial_extension_refusal("f3d radial extension group",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn radial_extension_sketch_refuses_retained_limit() {
+    assert_radial_extension_refusal("f3d dimension radial sketch id",
+        ResourceDimension::RetainedBytes);
+}
+
 #[test]
 fn exact_group_locus_entity_refuses_collection_limit() {
     assert_exact_group_variant_refusal("linear", "f3d exact group locus entity",

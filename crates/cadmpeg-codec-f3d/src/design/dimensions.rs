@@ -787,9 +787,9 @@ fn project_all_dimension_constraints(
         }
         None
     };
-    let radial_extension_annotation_groups = groups
-        .iter()
-        .filter_map(|group| {
+    let mut radial_extension_annotation_groups = HashSet::new();
+    for group in groups {
+        let candidate = (|| {
             let scope = native_stream(&group.id)?;
             if group.state != 0 {
                 return None;
@@ -816,11 +816,13 @@ fn project_all_dimension_constraints(
             if !radial_extension_annotation_group(&locus_entities, parameter) {
                 return None;
             }
-            let locus_indices = group
-                .loci
-                .iter()
-                .map(|locus| locus.geometry_record_index)
-                .collect::<Vec<_>>();
+            let mut locus_indices = Vec::new();
+            for locus in &group.loci {
+                if let Err(error) = push_dimension_item(ctx, &mut locus_indices,
+                    locus.geometry_record_index, "f3d radial dimension locus index") {
+                    return Some(Err(error));
+                }
+            }
             let sketch = match sketch_for_owner_or_geometry(scope, group.owner_reference,
                 &locus_indices, "f3d dimension radial sketch id") {
                 Ok(Some(sketch)) => sketch,
@@ -834,11 +836,13 @@ fn project_all_dimension_constraints(
                 &parameter_id,
                 linear_tolerance,
             )?;
-            Some(Ok((scope.to_owned(), group.record_index)))
-        })
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .collect::<HashSet<_>>();
+            Some(Ok((scope, group.record_index)))
+        })();
+        if let Some(result) = candidate {
+            insert_dimension_set(ctx, &mut radial_extension_annotation_groups, result?,
+                "f3d radial extension group")?;
+        }
+    }
     let mut exact_pair_companions = HashSet::new();
     for pair in pairs {
             let Some(scope) = native_stream(&pair.id) else { continue; };
@@ -894,7 +898,7 @@ fn project_all_dimension_constraints(
     }
     for group in groups {
         let Some(scope) = native_stream(&group.id) else { continue; };
-        if radial_extension_annotation_groups.contains(&(scope.to_owned(), group.record_index)) {
+        if radial_extension_annotation_groups.contains(&(scope, group.record_index)) {
             continue;
         }
         let Some((parameter, parameter_id)) =
@@ -915,7 +919,7 @@ fn project_all_dimension_constraints(
     for group in groups {
         let projected = (|| {
             let scope = native_stream(&group.id)?;
-            if radial_extension_annotation_groups.contains(&(scope.to_owned(), group.record_index))
+            if radial_extension_annotation_groups.contains(&(scope, group.record_index))
             {
                 return None;
             }
