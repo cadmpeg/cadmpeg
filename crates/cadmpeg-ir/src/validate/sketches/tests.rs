@@ -284,14 +284,14 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 };
                 curve.reverse_parameterization();
                 let last = curve.pole_rows().count() - 1;
-                let mut index = 0;
                 curve
-                    .edit_control_points(|point| {
-                        if index == last {
-                            point.u += 0.01;
-                        }
-                        index += 1;
-                        Ok(())
+                    .try_map_control_points(|pole_index, point| {
+                        let point = point.get();
+                        crate::units::FinitePoint2::new(crate::math::Point2::new(
+                            point.u + if pole_index == last { 0.01 } else { 0.0 },
+                            point.v,
+                        ))
+                        .ok_or(())
                     })
                     .unwrap();
             };
