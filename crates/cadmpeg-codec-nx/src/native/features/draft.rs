@@ -33,6 +33,7 @@ use super::offset_data_block_bytes;
 use super::resolved_feature_payload_references;
 use super::format_feature_history_id;
 use super::format_feature_child_id;
+use super::format_offset_data_block_id;
 use super::copy_operation_text;
 use super::replace_operation_text;
 use super::unique_offset_data_store;
@@ -724,46 +725,50 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
             let Some(lane) = lane else {
                 return;
             };
-            let section_ordinal = crate::om::draft_references::draft_feature_payload_references(
-                record.payload_view(),
-            )
-            .and_then(|graph| {
-                let complete_indices = graph
-                    .references()
-                    .into_iter()
-                    .map(|(token, _)| token.value())
-                    .chain(lane.indices().map(|token| token.atom.value()))
-                    .collect::<Vec<_>>();
-                unique_offset_data_store(&indexed, &complete_indices)
-            });
-            let Some(frame) = lane.into_absolute(entry_offset) else {
-                return;
-            };
-            let indices = match section_ordinal {
-                None => FeatureDraftConstructionIndices::Unresolved(frame),
-                Some(section_ordinal) => {
-                    let resolved = frame.resolve(ctx, |index| {
-                        format!("nx:om-data-blocks-{section_ordinal}:block#{index}")
-                    });
-                    let frame = match resolved {
-                        Ok(frame) => frame,
-                        Err(error) => {
-                            failure = Some(error);
-                            return;
-                        }
-                    };
-                    FeatureDraftConstructionIndices::Resolved(frame)
-                }
-            };
-            lanes.push(FeatureDraftConstructionIndexLane {
-                id: format!(
-                    "nx:feature-history:draft-construction-index-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                indices,
-            });
+            let projected = (|| -> Result<Option<FeatureDraftConstructionIndexLane>, CodecError> {
+                let section_ordinal = if let Some(graph) =
+                    crate::om::draft_references::draft_feature_payload_references(record.payload_view())
+                {
+                    let count = 4usize.checked_add(lane.indices().count())
+                        .ok_or_else(|| ctx.refuse_codec_limit("NX draft complete reference indices", 0, 1))?;
+                    let bytes = count.checked_mul(std::mem::size_of::<u32>())
+                        .ok_or_else(|| ctx.refuse_codec_limit("NX draft complete reference indices", 0, 1))?;
+                    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX draft complete reference indices")?;
+                    let _indices_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes), "NX draft complete reference indices")?;
+                    let mut complete_indices = Vec::new();
+                    complete_indices.try_reserve_exact(count)
+                        .map_err(|_| ctx.refuse_codec_limit("allocate NX draft complete reference indices", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+                    complete_indices.extend(graph.references().into_iter().map(|(token, _)| token.value()));
+                    complete_indices.extend(lane.indices().map(|token| token.atom.value()));
+                    let work = indexed.len().checked_mul(count)
+                        .ok_or_else(|| ctx.refuse_codec_limit("resolve NX draft reference store", 0, 1))?;
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "resolve NX draft reference store")?;
+                    unique_offset_data_store(&indexed, &complete_indices)
+                } else {
+                    None
+                };
+                let Some(frame) = lane.into_absolute(entry_offset) else {
+                    return Ok(None);
+                };
+                let indices = match section_ordinal {
+                    None => FeatureDraftConstructionIndices::Unresolved(frame),
+                    Some(section_ordinal) => FeatureDraftConstructionIndices::Resolved(
+                        frame.resolve(ctx, |index| format_offset_data_block_id(ctx, section_ordinal, index))?
+                    ),
+                };
+                let id = format_feature_history_id(ctx, "draft-construction-index-lane", section_key, operation_ordinal, None)?;
+                let operation_label = format_feature_history_id(ctx, "operation-label", section_key, operation_ordinal, None)?;
+                ctx.charge_collection_items(1, "NX draft construction index lanes")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDraftConstructionIndexLane>()), "NX draft construction index lane")?;
+                lanes.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX draft construction index lanes", 0, 1))?;
+                Ok(Some(FeatureDraftConstructionIndexLane { id, operation_label, indices }))
+            })();
+            match projected {
+                Ok(Some(lane)) => lanes.push(lane),
+                Ok(None) => {}
+                Err(error) => failure = Some(error),
+            }
         },
     )?;
     if let Some(error) = failure {

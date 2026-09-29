@@ -71,14 +71,14 @@ impl<O> DraftLeadingLane<(), O> {
     pub(crate) fn resolve<T>(
         self,
         ctx: &DecodeContext<'_>,
-        mut resolve: impl FnMut(u32) -> T,
+        mut resolve: impl FnMut(u32) -> Result<T, CodecError>,
     ) -> Result<DraftLeadingLane<T, O>, CodecError> {
         Ok(DraftLeadingLane {
             offset: self.offset,
-            indices: self.indices.map_charged(ctx, |token| CompactIndexTarget {
+            indices: self.indices.map_charged(ctx, |token| Ok(CompactIndexTarget {
                 atom: token.atom,
-                target: resolve(token.atom.value()),
-            })?,
+                target: resolve(token.atom.value())?,
+            }))?,
         })
     }
 
