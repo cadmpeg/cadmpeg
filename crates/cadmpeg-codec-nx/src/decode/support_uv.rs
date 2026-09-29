@@ -234,7 +234,7 @@ pub(super) fn validate_serialized_support_uv_with_index(
             Some(values),
             geometry_budget,
         )? {
-            admitted[side] = Some(values.clone_charged(ctx)?);
+            admitted[side] = Some(crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(values.as_slice(), "NX solved support-UV lane copy")?, values.as_slice().len()).ok_or_else(|| cadmpeg_core::CodecError::malformed("NX copied support-UV lane count"))?);
         }
     }
     Ok(admitted)
@@ -359,7 +359,7 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         }
         assigned[support] = lanes[lane]
             .as_ref()
-            .map(|lane| lane.clone_charged(ctx))
+            .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| cadmpeg_core::CodecError::malformed("NX copied support-UV lane count")))
             .transpose()?;
         assigned_lanes[support] = Some(lane);
     }
@@ -375,7 +375,7 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         if lane_matches_surface(surfaces[other_support], other_lane)? {
             assigned[other_support] = lanes[other_lane]
                 .as_ref()
-                .map(|lane| lane.clone_charged(ctx))
+                .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| cadmpeg_core::CodecError::malformed("NX copied support-UV lane count")))
                 .transpose()?;
         }
     }

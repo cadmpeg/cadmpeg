@@ -40,9 +40,7 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
-    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        Ok(Self(ctx.copy_retained_slice(&self.0, "NX solved support-UV lane copy")?))
-    }
+
     pub(crate) fn from_present_values_charged(
         ctx: &DecodeContext<'_>,
         values: Vec<[f64; 2]>,
@@ -365,13 +363,13 @@ impl CurveScan {
             let [support_first, support_second] = [0, 1].map(|side| {
                 curve.support_uv[side]
                     .as_ref()
-                    .map(|lane| lane.clone_charged(ctx))
+                    .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
                     .transpose()
             });
             let [ext_first, ext_second] = [0, 1].map(|side| {
                 curve.ext_support_uv[side]
                     .as_ref()
-                    .map(|lane| lane.clone_charged(ctx))
+                    .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
                     .transpose()
             });
             curves.push(IntersectionCurve {
@@ -750,11 +748,11 @@ fn enrich(
     let ext_support_uv = [
         chart.ext_support_uv[0]
             .as_ref()
-            .map(|lane| lane.clone_charged(ctx))
+            .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
             .transpose()?,
         chart.ext_support_uv[1]
             .as_ref()
-            .map(|lane| lane.clone_charged(ctx))
+            .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
             .transpose()?,
     ];
     Ok(IntersectionCurve {
