@@ -24,6 +24,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 const EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9: f64 = 1.0e-9;
 #[cfg(test)]
@@ -43,6 +44,37 @@ fn push_face_item<T>(
     }
     items.push(item);
     Ok(())
+}
+
+fn insert_face_map<K: Eq + Hash, V>(
+    ctx: Option<&DecodeContext<'_>>,
+    entries: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<Option<V>, CodecError> {
+    if !entries.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            entries.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+    }
+    Ok(entries.insert(key, value))
+}
+
+fn insert_face_set<T: Eq + Hash>(
+    ctx: Option<&DecodeContext<'_>>,
+    entries: &mut HashSet<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if !entries.contains(&value) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            entries.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+    }
+    Ok(entries.insert(value))
 }
 
 fn copy_face_text(
@@ -377,34 +409,37 @@ pub(super) fn resolved_profile_face_group(
 /// selection, not an additional profile consumed by the Extrude. The complete
 /// hierarchy must be acyclic, and each child can have exactly one parent.
 pub(crate) fn extrude_profile_group_roots<'a>(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     groups: &'a [DesignConstructionOperandGroup],
-) -> Option<Vec<&'a DesignConstructionOperandGroup>> {
+) -> Result<Option<Vec<&'a DesignConstructionOperandGroup>>, CodecError> {
     use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
 
-    let stream = native_stream(&scope.id)?;
-    let mut profile_groups = groups
-        .iter()
-        .filter(|group| {
+    let Some(stream) = native_stream(&scope.id) else { return Ok(None); };
+    let mut profile_groups = Vec::new();
+    for group in groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
                 && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
-        })
-        .collect::<Vec<_>>();
+        }) {
+        push_face_item(ctx, &mut profile_groups, group, "f3d Extrude profile group")?;
+    }
     profile_groups.sort_by_key(|group| group.scope_reference_ordinal);
     if profile_groups.windows(2).any(|groups| {
         groups[0].scope_reference_ordinal == groups[1].scope_reference_ordinal
             || groups[0].record_index == groups[1].record_index
     }) {
-        return None;
+        return Ok(None);
     }
 
-    let groups_by_record = profile_groups
-        .iter()
-        .map(|group| (group.record_index, *group))
-        .collect::<HashMap<_, _>>();
+    let mut groups_by_record = HashMap::new();
+    for group in &profile_groups {
+        // discarded-value: duplicate record indices are rejected by the length check below.
+        let _ = insert_face_map(ctx, &mut groups_by_record, group.record_index, *group,
+            "f3d Extrude profile group index")?;
+    }
     if groups_by_record.len() != profile_groups.len() {
-        return None;
+        return Ok(None);
     }
     let mut parent_by_child = HashMap::new();
     for parent in &profile_groups {
@@ -412,50 +447,57 @@ pub(crate) fn extrude_profile_group_roots<'a>(
             let Some(child) = groups_by_record.get(member) else {
                 continue;
             };
-            if child.scope_reference_ordinal <= parent.scope_reference_ordinal
-                || parent_by_child
-                    .insert(child.record_index, parent.record_index)
-                    .is_some()
-            {
-                return None;
+            if child.scope_reference_ordinal <= parent.scope_reference_ordinal {
+                return Ok(None);
+            }
+            if insert_face_map(ctx, &mut parent_by_child, child.record_index,
+                parent.record_index, "f3d Extrude profile parent index")?.is_some() {
+                return Ok(None);
             }
         }
     }
-    let roots = profile_groups
-        .iter()
-        .copied()
-        .filter(|group| !parent_by_child.contains_key(&group.record_index))
-        .collect::<Vec<_>>();
+    let mut roots = Vec::new();
+    for group in profile_groups.iter().copied()
+        .filter(|group| !parent_by_child.contains_key(&group.record_index)) {
+        push_face_item(ctx, &mut roots, group, "f3d Extrude profile root")?;
+    }
     if !profile_groups.is_empty() && roots.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let mut visited = HashSet::new();
-    if roots
-        .iter()
-        .any(|root| !visit_extrude_profile_group(root, &groups_by_record, &mut visited))
-        || visited.len() != profile_groups.len()
-    {
-        return None;
+    for root in &roots {
+        if !visit_extrude_profile_group(ctx, root, &groups_by_record, &mut visited)? {
+            return Ok(None);
+        }
     }
-    Some(roots)
+    if visited.len() != profile_groups.len() { return Ok(None); }
+    Ok(Some(roots))
 }
 
 fn visit_extrude_profile_group(
+    ctx: Option<&DecodeContext<'_>>,
     group: &DesignConstructionOperandGroup,
     groups_by_record: &HashMap<u32, &DesignConstructionOperandGroup>,
     visited: &mut HashSet<u32>,
-) -> bool {
-    visited.insert(group.record_index)
-        && group
-            .members()
-            .iter()
-            .map(|member| &member.value)
-            .all(|member| {
-                groups_by_record.get(member).is_none_or(|child| {
-                    visit_extrude_profile_group(child, groups_by_record, visited)
-                })
-            })
+) -> Result<bool, CodecError> {
+    let _depth = ctx.map(|ctx| ctx.enter_nested("f3d Extrude profile hierarchy"))
+        .transpose()?;
+    if let Some(ctx) = ctx {
+        ctx.charge_work(1, "f3d Extrude profile hierarchy")?;
+    }
+    if !insert_face_set(ctx, visited, group.record_index,
+        "f3d Extrude profile visited group")? {
+        return Ok(false);
+    }
+    for member in group.members().iter().map(|member| &member.value) {
+        if let Some(child) = groups_by_record.get(member) {
+            if !visit_extrude_profile_group(ctx, child, groups_by_record, visited)? {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
 /// Resolve each member of an Extrude profile group to one exact leaf operand.
@@ -4062,5 +4104,126 @@ mod tests {
                 if failure.operation == "f3d target plane face ID"
                     && failure.dimension == ResourceDimension::RetainedBytes
         ));
+    }
+
+    fn extrude_root_fixture() -> (DesignParameterScope, [DesignConstructionOperandGroup; 2]) {
+        let scope = DesignParameterScope::empty(
+            "f3d:test:scope#12",
+            crate::records::feature::scope::DesignFeatureKind::Extrude,
+            12,
+        );
+        let root: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:group#100",
+            "scope_record_index": 12,
+            "scope_reference_ordinal": 0,
+            "record_index": 100,
+            "byte_offset": 1000,
+            "class_tag": "332",
+            "members": [101],
+            "member_offsets": [1026],
+            "frame": {
+                "member_count_offset": 1021,
+                "opaque_index": 1,
+                "opaque_index_offset": 1072,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 1076,
+                "variant": false
+            },
+            "role": DesignOperandRole::PROFILE.raw(),
+            "extrude_role": "profile",
+            "role_offset": 1054,
+            "paired_class_tag": "259",
+            "paired_byte_offset": 1125
+        })).unwrap();
+        let mut child = root.clone();
+        child.id = "f3d:test:group#101".into();
+        child.record_index = 101;
+        child.scope_reference_ordinal = 1;
+        child.try_set_members(vec![crate::records::identity::Located {
+            value: 200,
+            offset: 1026,
+        }]).unwrap();
+        (scope, [root, child])
+    }
+
+    fn assert_extrude_root_collection_limit(operation: &'static str) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (scope, groups) = extrude_root_fixture();
+        let roots = super::extrude_profile_group_roots(None, &scope, &groups)
+            .unwrap().unwrap();
+        assert_eq!(roots.iter().map(|group| group.record_index).collect::<Vec<_>>(), [100]);
+        for limit in 0..16 {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            if matches!(super::extrude_profile_group_roots(Some(&ctx), &scope, &groups),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ) {
+                return;
+            }
+        }
+        panic!("no Extrude profile hierarchy refusal at {operation}");
+    }
+
+    #[test]
+    fn extrude_profile_group_refuses_collection_limit() {
+        assert_extrude_root_collection_limit("f3d Extrude profile group");
+    }
+
+    #[test]
+    fn extrude_profile_group_index_refuses_collection_limit() {
+        assert_extrude_root_collection_limit("f3d Extrude profile group index");
+    }
+
+    #[test]
+    fn extrude_profile_parent_index_refuses_collection_limit() {
+        assert_extrude_root_collection_limit("f3d Extrude profile parent index");
+    }
+
+    #[test]
+    fn extrude_profile_root_refuses_collection_limit() {
+        assert_extrude_root_collection_limit("f3d Extrude profile root");
+    }
+
+    #[test]
+    fn extrude_profile_visited_group_refuses_collection_limit() {
+        assert_extrude_root_collection_limit("f3d Extrude profile visited group");
+    }
+
+    #[test]
+    fn extrude_profile_hierarchy_refuses_depth_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (scope, groups) = extrude_root_fixture();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_recursion_depth = 1;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::extrude_profile_group_roots(Some(&ctx), &scope, &groups),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RecursionDepth
+                    && failure.operation == "f3d Extrude profile hierarchy"));
+    }
+
+    #[test]
+    fn extrude_profile_hierarchy_refuses_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (scope, groups) = extrude_root_fixture();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 1;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::extrude_profile_group_roots(Some(&ctx), &scope, &groups),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::WorkUnits
+                    && failure.operation == "f3d Extrude profile hierarchy"));
     }
 }

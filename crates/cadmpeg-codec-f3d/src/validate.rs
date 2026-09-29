@@ -747,14 +747,22 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         &native.design_body_recipe_operands,
         &native.asm_histories,
     );
-    history::bind_face_operand_history_candidates(
+    if let Err(error) = history::bind_face_operand_history_candidates(
+        None,
         &mut expected_face_operands,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.construction_recipes,
         &native.asm_histories,
         &scope_histories,
-    );
+    ) {
+        return vec![Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: format!("Fusion face operand history binding failed: {error}"),
+            entity: None,
+        }];
+    }
     let decoded_profile_face_groups = native
         .design_face_operands
         .iter()

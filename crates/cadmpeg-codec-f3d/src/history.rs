@@ -3905,15 +3905,16 @@ fn direct_face_recipe_candidates(
 }
 
 pub(crate) fn bind_face_operand_history_candidates(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operands: &mut [crate::records::topology::face::DesignFaceOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     recipes: &[crate::records::recipes::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     if projection_was_finalized(histories) {
-        return;
+        return Ok(());
     }
     let recipe_record_indices = recipes
         .iter()
@@ -4250,12 +4251,14 @@ pub(crate) fn bind_face_operand_history_candidates(
         }
     }
     bind_profile_face_group_cardinality(
+        ctx,
         operands,
         scopes,
         operand_groups,
         histories,
         scope_histories,
-    );
+    )?;
+    Ok(())
 }
 
 /// Resolve a Draft face whose persistent selector lane is ambiguous in the
@@ -5141,12 +5144,13 @@ fn resolve_direct_face_recipe_clauses(
 }
 
 fn bind_profile_face_group_cardinality(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operands: &mut [crate::records::topology::face::DesignFaceOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for scope in scopes {
         let scoped_history = if scope_histories.contains_key(&scope.id) {
             let Some(history) = bound_scope_history(&scope.id, scope_histories, histories) else {
@@ -5158,7 +5162,7 @@ fn bind_profile_face_group_cardinality(
         };
         let scoped_histories = scoped_history.map_or(histories, std::slice::from_ref);
         let Some(profile_groups) =
-            crate::design::face_resolve::extrude_profile_group_roots(scope, operand_groups)
+            crate::design::face_resolve::extrude_profile_group_roots(ctx, scope, operand_groups)?
         else {
             continue;
         };
@@ -5251,6 +5255,7 @@ fn bind_profile_face_group_cardinality(
             }
         }
     }
+    Ok(())
 }
 
 fn profile_face_group_cardinality_candidates(
