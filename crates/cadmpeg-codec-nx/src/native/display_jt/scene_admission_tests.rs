@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scene-node parser and record allocation admission.
 
+use super::{decimal_digits, display_jt_text_size};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -99,21 +100,13 @@ fn display_jt_range_vectors_refuse_before_conversion_allocation() {
 }
 
 #[test]
-fn display_jt_scene_record_refuses_before_identity_allocation() {
+fn display_jt_scene_record_refuses_before_identity_allocation() -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut records: Vec<String> = Vec::new();
-    let error = super::admit_display_jt_pair(
-        &ctx,
-        &mut records,
-        "segment",
-        "-base-node-",
-        "-inflated-element-",
-        0,
-        "store DisplayJT base node",
-    )
+    let error = ctx.reserve_record_vec(&mut records, 1, display_jt_text_size(&ctx, &["segment", "-base-node-", "segment", "-inflated-element-"], decimal_digits(0).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("store DisplayJT base node", 0, u64::MAX))?)?, "store DisplayJT base node")
     .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::Entities
@@ -121,14 +114,7 @@ fn display_jt_scene_record_refuses_before_identity_allocation() {
     assert!(records.is_empty());
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    super::admit_display_jt_pair(
-        &service,
-        &mut records,
-        "segment",
-        "-base-node-",
-        "-inflated-element-",
-        0,
-        "store DisplayJT base node",
-    )
+    service.reserve_record_vec(&mut records, 1, display_jt_text_size(&service, &["segment", "-base-node-", "segment", "-inflated-element-"], decimal_digits(0).checked_mul(2).ok_or_else(|| service.refuse_codec_limit("store DisplayJT base node", 0, u64::MAX))?)?, "store DisplayJT base node")
     .unwrap();
+    Ok(())
 }

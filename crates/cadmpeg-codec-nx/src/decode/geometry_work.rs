@@ -2,7 +2,7 @@
 //! Shared work accounting for adaptive geometry certification.
 
 use cadmpeg_core::decode::{
-    DecodeContext, ResourceLimit, ScopedReservation, WorkBudget,
+    DecodeContext, ResourceLimit, WorkBudget,
 };
 use std::cell::RefCell;
 use std::ops::Deref;
@@ -66,15 +66,6 @@ impl<'a> GeometryWorkBudget<'a> {
             )),
         }
     }
-
-    pub(super) fn reserve_vec<T>(
-        &self,
-        output: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<Option<ScopedReservation<'_>>, ResourceLimit> {
-    DecodeContext::reserve_temporary_vec_optional_limit(self.charges, output, count, operation)
-}
 
     pub(super) fn charge_collection_items(
         &self,

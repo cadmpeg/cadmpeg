@@ -1,7 +1,5 @@
 use super::feature_projection::{
-    insert_parameter_property, parameter_consumer_identity, projection_string, reserve_attach_vec,
-    selection_scoped_string,
-};
+    insert_parameter_property, parameter_consumer_identity };
 use super::{
     Angle, AnnotationBuilder, BTreeMap, CadIr, CodecError, DecodeContext, DesignParameter,
     DistinctMembers, Exactness, Feature, FeatureDefinition, FeatureId, FeatureOperation,
@@ -50,7 +48,7 @@ pub(in crate::native) fn attach_expression_parameters(
         reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             &crate::native::om::Expression,
         >()))?;
-        reserve_attach_vec(ctx, table_expressions, 1, "NX expression table members")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(table_expressions, 1, "NX expression table members")?;
         table_expressions.push(expression);
     }
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
@@ -74,7 +72,7 @@ pub(in crate::native) fn attach_expression_parameters(
         reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             &crate::native::features::FeatureParameterUse,
         >()))?;
-        reserve_attach_vec(ctx, uses, 1, "NX expression use member")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(uses, 1, "NX expression use member")?;
         uses.push(parameter_use);
     }
     for uses in uses_by_expression.values_mut() {
@@ -113,7 +111,7 @@ pub(in crate::native) fn attach_expression_parameters(
             &str,
             Vec<&crate::native::om::Expression>,
         )>()))?;
-        reserve_attach_vec(ctx, &mut ordered_tables, 1, "NX expression ordered tables")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ordered_tables, 1, "NX expression ordered tables")?;
         ordered_tables.push(entry);
     }
     for (_, expressions) in &mut ordered_tables {
@@ -245,7 +243,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX expression feature content",
             )?;
-            reserve_attach_vec(ctx, &mut source_content, 1, "NX expression feature content")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut source_content, 1, "NX expression feature content")?;
             source_content.push(FeatureSourceContent::Parameter(parameter));
         }
         let content_scratch = source_content
@@ -287,7 +285,7 @@ pub(in crate::native) fn attach_expression_parameters(
             cadmpeg_core::decode::u64_from_index(feature_bytes),
             "NX expression feature",
         )?;
-        reserve_attach_vec(ctx, &mut ir.model.features, 1, "NX expression feature")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.features, 1, "NX expression feature")?;
         let ordinal = base_ordinal
             .checked_add(cadmpeg_core::decode::u64_from_index(table_ordinal))
             .ok_or_else(|| ctx.refuse_codec_limit("NX expression feature ordinal", 0, 1))?;
@@ -345,7 +343,7 @@ pub(in crate::native) fn attach_expression_parameters(
             reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                 ParameterId,
             >()))?;
-            reserve_attach_vec(ctx, ids, 1, "NX parameter identity candidates")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(ids, 1, "NX parameter identity candidates")?;
             ids.push(id);
         }
         for (ordinal, expression) in expressions.into_iter().enumerate() {
@@ -415,7 +413,7 @@ pub(in crate::native) fn attach_expression_parameters(
                         cadmpeg_core::decode::u64_from_index(bytes),
                         "NX parameter dependency",
                     )?;
-                    reserve_attach_vec(ctx, &mut dependencies, 1, "NX parameter dependencies")?;
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut dependencies, 1, "NX parameter dependencies")?;
                     dependencies.push(candidate.clone());
                 }
             }
@@ -460,13 +458,13 @@ pub(in crate::native) fn attach_expression_parameters(
                     ctx,
                     &mut properties,
                     format_args!("declaration"),
-                    projection_string(ctx, format_args!("{}", declaration.id))?,
+                    ctx.format_retained_with_work(format_args!("{}", declaration.id), "NX feature projection text")?,
                 )?;
                 insert_parameter_property(
                     ctx,
                     &mut properties,
                     format_args!("declaration_object_id"),
-                    projection_string(ctx, format_args!("{}", declaration.object_id))?,
+                    ctx.format_retained_with_work(format_args!("{}", declaration.object_id), "NX feature projection text")?,
                 )?;
                 annotations
                     .derived(id.as_str(), "properties")
@@ -488,7 +486,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     ctx,
                     &mut properties,
                     format_args!("parameter_use.{consumer_ordinal}"),
-                    projection_string(ctx, format_args!("{}", parameter_use.id))?,
+                    ctx.format_retained_with_work(format_args!("{}", parameter_use.id), "NX feature projection text")?,
                 )?;
                 annotations
                     .derived(id.as_str(), "properties")
@@ -508,7 +506,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX expression parameter",
             )?;
-            reserve_attach_vec(ctx, &mut ir.model.parameters, 1, "NX expression parameters")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.parameters, 1, "NX expression parameters")?;
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 ctx.refuse_codec_limit(
                     "NX expression parameter ordinal",
@@ -520,15 +518,15 @@ pub(in crate::native) fn attach_expression_parameters(
                 id,
                 owner: Some(feature_id.clone()),
                 ordinal,
-                name: projection_string(ctx, format_args!("{}", expression.name.as_str()))?,
-                expression: projection_string(ctx, format_args!("{}", expression.expression))?,
+                name: ctx.format_retained_with_work(format_args!("{}", expression.name.as_str()), "NX feature projection text")?,
+                expression: ctx.format_retained_with_work(format_args!("{}", expression.expression), "NX feature projection text")?,
                 display: None,
                 value,
                 dependencies: DistinctMembers::try_from_unique_vec(dependencies)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 properties,
                 pmi: None,
-                native_ref: Some(projection_string(ctx, format_args!("{}", expression.id))?),
+                native_ref: Some(ctx.format_retained_with_work(format_args!("{}", expression.id), "NX feature projection text")?),
             });
         }
     }
@@ -590,7 +588,7 @@ fn order_expression_dependencies(
         reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             &crate::native::om::Expression,
         >()))?;
-        reserve_attach_vec(ctx, &mut order, 1, "NX expression dependency order")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut order, 1, "NX expression dependency order")?;
         order.push(expressions[index]);
     }
     let ordered_count = order.len();
@@ -600,7 +598,7 @@ fn order_expression_dependencies(
             reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                 &crate::native::om::Expression,
             >()))?;
-            reserve_attach_vec(ctx, &mut order, 1, "NX expression dependency order")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut order, 1, "NX expression dependency order")?;
             order.push(expression);
         }
     }
@@ -617,16 +615,8 @@ pub(super) fn attach_block_dimension_parameter_consumers(
     for dimension_set in dimensions {
         let mut reservation = ctx.reserve_scoped(0, "NX block dimension consumers")?;
         let consumer = match dimension_set.operation_label.split_once("operation-label") {
-            Some((prefix, suffix)) => selection_scoped_string(
-                ctx,
-                &mut reservation,
-                format_args!("{prefix}feature{suffix}"),
-            )?,
-            None => selection_scoped_string(
-                ctx,
-                &mut reservation,
-                format_args!("{}", dimension_set.operation_label),
-            )?,
+            Some((prefix, suffix)) => ctx.format_scoped_text_with_work(&mut reservation, format_args!("{prefix}feature{suffix}"), "NX body selection text")?,
+            None => ctx.format_scoped_text_with_work(&mut reservation, format_args!("{}", dimension_set.operation_label), "NX body selection text")?,
         };
         for (ordinal, dimension) in dimension_set.dimensions.iter().enumerate() {
             ctx.charge_work(
@@ -652,7 +642,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                 ctx,
                 &mut parameter.properties,
                 format_args!("block_dimension.{ordinal}"),
-                projection_string(ctx, format_args!("{}", dimension_set.id))?,
+                ctx.format_retained_with_work(format_args!("{}", dimension_set.id), "NX feature projection text")?,
             )?;
             if !parameter
                 .properties
@@ -666,11 +656,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                     ctx.charge_work(1, "NX block dimension consumer ordinal")?;
                     let mut key_reservation =
                         ctx.reserve_scoped(0, "NX block dimension consumer key")?;
-                    let key = selection_scoped_string(
-                        ctx,
-                        &mut key_reservation,
-                        format_args!("consumer.{candidate}"),
-                    )?;
+                    let key = ctx.format_scoped_text_with_work(&mut key_reservation, format_args!("consumer.{candidate}"), "NX body selection text")?;
                     if !parameter.properties.contains_key(key.as_str()) {
                         consumer_ordinal = Some(candidate);
                         break;
@@ -685,7 +671,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                     ctx,
                     &mut parameter.properties,
                     format_args!("consumer.{consumer_ordinal}"),
-                    projection_string(ctx, format_args!("{consumer}"))?,
+                    ctx.format_retained_with_work(format_args!("{consumer}"), "NX feature projection text")?,
                 )?;
             }
             annotations

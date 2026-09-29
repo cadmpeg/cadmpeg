@@ -44,7 +44,7 @@ fn jt_rendered_node_path_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 4;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
-    let error = super::retain_jt_node_path(&ctx, &[12, 34])
+    let error = ctx.join_display_retained((&[12, 34]).iter(), "-", "nx JT rendered node path")
         .expect_err("five text bytes exceed the four-byte retained limit");
     assert!(matches!(
         error,
@@ -54,7 +54,7 @@ fn jt_rendered_node_path_refuses_retained_limit() {
     ));
     with_jt_context(|service| {
         assert_eq!(
-            super::retain_jt_node_path(service, &[12, 34]).unwrap(),
+            service.join_display_retained((&[12, 34]).iter(), "-", "nx JT rendered node path").unwrap(),
             "12-34"
         );
     });
@@ -67,8 +67,8 @@ fn jt_tessellation_channel_bytes_refuse_collection_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
-    let mut bytes = Vec::new();
-    let error = super::reserve_jt_retained_bytes(&ctx, &mut bytes, 3, "nx JT tessellation colors")
+    let mut bytes = Vec::<u8>::new();
+    let error = ctx.reserve_retained_vec(&mut bytes, 3, "nx JT tessellation colors")
         .expect_err("three color bytes exceed two collection items");
     assert!(matches!(
         error,
@@ -87,7 +87,7 @@ fn jt_root_path_slot_does_not_admit_an_ir_entity() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let mut paths = Vec::<super::DisplayJtPath>::new();
-    super::reserve_jt_retained_vec(&ctx, &mut paths, 1, "nx JT root path state")
+    ctx.reserve_retained_vec(&mut paths, 1, "nx JT root path state")
         .expect("temporary path slot is not an IR entity");
     assert!(paths.is_empty());
 }

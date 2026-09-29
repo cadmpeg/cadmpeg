@@ -1239,14 +1239,6 @@ pub(crate) enum FramedSectionCache<'a> {
 type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
 type FramedSectionLayouts = Vec<(usize, crate::om::cache::SectionLayout)>;
 
-fn reserve_cache_slot<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.reserve_retained_vec(values, 1, operation)
-}
-
 fn decimal_len(mut value: usize) -> usize {
     let mut length = 1;
     while value >= 10 {
@@ -1322,10 +1314,10 @@ fn parse_framed_section_cache<'bytes>(
                 else {
                     continue;
                 };
-                reserve_cache_slot(ctx, &mut layouts, "NX framed cache layouts")?;
+                ctx.reserve_retained_vec(&mut layouts, 1, "NX framed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
-            reserve_cache_slot(ctx, &mut sections, "NX framed cache sections")?;
+            ctx.reserve_retained_vec(&mut sections, 1, "NX framed cache sections")?;
             sections.push((entry_index, section));
         }
     }
@@ -1379,10 +1371,10 @@ fn parse_indexed_section_cache<'bytes>(
                 else {
                     continue;
                 };
-                reserve_cache_slot(ctx, &mut layouts, "NX indexed cache layouts")?;
+                ctx.reserve_retained_vec(&mut layouts, 1, "NX indexed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
-            reserve_cache_slot(ctx, &mut sections, "NX indexed cache sections")?;
+            ctx.reserve_retained_vec(&mut sections, 1, "NX indexed cache sections")?;
             sections.push((entry_index, section));
         }
     }

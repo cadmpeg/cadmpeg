@@ -104,7 +104,7 @@ pub(crate) fn scan<'a>(
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX name fields")?;
     if bytes.first() == Some(&3) {
         if let Some(value) = name_text(bytes, 1) {
-            reserve_field(ctx, &mut fields)?;
+            ctx.reserve_retained_vec(&mut fields, 1, "NX name fields")?;
             fields.push(NameField {
                 form: Form::Leading,
                 value,
@@ -125,7 +125,7 @@ pub(crate) fn scan<'a>(
         let Some(value) = name_text(bytes, marker + 1) else {
             continue;
         };
-        reserve_field(ctx, &mut fields)?;
+        ctx.reserve_retained_vec(&mut fields, 1, "NX name fields")?;
         fields.push(NameField {
             form: Form::Typed {
                 offset: start,
@@ -135,14 +135,6 @@ pub(crate) fn scan<'a>(
         });
     }
     Ok(fields)
-}
-
-fn reserve_field<T>(ctx: &DecodeContext<'_>, fields: &mut Vec<T>) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX name fields")?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), "NX name fields")?;
-    fields
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("NX name fields", 0, 1))
 }
 
 fn name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {

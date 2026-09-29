@@ -521,22 +521,6 @@ pub(crate) struct Graph {
     by_kind: BTreeMap<NodeKind, Vec<(NodeKind, u32)>>,
 }
 
-fn push_scoped<T>(
-    ctx: &DecodeContext<'_>,
-    reservation: &mut ScopedReservation<'_>,
-    values: &mut Vec<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    reservation.grow(u64_from_index(std::mem::size_of::<T>()))?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    values.push(value);
-    Ok(())
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ReferenceRole {
     Body,
@@ -1109,21 +1093,9 @@ impl Graph {
                     .flatten()
             {
                 if matches!(kind, NodeKind::Body | NodeKind::Region) {
-                    push_scoped(
-                        ctx,
-                        &mut ownership_reservation,
-                        &mut ownership_candidates,
-                        candidate,
-                        "NX topology ownership candidates",
-                    )?;
+                    { ctx.reserve_scoped_vec(&mut ownership_reservation, &mut ownership_candidates, 1, "NX topology ownership candidates")?; (&mut ownership_candidates).push(candidate); Ok::<(), cadmpeg_core::CodecError>(()) }?;
                 } else {
-                    push_scoped(
-                        ctx,
-                        &mut candidate_reservation,
-                        &mut candidates,
-                        candidate,
-                        "NX topology candidates",
-                    )?;
+                    { ctx.reserve_scoped_vec(&mut candidate_reservation, &mut candidates, 1, "NX topology candidates")?; (&mut candidates).push(candidate); Ok::<(), cadmpeg_core::CodecError>(()) }?;
                 }
             }
         }
@@ -1153,13 +1125,7 @@ impl Graph {
                 .iter()
                 .all(|selected| !selected.overlaps(candidate))
             {
-                push_scoped(
-                    ctx,
-                    &mut admitted_reservation,
-                    &mut admitted_ownership,
-                    candidate,
-                    "NX admitted ownership candidates",
-                )?;
+                { ctx.reserve_scoped_vec(&mut admitted_reservation, &mut admitted_ownership, 1, "NX admitted ownership candidates")?; (&mut admitted_ownership).push(candidate); Ok::<(), cadmpeg_core::CodecError>(()) }?;
             }
         }
         let mut graph = Self::default();
@@ -1265,13 +1231,7 @@ impl Graph {
         let mut selected = Vec::new();
         let mut reservation = ctx.reserve_scoped(0, "NX topology unique candidates")?;
         for candidate in by_key.into_values().flatten() {
-            push_scoped(
-                ctx,
-                &mut reservation,
-                &mut selected,
-                candidate,
-                "NX topology unique candidates",
-            )?;
+            { ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology unique candidates")?; (&mut selected).push(candidate); Ok::<(), cadmpeg_core::CodecError>(()) }?;
         }
         Ok((selected, reservation))
     }
@@ -1300,13 +1260,7 @@ impl Graph {
             ctx.charge_work(1, "select NX topology candidates")?;
             if fixed_record_boundary(stream, first.end()) {
                 let end = first.end();
-                push_scoped(
-                    ctx,
-                    &mut reservation,
-                    &mut selected,
-                    first,
-                    "NX topology nonoverlapping candidates",
-                )?;
+                { ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology nonoverlapping candidates")?; (&mut selected).push(first); Ok::<(), cadmpeg_core::CodecError>(()) }?;
                 start += 1;
                 while nodes
                     .get(start)
@@ -1327,13 +1281,7 @@ impl Graph {
             }
             let cluster = &nodes[start..end];
             if let [node] = cluster {
-                push_scoped(
-                    ctx,
-                    &mut reservation,
-                    &mut selected,
-                    *node,
-                    "NX topology nonoverlapping candidates",
-                )?;
+                { ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology nonoverlapping candidates")?; (&mut selected).push(*node); Ok::<(), cadmpeg_core::CodecError>(()) }?;
             } else {
                 let mut boundary_candidates = cluster
                     .iter()
@@ -1344,13 +1292,7 @@ impl Graph {
                     continue;
                 };
                 if boundary_candidates.next().is_none() {
-                    push_scoped(
-                        ctx,
-                        &mut reservation,
-                        &mut selected,
-                        node,
-                        "NX topology nonoverlapping candidates",
-                    )?;
+                    { ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology nonoverlapping candidates")?; (&mut selected).push(node); Ok::<(), cadmpeg_core::CodecError>(()) }?;
                 }
             }
             start = end;

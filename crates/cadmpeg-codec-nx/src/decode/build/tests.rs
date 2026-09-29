@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 use super::{
-    push_unknown_link, reserve_unknown_pair, retain_live_annotations, unknown_stream_metadata,
+    push_unknown_link, retain_live_annotations, unknown_stream_metadata,
 };
 
 fn geometry_route_limit_error(policy: &DecodePolicy) -> cadmpeg_core::CodecError {
@@ -108,40 +108,6 @@ fn live_annotations_refuse_first_identity_at_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "nx live annotation identities"
-    ));
-}
-
-#[test]
-fn geometry_unknown_records_refuse_first_collection_slot() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    let error = reserve_unknown_pair(&ctx, &mut Vec::new(), &mut Vec::new())
-        .expect_err("unknown record needs one slot");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "nx geometry unknown streams"
-    ));
-}
-
-#[test]
-fn geometry_unknown_indices_refuse_second_collection_slot() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    let error = reserve_unknown_pair(&ctx, &mut Vec::new(), &mut Vec::new())
-        .expect_err("stream index needs a second slot");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "nx geometry unknown indices"
     ));
 }
 

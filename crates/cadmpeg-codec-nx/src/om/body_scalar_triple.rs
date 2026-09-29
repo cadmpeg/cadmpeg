@@ -82,7 +82,7 @@ pub(crate) fn operation_body_scalar_triples(
             })
         })();
         if let Some(triple) = parsed {
-            super::reserve_om_retained_item(ctx, &mut triples, "NX body scalar triples")?;
+            ctx.reserve_retained_vec(&mut triples, 1, "NX body scalar triples")?;
             triples.push(triple);
         }
     }

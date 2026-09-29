@@ -5158,30 +5158,6 @@ fn retained_om_three_number_id(
     Ok(id)
 }
 
-fn copy_om_retained_texts(
-    ctx: &DecodeContext<'_>,
-    values: &[&str],
-    operation: &'static str,
-) -> Result<Vec<String>, CodecError> {
-    let slot_bytes = values
-        .len()
-        .checked_mul(std::mem::size_of::<String>())
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(values.len()),
-        operation,
-    )?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(slot_bytes), operation)?;
-    let mut output = Vec::new();
-    output
-        .try_reserve_exact(values.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    for value in values {
-        output.push(ctx.copy_retained_text(value, operation)?);
-    }
-    Ok(output)
-}
-
 /// Decode complete zero-prefixed control arrays from offset-only OM stores.
 pub(super) fn data_block_control_values(
     ctx: &DecodeContext<'_>,
@@ -6626,18 +6602,10 @@ pub(super) fn persistent_handles(
         handles.push(PersistentHandle {
             id,
             value,
-            records: copy_om_retained_texts(ctx, &group.records, "NX persistent handle records")?,
+            records: ctx.collect_retained_texts((&group.records).iter().copied(), "NX persistent handle records")?,
             occurrence_count: group.occurrence_count,
-            data_blocks: copy_om_retained_texts(
-                ctx,
-                &group.data_blocks,
-                "NX persistent handle data blocks",
-            )?,
-            external_records: copy_om_retained_texts(
-                ctx,
-                &group.external_records,
-                "NX persistent handle external records",
-            )?,
+            data_blocks: ctx.collect_retained_texts((&group.data_blocks).iter().copied(), "NX persistent handle data blocks")?,
+            external_records: ctx.collect_retained_texts((&group.external_records).iter().copied(), "NX persistent handle external records")?,
             external_occurrence_count: group.external_occurrence_count,
         });
     }

@@ -3795,22 +3795,6 @@ fn assign_operation_header_identities(
     Ok(())
 }
 
-fn copy_payload_source_blocks<'a>(
-    ctx: &'a DecodeContext<'_>,
-    blocks: impl IntoIterator<Item = &'a str>,
-    operation: &'static str,
-) -> Result<(Vec<String>, cadmpeg_core::decode::ScopedReservation<'a>), CodecError> {
-    ctx.collect_scoped_texts(blocks, operation)
-}
-
-fn format_charged_text(
-    ctx: &DecodeContext<'_>,
-    args: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.format_retained_with_work(args, operation)
-}
-
 fn format_feature_history_id(
     ctx: &DecodeContext<'_>,
     kind: &'static str,
@@ -6601,13 +6585,9 @@ pub(super) fn feature_datum_plane_payloads(
         {
             continue;
         }
-        let (data_blocks, reservation) = copy_payload_source_blocks(
-            ctx,
-            header
+        let (data_blocks, reservation) = ctx.collect_scoped_texts(header
                 .resolved_data_blocks(DatumPlaneBlockLane::Object)
-                .map(String::as_str),
-            "copy NX datum plane source blocks",
-        )?;
+                .map(String::as_str), "copy NX datum plane source blocks")?;
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
@@ -6899,11 +6879,7 @@ pub(super) fn feature_datum_csys_descriptors(
             else {
                 continue;
             };
-            let id = format_charged_text(
-                ctx,
-                format_args!("{}-descriptor-{reference_ordinal}", construction.id),
-                "NX datum CSYS descriptor identity",
-            )?;
+            let id = ctx.format_retained_with_work(format_args!("{}-descriptor-{reference_ordinal}", construction.id), "NX datum CSYS descriptor identity")?;
             let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX datum CSYS descriptor operation label")?;
             let construction_id = ctx.copy_retained_text(&construction.id, "NX datum CSYS descriptor construction identity")?;
             let data_block =
@@ -6953,13 +6929,9 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
             }
             let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-            let id = format_charged_text(
-                ctx,
-                format_args!(
+            let id = ctx.format_retained_with_work(format_args!(
                     "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
-                ),
-                "NX datum descriptor identity use",
-            )?;
+                ), "NX datum descriptor identity use")?;
             let identity_text = ctx.copy_retained_text(csys.descriptor.descriptor().identity().as_str(), "NX datum descriptor shared identity")?;
             let identity = CsysIdentity::try_from(identity_text)
                 .map_err(|error| CodecError::Malformed(error.to_owned()))?;
@@ -7055,11 +7027,7 @@ pub(super) fn feature_datum_plane_descriptors(
             let Some(descriptor) = crate::om::datum_plane_descriptor_block(ctx, bytes)? else {
                 continue;
             };
-            let id = format_charged_text(
-                ctx,
-                format_args!("{}-descriptor-{ordinal:010}", header.id),
-                "NX datum plane descriptor identity",
-            )?;
+            let id = ctx.format_retained_with_work(format_args!("{}-descriptor-{ordinal:010}", header.id), "NX datum plane descriptor identity")?;
             let operation_label = ctx.copy_retained_text(&header.operation_label, "NX datum plane descriptor operation label")?;
             let datum_plane_header =
                 ctx.copy_retained_text(&header.id, "NX datum plane descriptor header identity")?;
@@ -7121,7 +7089,7 @@ pub(super) fn feature_datum_plane_block_uses(
                         DatumPlaneBlockLane::Descriptor => "descriptor",
                         DatumPlaneBlockLane::Object => "object",
                     };
-                    let id = format_charged_text(ctx, format_args!(
+                    let id = ctx.format_retained_with_work(format_args!(
                         "nx:feature-history:datum-plane-block-use#{construction_key}-{lane_key}-{reference_ordinal}-{input_key}-{}",
                         input.input_slot), "NX datum plane block use identity")?;
                     let datum_plane_header =
@@ -7192,7 +7160,7 @@ pub(super) fn feature_datum_csys_block_uses(
                     .operation_label
                     .rsplit_once('#')
                     .map_or(input.operation_label.as_str(), |(_, key)| key);
-                let id = format_charged_text(ctx, format_args!(
+                let id = ctx.format_retained_with_work(format_args!(
                     "nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
                     input.input_slot), "NX datum CSYS block use identity")?;
                 let construction_id = ctx.copy_retained_text(&construction.id, "NX datum CSYS block use construction")?;
@@ -7486,11 +7454,7 @@ pub(super) fn feature_sketch_construction_payloads(
             .iter()
             .map(|member| member.data_block.as_str())
             .chain(std::iter::once(construction.terminal_data_block.as_str()));
-        let (data_blocks, reservation) = copy_payload_source_blocks(
-            ctx,
-            source_ids,
-            "copy NX sketch construction source blocks",
-        )?;
+        let (data_blocks, reservation) = ctx.collect_scoped_texts(source_ids, "copy NX sketch construction source blocks")?;
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
@@ -7790,11 +7754,7 @@ pub(super) fn feature_sketch_payload_scalars(
             let key = construction_payload
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
-            let id = format_charged_text(
-                ctx,
-                format_args!("nx:feature-history:sketch-payload-scalar#{key}-{ordinal:010}"),
-                "NX sketch payload scalar identity",
-            )?;
+            let id = ctx.format_retained_with_work(format_args!("nx:feature-history:sketch-payload-scalar#{key}-{ordinal:010}"), "NX sketch payload scalar identity")?;
             let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX sketch payload scalar operation label")?;
             ctx.charge_collection_items(1, "NX sketch payload scalars")?;
             ctx.charge_retained(
@@ -8007,14 +7967,6 @@ fn sorted_payload_refs<'ctx, 'a, T>(
     Ok((references, reservation))
 }
 
-fn copy_sketch_record_ids<T>(
-    ctx: &DecodeContext<'_>,
-    references: &[&T],
-    id: impl Fn(&T) -> &str,
-) -> Result<Vec<String>, CodecError> {
-    ctx.collect_retained_texts(references.iter().map(|reference| id(reference)), "NX sketch payload record IDs")
-}
-
 pub(super) fn feature_sketch_payload_named_records(
     ctx: &DecodeContext<'_>,
     payloads: &[FeatureConstructionPayload],
@@ -8070,9 +8022,9 @@ pub(super) fn feature_sketch_payload_named_records(
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
             let id = format_feature_history_id(ctx, "sketch-payload-record", key, ordinal, None)?;
-            let scalar_fields = copy_sketch_record_ids(ctx, &scalar_fields, |scalar| &scalar.id)?;
-            let fixed_pairs = copy_sketch_record_ids(ctx, &record_fixed_pairs, |pair| &pair.id)?;
-            let mixed_pairs = copy_sketch_record_ids(ctx, &record_mixed_pairs, |pair| &pair.id)?;
+            let scalar_fields = ctx.collect_retained_texts(scalar_fields.iter().map(|scalar| scalar.id.as_str()), "NX sketch payload record IDs")?;
+            let fixed_pairs = ctx.collect_retained_texts(record_fixed_pairs.iter().map(|pair| pair.id.as_str()), "NX sketch payload record IDs")?;
+            let mixed_pairs = ctx.collect_retained_texts(record_mixed_pairs.iter().map(|pair| pair.id.as_str()), "NX sketch payload record IDs")?;
             ctx.charge_collection_items(1, "NX sketch payload named records")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -8145,11 +8097,7 @@ pub(super) fn feature_sketch_points(
             continue;
         }
         let key = record.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let id = format_charged_text(
-            ctx,
-            format_args!("nx:feature-history:sketch-point#{key}"),
-            "NX sketch point identity",
-        )?;
+        let id = ctx.format_retained_with_work(format_args!("nx:feature-history:sketch-point#{key}"), "NX sketch point identity")?;
         let operation_label = ctx.copy_retained_text(&record.operation_label, "NX sketch point operation label")?;
         let named_record = ctx.copy_retained_text(&record.id, "NX sketch point named record")?;
         let name = ctx.copy_retained_text(name.frame.value(), "NX sketch point name")?;
@@ -8410,22 +8358,14 @@ pub(super) fn offset_store_named_points(
             let point_ordinal = ordinal
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX named point ordinal", 0, 1))?;
-            let id = format_charged_text(
-                ctx,
-                format_args!("nx:offset-store:named-point#{section_ordinal}-{point_ordinal}"),
-                "NX named point identity",
-            )?;
+            let id = ctx.format_retained_with_work(format_args!("nx:offset-store:named-point#{section_ordinal}-{point_ordinal}"), "NX named point identity")?;
             let mut data_blocks = Vec::new();
             for relative in 0..point.block_count {
                 let block_ordinal = ordinal
                     .checked_add(relative)
                     .and_then(|ordinal| ordinal.checked_add(1))
                     .ok_or_else(|| ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
-                let block_id = format_charged_text(
-                    ctx,
-                    format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
-                    "NX named point data block identity",
-                )?;
+                let block_id = ctx.format_retained_with_work(format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"), "NX named point data block identity")?;
                 ctx.charge_collection_items(1, "NX named point data blocks")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
@@ -8491,7 +8431,7 @@ pub(super) fn feature_sketch_named_point_block_uses(
                 .id
                 .rsplit_once('#')
                 .map_or(point.id.as_str(), |(_, key)| key);
-            let id = format_charged_text(ctx, format_args!(
+            let id = ctx.format_retained_with_work(format_args!(
                 "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
                 reference.position.ordinal()), "NX sketch named point block use identity")?;
             let operation_label = ctx.copy_retained_text(&reference.operation_label, "NX sketch named point block use label")?;
@@ -8627,13 +8567,9 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             .id
             .rsplit_once('#')
             .map_or(point.id.as_str(), |(_, key)| key);
-        let id = format_charged_text(
-            ctx,
-            format_args!(
+        let id = ctx.format_retained_with_work(format_args!(
                 "nx:feature-history:sketch-preceding-named-point-use#{operation_key}-{point_key}"
-            ),
-            "NX preceding named-point use identity",
-        )?;
+            ), "NX preceding named-point use identity")?;
         let operation_label = ctx.copy_retained_text(operation_label, "NX preceding named-point operation label")?;
         let first_sketch_reference = ctx.copy_retained_text(&first_reference.id, "NX preceding named-point first reference")?;
         let named_point = ctx.copy_retained_text(&point.id, "NX preceding named-point identity")?;
@@ -9144,14 +9080,10 @@ pub(super) fn feature_parameter_bindings(
                 .operation_label
                 .rsplit_once('#')
                 .map_or(input.operation_label.as_str(), |(_, key)| key);
-            let id = format_charged_text(
-                ctx,
-                format_args!(
+            let id = ctx.format_retained_with_work(format_args!(
                     "nx:feature-history:parameter-binding#{operation_key}-{}-{}",
                     input.input_slot, reference.ordinal
-                ),
-                "NX parameter binding identity",
-            )?;
+                ), "NX parameter binding identity")?;
             let operation_label = ctx.copy_retained_text(&input.operation_label, "NX parameter binding operation")?;
             let input_block =
                 ctx.copy_retained_text(&input.data_block, "NX parameter binding input block")?;
@@ -9221,11 +9153,7 @@ pub(super) fn feature_parameter_uses(
         let expression_key = expression
             .rsplit_once('#')
             .map_or(expression, |(_, key)| key);
-        let id = format_charged_text(
-            ctx,
-            format_args!("nx:feature-history:parameter-use#{operation_key}-{expression_key}"),
-            "NX parameter use identity",
-        )?;
+        let id = ctx.format_retained_with_work(format_args!("nx:feature-history:parameter-use#{operation_key}-{expression_key}"), "NX parameter use identity")?;
         let operation_label =
             ctx.copy_retained_text(&binding.operation_label, "NX parameter use operation")?;
         let expression_id = ctx.copy_retained_text(expression, "NX parameter use expression")?;

@@ -84,7 +84,7 @@ pub(super) fn body_faces<'a, 'ctx>(
                 reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                     &Face,
                 >()))?;
-                reserve_attach_vec(ctx, &mut faces, 1, "NX body faces")?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut faces, 1, "NX body faces")?;
                 faces.push(face);
             }
         }
@@ -172,7 +172,7 @@ pub(super) fn connected_solid_body_faces<'a, 'ctx>(
         reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             &Face,
         >()))?;
-        reserve_attach_vec(ctx, &mut faces, 1, "NX connected solid faces")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut faces, 1, "NX connected solid faces")?;
         faces.push(face);
     }
     Ok(Some(ScopedFaces {
@@ -259,50 +259,6 @@ pub(super) struct ScopedSurfaceIds<'ctx> {
     _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-pub(super) fn projection_string(
-    ctx: &DecodeContext<'_>,
-    args: std::fmt::Arguments<'_>,
-) -> Result<String, CodecError> {
-    struct Length(usize);
-    impl std::fmt::Write for Length {
-        fn write_str(&mut self, text: &str) -> std::fmt::Result {
-            self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
-            Ok(())
-        }
-    }
-    let mut length = Length(0);
-    std::fmt::write(&mut length, args)
-        .map_err(|_| ctx.refuse_codec_limit("NX feature projection text", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(length.0),
-        "NX feature projection text",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length.0),
-        "NX feature projection text",
-    )?;
-    let mut text = String::new();
-    text.try_reserve(length.0).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "NX feature projection text",
-            0,
-            cadmpeg_core::decode::u64_from_index(length.0),
-        )
-    })?;
-    std::fmt::write(&mut text, args).map_err(|_| {
-        CodecError::InvalidInput("NX feature projection text formatting failed".to_string())
-    })?;
-    Ok(text)
-}
-
-pub(super) fn selection_scoped_string(
-    ctx: &DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    args: std::fmt::Arguments<'_>,
-) -> Result<String, CodecError> {
-    ctx.format_scoped_text_with_work(reservation, args, "NX body selection text")
-}
-
 pub(super) fn selection_indices_native(
     ctx: &DecodeContext<'_>,
     indices: impl Iterator<Item = u32> + Clone,
@@ -356,8 +312,8 @@ pub(super) fn parameter_consumer_identity(
     operation_label: &str,
 ) -> Result<String, CodecError> {
     match operation_label.split_once("operation-label") {
-        Some((prefix, suffix)) => projection_string(ctx, format_args!("{prefix}feature{suffix}")),
-        None => projection_string(ctx, format_args!("{operation_label}")),
+        Some((prefix, suffix)) => ctx.format_retained_with_work(format_args!("{prefix}feature{suffix}"), "NX feature projection text"),
+        None => ctx.format_retained_with_work(format_args!("{operation_label}"), "NX feature projection text"),
     }
 }
 
@@ -367,7 +323,7 @@ pub(super) fn insert_parameter_property(
     key: std::fmt::Arguments<'_>,
     value: String,
 ) -> Result<(), CodecError> {
-    let key = projection_string(ctx, key)?;
+    let key = ctx.format_retained_with_work(key, "NX feature projection text")?;
     let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed(format_args!("NX parameter property key is blank"))
     })?;
@@ -479,7 +435,7 @@ pub(super) fn blend_feature_definition(
             return Ok(None);
         }
         ctx.charge_collection_items(1, "NX blend result surfaces")?;
-        reserve_attach_vec(ctx, &mut surfaces, 1, "NX blend result surfaces")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut surfaces, 1, "NX blend result surfaces")?;
         surfaces.push(owner.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
         match radius {
             BlendRadiusLaw::Constant { signed_radius } if signed_radius.get() != 0.0 => {
@@ -509,7 +465,7 @@ pub(super) fn blend_feature_definition(
                         .ok_or_else(|| ctx.refuse_codec_limit("NX blend support pair", 0, 1))?;
                     ctx.charge_collection_items(1, "NX blend support pairs")?;
                     pairs_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-                    reserve_attach_vec(ctx, &mut pairs, 1, "NX blend support pairs")?;
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut pairs, 1, "NX blend support pairs")?;
                     pairs.push([first.surface.clone(), second.surface.clone()]);
                 }
             } else {
@@ -563,9 +519,9 @@ pub(super) fn blend_feature_definition(
     let face_blend = if matches!(family, NxBlendFamily::Face) && complete_pairs {
         if let Some(sides) = blend_support_bipartition(ctx, &pairs)? {
             let first_native =
-                projection_string(ctx, format_args!("{body}:blend-first-support-surfaces"))?;
+                ctx.format_retained_with_work(format_args!("{body}:blend-first-support-surfaces"), "NX feature projection text")?;
             let second_native =
-                projection_string(ctx, format_args!("{body}:blend-second-support-surfaces"))?;
+                ctx.format_retained_with_work(format_args!("{body}:blend-second-support-surfaces"), "NX feature projection text")?;
             let (first_faces, _) = support_face_projection(ctx, ir, &sides.first, first_native)?;
             let (second_faces, _) = support_face_projection(ctx, ir, &sides.second, second_native)?;
             match (&first_faces, &second_faces) {
@@ -673,7 +629,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
         reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             &SurfaceId,
         >()))?;
-        reserve_attach_vec(ctx, &mut pending, 1, "NX blend support queue")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut pending, 1, "NX blend support queue")?;
         pending.push(*seed);
         while let Some(surface) = pending.pop() {
             let side = sides[&surface];
@@ -692,7 +648,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
                         reservation.grow(cadmpeg_core::decode::u64_from_index(
                             std::mem::size_of::<&SurfaceId>(),
                         ))?;
-                        reserve_attach_vec(ctx, &mut pending, 1, "NX blend support queue")?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut pending, 1, "NX blend support queue")?;
                         pending.push(*neighbor);
                     }
                 }
@@ -708,7 +664,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
             .ok_or_else(|| ctx.refuse_codec_limit("NX blend support output", 0, 1))?;
         ctx.charge_collection_items(1, "NX blend support output")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        reserve_attach_vec(ctx, output, 1, "NX blend support output")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(output, 1, "NX blend support output")?;
         output.push(surface.clone());
     }
     for surface in &first {
@@ -739,10 +695,7 @@ pub(super) fn offset_surface_feature_definition(
     else {
         return Ok(None);
     };
-    let native = projection_string(
-        ctx,
-        format_args!("{}:offset-support-surfaces", body.as_str()),
-    )?;
+    let native = ctx.format_retained_with_work(format_args!("{}:offset-support-surfaces", body.as_str()), "NX feature projection text")?;
     let (faces, senses) = support_face_projection(ctx, ir, &supports, native)?;
     let distance = senses
         .as_deref()
@@ -809,7 +762,7 @@ pub(super) fn unique_carrier_supports(
             continue;
         }
         ctx.charge_collection_items(1, "NX offset support output")?;
-        reserve_attach_vec(ctx, &mut supports, 1, "NX offset support output")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut supports, 1, "NX offset support output")?;
         supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
     let sort_work = supports
@@ -865,7 +818,7 @@ pub(super) fn owned_offset_carriers<'a, 'ctx>(
             &SurfaceId,
             FiniteReal,
         )>()))?;
-        reserve_attach_vec(ctx, &mut carriers, 1, "NX offset carriers")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut carriers, 1, "NX offset carriers")?;
         carriers.push((support, candidate));
     }
     Ok((!carriers.is_empty()).then_some((
@@ -891,10 +844,7 @@ pub(super) fn thicken_feature_definition(
     else {
         return Ok(None);
     };
-    let native = projection_string(
-        ctx,
-        format_args!("{}:thicken-support-surfaces", body.as_str()),
-    )?;
+    let native = ctx.format_retained_with_work(format_args!("{}:thicken-support-surfaces", body.as_str()), "NX feature projection text")?;
     let (faces, senses) = support_face_projection(ctx, ir, &supports, native)?;
     let side = match direction {
         ThickenDirection::Both => Some(ThickenSide::Both),
@@ -1006,7 +956,7 @@ pub(super) fn owned_thicken_surface_data<'a>(
     let mut supports = Vec::new();
     for support in positive {
         ctx.charge_collection_items(1, "NX thicken support output")?;
-        reserve_attach_vec(ctx, &mut supports, 1, "NX thicken support output")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut supports, 1, "NX thicken support output")?;
         supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
     Ok(Some(OwnedThickenSurfaceData {
@@ -1054,7 +1004,7 @@ pub(super) fn support_face_projection(
             .ok_or_else(|| ctx.refuse_codec_limit("NX support face projection", 0, 1))?;
         ctx.charge_collection_items(1, "NX support face projection")?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        reserve_attach_vec(ctx, &mut selected, 1, "NX support face projection")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut selected, 1, "NX support face projection")?;
         selected.push((face.id.clone(), face.sense));
     }
     let mut faces = Vec::new();
@@ -1069,8 +1019,8 @@ pub(super) fn support_face_projection(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX resolved support faces",
         )?;
-        reserve_attach_vec(ctx, &mut faces, 1, "NX resolved support faces")?;
-        reserve_attach_vec(ctx, &mut senses, 1, "NX resolved support senses")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut faces, 1, "NX resolved support faces")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut senses, 1, "NX resolved support senses")?;
         faces.push(face);
         senses.push(sense);
     }
@@ -1100,7 +1050,7 @@ pub(in crate::native) fn feature_source_content(
         reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             &crate::native::features::FeaturePayloadString,
         >()))?;
-        reserve_attach_vec(ctx, &mut sorted, 1, "NX feature source text order")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut sorted, 1, "NX feature source text order")?;
         sorted.push(value);
     }
     let count = sorted.len();
@@ -1149,7 +1099,7 @@ pub(in crate::native) fn feature_source_content(
             )
         })?;
         owned.push_str(text);
-        reserve_attach_vec(ctx, &mut content, 1, "NX feature source text")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut content, 1, "NX feature source text")?;
         content.push(FeatureSourceContent::Text(owned));
     }
     cadmpeg_ir::features::FeatureContent::try_from(content).map_err(CodecError::malformed)
@@ -1385,7 +1335,7 @@ pub(super) fn block_placement(
             std::mem::size_of::<f64>(),
         ))?;
         if let Some(band) = existing {
-            reserve_attach_vec(ctx, &mut band.offsets, 1, "NX block plane offsets")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut band.offsets, 1, "NX block plane offsets")?;
             band.offsets.push(offset);
         } else {
             ctx.charge_collection_items(1, "NX block plane bands")?;
@@ -1393,9 +1343,9 @@ pub(super) fn block_placement(
                 PlaneBand,
             >()))?;
             let mut offsets = Vec::new();
-            reserve_attach_vec(ctx, &mut offsets, 1, "NX block plane offsets")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut offsets, 1, "NX block plane offsets")?;
             offsets.push(offset);
-            reserve_attach_vec(ctx, &mut bands, 1, "NX block plane bands")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bands, 1, "NX block plane bands")?;
             bands.push(PlaneBand { normal, offsets });
         }
     }
@@ -2287,7 +2237,7 @@ pub(super) fn push_hole_operation_label(
         cadmpeg_core::decode::u64_from_index(bytes),
         "NX hole operation labels",
     )?;
-    reserve_attach_vec(ctx, operations, 1, "NX hole operation labels")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(operations, 1, "NX hole operation labels")?;
     operations.push(label.to_owned());
     Ok(())
 }
@@ -2341,12 +2291,7 @@ pub(super) fn simple_hole_operations(
         reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             &crate::native::features::holes::FeatureSimpleHoleTemplate,
         >()))?;
-        reserve_attach_vec(
-            ctx,
-            &mut ordered_templates,
-            1,
-            "NX simple hole selected templates",
-        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ordered_templates, 1, "NX simple hole selected templates")?;
         ordered_templates.push(template);
     }
     if ordered_templates.is_empty() {
@@ -2827,7 +2772,7 @@ pub(super) fn insert_hole_output_body(
     ctx.charge_collection_items(1, "NX hole output body")?;
     charge_hole_map_entry::<Vec<BodyId>>(ctx, operation, nested_bytes, "NX hole output map")?;
     let mut bodies = Vec::new();
-    reserve_attach_vec(ctx, &mut bodies, 1, "NX hole output body")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bodies, 1, "NX hole output body")?;
     bodies.push(body.clone());
     outputs.insert(operation.to_owned(), bodies);
     Ok(())
@@ -3159,7 +3104,7 @@ pub(super) fn hole_axis_placements_for_body(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<HolePlacement>()),
             "NX hole axis placements",
         )?;
-        reserve_attach_vec(ctx, &mut placements, 1, "NX hole axis placements")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut placements, 1, "NX hole axis placements")?;
         placements.push(HolePlacement::Axis { origin, axis });
     }
     placements.sort_by_key(hole_placement_key);
@@ -3500,7 +3445,7 @@ pub(super) fn cylindrical_face_witnesses(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX cylindrical face witness",
         )?;
-        reserve_attach_vec(ctx, &mut witnesses, 1, "NX cylindrical face witnesses")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut witnesses, 1, "NX cylindrical face witnesses")?;
         witnesses.push(CylindricalFaceWitness {
             line_origin,
             axis,
@@ -3733,18 +3678,8 @@ pub(super) fn counterbore_cylinders(
                 cadmpeg_core::decode::u64_from_index(pair_bytes),
                 "nx counterbore candidate pair",
             )?;
-            reserve_attach_vec(
-                ctx,
-                &mut candidates[first_index],
-                1,
-                "nx counterbore candidate pair",
-            )?;
-            reserve_attach_vec(
-                ctx,
-                &mut candidates[second_index],
-                1,
-                "nx counterbore candidate pair",
-            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut candidates[first_index], 1, "nx counterbore candidate pair")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut candidates[second_index], 1, "nx counterbore candidate pair")?;
             candidates[first_index].push((second_index, witness));
             candidates[second_index].push((first_index, witness));
         }
@@ -3770,12 +3705,7 @@ pub(super) fn counterbore_cylinders(
         "nx counterbore cylinder witnesses",
     )?;
     let mut witnesses = Vec::new();
-    reserve_attach_vec(
-        ctx,
-        &mut witnesses,
-        cylinders.len() / 2,
-        "nx counterbore cylinder witnesses",
-    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut witnesses, cylinders.len() / 2, "nx counterbore cylinder witnesses")?;
     let mut used = ctx.alloc_filled(
         cylinders.len(),
         false,
@@ -3797,18 +3727,6 @@ pub(super) fn counterbore_cylinders(
         witnesses.push(witness);
     }
     Ok(Some(witnesses))
-}
-
-pub(super) fn reserve_attach_vec<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(additional);
-    values
-        .try_reserve_exact(additional)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))
 }
 
 /// Identify one blind bore from its unique planar termination. The cylinder
@@ -3931,7 +3849,7 @@ pub(super) fn blind_bore_cylinders(
         "NX blind bore witness",
     )?;
     let mut witnesses = Vec::new();
-    reserve_attach_vec(ctx, &mut witnesses, 1, "NX blind bore witness")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut witnesses, 1, "NX blind bore witness")?;
     witnesses.push(BlindBoreCylinderWitness {
         position,
         direction,
@@ -4001,7 +3919,7 @@ pub(super) fn hole_operations_by_body(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX hole operations per body",
             )?;
-            reserve_attach_vec(ctx, group, 1, "NX hole operations per body")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(group, 1, "NX hole operations per body")?;
             group.push(operation.clone());
         }
         return Ok(Some(operations_by_body));
@@ -4050,7 +3968,7 @@ pub(super) fn hole_operations_by_body(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX hole operations per body",
         )?;
-        reserve_attach_vec(ctx, &mut group, 1, "NX hole operations per body")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut group, 1, "NX hole operations per body")?;
         group.push(operation.clone());
     }
     Ok(Some(BTreeMap::from([(body.id.clone(), group)])))
@@ -4101,7 +4019,7 @@ pub(super) fn simple_hole_chamfers(
             })?;
         ctx.charge_collection_items(1, "NX chamfer selected operations")?;
         operation_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        reserve_attach_vec(ctx, &mut operations, 1, "NX chamfer selected operations")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut operations, 1, "NX chamfer selected operations")?;
         operations.push(template.operation_label.clone());
     }
     if operations.is_empty() {
@@ -4275,8 +4193,8 @@ pub(super) fn simple_hole_chamfers(
             geometry_reservation.grow(cadmpeg_core::decode::u64_from_index(
                 2 * std::mem::size_of::<f64>(),
             ))?;
-            reserve_attach_vec(ctx, &mut outer_radii, 1, "nx chamfer outer radii")?;
-            reserve_attach_vec(ctx, &mut included_angles, 1, "nx chamfer included angles")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut outer_radii, 1, "nx chamfer outer radii")?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut included_angles, 1, "nx chamfer included angles")?;
             outer_radii.push(outer);
             included_angles.push(half_angle * 2.0);
         }
