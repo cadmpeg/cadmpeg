@@ -2613,81 +2613,42 @@ fn attach_feature_operations(
                 format_args!("body_write.{ordinal}"),
                 format_args!("{}", write.id),
             )?;
-            source_properties.insert(
-                format!("body_write.{ordinal}.body_identity"),
-                write.frame.body_identity().to_string(),
-            );
-            source_properties.insert(
-                format!("body_write.{ordinal}.group_node"),
-                write.frame.group_node().value().to_string(),
-            );
-            source_properties.insert(
-                format!("body_write.{ordinal}.endpoint_tag"),
-                write.frame.endpoint_tag().code().to_string(),
-            );
-            source_properties.insert(
-                format!("body_write.{ordinal}.body_image_object_index"),
-                write.frame.body_image().value().to_string(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.body_identity"), format_args!("{}", write.frame.body_identity()))?;
+            insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.group_node"), format_args!("{}", write.frame.group_node().value()))?;
+            insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.endpoint_tag"), format_args!("{}", write.frame.endpoint_tag().code()))?;
+            insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.body_image_object_index"), format_args!("{}", write.frame.body_image().value()))?;
             if let Some(use_) = operation_body_image_segment_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
             {
-                source_properties.insert(
-                    format!("body_write.{ordinal}.body_image_segment_use"),
-                    use_.id.clone(),
-                );
-                source_properties.insert(
-                    format!("body_write.{ordinal}.segment_body_binding"),
-                    use_.segment_body_binding.clone(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.body_image_segment_use"), format_args!("{}", use_.id))?;
+                insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.segment_body_binding"), format_args!("{}", use_.segment_body_binding))?;
             }
             if let Some(use_) = operation_body_identity_segment_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
             {
-                source_properties.insert(
-                    format!("body_write.{ordinal}.body_identity_segment_use"),
-                    use_.id.clone(),
-                );
-                source_properties.insert(
-                    format!("body_write.{ordinal}.body_identity_segment_binding"),
-                    use_.segment_body_binding.clone(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.body_identity_segment_use"), format_args!("{}", use_.id))?;
+                insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.body_identity_segment_binding"), format_args!("{}", use_.segment_body_binding))?;
             }
             if let Some(use_) = operation_body_partition_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
             {
-                source_properties.insert(
-                    format!("body_write.{ordinal}.partition_use"),
-                    use_.id.clone(),
-                );
-                source_properties.insert(
-                    format!("body_write.{ordinal}.partition_stream_ordinal"),
-                    use_.partition_stream_ordinal.to_string(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.partition_use"), format_args!("{}", use_.id))?;
+                insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.partition_stream_ordinal"), format_args!("{}", use_.partition_stream_ordinal))?;
                 for (group_ordinal, group) in use_.parasolid_group_records.iter().enumerate() {
-                    source_properties.insert(
-                        format!("body_write.{ordinal}.parasolid_group.{group_ordinal}"),
-                        group.clone(),
-                    );
+                    insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.parasolid_group.{group_ordinal}"), format_args!("{}", group))?;
                 }
                 for (member_ordinal, member) in use_.parasolid_group_members.iter().enumerate() {
-                    source_properties.insert(
-                        format!("body_write.{ordinal}.parasolid_group_member.{member_ordinal}"),
-                        member.clone(),
-                    );
+                    insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.parasolid_group_member.{member_ordinal}"), format_args!("{}", member))?;
                 }
             }
             if let Some(use_) = body_write_group_partition_uses
                 .iter()
                 .find(|use_| use_.body_write == write.id)
             {
-                source_properties.insert(
-                    format!("body_write.{ordinal}.group_partition_use"),
-                    use_.id.clone(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("body_write.{ordinal}.group_partition_use"), format_args!("{}", use_.id))?;
             }
         }
         operation_source_properties(
@@ -2699,10 +2660,7 @@ fn attach_feature_operations(
             operation_terminal_frames,
         )?;
         if let Some(stable_identity) = &label.stable_identity {
-            source_properties.insert(
-                "operation_stable_identity".to_string(),
-                stable_identity.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("operation_stable_identity"), format_args!("{}", stable_identity))?;
         }
         for (use_ordinal, block_use) in datum_csys_uses_by_input_operation
             .get(label.id.as_str())
@@ -2710,52 +2668,28 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_block_use.{use_ordinal}"),
-                block_use.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_csys_block_use.{use_ordinal}"), format_args!("{}", block_use.id))?;
         }
         if let Some(dependency) = sketch_datum_csys_dependencies.get(label.id.as_str()) {
-            source_properties.insert(
-                "sketch_point_dependency_use".to_string(),
-                dependency.sketch_point_use.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_point_dependency_use"), format_args!("{}", dependency.sketch_point_use))?;
             match &dependency.block_relation {
                 crate::native::features::FeatureSketchDatumCsysBlockRelation::Shared {
                     data_block,
                 } => {
-                    source_properties.insert(
-                        "sketch_point_dependency_shared_block".to_string(),
-                        data_block.clone(),
-                    );
+                    insert_source_property(ctx, &mut source_properties, format_args!("sketch_point_dependency_shared_block"), format_args!("{}", data_block))?;
                 }
                 crate::native::features::FeatureSketchDatumCsysBlockRelation::Consecutive {
                     point_data_block,
                     construction_data_block,
                 } => {
-                    source_properties.insert(
-                        "sketch_point_dependency_point_block".to_string(),
-                        point_data_block.clone(),
-                    );
-                    source_properties.insert(
-                        "sketch_point_dependency_construction_block".to_string(),
-                        construction_data_block.clone(),
-                    );
+                    insert_source_property(ctx, &mut source_properties, format_args!("sketch_point_dependency_point_block"), format_args!("{}", point_data_block))?;
+                    insert_source_property(ctx, &mut source_properties, format_args!("sketch_point_dependency_construction_block"), format_args!("{}", construction_data_block))?;
                 }
             }
-            source_properties.insert(
-                "sketch_datum_csys_dependency".to_string(),
-                dependency.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_datum_csys_dependency"), format_args!("{}", dependency.id))?;
             for (alias_ordinal, alias) in dependency.scalar_aliases.iter().enumerate() {
-                source_properties.insert(
-                    format!("sketch_point_dependency_scalar.{alias_ordinal}"),
-                    alias.datum_csys_scalar.clone(),
-                );
-                source_properties.insert(
-                    format!("sketch_point_dependency_coordinate.{alias_ordinal}"),
-                    alias.sketch_coordinate_ordinal.to_string(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("sketch_point_dependency_scalar.{alias_ordinal}"), format_args!("{}", alias.datum_csys_scalar))?;
+                insert_source_property(ctx, &mut source_properties, format_args!("sketch_point_dependency_coordinate.{alias_ordinal}"), format_args!("{}", alias.sketch_coordinate_ordinal))?;
             }
         }
         let deletes_body = label.value == "DELETE";
@@ -2797,31 +2731,20 @@ fn attach_feature_operations(
                 _ => None,
             });
         if let Some(body) = body_references.get(label.id.as_str()) {
-            source_properties.insert(
-                NATIVE_PRIMARY_BODY_OBJECT_INDEX.to_string(),
-                body.to_string(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("{}", NATIVE_PRIMARY_BODY_OBJECT_INDEX), format_args!("{}", body))?;
         }
         if let Some(reference) = body_writer_references_by_operation.get(label.id.as_str()) {
-            source_properties.insert("primary_body_reference".to_string(), reference.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("primary_body_reference"), format_args!("{}", reference.id))?;
             if let Some(uses) = body_segment_uses_by_reference.get(reference.id.as_str()) {
                 if let [use_] = uses.as_slice() {
-                    source_properties
-                        .insert("primary_body_segment_use".to_string(), use_.id.clone());
-                    source_properties.insert(
-                        "primary_body_segment_binding".to_string(),
-                        use_.segment_body_binding.clone(),
-                    );
+                    insert_source_property(ctx, &mut source_properties, format_args!("primary_body_segment_use"), format_args!("{}", use_.id))?;
+                    insert_source_property(ctx, &mut source_properties, format_args!("primary_body_segment_binding"), format_args!("{}", use_.segment_body_binding))?;
                 }
             }
             if let Some(uses) = body_data_block_uses_by_reference.get(reference.id.as_str()) {
                 if let [use_] = uses.as_slice() {
-                    source_properties
-                        .insert("primary_body_data_block_use".to_string(), use_.id.clone());
-                    source_properties.insert(
-                        "primary_body_data_block".to_string(),
-                        use_.data_block.clone(),
-                    );
+                    insert_source_property(ctx, &mut source_properties, format_args!("primary_body_data_block_use"), format_args!("{}", use_.id))?;
+                    insert_source_property(ctx, &mut source_properties, format_args!("primary_body_data_block"), format_args!("{}", use_.data_block))?;
                 }
             }
         }
@@ -2831,17 +2754,11 @@ fn attach_feature_operations(
             .flatten()
             .filter_map(|reference| reference.ordinal.map(|ordinal| (reference, ordinal)))
         {
-            source_properties.insert(
-                format!("body_reference.{ordinal}"),
-                reference.body.value().to_string(),
-            );
-            source_properties.insert(
-                format!("body_reference_occurrence.{ordinal}"),
-                reference.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("body_reference.{ordinal}"), format_args!("{}", reference.body.value()))?;
+            insert_source_property(ctx, &mut source_properties, format_args!("body_reference_occurrence.{ordinal}"), format_args!("{}", reference.id))?;
         }
         if let Some(inputs) = sketch_construction_inputs_by_operation.get(label.id.as_str()) {
-            source_properties.insert("sketch_construction_inputs".to_string(), inputs.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_construction_inputs"), format_args!("{}", inputs.id))?;
         }
         for (ordinal, record) in sketch_records_by_operation
             .get(label.id.as_str())
@@ -2849,7 +2766,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("sketch_record.{ordinal}"), record.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_record.{ordinal}"), format_args!("{}", record.id))?;
         }
         for (ordinal, payload) in sketch_construction_payloads_by_operation
             .get(label.id.as_str())
@@ -2857,50 +2774,35 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("sketch_construction_payload.{ordinal}"),
-                payload.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_construction_payload.{ordinal}"), format_args!("{}", payload.id))?;
         }
         for pair in sketch_coordinate_pairs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_coordinate_pair.{}", pair.ordinal),
-                pair.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_coordinate_pair.{}", pair.ordinal), format_args!("{}", pair.id))?;
         }
         for pair in sketch_fixed_pairs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_fixed_pair.{}", pair.ordinal),
-                pair.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_fixed_pair.{}", pair.ordinal), format_args!("{}", pair.id))?;
         }
         for pair in sketch_mixed_pairs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_mixed_pair.{}", pair.ordinal),
-                pair.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_mixed_pair.{}", pair.ordinal), format_args!("{}", pair.id))?;
         }
         for lane in sketch_payload_scalar_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_scalar_lane.{}", lane.ordinal),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_scalar_lane.{}", lane.ordinal), format_args!("{}", lane.id))?;
         }
         for (ordinal, point) in sketch_fixed_points_by_operation
             .get(label.id.as_str())
@@ -2908,10 +2810,10 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("sketch_fixed_point.{ordinal}"), point.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_fixed_point.{ordinal}"), format_args!("{}", point.id))?;
         }
         if let Some(construction) = block_constructions_by_operation.get(label.id.as_str()) {
-            source_properties.insert("block_construction".to_string(), construction.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("block_construction"), format_args!("{}", construction.id))?;
         }
         for (ordinal, payload) in block_construction_payloads_by_operation
             .get(label.id.as_str())
@@ -2919,22 +2821,13 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("block_construction_payload.{ordinal}"),
-                payload.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("block_construction_payload.{ordinal}"), format_args!("{}", payload.id))?;
         }
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
-            source_properties.insert("block_dimensions".to_string(), dimensions.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("block_dimensions"), format_args!("{}", dimensions.id))?;
             for (dimension_ordinal, dimension) in dimensions.dimensions.iter().enumerate() {
-                source_properties.insert(
-                    format!("block_dimension_declaration.{dimension_ordinal}"),
-                    dimension.declaration.clone(),
-                );
-                source_properties.insert(
-                    format!("block_dimension_expression.{dimension_ordinal}"),
-                    dimension.expression.clone(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("block_dimension_declaration.{dimension_ordinal}"), format_args!("{}", dimension.declaration))?;
+                insert_source_property(ctx, &mut source_properties, format_args!("block_dimension_expression.{dimension_ordinal}"), format_args!("{}", dimension.expression))?;
             }
         }
         for (ordinal, point) in block_payload_points_by_operation
@@ -2943,7 +2836,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("block_payload_point.{ordinal}"), point.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("block_payload_point.{ordinal}"), format_args!("{}", point.id))?;
         }
         for (ordinal, group) in block_payload_point_groups_by_operation
             .get(label.id.as_str())
@@ -2951,25 +2844,16 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("block_payload_point_group.{ordinal}"),
-                group.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("block_payload_point_group.{ordinal}"), format_args!("{}", group.id))?;
         }
         if let Some(construction) = extrude_32_constructions_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "extrude_32_construction".to_string(),
-                construction.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("extrude_32_construction"), format_args!("{}", construction.id))?;
         }
         if let Some(header) = extrude_payload_headers_by_operation.get(label.id.as_str()) {
-            source_properties.insert("extrude_payload_header".to_string(), header.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("extrude_payload_header"), format_args!("{}", header.id))?;
         }
         if let Some(lane) = operation_terminal_discriminators_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "operation_terminal_discriminator".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("operation_terminal_discriminator"), format_args!("{}", lane.id))?;
         }
         for (ordinal, branch) in extrude_payload_32_branches_by_operation
             .get(label.id.as_str())
@@ -2977,68 +2861,50 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("extrude_payload_32_branch.{ordinal}"),
-                branch.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("extrude_payload_32_branch.{ordinal}"), format_args!("{}", branch.id))?;
         }
         for triple in operation_body_scalar_triples_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(ctx, &mut source_properties, format_args!(
                     "operation_body_scalar_triple.{}",
                     triple.body_reference_ordinal
-                ),
-                triple.id.clone(),
-            );
+                ), format_args!("{}", triple.id))?;
         }
         for member in operation_body_members_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(ctx, &mut source_properties, format_args!(
                     "operation_body_member.{}.{}",
                     member.body_reference_ordinal, member.ordinal
-                ),
-                member.id.clone(),
-            );
+                ), format_args!("{}", member.id))?;
         }
         for continuation in operation_body_11_continuations_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(ctx, &mut source_properties, format_args!(
                     "operation_body_11_continuation.{}",
                     continuation.body_reference_ordinal
-                ),
-                continuation.id.clone(),
-            );
+                ), format_args!("{}", continuation.id))?;
         }
         for lane in operation_body_reference_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(ctx, &mut source_properties, format_args!(
                     "operation_body_reference_lane.{}",
                     lane.body_reference_ordinal
-                ),
-                lane.id.clone(),
-            );
+                ), format_args!("{}", lane.id))?;
         }
         if let Some(construction) = datum_csys_constructions_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "datum_csys_construction".to_string(),
-                construction.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_csys_construction"), format_args!("{}", construction.id))?;
         }
         for (ordinal, use_) in datum_csys_column_row_uses_by_operation
             .get(label.id.as_str())
@@ -3046,10 +2912,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_column_row_use.{ordinal}"),
-                use_.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_csys_column_row_use.{ordinal}"), format_args!("{}", use_.id))?;
         }
         for (ordinal, payload) in datum_csys_payloads_by_operation
             .get(label.id.as_str())
@@ -3057,7 +2920,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("datum_csys_payload.{ordinal}"), payload.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_csys_payload.{ordinal}"), format_args!("{}", payload.id))?;
         }
         for (ordinal, pair) in datum_csys_payload_scalar_pairs_by_operation
             .get(label.id.as_str())
@@ -3065,10 +2928,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_payload_scalar_pair.{ordinal}"),
-                pair.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_csys_payload_scalar_pair.{ordinal}"), format_args!("{}", pair.id))?;
         }
         for (ordinal, pair) in datum_csys_payload_fixed_pairs_by_operation
             .get(label.id.as_str())
@@ -3076,10 +2936,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_payload_fixed_pair.{ordinal}"),
-                pair.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_csys_payload_fixed_pair.{ordinal}"), format_args!("{}", pair.id))?;
         }
         for (ordinal, scalar) in datum_csys_payload_scalars_by_operation
             .get(label.id.as_str())
@@ -3087,10 +2944,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_payload_scalar.{ordinal}"),
-                scalar.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_csys_payload_scalar.{ordinal}"), format_args!("{}", scalar.id))?;
         }
         for (ordinal, descriptor) in datum_csys_descriptors_by_operation
             .get(label.id.as_str())
@@ -3098,16 +2952,13 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_descriptor.{ordinal}"),
-                descriptor.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_csys_descriptor.{ordinal}"), format_args!("{}", descriptor.id))?;
         }
         if let Some(header) = datum_plane_headers_by_operation.get(label.id.as_str()) {
-            source_properties.insert("datum_plane_header".to_string(), header.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_plane_header"), format_args!("{}", header.id))?;
         }
         if let Some(payload) = datum_plane_payloads_by_operation.get(label.id.as_str()) {
-            source_properties.insert("datum_plane_payload".to_string(), payload.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_plane_payload"), format_args!("{}", payload.id))?;
         }
         for (ordinal, pair) in datum_plane_payload_scalar_pairs_by_operation
             .get(label.id.as_str())
@@ -3115,10 +2966,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_plane_payload_scalar_pair.{ordinal}"),
-                pair.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_plane_payload_scalar_pair.{ordinal}"), format_args!("{}", pair.id))?;
         }
         for (ordinal, descriptor) in datum_plane_descriptors_by_operation
             .get(label.id.as_str())
@@ -3126,10 +2974,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_plane_descriptor.{ordinal}"),
-                descriptor.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_plane_descriptor.{ordinal}"), format_args!("{}", descriptor.id))?;
         }
         for (ordinal, identity_use) in datum_identity_uses_by_operation
             .get(label.id.as_str())
@@ -3137,10 +2982,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_identity_use.{ordinal}"),
-                identity_use.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_identity_use.{ordinal}"), format_args!("{}", identity_use.id))?;
         }
         for (use_ordinal, block_use) in datum_plane_uses_by_input_operation
             .get(label.id.as_str())
@@ -3148,10 +2990,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_plane_block_use.{use_ordinal}"),
-                block_use.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("datum_plane_block_use.{use_ordinal}"), format_args!("{}", block_use.id))?;
         }
         simple_hole_native_properties(
             ctx,
@@ -3166,64 +3005,37 @@ fn attach_feature_operations(
             .iter()
             .filter(|lane| lane.operation_label == label.id)
         {
-            source_properties.insert(
-                "hole_package_construction_group_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("hole_package_construction_group_lane"), format_args!("{}", lane.id))?;
         }
         for group_use in hole_package_construction_group_uses {
             let group = simple_hole_construction_groups
                 .iter()
                 .find(|group| group.id == group_use.simple_hole_construction_group);
             if group_use.operation_label == label.id {
-                source_properties.insert(
-                    "hole_package_construction_group_use".to_string(),
-                    group_use.id.clone(),
-                );
-                source_properties.insert(
-                    "simple_hole_construction_group".to_string(),
-                    group_use.simple_hole_construction_group.clone(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("hole_package_construction_group_use"), format_args!("{}", group_use.id))?;
+                insert_source_property(ctx, &mut source_properties, format_args!("simple_hole_construction_group"), format_args!("{}", group_use.simple_hole_construction_group))?;
             } else if group.is_some_and(|group| {
                 group
                     .members
                     .iter()
                     .any(|member| member.operation_label == label.id)
             }) {
-                source_properties.insert(
-                    "hole_package_construction_group_use".to_string(),
-                    group_use.id.clone(),
-                );
-                source_properties.insert(
-                    "hole_package_operation".to_string(),
-                    group_use.operation_label.clone(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("hole_package_construction_group_use"), format_args!("{}", group_use.id))?;
+                insert_source_property(ctx, &mut source_properties, format_args!("hole_package_operation"), format_args!("{}", group_use.operation_label))?;
             }
         }
         for (slot, value) in label.objects.0.iter().enumerate() {
-            source_properties.insert(
-                format!("object_index.{slot}"),
-                value.map_or_else(|| "null".to_string(), |value| value.value().to_string()),
-            );
+            if let Some(value) = value { insert_source_property(ctx, &mut source_properties, format_args!("object_index.{slot}"), format_args!("{}", value.value()))?; } else { insert_source_property(ctx, &mut source_properties, format_args!("object_index.{slot}"), format_args!("null"))?; };
         }
         for input in input_blocks_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("input_block_record.{}", input.input_slot),
-                input.id.clone(),
-            );
-            source_properties.insert(
-                format!("input_block.{}", input.input_slot),
-                input.data_block.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("input_block_record.{}", input.input_slot), format_args!("{}", input.id))?;
+            insert_source_property(ctx, &mut source_properties, format_args!("input_block.{}", input.input_slot), format_args!("{}", input.data_block))?;
             if let Some(group) = input_block_identity_group_by_input.get(input.id.as_str()) {
-                source_properties.insert(
-                    format!("input_block_identity_group.{}", input.input_slot),
-                    (*group).to_string(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("input_block_identity_group.{}", input.input_slot), format_args!("{}", (*group)))?;
             }
         }
         for (ordinal, use_) in input_column_row_uses_by_operation
@@ -3232,7 +3044,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("input_column_row_use.{ordinal}"), use_.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("input_column_row_use.{ordinal}"), format_args!("{}", use_.id))?;
         }
         for (ordinal, target) in input_column_targets_by_operation
             .get(label.id.as_str())
@@ -3240,68 +3052,44 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("input_column_target.{ordinal}"), target.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("input_column_target.{ordinal}"), format_args!("{}", target.id))?;
         }
         for reference in sketch_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_reference_record.{}", reference.position.ordinal()),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("sketch_reference.{}", reference.position.ordinal()),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_reference_record.{}", reference.position.ordinal()), format_args!("{}", reference.id))?;
+            insert_source_property_reference(ctx, &mut source_properties, format_args!("sketch_reference.{}", reference.position.ordinal()), reference.data_block.as_deref(), reference.token.value())?;
         }
         for reference in projected_curve_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("projected_curve_reference_record.{}", reference.ordinal),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("projected_curve_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("projected_curve_reference_record.{}", reference.ordinal), format_args!("{}", reference.id))?;
+            insert_source_property_reference(ctx, &mut source_properties, format_args!("projected_curve_reference.{}", reference.ordinal), reference.data_block.as_deref(), reference.token.value())?;
         }
         for payload in projected_curve_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "projected_curve_construction_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("projected_curve_construction_payload"), format_args!("{}", payload.id))?;
         }
         for value in projected_curve_construction_strings_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("projected_curve_construction_string.{}", value.ordinal),
-                value.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("projected_curve_construction_string.{}", value.ordinal), format_args!("{}", value.id))?;
         }
         for graph in fset_reference_graphs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("fset_reference_graph".to_string(), graph.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("fset_reference_graph"), format_args!("{}", graph.id))?;
         }
         for payload in fset_construction_payloads_by_operation
             .get(label.id.as_str())
@@ -3317,269 +3105,182 @@ fn attach_feature_operations(
                 crate::native::features::fset::FeatureFsetReferenceGroup::First => "first",
                 crate::native::features::fset::FeatureFsetReferenceGroup::Second => "second",
             };
-            source_properties.insert(
-                format!("fset_construction_payload.{group}"),
-                payload.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("fset_construction_payload.{group}"), format_args!("{}", payload.id))?;
         }
         for field in delete_reference_fields_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("delete_reference_field".to_string(), field.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("delete_reference_field"), format_args!("{}", field.id))?;
         }
         for payload in delete_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "delete_construction_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("delete_construction_payload"), format_args!("{}", payload.id))?;
         }
         for reference in pattern_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("pattern_reference_record.{}", reference.ordinal),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("pattern_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("pattern_reference_record.{}", reference.ordinal), format_args!("{}", reference.id))?;
+            insert_source_property_reference(ctx, &mut source_properties, format_args!("pattern_reference.{}", reference.ordinal), reference.data_block.as_deref(), reference.token.value())?;
         }
         for payload in pattern_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "pattern_construction_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("pattern_construction_payload"), format_args!("{}", payload.id))?;
         }
         for lane in pattern_counted_reference_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "pattern_counted_reference_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("pattern_counted_reference_lane"), format_args!("{}", lane.id))?;
         }
         for value in pattern_construction_strings_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("pattern_construction_string.{}", value.ordinal),
-                value.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("pattern_construction_string.{}", value.ordinal), format_args!("{}", value.id))?;
         }
         for lane in pattern_construction_fixed_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("pattern_construction_fixed_lane.{}", lane.ordinal),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("pattern_construction_fixed_lane.{}", lane.ordinal), format_args!("{}", lane.id))?;
         }
         for lane in pattern_transform_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("pattern_transform_lane".to_string(), lane.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("pattern_transform_lane"), format_args!("{}", lane.id))?;
         }
         for lane in multi_instance_output_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("multi_instance_output_lane".to_string(), lane.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("multi_instance_output_lane"), format_args!("{}", lane.id))?;
         }
         for lane in identical_instance_output_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "identical_instance_output_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("identical_instance_output_lane"), format_args!("{}", lane.id))?;
         }
         if let Some(header) = point_construction_headers_by_operation.get(label.id.as_str()) {
-            source_properties.insert("point_construction_header".to_string(), header.id.clone());
-            source_properties.insert(
-                "point_construction_reference".to_string(),
-                header
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| header.token.value().to_string()),
-            );
-            source_properties.insert(
-                "point_construction_mode".to_string(),
-                format!("{:02x}", u8::from(header.mode)),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("point_construction_header"), format_args!("{}", header.id))?;
+            insert_source_property_reference(ctx, &mut source_properties, format_args!("point_construction_reference"), header.data_block.as_deref(), header.token.value())?;
+            insert_source_property(ctx, &mut source_properties, format_args!("point_construction_mode"), format_args!("{:02x}", u8::from(header.mode)))?;
         }
         if let Some(lane) = point_construction_scalar_lanes_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "point_construction_scalar_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("point_construction_scalar_lane"), format_args!("{}", lane.id))?;
         }
         for reference in draft_construction_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_reference_record.{}", reference.ordinal),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("draft_construction_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("draft_construction_reference_record.{}", reference.ordinal), format_args!("{}", reference.id))?;
+            insert_source_property_reference(ctx, &mut source_properties, format_args!("draft_construction_reference.{}", reference.ordinal), reference.data_block.as_deref(), reference.token.value())?;
         }
         for lane in draft_construction_index_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("draft_construction_index_lane".to_string(), lane.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("draft_construction_index_lane"), format_args!("{}", lane.id))?;
         }
         for payload in draft_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("draft_construction_payload".to_string(), payload.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("draft_construction_payload"), format_args!("{}", payload.id))?;
         }
         for payload in draft_construction_graph_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "draft_construction_graph_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("draft_construction_graph_payload"), format_args!("{}", payload.id))?;
         }
         for lane in draft_construction_fixed_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_fixed_lane.{}", lane.ordinal),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("draft_construction_fixed_lane.{}", lane.ordinal), format_args!("{}", lane.id))?;
         }
         for lane in draft_construction_binary32_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_binary32_lane.{}", lane.ordinal),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("draft_construction_binary32_lane.{}", lane.ordinal), format_args!("{}", lane.id))?;
         }
         for value in draft_construction_graph_strings_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_graph_string.{}", value.ordinal),
-                value.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("draft_construction_graph_string.{}", value.ordinal), format_args!("{}", value.id))?;
         }
         for frame in draft_construction_identity_frames_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_identity_frame.{}", frame.ordinal),
-                frame.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("draft_construction_identity_frame.{}", frame.ordinal), format_args!("{}", frame.id))?;
         }
         for lane in draft_construction_terminal_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "draft_construction_terminal_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("draft_construction_terminal_lane"), format_args!("{}", lane.id))?;
         }
         for reference in surface_construction_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(ctx, &mut source_properties, format_args!(
                     "surface_construction_reference_record.{}",
                     reference.ordinal
-                ),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("surface_construction_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+                ), format_args!("{}", reference.id))?;
+            insert_source_property_reference(ctx, &mut source_properties, format_args!("surface_construction_reference.{}", reference.ordinal), reference.data_block.as_deref(), reference.token.value())?;
         }
         for payload in surface_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "surface_construction_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("surface_construction_payload"), format_args!("{}", payload.id))?;
         }
         for pair in surface_construction_scalar_pairs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("surface_construction_scalar_pair.{}", pair.ordinal),
-                pair.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("surface_construction_scalar_pair.{}", pair.ordinal), format_args!("{}", pair.id))?;
         }
         for value in surface_construction_strings_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("surface_construction_string.{}", value.ordinal),
-                value.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("surface_construction_string.{}", value.ordinal), format_args!("{}", value.id))?;
         }
         for branch in surface_construction_branches_by_operation
             .get(label.id.as_str())
@@ -3589,24 +3290,14 @@ fn attach_feature_operations(
             for (ordinal, (token, data_block)) in
                 branch.references.members().as_slice().iter().enumerate()
             {
-                source_properties.insert(
-                    format!(
+                insert_source_property_reference(ctx, &mut source_properties, format_args!(
                         "surface_construction_branch.{}.member.{}",
                         branch.ordinal(),
                         ordinal
-                    ),
-                    data_block
-                        .clone()
-                        .unwrap_or_else(|| token.value().to_string()),
-                );
+                    ), data_block.as_deref(), token.value())?;
             }
             let (token, data_block) = branch.references.terminal();
-            source_properties.insert(
-                format!("surface_construction_branch.{}.terminal", branch.ordinal()),
-                data_block
-                    .clone()
-                    .unwrap_or_else(|| token.value().to_string()),
-            );
+            insert_source_property_reference(ctx, &mut source_properties, format_args!("surface_construction_branch.{}.terminal", branch.ordinal()), data_block.as_deref(), token.value())?;
         }
         for (ordinal, block_use) in sketch_named_point_uses_by_operation
             .get(label.id.as_str())
@@ -3614,10 +3305,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("sketch_named_point_block_use.{ordinal}"),
-                block_use.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_named_point_block_use.{ordinal}"), format_args!("{}", block_use.id))?;
         }
         for (ordinal, point_use) in sketch_preceding_named_point_uses_by_operation
             .get(label.id.as_str())
@@ -3625,10 +3313,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("sketch_preceding_named_point_use.{ordinal}"),
-                point_use.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_preceding_named_point_use.{ordinal}"), format_args!("{}", point_use.id))?;
         }
         for (ordinal, point_use) in sketch_point_uses_by_operation
             .get(label.id.as_str())
@@ -3636,7 +3321,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("sketch_point_use.{ordinal}"), point_use.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_point_use.{ordinal}"), format_args!("{}", point_use.id))?;
         }
         for (ordinal, group) in sketch_point_groups_by_operation
             .get(label.id.as_str())
@@ -3644,58 +3329,34 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("sketch_point_group.{ordinal}"), group.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("sketch_point_group.{ordinal}"), format_args!("{}", group.id))?;
         }
         for reference in extrude_profile_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("extrude_profile_reference_record.{}", reference.ordinal),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("extrude_profile_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("extrude_profile_reference_record.{}", reference.ordinal), format_args!("{}", reference.id))?;
+            insert_source_property_reference(ctx, &mut source_properties, format_args!("extrude_profile_reference.{}", reference.ordinal), reference.data_block.as_deref(), reference.token.value())?;
         }
         if let Some(profile) = extrude_construction_profiles_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "extrude_construction_profile".to_string(),
-                profile.id.clone(),
-            );
+            insert_source_property(ctx, &mut source_properties, format_args!("extrude_construction_profile"), format_args!("{}", profile.id))?;
         }
         for operand in operation_body_operands_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                operand.source_property_key(),
-                operand
-                    .operand_data_block
-                    .clone()
-                    .unwrap_or_else(|| operand.operand.atom.value().to_string()),
-            );
-            source_properties.insert(
-                format!(
+            insert_source_property_reference(ctx, &mut source_properties, format_args!("operation_body_operand.{}.{}", operand.body_reference_ordinal, operand.ordinal), operand.operand_data_block.as_deref(), operand.operand.atom.value())?;
+            insert_source_property(ctx, &mut source_properties, format_args!(
                     "operation_body_operand_record.{}.{}",
                     operand.body_reference_ordinal, operand.ordinal
-                ),
-                operand.id.clone(),
-            );
+                ), format_args!("{}", operand.id))?;
             for (binding_ordinal, binding) in operand.segment_body_bindings.iter().enumerate() {
-                source_properties.insert(
-                    format!(
+                insert_source_property(ctx, &mut source_properties, format_args!(
                         "operation_body_operand_segment_binding.{}.{}.{}",
                         operand.body_reference_ordinal, operand.ordinal, binding_ordinal
-                    ),
-                    binding.clone(),
-                );
+                    ), format_args!("{}", binding))?;
             }
         }
         for binding in parameter_bindings_by_operation
@@ -3703,21 +3364,15 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(ctx, &mut source_properties, format_args!(
                     "input_parameter_declaration.{}.{}",
                     binding.input_slot, binding.reference_ordinal
-                ),
-                binding.expression_declaration.clone(),
-            );
+                ), format_args!("{}", binding.expression_declaration))?;
             if let Some(expression) = &binding.expression {
-                source_properties.insert(
-                    format!(
+                insert_source_property(ctx, &mut source_properties, format_args!(
                         "input_parameter_expression.{}.{}",
                         binding.input_slot, binding.reference_ordinal
-                    ),
-                    expression.clone(),
-                );
+                    ), format_args!("{}", expression))?;
             }
         }
         for (ordinal, parameter_use) in parameter_uses_by_operation
@@ -3726,7 +3381,7 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("parameter_use.{ordinal}"), parameter_use.id.clone());
+            insert_source_property(ctx, &mut source_properties, format_args!("parameter_use.{ordinal}"), format_args!("{}", parameter_use.id))?;
         }
         let operation_payload_string_records = payload_strings_by_operation
             .get(label.id.as_str())
@@ -3904,10 +3559,7 @@ fn attach_feature_operations(
             .flatten();
         if let Some((_, supports)) = &offset_projection {
             for (support_ordinal, support) in supports.iter().enumerate() {
-                source_properties.insert(
-                    format!("offset_support_surface.{support_ordinal}"),
-                    support.as_str().to_owned(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("offset_support_surface.{support_ordinal}"), format_args!("{}", support.as_str()))?;
             }
         }
         let thicken_projection = (label.value == "THICKEN_SHEET")
@@ -3915,10 +3567,7 @@ fn attach_feature_operations(
             .flatten();
         if let Some((_, supports)) = &thicken_projection {
             for (support_ordinal, support) in supports.iter().enumerate() {
-                source_properties.insert(
-                    format!("thicken_support_surface.{support_ordinal}"),
-                    support.as_str().to_owned(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("thicken_support_surface.{support_ordinal}"), format_args!("{}", support.as_str()))?;
             }
         }
         let blend_family = match label.value.as_str() {
@@ -3930,10 +3579,7 @@ fn attach_feature_operations(
             blend_family.and_then(|family| blend_feature_definition(ir, &outputs, family));
         if let Some((_, surfaces)) = &blend_projection {
             for (surface_ordinal, surface) in surfaces.iter().enumerate() {
-                source_properties.insert(
-                    format!("blend_result_surface.{surface_ordinal}"),
-                    surface.as_str().to_owned(),
-                );
+                insert_source_property(ctx, &mut source_properties, format_args!("blend_result_surface.{surface_ordinal}"), format_args!("{}", surface.as_str()))?;
             }
         }
         let extrude_projection = (label.value == "EXTRUDE").then(|| {
@@ -5091,6 +4737,19 @@ fn insert_source_property(
         .map_err(|_| CodecError::InvalidInput("NX source property value formatting failed".to_string()))?;
     properties.insert(owned_key, owned_value);
     Ok(())
+}
+
+fn insert_source_property_reference(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: std::fmt::Arguments<'_>,
+    data_block: Option<&str>,
+    fallback: impl std::fmt::Display,
+) -> Result<(), CodecError> {
+    match data_block {
+        Some(data_block) => insert_source_property(ctx, properties, key, format_args!("{data_block}")),
+        None => insert_source_property(ctx, properties, key, format_args!("{fallback}")),
+    }
 }
 
 struct ParasolidStringAttributeSources<'a> {
