@@ -224,12 +224,21 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             row.feature_id == feature_id
                 && row.kind == crate::surface::SurfaceKind::Cylinder
                 && !ir.model.surfaces.iter().any(|surface| {
-                    surface.id == SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id)
+                    crate::identity::matches_numbered_identity(
+                        surface.id.as_str(),
+                        "creo:visibgeom:surface#",
+                        row.id,
+                    )
                 })
         })) else {
             continue;
         };
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            row.id,
+            "creo constrained slot cylinder identity",
+        )?;
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::from(cylinder.origin),
             Vector3::from(cylinder.axis),
@@ -301,12 +310,13 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         &scan.features.entity_tables,
         &scan.surfaces.rows,
     )? {
-        let sibling = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, sibling_id);
         let Some(cylinder_surface) = exactly_one(
             ir.model
                 .surfaces
                 .iter()
-                .filter(|surface| surface.id == sibling),
+                .filter(|surface| crate::identity::matches_numbered_identity(
+                    surface.id.as_str(), "creo:visibgeom:surface#", sibling_id,
+                )),
         )
         .and_then(|surface| match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => Some(*cylinder),
@@ -314,7 +324,12 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         }) else {
             continue;
         };
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, rowless_id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            rowless_id,
+            "creo rowless round cylinder identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -337,9 +352,10 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "AllFeatur:{rowless_id}"
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                        format_args!("AllFeatur:{rowless_id}"),
+                        "creo rowless round cylinder source IDs",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -389,7 +405,12 @@ pub(in super::super) fn transfer_hole_cylinders(
         });
         for (row, geometry) in simple_rows.chain(counterbore.into_iter().flatten()) {
             let cylinder_id = row.id;
-            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
+            let id = crate::identity::compose_checked::<SurfaceId>(
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE,
+                cylinder_id,
+                "creo hole cylinder identity",
+            )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -410,9 +431,10 @@ pub(in super::super) fn transfer_hole_cylinders(
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "VisibGeom:{cylinder_id}"
-                        ))
+                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                            format_args!("VisibGeom:{cylinder_id}"),
+                            "creo hole cylinder source IDs",
+                        )?)
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -1255,7 +1277,12 @@ pub(in super::super) fn transfer_positional_cylinders(
             frame.frame().orthonormal_frame(),
             frame.radius(),
         );
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, record.surface_id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            record.surface_id,
+            "creo positional cylinder identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             if row_local_frame_selected
                 && ir
@@ -1308,10 +1335,10 @@ pub(in super::super) fn transfer_positional_cylinders(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "VisibGeom:{}",
-                        record.surface_id
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                        format_args!("VisibGeom:{}", record.surface_id),
+                        "creo positional cylinder source IDs",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -1529,7 +1556,12 @@ pub(in super::super) fn transfer_positional_cones(
         else {
             continue;
         };
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, record.surface_id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            record.surface_id,
+            "creo positional cone identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -1551,10 +1583,10 @@ pub(in super::super) fn transfer_positional_cones(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "VisibGeom:{}",
-                        record.surface_id
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                        format_args!("VisibGeom:{}", record.surface_id),
+                        "creo positional cone source IDs",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -1605,7 +1637,12 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
         };
         for row in &sweep.cylinder_rows {
             let cylinder_id = row.id;
-            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
+            let id = crate::identity::compose_checked::<SurfaceId>(
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE,
+                cylinder_id,
+                "creo circular sweep cylinder identity",
+            )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -1628,9 +1665,10 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                     )),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "VisibGeom:{cylinder_id}"
-                        ))
+                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                            format_args!("VisibGeom:{cylinder_id}"),
+                            "creo circular sweep cylinder source IDs",
+                        )?)
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -1670,10 +1708,12 @@ pub(in super::super) fn transfer_cross_section_planes(
         if is_axis_aligned(normal) {
             continue;
         }
-        let id = SurfaceId::compose(
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx,
             &crate::identity::CROSS_SECTION_GEOMETRY_SURFACE,
             frame.surface_id,
-        );
+            "creo cross-section local-system plane identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -1701,10 +1741,10 @@ pub(in super::super) fn transfer_cross_section_planes(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "Xsections:{}",
-                        frame.surface_id
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                        format_args!("Xsections:{}", frame.surface_id),
+                        "creo cross-section local-system plane source IDs",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -1719,10 +1759,12 @@ pub(in super::super) fn transfer_cross_section_planes(
         transferred += 1;
     }
     for plane in &scan.planes.cross_section_outlines {
-        let id = SurfaceId::compose(
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx,
             &crate::identity::CROSS_SECTION_GEOMETRY_SURFACE,
             plane.surface_id,
-        );
+            "creo cross-section outline plane identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -1750,10 +1792,10 @@ pub(in super::super) fn transfer_cross_section_planes(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "Xsections:{}",
-                        plane.surface_id
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                        format_args!("Xsections:{}", plane.surface_id),
+                        "creo cross-section outline plane source IDs",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
