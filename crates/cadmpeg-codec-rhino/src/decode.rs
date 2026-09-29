@@ -5524,7 +5524,9 @@ fn scale_plane_pcurves(
                         pole.u * scale.value(),
                         pole.v * scale.value(),
                     ))
-                    .ok_or_else(|| NurbsError::Structure("control_points contains a non-finite point".into()))
+                    .ok_or_else(|| {
+                        NurbsError::Structure("control_points contains a non-finite point".into())
+                    })
                 })
                 .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
         }

@@ -70,10 +70,14 @@ fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
     let error = fidelity
         .attach_native_unknown_records(
             &mut ir,
-            "synthetic", [
+            "synthetic",
+            [
                 UnknownRecord::retained(id("first"), 0, vec![1], vec![]),
                 UnknownRecord::retained(id("occupied"), 0, vec![2], vec![]),
-            ].into(), &ctx)
+            ]
+            .into(),
+            &ctx,
+        )
         .unwrap_err();
     assert!(
         error.to_string().contains(id("occupied").as_str()),
@@ -106,7 +110,7 @@ fn charged_native_unknown_attachment_preserves_product_and_retained_wire() {
     let mut expected_ir = prior.clone();
     let mut expected_fidelity = SourceFidelity::default();
     expected_fidelity
-        .attach_native_unknown_records(&mut expected_ir, "synthetic", incoming.clone().into(), &ctx)
+        .attach_native_unknown_records(&mut expected_ir, "synthetic", incoming.clone(), &ctx)
         .expect("plain attachment");
 
     let mut actual_ir = prior;
@@ -366,7 +370,10 @@ fn invalid_raw_evidence_cannot_partially_enter_authoritative_retention() {
                     fidelity
                         .attach_native_unknown_records(
                             &mut ir,
-                            "synthetic", [UnknownRecord::retained(id("existing"), 0, vec![3], vec![])].into(), &ctx)
+                            "synthetic",
+                            [UnknownRecord::retained(id("existing"), 0, vec![3], vec![])].into(),
+                            &ctx,
+                        )
                         .unwrap();
                 }
                 let before_ir = ir.clone();
@@ -376,12 +383,16 @@ fn invalid_raw_evidence_cannot_partially_enter_authoritative_retention() {
                     invalid.clone(),
                 ];
                 let error = if attach {
-                    fidelity.attach_native_unknown_records(&mut ir, "synthetic", incoming.into(), &ctx).map_err(|error| error.to_string())
+                    fidelity
+                        .attach_native_unknown_records(&mut ir, "synthetic", incoming.into(), &ctx)
+                        .map_err(|error| error.to_string())
                 } else {
-                    fidelity.retain_unknown_records(SourceOwner::Root, incoming).map_err(|error| error.to_string())
+                    fidelity
+                        .retain_unknown_records(SourceOwner::Root, incoming)
+                        .map_err(|error| error.to_string())
                 }
                 .unwrap_err();
-                assert!(error.to_string().contains(invalid.id().as_str()), "{error}");
+                assert!(error.contains(invalid.id().as_str()), "{error}");
                 assert_eq!(ir, before_ir);
                 assert_eq!(fidelity, before_fidelity);
             }
@@ -402,7 +413,10 @@ fn retention_and_attachment_refuse_duplicate_batches_without_mutation() {
             fidelity
                 .attach_native_unknown_records(
                     &mut ir,
-                    "synthetic", [UnknownRecord::retained(id("existing"), 0, vec![3], vec![])].into(), &ctx)
+                    "synthetic",
+                    [UnknownRecord::retained(id("existing"), 0, vec![3], vec![])].into(),
+                    &ctx,
+                )
                 .unwrap();
             let before_ir = ir.clone();
             let before_fidelity = fidelity.clone();
@@ -416,12 +430,16 @@ fn retention_and_attachment_refuse_duplicate_batches_without_mutation() {
                 UnknownRecord::retained(duplicate_id.clone(), 0, vec![2], vec![]),
             ];
             let error = if attach {
-                fidelity.attach_native_unknown_records(&mut ir, "synthetic", incoming.into(), &ctx).map_err(|error| error.to_string())
+                fidelity
+                    .attach_native_unknown_records(&mut ir, "synthetic", incoming.into(), &ctx)
+                    .map_err(|error| error.to_string())
             } else {
-                fidelity.retain_unknown_records(SourceOwner::Root, incoming).map_err(|error| error.to_string())
+                fidelity
+                    .retain_unknown_records(SourceOwner::Root, incoming)
+                    .map_err(|error| error.to_string())
             }
             .unwrap_err();
-            assert!(error.to_string().contains(duplicate_id.as_str()), "{error}");
+            assert!(error.contains(duplicate_id.as_str()), "{error}");
             assert_eq!(fidelity, before_fidelity);
             assert_eq!(ir, before_ir);
         }
@@ -440,7 +458,10 @@ fn attachment_preserves_existing_records_and_the_root_owner() {
         fidelity
             .attach_native_unknown_records(
                 &mut ir,
-                "synthetic", [UnknownRecord::retained(id(name), 0, vec![1], vec![])].into(), &ctx)
+                "synthetic",
+                [UnknownRecord::retained(id(name), 0, vec![1], vec![])].into(),
+                &ctx,
+            )
             .unwrap();
     }
     assert_eq!(
@@ -496,7 +517,10 @@ fn failed_existing_native_admission_leaves_both_destinations_unchanged() {
     let error = fidelity
         .attach_native_unknown_records(
             &mut ir,
-            "synthetic", [UnknownRecord::retained(id("new"), 0, vec![1], vec![])].into(), &ctx)
+            "synthetic",
+            [UnknownRecord::retained(id("new"), 0, vec![1], vec![])].into(),
+            &ctx,
+        )
         .unwrap_err();
     assert!(error.to_string().contains("string"), "{error}");
     assert_eq!(ir, before);

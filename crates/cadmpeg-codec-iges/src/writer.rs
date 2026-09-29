@@ -3902,7 +3902,9 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
                 point.u.mul_add(u_factor, u_offset),
                 point.v.mul_add(v_factor, v_offset),
             ))
-            .ok_or_else(|| NurbsError::Structure("control_points contains a non-finite point".into()))
+            .ok_or_else(|| {
+                NurbsError::Structure("control_points contains a non-finite point".into())
+            })
         })
         .map_err(|error| {
             CodecError::malformed(format_args!(

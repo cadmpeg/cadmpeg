@@ -2458,8 +2458,7 @@ impl PcurveGeometry {
             Self::Nurbs { nurbs } => {
                 return nurbs
                     .try_map_control_points(|_, point| {
-                        FinitePoint2::new(scale(point.get()))
-                            .ok_or_else(non_finite_control_point)
+                        FinitePoint2::new(scale(point.get())).ok_or_else(non_finite_control_point)
                     })
                     .map_err(|error| error.to_string());
             }

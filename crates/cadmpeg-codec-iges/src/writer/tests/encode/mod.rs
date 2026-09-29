@@ -86,7 +86,8 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 == Some("COMPOSIT")
         }));
         let validation =
-            cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone()).expect("resource allocation did not fail");
+            cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone())
+                .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -121,7 +122,8 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -271,7 +273,9 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             decoded.report().losses
         );
         assert!(
-            cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok(),
+            cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+                .expect("resource allocation did not fail")
+                .is_ok(),
             "{version:?}"
         );
 
@@ -561,7 +565,8 @@ fn encode_regenerates_supported_analytic_and_spline_curves() {
             "{name}: {:?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
 }
@@ -645,7 +650,8 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         "{:#?}",
         decoded.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
     assert!(entities.iter().any(|record| {
@@ -703,7 +709,8 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1088,7 +1095,8 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         "{:#?}",
         decoded.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1113,7 +1121,8 @@ fn encode_regenerates_a_decoded_trimmed_sheet_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1138,7 +1147,8 @@ fn encode_regenerates_decoded_trimmed_sheet_inner_loop_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1164,7 +1174,8 @@ fn encode_regenerates_decoded_model_curve_bounded_sheet_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1191,7 +1202,8 @@ fn encode_regenerates_decoded_parametric_bounded_sheet_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1309,7 +1321,8 @@ fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() 
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1378,7 +1391,8 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1436,7 +1450,8 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1572,7 +1587,8 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1601,7 +1617,8 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1767,7 +1784,8 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1926,7 +1944,8 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         Some(loop_sequences[moved_loop_index])
     );
     assert!(round_trip.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

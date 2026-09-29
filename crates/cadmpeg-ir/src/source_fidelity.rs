@@ -743,7 +743,12 @@ mod tests {
             let mut fidelity = SourceFidelity::default();
             if attach {
                 fidelity
-                    .attach_native_unknown_records(&mut CadIr::empty(), "synthetic", [unknown].into(), &ctx)
+                    .attach_native_unknown_records(
+                        &mut CadIr::empty(),
+                        "synthetic",
+                        [unknown].into(),
+                        &ctx,
+                    )
                     .unwrap();
             } else {
                 fidelity

@@ -165,11 +165,17 @@ fn polynomial_pcurve_map_updates_all_poles_and_refuses_last_atomically() {
     assert_eq!(curve, original);
     curve
         .try_map_control_points(|index, point| {
-            FinitePoint2::new(Point2::new(point.get().u + if index == 0 { 0.0 } else { 1.0 }, point.get().v * 2.0))
-                .ok_or("non-finite point")
+            FinitePoint2::new(Point2::new(
+                point.get().u + if index == 0 { 0.0 } else { 1.0 },
+                point.get().v * 2.0,
+            ))
+            .ok_or("non-finite point")
         })
         .unwrap();
-    assert_eq!(curve.control_points(), vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]);
+    assert_eq!(
+        curve.control_points(),
+        vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]
+    );
     assert_eq!(curve.weights(), None);
 }
 
@@ -192,11 +198,17 @@ fn rational_pcurve_map_updates_all_poles_keeps_weights_and_refuses_last_atomical
     assert_eq!(curve, original);
     curve
         .try_map_control_points(|index, point| {
-            FinitePoint2::new(Point2::new(point.get().u + if index == 0 { 0.0 } else { 1.0 }, point.get().v * 2.0))
-                .ok_or("non-finite point")
+            FinitePoint2::new(Point2::new(
+                point.get().u + if index == 0 { 0.0 } else { 1.0 },
+                point.get().v * 2.0,
+            ))
+            .ok_or("non-finite point")
         })
         .unwrap();
-    assert_eq!(curve.control_points(), vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]);
+    assert_eq!(
+        curve.control_points(),
+        vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]
+    );
     assert_eq!(curve.weights(), weights);
 }
 
