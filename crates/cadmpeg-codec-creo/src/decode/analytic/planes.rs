@@ -1405,16 +1405,22 @@ fn unique_round_edge_origin_candidate(
 }
 
 fn round_edge_envelopes_for_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     plane_id: u32,
-) -> Vec<crate::surface::Type24RoundEdgeEnvelope> {
-    let rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
-        .into_iter()
-        .map(|row| (row.id, row))
-        .collect::<BTreeMap<_, _>>();
-    crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
-        .into_iter()
-        .filter_map(|topology| {
+) -> Result<Vec<crate::surface::Type24RoundEdgeEnvelope>, cadmpeg_core::CodecError> {
+    let mut rows = BTreeMap::new();
+    for row in crate::identity::uniquely_identified_rows_checked(
+        ctx, &scan.surfaces.rows, |row| row.id,
+    )? {
+        ctx.charge_collection_items(1, "creo round-edge surface row nodes")?;
+        rows.insert(row.id, row);
+    }
+    let mut envelopes = Vec::new();
+    for topology in crate::identity::uniquely_identified_rows_checked(
+        ctx, &scan.curves.topology_rows, |row| row.id,
+    )? {
+        let envelope = (|| {
             let cylinder_id = topology.bounded_face_ids().find(|face_id| {
                 *face_id != plane_id
                     && rows.get(face_id).is_some_and(|row| {
@@ -1431,14 +1437,20 @@ fn round_edge_envelopes_for_plane(
             let record =
                 crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?;
             record.type24_round_edge_envelope()
-        })
-        .collect()
+        })();
+        if let Some(envelope) = envelope {
+            ctx.try_reserve_items(&mut envelopes, 1, "creo round-edge plane envelopes")?;
+            envelopes.push(envelope);
+        }
+    }
+    Ok(envelopes)
 }
 
 fn select_round_edge_origin_branches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for frame in &scan.planes.local_systems {
         let decoded_frame = frame.frame();
         if frame.classification != crate::surface::LocalSystemClassification::Simple {
@@ -1466,7 +1478,7 @@ fn select_round_edge_origin_branches(
         if existing.len() != 1 || !plane_candidates_equivalent(existing[0], base) {
             continue;
         }
-        let envelopes = round_edge_envelopes_for_plane(scan, frame.surface_id);
+        let envelopes = round_edge_envelopes_for_plane(ctx, scan, frame.surface_id)?;
         let (options, count) = stored_parameter_origin_sign_candidates(base);
         let Some(selected) = unique_round_edge_origin_candidate(&options[..count], &envelopes) else {
             continue;
@@ -1475,6 +1487,7 @@ fn select_round_edge_origin_branches(
             existing[0] = selected;
         }
     }
+    Ok(())
 }
 
 fn plane_candidates(
@@ -1667,7 +1680,7 @@ fn plane_candidates(
         candidates.insert(plane.surface_id, options);
     }
     select_stored_frame_branches(ctx, scan, &mut candidates)?;
-    select_round_edge_origin_branches(scan, &mut candidates);
+    select_round_edge_origin_branches(ctx, scan, &mut candidates)?;
     candidates.retain(|id, _| {
             scan.surfaces
                 .rows
