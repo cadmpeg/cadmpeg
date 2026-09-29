@@ -4,6 +4,47 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 use super::{HeadOwner, ObjectRecord};
+
+#[test]
+fn payload_field_borrowed_wire_preserves_json_bytes() {
+    let fields = [
+        super::PayloadField::Blob { bytes: vec![1, 2, 3], offset: 4 },
+        super::PayloadField::List { declared_count: 0, items: Vec::new(), offset: 5 },
+        super::PayloadField::BulkTable { count: 0, rows: Vec::new(), offset: 6 },
+    ];
+    for field in fields {
+        let owned: super::PayloadFieldWire = field.clone().into();
+        assert_eq!(
+            serde_json::to_vec(&field).expect("borrowed field JSON"),
+            serde_json::to_vec(&owned).expect("owned field JSON")
+        );
+    }
+}
+
+#[test]
+fn payload_field_retained_limit_refuses_json_record() {
+    let field = super::PayloadField::Blob { bytes: vec![1, 2, 3], offset: 4 };
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        id: &'static str,
+        field: &'a super::PayloadField,
+    }
+    let record = Record { id: "catia:test:payload-field#0", field: &field };
+    let arena_name = "payload_fields";
+    let json_len = serde_json::to_vec(&record).expect("field JSON").len();
+    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+    });
+    let error = refused.expect_err("record exceeds retained-byte limit");
+    assert!(error.to_string().contains("RetainedBytes"), "{error}");
+    crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+            .expect("service profile admits field");
+    });
+}
 use crate::test_support::test_container::surface_alias_stream;
 use crate::test_support::test_object_graph::{
     catalog_stream, entity_table_record, inline_object_graph_record,
