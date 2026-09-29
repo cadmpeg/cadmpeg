@@ -142,3 +142,20 @@ fn relation_power_rejects_text_without_copying_the_invalid_operand() {
         RelationEvaluationContext::default(), &ctx,
     ).expect("numeric power needs no retained copy"), Some(CurveExpressionValue::Number(8.0)));
 }
+
+#[test]
+fn relation_unit_symbols_match_borrowed_text_at_zero_byte_limits() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    for (expression, expected) in [("2[cM]", Some(20.0)), ("1[mSeC]", Some(0.001)), ("0[c]", Some(273.15)), ("1[MpA]", Some(1_000.0)), ("1[Kelvin]", None), ("1[K]", None)] {
+        assert_eq!(crate::curve::parse_relation_expression::<f64>(
+            &ctx, expression, &BTreeMap::new(), RelationEvaluationContext::default(),
+        ).expect("borrowed unit lookup needs no byte admission"), expected, "{expression}");
+        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| crate::curve::parse_relation_expression::<f64>(
+            ctx, expression, &BTreeMap::new(), RelationEvaluationContext::default(),
+        )).expect("service unit lookup"), expected, "{expression}");
+    }
+}
