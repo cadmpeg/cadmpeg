@@ -105,7 +105,7 @@ pub(crate) fn enrich_history_semantic(
     )?;
     crate::resolved_features::operations::enrich_history_split_lines(ctx, histories, lanes)?;
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(ctx, histories, lanes)?;
-    crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
+    crate::resolved_features::direct_edits::enrich_history_move_body_translations(ctx, histories, lanes)?;
     enrich_history_parameters_semantic(ctx, histories, lanes)?;
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
