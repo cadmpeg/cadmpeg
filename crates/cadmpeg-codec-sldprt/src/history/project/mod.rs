@@ -170,10 +170,10 @@ pub(crate) fn project_feature_model(
     ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
-    let (mut features, parents): (Vec<_>, Vec<_>) = histories
-        .iter()
-        .flat_map(|history| {
-            let source_bindings = unique_source_bindings(history);
+    let (mut features, parents) = histories.iter().try_fold(
+        (Vec::new(), Vec::new()),
+        |(mut features, mut parents), history| -> Result<_, CodecError> {
+            let source_bindings = unique_source_bindings(ctx, history)?;
             let mut by_source = source_bindings
                 .iter()
                 .filter_map(|(source, binding)| {
@@ -213,11 +213,11 @@ pub(crate) fn project_feature_model(
                     && feature.parameters.len() == 1
                     && feature.source_value().is_some_and(|source| source > 0)
             });
-            history
+            for feature in history
                 .features
                 .iter()
                 .filter(|feature| !is_history_metadata_record(feature, &history.features))
-                .map(move |feature| {
+            {
                     let parent = feature
                         .tree_parent_record_id()
                         .and_then(|parent| by_native.get(parent).cloned())
@@ -226,8 +226,7 @@ pub(crate) fn project_feature_model(
                                 by_source.get(String::from(source).as_str()).cloned()
                             })
                         });
-                    Ok((
-                        cadmpeg_ir::features::Feature {
+                    let projected = cadmpeg_ir::features::Feature {
                             id: neutral_feature_id_charged(ctx, &feature.id)?,
                             ordinal: source_ordered
                                 .then(|| feature.source_value().map(u64::from))
@@ -264,14 +263,23 @@ pub(crate) fn project_feature_model(
                                 )?,
                             ),
                             native_ref: Some(copy_projected_feature_text(ctx, &feature.id)?),
-                        },
-                        parent,
-                    ))
-                })
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?
-        .into_iter()
-        .unzip();
+                    };
+                    ctx.reserve_collection_vec(
+                        &mut features,
+                        1,
+                        "collect SLDPRT projected features",
+                    )?;
+                    features.push(projected);
+                    ctx.reserve_collection_vec(
+                        &mut parents,
+                        1,
+                        "collect SLDPRT projected feature parents",
+                    )?;
+                    parents.push(parent);
+            }
+            Ok((features, parents))
+        },
+    )?;
     let mut regeneration_parents = Vec::new();
     for (child_index, parent) in parents.into_iter().enumerate() {
         let Some(parent) = parent else {
@@ -1006,40 +1014,55 @@ pub(crate) fn custom_property_attributes(
     Ok(attributes)
 }
 
-fn unique_source_bindings(
-    history: &FeatureHistory,
-) -> HashMap<FeatureSource, Option<(&str, FeatureId)>> {
+fn unique_source_bindings<'a>(
+    ctx: &DecodeContext<'_>,
+    history: &'a FeatureHistory,
+) -> Result<HashMap<FeatureSource, Option<(&'a str, FeatureId)>>, CodecError> {
     let mut bindings = HashMap::new();
     for feature in &history.features {
+        ctx.charge_work(1, "scan SLDPRT unique feature sources")?;
         if is_history_metadata_record(feature, &history.features) {
             continue;
         }
         let Some(source) = feature.source_id else {
             continue;
         };
-        let binding = (feature.id.as_str(), neutral_feature_id(&feature.id));
-        bindings
-            .entry(source)
-            .and_modify(|existing| *existing = None)
-            .or_insert(Some(binding));
+        if let Some(existing) = bindings.get_mut(&source) {
+            *existing = None;
+            continue;
+        }
+        ctx.charge_collection_items(1, "index SLDPRT unique feature sources")?;
+        bindings.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index SLDPRT unique feature sources", u64::MAX - 1, u64::MAX)
+        })?;
+        let binding = (feature.id.as_str(), neutral_feature_id_charged(ctx, &feature.id)?);
+        bindings.insert(source, Some(binding));
     }
-    bindings
+    Ok(bindings)
 }
 
-pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]) -> usize {
-    histories
-        .iter()
-        .map(|history| {
-            let sources = unique_source_bindings(history);
-            let native_ids = history
-                .features
-                .iter()
-                .map(|feature| feature.id.as_str())
-                .collect::<HashSet<_>>();
-            history
-                .features
-                .iter()
-                .filter(|feature| {
+pub(crate) fn incomplete_history_reference_features(
+    ctx: &DecodeContext<'_>,
+    histories: &[FeatureHistory],
+) -> Result<usize, CodecError> {
+    let mut incomplete = 0usize;
+    for history in histories {
+            let sources = unique_source_bindings(ctx, history)?;
+            let mut native_ids = HashSet::new();
+            for feature in &history.features {
+                ctx.charge_work(1, "index SLDPRT history feature references")?;
+                if native_ids.contains(feature.id.as_str()) {
+                    continue;
+                }
+                ctx.charge_collection_items(1, "index SLDPRT history feature references")?;
+                native_ids.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT history feature references", u64::MAX - 1, u64::MAX)
+                })?;
+                native_ids.insert(feature.id.as_str());
+            }
+            for feature in &history.features {
+                    ctx.charge_work(1, "scan SLDPRT incomplete history references")?;
+                    let owner_id = neutral_feature_id_charged(ctx, &feature.id)?;
                     let duplicate_source = feature
                         .source_id
                         .is_some_and(|source| sources.get(&source).is_some_and(Option::is_none));
@@ -1071,18 +1094,20 @@ pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]
                                 .ok()
                                 .and_then(|reference| sources.get(&reference))
                                 .and_then(Option::as_ref)
-                                .is_none_or(|(_, dependency)| {
-                                    dependency == &neutral_feature_id(&feature.id)
-                                })
+                                .is_none_or(|(_, dependency)| dependency == &owner_id)
                         });
-                    duplicate_source
+                    if duplicate_source
                         || (parent_requested && !parent_resolved)
                         || incomplete_content
                         || unresolved_dependency
-                })
-                .count()
-        })
-        .sum()
+                    {
+                        incomplete = incomplete.checked_add(1).ok_or_else(|| {
+                            ctx.refuse_codec_limit("count SLDPRT incomplete history references", u64::MAX - 1, u64::MAX)
+                        })?;
+                    }
+            }
+    }
+    Ok(incomplete)
 }
 
 fn project_feature_content(

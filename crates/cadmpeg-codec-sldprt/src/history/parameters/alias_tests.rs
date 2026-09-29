@@ -426,7 +426,54 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
     let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
 
     assert!(projected[2].dependencies.is_empty());
-    assert_eq!(incomplete_history_reference_features(&[history]), 4);
+    assert_eq!(
+        incomplete_history_reference_features(
+            &cadmpeg_test_support::service_decode_context(),
+            &[history],
+        )
+        .unwrap(),
+        4
+    );
+}
+
+#[test]
+fn incomplete_history_reference_index_refuses_collection_limit() {
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature("first", Some("1"), 0)],
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"history", &arena, &policy,
+    ).unwrap();
+    let error = incomplete_history_reference_features(&ctx, &[history]).err().unwrap();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn incomplete_history_reference_scan_refuses_work_limit() {
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature("first", Some("1"), 0)],
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"history", &arena, &policy,
+    ).unwrap();
+    let error = incomplete_history_reference_features(&ctx, &[history]).err().unwrap();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
