@@ -411,7 +411,7 @@ pub(crate) fn project_feature_model(
         });
         result?;
     }
-    bind_offset_plane_references(&mut features);
+    bind_offset_plane_references(ctx, &mut features)?;
     bind_native_construction_features(ctx, &mut features, histories)?;
     Ok(FeatureProjection {
         features,
@@ -488,7 +488,7 @@ pub(crate) fn project_semantic_notes(
     Ok(notes)
 }
 
-pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
+pub(super) fn bind_offset_plane_references(ctx: &DecodeContext<'_>, features: &mut [cadmpeg_ir::features::Feature]) -> Result<(), CodecError> {
     fn history_key(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
         feature
             .native_ref
@@ -599,12 +599,11 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         );
         same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance.abs(), distance.get().abs())
     };
-    let ordinals = features
-        .iter()
-        .map(|feature| {
-            (
-                feature.id.clone(),
-                (
+    let mut ordinals = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, "index SLDPRT offset plane ordinals")?;
+        let id = copy_projected_feature_id(ctx, &feature.id)?;
+        let value = (
                     feature.ordinal,
                     match feature.evaluation.definition() {
                         FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
@@ -633,40 +632,46 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                                 | FeatureOperation::DatumPlane { .. }
                         )
                     ),
-                ),
-            )
-        })
-        .collect::<HashMap<_, _>>();
+                );
+        insert_projected_map(ctx, &mut ordinals, id, value, "index SLDPRT offset plane ordinals")?;
+    }
     // A zero-distance offset with an explicit feature reference is a geometric
     // alias. Collapse only that provenance chain; independent coincident
     // planes remain distinct candidates and stay ambiguous.
-    let zero_offset_parents = features
-        .iter()
-        .filter_map(|feature| {
-            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::Feature { feature: reference }),
-                distance,
-            }) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            same_scalar(distance.get(), 0.0).then_some((feature.id.clone(), reference.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    let canonical_plane_id = |id: &str| -> Option<FeatureId> {
-        let Ok(mut current) = FeatureId::mint(id.to_owned()) else {
-            return None;
-        };
+    let mut zero_offset_parents = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, "index SLDPRT zero offset plane parents")?;
+        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature { feature: reference }), distance,
+        }) = feature.evaluation.definition() else { continue; };
+        if same_scalar(distance.get(), 0.0) {
+            let id = copy_projected_feature_id(ctx, &feature.id)?;
+            let reference = copy_projected_feature_id(ctx, reference)?;
+            insert_projected_map(ctx, &mut zero_offset_parents, id, reference,
+                "index SLDPRT zero offset plane parents")?;
+        }
+    }
+    fn canonical_plane_id<'a>(
+        ctx: &DecodeContext<'_>, id: &'a FeatureId,
+        parents: &'a HashMap<FeatureId, FeatureId>,
+    ) -> Result<&'a FeatureId, CodecError> {
+        let mut current = id;
         let mut visited = HashSet::new();
-        while visited.insert(current.clone()) {
-            let Some(parent) = zero_offset_parents.get(&current).cloned() else {
-                break;
-            };
+        loop {
+            ctx.charge_work(1, "walk SLDPRT zero offset plane parents")?;
+            if visited.contains(current) { break; }
+            ctx.charge_collection_items(1, "walk SLDPRT zero offset plane parents")?;
+            visited.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "walk SLDPRT zero offset plane parents", u64::MAX - 1, u64::MAX,
+            ))?;
+            visited.insert(current);
+            let Some(parent) = parents.get(current) else { break; };
             current = parent;
         }
-        Some(current)
-    };
+        Ok(current)
+    }
     for feature in features.iter_mut() {
+        ctx.charge_work(1, "validate SLDPRT offset plane references")?;
         let explicit_native_reference = feature.source_properties.contains_key("Reference")
             || feature.source_properties.contains_key("Plane");
         let result_frame = stored_frame(feature);
@@ -684,7 +689,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         else {
             continue;
         };
-        let reference_id = reference_id.clone();
+        let reference_id = copy_projected_feature_id(ctx, reference_id)?;
         let invalid = reference_id == feature.id
             || match ordinals.get(&reference_id) {
                 None => true,
@@ -721,6 +726,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                             || explicit_frame_identity)
                 }
             };
+        ctx.charge_work(feature.dependencies.as_slice().len() as u64, "validate SLDPRT offset plane dependencies")?;
         if invalid {
             feature.evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -735,13 +741,14 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 .dependencies
                 .retain(|dependency| dependency != &reference_id);
         } else if !feature.dependencies.contains(&reference_id) {
-            feature.dependencies.insert(reference_id);
+            ctx.charge_work(feature.dependencies.as_slice().len() as u64, "bind SLDPRT offset plane dependencies")?;
+            feature.dependencies.try_insert_charged(reference_id, ctx, "bind SLDPRT offset plane dependencies")?;
         }
 
     }
-    let mut frames = features
-        .iter()
-        .filter_map(|feature| {
+    let mut frames = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, "index SLDPRT offset plane frames")?;
             let frame = match feature.evaluation.definition() {
                 FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
                     principal_frame(*plane)
@@ -751,15 +758,16 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                     frame.normal().get(),
                     frame.u_axis().get(),
                 ),
-                _ => return None,
+                _ => continue,
             };
-            Some((feature.id.clone(), frame))
-        })
-        .collect::<HashMap<_, _>>();
+        let id = copy_projected_feature_id(ctx, &feature.id)?;
+        insert_projected_map(ctx, &mut frames, id, frame, "index SLDPRT offset plane frames")?;
+    }
 
     loop {
         let mut changed = false;
         for feature in features.iter() {
+            ctx.charge_work(1, "propagate SLDPRT offset plane frames")?;
             let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature { feature: reference }),
                 distance,
@@ -774,8 +782,9 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 continue;
             };
             let normal_length = normal.norm();
-            frames.insert(
-                feature.id.clone(),
+            let id = copy_projected_feature_id(ctx, &feature.id)?;
+            insert_projected_map(ctx, &mut frames,
+                id,
                 (
                     Point3::new(
                         origin.x + normal.x * distance.get() / normal_length,
@@ -785,34 +794,24 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                     normal,
                     u_axis,
                 ),
-            );
+                "propagate SLDPRT offset plane frames",
+            )?;
             changed = true;
         }
 
-        let bindings = features
-            .iter()
-            .enumerate()
-            .filter_map(|(index, feature)| {
-                let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                    reference,
-                    distance,
-                }) = feature.evaluation.definition()
-                else {
-                    return None;
-                };
-                let frame_reference_pending = matches!(
-                    reference,
-                    None | Some(DatumPlaneReference::ResolvedPlane { .. })
-                );
-                if !frame_reference_pending {
-                    return None;
-                }
-                let (origin, normal, _) = stored_frame(feature)?;
-                if same_scalar(distance.get(), 0.0) {
-                    return None;
-                }
-                let history = history_key(feature)?;
-                let serialized_reference_frame = serialized_reference_frame(feature);
+        let mut bindings = Vec::new();
+        for (index, feature) in features.iter().enumerate() {
+            ctx.charge_work(1, "bind SLDPRT offset plane frames")?;
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, distance })
+                = feature.evaluation.definition() else { continue; };
+            if !matches!(reference, None | Some(DatumPlaneReference::ResolvedPlane { .. })) {
+                continue;
+            }
+            let Some((origin, normal, _)) = stored_frame(feature) else { continue; };
+            if same_scalar(distance.get(), 0.0) { continue; }
+            let Some(history) = history_key(feature) else { continue; };
+            let serialized_reference_frame = serialized_reference_frame(feature);
+            ctx.charge_work(features.len() as u64, "find SLDPRT offset plane candidates")?;
                 let candidates = features
                     .iter()
                     .filter(|candidate| {
@@ -860,24 +859,30 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                             displacement.z
                                 - candidate_normal.z * signed_distance / candidate_normal_length,
                         );
-                        let canonical = canonical_plane_id(candidate.id.as_str())?;
                         (same_scalar(tangent.norm(), 0.0)
                             && same_scalar(signed_distance.abs(), distance.get().abs()))
-                        .then_some((canonical, distance.get().abs().copysign(signed_distance)))
+                        .then_some((&candidate.id, distance.get().abs().copysign(signed_distance)))
                     });
-                let mut candidates_by_root = HashMap::new();
-                for (candidate, distance) in candidates {
-                    candidates_by_root.entry(candidate).or_insert(distance);
+            let mut candidates_by_root = HashMap::new();
+            for (candidate, distance) in candidates {
+                let root = canonical_plane_id(ctx, candidate, &zero_offset_parents)?;
+                if !candidates_by_root.contains_key(root) {
+                    insert_projected_map(ctx, &mut candidates_by_root, root, distance,
+                        "index SLDPRT offset plane candidate roots")?;
                 }
-                let mut candidates = candidates_by_root.into_iter();
-                let candidate = candidates.next()?;
-                candidates.next().is_none().then_some((index, candidate))
-            })
-            .collect::<Vec<_>>();
+            }
+            let mut candidates = candidates_by_root.into_iter();
+            let Some((reference, distance)) = candidates.next() else { continue; };
+            if candidates.next().is_some() { continue; }
+            let reference = copy_projected_feature_id(ctx, reference)?;
+            ctx.reserve_collection_vec(&mut bindings, 1, "collect SLDPRT offset plane bindings")?;
+            bindings.push((index, (reference, distance)));
+        }
         for (index, (reference, distance)) in bindings {
             let Some(distance) = Length::new(distance) else {
                 continue;
             };
+            let reference_copy = copy_projected_feature_id(ctx, &reference)?;
             let mut bound = false;
             features[index].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -886,7 +891,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 }) = definition
                 {
                     *slot = Some(DatumPlaneReference::Feature {
-                        feature: reference.clone(),
+                        feature: reference_copy,
                     });
                     *stored_distance = distance;
                     bound = true;
@@ -895,9 +900,8 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             if !bound {
                 continue;
             }
-            if !features[index].dependencies.contains(&reference) {
-                features[index].dependencies.insert(reference);
-            }
+            ctx.charge_work(features[index].dependencies.as_slice().len() as u64, "bind SLDPRT offset plane dependencies")?;
+            features[index].dependencies.try_insert_charged(reference, ctx, "bind SLDPRT offset plane dependencies")?;
             changed = true;
         }
         if !changed {
@@ -905,6 +909,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         }
     }
     for feature in features {
+        ctx.charge_work(1, "resolve SLDPRT offset plane support frames")?;
         let properties = &feature.source_properties;
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -928,6 +933,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             }
         });
     }
+    Ok(())
 }
 
 fn bind_native_construction_features(
