@@ -311,14 +311,9 @@ impl<'a> WritableModel<'a> {
         let shell = &model.shells[0];
         if region.id != body.regions[0]
             || region.body != body.id
-            || region.shells != [shell.id.clone()]
+            || region.shells != std::slice::from_ref(&shell.id)
             || shell.region != region.id
-            || shell.faces()
-                != model
-                    .faces
-                    .iter()
-                    .map(|face| face.id.clone())
-                    .collect::<Vec<_>>()
+            || !shell.faces().iter().eq(model.faces.iter().map(|face| &face.id))
             || !shell.wire_edges().is_empty()
             || !shell.free_vertices().is_empty()
         {
@@ -334,12 +329,7 @@ impl<'a> WritableModel<'a> {
         let mut ordered_vertices = Vec::new();
         match layout {
             Layout::SingleFace => {
-                if model.faces[0].loops
-                    != model
-                        .loops
-                        .iter()
-                        .map(|loop_| loop_.id.clone())
-                        .collect::<Vec<_>>()
+                if !model.faces[0].loops.iter().eq(model.loops.iter().map(|loop_| &loop_.id))
                 {
                     return Err(CodecError::Malformed(
                         "single-face loop order is inconsistent".into(),

@@ -2251,12 +2251,7 @@ pub(crate) fn project(
             } else {
                 ctx.reserve_map(&mut producers, 1, "Rhino history producers")
                     .map_err(ProjectionError::Codec)?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(ids[index].as_str().len()),
-                    "Rhino history producer identity",
-                )
-                .map_err(ProjectionError::Codec)?;
-                producers.insert(*descendant, Some((index, ids[index].clone())));
+                producers.insert(*descendant, Some((index, ids[index].try_clone_for_decode(ctx, "Rhino history producer identity").map_err(ProjectionError::Codec)?)));
             }
         }
     }
@@ -2289,13 +2284,8 @@ pub(crate) fn project(
             if *producer_index >= index || dependency_seen.contains(id) {
                 continue;
             }
-            let id_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
-            ctx.charge_retained(id_bytes, "Rhino history seen dependency identity")
-                .map_err(ProjectionError::Codec)?;
-            dependency_seen.insert(id.clone());
-            ctx.charge_retained(id_bytes, "Rhino history dependency identity")
-                .map_err(ProjectionError::Codec)?;
-            dependencies.push(id.clone());
+            dependency_seen.insert(id.try_clone_for_decode(ctx, "Rhino history seen dependency identity").map_err(ProjectionError::Codec)?);
+            dependencies.push(id.try_clone_for_decode(ctx, "Rhino history dependency identity").map_err(ProjectionError::Codec)?);
         }
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();
