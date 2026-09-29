@@ -4230,10 +4230,10 @@ pub(super) fn simple_hole_chamfers(
         }
         let (Some(diameter), Some(angle)) = (
             cadmpeg_ir::scalar::PositiveLength::new(
-                2.0 * outer_radii.iter().sum::<f64>() / outer_radii.len() as f64,
+                2.0 * outer_radii.iter().sum::<f64>() / cadmpeg_core::convert::f64_from_index(outer_radii.len()).ok_or_else(|| ctx.refuse_codec_limit("NX chamfer radii count", 9_007_199_254_740_992, cadmpeg_core::decode::u64_from_index(outer_radii.len())))?,
             ),
             cadmpeg_ir::scalar::InteriorAngle::new(
-                included_angles.iter().sum::<f64>() / included_angles.len() as f64,
+                included_angles.iter().sum::<f64>() / cadmpeg_core::convert::f64_from_index(included_angles.len()).ok_or_else(|| ctx.refuse_codec_limit("NX chamfer angles count", 9_007_199_254_740_992, cadmpeg_core::decode::u64_from_index(included_angles.len())))?,
             ),
         ) else {
             return Ok(BTreeMap::new());

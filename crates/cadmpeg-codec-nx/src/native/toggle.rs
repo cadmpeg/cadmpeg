@@ -466,7 +466,7 @@ fn parse_saved_toggle_stream(
         let digits = if ordinal == 0 {
             1
         } else {
-            ordinal.ilog10() as usize + 1
+            cadmpeg_core::decode::index_from_u32(ordinal.ilog10()) + 1
         };
         let id_len = PREFIX.len() + digits;
         let mut id = ctx.retained_string(id_len, "retain NX saved toggle entry id")?;
@@ -517,7 +517,7 @@ fn assign_stable_toggle_identities(
         .checked_mul(std::mem::size_of::<(&ToggleId, usize)>() * 4)
         .and_then(|len| u64::try_from(len).ok())
         .ok_or_else(|| {
-            ctx.refuse_codec_limit("size NX saved toggle index", 0, entries.len() as u64)
+            ctx.refuse_codec_limit("size NX saved toggle index", 0, cadmpeg_core::decode::u64_from_index(entries.len()))
         })?;
     let _reservation = ctx.reserve_scoped(scratch_bytes, "index NX saved toggle identities")?;
     let mut counts = BTreeMap::<ToggleId, usize>::new();

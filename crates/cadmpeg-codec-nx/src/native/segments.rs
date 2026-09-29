@@ -873,7 +873,7 @@ pub(super) fn segment_om_links(
             };
             let Some(location) = entry_offset
                 .checked_add(relative_u64)
-                .and_then(|offset| OmLocation::new(offset, separator_byte_len as u32))
+                .and_then(|offset| OmLocation::new(offset, u32::try_from(separator_byte_len).ok()?))
             else {
                 continue;
             };

@@ -33,7 +33,7 @@ impl Serialize for ParasolidDeltasTerminalNullReferences {
             id: &self.id,
             stream_ordinal: self.stream_ordinal,
             references: self.form.references(),
-            byte_len: self.form.raw().len() as u64,
+            byte_len: cadmpeg_core::decode::u64_from_index(self.form.raw().len()),
             sha256: Sha256WireDigest::of(self.form.raw()),
             inflated_offset: self.inflated_offset,
         }
@@ -58,7 +58,7 @@ impl TryFrom<NullTailWire> for ParasolidDeltasTerminalNullReferences {
     type Error = &'static str;
     fn try_from(wire: NullTailWire) -> Result<Self, Self::Error> {
         let form = NullTailForm::from_references(&wire.references)?;
-        if wire.byte_len != form.raw().len() as u64 {
+        if wire.byte_len != cadmpeg_core::decode::u64_from_index(form.raw().len()) {
             return Err("byte_len: does not match null-reference encoding");
         }
         if wire.sha256 != crate::native::hex::Sha256Hex::digest(form.raw()) {
@@ -107,7 +107,7 @@ impl Serialize for ParasolidDeltasTermUseNumericTail {
             term_use_xmt: self.term_use_xmt,
             term_use_count: self.values.term_use_count(),
             values: self.values.values(),
-            byte_len: self.values.byte_len() as u64,
+            byte_len: cadmpeg_core::decode::u64_from_index(self.values.byte_len()),
             sha256: Sha256WireDigest::of(&bytes[..len]),
             inflated_offset: self.inflated_offset,
         }
@@ -136,7 +136,7 @@ impl TryFrom<NumericTailWire> for ParasolidDeltasTermUseNumericTail {
     type Error = &'static str;
     fn try_from(wire: NumericTailWire) -> Result<Self, Self::Error> {
         let values = NumericTailValues::new(wire.term_use_count, wire.values)?;
-        if wire.byte_len != values.byte_len() as u64 {
+        if wire.byte_len != cadmpeg_core::decode::u64_from_index(values.byte_len()) {
             return Err("byte_len: does not match numeric-tail encoding");
         }
         let (bytes, len) = values.encoded_bytes();

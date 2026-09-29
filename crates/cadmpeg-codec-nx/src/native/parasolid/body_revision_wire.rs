@@ -15,8 +15,8 @@ impl RevisionLengths {
     pub(super) fn from_slices(prefix: &[u8], tail: &[u8]) -> Self {
         // Each byte slice is at most isize::MAX bytes; their sum fits u64.
         Self {
-            prefix: prefix.len() as u64,
-            tail: tail.len() as u64,
+            prefix: cadmpeg_core::decode::u64_from_index(prefix.len()),
+            tail: cadmpeg_core::decode::u64_from_index(tail.len()),
         }
     }
 

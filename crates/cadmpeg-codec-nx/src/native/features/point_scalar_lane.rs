@@ -68,7 +68,7 @@ impl PointScalarPositions {
             if slot == 0 {
                 self.first_source_offset
             } else {
-                self.target_source_offset + 5 + (slot as u64 - 1) * 8
+                self.target_source_offset + 5 + (cadmpeg_core::decode::u64_from_index(slot) - 1) * 8
             }
         })
     }

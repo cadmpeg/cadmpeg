@@ -129,7 +129,7 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
         )
         .map_err(|_| "locations: allocation failed")?;
         for (ordinal, branch) in wire.branches.into_iter().enumerate() {
-            if branch.ordinal as usize != ordinal {
+            if cadmpeg_core::decode::index_from_u32(branch.ordinal) != ordinal {
                 return Err("branches.ordinal must equal branch order");
             }
             if usize::from(branch.declared_count) != branch.members.len() + 1 {
@@ -146,13 +146,13 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
             )
             .map_err(|_| "positions: allocation failed")?;
             for (ordinal, reference) in branch.members.into_iter().enumerate() {
-                if reference.ordinal as usize != ordinal {
+                if cadmpeg_core::decode::index_from_u32(reference.ordinal) != ordinal {
                     return Err("members.ordinal must equal member order");
                 }
                 positions.push(reference.source_offset);
                 members.push((reference.token, reference.data_block));
             }
-            if branch.terminal.ordinal as usize != members.len() {
+            if cadmpeg_core::decode::index_from_u32(branch.terminal.ordinal) != members.len() {
                 return Err("terminal.ordinal must equal members length");
             }
             branches.push(ThruCurveBranch {
