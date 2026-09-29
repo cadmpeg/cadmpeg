@@ -29,6 +29,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
 };
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::{
     collections::HashSet,
     ops::Range,
@@ -46,31 +47,41 @@ use crate::records::ObjectId;
 use cadmpeg_core::decode::u64_from_index;
 
 pub(super) fn compact_body_selections(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Vec<FeatureInputBodySelection> {
-    let mut objects = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| Some((feature_object_name(feature, lane)?, feature)))
-        .collect::<Vec<_>>();
-    objects.sort_by_key(|(name, _)| name.offset);
+) -> Result<Vec<FeatureInputBodySelection>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT compact body selections";
+    let mut objects = Vec::new();
+    for (input_index, feature) in histories.iter().flat_map(|history| &history.features).enumerate() {
+        ctx.charge_work(u64_from_index(lane.names.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let Some(name) = feature_object_name(feature, lane) else { continue; };
+        ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+        objects.push((name, feature, input_index));
+    }
+    let levels = if objects.len() > 1 { objects.len().ilog2() + 1 } else { 1 };
+    ctx.charge_work(u64_from_index(objects.len()).checked_mul(u64::from(levels))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    objects.sort_unstable_by_key(|(name, _, input_index)| (name.offset, *input_index));
     let lane_key = lane
         .id
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
+    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
     let state_token = compact_body_state_token(lane);
     let mut result = Vec::new();
-    for (object_index, &(name, feature)) in objects.iter().enumerate() {
+    for (object_index, &(name, feature, _)) in objects.iter().enumerate() {
+        ctx.charge_work(1, OPERATION)?;
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let Some(start) = usize::try_from(name.offset).ok() else {
             continue;
         };
         let next = objects.get(object_index + 1);
         let end = next
-            .and_then(|(next, _)| usize::try_from(next.offset).ok())
+            .and_then(|(next, _, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let next_token = next.and_then(|(next, next_feature)| {
+        let next_token = next.and_then(|(next, next_feature, _)| {
             (native_object_class(next_feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::DeleteBody)
                 .then(|| {
@@ -81,10 +92,12 @@ pub(super) fn compact_body_selections(
                 .flatten()
         });
         let selection = if kind == NativeClassKind::DeleteBody {
-            lane.native_payload
-                .get(start..end)
-                .and_then(|payload| compact_body_selection_vector(payload, start, next_token))
+            match lane.native_payload.get(start..end) {
+                Some(payload) => compact_body_selection_vector(ctx, payload, start, next_token)?,
+                None => None,
+            }
         } else if kind == NativeClassKind::Operation(FeatureClass::MoveBody) {
+            ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
             let mut data_classes = lane
                 .classes
                 .iter()
@@ -94,11 +107,11 @@ pub(super) fn compact_body_selections(
                 });
             match (data_classes.next(), data_classes.next()) {
                 (Some(class), None) => super::direct_edits::move_body_translation_record(
-                    &lane.native_payload,
+                    ctx, &lane.native_payload,
                     start,
                     end,
                     class.offset,
-                )
+                )?
                 .map(|record| (record.selection_offset, record.local_body_ids)),
                 _ => None,
             }
@@ -108,31 +121,38 @@ pub(super) fn compact_body_selections(
         let Some((offset, local_body_ids)) = selection else {
             continue;
         };
+        let ordinal = u32::try_from(result.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len())))?;
+        ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
+        let id = ctx.format_retained(format_args!("sldprt:feature-input:body-selection#{lane_key}:{offset}"), OPERATION)?;
+        let copy_text = |text: &str| {
+            ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
+            ctx.format_retained(format_args!("{text}"), OPERATION)
+        };
+        let parent = copy_text(&lane.id)?;
+        let object_name_ref = copy_text(&name.id)?;
+        let feature_ref = copy_text(&feature.id)?;
+        let (body_state_ids, mode) = match (kind, state_token) {
+            (NativeClassKind::DeleteBody, Some(token)) => (
+                compact_body_state_ids(ctx, &lane.native_payload, start, offset, token)?,
+                compact_body_retention_mode(ctx, &lane.native_payload, start, offset, token)?,
+            ),
+            _ => (Vec::new(), None),
+        };
+        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
         result.push(FeatureInputBodySelection {
-            id: format!("sldprt:feature-input:body-selection#{lane_key}:{offset}"),
-            parent: lane.id.clone(),
-            ordinal: result.len() as u32,
-            offset: offset as u64,
-            object_name_ref: name.id.clone(),
-            feature_ref: feature.id.clone(),
+            id,
+            parent,
+            ordinal,
+            offset: u64_from_index(offset),
+            object_name_ref,
+            feature_ref,
             local_body_ids,
-            body_state_ids: if kind == NativeClassKind::DeleteBody {
-                state_token.map_or_else(Vec::new, |token| {
-                    compact_body_state_ids(&lane.native_payload, start, offset, token)
-                })
-            } else {
-                Vec::new()
-            },
-            mode: if kind == NativeClassKind::DeleteBody {
-                state_token.and_then(|token| {
-                    compact_body_retention_mode(&lane.native_payload, start, offset, token)
-                })
-            } else {
-                None
-            },
+            body_state_ids,
+            mode,
         });
     }
-    result
+    Ok(result)
 }
 
 fn compact_body_state_token(lane: &FeatureInputLane) -> Option<u16> {
@@ -149,49 +169,64 @@ fn compact_body_state_token(lane: &FeatureInputLane) -> Option<u16> {
 }
 
 pub(crate) fn compact_body_state_ids_for_selection(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     selection: &FeatureInputBodySelection,
-) -> Vec<u32> {
-    let Some(token) = compact_body_state_token(lane) else {
-        return Vec::new();
-    };
-    let Some(start) = lane
-        .names
-        .iter()
-        .find(|name| name.id == selection.object_name_ref)
-        .and_then(|name| usize::try_from(name.offset).ok())
-    else {
-        return Vec::new();
-    };
-    let Some(end) = usize::try_from(selection.offset).ok() else {
-        return Vec::new();
-    };
-    compact_body_state_ids(&lane.native_payload, start, end, token)
+) -> Result<Vec<u32>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT body state identities";
+    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
+    let Some(token) = compact_body_state_token(lane) else { return Ok(Vec::new()); };
+    let mut start = None;
+    for name in &lane.names {
+        let work = name.id.len().checked_add(selection.object_name_ref.len()).and_then(|size| size.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64_from_index(work), OPERATION)?;
+        if name.id == selection.object_name_ref {
+            start = usize::try_from(name.offset).ok();
+            break;
+        }
+    }
+    let (Some(start), Ok(end)) = (start, usize::try_from(selection.offset)) else { return Ok(Vec::new()); };
+    compact_body_state_ids(ctx, &lane.native_payload, start, end, token)
 }
 
 pub(crate) fn compact_body_retention_mode_for_selection(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     selection: &FeatureInputBodySelection,
-) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
-    let token = compact_body_state_token(lane)?;
-    let start = lane
-        .names
-        .iter()
-        .find(|name| name.id == selection.object_name_ref)
-        .and_then(|name| usize::try_from(name.offset).ok())?;
-    let end = usize::try_from(selection.offset).ok()?;
-    compact_body_retention_mode(&lane.native_payload, start, end, token)
+) -> Result<Option<cadmpeg_ir::features::BodyRetentionMode>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT body retention mode";
+    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
+    let Some(token) = compact_body_state_token(lane) else { return Ok(None); };
+    let mut start = None;
+    for name in &lane.names {
+        let work = name.id.len().checked_add(selection.object_name_ref.len()).and_then(|size| size.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64_from_index(work), OPERATION)?;
+        if name.id == selection.object_name_ref {
+            start = usize::try_from(name.offset).ok();
+            break;
+        }
+    }
+    let (Some(start), Ok(end)) = (start, usize::try_from(selection.offset)) else { return Ok(None); };
+    compact_body_retention_mode(ctx, &lane.native_payload, start, end, token)
 }
 
 fn compact_body_retention_mode(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     token: u16,
-) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
+) -> Result<Option<cadmpeg_ir::features::BodyRetentionMode>, CodecError> {
     const HEADER_LEN: usize = 83;
+    const OPERATION: &str = "decode SLDPRT body retention mode";
+    let Some(scan_end) = end.checked_sub(HEADER_LEN - 1) else { return Ok(None); };
+    ctx.charge_work(u64_from_index(scan_end.checked_sub(start).unwrap_or(0)).checked_mul(u64_from_index(HEADER_LEN))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    Ok((|| {
     let token = token.to_le_bytes();
-    let state_end = (start..end.saturating_sub(HEADER_LEN - 1))
+    let state_end = (start..scan_end)
         .filter(|offset| compact_body_state_id(payload, *offset, token).is_some())
         .map(|offset| offset + HEADER_LEN)
         .max()?;
@@ -204,6 +239,7 @@ fn compact_body_retention_mode(
         1 => Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected),
         _ => None,
     }
+    })())
 }
 
 fn compact_body_state_id(payload: &[u8], offset: usize, token: [u8; 2]) -> Option<u32> {
@@ -219,17 +255,22 @@ fn compact_body_state_id(payload: &[u8], offset: usize, token: [u8; 2]) -> Optio
     .then_some(body_id)
 }
 
-fn compact_body_state_ids(payload: &[u8], start: usize, end: usize, token: u16) -> Vec<u32> {
+fn compact_body_state_ids(
+    ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize, token: u16,
+) -> Result<Vec<u32>, CodecError> {
     const HEADER_LEN: usize = 83;
+    const OPERATION: &str = "decode SLDPRT body state identities";
     let token = token.to_le_bytes();
     let mut result = Vec::new();
-    for offset in start..end.saturating_sub(HEADER_LEN - 1) {
-        let Some(body_id) = compact_body_state_id(payload, offset, token) else {
-            continue;
-        };
+    let Some(scan_end) = end.checked_sub(HEADER_LEN - 1) else { return Ok(result); };
+    ctx.charge_work(u64_from_index(scan_end.checked_sub(start).unwrap_or(0)).checked_mul(u64_from_index(HEADER_LEN))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    for offset in start..scan_end {
+        let Some(body_id) = compact_body_state_id(payload, offset, token) else { continue; };
+        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
         result.push(body_id);
     }
-    result
+    Ok(result)
 }
 
 /// Decode an edge-selection reference list, including the count-framed
@@ -2755,14 +2796,18 @@ fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<V
 }
 
 fn compact_body_selection_vector(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     base: usize,
     next_object_token: Option<u16>,
-) -> Option<(usize, Vec<u32>)> {
+) -> Result<Option<(usize, Vec<u32>)>, CodecError> {
     const SCHEMA: &[u8] = &11000u32.to_le_bytes();
-    for relative in (0..=payload.len().checked_sub(16)?).rev() {
-        if payload.get(relative..relative + 4)? != SCHEMA
-            || payload.get(relative + 4..relative + 12)? != [0; 8]
+    const OPERATION: &str = "decode SLDPRT compact body selection vector";
+    let Some(last) = payload.len().checked_sub(16) else { return Ok(None); };
+    for relative in (0..=last).rev() {
+        ctx.charge_work(32, OPERATION)?;
+        if payload.get(relative..relative + 4) != Some(SCHEMA)
+            || payload.get(relative + 4..relative + 12) != Some(&[0; 8])
         {
             continue;
         }
@@ -2794,36 +2839,57 @@ fn compact_body_selection_vector(
         {
             continue;
         }
-        let mut view = View::over_retained(payload);
-        if view.seek(relative + 16).is_none() {
-            continue;
-        }
-        let Some(local_body_ids) = view.read_counted(count as u64, 4, View::u32_le) else {
-            continue;
-        };
-        return Some((base + relative, local_body_ids));
+        let Some(ids) = payload.get(relative + 16..ids_end) else { continue; };
+        let local_body_ids = read_compact_body_ids(ctx, ids, OPERATION)?;
+        let Some(offset) = base.checked_add(relative) else { return Ok(None); };
+        return Ok(Some((offset, local_body_ids)));
     }
-    None
+    Ok(None)
 }
 
-pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option<Vec<u32>> {
-    if payload.get(offset..offset + 4)? != 11000u32.to_le_bytes()
-        || payload.get(offset + 4..offset + 12)? != [0; 8]
+pub(crate) fn compact_body_selection_at(
+    ctx: &DecodeContext<'_>, payload: &[u8], offset: usize,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT compact body selection";
+    ctx.charge_work(32, OPERATION)?;
+    let Some(header_end) = offset.checked_add(12) else { return Ok(None); };
+    let Some(schema_end) = offset.checked_add(4) else { return Ok(None); };
+    if payload.get(offset..schema_end) != Some(11000u32.to_le_bytes().as_slice())
+        || payload.get(schema_end..header_end) != Some(&[0; 8])
     {
-        return super::direct_edits::move_body_selection_at(payload, offset);
+        if payload.get(offset..schema_end).is_none() || payload.get(schema_end..header_end).is_none() {
+            return Ok(None);
+        }
+        return super::direct_edits::move_body_selection_at(ctx, payload, offset);
     }
-    let count = usize::try_from(View::u32_le_at(payload, offset + 12)?).ok()?;
-    let ids_end = offset.checked_add(16 + count.checked_mul(4)?)?;
-    let sentinel_end = ids_end.checked_add(4)?;
-    let zeros_end = sentinel_end.checked_add(12)?;
-    if payload.get(ids_end..sentinel_end)? != u32::MAX.to_le_bytes()
-        || payload.get(sentinel_end..zeros_end)? != [0; 12]
-    {
-        return None;
+    let ids = (|| {
+        let count = usize::try_from(View::u32_le_at(payload, offset.checked_add(12)?)?).ok()?;
+        let ids_start = offset.checked_add(16)?;
+        let ids_end = ids_start.checked_add(count.checked_mul(4)?)?;
+        let sentinel_end = ids_end.checked_add(4)?;
+        let zeros_end = sentinel_end.checked_add(12)?;
+        if payload.get(ids_end..sentinel_end)? != u32::MAX.to_le_bytes()
+            || payload.get(sentinel_end..zeros_end)? != [0; 12]
+        { return None; }
+        payload.get(ids_start..ids_end)
+    })();
+    match ids {
+        Some(ids) => Ok(Some(read_compact_body_ids(ctx, ids, OPERATION)?)),
+        None => Ok(None),
     }
-    let mut view = View::over_retained(payload);
-    view.seek(offset + 16)?;
-    view.read_counted(count as u64, 4, View::u32_le)
+}
+
+pub(super) fn read_compact_body_ids(
+    ctx: &DecodeContext<'_>, bytes: &[u8], operation: &'static str,
+) -> Result<Vec<u32>, CodecError> {
+    let mut result = Vec::new();
+    ctx.reserve_collection_vec(&mut result, bytes.len() / 4, operation)?;
+    ctx.charge_work(u64_from_index(bytes.len() / 4), operation)?;
+    let mut view = View::over_retained(bytes);
+    while let Some(id) = view.u32_le() {
+        result.push(id);
+    }
+    Ok(result)
 }
 
 pub(super) fn compact_general_curve_ref_at(payload: &[u8], offset: usize) -> bool {

@@ -1478,7 +1478,7 @@ fn body_state_ids_disagree_with_payload(
     let _reservation =
         admit_validation_candidates(ctx, source_units, "validate SLDPRT body state candidates")?;
     Ok(
-        crate::resolved_features::selections::compact_body_state_ids_for_selection(lane, record)
+        crate::resolved_features::selections::compact_body_state_ids_for_selection(ctx, lane, record)?
             != record.body_state_ids,
     )
 }
@@ -1494,19 +1494,16 @@ fn body_selection_disagrees_with_payload(
         selection_payload_span(lane, record.offset),
         "validate SLDPRT body selection candidates",
     )?;
-    Ok(usize::try_from(record.offset)
-        .ok()
-        .and_then(|offset| {
-            crate::resolved_features::selections::compact_body_selection_at(
-                &lane.native_payload,
-                offset,
-            )
-        })
-        .as_ref()
-        != Some(&record.local_body_ids)
+    let selection = match usize::try_from(record.offset) {
+        Ok(offset) => crate::resolved_features::selections::compact_body_selection_at(
+            ctx, &lane.native_payload, offset,
+        )?,
+        Err(_) => None,
+    };
+    Ok(selection.as_ref() != Some(&record.local_body_ids)
         || crate::resolved_features::selections::compact_body_retention_mode_for_selection(
-            lane, record,
-        ) != record.mode)
+            ctx, lane, record,
+        )? != record.mode)
 }
 
 /// `true` when an edge selection disagrees with the compact selection in its lane payload.
