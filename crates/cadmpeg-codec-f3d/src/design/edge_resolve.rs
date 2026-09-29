@@ -599,22 +599,19 @@ fn resolved_edge_group_with_transition_chain(
                 return unmatched_selection(previous_state_id);
             }
         }
-        let matched_operands = members
-            .iter()
-            .map(|member| &member.value)
-            .map(|member| {
+        let mut matched_operands = Vec::new();
+        for member in members.iter().map(|member| &member.value) {
                 let mut matches = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
                         && operand.record_index() == *member
                 });
-                let operand = matches.next()?;
-                matches.next().is_none().then_some(operand)
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(matched_operands) = matched_operands else {
-            return unmatched_selection(previous_state_id);
-        };
+                let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
+                    return unmatched_selection(previous_state_id);
+                };
+                push_edge_item(ctx, &mut matched_operands, operand,
+                    "f3d generic surface patch matched operand")?;
+        }
         if matched_operands
             .iter()
             .any(|operand| operand.surface_patch_recipe_structure.is_none())
@@ -635,17 +632,19 @@ fn resolved_edge_group_with_transition_chain(
         let Some(state_id) = state_id else {
             return unmatched_selection(previous_state_id);
         };
-        let Some(edges) = matched_operands
-            .iter()
-            .map(|operand| operand.resolved_edge_slot)
-            .collect::<Option<Vec<_>>>()
-        else {
-            return unmatched_selection(Some(state_id));
-        };
+        let mut edges = Vec::new();
+        for operand in &matched_operands {
+            let Some(edge) = operand.resolved_edge_slot else {
+                return unmatched_selection(Some(state_id));
+            };
+            push_edge_item(ctx, &mut edges, edge,
+                "f3d generic surface patch resolved slot")?;
+        }
         let mut resolved_edges = Vec::new();
         for edge_slot in edges {
             if !resolved_edges.contains(&edge_slot) {
-                resolved_edges.push(edge_slot);
+                push_edge_item(ctx, &mut resolved_edges, edge_slot,
+                    "f3d generic surface patch distinct slot")?;
             }
         }
         if resolved_edges.is_empty() {
