@@ -619,17 +619,19 @@ fn decode_with_occurrence_limits(
         unstatable_attribute_tables,
     } = native::store(
         &mut ir,
-        &parse.scan,
-        &parse.directory,
-        &parse.parameters,
-        &parse.trailing_pointer_analysis,
-        native::QuarantinedRecords {
-            directory: &parse.quarantined_directory,
-            parameters: &parse.quarantined_parameters,
+        native::NativeStoreInputs {
+            scan: &parse.scan,
+            directory: &parse.directory,
+            parameters: &parse.parameters,
+            trailing_pointer_analysis: &parse.trailing_pointer_analysis,
+            quarantine: native::QuarantinedRecords {
+                directory: &parse.quarantined_directory,
+                parameters: &parse.quarantined_parameters,
+            },
+            structure_admitted: semantic_structure_admitted,
+            sequences: &projection.sequences,
+            boundary_vertex_derivations: &projection.boundary_vertex_derivations,
         },
-        semantic_structure_admitted,
-        &projection.sequences,
-        &projection.boundary_vertex_derivations,
         &mut parse.references,
         &parse.global,
         native::ProductOccurrenceLimits::new(

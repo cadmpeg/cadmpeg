@@ -1948,12 +1948,8 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             None,
         ));
     }
-    if let UfrxRecord::ParsedPrefix {
-        id,
-        representation: Some(representation),
-        ..
-    } = record
-    {
+    if let UfrxRecord::ParsedPrefix(payload) = record {
+      if let Some(representation) = payload.representation.as_ref() {
         let representation_pair_present = representation.active_representation.is_some();
         let expected_pair = document_kind(ir).and_then(|kind| match kind {
             "assembly" => Some(true),
@@ -1964,9 +1960,10 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor UFRxDoc representation state is inconsistent".into(),
-                Some(id.clone()),
+                Some(payload.id.clone()),
             ));
         }
+      }
     }
     unique(
         findings,
