@@ -2265,12 +2265,55 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
-    resolved_edge_candidate_intersection_with_extra_proofs(
-        selector_contexts,
-        shared_edge_sets,
-        [],
-        None,
-    )
+    let ordered_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
+    let shared_edge_sets = ordered_edge_sets
+        .iter()
+        .copied()
+        .filter(|edges| !edges.is_empty())
+        .collect::<Vec<_>>();
+    let references_unavailable = !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty();
+    let reference_candidates =
+        (shared_edge_sets.len() >= 2).then(|| unique_edge_set_intersection(&shared_edge_sets));
+    if reference_candidates == Some(EdgeSetIntersection::Disjoint) {
+        return None;
+    }
+    let reference = match reference_candidates {
+        Some(EdgeSetIntersection::Unique(edge)) => Some(edge),
+        _ => None,
+    };
+    let incidence = (!references_unavailable)
+        .then(|| {
+            corroborated_edge_intersection(
+                selector_contexts,
+                &shared_edge_sets,
+                SelectorSlots::Incidence,
+            )
+        })
+        .flatten();
+    let boundary_count = (!references_unavailable)
+        .then(|| {
+            corroborated_edge_intersection(
+                selector_contexts,
+                &shared_edge_sets,
+                SelectorSlots::BoundaryCount,
+            )
+        })
+        .flatten();
+    let common_triplet =
+        corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
+    let cross_clause_triplet =
+        corroborated_cross_clause_triplet_intersection(selector_contexts, &shared_edge_sets);
+    let mut proofs = [
+        reference,
+        incidence,
+        boundary_count,
+        common_triplet,
+        cross_clause_triplet,
+    ]
+    .into_iter()
+    .flatten();
+    let edge = proofs.next()?;
+    proofs.all(|proof| proof == edge).then_some(edge)
 }
 
 pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
@@ -2311,76 +2354,6 @@ pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
         [edge] => Some(*edge),
         _ => None,
     }
-}
-
-fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
-    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-    extra_proofs: [Option<i64>; N],
-    disjoint_reference_proof: Option<i64>,
-) -> Option<i64> {
-    let extra_proofs = extra_proofs
-        .into_iter()
-        .flatten()
-        .chain(disjoint_reference_proof)
-        .collect::<Vec<_>>();
-    let ordered_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
-    let shared_edge_sets = ordered_edge_sets
-        .iter()
-        .copied()
-        .filter(|edges| !edges.is_empty())
-        .collect::<Vec<_>>();
-    let references_unavailable = !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty();
-    let reference_candidates =
-        (shared_edge_sets.len() >= 2).then(|| unique_edge_set_intersection(&shared_edge_sets));
-    // Disjoint contextual face references do not name a common edge. An exact
-    // recipe-clause/history proof remains independent of that context.
-    if reference_candidates == Some(EdgeSetIntersection::Disjoint) {
-        let edge = disjoint_reference_proof?;
-        return extra_proofs
-            .iter()
-            .all(|proof| *proof == edge)
-            .then_some(edge);
-    }
-    let reference = match reference_candidates {
-        Some(EdgeSetIntersection::Unique(edge)) => Some(edge),
-        _ => None,
-    };
-    let incidence = (!references_unavailable)
-        .then(|| {
-            corroborated_edge_intersection(
-                selector_contexts,
-                &shared_edge_sets,
-                SelectorSlots::Incidence,
-            )
-        })
-        .flatten();
-    let boundary_count = (!references_unavailable)
-        .then(|| {
-            corroborated_edge_intersection(
-                selector_contexts,
-                &shared_edge_sets,
-                SelectorSlots::BoundaryCount,
-            )
-        })
-        .flatten();
-    let common_triplet =
-        corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
-    let cross_clause_triplet =
-        corroborated_cross_clause_triplet_intersection(selector_contexts, &shared_edge_sets);
-    let proofs = [
-        reference,
-        incidence,
-        boundary_count,
-        common_triplet,
-        cross_clause_triplet,
-    ]
-    .into_iter()
-    .flatten()
-    .chain(extra_proofs)
-    .collect::<Vec<_>>();
-    let edge = *proofs.first()?;
-    proofs.iter().all(|proof| *proof == edge).then_some(edge)
 }
 
 fn corroborated_common_triplet_intersection(
