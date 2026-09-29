@@ -3,6 +3,8 @@
 
 use super::feature_input_blocks;
 use super::feature_operation_chronological_labels;
+use super::format_feature_history_id;
+use super::copy_operation_text;
 
 use super::operation_record::FeatureOperationRecord;
 
@@ -659,11 +661,71 @@ fn symbolic_thread_text_frames<'a>(
     if record.name() != "SYMBOLIC_THREAD" {
         return Ok(None);
     }
-    let frames = crate::om::operation_payload_text_frames(ctx, record)?
-        .into_iter()
-        .filter(|frame| frame.marker == crate::om::OperationTextMarker::Text)
-        .collect::<Vec<_>>();
+    let mut frames = crate::om::operation_payload_text_frames(ctx, record)?;
+    frames.retain(|frame| frame.marker == crate::om::OperationTextMarker::Text);
     Ok((frames.len() >= 2).then_some(frames))
+}
+
+fn owned_symbolic_thread(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    frames: Vec<crate::om::OperationPayloadTextFrame<'_>>,
+    section_key: &str,
+    entry_offset: u64,
+    operation_ordinal: usize,
+    record_offset: usize,
+) -> Result<FeatureSymbolicThread, cadmpeg_core::CodecError> {
+    let operation_label = format_feature_history_id(
+        ctx, "operation-label", section_key, operation_ordinal, None,
+    )?;
+    let operation_record = format_feature_history_id(
+        ctx, "operation-record", section_key, operation_ordinal, None,
+    )?;
+    let id = format_feature_history_id(
+        ctx, "symbolic-thread", section_key, operation_ordinal, None,
+    )?;
+    let bytes = frames.len().checked_mul(std::mem::size_of::<FeatureSymbolicThreadTextFrame>())
+        .ok_or_else(|| ctx.refuse_codec_limit("retain NX symbolic thread text frames", 0, 1))?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(frames.len()),
+        "NX symbolic thread text frames",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "NX symbolic thread text frames",
+    )?;
+    let mut text_frames = Vec::new();
+    text_frames.try_reserve_exact(frames.len()).map_err(|_| {
+        ctx.refuse_codec_limit("allocate NX symbolic thread text frames", 0, 1)
+    })?;
+    for (ordinal, frame) in frames.into_iter().enumerate() {
+        let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
+            ctx.refuse_codec_limit("NX symbolic thread text frame ordinal", 0, 1)
+        })?;
+        let frame_id = format_feature_history_id(
+            ctx, "symbolic-thread-text-frame", section_key, operation_ordinal, Some(ordinal),
+        )?;
+        let owner = copy_operation_text(ctx, &id, "NX symbolic thread text frame owner")?;
+        let value = copy_operation_text(
+            ctx, frame.value.as_str(), "NX symbolic thread text frame value",
+        )?;
+        text_frames.push(FeatureSymbolicThreadTextFrame {
+            id: frame_id,
+            symbolic_thread: owner,
+            ordinal: ordinal_u32,
+            value: crate::payload_text::PayloadText::new(value)
+                .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?,
+            source_offset: entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX symbolic thread text frame offset", 0, 1))?,
+        });
+    }
+    Ok(FeatureSymbolicThread {
+        id,
+        operation_label,
+        operation_record,
+        text_frames,
+        source_offset: entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(record_offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX symbolic thread offset", 0, 1))?,
+    })
 }
 
 /// Decode complete typed text frames from symbolic-thread operations.
@@ -688,33 +750,28 @@ pub(in crate::native) fn feature_symbolic_threads(
                     return;
                 }
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let operation_record = format!(
-                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-            );
-            let id =
-                format!("nx:feature-history:symbolic-thread#{section_key}-{operation_ordinal:010}");
-            let text_frames = frames
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, frame)| FeatureSymbolicThreadTextFrame {
-                    id: format!(
-                        "nx:feature-history:symbolic-thread-text-frame#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    symbolic_thread: id.clone(),
-                    ordinal: ordinal as u32,
-                    value: frame.value.into_owned(),
-                    source_offset: entry_offset + frame.offset as u64,
-                })
-                .collect();
-            threads.push(FeatureSymbolicThread {
-                id,
-                operation_label,
-                operation_record,
-                text_frames,
-                source_offset: entry_offset + record.offset() as u64,
-            });
+            let thread = match owned_symbolic_thread(
+                ctx, frames, section_key, entry_offset, operation_ordinal, record.offset(),
+            ) {
+                Ok(thread) => thread,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            if let Err(error) = ctx.charge_collection_items(1, "NX symbolic threads")
+                .and_then(|()| ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSymbolicThread>()),
+                    "NX symbolic threads",
+                ))
+                .and_then(|()| threads.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX symbolic threads", 0, 1)
+                }))
+            {
+                failure = Some(error);
+                return;
+            }
+            threads.push(thread);
         },
     )?;
     if let Some(error) = failure {

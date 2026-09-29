@@ -58,6 +58,58 @@ fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
     .is_none());
 }
 
+fn symbolic_thread_container() -> crate::container::Container<'static> {
+    let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0".to_vec();
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "SYMBOLIC_THREAD", payload)],
+        &[],
+    );
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part),
+    ]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("symbolic thread container")
+}
+
+fn symbolic_thread_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = symbolic_thread_container();
+    let records = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_symbolic_threads(ctx, &container)
+    })
+    .expect("admitted symbolic thread");
+    assert_eq!(records.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    crate::native::features::holes::feature_symbolic_threads(&ctx, &container)
+        .expect_err("symbolic thread resource limit")
+}
+
+#[test]
+fn symbolic_thread_route_refuses_collection_limit() {
+    let error = symbolic_thread_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn symbolic_thread_route_refuses_retained_limit() {
+    let error = symbolic_thread_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn symbolic_thread_route_refuses_work_limit() {
+    let error = symbolic_thread_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     use crate::native::features::holes::SimpleHoleEndTreatment;
