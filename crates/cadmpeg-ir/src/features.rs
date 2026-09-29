@@ -4897,14 +4897,52 @@ impl RevolveConstruction {
     /// Replaces the placed axis, naming the resolution state the new operand
     /// set produces.
     pub fn set_axis(&mut self, axis: Option<RevolutionAxis>) {
-        let profile = self.profile().cloned();
-        let extent = self.extent().cloned();
-        let RevolveSelections {
-            solid,
-            face_maker,
-            fuse_order,
-            allow_multi_profile_faces,
-        } = self.selections();
+        let old = std::mem::replace(
+            self,
+            Self::Unresolved(PartialRevolveConstruction::Profile {
+                axis: None,
+                extent: None,
+                solid: None,
+                face_maker: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            }),
+        );
+        let (profile, extent, solid, face_maker, fuse_order, allow_multi_profile_faces) = match old {
+            Self::Unresolved(PartialRevolveConstruction::Profile {
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+                ..
+            }) => (None, extent, solid, face_maker, fuse_order, allow_multi_profile_faces),
+            Self::Unresolved(PartialRevolveConstruction::Axis {
+                profile,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            }) => (Some(profile), extent, solid, face_maker, fuse_order, allow_multi_profile_faces),
+            Self::Unresolved(PartialRevolveConstruction::Extent {
+                profile,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+                ..
+            }) => (Some(profile), None, solid, face_maker, fuse_order, allow_multi_profile_faces),
+            Self::Resolved {
+                profile,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+                ..
+            } => (Some(profile), Some(extent), solid, face_maker, fuse_order, allow_multi_profile_faces),
+        };
         *self = match (profile, axis, extent) {
             (None, axis, extent) => Self::Unresolved(PartialRevolveConstruction::Profile {
                 axis,
