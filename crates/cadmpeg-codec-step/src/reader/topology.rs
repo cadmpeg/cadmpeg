@@ -55,7 +55,7 @@ fn push_topology_vec<T>(
     ctx.charge_collection_items(1, operation)?;
     values
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
     values.push(value);
     Ok(())
 }
@@ -80,7 +80,7 @@ fn append_topology_vec<T>(
     ctx.charge_collection_items(u64_from_index(count), operation)?;
     target
         .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(count)))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(count), operation)))?;
     target.append(source);
     Ok(())
 }
@@ -122,7 +122,7 @@ fn insert_topology_hash_set<T: Eq + Hash>(
         ctx.charge_collection_items(1, operation)?;
         values
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
     }
     values.insert(value);
     Ok(())
@@ -163,7 +163,7 @@ fn copy_topology_body_ids(
         ctx.charge_collection_items(1, operation)?;
         copies
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
         copies.push(body.try_clone_for_decode(ctx, operation)?);
     }
     Ok(copies)
@@ -297,8 +297,8 @@ fn admitted_body_clone<'a>(
     values.try_reserve_exact(bodies.len()).map_err(|_| {
         let requested = u64_from_index(bodies.len());
         match ctx {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, requested),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, requested),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, requested, operation)),
+            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, requested, operation)),
         }
     })?;
     values.extend_from_slice(bodies);
@@ -469,18 +469,10 @@ pub(super) fn representation_bodies<'a>(
     bodies.try_reserve_exact(body_ids.len()).map_err(|_| {
         ctx.map_or_else(
             || {
-                cadmpeg_core::decode::refuse_local_limit(
-                    "step_representation_body_output",
-                    0,
-                    u64_from_index(body_ids.len()),
-                )
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_representation_body_output"), 0, u64_from_index(body_ids.len()), "step_representation_body_output"))
             },
-            |ctx| {
-                ctx.refuse_codec_limit(
-                    "step_representation_body_output",
-                    0,
-                    u64_from_index(body_ids.len()),
-                )
+            |_ctx| {
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_representation_body_output"), 0, u64_from_index(body_ids.len()), "step_representation_body_output"))
             },
         )
     })?;
@@ -4335,7 +4327,7 @@ fn push_connected_face_item<T>(
     ctx.charge_collection_items(1, operation)?;
     values
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64_from_index(values.len()), 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), u64_from_index(values.len()), 1, operation)))?;
     values.push(value);
     Ok(())
 }

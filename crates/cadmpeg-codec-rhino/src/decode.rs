@@ -665,7 +665,7 @@ impl<'a> DecodeContext<'a> {
         {
             return Ok(true);
         }
-        let copy = copy_retained_link(self.expand.ctx(), link)?;
+        let copy = self.expand.ctx().copy_retained_text(link, "Rhino unknown record link copy")?;
         append_link_to_record(self.expand.ctx(), record, copy)
     }
 
@@ -682,7 +682,7 @@ impl<'a> DecodeContext<'a> {
             if link.as_str() == record.id().as_str() || record.links().binary_search(link).is_ok() {
                 continue;
             }
-            let copy = copy_retained_link(ctx, link)?;
+            let copy = ctx.copy_retained_text(link, "Rhino unknown record link copy")?;
             append_link_to_record(ctx, record, copy)?;
         }
         Ok(true)
@@ -1156,7 +1156,7 @@ impl<'a> DecodeContext<'a> {
                             ),
                         )?;
                     }
-                    let links = [annotation.id.as_str().to_owned()];
+                    let links = [self.expand.ctx().copy_retained_text(annotation.id.as_str(), "Rhino annotation link")?];
                     let result = self.validate_candidate(|candidate, _annotations| {
                         candidate.model.semantic_annotations.push(annotation);
                     });
@@ -4044,20 +4044,6 @@ fn append_link_to_record(
         record.links_mut().insert(index, link);
     }
     Ok(true)
-}
-
-fn copy_retained_link(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    source: &str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let bytes = u64_from_index(source.len());
-    ctx.charge_retained(bytes, "Rhino unknown record link copy")?;
-    let mut copy = String::new();
-    copy.try_reserve_exact(source.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, bytes, "Rhino unknown record link copy"))
-    })?;
-    copy.push_str(source);
-    Ok(copy)
 }
 
 fn validation_findings(report: &cadmpeg_ir::report::check::ValidationReport) -> String {

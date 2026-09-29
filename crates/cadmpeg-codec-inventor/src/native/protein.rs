@@ -69,7 +69,7 @@ impl Serialize for ProteinRecord {
                 ProteinRecordState::Package,
                 Some(*directory_id),
                 Some(declared_len.get()),
-                u64::try_from(entries.len()).map_err(serde::ser::Error::custom)?,
+                cadmpeg_core::decode::u64_from_index(entries.len()),
                 None,
             ),
             Self::Malformed {

@@ -4184,8 +4184,7 @@ fn evaluate_formula_expression_with_mode_charged<'a>(
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
     evaluate: bool,
 ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
-    let source_bytes = u64::try_from(source.len())
-        .map_err(|_| ctx.refuse_codec_limit("catia_formula_expression_scan", u64::MAX, u64::MAX))?;
+    let source_bytes = cadmpeg_core::decode::u64_from_index(source.len());
     ctx.charge_work(source_bytes, "catia_formula_expression_scan")?;
     FormulaExpressionParser {
         source,

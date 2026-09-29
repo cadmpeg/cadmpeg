@@ -447,7 +447,7 @@ impl MeshSelectionSearch<'_, '_> {
                                     domain.len().checked_mul(std::mem::size_of::<usize>())?,
                                 )
                         })
-                        .and_then(|bytes| u64::try_from(bytes).ok())
+                        .map(cadmpeg_core::decode::u64_from_index)
                     else {
                         return Err(self.ctx.refuse_codec_limit(
                             "catia_forced_equation_cache_key",
@@ -661,24 +661,12 @@ impl MeshSelectionSearch<'_, '_> {
                 continue;
             };
             self.ctx.charge_collection_items(
-                u64::try_from(assignment.boundaries.len()).map_err(|_| {
-                    self.ctx.refuse_codec_limit(
-                        "catia_selection_completion_boundaries",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
+                cadmpeg_core::decode::u64_from_index(assignment.boundaries.len()),
                 "catia_selection_completion_boundaries",
             )?;
             for boundary in &assignment.boundaries {
                 self.ctx.charge_collection_items(
-                    u64::try_from(boundary.len()).map_err(|_| {
-                        self.ctx.refuse_codec_limit(
-                            "catia_selection_completion_directions",
-                            u64::MAX,
-                            u64::MAX,
-                        )
-                    })?,
+                    cadmpeg_core::decode::u64_from_index(boundary.len()),
                     "catia_selection_completion_directions",
                 )?;
             }
@@ -2204,7 +2192,7 @@ pub(super) fn resolve_singleton_mesh_selection(
                 .len()
                 .checked_mul(std::mem::size_of::<usize>())
                 .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
-                .and_then(|bytes| u64::try_from(bytes).ok())
+                .map(cadmpeg_core::decode::u64_from_index)
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("catia_singleton_root_domain_copy", u64::MAX, u64::MAX)
                 })?;

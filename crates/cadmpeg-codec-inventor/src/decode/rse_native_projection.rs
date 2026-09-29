@@ -13,7 +13,7 @@ use crate::native::{
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentMetaState};
 
 use super::{
-    admit_native_items, retained_format, retained_hex, retained_sha256, wire_len,
+    admit_native_items, retained_format, retained_hex, retained_sha256,
 };
 
 pub(super) struct RseNativeProjection {
@@ -97,27 +97,15 @@ pub(super) fn project(
                     created: ctx.copy_retained_text(&meta.created, "retain Inventor segment creation text")?,
                     modified: ctx.copy_retained_text(&meta.modified, "retain Inventor segment modification text")?,
                     body_form: meta.body_form,
-                    expanded_body_len: wire_len(
-                        ctx,
-                        meta.body.window().len(),
-                        "Inventor expanded metadata body length",
-                    )?,
+                    expanded_body_len: cadmpeg_core::decode::u64_from_index(meta.body.window().len()),
                     expanded_body_sha256: retained_sha256(
                         ctx,
                         meta.body.window(),
                         "retain Inventor segment body digest",
                     )?,
                     table_prefix: meta.tables.prefix,
-                    block_count: wire_len(
-                        ctx,
-                        meta.tables.blocks.len(),
-                        "Inventor metadata block count",
-                    )?,
-                    type_count: wire_len(
-                        ctx,
-                        meta.tables.types.len(),
-                        "Inventor metadata type count",
-                    )?,
+                    block_count: cadmpeg_core::decode::u64_from_index(meta.tables.blocks.len()),
+                    type_count: cadmpeg_core::decode::u64_from_index(meta.tables.types.len()),
                     terminal_id: retained_hex(
                         ctx,
                         &meta.tables.terminal_id,
@@ -135,11 +123,7 @@ pub(super) fn project(
                         token: ctx.copy_retained_text(token, "retain Inventor metadata section token")?,
                         number: section.number,
                         discriminator: section.discriminator,
-                        payload_len: wire_len(
-                            ctx,
-                            section.payload.window().len(),
-                            "Inventor metadata section payload length",
-                        )?,
+                        payload_len: cadmpeg_core::decode::u64_from_index(section.payload.window().len()),
                         payload_sha256: retained_sha256(
                             ctx,
                             section.payload.window(),
@@ -190,16 +174,8 @@ pub(super) fn project(
                                 .push(RseRecordRecord::from_frame(ctx, token, record)?);
                         }
                         SegmentBulkFrame::Framed {
-                            record_count: wire_len(
-                                ctx,
-                                table.records.len(),
-                                "Inventor RSe record count",
-                            )?,
-                            stream_trailer_len: wire_len(
-                                ctx,
-                                table.stream_trailer.window().len(),
-                                "Inventor RSe stream trailer length",
-                            )?,
+                            record_count: cadmpeg_core::decode::u64_from_index(table.records.len()),
+                            stream_trailer_len: cadmpeg_core::decode::u64_from_index(table.stream_trailer.window().len()),
                             stream_trailer_sha256: retained_sha256(
                                 ctx,
                                 table.stream_trailer.window(),
@@ -221,21 +197,13 @@ pub(super) fn project(
                     token: ctx.copy_retained_text(token, "retain Inventor segment bulk token")?,
                     prefix: retained_hex(ctx, &bulk.prefix, "retain Inventor segment bulk prefix")?,
                     form: bulk.form.value(),
-                    compressed_len: wire_len(
-                        ctx,
-                        bulk.compressed.window().len(),
-                        "Inventor compressed bulk length",
-                    )?,
+                    compressed_len: cadmpeg_core::decode::u64_from_index(bulk.compressed.window().len()),
                     compressed_sha256: retained_sha256(
                         ctx,
                         bulk.compressed.window(),
                         "retain Inventor compressed bulk digest",
                     )?,
-                    expanded_len: wire_len(
-                        ctx,
-                        bulk.expanded.window().len(),
-                        "Inventor expanded bulk length",
-                    )?,
+                    expanded_len: cadmpeg_core::decode::u64_from_index(bulk.expanded.window().len()),
                     expanded_sha256: retained_sha256(
                         ctx,
                         bulk.expanded.window(),

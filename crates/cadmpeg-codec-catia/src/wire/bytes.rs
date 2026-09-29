@@ -36,8 +36,7 @@ pub(crate) fn finite_f64_lane_charged(
     if !bytes.len().is_multiple_of(8) {
         return Ok(None);
     }
-    let retained = u64::try_from(bytes.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let retained = cadmpeg_core::decode::u64_from_index(bytes.len());
     ctx.charge_retained(retained, operation)?;
     let mut values = Vec::new();
     crate::resource::reserve_vec(ctx, &mut values, bytes.len() / 8, operation)?;

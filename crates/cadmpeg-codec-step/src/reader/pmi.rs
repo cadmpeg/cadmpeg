@@ -121,8 +121,8 @@ fn claim_pmi_typed(
             ctx.charge_collection_items(1, "step_pmi_typed_claims")?;
         }
         typed.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit("step_pmi_typed_claims", 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit("step_pmi_typed_claims", 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_typed_claims"), 0, 1, "step_pmi_typed_claims")),
+            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_typed_claims"), 0, 1, "step_pmi_typed_claims")),
         })?;
         typed.insert(id);
     }
@@ -150,8 +150,8 @@ fn push_pmi_vec<T>(
         ctx.charge_collection_items(1, operation)?;
     }
     values.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
+        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
     })?;
     values.push(value);
     Ok(())
@@ -1319,8 +1319,8 @@ fn push_source_id<T>(
     }
     let items = values.entry(source).or_default();
     items.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(item_operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(item_operation, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(item_operation), 0, 1, item_operation)),
+        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(item_operation), 0, 1, item_operation)),
     })?;
     items.push(id);
     Ok(())
@@ -1850,8 +1850,8 @@ fn targets(
         }
         seen.insert(id);
         targets.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit("step_pmi_target_items", 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit("step_pmi_target_items", 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_target_items"), 0, 1, "step_pmi_target_items")),
+            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_target_items"), 0, 1, "step_pmi_target_items")),
         })?;
         targets.push(PmiTarget::ShapeAspect {
             source_id: super::step_source_id(id),
@@ -2385,8 +2385,8 @@ fn characteristic_measure_values(
                 ctx.charge_collection_items(1, "step_pmi_measure_values")?;
             }
             values.try_reserve(1).map_err(|_| match ctx {
-                Some(ctx) => ctx.refuse_codec_limit("step_pmi_measure_values", 0, 1),
-                None => cadmpeg_core::decode::refuse_local_limit("step_pmi_measure_values", 0, 1),
+                Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"), 0, 1, "step_pmi_measure_values")),
+                None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"), 0, 1, "step_pmi_measure_values")),
             })?;
             values.push((name, value));
         }
@@ -2398,9 +2398,9 @@ fn characteristic_measure_values(
                     ctx.charge_collection_items(1, "step_pmi_measure_values")?;
                 }
                 values.try_reserve(1).map_err(|_| match ctx {
-                    Some(ctx) => ctx.refuse_codec_limit("step_pmi_measure_values", 0, 1),
+                    Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"), 0, 1, "step_pmi_measure_values")),
                     None => {
-                        cadmpeg_core::decode::refuse_local_limit("step_pmi_measure_values", 0, 1)
+                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"), 0, 1, "step_pmi_measure_values"))
                     }
                 })?;
                 values.push((None, value));

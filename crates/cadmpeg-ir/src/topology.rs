@@ -831,7 +831,7 @@ impl LoopRing {
         let mut members = HashSet::new();
         members
             .try_reserve(coedges.len())
-            .map_err(|_| ctx.refuse_codec_limit("loop ring members", 0, count))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("loop ring members"), 0, count, "loop ring members")))?;
         members.extend(coedges.iter());
         if members.len() != coedges.len() {
             return Ok(Err(LoopRingError(

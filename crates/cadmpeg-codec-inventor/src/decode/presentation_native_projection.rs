@@ -14,7 +14,7 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 
 use super::{
     charge_items, charge_retained_len, retained_format, retained_native_sha256,
-    retained_sha256, wire_len,
+    retained_sha256,
 };
 
 pub(super) struct PresentationNativeProjection {
@@ -59,11 +59,7 @@ pub(super) fn project(
             related_references: style.related_references,
             state: style.state,
             terminal_reference: style.terminal_reference,
-            suffix_len: wire_len(
-                ctx,
-                style.suffix.window().len(),
-                "Inventor default style suffix length",
-            )?,
+            suffix_len: cadmpeg_core::decode::u64_from_index(style.suffix.window().len()),
             suffix_sha256: retained_native_sha256(
                 ctx,
                 style.suffix.window(),
@@ -124,11 +120,7 @@ pub(super) fn project(
                     ctx.copy_retained_text(&value.guid, "retain Inventor rendering extension text")
                 })
                 .transpose()?,
-            suffix_len: wire_len(
-                ctx,
-                style.suffix.window().len(),
-                "Inventor rendering style suffix length",
-            )?,
+            suffix_len: cadmpeg_core::decode::u64_from_index(style.suffix.window().len()),
             suffix_sha256: retained_sha256(
                 ctx,
                 style.suffix.window(),

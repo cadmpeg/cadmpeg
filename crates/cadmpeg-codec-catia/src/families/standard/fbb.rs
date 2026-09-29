@@ -1676,7 +1676,7 @@ pub(crate) fn parse_vertex_table(
     let count = points.len();
     let bytes_needed = count
         .checked_mul(std::mem::size_of::<[f64; 3]>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia_fbb_vertex_coordinates", u64::MAX, u64::MAX)
         })?;
@@ -1835,7 +1835,7 @@ fn parse_trim_chain_with_length_encoding(
             let retained_bytes = reversed
                 .len()
                 .checked_mul(std::mem::size_of::<TrimRecord>())
-                .and_then(|bytes| u64::try_from(bytes).ok())
+                .map(cadmpeg_core::decode::u64_from_index)
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("catia_trim_solution_records", u64::MAX, u64::MAX)
                 })?;

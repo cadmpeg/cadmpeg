@@ -4553,9 +4553,7 @@ fn design_objects(
             let object = CatiaDesignObject {
                 id,
                 parent: ctx.copy_retained_text(&graph.id, "catia_design_parent")?,
-                ordinal: u64::try_from(ordinal).map_err(|_| {
-                    ctx.refuse_codec_limit("catia_design_ordinal", u64::MAX, u64::MAX)
-                })?,
+                ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                 first_field_byte_offset: first_record.byte_offset,
                 owner_entity_id,
                 owner_record: owner_record
@@ -4673,9 +4671,7 @@ fn design_parallel_reference_table(
             .and_then(|cell| cell.design_object())
             .is_some()
         {
-            let count = u64::try_from(cells.len()).map_err(|_| {
-                ctx.refuse_codec_limit("catia_design_row_match_work", u64::MAX, u64::MAX)
-            })?;
+            let count = cadmpeg_core::decode::u64_from_index(cells.len());
             let units = count.checked_mul(count).ok_or_else(|| {
                 ctx.refuse_codec_limit("catia_design_row_match_work", u64::MAX, u64::MAX)
             })?;
@@ -5252,9 +5248,7 @@ fn relation_type_signature_charged(
     source: &str,
 ) -> Result<Option<CatiaRelationTypeSignature>, CodecError> {
     ctx.charge_work(
-        u64::try_from(source.len()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_native_signature_scan", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(source.len()),
         "catia_native_signature_scan",
     )?;
     let source = source.strip_suffix('\n').unwrap_or(source);
@@ -5452,18 +5446,14 @@ fn entity_incidences(
     CodecError,
 > {
     ctx.charge_work(
-        u64::try_from(records.len()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_native_incidence_scan", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(records.len()),
         "catia_native_incidence_scan",
     )?;
     let mut incoming_references = Vec::new();
     let mut incoming_storage_references = Vec::new();
     for record in records.iter().filter(|record| record.parent == graph_id) {
         ctx.charge_work(
-            u64::try_from(record.references.len()).map_err(|_| {
-                ctx.refuse_codec_limit("catia_native_incidence_references", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(record.references.len()),
             "catia_native_incidence_references",
         )?;
         for reference in record
@@ -6048,9 +6038,7 @@ fn relation_program_instance(
             return Ok(None);
         };
     ctx.charge_work(
-        u64::try_from(relation_expressions.len()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_native_program_lookup", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(relation_expressions.len()),
         "catia_native_program_lookup",
     )?;
     let selected_expression = relation_expressions
@@ -6139,9 +6127,7 @@ fn entity_reference(
         return Ok(CatiaEntityReference::Null { entity_id });
     }
     ctx.charge_work(
-        u64::try_from(entities.len()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_native_reference_lookup", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(entities.len()),
         "catia_native_reference_lookup",
     )?;
     let entity = entities.iter().find_map(|((graph, id), entity)| {
@@ -6150,13 +6136,7 @@ fn entity_reference(
     Ok(match entity {
         Some(entity) => {
             ctx.charge_work(
-                u64::try_from(entity_classes.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "catia_native_reference_class_lookup",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
+                cadmpeg_core::decode::u64_from_index(entity_classes.len()),
                 "catia_native_reference_class_lookup",
             )?;
             let class_name = entity_classes.iter().find_map(|((graph, id), class_name)| {
@@ -6759,9 +6739,7 @@ fn semantic_entity_indices(
             return Err(CodecError::malformed("CATIA parameter binding disappeared"));
         };
         ctx.charge_work(
-            u64::try_from(entity_classes.len()).map_err(|_| {
-                ctx.refuse_codec_limit("catia_native_binding_class_lookup", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(entity_classes.len()),
             "catia_native_binding_class_lookup",
         )?;
         let class_name = entity_classes.iter().find_map(|((graph, id), class_name)| {
@@ -6867,7 +6845,7 @@ fn resolved_relation_program_inputs(
         .len()
         .checked_mul(dependencies.len())
         .and_then(|work| work.checked_mul(2))
-        .and_then(|work| u64::try_from(work).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_native_input_matching", u64::MAX, u64::MAX))?;
     ctx.charge_work(work, "catia_native_input_matching")?;
     if dependencies.iter().any(|dependency| {
@@ -6928,8 +6906,7 @@ pub(crate) fn relation_symbols(
     source: &str,
 ) -> Result<Vec<(u64, String)>, CodecError> {
     ctx.charge_work(
-        u64::try_from(source.len())
-            .map_err(|_| ctx.refuse_codec_limit("catia_native_symbol_scan", u64::MAX, u64::MAX))?,
+        cadmpeg_core::decode::u64_from_index(source.len()),
         "catia_native_symbol_scan",
     )?;
     let bytes = source.as_bytes();
@@ -6964,9 +6941,7 @@ pub(crate) fn relation_symbols(
             at += 1;
         }
         if bytes.get(at) != Some(&b'/') {
-            let source_offset = u64::try_from(start).map_err(|_| {
-                ctx.refuse_codec_limit("catia_native_symbol_offset", u64::MAX, u64::MAX)
-            })?;
+            let source_offset = cadmpeg_core::decode::u64_from_index(start);
             let symbol = ctx.copy_retained_text(&source[start..bare_end], "catia_native_symbol_text")?;
             crate::resource::push(
                 ctx,
@@ -6986,9 +6961,7 @@ pub(crate) fn relation_symbols(
             at = start + 1;
             continue;
         }
-        let source_offset = u64::try_from(start).map_err(|_| {
-            ctx.refuse_codec_limit("catia_native_symbol_offset", u64::MAX, u64::MAX)
-        })?;
+        let source_offset = cadmpeg_core::decode::u64_from_index(start);
         let symbol = ctx.copy_retained_text(&source[start..at], "catia_native_symbol_text")?;
         crate::resource::push(
             ctx,
@@ -8681,9 +8654,7 @@ fn consolidated_cone_faces(
         let mut positions = Vec::new();
         let mut next = face.end;
         while let Some(&end) = class18_ends.get(&next) {
-            let position = u64::try_from(next).map_err(|_| {
-                ctx.refuse_codec_limit("catia_native_cone_face_positions", u64::MAX, u64::MAX)
-            })?;
+            let position = cadmpeg_core::decode::u64_from_index(next);
             crate::resource::push(
                 ctx,
                 &mut positions,
@@ -8707,12 +8678,8 @@ fn consolidated_cone_faces(
                 "catia_native_cone_face_parameter_points",
             )?;
         }
-        let byte_offset = u64::try_from(face.pos).map_err(|_| {
-            ctx.refuse_codec_limit("catia_native_cone_face_offset", u64::MAX, u64::MAX)
-        })?;
-        let byte_len = u64::try_from(face.end - face.pos).map_err(|_| {
-            ctx.refuse_codec_limit("catia_native_cone_face_length", u64::MAX, u64::MAX)
-        })?;
+        let byte_offset = cadmpeg_core::decode::u64_from_index(face.pos);
+        let byte_len = cadmpeg_core::decode::u64_from_index(face.end - face.pos);
         let value = CatiaConsolidatedConeFace {
             id: crate::resource::format_usize_id(
                 ctx,
@@ -10173,7 +10140,7 @@ impl CatiaNative {
             let Some(catalog_pos) = block
                 .pos
                 .checked_add(block.total_len())
-                .and_then(|pos| u64::try_from(pos).ok())
+                .map(cadmpeg_core::decode::u64_from_index)
             else {
                 continue;
             };
@@ -10183,9 +10150,7 @@ impl CatiaNative {
             else {
                 continue;
             };
-            let Some(block_pos) = u64::try_from(block.pos).ok() else {
-                continue;
-            };
+            let block_pos = cadmpeg_core::decode::u64_from_index(block.pos);
             let object_graph = object_graphs.iter().find(|graph| {
                 graph
                     .byte_offset

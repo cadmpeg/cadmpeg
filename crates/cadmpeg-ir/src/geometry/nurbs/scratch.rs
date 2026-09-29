@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fallible scratch storage for evaluators over admitted NURBS geometry.
 
-use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{ResourceDimension, ResourceLimit};
 
 /// Allocate a scratch vector bounded by the admitted control or knot count.
 pub(crate) fn filled<T: Clone>(
@@ -23,20 +23,15 @@ pub(crate) fn reserve_exact<T>(
 ) -> Result<(), ResourceLimit> {
     output
         .try_reserve_exact(additional)
-        .map_err(|_| allocation_failed(additional, operation))
-}
-
-/// Describe a refused evaluator reserve without a decode session.
-pub(crate) fn allocation_failed(additional: usize, operation: &'static str) -> ResourceLimit {
-    let requested = cadmpeg_core::decode::u64_from_index(additional);
-    ResourceLimit {
-        dimension: ResourceDimension::Codec(operation),
-        reason: ResourceFailure::AllocationFailed,
-        limit: requested,
-        used: requested,
-        additional: 0,
-        operation,
-    }
+        .map_err(|_| {
+            let requested = cadmpeg_core::decode::u64_from_index(additional);
+            ResourceLimit::allocation_failed(
+                ResourceDimension::Codec(operation),
+                requested,
+                requested,
+                operation,
+            )
+        })
 }
 
 #[cfg(test)]

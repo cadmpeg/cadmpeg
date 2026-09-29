@@ -111,10 +111,7 @@ fn retained_format(
     Ok(value.to_string())
 }
 
-fn u64_len(ctx: &DecodeContext<'_>, len: usize) -> Result<u64, CodecError> {
-    u64::try_from(len)
-        .map_err(|_| ctx.refuse_codec_limit("Inventor dialect length", u64::MAX - 1, u64::MAX))
-}
+
 
 fn join(
     ctx: &DecodeContext<'_>,
@@ -127,7 +124,7 @@ fn join(
         let value = value?;
         ctx.charge_collection_items(1, "collect Inventor dialect join parts")?;
         bytes = bytes
-            .checked_add(u64_len(ctx, value.len())?)
+            .checked_add(cadmpeg_core::decode::u64_from_index(value.len()))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("Inventor dialect joined bytes", u64::MAX - 1, u64::MAX)
             })?;
@@ -135,7 +132,7 @@ fn join(
     }
     if !parts.is_empty() {
         bytes = bytes
-            .checked_add(u64_len(ctx, parts.len() - 1)?)
+            .checked_add(cadmpeg_core::decode::u64_from_index(parts.len() - 1))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("Inventor dialect joined bytes", u64::MAX - 1, u64::MAX)
             })?;
@@ -231,7 +228,7 @@ impl DialectRecovery {
             {
                 ctx.charge_collection_items(1, "collect Inventor unframed dialect metadata")?;
                 ctx.charge_retained(
-                    u64_len(ctx, declared.marker.len())?,
+                    cadmpeg_core::decode::u64_from_index(declared.marker.len()),
                     "retain Inventor unframed dialect marker",
                 )?;
                 unframed_meta_streams.push(declared.clone());
@@ -258,7 +255,7 @@ impl DialectRecovery {
                 ctx.refuse_codec_limit("Inventor dialect declaration count", u64::MAX - 1, u64::MAX)
             })?;
         ctx.charge_work(
-            u64_len(ctx, declaration_count)?,
+            cadmpeg_core::decode::u64_from_index(declaration_count),
             "classify Inventor dialect declarations",
         )?;
         let identity_verified = !self.schemas.is_empty()
@@ -314,7 +311,7 @@ impl DialectRecovery {
                     ctx,
                     self.meta_streams.iter().map(|declared| {
                         ctx.charge_retained(
-                            u64_len(ctx, declared.marker.len())?,
+                            cadmpeg_core::decode::u64_from_index(declared.marker.len()),
                             "retain Inventor metadata marker declaration part",
                         )?;
                         Ok(declared.marker.clone())
@@ -373,13 +370,13 @@ impl DialectRecovery {
         if self.schemas.is_empty() {
             ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
             ctx.charge_retained(
-                u64_len(ctx, "no RSe database stream declares a schema".len())?,
+                cadmpeg_core::decode::u64_from_index("no RSe database stream declares a schema".len()),
                 "retain Inventor absent schema reason",
             )?;
             reasons.push("no RSe database stream declares a schema".to_owned());
         } else {
             ctx.charge_work(
-                u64_len(ctx, self.schemas.len())?,
+                cadmpeg_core::decode::u64_from_index(self.schemas.len()),
                 "scan Inventor foreign schemas",
             )?;
             if self
@@ -440,16 +437,13 @@ impl DialectRecovery {
         if self.meta_streams.is_empty() {
             ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
             ctx.charge_retained(
-                u64_len(
-                    ctx,
-                    "no RSe segment metadata stream declares a marker and version".len(),
-                )?,
+                cadmpeg_core::decode::u64_from_index("no RSe segment metadata stream declares a marker and version".len()),
                 "retain Inventor absent metadata reason",
             )?;
             reasons.push("no RSe segment metadata stream declares a marker and version".to_owned());
         } else {
             ctx.charge_work(
-                u64_len(ctx, self.meta_streams.len())?,
+                cadmpeg_core::decode::u64_from_index(self.meta_streams.len()),
                 "scan Inventor foreign metadata",
             )?;
             if self
@@ -509,14 +503,14 @@ impl DialectRecovery {
             })?;
         }
         ctx.charge_retained(
-            u64_len(ctx, reason_bytes)?,
+            cadmpeg_core::decode::u64_from_index(reason_bytes),
             "retain Inventor joined dialect reasons",
         )?;
         let joined_reasons = reasons.join("; ");
         ctx.charge_collection_items(1, "collect Inventor dialect loss")?;
         ctx.charge_retained(8, "retain Inventor dialect loss namespace")?;
         ctx.charge_retained(
-            u64_len(ctx, InventorLossCode::SourceDialectUnverified.code().len())?,
+            cadmpeg_core::decode::u64_from_index(InventorLossCode::SourceDialectUnverified.code().len()),
             "retain Inventor dialect loss code",
         )?;
         Ok(
@@ -592,7 +586,7 @@ fn kernel_layer(
             .split_once(':')
             .map_or(recovery.as_str(), |(_, grammar)| grammar);
         ctx.charge_retained(
-            u64_len(ctx, grammar.len())?,
+            cadmpeg_core::decode::u64_from_index(grammar.len()),
             "retain Inventor kernel recovery grammar",
         )?;
     }
@@ -638,24 +632,24 @@ pub(crate) fn layers(
     carrier: &ActiveCarrierState<'_>,
 ) -> Result<DialectLayers, CodecError> {
     ctx.charge_collection_items(
-        u64_len(ctx, primary.declared().len())?,
+        cadmpeg_core::decode::u64_from_index(primary.declared().len()),
         "copy Inventor primary dialect declarations",
     )?;
     for value in primary.declared().values() {
         ctx.charge_retained(
-            u64_len(ctx, value.len())?,
+            cadmpeg_core::decode::u64_from_index(value.len()),
             "copy Inventor primary dialect value",
         )?;
     }
     if let Some(instance) = primary.instance() {
         ctx.charge_retained(
-            u64_len(ctx, instance.len())?,
+            cadmpeg_core::decode::u64_from_index(instance.len()),
             "copy Inventor primary dialect instance",
         )?;
     }
     if let cadmpeg_core::dialect::Admission::Unverified { using } = primary.admission() {
         ctx.charge_retained(
-            u64_len(ctx, using.as_str().len())?,
+            cadmpeg_core::decode::u64_from_index(using.as_str().len()),
             "copy Inventor primary dialect grammar",
         )?;
     }
@@ -683,11 +677,11 @@ pub(crate) fn kernel_dialect_loss(
             ctx.charge_collection_items(1, "collect Inventor kernel dialect loss")?;
             ctx.charge_retained(8, "retain Inventor kernel loss namespace")?;
             ctx.charge_retained(
-                u64_len(ctx, InventorLossCode::KernelCarrierUnparseable.code().len())?,
+                cadmpeg_core::decode::u64_from_index(InventorLossCode::KernelCarrierUnparseable.code().len()),
                 "retain Inventor kernel loss code",
             )?;
             ctx.charge_retained(
-                u64_len(ctx, "the selected kernel carrier did not expose a parseable ACIS or ASM header; its native records remain retained".len())?,
+                cadmpeg_core::decode::u64_from_index("the selected kernel carrier did not expose a parseable ACIS or ASM header; its native records remain retained".len()),
                 "retain Inventor kernel unparseable loss message",
             )?;
             Ok(Some(InventorLossCode::KernelCarrierUnparseable.note(
@@ -701,7 +695,7 @@ pub(crate) fn kernel_dialect_loss(
             ctx.charge_collection_items(1, "collect Inventor kernel dialect loss")?;
             ctx.charge_retained(8, "retain Inventor kernel loss namespace")?;
             ctx.charge_retained(
-                u64_len(ctx, InventorLossCode::KernelDialectUnverified.code().len())?,
+                cadmpeg_core::decode::u64_from_index(InventorLossCode::KernelDialectUnverified.code().len()),
                 "retain Inventor kernel loss code",
             )?;
             let declared = match (

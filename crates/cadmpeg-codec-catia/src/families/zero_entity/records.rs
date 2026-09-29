@@ -1719,14 +1719,14 @@ fn zero_entity_support_pcurve(
         };
         if weight_start.is_some() {
             if let Err(error) = ctx.charge_collection_items(
-                u64::try_from(control_count).ok()?,
+                cadmpeg_core::decode::u64_from_index(control_count),
                 "catia_zero_support_weighted_poles",
             ) {
                 return Some(Err(error));
             }
         }
         if let Err(error) = ctx.charge_collection_items(
-            u64::try_from(control_count).ok()?,
+            cadmpeg_core::decode::u64_from_index(control_count),
             "catia_zero_support_checked_poles",
         ) {
             return Some(Err(error));
@@ -1832,9 +1832,7 @@ pub(super) fn zero_entity_neutral_pcurve(
     };
     let knots =
         crate::resource::copy_knot_vector(ctx, nurbs.knots(), "catia_zero_neutral_pcurve_knots")?;
-    let count = u64::try_from(nurbs.pole_rows().count()).map_err(|_| {
-        ctx.refuse_codec_limit("catia_zero_neutral_checked_poles", u64::MAX, u64::MAX)
-    })?;
+    let count = cadmpeg_core::decode::u64_from_index(nurbs.pole_rows().count());
     if weights.is_some() {
         ctx.charge_collection_items(count, "catia_zero_neutral_weighted_poles")?;
     }
@@ -2168,9 +2166,7 @@ fn zero_entity_lift_pcurve(
             )?;
             weights.extend(source.iter().map(|pole| pole.weight));
             ctx.charge_collection_items(
-                u64::try_from(source.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("catia_zero_lifted_rational_poles", u64::MAX, u64::MAX)
-                })?,
+                cadmpeg_core::decode::u64_from_index(source.len()),
                 "catia_zero_lifted_rational_poles",
             )?;
             Some(weights)
@@ -2179,9 +2175,7 @@ fn zero_entity_lift_pcurve(
     let knots =
         crate::resource::copy_knot_vector(ctx, nurbs.knots(), "catia_zero_lifted_pcurve_knots")?;
     ctx.charge_collection_items(
-        u64::try_from(nurbs.pole_rows().count()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_zero_lifted_checked_poles", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(nurbs.pole_rows().count()),
         "catia_zero_lifted_checked_poles",
     )?;
     crate::nurbs::note_refusal(
@@ -2215,43 +2209,32 @@ fn zero_entity_surface_isocurve(
         (knots.len(), "catia_zero_isocurve_knots"),
     ] {
         ctx.charge_collection_items(
-            u64::try_from(count)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+            cadmpeg_core::decode::u64_from_index(count),
             operation,
         )?;
     }
     if let cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } = surface.pole_grid() {
         ctx.charge_collection_items(
-            u64::try_from(rows.len()).map_err(|_| {
-                ctx.refuse_codec_limit("catia_zero_isocurve_weight_rows", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(rows.len()),
             "catia_zero_isocurve_weight_rows",
         )?;
         for row in rows {
             ctx.charge_collection_items(
-                u64::try_from(row.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("catia_zero_isocurve_weight_values", u64::MAX, u64::MAX)
-                })?,
+                cadmpeg_core::decode::u64_from_index(row.len()),
                 "catia_zero_isocurve_weight_values",
             )?;
         }
         ctx.charge_collection_items(
-            u64::try_from(varying_count).map_err(|_| {
-                ctx.refuse_codec_limit("catia_zero_isocurve_curve_weights", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(varying_count),
             "catia_zero_isocurve_curve_weights",
         )?;
         ctx.charge_collection_items(
-            u64::try_from(varying_count).map_err(|_| {
-                ctx.refuse_codec_limit("catia_zero_isocurve_weighted_poles", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(varying_count),
             "catia_zero_isocurve_weighted_poles",
         )?;
     }
     ctx.charge_collection_items(
-        u64::try_from(varying_count).map_err(|_| {
-            ctx.refuse_codec_limit("catia_zero_isocurve_checked_poles", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(varying_count),
         "catia_zero_isocurve_checked_poles",
     )?;
     cadmpeg_ir::eval::nurbs_surface_isocurve(surface, axis, parameter).map_err(Into::into)
@@ -2744,15 +2727,11 @@ fn zero_entity_nurbs_surface(
         )?);
     }
     ctx.charge_collection_items(
-        u64::try_from(rows.len()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_zero_nurbs_checked_rows", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(rows.len()),
         "catia_zero_nurbs_checked_rows",
     )?;
     ctx.charge_collection_items(
-        u64::try_from(pole_count).map_err(|_| {
-            ctx.refuse_codec_limit("catia_zero_nurbs_checked_poles", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(pole_count),
         "catia_zero_nurbs_checked_poles",
     )?;
     crate::nurbs::note_refusal(

@@ -47,9 +47,9 @@ pub(crate) fn decode_payload(
         }
         compact.try_reserve(1).map_err(|_| {
             ParseError::Resource(match ctx {
-                Some(ctx) => ctx.refuse_codec_limit("step_signature_compact_items", 0, 1),
+                Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_signature_compact_items"), 0, 1, "step_signature_compact_items")),
                 None => {
-                    cadmpeg_core::decode::refuse_local_limit("step_signature_compact_items", 0, 1)
+                    cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_signature_compact_items"), 0, 1, "step_signature_compact_items"))
                 }
             })
         })?;

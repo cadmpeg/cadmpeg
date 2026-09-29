@@ -1527,13 +1527,7 @@ fn emit_standard_extrusion_definition(
                 "catia_extrusion_directrix_owner_id",
             )?;
             ctx.charge_retained(
-                u64::try_from(procedure_id.as_str().len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "catia_extrusion_directrix_construction_id",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
+                cadmpeg_core::decode::u64_from_index(procedure_id.as_str().len()),
                 "catia_extrusion_directrix_construction_id",
             )?;
             let procedure = ProceduralCurve::new(
@@ -1667,13 +1661,7 @@ fn emit_standard_extrusion_definition(
                 "catia_extrusion_offset_procedures",
             )?;
             ctx.charge_retained(
-                u64::try_from(procedure_id.as_str().len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "catia_extrusion_offset_construction_id",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
+                cadmpeg_core::decode::u64_from_index(procedure_id.as_str().len()),
                 "catia_extrusion_offset_construction_id",
             )?;
             let owner = crate::resource::copy_id(
@@ -2226,10 +2214,7 @@ impl EntityRewrite for StandardPopulationScope<'_, '_> {
         }
         let mut size = CountBytes(0);
         serde_json::to_writer(&mut size, &entity).map_err(CodecError::malformed)?;
-        let bytes = u64::try_from(size.0).map_err(|_| {
-            self.ctx
-                .refuse_codec_limit("catia_standard_population_rewrite", u64::MAX, u64::MAX)
-        })?;
+        let bytes = cadmpeg_core::decode::u64_from_index(size.0);
         self.ctx
             .charge_collection_items(bytes, "catia_standard_population_rewrite")?;
         let retained = bytes.checked_mul(4).ok_or_else(|| {

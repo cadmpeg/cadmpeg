@@ -1293,14 +1293,10 @@ fn mesh_topology_gauge_key(
     topology: &StandardTopology,
 ) -> Result<Vec<u64>, CodecError> {
     let mut key = Vec::new();
-    let usize_key = |value: usize| {
-        u64::try_from(value)
-            .map_err(|_| ctx.refuse_codec_limit("catia_gauge_topology_key", u64::MAX, u64::MAX))
-    };
     crate::resource::push(
         ctx,
         &mut key,
-        usize_key(topology.vertex_points.len())?,
+        cadmpeg_core::decode::u64_from_index(topology.vertex_points.len()),
         "catia_gauge_topology_key",
     )?;
     for point in &topology.vertex_points {
@@ -1316,13 +1312,13 @@ fn mesh_topology_gauge_key(
     crate::resource::push(
         ctx,
         &mut key,
-        usize_key(topology.logical_vertex_count)?,
+        cadmpeg_core::decode::u64_from_index(topology.logical_vertex_count),
         "catia_gauge_topology_key",
     )?;
     crate::resource::push(
         ctx,
         &mut key,
-        usize_key(topology.edge_rows.len())?,
+        cadmpeg_core::decode::u64_from_index(topology.edge_rows.len()),
         "catia_gauge_topology_key",
     )?;
     for row in &topology.edge_rows {
@@ -1341,7 +1337,7 @@ fn mesh_topology_gauge_key(
         crate::resource::push(
             ctx,
             &mut key,
-            usize_key(row.handles.len())?,
+            cadmpeg_core::decode::u64_from_index(row.handles.len()),
             "catia_gauge_topology_key",
         )?;
         for &handle in &row.handles {
@@ -1351,28 +1347,28 @@ fn mesh_topology_gauge_key(
     crate::resource::push(
         ctx,
         &mut key,
-        usize_key(topology.faces.len())?,
+        cadmpeg_core::decode::u64_from_index(topology.faces.len()),
         "catia_gauge_topology_key",
     )?;
     for face in &topology.faces {
         crate::resource::push(
             ctx,
             &mut key,
-            usize_key(face.boundaries.len())?,
+            cadmpeg_core::decode::u64_from_index(face.boundaries.len()),
             "catia_gauge_topology_key",
         )?;
         for boundary in &face.boundaries {
             crate::resource::push(
                 ctx,
                 &mut key,
-                usize_key(boundary.coedges.len())?,
+                cadmpeg_core::decode::u64_from_index(boundary.coedges.len()),
                 "catia_gauge_topology_key",
             )?;
             for coedge in &boundary.coedges {
                 crate::resource::push(
                     ctx,
                     &mut key,
-                    usize_key(coedge.edge_row)?,
+                    cadmpeg_core::decode::u64_from_index(coedge.edge_row),
                     "catia_gauge_topology_key",
                 )?;
                 crate::resource::push(
@@ -1384,13 +1380,13 @@ fn mesh_topology_gauge_key(
                 crate::resource::push(
                     ctx,
                     &mut key,
-                    usize_key(coedge.start_vertex)?,
+                    cadmpeg_core::decode::u64_from_index(coedge.start_vertex),
                     "catia_gauge_topology_key",
                 )?;
                 crate::resource::push(
                     ctx,
                     &mut key,
-                    usize_key(coedge.end_vertex)?,
+                    cadmpeg_core::decode::u64_from_index(coedge.end_vertex),
                     "catia_gauge_topology_key",
                 )?;
             }

@@ -118,7 +118,7 @@ fn push_entry(
     ctx.charge_collection_items(1, "step_inspect_entries")?;
     entries
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_inspect_entries", 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_inspect_entries"), 0, 1, "step_inspect_entries")))?;
     entries.push(entry);
     Ok(())
 }
@@ -143,7 +143,7 @@ fn append_notes(
         ctx.charge_collection_items(1, "step_codec_notes")?;
         notes
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_codec_notes", 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_codec_notes"), 0, 1, "step_codec_notes")))?;
         notes.push(note);
     }
     Ok(())

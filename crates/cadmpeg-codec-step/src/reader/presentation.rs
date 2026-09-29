@@ -1269,8 +1269,8 @@ fn push_presentation_vec<T>(
         ctx.charge_collection_items(1, operation)?;
     }
     values.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
+        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
     })?;
     values.push(value);
     Ok(())
@@ -1286,9 +1286,9 @@ fn claim_presentation_typed(
             ctx.charge_collection_items(1, "step_presentation_typed_claims")?;
         }
         typed.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit("step_presentation_typed_claims", 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_presentation_typed_claims"), 0, 1, "step_presentation_typed_claims")),
             None => {
-                cadmpeg_core::decode::refuse_local_limit("step_presentation_typed_claims", 0, 1)
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_presentation_typed_claims"), 0, 1, "step_presentation_typed_claims"))
             }
         })?;
         typed.insert(id);
@@ -1327,12 +1327,8 @@ fn push_scalar_candidate(
             ctx.charge_collection_items(1, "step_presentation_scalar_color_groups")?;
         }
         candidates.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit("step_presentation_scalar_color_groups", 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(
-                "step_presentation_scalar_color_groups",
-                0,
-                1,
-            ),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_presentation_scalar_color_groups"), 0, 1, "step_presentation_scalar_color_groups")),
+            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_presentation_scalar_color_groups"), 0, 1, "step_presentation_scalar_color_groups")),
         })?;
         candidates.insert(key, Vec::new());
     }

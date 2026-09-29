@@ -577,7 +577,7 @@ fn layout_global_card(ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u8>, CodecE
     }
     let mut card = Vec::new();
     card.try_reserve_exact(72).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit("iges global layout card bytes", 72, 72)
+        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges global layout card bytes"), 72, 72, "iges global layout card bytes"))
     })?;
     Ok(card)
 }
@@ -929,7 +929,7 @@ fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteR
     let _reservation = ctx.reserve_scoped(count, "iges global numeric text")?;
     let mut normalized = Vec::new();
     normalized.try_reserve_exact(text.len()).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit("iges global numeric text", count, count)
+        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges global numeric text"), count, count, "iges global numeric text"))
     })?;
     normalized.extend_from_slice(text.as_bytes());
     for byte in &mut normalized {

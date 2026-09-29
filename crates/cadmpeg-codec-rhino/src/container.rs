@@ -835,9 +835,7 @@ fn list_checksum_children(
         offset = child.next_offset();
     }
     ctx.charge_work(
-        u64::try_from(child_count).map_err(|_| FramingError::Overflow {
-            offset: first_child_offset,
-        })?,
+        cadmpeg_core::decode::u64_from_index(child_count),
         "Rhino view checksum child ranges",
     )
     .map_err(|error| match error {
@@ -845,14 +843,9 @@ fn list_checksum_children(
         other => FramingError::structural(first_child_offset, other.to_string()),
     })?;
     let range_bytes =
-        u64::try_from(std::mem::size_of::<std::ops::Range<usize>>()).map_err(|_| {
-            FramingError::Overflow {
-                offset: first_child_offset,
-            }
-        })?;
-    let total_bytes = u64::try_from(child_count)
-        .ok()
-        .and_then(|count| count.checked_mul(range_bytes))
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<std::ops::Range<usize>>());
+    let total_bytes = cadmpeg_core::decode::u64_from_index(child_count)
+        .checked_mul(range_bytes)
         .ok_or(FramingError::Overflow {
             offset: first_child_offset,
         })?;

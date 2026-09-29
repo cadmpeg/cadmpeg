@@ -64,7 +64,7 @@ fn push_geometry_vec<T>(
     ctx.charge_collection_items(1, operation)?;
     values
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
     values.push(value);
     Ok(())
 }
@@ -107,7 +107,7 @@ fn insert_geometry_hash<K: Eq + Hash, V>(
         ctx.charge_collection_items(1, operation)?;
         values
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
     }
     values.insert(key, value);
     Ok(())
@@ -122,7 +122,7 @@ fn claim_geometry_typed(
         ctx.charge_collection_items(1, "step_geometry_typed_ids")?;
         typed
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_geometry_typed_ids", 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_geometry_typed_ids"), 0, 1, "step_geometry_typed_ids")))?;
         typed.insert(id);
     }
     Ok(())
@@ -138,7 +138,7 @@ fn insert_geometry_hash_set<T: Eq + Hash>(
         ctx.charge_collection_items(1, operation)?;
         values
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
         values.insert(value);
     }
     Ok(())
@@ -204,7 +204,7 @@ pub(super) fn infer_edge_parameter_ranges(
         ctx.charge_collection_items(1, "step_parameter_inference_points")?;
         points
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_parameter_inference_points", 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_parameter_inference_points"), 0, 1, "step_parameter_inference_points")))?;
         points.insert(point.id.as_str(), point.position().get());
     }
     let mut vertices = HashMap::new();
@@ -213,7 +213,7 @@ pub(super) fn infer_edge_parameter_ranges(
             ctx.charge_collection_items(1, "step_parameter_inference_vertices")?;
             vertices
                 .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("step_parameter_inference_vertices", 0, 1))?;
+                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_parameter_inference_vertices"), 0, 1, "step_parameter_inference_vertices")))?;
             vertices.insert(vertex.id.as_str(), point);
         }
     }
@@ -234,7 +234,7 @@ pub(super) fn infer_edge_parameter_ranges(
         ctx.charge_collection_items(1, "step_parameter_inference_candidates")?;
         candidates
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_parameter_inference_candidates", 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_parameter_inference_candidates"), 0, 1, "step_parameter_inference_candidates")))?;
         candidates.push((index, curve, start, end));
     }
     let work = u64_from_index(candidates.len())
@@ -280,7 +280,7 @@ pub(super) fn infer_edge_parameter_ranges(
                 ctx.charge_collection_items(1, "step_parameter_inference_ranges")?;
                 inferred
                     .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("step_parameter_inference_ranges", 0, 1))?;
+                    .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_parameter_inference_ranges"), 0, 1, "step_parameter_inference_ranges")))?;
                 inferred.push((edge_index, range));
             }
             Ok::<_, CodecError>(inferred)
@@ -5171,7 +5171,7 @@ fn defer_geometry_dependency(
         ctx.charge_collection_items(1, group_operation)?;
         waiting_on
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(group_operation, 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(group_operation), 0, 1, group_operation)))?;
     }
     let dependents = waiting_on.entry(dependency).or_default();
     push_geometry_vec(dependents, id, ctx, item_operation)
@@ -5188,7 +5188,7 @@ fn wake_deferred_dependents(
         ctx.charge_collection_items(u64_from_index(dependents.len()), operation)?;
         queue
             .try_reserve(dependents.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(dependents.len())))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(dependents.len()), operation)))?;
         queue.extend(dependents);
     }
     Ok(())
@@ -6810,7 +6810,7 @@ fn expand_knots(
         }
         ctx.charge_collection_items(u64_from_index(count), "step_expanded_nurbs_knots")?;
         knots.try_reserve(count).map_err(|_| {
-            ctx.refuse_codec_limit("step_expanded_nurbs_knots", 0, u64_from_index(count))
+            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_expanded_nurbs_knots"), 0, u64_from_index(count), "step_expanded_nurbs_knots"))
         })?;
         knots.extend(std::iter::repeat_n(knot, count));
     }

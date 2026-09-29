@@ -805,11 +805,12 @@ fn variable_blend_value(
             }
             let mut points = Vec::new();
             if points.try_reserve(count).is_err() {
-                return Some(Err(ctx.refuse_codec_limit(
+                return Some(Err(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("reserve variable blend interpolation points"),
+                    cadmpeg_core::decode::u64_from_index(count),
+                    cadmpeg_core::decode::u64_from_index(count),
                     "reserve variable blend interpolation points",
-                    count as u64,
-                    count as u64,
-                )));
+                ))));
             }
             for _ in 0..count {
                 let parameter = cur.take_f64()?;

@@ -361,20 +361,18 @@ impl SourceFidelity {
                     .len()
                     .checked_add(id.as_str().len())
                     .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-                let bytes = u64::try_from(length)
-                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+                let bytes = cadmpeg_core::decode::u64_from_index(length);
                 ctx.charge_retained(bytes, operation)?;
                 let mut message = String::new();
                 message
                     .try_reserve(length)
-                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+                    .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, bytes, operation)))?;
                 message.push_str(DUPLICATE_PREFIX);
                 message.push_str(id.as_str());
                 return Err(cadmpeg_core::CodecError::Malformed(message));
             }
         }
-        let record_count = u64::try_from(other.retained_records.len())
-            .map_err(|_| ctx.refuse_codec_limit("append source records", 0, u64::MAX))?;
+        let record_count = cadmpeg_core::decode::u64_from_index(other.retained_records.len());
         ctx.charge_collection_items(record_count, "append source records")?;
         self.annotations
             .append_charged(ctx, other.annotations, "append source provenance")?
@@ -542,11 +540,7 @@ impl SourceFidelity {
                 "native unknown product links",
             )?;
             links.try_reserve_exact(record.links().len()).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "native unknown product links",
-                    0,
-                    u64_from_index(record.links().len()),
-                )
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("native unknown product links"), 0, u64_from_index(record.links().len()), "native unknown product links"))
             })?;
             for link in record.links() {
                 let text = ctx.copy_retained_text(link, "native unknown product link text")?;
@@ -555,7 +549,7 @@ impl SourceFidelity {
             ctx.charge_collection_items(1, "native unknown products")?;
             products
                 .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("native unknown products", 0, 1))?;
+                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("native unknown products"), 0, 1, "native unknown products")))?;
             products.push(crate::NativeUnknownRecord { id, links });
             let stream =
                 if let Some(provenance) = self.annotations.provenance.get(record.id().as_str()) {
@@ -579,11 +573,7 @@ impl SourceFidelity {
         native_records
             .try_reserve_exact(products.len())
             .map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "native unknown arena records",
-                    0,
-                    u64_from_index(products.len()),
-                )
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("native unknown arena records"), 0, u64_from_index(products.len()), "native unknown arena records"))
             })?;
         for product in &products {
             let id = product
@@ -598,11 +588,7 @@ impl SourceFidelity {
                     "native unknown arena links",
                 )?;
                 links.try_reserve_exact(product.links.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "native unknown arena links",
-                        0,
-                        u64_from_index(product.links.len()),
-                    )
+                    cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("native unknown arena links"), 0, u64_from_index(product.links.len()), "native unknown arena links"))
                 })?;
                 for link in &product.links {
                     links.push(serde_json::Value::String(ctx.copy_retained_text(

@@ -2471,8 +2471,7 @@ pub(crate) fn project(
         .map_err(ProjectionError::Codec)?;
         ir.model.features.push(Feature {
             id: feature_id,
-            ordinal: u64::try_from(index)
-                .map_err(|_| "history source order exceeds u64".to_string())?,
+            ordinal: cadmpeg_core::decode::u64_from_index(index),
             name: None,
             suppressed: Some(false),
             dependencies,
@@ -2491,8 +2490,7 @@ pub(crate) fn project(
         });
     }
     for record in records {
-        u64::try_from(record.source_range.start)
-            .map_err(|_| "history source offset exceeds u64".to_string())?;
+        cadmpeg_core::decode::u64_from_index(record.source_range.start);
     }
     let native = records
         .iter()

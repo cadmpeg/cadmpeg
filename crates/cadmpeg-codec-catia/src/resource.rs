@@ -362,7 +362,7 @@ pub(crate) fn copy_retained_slice<T: Clone>(
     let Some(bytes) = values
         .len()
         .checked_mul(std::mem::size_of::<T>().max(1))
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
     };
@@ -511,7 +511,7 @@ pub(crate) fn format_retained(
 ) -> Result<String, CodecError> {
     let length = formatted_length(ctx, args, operation)?;
     let bytes =
-        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        cadmpeg_core::decode::u64_from_index(length);
     ctx.charge_retained(bytes, operation)?;
     let mut text = String::new();
     text.try_reserve(length)
@@ -527,7 +527,7 @@ pub(crate) fn format_scoped<'a>(
 ) -> Result<(String, ScopedReservation<'a>), CodecError> {
     let length = formatted_length(ctx, args, operation)?;
     let bytes =
-        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        cadmpeg_core::decode::u64_from_index(length);
     let reservation = ctx.reserve_scoped(bytes, operation)?;
     let mut text = String::new();
     text.try_reserve(length)
@@ -589,8 +589,7 @@ pub(crate) fn extend_retained_bytes(
     source: &[u8],
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count = u64::try_from(source.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let count = cadmpeg_core::decode::u64_from_index(source.len());
     ctx.charge_collection_items(count, operation)?;
     ctx.charge_retained(count, operation)?;
     target
@@ -618,7 +617,7 @@ pub(crate) fn format_usize_id(
         .checked_add(digits.max(minimum_digits))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     let bytes =
-        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        cadmpeg_core::decode::u64_from_index(length);
     ctx.charge_retained(bytes, operation)?;
     let mut id = String::new();
     id.try_reserve(length)
@@ -718,7 +717,7 @@ pub(crate) fn copy_retained_rows<T: Clone>(
     let Some(bytes) = rows
         .len()
         .checked_mul(std::mem::size_of::<Vec<T>>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit(row_operation, u64::MAX, u64::MAX));
     };
@@ -740,7 +739,7 @@ pub(crate) fn copy_retained_set<T: Copy + Eq + Hash>(
         .len()
         .checked_mul(std::mem::size_of::<T>().max(1))
         .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<T>>()))
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
     };
@@ -756,8 +755,7 @@ pub(crate) fn copy_knot_vector(
     knots: &cadmpeg_ir::geometry::nurbs::KnotVector,
     operation: &'static str,
 ) -> Result<cadmpeg_ir::geometry::nurbs::KnotVector, CodecError> {
-    let count = u64::try_from(knots.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let count = cadmpeg_core::decode::u64_from_index(knots.len());
     ctx.charge_collection_items(count, operation)?;
     let bytes = count
         .checked_mul(std::mem::size_of::<f64>() as u64)
@@ -1130,7 +1128,7 @@ fn temporary_bytes<T>(
     let Some(bytes) = item_bytes
         .checked_add(32)
         .and_then(|size| size.checked_mul(count))
-        .and_then(|size| u64::try_from(size).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
     };
@@ -1144,7 +1142,7 @@ pub(crate) fn temporary_vec<'a, T>(
 ) -> Result<(Vec<T>, ScopedReservation<'a>), CodecError> {
     let bytes = count
         .checked_mul(std::mem::size_of::<T>().max(1))
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     let reservation = ctx.reserve_scoped(bytes, operation)?;
     let mut values = Vec::new();

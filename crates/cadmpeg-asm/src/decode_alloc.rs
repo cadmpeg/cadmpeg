@@ -12,12 +12,12 @@ pub(crate) fn counted_vec<T>(
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
     let count_u64 =
-        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, operation)?;
     let mut values = Vec::new();
     values
         .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, count_u64, operation)))?;
     Ok(values)
 }
 
@@ -40,11 +40,11 @@ pub(crate) fn append_vec<T>(
 ) -> Result<(), CodecError> {
     let count = source.len();
     let amount =
-        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(amount, operation)?;
     target
         .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, amount))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, amount, operation)))?;
     target.append(source);
     Ok(())
 }
@@ -66,7 +66,7 @@ pub(crate) fn reserve_vec_slot<T>(
     ctx.charge_collection_items(1, operation)?;
     values
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
     Ok(())
 }
 
@@ -92,7 +92,7 @@ pub(crate) fn collect_hash_set<T: Eq + Hash>(
         if !out.contains(&value) {
             ctx.charge_collection_items(1, operation)?;
             out.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
             out.insert(value);
         }
     }
@@ -111,7 +111,7 @@ pub(crate) fn insert_hash_set<T: Eq + Hash>(
     ctx.charge_collection_items(1, operation)?;
     values
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
     Ok(values.insert(value))
 }
 
@@ -128,7 +128,7 @@ pub(crate) fn insert_string_set(
     let owned = ctx.copy_retained_text(value, operation)?;
     values
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
     Ok(values.insert(owned))
 }
 
@@ -142,7 +142,7 @@ pub(crate) fn collect_hash_map<K: Eq + Hash, V>(
         if !out.contains_key(&key) {
             ctx.charge_collection_items(1, operation)?;
             out.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
         }
         out.insert(key, value);
     }
@@ -170,7 +170,7 @@ pub(crate) fn reserve_hash_map_entry<K: Eq + Hash, V>(
         ctx.charge_collection_items(1, operation)?;
         values
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
     }
     Ok(())
 }

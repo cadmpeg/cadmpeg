@@ -3322,7 +3322,7 @@ fn e5_lift_plane_nurbs(
             let bytes = points
                 .len()
                 .checked_mul(std::mem::size_of::<FinitePoint3>())
-                .and_then(|bytes| u64::try_from(bytes).ok())
+                .map(cadmpeg_core::decode::u64_from_index)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             ctx.charge_retained(bytes, operation)?;
             let Some(points) =
@@ -3336,7 +3336,7 @@ fn e5_lift_plane_nurbs(
             let bytes = points
                 .len()
                 .checked_mul(std::mem::size_of::<WeightedPole3<FinitePoint3>>())
-                .and_then(|bytes| u64::try_from(bytes).ok())
+                .map(cadmpeg_core::decode::u64_from_index)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             ctx.charge_retained(bytes, operation)?;
             let Some(points) = crate::resource::collect_options(

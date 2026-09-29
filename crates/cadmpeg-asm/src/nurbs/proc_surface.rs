@@ -4300,9 +4300,7 @@ pub(crate) fn copy_revision_discontinuities(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         source: &[f64],
     ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
-        let count = u64::try_from(source.len()).map_err(|_| {
-            ctx.refuse_codec_limit("ASM revision discontinuities", u64::MAX, u64::MAX)
-        })?;
+        let count = cadmpeg_core::decode::u64_from_index(source.len());
         let bytes = count.checked_mul(8).ok_or_else(|| {
             ctx.refuse_codec_limit("ASM revision discontinuities", u64::MAX, u64::MAX)
         })?;

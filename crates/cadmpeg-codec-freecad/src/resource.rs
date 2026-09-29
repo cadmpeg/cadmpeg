@@ -283,7 +283,7 @@ pub(crate) fn materialized_vec<'a, T>(
 ) -> Result<(Vec<T>, ScopedReservation<'a>), CodecError> {
     let bytes = count
         .checked_mul(std::mem::size_of::<T>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, ctx.policy().limits.max_materialized_bytes, u64::MAX, operation)))?;
     let reservation = ctx.reserve_scoped(bytes, operation)?;
     let mut items = Vec::new();

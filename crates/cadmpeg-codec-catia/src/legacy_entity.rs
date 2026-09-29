@@ -452,7 +452,7 @@ fn charge_scan(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     let work =
-        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        cadmpeg_core::decode::u64_from_index(length);
     ctx.charge_work(work, operation)
 }
 
@@ -880,9 +880,7 @@ fn parse_scalar_values(
     )?;
     for index in 1..values.len() {
         ctx.charge_work(
-            u64::try_from(index).map_err(|_| {
-                ctx.refuse_codec_limit("catia_legacy_scalar_sort", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(index),
             "catia_legacy_scalar_sort",
         )?;
         let mut at = index;
@@ -1630,9 +1628,7 @@ fn parse_role_selectors(
     roles.extend(field_bound_roles);
     for index in 1..roles.len() {
         ctx.charge_work(
-            u64::try_from(index).map_err(|_| {
-                ctx.refuse_codec_limit("catia_legacy_role_sort", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(index),
             "catia_legacy_role_sort",
         )?;
         let mut at = index;

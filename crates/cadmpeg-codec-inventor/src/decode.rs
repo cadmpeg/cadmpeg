@@ -95,7 +95,7 @@ fn decode_container<'a>(
     let unresolved_feature_states = feature_projection.unresolved_states;
     ir.model.features = feature_projection.features;
     ir.model.feature_result_topologies = feature_projection.result_topologies;
-    admitted_entities = wire_len(ctx, ir.model.entity_count(), "Inventor model entity count")?;
+    admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
     let mut attributes = BTreeMap::new();
     insert_source_attribute(
         ctx,
@@ -147,11 +147,7 @@ fn decode_container<'a>(
                     version: property_set.version,
                     system_identifier: property_set.system_identifier,
                     clsid: hex(&property_set.clsid),
-                    section_count: wire_len(
-                        ctx,
-                        property_set.sections.len(),
-                        "Inventor property section count",
-                    )?,
+                    section_count: cadmpeg_core::decode::u64_from_index(property_set.sections.len()),
                 });
                 for (section_ordinal, section) in property_set.sections.iter().enumerate() {
                     let set_name = property_set_name(ctx, section)?;
@@ -202,16 +198,8 @@ fn decode_container<'a>(
                         fmtid: hex(&section.fmtid),
                         code_page: section.code_page,
                         offsets_ordered: section.offsets_ordered,
-                        dictionary_entries: wire_len(
-                            ctx,
-                            section.dictionary_entries,
-                            "Inventor property dictionary count",
-                        )?,
-                        property_count: wire_len(
-                            ctx,
-                            section.properties.len(),
-                            "Inventor property count",
-                        )?,
+                        dictionary_entries: cadmpeg_core::decode::u64_from_index(section.dictionary_entries),
+                        property_count: cadmpeg_core::decode::u64_from_index(section.properties.len()),
                     });
                     for property in &section.properties {
                         admit_native_items(ctx, 1)?;
@@ -270,11 +258,7 @@ fn decode_container<'a>(
                         charge_retained_len(ctx, 32, "retain Inventor property value FMTID")?;
                         charge_retained_len(ctx, 64, "retain Inventor property raw digest")?;
                         ctx.charge_work(
-                            wire_len(
-                                ctx,
-                                property.raw.window().len(),
-                                "Inventor property raw length",
-                            )?,
+                            cadmpeg_core::decode::u64_from_index(property.raw.window().len()),
                             "hash Inventor property raw bytes",
                         )?;
                         properties.push(PropertyRecord {
@@ -290,11 +274,7 @@ fn decode_container<'a>(
                             name: property_name,
                             value_kind: property_value_kind(&property.value),
                             scalar_value,
-                            raw_len: wire_len(
-                                ctx,
-                                property.raw.window().len(),
-                                "Inventor property raw length",
-                            )?,
+                            raw_len: cadmpeg_core::decode::u64_from_index(property.raw.window().len()),
                             raw_sha256: crate::native::digest::Sha256Hex::digest(
                                 property.raw.window(),
                             ),
@@ -446,12 +426,8 @@ fn decode_container<'a>(
                         "retain Inventor registry revision GUID",
                     )?,
                     type_name: ctx.copy_retained_text(&entry.type_name, "retain Inventor registry type name")?,
-                    object_count: wire_len(
-                        ctx,
-                        entry.objects.len(),
-                        "Inventor registry object count",
-                    )?,
-                    node_count: wire_len(ctx, entry.nodes.len(), "Inventor registry node count")?,
+                    object_count: cadmpeg_core::decode::u64_from_index(entry.objects.len()),
+                    node_count: cadmpeg_core::decode::u64_from_index(entry.nodes.len()),
                 })
             })
             .collect::<Result<Vec<_>, _>>()?,
@@ -531,11 +507,7 @@ fn decode_container<'a>(
     let pm_graphics_style_collections = presentation_native.graphics_style_collections;
     let pm_graphics_primary_color_styles = presentation_native.graphics_primary_color_styles;
     ctx.admit_entities(
-        wire_len(
-            ctx,
-            ir.model.entity_count(),
-            "Inventor pre-assembly entity count",
-        )?,
+        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
         &mut admitted_entities,
         "admit Inventor pre-assembly entities",
     )?;
@@ -1294,23 +1266,11 @@ fn charge_items(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count = u64::try_from(count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "Inventor native collection item count",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
+    let count = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count, operation)
 }
 
-fn wire_len(
-    ctx: &DecodeContext<'_>,
-    len: usize,
-    operation: &'static str,
-) -> Result<u64, CodecError> {
-    u64::try_from(len).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
-}
+
 
 fn decimal_digits(value: usize) -> usize {
     value
@@ -1332,9 +1292,7 @@ fn charge_retained_len(
     bytes: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let bytes = u64::try_from(bytes).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor retained byte count", u64::MAX - 1, u64::MAX)
-    })?;
+    let bytes = cadmpeg_core::decode::u64_from_index(bytes);
     ctx.charge_retained(bytes, operation)
 }
 
@@ -1359,9 +1317,7 @@ fn retained_hex(
     })?;
     charge_retained_len(ctx, len, operation)?;
     ctx.charge_work(
-        u64::try_from(bytes.len()).map_err(|_| {
-            ctx.refuse_codec_limit("Inventor hexadecimal work", u64::MAX - 1, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
         "encode Inventor hexadecimal bytes",
     )?;
     Ok(hex(bytes))
@@ -1374,8 +1330,7 @@ fn retained_sha256(
 ) -> Result<String, CodecError> {
     ctx.charge_retained(64, operation)?;
     ctx.charge_work(
-        u64::try_from(bytes.len())
-            .map_err(|_| ctx.refuse_codec_limit("Inventor digest work", u64::MAX - 1, u64::MAX))?,
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
         "hash Inventor native bytes",
     )?;
     Ok(sha256_hex(bytes))
@@ -1388,8 +1343,7 @@ fn retained_native_sha256(
 ) -> Result<crate::native::digest::Sha256Hex, CodecError> {
     ctx.charge_retained(64, operation)?;
     ctx.charge_work(
-        u64::try_from(bytes.len())
-            .map_err(|_| ctx.refuse_codec_limit("Inventor digest work", u64::MAX - 1, u64::MAX))?,
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
         "hash Inventor native bytes",
     )?;
     Ok(crate::native::digest::Sha256Hex::digest(bytes))
@@ -1427,7 +1381,7 @@ fn project_root_product(
         ctx.refuse_codec_limit("Inventor root product count", u64::MAX - 1, u64::MAX)
     })?;
     ctx.admit_entities(
-        wire_len(ctx, next_count, "Inventor root product count")?,
+        cadmpeg_core::decode::u64_from_index(next_count),
         admitted_entities,
         "admit Inventor root product",
     )?;
@@ -1651,11 +1605,7 @@ fn project_preview_asset(
     ctx.charge_retained(key_len, "retain Inventor preview identity key")?;
     ctx.charge_retained(24_u64 + key_len, "retain Inventor preview asset id")?;
     let _ordinal_reservation = ctx.reserve_scoped(
-        wire_len(
-            ctx,
-            decimal_digits(ordinal),
-            "Inventor preview ordinal length",
-        )?,
+        cadmpeg_core::decode::u64_from_index(decimal_digits(ordinal)),
         "format Inventor preview ordinal",
     )?;
     charge_retained_len(ctx, native_id.len(), "retain Inventor preview source id")?;
@@ -1756,9 +1706,7 @@ fn project_protein_records(
         if instance.records.is_empty() && instance.rejected.is_empty() {
             continue;
         }
-        let entry_name_len = u64::try_from(instance.entry_name.len()).map_err(|_| {
-            ctx.refuse_codec_limit("Inventor Protein entry name length", u64::MAX - 1, u64::MAX)
-        })?;
+        let entry_name_len = cadmpeg_core::decode::u64_from_index(instance.entry_name.len());
         ctx.charge_work(entry_name_len, "hash Inventor Protein entry name")?;
         let _digest_reservation = ctx.reserve_scoped(64, "hash Inventor Protein entry name")?;
         let entry_digest = sha256_hex(instance.entry_name.as_bytes());
@@ -1839,11 +1787,7 @@ fn project_ufrx_state(
                 directory_id: stream.directory_id(),
                 schema: *schema,
                 section_versions: section_versions.clone(),
-                tail_len: wire_len(
-                    ctx,
-                    source.window().len(),
-                    "Inventor UFRx unsupported tail length",
-                )?,
+                tail_len: cadmpeg_core::decode::u64_from_index(source.window().len()),
                 tail_sha256: retained_native_sha256(
                     ctx,
                     source.window(),
@@ -1906,11 +1850,7 @@ fn project_ufrx_state(
                 external_references: references,
                 embedded_references: embedded,
                 occurrences,
-                tail_len: wire_len(
-                    ctx,
-                    document.unparsed_tail.window().len(),
-                    "Inventor UFRx tail length",
-                )?,
+                tail_len: cadmpeg_core::decode::u64_from_index(document.unparsed_tail.window().len()),
                 tail_sha256: retained_native_sha256(
                     ctx,
                     document.unparsed_tail.window(),
@@ -1928,11 +1868,7 @@ fn project_ufrx_model_state(
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxModelStateRecord>, CodecError> {
     let issue_detail = model_state_issue(
-        wire_len(
-            ctx,
-            state.suffix.window().len(),
-            "Inventor UFRx model-state suffix length",
-        )?,
+        cadmpeg_core::decode::u64_from_index(state.suffix.window().len()),
         &state.name,
     );
     if let Some(detail) = issue_detail {
@@ -1970,11 +1906,7 @@ fn project_ufrx_model_state(
         state: state.state,
         prefix_count: state.prefix_count,
         parameters,
-        suffix_len: wire_len(
-            ctx,
-            state.suffix.window().len(),
-            "Inventor UFRx model-state suffix length",
-        )?,
+        suffix_len: cadmpeg_core::decode::u64_from_index(state.suffix.window().len()),
         suffix_sha256: retained_sha256(
             ctx,
             state.suffix.window(),
@@ -1982,11 +1914,7 @@ fn project_ufrx_model_state(
         )?,
     });
     let _scope_reservation = ctx.reserve_scoped(
-        wire_len(
-            ctx,
-            "ufrx-model-state-".len() + decimal_digits(ordinal),
-            "Inventor UFRx issue scope length",
-        )?,
+        cadmpeg_core::decode::u64_from_index("ufrx-model-state-".len() + decimal_digits(ordinal)),
         "format Inventor UFRx model-state issue scope",
     )?;
     let scope = format!("ufrx-model-state-{ordinal}");
@@ -2045,11 +1973,7 @@ fn project_ufrx_external_reference(
         flags: reference.flags,
     });
     let _scope_reservation = ctx.reserve_scoped(
-        wire_len(
-            ctx,
-            "ufrx-external-reference-".len() + decimal_digits(ordinal),
-            "Inventor UFRx issue scope length",
-        )?,
+        cadmpeg_core::decode::u64_from_index("ufrx-external-reference-".len() + decimal_digits(ordinal)),
         "format Inventor UFRx external issue scope",
     )?;
     let scope = format!("ufrx-external-reference-{ordinal}");
@@ -2062,11 +1986,7 @@ fn project_ufrx_embedded_reference(
     reference: &crate::external_reference::InventorEmbeddedReference<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<EmbeddedReferenceRecord>, CodecError> {
-    if embedded_reference_issue(wire_len(
-        ctx,
-        reference.source.window().len(),
-        "Inventor UFRx embedded length",
-    )?)
+    if embedded_reference_issue(cadmpeg_core::decode::u64_from_index(reference.source.window().len()))
     .is_some()
     {
         charge_retained_len(
@@ -2093,11 +2013,7 @@ fn project_ufrx_embedded_reference(
         state: reference.state,
         display_name: ctx.copy_retained_text(&reference.display_name, "retain Inventor UFRx embedded display name")?,
         state_values: reference.state_values,
-        record_len: wire_len(
-            ctx,
-            reference.source.window().len(),
-            "Inventor UFRx embedded length",
-        )?,
+        record_len: cadmpeg_core::decode::u64_from_index(reference.source.window().len()),
         record_sha256: retained_sha256(
             ctx,
             reference.source.window(),
@@ -2105,11 +2021,7 @@ fn project_ufrx_embedded_reference(
         )?,
     });
     let _scope_reservation = ctx.reserve_scoped(
-        wire_len(
-            ctx,
-            "ufrx-embedded-reference-".len() + decimal_digits(ordinal),
-            "Inventor UFRx issue scope length",
-        )?,
+        cadmpeg_core::decode::u64_from_index("ufrx-embedded-reference-".len() + decimal_digits(ordinal)),
         "format Inventor UFRx embedded issue scope",
     )?;
     let scope = format!("ufrx-embedded-reference-{ordinal}");
@@ -2124,11 +2036,7 @@ fn project_ufrx_occurrence(
 ) -> Result<Option<UfrxOccurrenceRecord>, CodecError> {
     let issue_detail = occurrence_issue(
         occurrence.header_padding_words,
-        wire_len(
-            ctx,
-            occurrence.source.window().len(),
-            "Inventor UFRx occurrence length",
-        )?,
+        cadmpeg_core::decode::u64_from_index(occurrence.source.window().len()),
     );
     if let Some(detail) = issue_detail {
         charge_retained_len(
@@ -2154,11 +2062,7 @@ fn project_ufrx_occurrence(
             .map(|title| ctx.copy_retained_text(title, "retain Inventor UFRx occurrence title"))
             .transpose()?,
         header_padding_words: occurrence.header_padding_words,
-        record_len: wire_len(
-            ctx,
-            occurrence.source.window().len(),
-            "Inventor UFRx occurrence length",
-        )?,
+        record_len: cadmpeg_core::decode::u64_from_index(occurrence.source.window().len()),
         record_sha256: retained_sha256(
             ctx,
             occurrence.source.window(),
@@ -2166,11 +2070,7 @@ fn project_ufrx_occurrence(
         )?,
     });
     let _scope_reservation = ctx.reserve_scoped(
-        wire_len(
-            ctx,
-            "ufrx-occurrence-".len() + decimal_digits(ordinal),
-            "Inventor UFRx issue scope length",
-        )?,
+        cadmpeg_core::decode::u64_from_index("ufrx-occurrence-".len() + decimal_digits(ordinal)),
         "format Inventor UFRx occurrence issue scope",
     )?;
     let scope = format!("ufrx-occurrence-{ordinal}");
@@ -2225,9 +2125,7 @@ fn project_ufrx_representation(
 }
 
 fn admit_native_items(ctx: &DecodeContext<'_>, count: usize) -> Result<(), CodecError> {
-    let count = u64::try_from(count).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor native record count", u64::MAX - 1, u64::MAX)
-    })?;
+    let count = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count, "retain Inventor native structural records")?;
     ctx.charge_entities(count, "admit Inventor native structural records")
 }
@@ -2426,13 +2324,7 @@ fn admit_protein_asset(
             "retain Inventor Protein asset conversion issue",
         )?;
     }
-    let scope_len = u64::try_from(wire.id.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "Inventor Protein issue scope length",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
+    let scope_len = cadmpeg_core::decode::u64_from_index(wire.id.len());
     let _scope_reservation =
         ctx.reserve_scoped(scope_len, "copy Inventor Protein asset issue scope")?;
     let scope = wire.id.clone();
@@ -2458,13 +2350,7 @@ fn admit_protein_rejection(
             "retain Inventor Protein rejection conversion issue",
         )?;
     }
-    let scope_len = u64::try_from(wire.id.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "Inventor Protein issue scope length",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
+    let scope_len = cadmpeg_core::decode::u64_from_index(wire.id.len());
     let _scope_reservation =
         ctx.reserve_scoped(scope_len, "copy Inventor Protein rejection issue scope")?;
     let scope = wire.id.clone();
@@ -2496,11 +2382,7 @@ fn admit_assembly_placement(
         )?;
     }
     let _token_reservation = ctx.reserve_scoped(
-        wire_len(
-            ctx,
-            wire.segment_token.len(),
-            "Inventor placement issue token length",
-        )?,
+        cadmpeg_core::decode::u64_from_index(wire.segment_token.len()),
         "copy Inventor placement issue token",
     )?;
     let segment_token = wire.segment_token.clone();
@@ -2649,9 +2531,7 @@ impl MetadataProjection {
 
 fn normalize_property_name(ctx: &DecodeContext<'_>, name: &str) -> Result<String, CodecError> {
     ctx.charge_work(
-        u64::try_from(name.len()).map_err(|_| {
-            ctx.refuse_codec_limit("Inventor property name length", u64::MAX - 1, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(name.len()),
         "normalize Inventor property name",
     )?;
     let normalized_len = name

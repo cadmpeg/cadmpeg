@@ -991,9 +991,7 @@ pub(crate) fn value_schema_selections(
         if ordinal_index > catalog.entries.len() {
             continue;
         }
-        let Some(offset) = u64::try_from(*offset).ok() else {
-            continue;
-        };
+        let offset = cadmpeg_core::decode::u64_from_index(*offset);
         let Some(byte_offset) = block_byte_offset
             .checked_add(6)
             .and_then(|base| base.checked_add(offset))
@@ -1061,8 +1059,7 @@ impl CatiaValueBlock {
             "catia_value_block_id",
         )?;
         let fields = value_block::tokenize_charged(ctx, &block.payload)?;
-        let byte_offset = u64::try_from(block.pos)
-            .map_err(|_| ctx.refuse_codec_limit("catia_value_block_offset", u64::MAX, u64::MAX))?;
+        let byte_offset = cadmpeg_core::decode::u64_from_index(block.pos);
         let schema_selections = value_schema_selections(ctx, &id, byte_offset, &fields, catalog)?;
         Ok(Self {
             id,
@@ -1090,9 +1087,7 @@ impl CatiaAliasRow {
                 format_args!("catia:outer:alias-row#{:010}", row.pos),
                 "catia_native_alias_row_id",
             )?,
-            byte_offset: u64::try_from(row.pos).map_err(|_| {
-                ctx.refuse_codec_limit("catia_native_alias_row_offset", u64::MAX, u64::MAX)
-            })?,
+            byte_offset: cadmpeg_core::decode::u64_from_index(row.pos),
             lead_raw: row.lead_raw,
             tag_raw: row.tag_raw,
             flag: row.flag,
@@ -1128,9 +1123,7 @@ impl CatiaCatalog {
                 )?,
                 parent: ctx.copy_retained_text(&id, "catia_native_catalog_entry_parent")?,
                 ordinal: entry.ordinal,
-                byte_offset: u64::try_from(entry.pos).map_err(|_| {
-                    ctx.refuse_codec_limit("catia_native_catalog_entry_offset", u64::MAX, u64::MAX)
-                })?,
+                byte_offset: cadmpeg_core::decode::u64_from_index(entry.pos),
                 value: entry.value,
             };
             crate::resource::push(
@@ -1142,12 +1135,8 @@ impl CatiaCatalog {
         }
         Ok(Self {
             id,
-            byte_offset: u64::try_from(catalog.pos).map_err(|_| {
-                ctx.refuse_codec_limit("catia_native_catalog_offset", u64::MAX, u64::MAX)
-            })?,
-            byte_len: u64::try_from(catalog.total_len).map_err(|_| {
-                ctx.refuse_codec_limit("catia_native_catalog_length", u64::MAX, u64::MAX)
-            })?,
+            byte_offset: cadmpeg_core::decode::u64_from_index(catalog.pos),
+            byte_len: cadmpeg_core::decode::u64_from_index(catalog.total_len),
             entries,
         })
     }

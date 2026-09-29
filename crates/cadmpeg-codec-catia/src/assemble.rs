@@ -78,9 +78,7 @@ pub(crate) fn annotate(
     let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let stream_bytes =
-        u64::try_from(std::mem::size_of::<cadmpeg_ir::StreamName>()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_annotation_stream_handle", u64::MAX, u64::MAX)
-        })?;
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
     ctx.charge_retained(stream_bytes, "catia_annotation_stream_handle")?;
     let tag = resource::format_retained(ctx, format_args!("{tag}"), "catia_annotation_tag")?;
     ctx.charge_collection_items(1, "catia_annotation_provenance")?;
@@ -156,7 +154,7 @@ fn unresolved_carrier_ids<'a>(
             .procedural_surfaces
             .len()
             .checked_add(ir.model.procedural_curves.len())
-            .and_then(|count| u64::try_from(count).ok())
+            .map(cadmpeg_core::decode::u64_from_index)
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("catia_carrier_resolution_work", u64::MAX, u64::MAX)
             })?;
@@ -971,9 +969,7 @@ pub(crate) fn rational_pcurve_arc(
         return Ok(None);
     };
     ctx.charge_work(
-        u64::try_from(segment_count).map_err(|_| {
-            ctx.refuse_codec_limit("catia_rational_arc_segments", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(segment_count),
         "catia_rational_arc_segments",
     )?;
     let step = span / segment_count as f64;

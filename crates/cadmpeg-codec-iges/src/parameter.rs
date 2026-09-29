@@ -2940,7 +2940,7 @@ fn layout_parameter_card(ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u8>, Cod
     }
     let mut card = Vec::new();
     card.try_reserve_exact(64)
-        .map_err(|_| refuse_local_limit("iges parameter layout card bytes", 64, 64))?;
+        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges parameter layout card bytes"), 64, 64, "iges parameter layout card bytes")))?;
     Ok(card)
 }
 
@@ -3461,11 +3461,7 @@ fn numeric_with_limits(
             .map_err(TokenizeFailure::Refusal)?;
         let mut normalized = String::new();
         normalized.try_reserve_exact(text.len()).map_err(|_| {
-            TokenizeFailure::Refusal(refuse_local_limit(
-                "iges numeric token text",
-                u64_from_index(text.len()),
-                u64_from_index(text.len()),
-            ))
+            TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges numeric token text"), u64_from_index(text.len()), u64_from_index(text.len()), "iges numeric token text")))
         })?;
         normalized.extend(text.bytes().map(|byte| {
             char::from(if matches!(byte, b'D' | b'd') {
@@ -3716,11 +3712,7 @@ fn owned_bytes(
     }
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(byte_count).map_err(|_| {
-        refuse_local_limit(
-            "iges owned parameter bytes",
-            u64_from_index(byte_count),
-            u64_from_index(byte_count),
-        )
+        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges owned parameter bytes"), u64_from_index(byte_count), u64_from_index(byte_count), "iges owned parameter bytes"))
     })?;
     let mut card_boundaries =
         reserve_optional_vec(ctx, card_count, "iges parameter card boundaries")?;
@@ -3775,11 +3767,7 @@ fn quarantine(
             }
             let mut bytes = Vec::new();
             bytes.try_reserve_exact(byte_count).map_err(|_| {
-                refuse_local_limit(
-                    "iges quarantined parameter bytes",
-                    u64_from_index(byte_count),
-                    u64_from_index(byte_count),
-                )
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges quarantined parameter bytes"), u64_from_index(byte_count), u64_from_index(byte_count), "iges quarantined parameter bytes"))
             })?;
             bytes.extend_from_slice(&line.payload);
             for (sequence, line) in retained {
@@ -4271,11 +4259,7 @@ fn copy_token_bytes(
         None => {
             let mut copy = Vec::new();
             copy.try_reserve_exact(bytes.len()).map_err(|_| {
-                TokenizeFailure::Refusal(refuse_local_limit(
-                    "iges parameter string token",
-                    u64_from_index(bytes.len()),
-                    u64_from_index(bytes.len()),
-                ))
+                TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges parameter string token"), u64_from_index(bytes.len()), u64_from_index(bytes.len()), "iges parameter string token")))
             })?;
             copy.extend_from_slice(bytes);
             Ok(copy)

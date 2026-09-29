@@ -1513,14 +1513,11 @@ fn read_cloud(
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
     let point_count = crate::wire::element_count(reader, 24)?;
-    let point_count_u64 = u64::try_from(point_count)
-        .map_err(|_| GeometryError::not_implemented("point-cloud count exceeds address space"))?;
+    let point_count_u64 = cadmpeg_core::decode::u64_from_index(point_count);
     ctx.charge_collection_items(point_count_u64, "Rhino point-cloud points")?;
     let point_bytes = point_count_u64
         .checked_mul(
-            u64::try_from(std::mem::size_of::<FinitePoint3>()).map_err(|_| {
-                GeometryError::not_implemented("point-cloud storage exceeds address space")
-            })?,
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FinitePoint3>()),
         )
         .ok_or_else(|| {
             GeometryError::not_implemented("point-cloud storage exceeds address space")

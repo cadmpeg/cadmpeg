@@ -220,8 +220,7 @@ impl<'a> ArchiveSnapshot<'a> {
             .entry(name)
             .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
         let end = entry.data_end()?;
-        let archive_start = u64::try_from(self.root.start())
-            .map_err(|_| CodecError::Malformed("ZIP root offset does not fit u64".into()))?;
+        let archive_start = cadmpeg_core::decode::u64_from_index(self.root.start());
         let absolute_start = archive_start.checked_add(entry.data_start).ok_or_else(|| {
             CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
@@ -453,8 +452,7 @@ fn central_directory_inventory(
             .ok_or_else(|| CodecError::Malformed("ZIP directory offset is truncated".into()))?;
         (u64::from(count), u64::from(size), u64::from(start), end)
     };
-    let directory_end = u64::try_from(directory_end)
-        .map_err(|_| CodecError::Malformed("ZIP directory end exceeds u64".into()))?;
+    let directory_end = cadmpeg_core::decode::u64_from_index(directory_end);
     let canonical_start = directory_end
         .checked_sub(directory_size)
         .ok_or_else(|| CodecError::Malformed("ZIP directory size exceeds archive".into()))?;
@@ -469,16 +467,14 @@ fn central_directory_inventory(
         let search_len = search_end
             .checked_sub(search_start)
             .ok_or_else(|| CodecError::Malformed("ZIP directory search range is invalid".into()))?;
-        let search_work = u64::try_from(search_len)
-            .map_err(|_| CodecError::Malformed("ZIP directory search exceeds u64".into()))?;
+        let search_work = cadmpeg_core::decode::u64_from_index(search_len);
         ctx.charge_work(search_work, "ZIP central header search")?;
         let start = bytes
             .get(search_start..search_end)
             .and_then(|range| range.windows(4).position(|window| window == b"PK\x01\x02"))
             .and_then(|relative| search_start.checked_add(relative))
             .ok_or_else(|| CodecError::Malformed("ZIP central header is absent".into()))?;
-        u64::try_from(start)
-            .map_err(|_| CodecError::Malformed("ZIP directory offset exceeds u64".into()))?
+        cadmpeg_core::decode::u64_from_index(start)
     };
     let mut indexed_name_bytes = 0_u64;
     for _ in 0..count {
