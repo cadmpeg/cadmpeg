@@ -2443,9 +2443,18 @@ mod tests {
     }
 
     #[test]
+    fn numeric_slots_accept_exact_integer_above_contiguous_f64_range() {
+        let source = asm_stream("point $-1 -1 $-1 9007199254740994 0 0 #\n");
+        let stream = parse(&source).expect("exact integer coordinate");
+        assert_eq!(stream.records[0].tokens[3], Token::Position([9007199254740994.0 * 0.1, 0.0, 0.0]));
+    }
+
+    #[test]
     fn numeric_slots_refuse_inexact_integer_coordinates() {
-        let source = asm_stream("point $-1 -1 $-1 9007199254740993 0 0 #");
-        assert!(parse(&source).is_err());
+        let source = asm_stream("point $-1 -1 $-1 9007199254740993 0 0 #\n");
+        let stream = parse(&source).expect("inexact numeric shape keeps lexical tokens");
+        assert_eq!(stream.records[0].tokens.len(), 6);
+        assert_eq!(stream.records[0].tokens[3], Token::Long(9_007_199_254_740_993));
     }
 
     #[test]
