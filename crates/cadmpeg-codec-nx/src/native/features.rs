@@ -9175,27 +9175,43 @@ pub(super) fn feature_operation_body_11_continuations(
                     return;
                 }
             };
-            continuations.extend(
-                rows
-                    .into_iter()
-                    .map(|continuation| FeatureOperationBody11Continuation {
-                        id: format!(
-                            "nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal:010}-{}",
-                            continuation.body_reference_ordinal
-                        ),
-                        operation_label: format!(
-                            "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                        ),
+            let projected = (|| -> Result<(), CodecError> {
+                for continuation in rows {
+                    let id = format_charged_text(ctx,
+                        format_args!("nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal:010}-{}",
+                            continuation.body_reference_ordinal),
+                        "NX trim body continuation identity")?;
+                    let operation_label = format_feature_history_id(ctx, "operation-label",
+                        section_key, operation_ordinal, None)?;
+                    let offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(
+                        continuation.continuation.offset))
+                        .ok_or_else(|| ctx.refuse_codec_limit(
+                            "NX trim body continuation offset", 0, 1))?;
+                    let terminal_source_offset = entry_offset.checked_add(
+                        cadmpeg_core::decode::u64_from_index(continuation.terminal.offset))
+                        .ok_or_else(|| ctx.refuse_codec_limit(
+                            "NX trim body terminal offset", 0, 1))?;
+                    ctx.charge_collection_items(1, "NX trim body continuations")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureOperationBody11Continuation>()),
+                        "NX trim body continuations")?;
+                    continuations.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX trim body continuations", 0, 1))?;
+                    continuations.push(FeatureOperationBody11Continuation {
+                        id, operation_label,
                         body_reference_ordinal: continuation.body_reference_ordinal,
                         body_object_index: continuation.body_object_index,
                         continuation: crate::om::compact::LocatedCompactIndex {
-                            atom: continuation.continuation.atom,
-                            offset: entry_offset + continuation.continuation.offset as u64,
+                            atom: continuation.continuation.atom, offset,
                         },
-                        terminal: continuation.terminal.token,
-                        terminal_source_offset: entry_offset + continuation.terminal.offset as u64,
-                    }),
-            );
+                        terminal: continuation.terminal.token, terminal_source_offset,
+                    });
+                }
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
     if let Some(error) = failure {
@@ -9226,52 +9242,76 @@ pub(super) fn feature_operation_body_reference_lanes(
                     return;
                 }
             };
+            let projected = (|| -> Result<(), CodecError> {
             for lane in parsed {
                 let references = match lane.values {
                     crate::om::OperationBodyReferenceLaneValues::CompactIndex(values) => {
-                        FeatureOperationBodyReferences::CompactIndex(
-                            values
-                                .into_iter()
-                                .map(|value| ConstructionReference {
-                                    token: value.atom,
-                                    data_block: unique_offset_data_block(
-                                        &indexed,
-                                        value.atom.value(),
-                                    ),
-                                    source_offset: entry_offset + value.offset as u64,
-                                })
-                                .collect(),
-                        )
+                        let mut references = Vec::new();
+                        for value in values {
+                            let data_block = charged_unique_offset_data_block(ctx, &indexed,
+                                value.atom.value())?;
+                            let source_offset = entry_offset.checked_add(
+                                cadmpeg_core::decode::u64_from_index(value.offset))
+                                .ok_or_else(|| ctx.refuse_codec_limit(
+                                    "NX body compact reference offset", 0, 1))?;
+                            ctx.charge_collection_items(1, "NX body compact references")?;
+                            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                                std::mem::size_of::<ConstructionReference<Option<String>, CompactIndexAtom>>()),
+                                "NX body compact references")?;
+                            references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                                "allocate NX body compact references", 0, 1))?;
+                            references.push(ConstructionReference {
+                                token: value.atom, data_block, source_offset,
+                            });
+                        }
+                        FeatureOperationBodyReferences::CompactIndex(references)
                     }
                     crate::om::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) => {
-                        FeatureOperationBodyReferences::PayloadObjectIndex(
-                            values
-                                .into_iter()
-                                .map(|value| ConstructionReference {
-                                    token: value.token,
-                                    data_block: unique_offset_data_block(
-                                        &indexed,
-                                        value.token.value(),
-                                    ),
-                                    source_offset: entry_offset + value.offset as u64,
-                                })
-                                .collect(),
-                        )
+                        let mut references = Vec::new();
+                        for value in values {
+                            let data_block = charged_unique_offset_data_block(ctx, &indexed,
+                                value.token.value())?;
+                            let source_offset = entry_offset.checked_add(
+                                cadmpeg_core::decode::u64_from_index(value.offset))
+                                .ok_or_else(|| ctx.refuse_codec_limit(
+                                    "NX body object reference offset", 0, 1))?;
+                            ctx.charge_collection_items(1, "NX body object references")?;
+                            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                                std::mem::size_of::<ConstructionReference<Option<String>, PayloadIndexToken>>()),
+                                "NX body object references")?;
+                            references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                                "allocate NX body object references", 0, 1))?;
+                            references.push(ConstructionReference {
+                                token: value.token, data_block, source_offset,
+                            });
+                        }
+                        FeatureOperationBodyReferences::PayloadObjectIndex(references)
                     }
                 };
+                let id = format_charged_text(ctx,
+                    format_args!("nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal:010}-{}",
+                        lane.body_reference_ordinal),
+                    "NX operation body reference lane identity")?;
+                let operation_label = format_feature_history_id(ctx, "operation-label",
+                    section_key, operation_ordinal, None)?;
+                ctx.charge_collection_items(1, "NX operation body reference lanes")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureOperationBodyReferenceLane>()),
+                    "NX operation body reference lanes")?;
+                lanes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX operation body reference lanes", 0, 1))?;
                 lanes.push(FeatureOperationBodyReferenceLane {
-                    id: format!(
-                        "nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal:010}-{}",
-                        lane.body_reference_ordinal
-                    ),
-                    operation_label: format!(
-                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                    ),
+                    id, operation_label,
                     body_reference_ordinal: lane.body_reference_ordinal,
                     body_object_index: lane.body_object_index,
                     branch: lane.branch,
                     references,
                 });
+            }
+            Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
             }
         },
     )?;
