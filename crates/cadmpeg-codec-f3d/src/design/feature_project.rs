@@ -2366,36 +2366,34 @@ fn project_fillet_arm(
         }
     }
 
-    let mut assignments = inputs
-        .fillet_radius_groups
-        .iter()
-        .filter(|assignment| {
+    let mut assignments = Vec::new();
+    for assignment in inputs.fillet_radius_groups {
+        if
             native_stream(&assignment.id) == Some(native_scope)
                 && assignment.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
+        {
+            push_feature_item(ctx, &mut assignments, assignment,
+                "f3d Fillet scope assignment")?;
+        }
+    }
     assignments.sort_by_key(|assignment| assignment.group_ordinal);
     if !assignments.is_empty() {
         let Some(assignments) = resolved_fillet_assignments(ctx, &assignments, parameters)? else {
             return native_scope_definition(scope, parameters);
         };
-        let groups = assignments
-            .into_iter()
-            .map(|resolved| -> Result<_, CodecError> {
+        let mut groups = Vec::new();
+        for resolved in assignments {
                 let edge_radius = match &resolved.radius {
                     RadiusSpec::Constant { radius } => Some(radius.get()),
                     _ => None,
                 };
-                let edges = inputs
+                let edges = if let Some(group) = inputs
                     .construction_groups
                     .iter()
                     .find(|group| {
                         native_stream(&group.id) == Some(native_scope)
                             && group.record_index == resolved.assignment.group_record_index
-                    })
-                    .map_or(
-                        Ok(EdgeSelection::Native(resolved.assignment.id.clone())),
-                        |group| {
+                    }) {
                             resolved_edge_treatment_group_with_corners(
                                 group,
                                 inputs.construction_groups,
@@ -2407,18 +2405,18 @@ fn project_fillet_arm(
                                 &neutral_feature_id(scope),
                                 edge_radius,
                                 ctx,
-                            )
-                        },
-                    )?;
-                Ok(FilletGroup {
+                            )?
+                    } else {
+                        EdgeSelection::Native(copy_feature_text(ctx, &resolved.assignment.id,
+                            "f3d Fillet fallback edge group ID")?)
+                    };
+                push_feature_item(ctx, &mut groups, FilletGroup {
                     edges,
                     radius: resolved.radius,
                     tangency_weight: resolved.tangency_weight,
-                })
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?
-            .try_into()
-            .ok();
+                }, "f3d Fillet projected group")?;
+        }
+        let groups = groups.try_into().ok();
         return groups.map_or_else(
             || native_scope_definition(scope, parameters),
             |groups| {
@@ -5978,17 +5976,16 @@ fn project_variable_fillet(
     let edge_treatment_vertex_operands = inputs.edge_treatment_vertex_operands;
     let histories = inputs.histories;
     let stream = or_none!(native_stream(&scope.id));
-    let mut groups = construction_groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let [group] = groups.as_slice() else {
+    let mut groups = construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+    });
+    let Some(group) = groups.next() else {
         return Ok(None);
     };
+    if groups.next().is_some() {
+        return Ok(None);
+    }
     let (points, tangency_weight) = or_none!(variable_fillet_law(ctx, parameters)?);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
