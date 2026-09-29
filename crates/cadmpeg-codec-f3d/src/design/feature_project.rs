@@ -3680,27 +3680,28 @@ fn selected_work_planes<'a>(
 }
 
 fn resolved_split_face_path(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
-) -> Option<cadmpeg_ir::features::PathRef> {
+) -> Result<Option<cadmpeg_ir::features::PathRef>, CodecError> {
     use cadmpeg_ir::features::PathRef;
 
-    let previous_state_id =
-        crate::history::effective_scope_previous_history_state_id(scope, histories)?;
-    let stream = native_stream(&scope.id)?;
+    let previous_state_id = or_none!(
+        crate::history::effective_scope_previous_history_state_id(scope, histories));
+    let stream = or_none!(native_stream(&scope.id));
     let feature = neutral_feature_id(scope);
     let feature_key = feature.key();
     let prefix = ids::history_input_prefix(&feature_key, previous_state_id);
-    let mut edge_slots = Vec::with_capacity(group.members().len());
+    let mut edge_slots = Vec::new();
     for (ordinal, member) in group
         .members()
         .iter()
         .map(|member| &member.value)
         .enumerate()
     {
-        let ordinal = u32::try_from(ordinal).ok()?;
+        let ordinal = or_none!(u32::try_from(ordinal).ok());
         let mut selections = entity_selection_operands.iter().filter(|selection| {
             native_stream(&selection.id) == Some(stream)
                 && selection.scope_record_index == scope.record_index
@@ -3708,25 +3709,33 @@ fn resolved_split_face_path(
                 && selection.group_member_ordinal == ordinal
                 && selection.record_index() == *member
         });
-        let selection = selections.next()?;
+        let selection = or_none!(selections.next());
         if selections.next().is_some() || selection.secondary().is_some() {
-            return None;
+            return Ok(None);
         }
-        let edge_slot = selection.resolved_edge_slot?;
+        let edge_slot = or_none!(selection.resolved_edge_slot);
         if edge_slots.contains(&edge_slot) {
-            return None;
+            return Ok(None);
         }
-        edge_slots.push(edge_slot);
+        push_feature_item(ctx, &mut edge_slots, edge_slot, "f3d SplitFace path edge slot")?;
     }
-    PathRef::historical_edges(
+    let mut edges = Vec::new();
+    for edge_slot in edge_slots {
+        let edge = ids::history_input_edge_id(&prefix, edge_slot);
+        if let Some(ctx) = ctx {
+            ctx.charge_retained(u64::try_from(edge.as_str().len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d SplitFace historical edge id", 0, 1)
+            })?, "f3d SplitFace historical edge id")?;
+        }
+        push_feature_item(ctx, &mut edges, edge,
+            "f3d SplitFace historical edge")?;
+    }
+    Ok(PathRef::historical_edges(
         feature_input_topology_id(&feature, previous_state_id),
-        edge_slots
-            .into_iter()
-            .map(|edge_slot| ids::history_input_edge_id(&prefix, edge_slot))
-            .collect(),
-        group.id.clone(),
+        edges,
+        copy_feature_text(ctx, &group.id, "f3d SplitFace path group id")?,
     )
-    .ok()
+    .ok())
 }
 
 /// Return the unique non-empty construction operand group in `scope` carrying
@@ -8792,7 +8801,7 @@ fn project_split_face(
     }
     let target_selection = project_face_selection(ctx, scope, targets, face_operands, histories)?;
     let tool = if let Some(path) =
-        resolved_split_face_path(scope, tool, entity_selection_operands, histories)
+        resolved_split_face_path(ctx, scope, tool, entity_selection_operands, histories)?
     {
         SplitFaceTool::Path(path)
     } else if let Some(planes) =
