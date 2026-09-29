@@ -2,6 +2,7 @@
 
 mod body_uses_and_history;
 mod block_limits;
+mod block_dimensions;
 mod datum_block_use_limits;
 mod column_relation_limits;
 mod datum_csys_limits;
