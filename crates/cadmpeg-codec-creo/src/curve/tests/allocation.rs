@@ -236,6 +236,57 @@ fn conditional_expression_assignments_refuse_before_growth() {
 }
 
 #[test]
+fn solve_unknowns_refuse_before_vector_growth() {
+    let service = with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::curve_expression_solve_unknowns(ctx, "x, Y")
+    })
+    .expect("service profile")
+    .expect("valid unknowns");
+    assert_eq!(service.iter().map(|unknown| unknown.name.as_str()).collect::<Vec<_>>(), ["x", "Y"]);
+    assert!(with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::curve_expression_solve_unknowns(ctx, "x, X")
+    })
+    .expect("service profile")
+    .is_none());
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let error = with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_unknowns(ctx, "x")
+    })
+    .expect_err("one unknown exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo solve unknowns"));
+}
+
+#[test]
+fn solve_unknown_name_refuses_before_retained_copy() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let error = with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_unknowns(ctx, "x")
+    })
+    .expect_err("unknown name exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo solve unknown names"));
+}
+
+#[test]
+fn solve_unknown_duplicate_check_obeys_work_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let error = with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_unknowns(ctx, "x,y")
+    })
+    .expect_err("second unknown needs one comparison");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "creo solve unknown duplicate checks"));
+}
+
+#[test]
 fn curve_expression_labels_refuse_before_vector_growth() {
     assert_eq!(
         parse(ONE_COMMENT, DecodePolicy::service())
