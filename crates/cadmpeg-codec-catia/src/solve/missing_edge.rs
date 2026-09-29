@@ -22,14 +22,7 @@ use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
-fn charge_collection_items(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = u64_from_index(count);
-    ctx.charge_collection_items(count, operation)
-}
+
 
 /// Return the counted physical edge rows in their serialized table order.
 ///
@@ -1169,7 +1162,7 @@ pub(crate) fn repeated_face_endpoint_closures(
         }
         let start_previous = degrees.get(&pair[0]).copied();
         if start_previous.is_none() {
-            charge_collection_items(ctx, 1, "catia missing-edge point degrees")?;
+            ctx.charge_collection_items(u64_from_index(1), "catia missing-edge point degrees")?;
         }
         *degrees.entry(pair[0]).or_default() += start_add;
         let end_previous = if pair[0] == pair[1] {
@@ -1177,7 +1170,7 @@ pub(crate) fn repeated_face_endpoint_closures(
         } else {
             let previous = degrees.get(&pair[1]).copied();
             if previous.is_none() {
-                charge_collection_items(ctx, 1, "catia missing-edge point degrees")?;
+                ctx.charge_collection_items(u64_from_index(1), "catia missing-edge point degrees")?;
             }
             *degrees.entry(pair[1]).or_default() += 1;
             Some((pair[1], previous))

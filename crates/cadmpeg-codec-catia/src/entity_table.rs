@@ -1344,16 +1344,8 @@ fn unique_monotone_run(
     if first.is_empty() {
         return Ok(None);
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(first.len()),
-        "collect CATIA 7C05 path states",
-    )?;
     let mut previous = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut previous,
-        first.len(),
-        "collect CATIA 7C05 path states",
-    )?;
+    ctx.reserve_vec(&mut previous, first.len(), "collect CATIA 7C05 path states")?;
     previous.extend(first.iter().copied().map(|identity| MonotonePathState {
         identity,
         path_count: PathCount::One,
@@ -1377,16 +1369,8 @@ fn unique_monotone_run(
             })?;
         ctx.charge_work(sort_units, "sort CATIA 7C05 predecessor states")?;
         ordered_predecessors.sort_by_key(|(_, state)| state.identity.entity_id);
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(ordered_predecessors.len()),
-            "collect CATIA 7C05 cumulative paths",
-        )?;
         let mut cumulative = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut cumulative,
-            ordered_predecessors.len(),
-            "collect CATIA 7C05 cumulative paths",
-        )?;
+        ctx.reserve_vec(&mut cumulative, ordered_predecessors.len(), "collect CATIA 7C05 cumulative paths")?;
         let mut cumulative_count = PathCount::None;
         for (index, state) in &ordered_predecessors {
             cumulative_count = cumulative_count.join(state.path_count);
@@ -1447,16 +1431,8 @@ fn unique_monotone_run(
     else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(records.len()),
-        "collect CATIA 7C05 resolved identities",
-    )?;
     let mut result = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut result,
-        records.len(),
-        "collect CATIA 7C05 resolved identities",
-    )?;
+    ctx.reserve_vec(&mut result, records.len(), "collect CATIA 7C05 resolved identities")?;
     for layer in std::iter::once(final_layer).chain(layers.iter().rev()) {
         let state = &layer[state_index];
         result.push(state.identity);
