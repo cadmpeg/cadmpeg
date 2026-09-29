@@ -29,7 +29,7 @@ use super::support_uv::{
     IntersectionCompletionSource, SerializedSupportUv,
 };
 use super::{report_untransferred_streams, Counts, Scan};
-use crate::decode::ids::{copy_typed_id, IdScope};
+use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::geometry;
 use crate::loss::NxLossCode;
@@ -263,11 +263,7 @@ pub(super) fn try_decode_geometry(
     let mut emitted_body_ids = BTreeSet::new();
     for body in body_node_ids.keys() {
         ctx.charge_collection_items(1, "nx emitted terminal body index")?;
-        emitted_body_ids.insert(copy_typed_id(
-            ctx,
-            body.as_str(),
-            "nx emitted terminal body identity",
-        )?);
+        emitted_body_ids.insert(body.try_clone_for_decode(ctx, "nx emitted terminal body identity")?);
     }
     let terminal_preselection = match terminal_lineage.as_ref() {
         Some(lineage) => crate::native::model::terminal_feature_body_ids(
@@ -441,7 +437,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx geometry points", 0, 1))?;
             ir.model.points.push(Point::new(
-                copy_typed_id(ctx, pid.as_str(), "nx geometry point identity")?,
+                pid.try_clone_for_decode(ctx, "nx geometry point identity")?,
                 position,
                 None,
             ));
@@ -451,8 +447,8 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx geometry point vertices", 0, 1))?;
             ir.model.vertices.push(Vertex {
-                id: copy_typed_id(ctx, vid.as_str(), "nx point vertex identity")?,
-                point: copy_typed_id(ctx, pid.as_str(), "nx vertex point identity")?,
+                id: vid.try_clone_for_decode(ctx, "nx point vertex identity")?,
+                point: pid.try_clone_for_decode(ctx, "nx vertex point identity")?,
                 tolerance: None,
             });
             ctx.charge_collection_items(1, "nx point node index")?;
@@ -500,7 +496,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx geometry surfaces", 0, 1))?;
             ir.model.surfaces.push(Surface {
-                id: copy_typed_id(ctx, id.as_str(), "nx geometry surface identity")?,
+                id: id.try_clone_for_decode(ctx, "nx geometry surface identity")?,
                 geometry,
                 source_object: None,
             });
@@ -526,7 +522,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx geometry surfaces", 0, 1))?;
             ir.model.surfaces.push(Surface {
-                id: copy_typed_id(ctx, id.as_str(), "nx NURBS surface identity")?,
+                id: id.try_clone_for_decode(ctx, "nx NURBS surface identity")?,
                 geometry: surf.geometry,
                 source_object: None,
             });
@@ -548,14 +544,14 @@ pub(super) fn try_decode_geometry(
             let Some(support_ref) = surfaces_by_xmt.get(&offset.state.support()) else {
                 continue;
             };
-            let support: SurfaceId = copy_typed_id(ctx, support_ref.as_str(), "nx offset support")?;
+            let support: SurfaceId = support_ref.try_clone_for_decode(ctx, "nx offset support")?;
             let procedural_id: ProceduralSurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("offset"), oi)?;
             let (surface_id, cache_fit_tolerance) = if let Some((surface, fit_tolerance)) =
                 saved_offset_carriers.get(&offset.xmt)
             {
                 (
-                    copy_typed_id(ctx, surface.as_str(), "nx saved offset surface")?,
+                    surface.try_clone_for_decode(ctx, "nx saved offset surface")?,
                     Some(*fit_tolerance),
                 )
             } else {
@@ -581,13 +577,9 @@ pub(super) fn try_decode_geometry(
                     .try_reserve(1)
                     .map_err(|_| ctx.refuse_codec_limit("nx offset surfaces", 0, 1))?;
                 ir.model.surfaces.push(Surface {
-                    id: copy_typed_id(ctx, surface_id.as_str(), "nx offset surface identity")?,
+                    id: surface_id.try_clone_for_decode(ctx, "nx offset surface identity")?,
                     geometry: SurfaceGeometry::Procedural {
-                        construction: copy_typed_id(
-                            ctx,
-                            procedural_id.as_str(),
-                            "nx offset construction identity",
-                        )?,
+                        construction: procedural_id.try_clone_for_decode(ctx, "nx offset construction identity")?,
                         cache: None,
                     },
                     source_object: Some(SourceObjectAssociation {
@@ -651,7 +643,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx offset constructions", 0, 1))?;
             let _attached = ir.model.add_procedural_surface(
-                &copy_typed_id(ctx, surface_id.as_str(), "nx offset construction owner")?,
+                &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?,
                 procedural,
             );
 
@@ -680,13 +672,9 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx blend surfaces", 0, 1))?;
             ir.model.surfaces.push(Surface {
-                id: copy_typed_id(ctx, surface_id.as_str(), "nx blend surface identity")?,
+                id: surface_id.try_clone_for_decode(ctx, "nx blend surface identity")?,
                 geometry: SurfaceGeometry::Procedural {
-                    construction: copy_typed_id(
-                        ctx,
-                        procedural_id.as_str(),
-                        "nx blend construction identity",
-                    )?,
+                    construction: procedural_id.try_clone_for_decode(ctx, "nx blend construction identity")?,
                     cache: None,
                 },
                 source_object: Some(SourceObjectAssociation {
@@ -727,7 +715,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx blend constructions", 0, 1))?;
             let attached = ir.model.add_procedural_surface(
-                &copy_typed_id(ctx, surface_id.as_str(), "nx blend construction owner")?,
+                &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?,
                 ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Blend(
@@ -774,11 +762,7 @@ pub(super) fn try_decode_geometry(
                 surfaces_by_xmt
                     .get(&support_xmts[side])
                     .map(|surface| {
-                        copy_typed_id::<SurfaceId>(
-                            ctx,
-                            surface.as_str(),
-                            "nx blend support identity",
-                        )
+                        surface.try_clone_for_decode(ctx, "nx blend support identity")
                     })
                     .transpose()
                     .map(|surface| {
@@ -837,7 +821,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx geometry curves", 0, 1))?;
             ir.model.curves.push(Curve {
-                id: copy_typed_id(ctx, id.as_str(), "nx geometry curve identity")?,
+                id: id.try_clone_for_decode(ctx, "nx geometry curve identity")?,
                 geometry,
                 source_object: None,
             });
@@ -863,7 +847,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx NURBS curves", 0, 1))?;
             ir.model.curves.push(Curve {
-                id: copy_typed_id(ctx, id.as_str(), "nx NURBS curve identity")?,
+                id: id.try_clone_for_decode(ctx, "nx NURBS curve identity")?,
                 geometry: crv.geometry,
                 source_object: None,
             });
@@ -891,7 +875,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx NURBS pcurves", 0, 1))?;
             ir.model.pcurves.push(Pcurve {
-                id: copy_typed_id(ctx, id.as_str(), "nx NURBS pcurve identity")?,
+                id: id.try_clone_for_decode(ctx, "nx NURBS pcurve identity")?,
                 geometry: pcurve.geometry,
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
             });
@@ -988,8 +972,8 @@ pub(super) fn try_decode_geometry(
                 if let [Some(first), Some(second)] = [first, second] {
                     cadmpeg_ir::geometry::TolerantIntersectionConstruction::from_parts(
                         [
-                            copy_typed_id(ctx, first.as_str(), "nx uncharted first support")?,
-                            copy_typed_id(ctx, second.as_str(), "nx uncharted second support")?,
+                            first.try_clone_for_decode(ctx, "nx uncharted first support")?,
+                            second.try_clone_for_decode(ctx, "nx uncharted second support")?,
                         ],
                         uncharted.endpoints,
                         uncharted.tolerance.into(),
@@ -1007,11 +991,7 @@ pub(super) fn try_decode_geometry(
                         if lane.is_some() {
                             ctx.charge_collection_items(1, "nx validated support UV lanes")?;
                             validated_support_uv_lanes.insert((
-                                copy_typed_id(
-                                    ctx,
-                                    procedural_id.as_str(),
-                                    "nx validated support UV construction",
-                                )?,
+                                procedural_id.try_clone_for_decode(ctx, "nx validated support UV construction")?,
                                 side,
                             ));
                         }
@@ -1034,7 +1014,7 @@ pub(super) fn try_decode_geometry(
                     .try_reserve(1)
                     .map_err(|_| ctx.refuse_codec_limit("nx pending EXT11 support UV", 0, 1))?;
                 pending_ext11_support_uv.push((
-                    copy_typed_id(ctx, procedural_id.as_str(), "nx pending EXT11 construction")?,
+                    procedural_id.try_clone_for_decode(ctx, "nx pending EXT11 construction")?,
                     charted.samples.clone_charged(ctx)?,
                     charted.fit_tolerance.get(),
                     SerializedSupportUv {
@@ -1067,7 +1047,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx intersection curves", 0, 1))?;
             ir.model.curves.push(Curve {
-                id: copy_typed_id(ctx, curve_id.as_str(), "nx intersection curve identity")?,
+                id: curve_id.try_clone_for_decode(ctx, "nx intersection curve identity")?,
                 geometry: if let Some(charted) = charted {
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         NurbsCurve::from_lanes(
@@ -1084,20 +1064,12 @@ pub(super) fn try_decode_geometry(
                     ))
                 } else if uncharted.is_some() {
                     CurveGeometry::Procedural {
-                        construction: copy_typed_id(
-                            ctx,
-                            procedural_id.as_str(),
-                            "nx intersection construction identity",
-                        )?,
+                        construction: procedural_id.try_clone_for_decode(ctx, "nx intersection construction identity")?,
                         cache: None,
                     }
                 } else {
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: Some(copy_typed_id(
-                            ctx,
-                            unknown_id.as_str(),
-                            "nx unknown intersection record",
-                        )?),
+                        record: Some(unknown_id.try_clone_for_decode(ctx, "nx unknown intersection record")?),
                     })
                 },
                 source_object: Some(SourceObjectAssociation {
@@ -1213,7 +1185,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx intersection constructions", 0, 1))?;
             let _attached = ir.model.add_procedural_curve(
-                &copy_typed_id(ctx, curve_id.as_str(), "nx intersection owner identity")?,
+                &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?,
                 procedural,
             );
 
@@ -1225,7 +1197,7 @@ pub(super) fn try_decode_geometry(
             let Some(spine_ref) = curves_by_xmt.get(&spine_xmt) else {
                 continue;
             };
-            let spine = copy_typed_id(ctx, spine_ref.as_str(), "nx blend spine identity")?;
+            let spine = spine_ref.try_clone_for_decode(ctx, "nx blend spine identity")?;
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
@@ -1242,7 +1214,7 @@ pub(super) fn try_decode_geometry(
         for (index, curve) in ir.model.curves.iter().enumerate() {
             ctx.charge_collection_items(1, "nx curve identity index")?;
             curve_indices.insert(
-                copy_typed_id(ctx, curve.id.as_str(), "nx curve index identity")?,
+                curve.id.try_clone_for_decode(ctx, "nx curve index identity")?,
                 index,
             );
         }
@@ -1250,7 +1222,7 @@ pub(super) fn try_decode_geometry(
         for (index, surface) in ir.model.surfaces.iter().enumerate() {
             ctx.charge_collection_items(1, "nx surface identity index")?;
             surface_indices.insert(
-                copy_typed_id(ctx, surface.id.as_str(), "nx surface index identity")?,
+                surface.id.try_clone_for_decode(ctx, "nx surface index identity")?,
                 index,
             );
         }
@@ -1258,7 +1230,7 @@ pub(super) fn try_decode_geometry(
         for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
             ctx.charge_collection_items(1, "nx pcurve identity index")?;
             pcurve_indices.insert(
-                copy_typed_id(ctx, pcurve.id.as_str(), "nx pcurve index identity")?,
+                pcurve.id.try_clone_for_decode(ctx, "nx pcurve index identity")?,
                 index,
             );
         }
@@ -1268,7 +1240,7 @@ pub(super) fn try_decode_geometry(
             for trim in trimmed_curves {
                 if let Some(basis_ref) = curves_by_xmt.get(&trim.state.basis()) {
                     let basis =
-                        copy_typed_id(ctx, basis_ref.as_str(), "nx trimmed curve identity")?;
+                        basis_ref.try_clone_for_decode(ctx, "nx trimmed curve identity")?;
                     let parameters = curve_indices
                         .get(&basis)
                         .and_then(|index| ir.model.curves.get(*index))
@@ -1284,14 +1256,14 @@ pub(super) fn try_decode_geometry(
                 }
                 if let Some(pcurve_ref) = pcurves_by_xmt.get(&trim.state.basis()) {
                     let pcurve =
-                        copy_typed_id(ctx, pcurve_ref.as_str(), "nx trimmed pcurve identity")?;
+                        pcurve_ref.try_clone_for_decode(ctx, "nx trimmed pcurve identity")?;
                     ctx.charge_collection_items(1, "nx trimmed pcurve index")?;
                     pcurves_by_xmt.insert(trim.xmt, pcurve);
                     if let Some(support) = pcurve_supports_by_xmt.get(&trim.state.basis()) {
                         ctx.charge_collection_items(1, "nx trimmed pcurve supports")?;
                         pcurve_supports_by_xmt.insert(
                             trim.xmt,
-                            copy_typed_id(ctx, support.as_str(), "nx trimmed pcurve support")?,
+                            support.try_clone_for_decode(ctx, "nx trimmed pcurve support")?,
                         );
                     }
                     ctx.charge_collection_items(1, "nx curve trim ranges")?;
@@ -1301,7 +1273,7 @@ pub(super) fn try_decode_geometry(
             for surface_curve in surface_curves {
                 if let Some(pcurve_ref) = pcurves_by_xmt.get(&surface_curve.state.pcurve()) {
                     let pcurve: PcurveId =
-                        copy_typed_id(ctx, pcurve_ref.as_str(), "nx surface pcurve identity")?;
+                        pcurve_ref.try_clone_for_decode(ctx, "nx surface pcurve identity")?;
                     if !normalized_pcurves.contains(&pcurve) {
                         let support = surfaces_by_xmt
                             .get(&surface_curve.state.surface())
@@ -1367,7 +1339,7 @@ pub(super) fn try_decode_geometry(
                         ctx.charge_collection_items(1, "nx surface pcurve supports")?;
                         pcurve_supports_by_xmt.insert(
                             surface_curve.xmt,
-                            copy_typed_id(ctx, support.as_str(), "nx surface pcurve support")?,
+                            support.try_clone_for_decode(ctx, "nx surface pcurve support")?,
                         );
                     }
                 }
@@ -1379,7 +1351,7 @@ pub(super) fn try_decode_geometry(
                     ctx.charge_collection_items(1, "nx surface curve index")?;
                     curves_by_xmt.insert(
                         surface_curve.xmt,
-                        copy_typed_id(ctx, original.as_str(), "nx surface curve identity")?,
+                        original.try_clone_for_decode(ctx, "nx surface curve identity")?,
                     );
                 }
             }
@@ -1717,7 +1689,7 @@ where
     T::Error: std::fmt::Display,
 {
     ctx.charge_collection_items(1, operation)?;
-    ids.insert(copy_typed_id(ctx, identity, operation)?);
+    ids.insert(T::try_from(ctx.copy_retained_text(identity, operation)?).map_err(CodecError::malformed)?);
     Ok(())
 }
 
@@ -1751,8 +1723,8 @@ fn copy_endpoint_witnesses(
 ) -> Result<(), CodecError> {
     for ((curve, surface), witnesses) in source {
         let key = (
-            copy_typed_id(ctx, curve.as_str(), "nx endpoint witness curve")?,
-            copy_typed_id(ctx, surface.as_str(), "nx endpoint witness surface")?,
+            curve.try_clone_for_decode(ctx, "nx endpoint witness curve")?,
+            surface.try_clone_for_decode(ctx, "nx endpoint witness surface")?,
         );
         let target_witnesses = match target.entry(key) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -2134,11 +2106,7 @@ pub(super) fn rmfastload_selected_bodies(
     for (body, ids) in body_node_ids {
         if !ids.is_empty() && ids.is_subset(&active) {
             ctx.charge_collection_items(1, "nx rmfastload selected bodies")?;
-            selected.insert(copy_typed_id(
-                ctx,
-                body.as_str(),
-                "nx rmfastload selected body identity",
-            )?);
+            selected.insert(body.try_clone_for_decode(ctx, "nx rmfastload selected body identity")?);
         }
     }
     Ok(selected)
@@ -2278,11 +2246,7 @@ fn select_terminal_feature_bodies(
     let mut emitted = BTreeSet::new();
     for body in &ir.model.bodies {
         ctx.charge_collection_items(1, "nx terminal body selection index")?;
-        emitted.insert(copy_typed_id(
-            ctx,
-            body.id.as_str(),
-            "nx terminal body selection identity",
-        )?);
+        emitted.insert(body.id.try_clone_for_decode(ctx, "nx terminal body selection identity")?);
     }
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
@@ -2527,11 +2491,7 @@ fn finalize_point_topology(
     let mut referenced_points: BTreeSet<PointId> = BTreeSet::new();
     for vertex in &ir.model.vertices {
         ctx.charge_collection_items(1, "nx referenced points")?;
-        referenced_points.insert(copy_typed_id(
-            ctx,
-            vertex.point.as_str(),
-            "nx referenced point identity",
-        )?);
+        referenced_points.insert(vertex.point.try_clone_for_decode(ctx, "nx referenced point identity")?);
     }
     if !ir.model.bodies.is_empty() {
         ir.model
@@ -2594,8 +2554,8 @@ fn finalize_point_topology(
         )?;
         super::annotations::exactness(ctx, annotations, vertex_id.as_str(), Exactness::Inferred)?;
         ir.model.vertices.push(Vertex {
-            id: copy_typed_id(ctx, vertex_id.as_str(), "nx point vertex identity copy")?,
-            point: copy_typed_id(ctx, point.id.as_str(), "nx point reference identity")?,
+            id: vertex_id.try_clone_for_decode(ctx, "nx point vertex identity copy")?,
+            point: point.id.try_clone_for_decode(ctx, "nx point reference identity")?,
             tolerance: None,
         });
         free_vertices.push(vertex_id);
@@ -2607,8 +2567,8 @@ fn finalize_point_topology(
         .map_err(|_| ctx.refuse_codec_limit("nx point topology shells", 0, 1))?;
     ir.model.shells.push(
         match Shell::new(
-            copy_typed_id(ctx, shell_id.as_str(), "nx point shell identity copy")?,
-            copy_typed_id(ctx, region_id.as_str(), "nx point shell region identity")?,
+            shell_id.try_clone_for_decode(ctx, "nx point shell identity copy")?,
+            region_id.try_clone_for_decode(ctx, "nx point shell region identity")?,
             Vec::new(),
             Vec::new(),
             free_vertices,
@@ -2631,8 +2591,8 @@ fn finalize_point_topology(
         .map_err(|_| ctx.refuse_codec_limit("nx point region shells", 0, 1))?;
     region_shells.push(shell_id);
     ir.model.regions.push(Region {
-        id: copy_typed_id(ctx, region_id.as_str(), "nx point region identity copy")?,
-        body: copy_typed_id(ctx, body_id.as_str(), "nx point region body identity")?,
+        id: region_id.try_clone_for_decode(ctx, "nx point region identity copy")?,
+        body: body_id.try_clone_for_decode(ctx, "nx point region body identity")?,
         shells: region_shells,
     });
     ctx.charge_collection_items(1, "nx point topology bodies")?;
@@ -2670,8 +2630,8 @@ where
 {
     ctx.charge_collection_items(1, "nx body classification relations")?;
     map.insert(
-        copy_typed_id(ctx, key, "nx body classification relation identity")?,
-        copy_typed_id(ctx, body.as_str(), "nx body classification owner identity")?,
+        K::try_from(ctx.copy_retained_text(key, "nx body classification relation identity")?).map_err(CodecError::malformed)?,
+        body.try_clone_for_decode(ctx, "nx body classification owner identity")?,
     );
     Ok(())
 }
@@ -2713,11 +2673,7 @@ fn classify_body_kinds(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
         if !edge_uses.contains_key(body) {
             ctx.charge_collection_items(1, "nx body classification edge owners")?;
             edge_uses.insert(
-                copy_typed_id(
-                    ctx,
-                    body.as_str(),
-                    "nx body classification edge owner identity",
-                )?,
+                body.try_clone_for_decode(ctx, "nx body classification edge owner identity")?,
                 BTreeMap::new(),
             );
         }
@@ -2729,11 +2685,7 @@ fn classify_body_kinds(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
         if !edges.contains_key(&coedge.edge) {
             ctx.charge_collection_items(1, "nx body classification edge uses")?;
             edges.insert(
-                copy_typed_id(
-                    ctx,
-                    coedge.edge.as_str(),
-                    "nx body classification edge identity",
-                )?,
+                coedge.edge.try_clone_for_decode(ctx, "nx body classification edge identity")?,
                 0,
             );
         }

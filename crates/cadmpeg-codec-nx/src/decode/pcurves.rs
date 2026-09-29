@@ -24,7 +24,6 @@ use super::support_uv::{
     blend_spine_cache_fit_tolerance_with_index, linear_knots,
     parameterization_equivalent_surfaces_with_index, pcurve_requires_completion,
 };
-use crate::decode::ids::copy_typed_id;
 use crate::framing::node_kind::NodeKind;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
@@ -142,7 +141,7 @@ fn vertex_point_positions(
         };
         ctx.charge_collection_items(1, "nx pcurve vertex position index")?;
         vertices.insert(
-            copy_typed_id(ctx, vertex.id.as_str(), "nx pcurve vertex identity")?,
+            vertex.id.try_clone_for_decode(ctx, "nx pcurve vertex identity")?,
             position,
         );
     }
@@ -160,11 +159,7 @@ fn edge_indices_by_curve(
         };
         ctx.charge_collection_items(1, "nx pcurve edge curve index")?;
         let group = indices
-            .entry(copy_typed_id(
-                ctx,
-                curve.as_str(),
-                "nx pcurve edge curve identity",
-            )?)
+            .entry(curve.try_clone_for_decode(ctx, "nx pcurve edge curve identity")?)
             .or_insert_with(Vec::new);
         ctx.charge_collection_items(1, "nx pcurve edge indices")?;
         group
@@ -206,15 +201,15 @@ impl IntersectionIncidenceIndex {
         for loop_ in ir.model.loops.iter().skip(starts.loops) {
             ctx.charge_collection_items(1, "nx incidence loop faces")?;
             self.loop_faces.insert(
-                copy_typed_id(ctx, loop_.id.as_str(), "nx incidence loop identity")?,
-                copy_typed_id(ctx, loop_.face.as_str(), "nx incidence face identity")?,
+                loop_.id.try_clone_for_decode(ctx, "nx incidence loop identity")?,
+                loop_.face.try_clone_for_decode(ctx, "nx incidence face identity")?,
             );
         }
         for face in ir.model.faces.iter().skip(starts.faces) {
             ctx.charge_collection_items(1, "nx incidence face surfaces")?;
             self.face_surfaces.insert(
-                copy_typed_id(ctx, face.id.as_str(), "nx incidence face identity")?,
-                copy_typed_id(ctx, face.surface.as_str(), "nx incidence surface identity")?,
+                face.id.try_clone_for_decode(ctx, "nx incidence face identity")?,
+                face.surface.try_clone_for_decode(ctx, "nx incidence surface identity")?,
             );
         }
         for edge in ir.model.edges.iter().skip(starts.edges) {
@@ -223,8 +218,8 @@ impl IntersectionIncidenceIndex {
             };
             ctx.charge_collection_items(1, "nx incidence edge curves")?;
             self.edge_curves.insert(
-                copy_typed_id(ctx, edge.id.as_str(), "nx incidence edge identity")?,
-                copy_typed_id(ctx, curve.as_str(), "nx incidence curve identity")?,
+                edge.id.try_clone_for_decode(ctx, "nx incidence edge identity")?,
+                curve.try_clone_for_decode(ctx, "nx incidence curve identity")?,
             );
         }
         self.index_new_pcurves(ctx, ir, starts.pcurves)?;
@@ -243,11 +238,7 @@ impl IntersectionIncidenceIndex {
             ctx.charge_collection_items(1, "nx incidence procedural owners")?;
             let indices = self
                 .procedural_by_curve
-                .entry(copy_typed_id(
-                    ctx,
-                    owner.as_str(),
-                    "nx incidence owner identity",
-                )?)
+                .entry(owner.try_clone_for_decode(ctx, "nx incidence owner identity")?)
                 .or_default();
             ctx.charge_collection_items(1, "nx incidence procedural indices")?;
             indices
@@ -255,11 +246,7 @@ impl IntersectionIncidenceIndex {
                 .map_err(|_| ctx.refuse_codec_limit("nx incidence procedural indices", 0, 1))?;
             indices.push(index);
             ctx.charge_collection_items(1, "nx affected incidence curves")?;
-            affected_curves.insert(copy_typed_id(
-                ctx,
-                owner.as_str(),
-                "nx affected curve identity",
-            )?);
+            affected_curves.insert(owner.try_clone_for_decode(ctx, "nx affected curve identity")?);
         }
         for coedge in ir.model.coedges.iter().skip(starts.coedges) {
             let Some(curve) = self.edge_curves.get(&coedge.edge) else {
@@ -275,29 +262,21 @@ impl IntersectionIncidenceIndex {
             ctx.charge_collection_items(1, "nx incident surface owners")?;
             let surfaces = self
                 .incident_surfaces
-                .entry(copy_typed_id(
-                    ctx,
-                    curve.as_str(),
-                    "nx incident curve identity",
-                )?)
+                .entry(curve.try_clone_for_decode(ctx, "nx incident curve identity")?)
                 .or_default();
             if !surfaces.contains(surface) {
                 ctx.charge_collection_items(1, "nx incident surfaces")?;
                 surfaces
                     .try_reserve(1)
                     .map_err(|_| ctx.refuse_codec_limit("nx incident surfaces", 0, 1))?;
-                surfaces.push(copy_typed_id(
-                    ctx,
-                    surface.as_str(),
-                    "nx incident surface identity",
-                )?);
+                surfaces.push(surface.try_clone_for_decode(ctx, "nx incident surface identity")?);
             }
             ctx.charge_collection_items(1, "nx incident pcurve owners")?;
             let pcurves = self
                 .incident_pcurves
                 .entry((
-                    copy_typed_id(ctx, curve.as_str(), "nx pcurve curve identity")?,
-                    copy_typed_id(ctx, surface.as_str(), "nx pcurve surface identity")?,
+                    curve.try_clone_for_decode(ctx, "nx pcurve curve identity")?,
+                    surface.try_clone_for_decode(ctx, "nx pcurve surface identity")?,
                 ))
                 .or_default();
             for pcurve in &coedge.pcurves {
@@ -306,19 +285,11 @@ impl IntersectionIncidenceIndex {
                     pcurves
                         .try_reserve(1)
                         .map_err(|_| ctx.refuse_codec_limit("nx incident pcurves", 0, 1))?;
-                    pcurves.push(copy_typed_id(
-                        ctx,
-                        pcurve.pcurve.as_str(),
-                        "nx incident pcurve identity",
-                    )?);
+                    pcurves.push(pcurve.pcurve.try_clone_for_decode(ctx, "nx incident pcurve identity")?);
                 }
             }
             ctx.charge_collection_items(1, "nx affected incidence curves")?;
-            affected_curves.insert(copy_typed_id(
-                ctx,
-                curve.as_str(),
-                "nx affected curve identity",
-            )?);
+            affected_curves.insert(curve.try_clone_for_decode(ctx, "nx affected curve identity")?);
         }
         Ok(affected_curves)
     }
@@ -332,11 +303,7 @@ impl IntersectionIncidenceIndex {
         for (index, pcurve) in ir.model.pcurves.iter().enumerate().skip(start) {
             ctx.charge_collection_items(1, "nx incidence pcurve index")?;
             self.pcurves_by_id
-                .entry(copy_typed_id(
-                    ctx,
-                    pcurve.id.as_str(),
-                    "nx incidence pcurve identity",
-                )?)
+                .entry(pcurve.id.try_clone_for_decode(ctx, "nx incidence pcurve identity")?)
                 .or_insert(index);
         }
         Ok(())
@@ -386,11 +353,7 @@ impl IntersectionIncidenceIndex {
                 }
                 context.set_surface(
                     missing[0],
-                    Some(copy_typed_id(
-                        ctx,
-                        surface.as_str(),
-                        "nx completed support identity",
-                    )?),
+                    Some(surface.try_clone_for_decode(ctx, "nx completed support identity")?),
                 );
             }
         }
@@ -426,8 +389,8 @@ impl IntersectionIncidenceIndex {
                     let Some([pcurve]) = self
                         .incident_pcurves
                         .get(&(
-                            copy_typed_id(ctx, curve.as_str(), "nx completion curve lookup")?,
-                            copy_typed_id(ctx, surface.as_str(), "nx completion surface lookup")?,
+                            curve.try_clone_for_decode(ctx, "nx completion curve lookup")?,
+                            surface.try_clone_for_decode(ctx, "nx completion surface lookup")?,
                         ))
                         .map(Vec::as_slice)
                     else {
@@ -604,13 +567,9 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         };
         for use_ in &coedge.pcurves {
             let key = (
-                copy_typed_id(ctx, curve.as_str(), "nx serialized branch curve lookup")?,
-                copy_typed_id(ctx, surface.as_str(), "nx serialized branch surface lookup")?,
-                copy_typed_id(
-                    ctx,
-                    use_.pcurve.as_str(),
-                    "nx serialized branch pcurve lookup",
-                )?,
+                curve.try_clone_for_decode(ctx, "nx serialized branch curve lookup")?,
+                surface.try_clone_for_decode(ctx, "nx serialized branch surface lookup")?,
+                use_.pcurve.try_clone_for_decode(ctx, "nx serialized branch pcurve lookup")?,
             );
             if !serialized.contains(&key) {
                 continue;
@@ -618,12 +577,12 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             ctx.charge_collection_items(1, "nx serialized branch incidence")?;
             let candidates = incident
                 .entry((
-                    copy_typed_id(ctx, curve.as_str(), "nx branch incidence curve")?,
-                    copy_typed_id(ctx, surface.as_str(), "nx branch incidence surface")?,
+                    curve.try_clone_for_decode(ctx, "nx branch incidence curve")?,
+                    surface.try_clone_for_decode(ctx, "nx branch incidence surface")?,
                 ))
                 .or_default();
             let candidate = (
-                copy_typed_id(ctx, use_.pcurve.as_str(), "nx branch candidate pcurve")?,
+                use_.pcurve.try_clone_for_decode(ctx, "nx branch candidate pcurve")?,
                 use_.parameter_range
                     .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
             );
@@ -644,11 +603,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
             ctx.charge_collection_items(1, "nx serialized branch pcurve index")?;
             pcurves_by_id
-                .entry(copy_typed_id(
-                    ctx,
-                    pcurve.id.as_str(),
-                    "nx branch pcurve identity",
-                )?)
+                .entry(pcurve.id.try_clone_for_decode(ctx, "nx branch pcurve identity")?)
                 .or_insert(index);
         }
         let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
@@ -702,8 +657,8 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             };
             let lookup = |support: &SurfaceId| -> Result<_, cadmpeg_core::CodecError> {
                 let key = (
-                    copy_typed_id(ctx, owner.as_str(), "nx branch owner lookup")?,
-                    copy_typed_id(ctx, support.as_str(), "nx branch support lookup")?,
+                    owner.try_clone_for_decode(ctx, "nx branch owner lookup")?,
+                    support.try_clone_for_decode(ctx, "nx branch support lookup")?,
                 );
                 Ok(incident.get(&key).map(Vec::as_slice))
             };
@@ -789,8 +744,8 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                     ctx.refuse_codec_limit("nx serialized branch replacements", 0, 1)
                 })?;
                 replacements.push((
-                    copy_typed_id(ctx, procedural.id.as_str(), "nx branch procedural identity")?,
-                    copy_typed_id(ctx, edge.id.as_str(), "nx branch edge identity")?,
+                    procedural.id.try_clone_for_decode(ctx, "nx branch procedural identity")?,
+                    edge.id.try_clone_for_decode(ctx, "nx branch edge identity")?,
                     edge_reversed,
                     parameterization,
                 ));
@@ -1403,11 +1358,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         };
         ctx.charge_collection_items(1, "nx opposite chart edge tolerances")?;
         edge_tolerances
-            .entry(copy_typed_id(
-                ctx,
-                curve.as_str(),
-                "nx opposite chart curve identity",
-            )?)
+            .entry(curve.try_clone_for_decode(ctx, "nx opposite chart curve identity")?)
             .and_modify(|current| *current = current.min(tolerance))
             .or_insert(tolerance);
     }
@@ -1699,11 +1650,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     for (index, procedural) in ir.model.procedural_curves.iter().enumerate() {
         ctx.charge_collection_items(1, "nx exact boundary procedural index")?;
         procedural_indices
-            .entry(copy_typed_id(
-                ctx,
-                procedural.id.as_str(),
-                "nx exact boundary procedural identity",
-            )?)
+            .entry(procedural.id.try_clone_for_decode(ctx, "nx exact boundary procedural identity")?)
             .or_insert(index);
     }
     let mut blend_parameter_grids = BlendParameterGridCache::new();
@@ -1902,15 +1849,11 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("nx exact boundary replacements", 0, 1))?;
         replacements.push((
-            copy_typed_id(
-                ctx,
-                procedural.id.as_str(),
-                "nx exact boundary procedural identity",
-            )?,
+            procedural.id.try_clone_for_decode(ctx, "nx exact boundary procedural identity")?,
             pcurves,
             fit_tolerance,
             curve_is_cache_backed_with_index(&model_index, owner),
-            copy_typed_id(ctx, owner.as_str(), "nx exact boundary owner identity")?,
+            owner.try_clone_for_decode(ctx, "nx exact boundary owner identity")?,
             range,
         ));
     }
@@ -4334,18 +4277,10 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                 .map_err(|_| ctx.refuse_codec_limit("nx tolerant edge candidates", 0, 1))?;
             candidates.push((
                 xmt,
-                copy_typed_id(ctx, edge_id.as_str(), "nx tolerant edge candidate identity")?,
+                edge_id.try_clone_for_decode(ctx, "nx tolerant edge candidate identity")?,
                 [
-                    copy_typed_id(
-                        ctx,
-                        supports[0].as_str(),
-                        "nx tolerant first support identity",
-                    )?,
-                    copy_typed_id(
-                        ctx,
-                        supports[1].as_str(),
-                        "nx tolerant second support identity",
-                    )?,
+                    supports[0].try_clone_for_decode(ctx, "nx tolerant first support identity")?,
+                    supports[1].try_clone_for_decode(ctx, "nx tolerant second support identity")?,
                 ],
                 endpoints,
                 tolerance,
@@ -4370,11 +4305,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             xmt,
         )?;
         let procedural = ProceduralCurve::new(
-            copy_typed_id(
-                ctx,
-                procedural_id.as_str(),
-                "nx tolerant procedural identity",
-            )?,
+            procedural_id.try_clone_for_decode(ctx, "nx tolerant procedural identity")?,
             ProceduralCurveDefinition::TolerantIntersection {
                 construction: admitted_intersection,
                 parameterization: None,
@@ -4389,11 +4320,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         else {
             continue;
         };
-        edge.set_curve(Some(copy_typed_id(
-            ctx,
-            curve_id.as_str(),
-            "nx tolerant edge curve identity",
-        )?))
+        edge.set_curve(Some(curve_id.try_clone_for_decode(ctx, "nx tolerant edge curve identity")?))
         .map_err(cadmpeg_core::CodecError::malformed)?;
         charge_derived_field(ctx, edge_id.as_str(), "curve")?;
         annotations
@@ -4423,13 +4350,9 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("nx tolerant edge curves", 0, 1))?;
         ir.model.curves.push(Curve {
-            id: copy_typed_id(ctx, curve_id.as_str(), "nx tolerant carrier identity")?,
+            id: curve_id.try_clone_for_decode(ctx, "nx tolerant carrier identity")?,
             geometry: CurveGeometry::Procedural {
-                construction: copy_typed_id(
-                    ctx,
-                    procedural_id.as_str(),
-                    "nx tolerant construction identity",
-                )?,
+                construction: procedural_id.try_clone_for_decode(ctx, "nx tolerant construction identity")?,
                 cache: None,
             },
             source_object: None,

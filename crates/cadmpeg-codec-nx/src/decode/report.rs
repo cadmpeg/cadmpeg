@@ -431,11 +431,7 @@ pub(crate) fn append_design_intent_losses(
         .try_reserve_exact(ir.model.bodies.len())
         .map_err(|_| ctx.refuse_codec_limit("nx report current body identities", 0, count))?;
     for body in &ir.model.bodies {
-        current_body_ids.push(crate::decode::ids::copy_typed_id(
-            ctx,
-            body.id.as_str(),
-            "nx report current body identity",
-        )?);
+        current_body_ids.push(body.id.try_clone_for_decode(ctx, "nx report current body identity")?);
     }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
     let (active_features, closure_rejection) =
@@ -980,11 +976,7 @@ pub(crate) fn append_design_intent_losses(
         }) = feature.evaluation.definition()
         {
             ctx.charge_collection_items(1, "nx report active sketch identities")?;
-            active_sketch_ids.insert(crate::decode::ids::copy_typed_id(
-                ctx,
-                sketch.as_str(),
-                "nx report active sketch identity",
-            )?);
+            active_sketch_ids.insert(sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?);
         }
     }
     let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {

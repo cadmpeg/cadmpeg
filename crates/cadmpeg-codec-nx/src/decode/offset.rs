@@ -8,7 +8,6 @@ use super::blend::{
 use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
-use super::ids::copy_typed_id;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
 use crate::topology::{Graph, Node};
@@ -170,7 +169,7 @@ pub(super) fn saved_offset_carriers(
             result.insert(
                 offset,
                 (
-                    copy_typed_id(ctx, candidate.as_str(), "nx saved offset surface identity")?,
+                    candidate.try_clone_for_decode(ctx, "nx saved offset surface identity")?,
                     *fit,
                 ),
             );
@@ -2581,11 +2580,7 @@ pub(super) fn intersection_side(
     let surface = surface_xmt
         .and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)))
         .map(|surface| {
-            crate::decode::ids::copy_typed_id(
-                ctx,
-                surface.as_str(),
-                "nx intersection support identity",
-            )
+            surface.try_clone_for_decode(ctx, "nx intersection support identity")
         })
         .transpose()?;
     let lanes = if let (Some(surface_id), Some((uv, parameters))) = (&surface, uv) {

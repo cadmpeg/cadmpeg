@@ -36,55 +36,8 @@ pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 /// certificates earned within the same accounting scope.
 pub(super) struct GeometryWorkBudget<'a> {
     work: WorkBudget<'a>,
-    charges: Option<&'a dyn ScratchCharges>,
+    pub(super) charges: Option<&'a DecodeContext<'a>>,
     blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
-}
-
-trait ScratchCharges {
-    fn charge_items(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit>;
-    fn copy_retained_text(
-        &self,
-        text: &str,
-        operation: &'static str,
-    ) -> Result<String, ResourceLimit>;
-    fn resource_refusal(&self) -> Option<ResourceLimit>;
-    fn fuse_local_work(&self, limit: u64);
-    fn reserve_bytes(
-        &self,
-        bytes: u64,
-        operation: &'static str,
-    ) -> Result<ScopedReservation<'_>, ResourceLimit>;
-}
-
-impl ScratchCharges for DecodeContext<'_> {
-    fn charge_items(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit> {
-        self.charge_collection_items_limit(count, operation)
-    }
-
-    fn copy_retained_text(
-        &self,
-        text: &str,
-        operation: &'static str,
-    ) -> Result<String, ResourceLimit> {
-        self.copy_retained_text_limit(text, operation)
-    }
-
-    fn resource_refusal(&self) -> Option<ResourceLimit> {
-        DecodeContext::resource_refusal(self)
-    }
-
-    fn fuse_local_work(&self, limit: u64) {
-        let additional = limit + u64::from(limit != u64::MAX);
-        drop(self.refuse_codec_limit("nx adaptive geometry work", limit, additional));
-    }
-
-    fn reserve_bytes(
-        &self,
-        bytes: u64,
-        operation: &'static str,
-    ) -> Result<ScopedReservation<'_>, ResourceLimit> {
-        self.reserve_scoped_limit(bytes, operation)
-    }
 }
 
 impl<'a> GeometryWorkBudget<'a> {
@@ -132,8 +85,8 @@ impl<'a> GeometryWorkBudget<'a> {
         let item_bytes = u64::try_from(std::mem::size_of::<T>()).map_err(|_| invalid_size())?;
         let bytes = count_u64.checked_mul(item_bytes).ok_or_else(invalid_size)?;
         let reservation = if let Some(charges) = self.charges {
-            charges.charge_items(count_u64, operation)?;
-            Some(charges.reserve_bytes(bytes, operation)?)
+            charges.charge_collection_items_limit(count_u64, operation)?;
+            Some(charges.reserve_scoped_limit(bytes, operation)?)
         } else {
             None
         };
@@ -154,31 +107,9 @@ impl<'a> GeometryWorkBudget<'a> {
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
         if let Some(charges) = self.charges {
-            charges.charge_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
+            charges.charge_collection_items_limit(cadmpeg_core::decode::u64_from_index(count), operation)?;
         }
         Ok(())
-    }
-
-    pub(super) fn copy_retained_text(
-        &self,
-        text: &str,
-        operation: &'static str,
-    ) -> Result<String, ResourceLimit> {
-        if let Some(charges) = self.charges {
-            return charges.copy_retained_text(text, operation);
-        }
-        let mut copy = String::new();
-        copy.try_reserve_exact(text.len())
-            .map_err(|_| ResourceLimit {
-                dimension: ResourceDimension::Codec(operation),
-                reason: ResourceFailure::AllocationFailed,
-                limit: cadmpeg_core::decode::u64_from_index(text.len()),
-                used: 0,
-                additional: cadmpeg_core::decode::u64_from_index(text.len()),
-                operation,
-            })?;
-        copy.push_str(text);
-        Ok(copy)
     }
 
     pub(super) fn resource_refusal(&self) -> Option<ResourceLimit> {
@@ -188,7 +119,8 @@ impl<'a> GeometryWorkBudget<'a> {
         }
         if self.work.exhausted() {
             let limit = cadmpeg_core::decode::u64_from_index(self.work.consumed());
-            charges.fuse_local_work(limit);
+            let additional = limit + u64::from(limit != u64::MAX);
+            drop(charges.refuse_codec_limit("nx adaptive geometry work", limit, additional));
         }
         charges.resource_refusal()
     }

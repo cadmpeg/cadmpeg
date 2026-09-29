@@ -1474,8 +1474,7 @@ impl BlendSurfaceFrameCache {
             entry.frame = frame;
             return Ok(());
         }
-        let surface = geometry_budget
-            .copy_retained_text(surface.as_str(), "nx blend frame cache identity")?;
+        let surface = match geometry_budget.charges { Some(ctx) => ctx.copy_retained_text_limit(surface.as_str(), "nx blend frame cache identity"), None => Ok(surface.as_str().to_owned()) }?;
         geometry_budget.charge_collection_items(1, "nx blend frame cache entries")?;
         if self.entries.len() == MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
             self.entries.pop_front();
@@ -1521,8 +1520,7 @@ impl BlendSurfaceFrameCache {
             entry.point = point;
             return Ok(());
         }
-        let surface = geometry_budget
-            .copy_retained_text(surface.as_str(), "nx blend boundary cache identity")?;
+        let surface = match geometry_budget.charges { Some(ctx) => ctx.copy_retained_text_limit(surface.as_str(), "nx blend boundary cache identity"), None => Ok(surface.as_str().to_owned()) }?;
         geometry_budget.charge_collection_items(1, "nx blend boundary cache entries")?;
         if self.boundary_points.len() == MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
             self.boundary_points.pop_front();
@@ -3699,21 +3697,18 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             return None;
         };
         let contact_seed = BlendContactSeed {
-            support: match geometry_budget
-                .copy_retained_text(support.as_str(), "nx blend contact support identity")
+            support: match match geometry_budget.charges { Some(ctx) => ctx.copy_retained_text_limit(support.as_str(), "nx blend contact support identity"), None => Ok(support.as_str().to_owned()) }
             {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
             },
-            spine: match geometry_budget
-                .copy_retained_text(spine.as_str(), "nx blend contact spine identity")
+            spine: match match geometry_budget.charges { Some(ctx) => ctx.copy_retained_text_limit(spine.as_str(), "nx blend contact spine identity"), None => Ok(spine.as_str().to_owned()) }
             {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
             },
             parameter,
-            offset_surface: match geometry_budget
-                .copy_retained_text(offset_surface.as_str(), "nx blend contact offset identity")
+            offset_surface: match match geometry_budget.charges { Some(ctx) => ctx.copy_retained_text_limit(offset_surface.as_str(), "nx blend contact offset identity"), None => Ok(offset_surface.as_str().to_owned()) }
             {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
