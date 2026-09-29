@@ -169,14 +169,14 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
             data_block: block.map(str::to_string),
             source_offset: 200 + u64::from(ordinal),
         };
-    let uses = feature_sketch_named_point_block_uses(
+    let uses = crate::test_support::with_decode_context(|ctx| feature_sketch_named_point_block_uses(ctx,
         &[
             reference("miss", 0, 2, Some("block-9")),
             reference("hit", 1, 2, Some("block-11")),
             reference("unresolved", 2, 3, None),
         ],
         &[point],
-    );
+    )).unwrap();
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].sketch_reference, "hit");
     assert_eq!(uses[0].reference_ordinal, 1);
