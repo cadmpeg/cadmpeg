@@ -41,6 +41,7 @@ pub(crate) enum SatLossCode {
 
 impl SatLossCode {
     /// Every code, in declaration order.
+    #[cfg(test)]
     const ALL: &'static [SatLossCode] = &[
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,

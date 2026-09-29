@@ -325,7 +325,11 @@ pub(super) fn persist_decode_sidecar(
         }
         | LoadOrigin::Restored { report, fidelity } => {
             let sidecar =
-                DecodeSidecar::bind_sha256(cadir_sha256.clone(), report.clone(), fidelity.clone());
+                DecodeSidecar::bind_sha256(
+                    cadir_sha256.clone(),
+                    report.clone(),
+                    fidelity.as_ref().clone(),
+                );
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();
             bytes.push(b'\n');
             write_bytes_atomic(&path, &bytes)?;

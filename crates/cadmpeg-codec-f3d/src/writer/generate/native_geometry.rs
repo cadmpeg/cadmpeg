@@ -5448,7 +5448,7 @@ pub(crate) fn native_procedural_curve(
                 }
             }
         }
-        match first_pcurve {
+        match first_pcurve.as_ref() {
             cadmpeg_ir::geometry::SpringPcurve::Pcurve(pcurve) => {
                 native_spring_pcurve(bytes, target, &supports[0], pcurve)?;
             }
@@ -5984,7 +5984,7 @@ mod pcurve_chart_tests {
                 let SpringLayout::ContextFirst { first_pcurve, .. } = &mut layout else {
                     panic!("fixture must retain its context-first spring layout");
                 };
-                *first_pcurve = SpringPcurve::Pcurve(PcurveGeometry::Line(
+                **first_pcurve = SpringPcurve::Pcurve(PcurveGeometry::Line(
                     LinePcurve::try_new(Point2::new(origin, 0.0), Point2::new(direction, 0.0))
                         .expect("finite nonzero line parameters"),
                 ));
