@@ -4497,13 +4497,7 @@ fn attach_standard_faces(
         .and_then(|text| ShellId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
     let mut face_ids = Vec::new();
     for (face_index, (surface, forward, offset)) in bindings.iter().enumerate() {
-        let face_id = FaceId::mint(crate::resource::format_usize_id(
-            ctx,
-            "catia:standard:face#",
-            face_index,
-            1,
-            "catia_standard_face_id",
-        )?)
+        let face_id = FaceId::mint(ctx.format_retained(format_args!("catia:standard:face#{:01}", face_index), "catia_standard_face_id")?)
         .map_err(CodecError::malformed)?;
         annotate(
             ctx,
@@ -4670,13 +4664,7 @@ fn partition_standard_face_components(
     };
     let mut region_ids = Vec::new();
     for component in 0..components.len() {
-        let id = RegionId::mint(crate::resource::format_usize_id(
-            ctx,
-            "catia:standard:region#0-",
-            component,
-            1,
-            "catia_standard_partition_region_id",
-        )?)
+        let id = RegionId::mint(ctx.format_retained(format_args!("catia:standard:region#0-{:01}", component), "catia_standard_partition_region_id")?)
         .map_err(CodecError::malformed)?;
         ctx.push_vec(&mut region_ids, id, "catia_standard_partition_region_ids")?;
     }
@@ -4700,23 +4688,11 @@ fn partition_standard_face_components(
     for (component, faces) in components.iter().enumerate() {
         let region_id = region_ids[component]
             .try_clone_for_decode(ctx, "catia_standard_partition_region_copy")?;
-        let shell_id = ShellId::mint(crate::resource::format_usize_id(
-            ctx,
-            "catia:standard:shell#0-",
-            component,
-            1,
-            "catia_standard_partition_shell_id",
-        )?)
+        let shell_id = ShellId::mint(ctx.format_retained(format_args!("catia:standard:shell#0-{:01}", component), "catia_standard_partition_shell_id")?)
         .map_err(CodecError::malformed)?;
         let mut face_ids = Vec::new();
         for &face in faces {
-            let id = FaceId::mint(crate::resource::format_usize_id(
-                ctx,
-                "catia:standard:face#",
-                face,
-                1,
-                "catia_standard_partition_face_id",
-            )?)
+            let id = FaceId::mint(ctx.format_retained(format_args!("catia:standard:face#{:01}", face), "catia_standard_partition_face_id")?)
             .map_err(CodecError::malformed)?;
             ctx.push_vec(&mut face_ids, id, "catia_standard_partition_face_ids")?;
         }

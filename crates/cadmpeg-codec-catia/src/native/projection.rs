@@ -264,7 +264,7 @@ pub(crate) fn consolidated_owner_packets(
                 .map(Box::new);
         }
         output.push(CatiaConsolidatedOwnerPacket {
-                id: crate::resource::format_usize_id(ctx, "catia:consolidated:owner-packet#", pos, 10, "catia_native_owner_packet_id")?,
+                id: ctx.format_retained(format_args!("catia:consolidated:owner-packet#{:010}", pos), "catia_native_owner_packet_id")?,
                 byte_offset: u64_from_index(pos),
                 source_index,
                 header_token,
@@ -370,13 +370,7 @@ pub(crate) fn consolidated_edge_runs(
             })
             .transpose()?;
         let value = CatiaConsolidatedEdgeRun {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:edge-run#",
-                index,
-                1,
-                "catia_native_edge_run_id",
-            )?,
+            id: ctx.format_retained(format_args!("catia:consolidated:edge-run#{:01}", index), "catia_native_edge_run_id")?,
             byte_offset: pcurve_offsets[0],
             pcurves: [
                 ctx.copy_retained_text(first, "catia_native_edge_run_first_pcurve_id")?,
@@ -518,13 +512,7 @@ pub(crate) fn consolidated_edge_nodes(
             .get(&node.pos)
             .map(|(pos, ordinal)| {
                 Ok::<_, CodecError>((
-                    crate::resource::format_usize_id(
-                        ctx,
-                        "catia:consolidated:owner-packet#",
-                        *pos,
-                        10,
-                        "catia_native_edge_owner_id",
-                    )?,
+                    ctx.format_retained(format_args!("catia:consolidated:owner-packet#{:010}", *pos), "catia_native_edge_owner_id")?,
                     *ordinal,
                 ))
             })
@@ -534,13 +522,7 @@ pub(crate) fn consolidated_edge_nodes(
             None => (None, None),
         };
         output.push(CatiaConsolidatedEdgeNode {
-            id: crate::resource::format_usize_id(
-                ctx,
-                "catia:consolidated:edge-node#",
-                index,
-                1,
-                "catia_native_edge_node_id",
-            )?,
+            id: ctx.format_retained(format_args!("catia:consolidated:edge-node#{:01}", index), "catia_native_edge_node_id")?,
             byte_offset: u64_from_index(node.pos),
             source_index,
             width,
