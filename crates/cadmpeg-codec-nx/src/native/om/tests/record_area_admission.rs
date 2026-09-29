@@ -5,7 +5,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 fn record_area_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
-    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_om_record_area_payload())]);
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_om_record_area_payload())]);
     let scan_arena = DecodeArena::new();
     let scan_policy = DecodePolicy::service();
     let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();

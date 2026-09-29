@@ -30,17 +30,26 @@ fn part_attribute_attachment_preserves_value() {
         panic!("one attached part attribute");
     };
     assert_eq!(attribute.name.as_str(), "Title");
-    assert_eq!(attribute.values.as_slice(), [cadmpeg_ir::attributes::AttributeValue::String("Value".into())]);
+    assert_eq!(
+        attribute.values.as_slice(),
+        [cadmpeg_ir::attributes::AttributeValue::String(
+            "Value".into()
+        )]
+    );
 }
 
 #[test]
 fn part_attribute_attachment_refuses_collection_limit() {
     let error = attach_one_attribute(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn part_attribute_attachment_refuses_retained_limit() {
     let error = attach_one_attribute(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+    );
 }

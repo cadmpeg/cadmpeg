@@ -6,26 +6,35 @@ use crate::native::features::feature_datum_csys_payloads;
 use crate::native::features::feature_datum_plane_payloads;
 
 #[derive(Clone, Copy)]
-enum DatumPayloadRoute { Csys, Plane }
+enum DatumPayloadRoute {
+    Csys,
+    Plane,
+}
 
 fn datum_payload_refusal(
     route: DatumPayloadRoute,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(ctx,
-            crate::test_support::test_prt::composed_feature_history_prt())
-    }).expect("composed feature-history container");
+        crate::container::scan_bytes(
+            ctx,
+            crate::test_support::test_prt::composed_feature_history_prt(),
+        )
+    })
+    .expect("composed feature-history container");
     let (constructions, headers) = crate::test_support::with_decode_context(|ctx| {
-        Ok::<_, cadmpeg_core::CodecError>((feature_datum_csys_constructions(ctx, &container)?,
-            feature_datum_plane_headers(ctx, &container)?))
-    }).expect("datum construction inputs");
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        match route {
-            DatumPayloadRoute::Csys =>
-                feature_datum_csys_payloads(ctx, &container, &constructions).map(|rows| rows.len()),
-            DatumPayloadRoute::Plane =>
-                feature_datum_plane_payloads(ctx, &container, &headers).map(|rows| rows.len()),
+        Ok::<_, cadmpeg_core::CodecError>((
+            feature_datum_csys_constructions(ctx, &container)?,
+            feature_datum_plane_headers(ctx, &container)?,
+        ))
+    })
+    .expect("datum construction inputs");
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
+        DatumPayloadRoute::Csys => {
+            feature_datum_csys_payloads(ctx, &container, &constructions).map(|rows| rows.len())
+        }
+        DatumPayloadRoute::Plane => {
+            feature_datum_plane_payloads(ctx, &container, &headers).map(|rows| rows.len())
         }
     };
     let admitted = crate::test_support::with_decode_context(|ctx| decode(ctx))

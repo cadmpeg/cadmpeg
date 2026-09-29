@@ -102,8 +102,15 @@ impl DeleteReferences<()> {
         Ok(DeleteReferences::new(
             offset,
             self.control,
-            [map_slot(first)?, map_slot(second)?, map_slot(third)?, map_slot(fourth)?, map_slot(fifth)?],
-        ).ok())
+            [
+                map_slot(first)?,
+                map_slot(second)?,
+                map_slot(third)?,
+                map_slot(fourth)?,
+                map_slot(fifth)?,
+            ],
+        )
+        .ok())
     }
 }
 
@@ -122,14 +129,19 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-            .expect("test decode context");
-        let error = field.resolve(0, |token| {
-            ctx.charge_collection_items(1, "NX DELETE target")?;
-            Ok(Some(token.value()))
-        }).err().expect("target resolution refusal");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("test decode context");
+        let error = field
+            .resolve(0, |token| {
+                ctx.charge_collection_items(1, "NX DELETE target")?;
+                Ok(Some(token.value()))
+            })
+            .expect_err("target resolution refusal");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
@@ -139,11 +151,20 @@ mod tests {
         ];
         let record = OperationPayload::new(&payload, 100, "DELETE").expect("test DELETE payload");
         let field = DeleteReferences::read(record).expect("complete DELETE field");
-        let resolved = field.resolve(20, |token| Ok::<_, cadmpeg_core::CodecError>(Some(token.value())))
-            .expect("target resolution").expect("valid relocated field");
+        let resolved = field
+            .resolve(20, |token| {
+                Ok::<_, cadmpeg_core::CodecError>(Some(token.value()))
+            })
+            .expect("target resolution")
+            .expect("valid relocated field");
         assert_eq!(resolved.offset(), 120);
         assert_eq!(resolved.reference_offsets(), [127, 129, 130, 133, 136]);
-        assert_eq!(resolved.slots().each_ref().map(|slot| slot.as_ref().map(|(_, value)| *value)),
-            [Some(Some(32)), None, Some(Some(520)), Some(Some(521)), None]);
+        assert_eq!(
+            resolved
+                .slots()
+                .each_ref()
+                .map(|slot| slot.as_ref().map(|(_, value)| *value)),
+            [Some(Some(32)), None, Some(Some(520)), Some(Some(521)), None]
+        );
     }
 }

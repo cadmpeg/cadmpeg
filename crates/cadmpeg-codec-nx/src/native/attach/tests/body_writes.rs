@@ -92,8 +92,10 @@ fn body_image_outputs_require_one_body_per_binding() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (outputs, _reservation) = operation_body_image_outputs_by_write(&ctx, &uses, &bodies).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (outputs, _reservation) =
+        operation_body_image_outputs_by_write(&ctx, &uses, &bodies).unwrap();
 
     assert_eq!(
         outputs.get("write-a"),
@@ -111,7 +113,8 @@ fn body_image_index_with_limit(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (outputs, _reservation) = operation_body_image_outputs_by_write(&ctx, &uses, &bodies)?;
     assert_eq!(outputs["write"], body);
     Ok(())
@@ -119,30 +122,39 @@ fn body_image_index_with_limit(
 
 #[test]
 fn body_image_index_refuses_collection_limit() {
-    let error = body_image_index_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    let error =
+        body_image_index_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn body_image_index_refuses_scoped_limit() {
-    let error = body_image_index_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    let error =
+        body_image_index_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
 }
 
 #[test]
 fn body_image_index_refuses_work_limit() {
     let error = body_image_index_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
 fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let write_a = native_body_write("write-a");
     let write_b = native_body_write("write-b");
     let writes = [&write_a, &write_b];
@@ -168,7 +180,11 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
         "write-a",
         BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
     )]);
-    assert!(complete_operation_body_image_outputs(&ctx, &writes, &partial).unwrap().is_empty());
+    assert!(
+        complete_operation_body_image_outputs(&ctx, &writes, &partial)
+            .unwrap()
+            .is_empty()
+    );
 
     let duplicate = BTreeMap::from([
         (
@@ -180,7 +196,11 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
             BodyId::mint("test:model:entity#body").expect("identity grammar"),
         ),
     ]);
-    assert!(complete_operation_body_image_outputs(&ctx, &writes, &duplicate).unwrap().is_empty());
+    assert!(
+        complete_operation_body_image_outputs(&ctx, &writes, &duplicate)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 fn complete_body_image_output_with_limit(
@@ -192,7 +212,8 @@ fn complete_body_image_output_with_limit(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let selected = complete_operation_body_image_outputs(&ctx, &[&write], &outputs)?;
     assert_eq!(selected, [body]);
     Ok(())
@@ -200,23 +221,34 @@ fn complete_body_image_output_with_limit(
 
 #[test]
 fn complete_body_image_output_refuses_collection_limit() {
-    let error = complete_body_image_output_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    let error =
+        complete_body_image_output_with_limit(|policy| policy.limits.max_collection_items = 0)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn complete_body_image_output_refuses_retained_limit() {
-    let error = complete_body_image_output_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    let error =
+        complete_body_image_output_with_limit(|policy| policy.limits.max_retained_bytes = 0)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]
 fn complete_body_image_output_refuses_work_limit() {
-    let error = complete_body_image_output_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    let error = complete_body_image_output_with_limit(|policy| policy.limits.max_work_units = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 fn native_boolean(
@@ -281,7 +313,10 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
     )]);
 
     crate::test_support::with_decode_context(|ctx| {
-        assert!(operation_body_image_outputs_by_write(ctx, &uses, &bodies).unwrap().0.is_empty());
+        assert!(operation_body_image_outputs_by_write(ctx, &uses, &bodies)
+            .unwrap()
+            .0
+            .is_empty());
     });
 }
 
@@ -307,8 +342,10 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (outputs, _reservation) = operation_body_identity_outputs_by_write(&ctx, &uses, &bodies).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (outputs, _reservation) =
+        operation_body_identity_outputs_by_write(&ctx, &uses, &bodies).unwrap();
 
     assert_eq!(
         outputs.get("write-a"),
@@ -321,8 +358,11 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
 fn conflicting_body_output_witnesses_remain_unresolved() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut reservation = ctx.reserve_scoped(0, "NX body image output indexes").unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut reservation = ctx
+        .reserve_scoped(0, "NX body image output indexes")
+        .unwrap();
     let mut outputs = BTreeMap::from([(
         "write",
         BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
@@ -338,7 +378,8 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
             "write",
             BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
         )]),
-    ).unwrap();
+    )
+    .unwrap();
     merge_operation_body_outputs(
         &ctx,
         &mut reservation,
@@ -348,7 +389,8 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
             "write",
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
         )]),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert!(!outputs.contains_key("write"));
     assert!(conflicts.contains("write"));
@@ -388,13 +430,15 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     let writes = [write_a, write_b];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (outputs, _reservation) = operation_body_group_partition_outputs_by_write(
         &ctx,
         &writes,
         &[use_],
         std::slice::from_ref(&body),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(outputs.get("write-a"), Some(&body.id));
     assert_eq!(outputs.get("write-b"), Some(&body.id));
@@ -452,7 +496,8 @@ fn direct_group_use(
 fn result_topology_uses_only_unique_current_group_members() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
     let members = [
         group_member("face", GroupNodeFamily::Face, Some(40)),
@@ -466,7 +511,8 @@ fn result_topology_uses_only_unique_current_group_members() {
         use_.partition_stream_ordinal,
         &use_.parasolid_group_members,
         &members,
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(result.faces, ["nx:s4:face#40"]);
     assert_eq!(result.edges, ["nx:s4:edge#41"]);
@@ -477,7 +523,8 @@ fn result_topology_uses_only_unique_current_group_members() {
         group_member("face", GroupNodeFamily::Face, Some(40)),
     ];
     assert!(
-        feature_result_group_members(&ctx, 4, &["face".into()], &duplicate_members).unwrap()
+        feature_result_group_members(&ctx, 4, &["face".into()], &duplicate_members)
+            .unwrap()
             .faces
             .is_empty()
     );
@@ -487,7 +534,8 @@ fn result_topology_uses_only_unique_current_group_members() {
 fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let members = [
         group_member("face", GroupNodeFamily::Face, Some(40)),
         group_member("edge", GroupNodeFamily::Edge, Some(41)),
@@ -501,20 +549,23 @@ fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
         std::slice::from_ref(&image),
         &[],
         &members,
-    ).unwrap();
+    )
+    .unwrap();
     let from_direct = operation_body_write_result_group_members(
         &ctx,
         "write",
         &[],
         std::slice::from_ref(&direct),
         &members,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(from_image.faces, ["nx:s4:face#40"]);
     assert_eq!(from_direct.faces, from_image.faces);
 
     let conflict = direct_group_use(&["edge"]);
     let rejected =
-        operation_body_write_result_group_members(&ctx, "write", &[image], &[conflict], &members).unwrap();
+        operation_body_write_result_group_members(&ctx, "write", &[image], &[conflict], &members)
+            .unwrap();
     assert!(rejected.faces.is_empty());
     assert!(rejected.edges.is_empty());
 }
@@ -525,7 +576,8 @@ fn result_group_with_limit(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let members = [group_member("face", GroupNodeFamily::Face, Some(40))];
     let uses = [group_use(&["face"])];
     let result = operation_body_write_result_group_members(&ctx, "write", &uses, &[], &members)?;
@@ -535,23 +587,30 @@ fn result_group_with_limit(
 
 #[test]
 fn result_group_refuses_collection_limit() {
-    let error = result_group_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    let error =
+        result_group_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn result_group_refuses_retained_limit() {
     let error = result_group_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]
 fn result_group_refuses_work_limit() {
     let error = result_group_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]

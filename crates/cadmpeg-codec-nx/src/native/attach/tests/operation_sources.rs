@@ -6,15 +6,25 @@ use std::collections::BTreeMap;
 fn operation_source_properties_require_unique_owned_structures() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let properties_for = |operation_label: &str,
-                          records: &[crate::native::features::operation_record::FeatureOperationRecord],
-                          common_frames: &[crate::native::features::FeatureOperationCommonFrame],
-                          terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame]| {
-        let mut properties = BTreeMap::new();
-        operation_source_properties(&ctx, &mut properties, operation_label, records, common_frames, terminal_frames).unwrap();
-        properties
-    };
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let properties_for =
+        |operation_label: &str,
+         records: &[crate::native::features::operation_record::FeatureOperationRecord],
+         common_frames: &[crate::native::features::FeatureOperationCommonFrame],
+         terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame]| {
+            let mut properties = BTreeMap::new();
+            operation_source_properties(
+                &ctx,
+                &mut properties,
+                operation_label,
+                records,
+                common_frames,
+                terminal_frames,
+            )
+            .unwrap();
+            properties
+        };
     let record = crate::native::features::operation_record::FeatureOperationRecord {
         id: "record".into(),
         operation_label: "operation".into(),

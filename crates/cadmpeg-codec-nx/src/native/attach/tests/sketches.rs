@@ -44,7 +44,8 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let sketch = super::super::attach_sketch_graph(
         &ctx,
         &mut ir,
@@ -60,7 +61,8 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         &mut annotations,
         &stream,
     )
-    .unwrap().expect("one complete coordinate pair retains a native sketch graph");
+    .unwrap()
+    .expect("one complete coordinate pair retains a native sketch graph");
 
     assert_eq!(ir.model.sketches[0].id, sketch);
     assert!(matches!(
@@ -110,7 +112,8 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let sketch = super::super::attach_sketch_graph(
         &ctx,
         &mut ir,
@@ -126,7 +129,8 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
         &mut annotations,
         &stream,
     )
-    .unwrap().expect("one complete fixed point retains a native sketch graph");
+    .unwrap()
+    .expect("one complete fixed point retains a native sketch graph");
 
     assert_eq!(ir.model.sketches[0].id, sketch);
     assert!(matches!(
@@ -152,14 +156,19 @@ fn fixed_point_sketch_with_limit(
 ) -> Result<Option<cadmpeg_ir::sketches::SketchId>, cadmpeg_core::CodecError> {
     let label = crate::native::features::FeatureOperationLabel {
         id: "nx:feature-history:operation-label#section-11".into(),
-        section_link: "section".into(), ordinal: 11, value: "SKETCH".into(),
+        section_link: "section".into(),
+        ordinal: 11,
+        value: "SKETCH".into(),
         objects: crate::om::header_references::HeaderReferences([None; 4]),
-        stable_identity: None, source_offset: 80,
+        stable_identity: None,
+        source_offset: 80,
     };
     let point = crate::native::features::FeatureSketchFixedPoint {
         id: "nx:feature-history:sketch-fixed-point#section-11-0000000000".into(),
-        operation_label: label.id.clone(), named_record: "named-record".into(),
-        name: "Point1".into(), fixed_pair: "fixed-pair".into(),
+        operation_label: label.id.clone(),
+        named_record: "named-record".into(),
+        name: "Point1".into(),
+        fixed_pair: "fixed-pair".into(),
         values: [0.25, -0.5].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
         source_offset: 91,
     };
@@ -171,39 +180,58 @@ fn fixed_point_sketch_with_limit(
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     super::super::attach_sketch_graph(
-        &ctx, &mut ir, &label,
+        &ctx,
+        &mut ir,
+        &label,
         &super::super::SketchSources {
-            point_uses: &[], point_groups: &[], points: &[], payload_scalars: &[],
-            fixed_points: &[&point], coordinate_pairs: &[],
+            point_uses: &[],
+            point_groups: &[],
+            points: &[],
+            payload_scalars: &[],
+            fixed_points: &[&point],
+            coordinate_pairs: &[],
         },
-        &mut annotations, &stream,
+        &mut annotations,
+        &stream,
     )
 }
 
 #[test]
 fn sketch_graph_refuses_collection_limit() {
-    let error = fixed_point_sketch_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    let error =
+        fixed_point_sketch_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn sketch_graph_refuses_retained_limit() {
-    let error = fixed_point_sketch_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    let error =
+        fixed_point_sketch_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]
 fn sketch_graph_refuses_scoped_limit() {
-    let error = fixed_point_sketch_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    let error = fixed_point_sketch_with_limit(|policy| policy.limits.max_materialized_bytes = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
 }
 
 #[test]
 fn sketch_graph_refuses_work_limit() {
-    let error = fixed_point_sketch_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    let error =
+        fixed_point_sketch_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }

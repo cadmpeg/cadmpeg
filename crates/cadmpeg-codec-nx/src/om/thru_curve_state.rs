@@ -91,14 +91,22 @@ impl<T> ThruCurveBranchItems<T> {
     pub(super) fn try_map_indexed_charged<U>(
         self,
         ctx: &DecodeContext<'_>,
-        mut f: impl FnMut(usize, T) -> Result<U, CodecError>,
+        mut project: impl FnMut(usize, T) -> Result<U, CodecError>,
     ) -> Result<ThruCurveBranchItems<U>, CodecError> {
         match self {
             Self::Standard(members) => Ok(ThruCurveBranchItems::Standard(
-                members.try_map_indexed_charged(ctx, f)?,
+                members.try_map_indexed_charged(ctx, project)?,
             )),
-            Self::Extended { members: [a, b, c, d], values } => Ok(ThruCurveBranchItems::Extended {
-                members: [f(0, a)?, f(1, b)?, f(2, c)?, f(3, d)?],
+            Self::Extended {
+                members: [first, second, third, fourth],
+                values,
+            } => Ok(ThruCurveBranchItems::Extended {
+                members: [
+                    project(0, first)?,
+                    project(1, second)?,
+                    project(2, third)?,
+                    project(3, fourth)?,
+                ],
                 values,
             }),
         }

@@ -18,7 +18,12 @@ fn attach_one_configuration(
     super::super::attach_configurations(
         &ctx,
         &mut ir,
-        std::iter::once(("nx:arrangements:configuration#0", "Primary", 0, Some("nx:arrangements:attribute-use#0"))),
+        std::iter::once((
+            "nx:arrangements:configuration#0",
+            "Primary",
+            0,
+            Some("nx:arrangements:attribute-use#0"),
+        )),
         &mut annotations,
         &stream,
     )?;
@@ -33,17 +38,29 @@ fn configuration_attachment_preserves_active_relation() {
     };
     assert!(configuration.active);
     assert_eq!(configuration.name.as_deref(), Some("Primary"));
-    assert_eq!(configuration.properties.get("active_attribute_use").map(String::as_str), Some("nx:arrangements:attribute-use#0"));
+    assert_eq!(
+        configuration
+            .properties
+            .get("active_attribute_use")
+            .map(String::as_str),
+        Some("nx:arrangements:attribute-use#0")
+    );
 }
 
 #[test]
 fn configuration_attachment_refuses_collection_limit() {
-    let error = attach_one_configuration(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+    let error =
+        attach_one_configuration(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn configuration_attachment_refuses_retained_limit() {
-    let error = attach_one_configuration(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes));
+    let error =
+        attach_one_configuration(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+    );
 }

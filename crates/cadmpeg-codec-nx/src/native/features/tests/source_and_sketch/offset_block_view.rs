@@ -17,9 +17,9 @@ fn offset_block_view_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> Codec
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    let mut reservation = ctx.reserve_scoped(0, "NX offset block view storage")
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let mut reservation = ctx
+        .reserve_scoped(0, "NX offset block view storage")
         .expect("empty reservation");
     let mut blocks = BTreeMap::new();
     offset_data_block_bytes_for_section(

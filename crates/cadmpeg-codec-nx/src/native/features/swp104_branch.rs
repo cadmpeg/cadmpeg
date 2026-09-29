@@ -70,10 +70,12 @@ impl FeatureSwp104LeadingBranch {
         {
             return Ok(None);
         }
-        let reference = |token| Ok(Reference {
-            token,
-            data_block: resolve(token)?,
-        });
+        let reference = |token| {
+            Ok(Reference {
+                token,
+                data_block: resolve(token)?,
+            })
+        };
         Ok(Some(Self {
             id,
             operation_label,
@@ -247,8 +249,9 @@ mod tests {
         operation_label: String,
         source_offset: u64,
         branch: crate::om::Swp104PayloadLeadingBranch,
-        resolve: impl Fn(crate::om::reference_index::PayloadIndexToken)
-            -> Result<Option<String>, cadmpeg_core::CodecError>,
+        resolve: impl Fn(
+            crate::om::reference_index::PayloadIndexToken,
+        ) -> Result<Option<String>, cadmpeg_core::CodecError>,
     ) -> Option<FeatureSwp104LeadingBranch> {
         crate::test_support::with_decode_context(|ctx| {
             FeatureSwp104LeadingBranch::from_source(
@@ -299,7 +302,7 @@ mod tests {
                         "operation".to_owned(),
                         1200,
                         source.clone(),
-            |token| Ok(Some(format!("block#{}", token.value()))),
+                        |token| Ok(Some(format!("block#{}", token.value()))),
                     )
                     .unwrap();
                     let wire = serde_json::to_value(&branch).unwrap();
@@ -323,7 +326,7 @@ mod tests {
                         "operation".to_owned(),
                         u64::MAX,
                         source,
-        |_| Ok(None)
+                        |_| Ok(None)
                     )
                     .is_none());
                 }

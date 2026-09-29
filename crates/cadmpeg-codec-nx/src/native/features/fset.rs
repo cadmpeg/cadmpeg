@@ -4,8 +4,8 @@
 use super::payload_content::FeaturePayloadContent;
 use super::{
     charged_unique_offset_data_block, copy_operation_text, format_feature_history_id,
-    offset_data_block_bytes, visit_feature_history_operation_records,
-    FeatureConstructionOwner, FeatureConstructionPayload,
+    offset_data_block_bytes, visit_feature_history_operation_records, FeatureConstructionOwner,
+    FeatureConstructionPayload,
 };
 use crate::container::Container;
 use crate::om::fset_references::{word_reference_bytes, FsetReferences};
@@ -211,23 +211,47 @@ pub(in crate::native) fn feature_fset_reference_graphs(
             if failure.is_some() {
                 return;
             }
-            let projected = (|| -> Result<Option<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
-                let Some(graph) = FsetReferences::read(record.payload_view()) else {
-                    return Ok(None);
-                };
-                let Some(references) = graph.resolve(entry_offset, |index| {
-                    charged_unique_offset_data_block(ctx, &indexed, u32::from(index))
-                })? else {
-                    return Ok(None);
-                };
-                let id = format_feature_history_id(ctx, "fset-reference-graph", section_key, operation_ordinal, None)?;
-                let operation_label = format_feature_history_id(ctx, "operation-label", section_key, operation_ordinal, None)?;
-                ctx.charge_collection_items(1, "NX FSET reference graphs")?;
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureFsetReferenceGraph>()), "NX FSET reference graph")?;
-                graphs.try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET reference graphs", 0, 1))?;
-                Ok(Some(FeatureFsetReferenceGraph { id, operation_label, references }))
-            })();
+            let projected =
+                (|| -> Result<Option<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
+                    let Some(graph) = FsetReferences::read(record.payload_view()) else {
+                        return Ok(None);
+                    };
+                    let Some(references) = graph.resolve(entry_offset, |index| {
+                        charged_unique_offset_data_block(ctx, &indexed, u32::from(index))
+                    })?
+                    else {
+                        return Ok(None);
+                    };
+                    let id = format_feature_history_id(
+                        ctx,
+                        "fset-reference-graph",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    )?;
+                    let operation_label = format_feature_history_id(
+                        ctx,
+                        "operation-label",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    )?;
+                    ctx.charge_collection_items(1, "NX FSET reference graphs")?;
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                            FeatureFsetReferenceGraph,
+                        >()),
+                        "NX FSET reference graph",
+                    )?;
+                    graphs.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("allocate NX FSET reference graphs", 0, 1)
+                    })?;
+                    Ok(Some(FeatureFsetReferenceGraph {
+                        id,
+                        operation_label,
+                        references,
+                    }))
+                })();
             match projected {
                 Ok(Some(graph)) => graphs.push(graph),
                 Ok(None) => {}
@@ -252,16 +276,30 @@ pub(in crate::native) fn feature_fset_construction_payloads(
     let mut output = Vec::new();
     for graph in graphs {
         for (group, source_blocks) in [
-            (FeatureFsetReferenceGroup::First, graph.references.first().as_slice()),
-            (FeatureFsetReferenceGroup::Second, graph.references.second().as_slice()),
+            (
+                FeatureFsetReferenceGroup::First,
+                graph.references.first().as_slice(),
+            ),
+            (
+                FeatureFsetReferenceGroup::Second,
+                graph.references.second().as_slice(),
+            ),
         ] {
-            let Some(payload) = fset_construction_payload_from_group(ctx, graph, group, source_blocks, &blocks)? else {
+            let Some(payload) =
+                fset_construction_payload_from_group(ctx, graph, group, source_blocks, &blocks)?
+            else {
                 continue;
             };
             ctx.charge_collection_items(1, "NX FSET construction payloads")?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureConstructionPayload>()), "NX FSET construction payload")?;
-            output.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET construction payloads", 0, 1))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureConstructionPayload>(),
+                ),
+                "NX FSET construction payload",
+            )?;
+            output.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX FSET construction payloads", 0, 1)
+            })?;
             output.push(payload);
         }
     }
@@ -278,17 +316,29 @@ fn fset_construction_payload_from_group(
     if source_blocks.iter().any(|(_, target)| target.is_none()) {
         return Ok(None);
     }
-    let text_bytes = source_blocks.iter().try_fold(0usize, |total, (_, target)| {
-        total.checked_add(target.as_ref().map_or(0, String::len))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX FSET source block references", 0, 1))
-    })?;
-    let slot_bytes = source_blocks.len().checked_mul(std::mem::size_of::<String>())
+    let text_bytes = source_blocks
+        .iter()
+        .try_fold(0usize, |total, (_, target)| {
+            total
+                .checked_add(target.as_ref().map_or(0, String::len))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX FSET source block references", 0, 1))
+        })?;
+    let slot_bytes = source_blocks
+        .len()
+        .checked_mul(std::mem::size_of::<String>())
         .and_then(|bytes| bytes.checked_add(text_bytes))
         .ok_or_else(|| ctx.refuse_codec_limit("NX FSET source block references", 0, 1))?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(source_blocks.len()), "NX FSET source block references")?;
-    let _source_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(slot_bytes), "NX FSET source block references")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(source_blocks.len()),
+        "NX FSET source block references",
+    )?;
+    let _source_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(slot_bytes),
+        "NX FSET source block references",
+    )?;
     let mut data_blocks = Vec::new();
-    data_blocks.try_reserve_exact(source_blocks.len())
+    data_blocks
+        .try_reserve_exact(source_blocks.len())
         .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET source block references", 0, 1))?;
     for (_, target) in source_blocks {
         let Some(block) = target else {
@@ -300,11 +350,17 @@ fn fset_construction_payload_from_group(
         id.push_str(block);
         data_blocks.push(id);
     }
-    let Some(store) = data_blocks.first().and_then(|id| id.rsplit_once(":block#").map(|(store, _)| store)) else {
+    let Some(store) = data_blocks
+        .first()
+        .and_then(|id| id.rsplit_once(":block#").map(|(store, _)| store))
+    else {
         return Ok(None);
     };
-    if data_blocks.iter().any(|block| block.rsplit_once(":block#")
-        .is_none_or(|(prefix, _)| prefix != store)) {
+    if data_blocks.iter().any(|block| {
+        block
+            .rsplit_once(":block#")
+            .is_none_or(|(prefix, _)| prefix != store)
+    }) {
         return Ok(None);
     }
     let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
@@ -314,15 +370,22 @@ fn fset_construction_payload_from_group(
         FeatureFsetReferenceGroup::First => "first",
         FeatureFsetReferenceGroup::Second => "second",
     };
-    let Some(operation_key) = graph.operation_label
-        .strip_prefix("nx:feature-history:operation-label#") else {
+    let Some(operation_key) = graph
+        .operation_label
+        .strip_prefix("nx:feature-history:operation-label#")
+    else {
         return Ok(None);
     };
     let prefix = "nx:feature-history:fset-construction-payload#";
-    let id_len = prefix.len().checked_add(operation_key.len())
+    let id_len = prefix
+        .len()
+        .checked_add(operation_key.len())
         .and_then(|length| length.checked_add(1 + group_name.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("NX FSET construction identity", 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len), "NX FSET construction identity")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(id_len),
+        "NX FSET construction identity",
+    )?;
     let mut id = String::new();
     id.try_reserve_exact(id_len)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET construction identity", 0, 1))?;
@@ -330,7 +393,11 @@ fn fset_construction_payload_from_group(
         .map_err(|_| ctx.refuse_codec_limit("write NX FSET construction identity", 0, 1))?;
     Ok(Some(FeatureConstructionPayload {
         id,
-        operation_label: copy_operation_text(ctx, &graph.operation_label, "NX FSET construction operation")?,
+        operation_label: copy_operation_text(
+            ctx,
+            &graph.operation_label,
+            "NX FSET construction operation",
+        )?,
         owner: FeatureConstructionOwner::Fset {
             reference_graph: copy_operation_text(ctx, &graph.id, "NX FSET construction reference")?,
             group,
@@ -345,11 +412,19 @@ mod tests {
     use cadmpeg_core::CodecError;
     use std::collections::BTreeMap;
 
-    fn fset_construction_fixture() -> (FeatureFsetReferenceGraph, BTreeMap<String, (&'static [u8], u64)>) {
+    fn fset_construction_fixture() -> (
+        FeatureFsetReferenceGraph,
+        BTreeMap<String, (&'static [u8], u64)>,
+    ) {
         let graph = serde_json::from_str(r#"{"id":"graph","operation_label":"nx:feature-history:operation-label#0-0000000001","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["nx:om-data-blocks-0:block#1","nx:om-data-blocks-0:block#2"],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":["nx:om-data-blocks-0:block#3","nx:om-data-blocks-0:block#4","nx:om-data-blocks-0:block#5"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#)
             .expect("complete FSET graph");
         let blocks = (1u32..=5)
-            .map(|ordinal| (format!("nx:om-data-blocks-0:block#{ordinal}"), (b"A".as_slice(), u64::from(ordinal))))
+            .map(|ordinal| {
+                (
+                    format!("nx:om-data-blocks-0:block#{ordinal}"),
+                    (b"A".as_slice(), u64::from(ordinal)),
+                )
+            })
             .collect();
         (graph, blocks)
     }
@@ -364,9 +439,13 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test root");
         super::fset_construction_payload_from_group(
-            &ctx, &graph, super::FeatureFsetReferenceGroup::First,
-            graph.references.first().as_slice(), &blocks,
-        ).err().expect("FSET construction limit refusal")
+            &ctx,
+            &graph,
+            super::FeatureFsetReferenceGroup::First,
+            graph.references.first().as_slice(),
+            &blocks,
+        )
+        .expect_err("FSET construction limit refusal")
     }
 
     #[test]
@@ -378,7 +457,8 @@ mod tests {
 
     #[test]
     fn fset_construction_refuses_scoped_limit() {
-        let error = fset_construction_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        let error =
+            fset_construction_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
     }
@@ -405,11 +485,28 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test root");
         for (group, source_blocks, expected_count, first_id) in [
-            (super::FeatureFsetReferenceGroup::First, graph.references.first().as_slice(), 2, "nx:om-data-blocks-0:block#1"),
-            (super::FeatureFsetReferenceGroup::Second, graph.references.second().as_slice(), 3, "nx:om-data-blocks-0:block#3"),
+            (
+                super::FeatureFsetReferenceGroup::First,
+                graph.references.first().as_slice(),
+                2,
+                "nx:om-data-blocks-0:block#1",
+            ),
+            (
+                super::FeatureFsetReferenceGroup::Second,
+                graph.references.second().as_slice(),
+                3,
+                "nx:om-data-blocks-0:block#3",
+            ),
         ] {
-            let payload = super::fset_construction_payload_from_group(&ctx, &graph, group, source_blocks, &blocks)
-                .expect("admitted source blocks").expect("complete FSET payload");
+            let payload = super::fset_construction_payload_from_group(
+                &ctx,
+                &graph,
+                group,
+                source_blocks,
+                &blocks,
+            )
+            .expect("admitted source blocks")
+            .expect("complete FSET payload");
             assert_eq!(payload.content.blocks().len(), expected_count);
             assert_eq!(payload.content.blocks()[0].id, first_id);
         }

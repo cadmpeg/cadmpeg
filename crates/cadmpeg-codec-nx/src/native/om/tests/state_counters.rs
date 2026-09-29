@@ -8,9 +8,9 @@ use crate::om::state_message::{StateMessage, StateMessageSeverity};
 use crate::om::state_status::StateStatusPayload;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::native::features::FeatureOperationStateJournalUse;
@@ -405,8 +405,10 @@ fn native_operation_state_groups_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
     let error = operation_state_groups(&ctx, &container)
         .expect_err("group route exceeds zero collection items");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]

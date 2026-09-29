@@ -32,7 +32,12 @@ pub(super) fn summarize(
     entries
         .try_reserve_exact(entry_count)
         .map_err(|_| ctx.refuse_codec_limit("nx summary entries", 0, 1))?;
-    let semantic_streams = native::substrate::topology_streams(ctx, scan)?;
+    let semantic_streams = scan
+        .streams
+        .iter()
+        .any(|stream| stream.kind() == parasolid::StreamKind::Partition)
+        .then(|| native::substrate::topology_streams(ctx, scan))
+        .transpose()?;
 
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();
@@ -134,6 +139,11 @@ pub(super) fn summarize(
                 )?;
             }
             if stream.kind() == parasolid::StreamKind::Partition {
+                let Some(semantic_streams) = semantic_streams.as_ref() else {
+                    return Err(CodecError::malformed(
+                        "NX partition has no topology byte views",
+                    ));
+                };
                 let graph = topology::Graph::parse(ctx, &semantic_streams[si])?;
                 for (kind, name) in [
                     (NodeKind::Body, "body"),

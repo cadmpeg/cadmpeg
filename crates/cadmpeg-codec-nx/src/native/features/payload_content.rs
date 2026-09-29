@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source-block metadata for reconstructed feature payloads.
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use serde::{
     ser::{SerializeSeq, SerializeStruct},
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use std::collections::BTreeMap;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FeaturePayloadBlock {
@@ -61,20 +61,22 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
                 return Ok(None);
             };
             let length = u64_from_index(bytes.len());
-            byte_len = byte_len.checked_add(length).ok_or_else(|| {
-                ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1)
-            })?;
-            ctx.charge_work(length.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("hash NX feature payload bytes", 0, 1)
-            })?, "hash NX feature payload bytes")?;
+            byte_len = byte_len
+                .checked_add(length)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
+            ctx.charge_work(
+                length
+                    .checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("hash NX feature payload bytes", 0, 1))?,
+                "hash NX feature payload bytes",
+            )?;
             let record_bytes = std::mem::size_of::<FeaturePayloadBlock>()
                 .checked_add(id.len())
                 .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature payload blocks", 0, 1))?;
             reservation.grow(u64_from_index(record_bytes))?;
             ctx.charge_collection_items(1, "NX feature payload blocks")?;
-            rows.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX feature payload blocks", 0, 1)
-            })?;
+            rows.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX feature payload blocks", 0, 1))?;
             hash.update(bytes);
             rows.push(FeaturePayloadBlock {
                 id,

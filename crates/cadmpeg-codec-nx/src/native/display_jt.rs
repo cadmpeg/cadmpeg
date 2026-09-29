@@ -5870,7 +5870,9 @@ fn resolve_display_jt_node_paths(
             "resolve JT parent paths",
         )?;
         for id in ids {
-            let Some(paths) = resolve_display_jt_node_paths(ctx, *id, lookup, visiting, visiting_reservation)? else {
+            let Some(paths) =
+                resolve_display_jt_node_paths(ctx, *id, lookup, visiting, visiting_reservation)?
+            else {
                 return Ok(None);
             };
             let count = paths.len();
@@ -5878,18 +5880,17 @@ fn resolve_display_jt_node_paths(
                 cadmpeg_core::decode::u64_from_index(count),
                 "nx JT parent path states",
             )?;
-            let bytes = count.checked_mul(std::mem::size_of::<DisplayJtPath>())
+            let bytes = count
+                .checked_mul(std::mem::size_of::<DisplayJtPath>())
                 .ok_or_else(|| ctx.refuse_codec_limit("nx JT parent path states", 0, 1))?;
             parent_states_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-            parent_states
-                .try_reserve(count)
-                .map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "nx JT parent path states",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(count),
-                    )
-                })?;
+            parent_states.try_reserve(count).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "nx JT parent path states",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(count),
+                )
+            })?;
             parent_states.extend(paths);
         }
     } else {
@@ -5897,7 +5898,8 @@ fn resolve_display_jt_node_paths(
         parent_states_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<DisplayJtPath>(),
         ))?;
-        parent_states.try_reserve(1)
+        parent_states
+            .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("nx JT root path state", 0, 1))?;
         parent_states.push(DisplayJtPath {
             matrix: [
@@ -5962,11 +5964,11 @@ fn resolve_display_jt_node_paths(
             path.instance_path
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx JT instance path nodes", 0, 1))?;
-            path.instance_path.push(
-                retain_jt_text_parts(
-                    ctx, &[instance_id], "nx JT instance path identity"
-                )?,
-            );
+            path.instance_path.push(retain_jt_text_parts(
+                ctx,
+                &[instance_id],
+                "nx JT instance path identity",
+            )?);
         }
         ctx.charge_collection_items(1, "nx JT node path nodes")?;
         path.node_path
@@ -5985,23 +5987,33 @@ fn display_jt_node_paths(
     shape_object_id: u32,
     inputs: &DisplayJtTessellationInputs<'_>,
 ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
-    let scene_scans = inputs.base_nodes.len()
+    let scene_scans = inputs
+        .base_nodes
+        .len()
         .checked_add(inputs.transforms.len())
         .and_then(|count| count.checked_add(inputs.materials.len()))
         .and_then(|count| count.checked_mul(2))
         .and_then(|count| count.checked_mul(inputs.compressed_elements.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
-    let instance_scans = inputs.instance_nodes.len()
+    let instance_scans = inputs
+        .instance_nodes
+        .len()
         .checked_mul(inputs.base_nodes.len())
         .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
-    let child_scans = inputs.group_nodes.len()
+    let child_scans = inputs
+        .group_nodes
+        .len()
         .checked_add(inputs.instance_nodes.len())
         .and_then(|count| count.checked_mul(inputs.base_nodes.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
-    let work = scene_scans.checked_add(instance_scans)
+    let work = scene_scans
+        .checked_add(instance_scans)
         .and_then(|count| count.checked_add(child_scans))
         .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "scan JT node paths")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "scan JT node paths",
+    )?;
     let in_scene = |element_id: &str| {
         inputs
             .compressed_elements
@@ -6015,9 +6027,8 @@ fn display_jt_node_paths(
         .filter(|base| in_scene(&base.element))
         .count();
     let mut scoped = Vec::new();
-    let _scoped_reservation = reserve_jt_scratch_vec(
-        ctx, &mut scoped, scoped_count, "nx JT scoped base nodes"
-    )?;
+    let _scoped_reservation =
+        reserve_jt_scratch_vec(ctx, &mut scoped, scoped_count, "nx JT scoped base nodes")?;
     scoped.extend(
         inputs
             .base_nodes
@@ -6090,9 +6101,7 @@ fn display_jt_node_paths(
         instances_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(u32, String)>() * 4,
         ))?;
-        let id = retain_jt_text_parts(
-            ctx, &[&node.id], "nx JT instance identity"
-        )?;
+        let id = retain_jt_text_parts(ctx, &[&node.id], "nx JT instance identity")?;
         instance_ids.insert(node.object_id, id);
     }
     for (object_id, base) in &by_object {
@@ -6127,7 +6136,9 @@ fn display_jt_node_paths(
             }
             let ids = parents.entry(child).or_default();
             ctx.charge_collection_items(1, "nx JT parent references")?;
-            parents_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+            parents_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                u32,
+            >()))?;
             ids.try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx JT parent references", 0, 1))?;
             ids.push(*object_id);
@@ -6141,7 +6152,13 @@ fn display_jt_node_paths(
         materials: &scoped_materials,
     };
     let mut visiting_reservation = ctx.reserve_scoped(0, "nx JT visiting nodes")?;
-    resolve_display_jt_node_paths(ctx, shape_object_id, &lookup, &mut BTreeSet::new(), &mut visiting_reservation)
+    resolve_display_jt_node_paths(
+        ctx,
+        shape_object_id,
+        &lookup,
+        &mut BTreeSet::new(),
+        &mut visiting_reservation,
+    )
 }
 
 fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<FinitePoint3> {
@@ -6272,7 +6289,12 @@ fn display_jt_tessellation_rows(
         if matching_nodes.next().is_some() {
             return Ok(None);
         }
-        let paths = required!(display_jt_node_paths(ctx, &binding.scene_segment, shape_node.object_id, inputs)?);
+        let paths = required!(display_jt_node_paths(
+            ctx,
+            &binding.scene_segment,
+            shape_node.object_id,
+            inputs
+        )?);
         let mut rendered = Vec::new();
         let render_count = mesh
             .polygons
@@ -6285,7 +6307,8 @@ fn display_jt_tessellation_rows(
             if polygon.group < 0 {
                 continue;
             }
-            let corners: &[(u32, Option<u32>); 3] = required!(polygon.corners.as_slice().try_into().ok());
+            let corners: &[(u32, Option<u32>); 3] =
+                required!(polygon.corners.as_slice().try_into().ok());
             let triangle = corners.map(|(vertex, _)| vertex);
             let attributes = corners.map(|(_, attribute)| attribute);
             rendered.push((triangle, attributes));
@@ -6454,10 +6477,9 @@ fn display_jt_tessellation_rows(
                             (normal_array, normal_vectors.as_mut())
                         {
                             let normal = required!(normal_array.normals.get(attribute));
-                            normal_vectors.push(FiniteVector3::from(required!(transform_jt_normal(
-                                transform,
-                                normal.map(FiniteBinary32::get),
-                            ))));
+                            normal_vectors.push(FiniteVector3::from(required!(
+                                transform_jt_normal(transform, normal.map(FiniteBinary32::get),)
+                            )));
                         }
                         if let Some(color_array) = color_array {
                             for component in required!(color_array.colors.get(attribute)) {
@@ -6470,11 +6492,16 @@ fn display_jt_tessellation_rows(
                             }
                         }
                         if let Some(array) = vertex_flag_array {
-                            vertex_flag_data
-                                .extend_from_slice(&required!(array.values.get(attribute)).to_le_bytes());
+                            vertex_flag_data.extend_from_slice(
+                                &required!(array.values.get(attribute)).to_le_bytes(),
+                            );
                         }
                     }
-                    triangles.push([base, required!(base.checked_add(1)), required!(base.checked_add(2))]);
+                    triangles.push([
+                        base,
+                        required!(base.checked_add(1)),
+                        required!(base.checked_add(2)),
+                    ]);
                 }
                 let mut channels = Vec::new();
                 let channel_count = required!(usize::from(color_array.is_some())
@@ -6487,16 +6514,14 @@ fn display_jt_tessellation_rows(
                     "nx JT tessellation channels",
                 ))?;
                 if color_array.is_some() {
-                    channels.push(
-                        required!(TessellationChannel::new(
-                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                            16,
-                            DISPLAY_JT_COLOR_CHANNEL,
-                            ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
-                            color_data,
-                        )
-                        .ok()),
-                    );
+                    channels.push(required!(TessellationChannel::new(
+                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                        16,
+                        DISPLAY_JT_COLOR_CHANNEL,
+                        ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
+                        color_data,
+                    )
+                    .ok()));
                 }
                 for (((array, component_count), data), ordinal) in texture_arrays
                     .iter()
@@ -6504,31 +6529,27 @@ fn display_jt_tessellation_rows(
                     .zip(texture_data)
                     .zip(0_u32..)
                 {
-                    channels.push(
-                        required!(TessellationChannel::new(
-                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                            required!(u32::try_from(required!(component_count.checked_mul(4))).ok()),
-                            required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)),
-                            u32::from(array.channel)
-                                | (((vertex_header.vertex_bindings >> (8 + 4 * array.channel))
-                                    & 0xf) as u32)
-                                    << 8,
-                            data,
-                        )
-                        .ok()),
-                    );
+                    channels.push(required!(TessellationChannel::new(
+                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                        required!(u32::try_from(required!(component_count.checked_mul(4))).ok()),
+                        required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)),
+                        u32::from(array.channel)
+                            | (((vertex_header.vertex_bindings >> (8 + 4 * array.channel)) & 0xf)
+                                as u32)
+                                << 8,
+                        data,
+                    )
+                    .ok()));
                 }
                 if vertex_flag_array.is_some() {
-                    channels.push(
-                        required!(TessellationChannel::new(
-                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                            4,
-                            DISPLAY_JT_VERTEX_FLAG_CHANNEL,
-                            0,
-                            vertex_flag_data,
-                        )
-                        .ok()),
-                    );
+                    channels.push(required!(TessellationChannel::new(
+                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                        4,
+                        DISPLAY_JT_VERTEX_FLAG_CHANNEL,
+                        0,
+                        vertex_flag_data,
+                    )
+                    .ok()));
                 }
                 (vertices, triangles, normal_vectors, channels)
             } else {
@@ -6540,7 +6561,9 @@ fn display_jt_tessellation_rows(
                     "nx JT tessellation vertices",
                 ))?;
                 for index in 0..coordinates.points_m.len() {
-                    vertices.push(required!(convert_point(required!(u32::try_from(index).ok()))));
+                    vertices.push(required!(convert_point(required!(
+                        u32::try_from(index).ok()
+                    ))));
                 }
                 let mut triangles = Vec::new();
                 (reserve_jt_retained_vec(
@@ -6571,14 +6594,10 @@ fn display_jt_tessellation_rows(
                     )));
                 }
             };
-            let tessellation = (Tessellation::from_parts(
-                tessellation_id,
-                mesh,
-                channels,
-            )
-            .map_err(|error| CodecError::malformed(format_args!(
-                "display-jt tessellation: {error}"
-            ))))?;
+            let tessellation = (Tessellation::from_parts(tessellation_id, mesh, channels)
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("display-jt tessellation: {error}"))
+                }))?;
             tessellations.push((
                 tessellation.with_source_object(Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
@@ -6608,26 +6627,47 @@ mod tests {
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
         let compressed = super::DisplayJtCompressedElement {
-            id: "element".into(), segment: "scene".into(), segment_type: 0,
-            ordinal: 0, object_type_id: [0; 16], object_base_type: 0,
-            object_id: 7, body_byte_len: 0,
+            id: "element".into(),
+            segment: "scene".into(),
+            segment_type: 0,
+            ordinal: 0,
+            object_type_id: [0; 16],
+            object_base_type: 0,
+            object_id: 7,
+            body_byte_len: 0,
             body_sha256: super::Sha256Hex::digest(&[]),
-            inflated_offset: 0, source_offset: 0,
+            inflated_offset: 0,
+            source_offset: 0,
         };
         let base = super::DisplayJtBaseNodeData {
-            id: "base".into(), element: compressed.id.clone(),
-            object_type_id: [0; 16], object_id: 7, version: 1,
-            flags: 0, attribute_object_ids: Vec::new(),
+            id: "base".into(),
+            element: compressed.id.clone(),
+            object_type_id: [0; 16],
+            object_id: 7,
+            version: 1,
+            flags: 0,
+            attribute_object_ids: Vec::new(),
             family_data_byte_len: 0,
             family_data_sha256: "00".repeat(32).try_into().expect("valid digest"),
             source_offset: 0,
         };
         let inputs = super::DisplayJtTessellationInputs {
-            meshes: &[], coordinates: &[], normals: &[], colors: &[],
-            texture_coordinates: &[], vertex_flags: &[], vertex_headers: &[],
-            coordinate_headers: &[], shape_elements: &[], bindings: &[],
-            shape_nodes: &[], base_nodes: &[base], group_nodes: &[],
-            instance_nodes: &[], transforms: &[], materials: &[],
+            meshes: &[],
+            coordinates: &[],
+            normals: &[],
+            colors: &[],
+            texture_coordinates: &[],
+            vertex_flags: &[],
+            vertex_headers: &[],
+            coordinate_headers: &[],
+            shape_elements: &[],
+            bindings: &[],
+            shape_nodes: &[],
+            base_nodes: &[base],
+            group_nodes: &[],
+            instance_nodes: &[],
+            transforms: &[],
+            materials: &[],
             compressed_elements: &[compressed],
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -6636,35 +6676,44 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test root");
         super::display_jt_node_paths(&ctx, "scene", 7, &inputs)
-            .err().expect("scene node path limit refusal")
+            .err()
+            .expect("scene node path limit refusal")
     }
 
     #[test]
     fn scene_node_paths_refuse_collection_limit() {
         let error = scene_node_path_limit_error(|policy| policy.limits.max_collection_items = 0);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
     fn scene_node_paths_refuse_scoped_limit() {
         let error = scene_node_path_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
     }
 
     #[test]
     fn scene_node_paths_refuse_retained_limit() {
         let error = scene_node_path_limit_error(|policy| policy.limits.max_retained_bytes = 0);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
     fn scene_node_paths_refuse_work_limit() {
         let error = scene_node_path_limit_error(|policy| policy.limits.max_work_units = 0);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 
     #[test]
@@ -6704,7 +6753,8 @@ mod tests {
             7,
             &lookup,
             &mut BTreeSet::new(),
-            &mut ctx.reserve_scoped(0, "test JT visiting nodes")
+            &mut ctx
+                .reserve_scoped(0, "test JT visiting nodes")
                 .expect("empty visiting reservation"),
         )
         .err()
@@ -8174,15 +8224,11 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &representation,
-            &arena,
-            &policy,
-        )
-        .expect("bounded JT lookahead input");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&representation, &arena, &policy)
+                .expect("bounded JT lookahead input");
         let error = super::jt9_topology_high_degree_lane_count(&ctx, &representation, 10)
-            .err()
-            .expect("the packet frame exceeds the nesting limit");
+            .expect_err("the packet frame exceeds the nesting limit");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)

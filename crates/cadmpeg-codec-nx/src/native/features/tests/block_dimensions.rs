@@ -11,7 +11,8 @@ fn block_dimensions_for_test(
 ) -> Vec<crate::native::features::FeatureBlockDimensions> {
     crate::test_support::with_decode_context(|ctx| {
         feature_block_dimensions(ctx, constructions, bindings, declarations, expressions)
-    }).expect("admitted block dimensions")
+    })
+    .expect("admitted block dimensions")
 }
 
 #[test]
@@ -225,51 +226,73 @@ fn block_dimension_refusal(
 
     let operation = "operation";
     let construction = FeatureBlockConstruction {
-        id: "block-construction".into(), operation_label: operation.into(), control: 0,
+        id: "block-construction".into(),
+        operation_label: operation.into(),
+        control: 0,
         members: std::array::from_fn(|ordinal| FeatureConstructionMember {
-            reference: format!("reference#{ordinal}"), data_block: format!("block#{ordinal}"),
+            reference: format!("reference#{ordinal}"),
+            data_block: format!("block#{ordinal}"),
         }),
         terminal_reference: "terminal-reference".into(),
         terminal_data_block: "terminal-block".into(),
     };
     let binding = FeatureParameterBinding {
-        id: "binding".into(), operation_label: operation.into(),
+        id: "binding".into(),
+        operation_label: operation.into(),
         input_slot: crate::om::header_references::HeaderSlot::Zero,
-        input_block: "input".into(), reference_ordinal: 0,
+        input_block: "input".into(),
+        reference_ordinal: 0,
         expression_declaration: "declaration-20".into(),
-        expression: Some("expression-20".into()), object_id: 20, source_offset: 1,
+        expression: Some("expression-20".into()),
+        object_id: 20,
+        source_offset: 1,
     };
     let declarations: [ExpressionDeclaration; 3] = std::array::from_fn(|ordinal| {
         let index = 20 + u32::try_from(ordinal).expect("three dimension slots");
         ExpressionDeclaration {
-            id: format!("declaration-{index}"), object_id: index,
+            id: format!("declaration-{index}"),
+            object_id: index,
             record: format!("section:entry#{index}"),
-            name: crate::om::parameter_name::ParameterName::<_, u32>::parse(
-                format!("p{index}")).expect("canonical parameter name"),
-            literal: None, source_entry: "section".into(), source_offset: u64::from(index),
+            name: crate::om::parameter_name::ParameterName::<_, u32>::parse(format!("p{index}"))
+                .expect("canonical parameter name"),
+            literal: None,
+            source_entry: "section".into(),
+            source_offset: u64::from(index),
         }
     });
     let expressions: [Expression; 3] = std::array::from_fn(|ordinal| {
         let index = 20 + u32::try_from(ordinal).expect("three dimension slots");
         Expression {
             id: format!("expression-{index}"),
-            owner: None, declaration: Some(format!("declaration-{index}")),
+            owner: None,
+            declaration: Some(format!("declaration-{index}")),
             name: crate::om::parameter_name::ParameterName::new(format!("p{index}")),
-            unit: ExpressionUnit::Millimeter, expression: index.to_string(),
-            value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(f64::from(index))
-                .expect("finite expression value")),
+            unit: ExpressionUnit::Millimeter,
+            expression: index.to_string(),
+            value: Some(
+                cadmpeg_ir::scalar::FiniteReal::try_from(f64::from(index))
+                    .expect("finite expression value"),
+            ),
             source_entry: "section".into(),
-            source_table: cadmpeg_core::text::NonBlankString::new("table")
-                .expect("source table"),
+            source_table: cadmpeg_core::text::NonBlankString::new("table").expect("source table"),
             source_offset: u64::from(index),
         }
     });
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_block_dimensions(ctx, std::slice::from_ref(&construction),
-            std::slice::from_ref(&binding), &declarations, &expressions)
+        feature_block_dimensions(
+            ctx,
+            std::slice::from_ref(&construction),
+            std::slice::from_ref(&binding),
+            &declarations,
+            &expressions,
+        )
     };
-    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
-        .expect("admitted block dimension").len(), 1);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| decode(ctx))
+            .expect("admitted block dimension")
+            .len(),
+        1
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);
@@ -281,27 +304,35 @@ fn block_dimension_refusal(
 #[test]
 fn block_dimension_refuses_collection_limit() {
     let error = block_dimension_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn block_dimension_refuses_retained_limit() {
     let error = block_dimension_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]
 fn block_dimension_refuses_scoped_limit() {
     let error = block_dimension_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
 }
 
 #[test]
 fn block_dimension_refuses_work_limit() {
     let error = block_dimension_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }

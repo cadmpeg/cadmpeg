@@ -6,10 +6,10 @@ use crate::om::roll_forward::{GroupTableFooter, OperationStateGroup, OperationSt
 use crate::om::state_group::{
     OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers,
 };
-use serde::ser::SerializeSeq;
-use serde::{Deserialize, Serialize};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use serde::ser::SerializeSeq;
+use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
 fn decimal_len(mut value: usize) -> usize {
@@ -22,9 +22,13 @@ fn decimal_len(mut value: usize) -> usize {
 }
 
 fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    ctx.charge_retained(u64_from_index(text.len()), "retain NX roll-forward table text")?;
+    ctx.charge_retained(
+        u64_from_index(text.len()),
+        "retain NX roll-forward table text",
+    )?;
     let mut owned = String::new();
-    owned.try_reserve_exact(text.len())
+    owned
+        .try_reserve_exact(text.len())
         .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward table text", 0, 1))?;
     owned.push_str(text);
     Ok(owned)
@@ -32,18 +36,28 @@ fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecErr
 
 fn group_id(ctx: &DecodeContext<'_>, section: usize, ordinal: u32) -> Result<String, CodecError> {
     let section_digits = decimal_len(section).max(10);
-    let ordinal_digits = decimal_len(usize::try_from(ordinal)
-        .map_err(|_| ctx.refuse_codec_limit("NX roll-forward group ordinal", 0, 1))?).max(10);
-    let length = "nx:feature-history:roll-forward-state-group#-".len()
+    let ordinal_digits = decimal_len(
+        usize::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX roll-forward group ordinal", 0, 1))?,
+    )
+    .max(10);
+    let length = "nx:feature-history:roll-forward-state-group#-"
+        .len()
         .checked_add(section_digits)
         .and_then(|length| length.checked_add(ordinal_digits))
         .ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward group identity length", 0, 1))?;
-    ctx.charge_retained(u64_from_index(length), "retain NX roll-forward group identity")?;
+    ctx.charge_retained(
+        u64_from_index(length),
+        "retain NX roll-forward group identity",
+    )?;
     let mut id = String::new();
     id.try_reserve_exact(length)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward group identity", 0, 1))?;
-    write!(id, "nx:feature-history:roll-forward-state-group#{section:010}-{ordinal:010}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX roll-forward group identity", 0, 1))?;
+    write!(
+        id,
+        "nx:feature-history:roll-forward-state-group#{section:010}-{ordinal:010}"
+    )
+    .map_err(|_| ctx.refuse_codec_limit("write NX roll-forward group identity", 0, 1))?;
     Ok(id)
 }
 
@@ -272,9 +286,13 @@ impl OmRollForwardStateTable {
                 ))
             })?;
             ctx.charge_collection_items(1, "NX roll-forward state groups")?;
-            ctx.charge_retained(u64_from_index(std::mem::size_of::<OmRollForwardStateGroup>()), "retain NX roll-forward state groups")?;
-            groups.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward state groups", 0, 1))?;
+            ctx.charge_retained(
+                u64_from_index(std::mem::size_of::<OmRollForwardStateGroup>()),
+                "retain NX roll-forward state groups",
+            )?;
+            groups.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX roll-forward state groups", 0, 1)
+            })?;
             groups.push(OmRollForwardStateGroup {
                 id: group_id(ctx, section_ordinal, ordinal)?,
                 frame,
@@ -346,11 +364,19 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::OmRollForwardStateTable::from_frames(
-            &ctx, 0, "section", "entry", super::GroupTableFooter::try_from(&[][..]).unwrap(),
-            8, [group.frame],
-        ).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems));
+            &ctx,
+            0,
+            "section",
+            "entry",
+            super::GroupTableFooter::try_from(&[][..]).unwrap(),
+            8,
+            [group.frame],
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]

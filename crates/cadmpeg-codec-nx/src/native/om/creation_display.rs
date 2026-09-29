@@ -50,9 +50,14 @@ fn retained_identity(
     prefix: &'static str,
     ordinal: usize,
 ) -> Result<String, CodecError> {
-    let length = prefix.len().checked_add(decimal_len(ordinal))
+    let length = prefix
+        .len()
+        .checked_add(decimal_len(ordinal))
         .ok_or_else(|| ctx.refuse_codec_limit("NX creation display identity length", 0, 1))?;
-    ctx.charge_retained(u64_from_index(length), "retain NX creation display identity")?;
+    ctx.charge_retained(
+        u64_from_index(length),
+        "retain NX creation display identity",
+    )?;
     let mut id = String::new();
     id.try_reserve_exact(length)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display identity", 0, 1))?;
@@ -62,9 +67,13 @@ fn retained_identity(
 }
 
 fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    ctx.charge_retained(u64_from_index(text.len()), "retain NX creation display text")?;
+    ctx.charge_retained(
+        u64_from_index(text.len()),
+        "retain NX creation display text",
+    )?;
     let mut owned = String::new();
-    owned.try_reserve_exact(text.len())
+    owned
+        .try_reserve_exact(text.len())
         .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display text", 0, 1))?;
     owned.push_str(text);
     Ok(owned)
@@ -89,19 +98,31 @@ fn push_relation(
     source_entry: &str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "NX creation display relations")?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<RmCreationDisplayDataRelation>()), "retain NX creation display relations")?;
-    relations.try_reserve(1)
+    ctx.charge_retained(
+        u64_from_index(std::mem::size_of::<RmCreationDisplayDataRelation>()),
+        "retain NX creation display relations",
+    )?;
+    relations
+        .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display relations", 0, 1))?;
-    let class_len = "nx:om-entry-:class#".len()
+    let class_len = "nx:om-entry-:class#"
+        .len()
         .checked_add(decimal_len(entry_index))
         .and_then(|length| length.checked_add(decimal_len(definition_offset)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX creation display class identity length", 0, 1))?;
-    ctx.charge_retained(u64_from_index(class_len), "retain NX creation display class identity")?;
+    ctx.charge_retained(
+        u64_from_index(class_len),
+        "retain NX creation display class identity",
+    )?;
     let mut class_definition = String::new();
-    class_definition.try_reserve_exact(class_len)
+    class_definition
+        .try_reserve_exact(class_len)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display class identity", 0, 1))?;
-    write!(class_definition, "nx:om-entry-{entry_index}:class#{definition_offset}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX creation display class identity", 0, 1))?;
+    write!(
+        class_definition,
+        "nx:om-entry-{entry_index}:class#{definition_offset}"
+    )
+    .map_err(|_| ctx.refuse_codec_limit("write NX creation display class identity", 0, 1))?;
     relations.push(RmCreationDisplayDataRelation {
         id: String::new(),
         ordinal: 0,
@@ -116,19 +137,32 @@ fn finalize_relations(
     ctx: &DecodeContext<'_>,
     mut relations: Vec<RmCreationDisplayDataRelation>,
 ) -> Result<Vec<RmCreationDisplayDataRelation>, CodecError> {
-    let sort_bytes = relations.len()
+    let sort_bytes = relations
+        .len()
         .checked_mul(std::mem::size_of::<RmCreationDisplayDataRelation>())
         .ok_or_else(|| ctx.refuse_codec_limit("NX creation display sort bytes", 0, 1))?;
-    let sort_reservation = ctx.reserve_scoped(u64_from_index(sort_bytes), "sort NX creation display relations")?;
-    let sort_work = relations.len().checked_mul(relations.len())
+    let sort_reservation = ctx.reserve_scoped(
+        u64_from_index(sort_bytes),
+        "sort NX creation display relations",
+    )?;
+    let sort_work = relations
+        .len()
+        .checked_mul(relations.len())
         .ok_or_else(|| ctx.refuse_codec_limit("NX creation display sort work", 0, 1))?;
-    ctx.charge_work(u64_from_index(sort_work), "sort NX creation display relations")?;
+    ctx.charge_work(
+        u64_from_index(sort_work),
+        "sort NX creation display relations",
+    )?;
     relations.sort_by_key(|relation| relation.encoding.offset());
     drop(sort_reservation);
     for (ordinal, relation) in relations.iter_mut().enumerate() {
         relation.ordinal = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX creation display ordinal", 0, 1))?;
-        relation.id = retained_identity(ctx, "nx:rm-creation-display-data-relations:relation#", ordinal)?;
+        relation.id = retained_identity(
+            ctx,
+            "nx:rm-creation-display-data-relations:relation#",
+            ordinal,
+        )?;
     }
     Ok(relations)
 }
@@ -150,7 +184,10 @@ pub(in crate::native) fn rm_creation_display_data_relations(
         let Some(record_area) = section.record_area else {
             continue;
         };
-        ctx.charge_work(u64_from_index(section.types.len()), "find NX creation display class")?;
+        ctx.charge_work(
+            u64_from_index(section.types.len()),
+            "find NX creation display class",
+        )?;
         let record_area_offset = record_area.offset;
         let record_area = record_area.bytes;
         let Some((class_ordinal, definition)) = section
@@ -174,8 +211,14 @@ pub(in crate::native) fn rm_creation_display_data_relations(
             let Some(row) = row.into_absolute(source_base) else {
                 continue;
             };
-            push_relation(ctx, &mut relations, RmCreationDisplayDataEncoding::Index(row),
-                entry_index, definition.offset, &entry.name)?;
+            push_relation(
+                ctx,
+                &mut relations,
+                RmCreationDisplayDataEncoding::Index(row),
+                entry_index,
+                definition.offset,
+                &entry.name,
+            )?;
         }
         for row in crate::om::column_row::scan::linked_rows(ctx, record_area)? {
             if row.indices()[2].atom.value() != class_ordinal {
@@ -186,12 +229,17 @@ pub(in crate::native) fn rm_creation_display_data_relations(
             };
             let target_object_id =
                 rmfastload_target_object_id(ctx, object_ids, row.target_index().atom.value())?;
-            push_relation(ctx, &mut relations,
+            push_relation(
+                ctx,
+                &mut relations,
                 RmCreationDisplayDataEncoding::Linked {
                     row,
                     target_object_id,
                 },
-                entry_index, definition.offset, &entry.name)?;
+                entry_index,
+                definition.offset,
+                &entry.name,
+            )?;
         }
         for row in crate::om::column_row::scan::target_rows(ctx, record_area)? {
             if row.indices()[2].atom.value() != class_ordinal {
@@ -202,12 +250,17 @@ pub(in crate::native) fn rm_creation_display_data_relations(
             };
             let target_object_id =
                 rmfastload_target_object_id(ctx, object_ids, row.target_index().atom.value())?;
-            push_relation(ctx, &mut relations,
+            push_relation(
+                ctx,
+                &mut relations,
                 RmCreationDisplayDataEncoding::Target {
                     row,
                     target_object_id,
                 },
-                entry_index, definition.offset, &entry.name)?;
+                entry_index,
+                definition.offset,
+                &entry.name,
+            )?;
         }
     }
     finalize_relations(ctx, relations)
@@ -232,7 +285,9 @@ mod admission_tests {
         let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
-        let error = with_policy(policy, |ctx| push_relation(ctx, &mut Vec::new(), row.encoding, 0, 10, "entry").unwrap_err());
+        let error = with_policy(policy, |ctx| {
+            push_relation(ctx, &mut Vec::new(), row.encoding, 0, 10, "entry").unwrap_err()
+        });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems));
     }
@@ -242,7 +297,9 @@ mod admission_tests {
         let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
-        let error = with_policy(policy, |ctx| push_relation(ctx, &mut Vec::new(), row.encoding, 0, 10, "entry").unwrap_err());
+        let error = with_policy(policy, |ctx| {
+            push_relation(ctx, &mut Vec::new(), row.encoding, 0, 10, "entry").unwrap_err()
+        });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes));
     }
@@ -263,7 +320,9 @@ mod admission_tests {
         let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
         let mut policy = DecodePolicy::default();
         policy.limits.max_materialized_bytes = 0;
-        let error = with_policy(policy, |ctx| finalize_relations(ctx, vec![row]).unwrap_err());
+        let error = with_policy(policy, |ctx| {
+            finalize_relations(ctx, vec![row]).unwrap_err()
+        });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes));
     }
@@ -273,7 +332,9 @@ mod admission_tests {
         let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let error = with_policy(policy, |ctx| finalize_relations(ctx, vec![row]).unwrap_err());
+        let error = with_policy(policy, |ctx| {
+            finalize_relations(ctx, vec![row]).unwrap_err()
+        });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits));
     }

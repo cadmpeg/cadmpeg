@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Joined payload bytes and the source spans that produced them.
 
-use std::collections::BTreeMap;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
+use std::collections::BTreeMap;
 
 struct SourceSpan {
     byte_len: u64,
@@ -22,40 +22,54 @@ impl<'ctx> JoinedPayload<'ctx> {
         ids: impl Iterator<Item = &'a String> + Clone,
         blocks: &BTreeMap<String, (&[u8], u64)>,
     ) -> Result<Option<Self>, CodecError> {
-        let count = ids.clone().try_fold(0usize, |count, _| count.checked_add(1))
+        let count = ids
+            .clone()
+            .try_fold(0usize, |count, _| count.checked_add(1))
             .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload blocks", 0, 1))?;
         let mut byte_len = 0usize;
         for id in ids.clone() {
             let Some((fragment, _)) = blocks.get(id).copied() else {
                 return Ok(None);
             };
-            byte_len = byte_len.checked_add(fragment.len()).ok_or_else(|| {
-                ctx.refuse_codec_limit("join NX feature payload bytes", 0, 1)
-            })?;
+            byte_len = byte_len
+                .checked_add(fragment.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("join NX feature payload bytes", 0, 1))?;
         }
-        let span_bytes = count.checked_mul(std::mem::size_of::<SourceSpan>()).ok_or_else(|| {
-            ctx.refuse_codec_limit("reserve NX feature payload spans", 0, 1)
-        })?;
-        let reserved = byte_len.checked_add(span_bytes).ok_or_else(|| {
-            ctx.refuse_codec_limit("reserve NX joined feature payload", 0, 1)
-        })?;
+        let span_bytes = count
+            .checked_mul(std::mem::size_of::<SourceSpan>())
+            .ok_or_else(|| ctx.refuse_codec_limit("reserve NX feature payload spans", 0, 1))?;
+        let reserved = byte_len
+            .checked_add(span_bytes)
+            .ok_or_else(|| ctx.refuse_codec_limit("reserve NX joined feature payload", 0, 1))?;
         ctx.charge_work(u64_from_index(count), "scan NX feature payload blocks")?;
         ctx.charge_work(u64_from_index(byte_len), "copy NX feature payload bytes")?;
         ctx.charge_collection_items(u64_from_index(count), "NX feature payload spans")?;
-        let reservation = ctx.reserve_scoped(u64_from_index(reserved), "join NX feature payload")?;
+        let reservation =
+            ctx.reserve_scoped(u64_from_index(reserved), "join NX feature payload")?;
         let mut bytes = Vec::new();
         bytes.try_reserve_exact(byte_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX feature payload bytes", 0, u64_from_index(byte_len))
+            ctx.refuse_codec_limit(
+                "allocate NX feature payload bytes",
+                0,
+                u64_from_index(byte_len),
+            )
         })?;
         let mut sources = Vec::new();
         sources.try_reserve_exact(count).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX feature payload spans", 0, u64_from_index(count))
+            ctx.refuse_codec_limit(
+                "allocate NX feature payload spans",
+                0,
+                u64_from_index(count),
+            )
         })?;
         for id in ids {
             let Some((fragment, source_offset)) = blocks.get(id).copied() else {
                 return Ok(None);
             };
-            if source_offset.checked_add(u64_from_index(fragment.len())).is_none() {
+            if source_offset
+                .checked_add(u64_from_index(fragment.len()))
+                .is_none()
+            {
                 return Ok(None);
             }
             bytes.extend_from_slice(fragment);
@@ -64,7 +78,11 @@ impl<'ctx> JoinedPayload<'ctx> {
                 source_offset,
             });
         }
-        Ok(Some(Self { bytes, sources, _reservation: reservation }))
+        Ok(Some(Self {
+            bytes,
+            sources,
+            _reservation: reservation,
+        }))
     }
 
     pub(super) fn bytes(&self) -> &[u8] {
@@ -96,14 +114,17 @@ mod tests {
     #[test]
     fn source_locations_follow_fragment_boundaries_and_skip_empty_blocks() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
         let ids = ["a".to_owned(), "empty".to_owned(), "b".to_owned()];
         let blocks = BTreeMap::from([
             ("a".to_owned(), (&[1, 2][..], 10)),
             ("empty".to_owned(), (&[][..], u64::MAX)),
             ("b".to_owned(), (&[3, 4, 5][..], 100)),
         ]);
-        let joined = JoinedPayload::from_source(&ctx, ids.iter(), &blocks).unwrap().unwrap();
+        let joined = JoinedPayload::from_source(&ctx, ids.iter(), &blocks)
+            .unwrap()
+            .unwrap();
         assert_eq!(joined.bytes(), [1, 2, 3, 4, 5]);
         assert_eq!(
             [0, 1, 2, 4, 5, u64::MAX].map(|offset| joined.source_offset(offset)),
@@ -114,16 +135,20 @@ mod tests {
     #[test]
     fn source_extent_overflow_is_rejected_at_construction() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
         let ids = ["a".to_owned()];
         let blocks = BTreeMap::from([("a".to_owned(), (&[1, 2][..], u64::MAX))]);
-        assert!(JoinedPayload::from_source(&ctx, ids.iter(), &blocks).unwrap().is_none());
+        assert!(JoinedPayload::from_source(&ctx, ids.iter(), &blocks)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
         let ids = ["block#2".to_string(), "block#3".to_string()];
         let blocks = std::collections::BTreeMap::from([
             ("block#2".to_string(), (&[0x30, 0x43][..], 120_u64)),

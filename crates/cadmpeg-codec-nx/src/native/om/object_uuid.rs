@@ -22,16 +22,23 @@ fn uuid_value_id(
     section_ordinal: usize,
     offset: usize,
 ) -> Result<String, CodecError> {
-    let length = "nx:om-object-uuid-values-:value#".len()
+    let length = "nx:om-object-uuid-values-:value#"
+        .len()
         .checked_add(decimal_digits(section_ordinal))
         .and_then(|length| length.checked_add(decimal_digits(offset)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX OM UUID identity length", 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "retain NX OM UUID identity")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "retain NX OM UUID identity",
+    )?;
     let mut id = String::new();
     id.try_reserve_exact(length)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX OM UUID identity", 0, 1))?;
-    write!(id, "nx:om-object-uuid-values-{section_ordinal}:value#{offset}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX OM UUID identity", 0, 1))?;
+    write!(
+        id,
+        "nx:om-object-uuid-values-{section_ordinal}:value#{offset}"
+    )
+    .map_err(|_| ctx.refuse_codec_limit("write NX OM UUID identity", 0, 1))?;
     Ok(id)
 }
 
@@ -40,23 +47,35 @@ fn uuid_record_id(
     section_ordinal: usize,
     record_ordinal: usize,
 ) -> Result<String, CodecError> {
-    let length = "nx:om-record-directory-:entry#".len()
+    let length = "nx:om-record-directory-:entry#"
+        .len()
         .checked_add(decimal_digits(section_ordinal))
         .and_then(|length| length.checked_add(decimal_digits(record_ordinal)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX OM UUID record identity length", 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "retain NX OM UUID record identity")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "retain NX OM UUID record identity",
+    )?;
     let mut id = String::new();
     id.try_reserve_exact(length)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX OM UUID record identity", 0, 1))?;
-    write!(id, "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX OM UUID record identity", 0, 1))?;
+    write!(
+        id,
+        "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
+    )
+    .map_err(|_| ctx.refuse_codec_limit("write NX OM UUID record identity", 0, 1))?;
     Ok(id)
 }
 
-fn retained_text(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -> Result<String, CodecError> {
+fn retained_text(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
     ctx.charge_retained(cadmpeg_core::decode::u64_from_index(text.len()), operation)?;
     let mut owned = String::new();
-    owned.try_reserve_exact(text.len())
+    owned
+        .try_reserve_exact(text.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     owned.push_str(text);
     Ok(owned)
@@ -154,10 +173,10 @@ pub(in crate::native) fn object_uuid_values(
             let mut record_ids = Vec::new();
             for (record_ordinal, record) in records.iter().enumerate() {
                 if record.offset >= frame_end
-                    || !record
+                    || record
                         .offset
                         .checked_add(record.bytes.len())
-                        .is_some_and(|record_end| value.offset < record_end)
+                        .is_none_or(|record_end| value.offset >= record_end)
                 {
                     continue;
                 }
@@ -166,12 +185,12 @@ pub(in crate::native) fn object_uuid_values(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
                     "retain NX OM UUID records",
                 )?;
-                record_ids.try_reserve(1)
+                record_ids
+                    .try_reserve(1)
                     .map_err(|_| ctx.refuse_codec_limit("allocate NX OM UUID records", 0, 1))?;
                 record_ids.push(uuid_record_id(ctx, section_ordinal, record_ordinal)?);
             }
-            let Some(records) = NonEmpty::from_vec(record_ids)
-            else {
+            let Some(records) = NonEmpty::from_vec(record_ids) else {
                 continue;
             };
             let Some(source_offset) =
@@ -184,14 +203,16 @@ pub(in crate::native) fn object_uuid_values(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectUuidValue>()),
                 "retain NX OM UUID values",
             )?;
-            values.try_reserve(1)
+            values
+                .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("allocate NX OM UUID values", 0, 1))?;
             let id = uuid_value_id(ctx, section_ordinal, value.offset)?;
             let uuid = crate::canonical_uuid::CanonicalUuid::new(retained_text(
                 ctx,
                 value.value.as_str(),
                 "retain NX OM UUID text",
-            )?).map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
+            )?)
+            .map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
             let source_entry = retained_text(ctx, &entry.name, "retain NX OM UUID source entry")?;
             values.push(ObjectUuidValue {
                 id,
@@ -259,10 +280,7 @@ mod tests {
         }
     }
 
-    fn assert_limit(
-        configure: impl FnOnce(&mut DecodePolicy),
-        dimension: ResourceDimension,
-    ) {
+    fn assert_limit(configure: impl FnOnce(&mut DecodePolicy), dimension: ResourceDimension) {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         configure(&mut policy);
@@ -273,17 +291,26 @@ mod tests {
 
     #[test]
     fn object_uuid_values_refuse_collection_limit() {
-        assert_limit(|policy| policy.limits.max_collection_items = 0, ResourceDimension::CollectionItems);
+        assert_limit(
+            |policy| policy.limits.max_collection_items = 0,
+            ResourceDimension::CollectionItems,
+        );
     }
 
     #[test]
     fn object_uuid_values_refuse_retained_limit() {
-        assert_limit(|policy| policy.limits.max_retained_bytes = 0, ResourceDimension::RetainedBytes);
+        assert_limit(
+            |policy| policy.limits.max_retained_bytes = 0,
+            ResourceDimension::RetainedBytes,
+        );
     }
 
     #[test]
     fn object_uuid_values_refuse_work_limit() {
-        assert_limit(|policy| policy.limits.max_work_units = 0, ResourceDimension::WorkUnits);
+        assert_limit(
+            |policy| policy.limits.max_work_units = 0,
+            ResourceDimension::WorkUnits,
+        );
     }
 
     #[test]
@@ -293,8 +320,18 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(UUID_FRAME, &arena, &policy).unwrap();
         let values = object_uuid_values(&ctx, &container()).unwrap();
         assert_eq!(values.len(), 1);
-        assert_eq!(values[0].uuid.as_str(), "01234567-89ab-cdef-0123-456789abcdef");
-        assert_eq!(values[0].records.iter().map(String::as_str).collect::<Vec<_>>(), ["nx:om-record-directory-0:entry#0"]);
+        assert_eq!(
+            values[0].uuid.as_str(),
+            "01234567-89ab-cdef-0123-456789abcdef"
+        );
+        assert_eq!(
+            values[0]
+                .records
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["nx:om-record-directory-0:entry#0"]
+        );
     }
 
     #[test]

@@ -76,7 +76,8 @@ pub(super) fn build_geometry_report(
     dialect_losses: &[LossNote],
     notes: &[String],
 ) -> Result<DecodeBody, cadmpeg_core::CodecError> {
-    let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields(ctx)?;
+    let has_untransferred_attribute_fields =
+        model.has_untransferred_parasolid_attribute_fields(ctx)?;
     let mut losses = Vec::new();
 
     losses.push(NxLossCode::CarrierAnalyticCensus.note(format!(
@@ -305,7 +306,8 @@ pub(crate) fn append_design_intent_losses(
         .collect::<Vec<_>>();
     // Require a non-BaseFeature writer before treating body-to-history as proven.
     let (active_features, closure_rejection) =
-        match crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)? {
+        match crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)?
+        {
             Ok(active) => (Some(active), None),
             Err(rejection) => (None, Some(rejection.code())),
         };
@@ -370,7 +372,9 @@ pub(crate) fn append_design_intent_losses(
                 }))
             || (configuration.active
                 && active_configuration_state_is_incomplete_for_decode(ctx, ir, configuration)?);
-        if incomplete { incomplete_configuration_count += 1; }
+        if incomplete {
+            incomplete_configuration_count += 1;
+        }
     }
     if incomplete_configuration_count != 0 {
         losses.push(NxLossCode::ConfigurationStateUnresolved.note(format!(

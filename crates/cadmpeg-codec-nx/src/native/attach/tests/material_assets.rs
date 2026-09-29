@@ -4,19 +4,20 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{AnnotationBuilder, CadIr};
 
-fn material_asset_result(
-    configure: impl FnOnce(&mut DecodePolicy),
-) -> Result<CadIr, CodecError> {
+fn material_asset_result(configure: impl FnOnce(&mut DecodePolicy)) -> Result<CadIr, CodecError> {
     let texture = [b'I', b'I', 42, 0, 8, 0, 0, 0, 0, 0];
-    let file = crate::test_support::test_prt::prt_with_named_payloads(&[
-        ("/Root/materialsTif/Material", texture.to_vec()),
-    ]);
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+        "/Root/materialsTif/Material",
+        texture.to_vec(),
+    )]);
     let container = crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(ctx, file.as_slice())
-    }).unwrap();
+    })
+    .unwrap();
     let textures = crate::test_support::with_decode_context(|ctx| {
         crate::native::om::material_texture::material_texture_assets(ctx, &container)
-    }).unwrap();
+    })
+    .unwrap();
     assert_eq!(textures.len(), 1);
     let scan = crate::decode::Scan {
         container,
@@ -60,7 +61,8 @@ fn material_asset_attachment_refuses_retained_limit() {
 
 #[test]
 fn material_asset_attachment_refuses_scoped_limit() {
-    let error = material_asset_result(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    let error =
+        material_asset_result(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes));
 }

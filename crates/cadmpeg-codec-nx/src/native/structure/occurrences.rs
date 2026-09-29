@@ -23,10 +23,12 @@ impl FastLoadOccurrences {
         form: OccurrenceLaneForm,
         records: Vec<FastLoadComponentOccurrence>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let records = records.try_into()
-            .map_err(|_: cadmpeg_ir::features::BodySelectionError| {
-                cadmpeg_core::CodecError::malformed("empty NX fast-load occurrence lane")
-            })?;
+        let records =
+            records
+                .try_into()
+                .map_err(|_: cadmpeg_ir::features::BodySelectionError| {
+                    cadmpeg_core::CodecError::malformed("empty NX fast-load occurrence lane")
+                })?;
         Ok(Self(Some(OccurrenceLane { form, records })))
     }
 

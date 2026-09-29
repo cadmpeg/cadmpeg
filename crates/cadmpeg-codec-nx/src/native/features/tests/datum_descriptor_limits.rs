@@ -7,40 +7,55 @@ use crate::native::features::feature_datum_plane_csys_identity_uses;
 use crate::native::features::feature_datum_plane_descriptors;
 
 #[derive(Clone, Copy)]
-enum DatumDescriptorRoute { Csys, Plane, IdentityUse }
+enum DatumDescriptorRoute {
+    Csys,
+    Plane,
+    IdentityUse,
+}
 
 fn datum_descriptor_refusal(
     route: DatumDescriptorRoute,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(ctx,
-            crate::test_support::test_prt::composed_feature_history_prt())
-    }).expect("composed feature-history container");
+        crate::container::scan_bytes(
+            ctx,
+            crate::test_support::test_prt::composed_feature_history_prt(),
+        )
+    })
+    .expect("composed feature-history container");
     let (constructions, headers) = crate::test_support::with_decode_context(|ctx| {
-        Ok::<_, cadmpeg_core::CodecError>((feature_datum_csys_constructions(ctx, &container)?,
-            feature_datum_plane_headers(ctx, &container)?))
-    }).expect("datum descriptor inputs");
+        Ok::<_, cadmpeg_core::CodecError>((
+            feature_datum_csys_constructions(ctx, &container)?,
+            feature_datum_plane_headers(ctx, &container)?,
+        ))
+    })
+    .expect("datum descriptor inputs");
     let (csys, plane) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
             feature_datum_csys_descriptors(ctx, &container, &constructions)?,
             feature_datum_plane_descriptors(ctx, &container, &headers)?,
         ))
-    }).expect("admitted datum descriptors");
+    })
+    .expect("admitted datum descriptors");
     assert!(!csys.is_empty());
     assert!(!plane.is_empty());
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        match route {
-            DatumDescriptorRoute::Csys =>
-                feature_datum_csys_descriptors(ctx, &container, &constructions).map(|rows| rows.len()),
-            DatumDescriptorRoute::Plane =>
-                feature_datum_plane_descriptors(ctx, &container, &headers).map(|rows| rows.len()),
-            DatumDescriptorRoute::IdentityUse =>
-                feature_datum_plane_csys_identity_uses(ctx, &plane, &csys).map(|rows| rows.len()),
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
+        DatumDescriptorRoute::Csys => {
+            feature_datum_csys_descriptors(ctx, &container, &constructions).map(|rows| rows.len())
+        }
+        DatumDescriptorRoute::Plane => {
+            feature_datum_plane_descriptors(ctx, &container, &headers).map(|rows| rows.len())
+        }
+        DatumDescriptorRoute::IdentityUse => {
+            feature_datum_plane_csys_identity_uses(ctx, &plane, &csys).map(|rows| rows.len())
         }
     };
-    assert!(crate::test_support::with_decode_context(|ctx| decode(ctx))
-        .expect("admitted datum descriptor route") > 0);
+    assert!(
+        crate::test_support::with_decode_context(|ctx| decode(ctx))
+            .expect("admitted datum descriptor route")
+            > 0
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);

@@ -17,7 +17,8 @@ fn material_catalog_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> Co
     let scan_policy = DecodePolicy::service();
     let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
     let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
-    let assets = super::super::material_texture::material_texture_assets(&scan_ctx, &container).unwrap();
+    let assets =
+        super::super::material_texture::material_texture_assets(&scan_ctx, &container).unwrap();
     assert_eq!(assets.len(), 1);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
