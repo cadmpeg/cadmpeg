@@ -9,7 +9,7 @@ pub(crate) mod arrays;
 pub(crate) mod cylinder_frame_readers;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
-use cadmpeg_core::decode::{bounded_len, DecodeContext};
+use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -5959,21 +5959,27 @@ fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usiz
 }
 
 fn plane_local_system_compound_close(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
     // Keep the established structural boundary when it exists. Some local
     // systems contain an e0 byte inside a numeric token; in that case the
     // generic scanner can stop without finding the following e3. Validate a
     // complete frame only as the recovery path for that false boundary.
     if let Some(close) = first_compound_close(payload, start, end) {
-        return Some(close);
+        return Ok(Some(close));
     }
-    (start..end)
-        .filter(|close| payload.get(*close) == Some(&psb::token::COMPOUND_CLOSE))
-        .find(|close| complete_plane_local_system(&payload[start..*close], cache).is_some())
+    for close in start..end {
+        if payload.get(close) == Some(&psb::token::COMPOUND_CLOSE)
+            && complete_plane_local_system(ctx, &payload[start..close], cache)?.is_some()
+        {
+            return Ok(Some(close));
+        }
+    }
+    Ok(None)
 }
 
 /// The declared slots of a bounded spline scalar body, with their source
@@ -6608,7 +6614,7 @@ fn plane_envelope_compound_close(
                 &body[positive_start..positive_end],
             ));
             let axis_aligned = plane_envelope_has_one_held_coordinate(&slots, pairs);
-            if axis_aligned || plane_envelope_boundary_has_local_system(body, offset, cache) {
+            if axis_aligned || plane_envelope_boundary_has_local_system(ctx, body, offset, cache)? {
                 return Ok(Some(offset));
             }
     }
@@ -6627,22 +6633,23 @@ fn plane_envelope_has_one_held_coordinate(
 }
 
 fn plane_envelope_boundary_has_local_system(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     envelope_close: usize,
     cache: &scalar::ScalarCache,
-) -> bool {
+) -> Result<bool, CodecError> {
     let Some(local_system_start) = envelope_close.checked_add(1) else {
-        return false;
+        return Ok(false);
     };
     if local_system_start == body.len() {
-        return false;
+        return Ok(false);
     }
     let Some(local_system_close) =
-        plane_local_system_compound_close(body, local_system_start, body.len(), cache)
+        plane_local_system_compound_close(ctx, body, local_system_start, body.len(), cache)?
     else {
-        return false;
+        return Ok(false);
     };
-    complete_plane_local_system(&body[local_system_start..local_system_close], cache).is_some()
+    Ok(complete_plane_local_system(ctx, &body[local_system_start..local_system_close], cache)?.is_some())
 }
 
 fn slot_equality(first: &(Option<f64>, &[u8]), second: &(Option<f64>, &[u8])) -> Option<bool> {
@@ -6964,24 +6971,32 @@ fn complete_plane_local_system_slots(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<[f64; 12]> {
-    complete_plane_local_system(body, cache).map(|(slots, _)| slots.get())
+    crate::decode::with_test_decode_ctx(|ctx| complete_plane_local_system(ctx, body, cache))
+        .expect("plane local system fits service limits")
+        .map(|(slots, _)| slots.get())
 }
 
 fn complete_plane_local_system(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<(
+) -> Result<Option<(
     cadmpeg_ir::units::FiniteVector<12>,
     scalar::PlaneSupportFrameLayout,
-)> {
+)>, CodecError> {
     let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
     if let Some(prefix) = frame_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
-        let mut normalized = Vec::with_capacity(prefix.len() + 1);
+        let Some(count) = prefix.len().checked_add(1) else {
+            return Ok(None);
+        };
+        let _reservation = ctx.reserve_scoped(u64_from_index(count), "creo normalized plane frame bytes")?;
+        let mut normalized = Vec::new();
+        ctx.try_collection(count, "creo normalized plane frame items", || normalized.try_reserve(count))?;
         normalized.extend_from_slice(prefix);
         normalized.push(0x0f);
-        return scalar::decode_plane_support_local_system(&normalized, cache);
+        return Ok(scalar::decode_plane_support_local_system(&normalized, cache));
     }
-    scalar::decode_plane_support_local_system(frame_body, cache)
+    Ok(scalar::decode_plane_support_local_system(frame_body, cache))
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
@@ -7050,7 +7065,7 @@ fn plane_local_systems_for_rows(
         for envelope_close in envelope_closes.into_iter().flatten() {
             let chunk_start = envelope_close + 1;
             let chunk_end =
-                plane_local_system_compound_close(payload, chunk_start, row_end, &cache);
+                plane_local_system_compound_close(ctx, payload, chunk_start, row_end, &cache)?;
             let Some(chunk_end) = chunk_end else {
                 continue;
             };
@@ -7058,7 +7073,7 @@ fn plane_local_systems_for_rows(
                 continue;
             }
             let body = &payload[chunk_start..chunk_end];
-            let decoded = complete_plane_local_system(body, &cache);
+            let decoded = complete_plane_local_system(ctx, body, &cache)?;
             let slots = decoded
                 .as_ref()
                 .map_or([None; 12], |(slots, _)| slots.get().map(Some));
