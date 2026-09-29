@@ -7030,9 +7030,9 @@ pub(crate) fn bind_edge_operand_history_candidates(
         }
         operand.changed_boundary_edge_slots = history_collect(decode, operand.preceding_boundary_edge_slots.iter().copied().filter(|edge| changed_edges.contains(edge)), "collect F3D changed boundary edges")?;
         operand.deleted_boundary_edge_slots =
-            boundary_edges_in_changes(&operand.preceding_boundary_edge_slots, &deleted_edges);
+            boundary_edges_in_changes(decode, &operand.preceding_boundary_edge_slots, &deleted_edges)?;
         operand.updated_boundary_edge_slots =
-            boundary_edges_in_changes(&operand.preceding_boundary_edge_slots, &updated_edges);
+            boundary_edges_in_changes(decode, &operand.preceding_boundary_edge_slots, &updated_edges)?;
         operand.treatment_radius_candidates = treatment_radius_candidates(
             Some(&operand.result_candidate_faces),
             &inserted_faces,
@@ -7093,7 +7093,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 .map(|edge| historical_edge_context(edge, topology))
                 .collect::<Vec<_>>();
             operand.recipe_selectors =
-                recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
+                recipe_selector_candidates(decode, operand.recipe_structure.as_ref(), &contexts)?;
             operand.resolved_edge_slot =
                 crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces(
                     &operand.recipe_selectors,
@@ -7120,7 +7120,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 .map(|edge| historical_edge_context(edge, topology))
                 .collect::<Vec<_>>();
             operand.recipe_selectors =
-                recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
+                recipe_selector_candidates(decode, operand.recipe_structure.as_ref(), &contexts)?;
             operand.resolved_edge_slot =
                 crate::design::edge_resolve::resolved_edge_candidate_intersection(
                     &operand.recipe_selectors,
@@ -7143,7 +7143,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .map(|edge| historical_edge_context(edge, topology))
             .collect::<Vec<_>>();
         operand.recipe_selectors =
-            recipe_selector_candidates(operand.recipe_structure.as_ref(), &changed_edge_contexts);
+            recipe_selector_candidates(decode, operand.recipe_structure.as_ref(), &changed_edge_contexts)?;
         operand.resolved_edge_slot = side_one_recipe_edge(
             decode,
             operand.recipe_structure.as_ref(),
@@ -7352,7 +7352,7 @@ fn bind_active_edge_operand_candidates(
             boundary_edges.iter().copied().map(|edge| historical_edge_context(edge, topology)),
             "collect F3D terminal edge contexts",
         )?;
-        let selectors = recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
+        let selectors = recipe_selector_candidates(decode, operand.recipe_structure.as_ref(), &contexts)?;
         let reference_edge_sets = collect_reference_edge_sets(decode, &reference_faces, topology)?;
         let all_reference_edge_sets = collect_reference_edge_sets(decode, &all_reference_faces, topology)?;
         let edge = crate::design::edge_resolve::resolved_edge_candidate_intersection(
@@ -7660,86 +7660,62 @@ fn treatment_transition_edge_candidates(
     treatment_edge_candidates(None, inserted_faces, result, preceding, deleted_edges).1
 }
 
-fn boundary_edges_in_changes(boundary_edges: &[i64], changes: &[i64]) -> Vec<i64> {
-    boundary_edges
-        .iter()
-        .copied()
-        .filter(|edge| changes.contains(edge))
-        .collect()
+fn boundary_edges_in_changes(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    boundary_edges: &[i64],
+    changes: &[i64],
+) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
+    history_collect(decode, boundary_edges.iter().copied().filter(|edge| changes.contains(edge)), "collect F3D boundary edges in changes")
 }
 
 fn recipe_selector_candidates(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
     contexts: &[crate::records::topology::historical_context::DesignHistoricalEdgeContext],
-) -> Vec<crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext> {
+) -> Result<Vec<crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext>, cadmpeg_core::CodecError> {
     let Some(structure) = structure else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let selectors = structure
-        .sides
-        .iter()
-        .flat_map(|side| side.entries.iter().map(|entry| entry.selector))
-        .collect::<BTreeSet<_>>();
-    selectors
-        .iter()
-        .map(|selector| {
-            let clauses = structure
-                .sides
-                .iter()
-                .map(|side| {
-                    side.entries
-                        .iter()
-                        .find(|entry| entry.selector == *selector)
-                        .map(|entry| {
-                            let triplet_edge_slots =
-                                entry.topology_triplets.each_ref().map(|triplet| {
-                                    contexts
-                                        .iter()
-                                        .filter(|context| {
-                                            context.incident_loops.iter().any(|incident| {
-                                                incident.boundary_edge_count
-                                                    == entry.boundary_edge_count.get()
-                                                    && triplet
-                                                        .incident
-                                                        .map(|incident| incident.ordinal)
-                                                        .is_some_and(|ordinal| {
-                                                            incident.coedge_ordinal == ordinal
-                                                        })
-                                            })
-                                        })
-                                        .map(|context| context.edge_slot)
-                                        .collect()
-                                });
-                            crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
-                                entry: *entry,
-                                triplet_edge_slots,
-                            }
+    let mut selectors = BTreeSet::new();
+    for selector in structure.sides.iter().flat_map(|side| side.entries.iter().map(|entry| entry.selector)) {
+        history_set_insert(decode, &mut selectors, selector, "index F3D edge recipe selectors")?;
+    }
+    let mut selected = Vec::new();
+    for selector in selectors {
+        let mut clauses = Vec::new();
+        for side in &structure.sides {
+            let clause = if let Some(entry) = side.entries.iter().find(|entry| entry.selector == selector) {
+                let [first, second] = entry.topology_triplets.each_ref().map(|triplet| {
+                    history_collect(decode, contexts.iter().filter(|context| {
+                        context.incident_loops.iter().any(|incident| {
+                            incident.boundary_edge_count == entry.boundary_edge_count.get()
+                                && triplet.incident.map(|incident| incident.ordinal)
+                                    .is_some_and(|ordinal| incident.coedge_ordinal == ordinal)
                         })
+                    }).map(|context| context.edge_slot), "collect F3D recipe triplet edges")
+                });
+                Some(crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
+                    entry: *entry,
+                    triplet_edge_slots: [first?, second?],
                 })
-                .collect::<Vec<_>>();
-            let required = clauses
-                .iter()
-                .map(|entry| {
-                    entry
-                        .as_ref()
-                        .map(|entry| i64::from(entry.entry.boundary_edge_count.get()))
-                })
-                .collect::<Vec<_>>();
-            let boundary_count_matching_edge_slots = contexts
-                .iter()
-                .filter(|context| {
-                    let counts = context
-                        .incident_loops
-                        .iter()
-                        .map(|incident| i64::from(incident.boundary_edge_count))
-                        .collect::<Vec<_>>();
-                    incident_loop_counts_satisfy_sides(&counts, &required)
-                })
-                .map(|context| context.edge_slot)
-                .collect();
-            let incidence_matching_edge_slots = contexts
-                .iter()
-                .filter(|context| {
+            } else {
+                None
+            };
+            charge_history_item(decode, "collect F3D recipe selector clauses")?;
+            clauses.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D recipe selector clauses"))?;
+            clauses.push(clause);
+        }
+        let required = history_collect(decode, clauses.iter().map(|entry| entry.as_ref().map(|entry| i64::from(entry.entry.boundary_edge_count.get()))), "collect F3D recipe side counts")?;
+        let mut boundary_count_matching_edge_slots = Vec::new();
+        for context in contexts {
+            let counts = history_collect(decode, context.incident_loops.iter().map(|incident| i64::from(incident.boundary_edge_count)), "collect F3D incident loop counts")?;
+            if incident_loop_counts_satisfy_sides(&counts, &required) {
+                charge_history_item(decode, "collect F3D boundary count edge matches")?;
+                boundary_count_matching_edge_slots.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D boundary count edge matches"))?;
+                boundary_count_matching_edge_slots.push(context.edge_slot);
+            }
+        }
+        let incidence_matching_edge_slots = history_collect(decode, contexts.iter().filter(|context| {
                     clauses.iter().flatten().all(|clause| {
                         let entry = &clause.entry;
                         entry.topology_triplets.iter().all(|triplet| {
@@ -7752,17 +7728,17 @@ fn recipe_selector_candidates(
                             })
                         })
                     })
-                })
-                .map(|context| context.edge_slot)
-                .collect::<Vec<_>>();
-            crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
-                selector: *selector,
-                clauses,
-                incidence_matching_edge_slots,
-                boundary_count_matching_edge_slots,
-            }
-        })
-        .collect()
+                }).map(|context| context.edge_slot), "collect F3D incidence edge matches")?;
+        charge_history_item(decode, "collect F3D edge recipe selectors")?;
+        selected.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D edge recipe selectors"))?;
+        selected.push(crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
+            selector,
+            clauses,
+            incidence_matching_edge_slots,
+            boundary_count_matching_edge_slots,
+        });
+    }
+    Ok(selected)
 }
 
 fn historical_edge_context(
@@ -9996,10 +9972,10 @@ fn history_index<K: std::hash::Hash + Eq, V>(
     Ok(index)
 }
 
-fn history_set_insert(
+fn history_set_insert<T: Ord>(
     decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
-    set: &mut BTreeSet<i64>,
-    value: i64,
+    set: &mut BTreeSet<T>,
+    value: T,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if !set.contains(&value) {

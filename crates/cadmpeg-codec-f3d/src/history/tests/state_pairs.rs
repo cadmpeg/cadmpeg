@@ -1073,8 +1073,8 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
 
 #[test]
 fn boundary_edge_change_partition_preserves_boundary_order() {
-    assert_eq!(boundary_edges_in_changes(&[8, 3, 5, 2], &[2, 8]), [8, 2]);
-    assert!(boundary_edges_in_changes(&[8, 3], &[1, 2]).is_empty());
+    assert_eq!(boundary_edges_in_changes(None, &[8, 3, 5, 2], &[2, 8]).unwrap(), [8, 2]);
+    assert!(boundary_edges_in_changes(None, &[8, 3], &[1, 2]).unwrap().is_empty());
 }
 
 #[test]
@@ -1455,7 +1455,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             ],
         },
     ];
-    let selectors = recipe_selector_candidates(Some(&structure), &contexts);
+    let selectors = recipe_selector_candidates(None, Some(&structure), &contexts).unwrap();
     assert_eq!(selectors.len(), 2);
     assert_eq!(selectors[0].selector, 1);
     assert_eq!(selectors[0].boundary_count_matching_edge_slots, [8]);
