@@ -4,28 +4,30 @@ mod data_block_object_frames;
 mod offset_block_view;
 
 use crate::native::features::canonical_feature_history_links;
-use crate::native::features::data_block_object_frame_id;
-use crate::native::features::feature_block_constructions;
+use crate::native::features::construction_records::data_block_object_frame_id;
+use crate::native::features::construction_records::feature_block_constructions;
+use crate::native::features::construction_records::feature_extrude_construction_profiles;
 use crate::native::features::feature_datum_csys_block_uses;
 use crate::native::features::feature_datum_plane_csys_identity_uses;
-use crate::native::features::feature_extrude_construction_profiles;
 
 fn extrude_constructions_for_test(
     references: &[crate::native::features::FeatureExtrudeProfileReference],
-    branches: &[crate::native::features::FeatureExtrudePayload32Branch],
-) -> Vec<crate::native::features::FeatureExtrude32Construction> {
+    branches: &[crate::native::features::extrude_32::FeatureExtrudePayload32Branch],
+) -> Vec<crate::native::features::extrude_32::FeatureExtrude32Construction> {
     crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::feature_extrude_32_constructions(ctx, references, branches)
+        crate::native::features::construction_records::feature_extrude_32_constructions(
+            ctx, references, branches,
+        )
     })
     .unwrap()
 }
-use crate::native::features::feature_operation_body_operands;
+use crate::native::features::construction_records::feature_operation_body_operands;
+use crate::native::features::construction_records::unique_offset_data_store;
 use crate::native::features::feature_sketch_construction_inputs;
 use crate::native::features::feature_sketch_datum_csys_dependencies;
 use crate::native::features::feature_sketch_records;
 use crate::native::features::offset_data_block_bytes_for_section;
 use crate::native::features::parse_sketch_point_name;
-use crate::native::features::unique_offset_data_store;
 use crate::native::features::FeatureBodyReference;
 use crate::native::features::FeatureBooleanKind;
 use crate::native::features::FeatureBooleanOperation;
@@ -132,7 +134,9 @@ fn nx_feature_source_content_orders_payload_text() {
         value: crate::payload_text::PayloadText::new("Later".to_owned()).unwrap(),
         source_offset: 40,
     };
-    let content = crate::native::attach::feature_source_content(&ctx, &[&later, &text]).unwrap();
+    let content =
+        crate::native::attach::feature_projection::feature_source_content(&ctx, &[&later, &text])
+            .unwrap();
     assert!(matches!(
         &content[0],
         cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Through"
@@ -174,7 +178,8 @@ fn feature_source_text_with_limit(
         value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
         source_offset: 30,
     };
-    let content = crate::native::attach::feature_source_content(&ctx, &[&text])?;
+    let content =
+        crate::native::attach::feature_projection::feature_source_content(&ctx, &[&text])?;
     assert_eq!(content.len(), 1);
     Ok(())
 }
@@ -1402,7 +1407,7 @@ fn nx_operation_body_operands_refuse_work_limit() {
 
 pub(super) fn extrude_32_fixture() -> (
     FeatureExtrudeProfileReference,
-    crate::native::features::FeatureExtrudePayload32Branch,
+    crate::native::features::extrude_32::FeatureExtrudePayload32Branch,
 ) {
     let reference = FeatureExtrudeProfileReference {
         id: "profile#0".to_string(),
@@ -1517,8 +1522,12 @@ fn extrude_32_mapping_refusal(
     configure(&mut policy);
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    crate::native::features::feature_extrude_32_constructions(&ctx, &[reference], &[branch])
-        .unwrap_err()
+    crate::native::features::construction_records::feature_extrude_32_constructions(
+        &ctx,
+        &[reference],
+        &[branch],
+    )
+    .unwrap_err()
 }
 
 #[test]

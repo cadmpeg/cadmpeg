@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::body_writing_unresolved_feature_definition;
-use crate::native::attach::brep_feature_definition;
+use crate::native::attach::feature_projection::body_writing_unresolved_feature_definition;
+use crate::native::attach::feature_projection::brep_feature_definition;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};

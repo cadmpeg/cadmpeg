@@ -27,7 +27,7 @@ fn block_construction_refusal(
         })
         .collect::<Vec<_>>();
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::native::features::feature_block_constructions(ctx, &references)
+        crate::native::features::construction_records::feature_block_constructions(ctx, &references)
     };
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| decode(ctx))
@@ -79,7 +79,7 @@ fn block_payload_refusal(
 ) -> cadmpeg_core::CodecError {
     let (container, construction) = block_payload_input(b"A");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::native::features::feature_block_construction_payloads(
+        crate::native::features::construction_records::feature_block_construction_payloads(
             ctx,
             &container,
             std::slice::from_ref(&construction),
@@ -112,7 +112,7 @@ fn block_field_refusal(
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
     let (container, construction) = block_payload_input(bytes);
     let payloads = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::feature_block_construction_payloads(
+        crate::native::features::construction_records::feature_block_construction_payloads(
             ctx,
             &container,
             std::slice::from_ref(&construction),
@@ -121,11 +121,11 @@ fn block_field_refusal(
     .expect("block construction payloads");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
         BlockFieldRoute::Scalar => {
-            crate::native::features::feature_block_payload_scalars(ctx, &container, &payloads)
+            crate::native::features::construction_records::feature_block_payload_scalars(ctx, &container, &payloads)
                 .map(|rows| rows.len())
         }
         BlockFieldRoute::Name => {
-            crate::native::features::feature_block_payload_names(ctx, &container, &payloads)
+            crate::native::features::construction_records::feature_block_payload_names(ctx, &container, &payloads)
                 .map(|rows| rows.len())
         }
     };
@@ -195,20 +195,20 @@ fn block_named_record_refusal(
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
     let (container, construction) = block_payload_input(bytes);
     let (payloads, names, scalars) = crate::test_support::with_decode_context(|ctx| {
-        let payloads = crate::native::features::feature_block_construction_payloads(
+        let payloads = crate::native::features::construction_records::feature_block_construction_payloads(
             ctx,
             &container,
             std::slice::from_ref(&construction),
         )?;
         let names =
-            crate::native::features::feature_block_payload_names(ctx, &container, &payloads)?;
+            crate::native::features::construction_records::feature_block_payload_names(ctx, &container, &payloads)?;
         let scalars =
-            crate::native::features::feature_block_payload_scalars(ctx, &container, &payloads)?;
+            crate::native::features::construction_records::feature_block_payload_scalars(ctx, &container, &payloads)?;
         Ok::<_, cadmpeg_core::CodecError>((payloads, names, scalars))
     })
     .expect("block named record inputs");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::native::features::feature_block_payload_named_records(
+        crate::native::features::construction_records::feature_block_payload_named_records(
             ctx, &payloads, &names, &scalars,
         )
     };
@@ -270,16 +270,16 @@ fn block_point_input() -> (
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
     let (container, construction) = block_payload_input(bytes);
     crate::test_support::with_decode_context(|ctx| {
-        let payloads = crate::native::features::feature_block_construction_payloads(
+        let payloads = crate::native::features::construction_records::feature_block_construction_payloads(
             ctx,
             &container,
             std::slice::from_ref(&construction),
         )?;
         let names =
-            crate::native::features::feature_block_payload_names(ctx, &container, &payloads)?;
+            crate::native::features::construction_records::feature_block_payload_names(ctx, &container, &payloads)?;
         let mut scalars =
-            crate::native::features::feature_block_payload_scalars(ctx, &container, &payloads)?;
-        let mut records = crate::native::features::feature_block_payload_named_records(
+            crate::native::features::construction_records::feature_block_payload_scalars(ctx, &container, &payloads)?;
+        let mut records = crate::native::features::construction_records::feature_block_payload_named_records(
             ctx, &payloads, &names, &scalars,
         )?;
         assert_eq!((records.len(), scalars.len()), (1, 1));
@@ -304,7 +304,7 @@ fn block_point_refusal(
 ) -> cadmpeg_core::CodecError {
     let (records, names, scalars) = block_point_input();
     let points = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::feature_block_payload_points(ctx, &records, &names, &scalars)
+        crate::native::features::construction_records::feature_block_payload_points(ctx, &records, &names, &scalars)
     })
     .expect("admitted block point");
     assert_eq!(points.len(), 1);
@@ -313,11 +313,11 @@ fn block_point_refusal(
     let group_points = [points[0].clone(), second];
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
         BlockPointRoute::Point => {
-            crate::native::features::feature_block_payload_points(ctx, &records, &names, &scalars)
+            crate::native::features::construction_records::feature_block_payload_points(ctx, &records, &names, &scalars)
                 .map(|rows| rows.len())
         }
         BlockPointRoute::Group => {
-            crate::native::features::feature_block_payload_point_groups(ctx, &group_points)
+            crate::native::features::construction_records::feature_block_payload_point_groups(ctx, &group_points)
                 .map(|rows| rows.len())
         }
     };

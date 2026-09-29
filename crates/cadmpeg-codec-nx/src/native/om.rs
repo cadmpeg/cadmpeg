@@ -7686,7 +7686,7 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::test_support::with_decode_context(|ctx| {
-            crate::native::attach::attach_expression_parameters(
+            crate::native::attach::expressions::attach_expression_parameters(
                 ctx,
                 &mut ir,
                 &expressions,
@@ -7727,7 +7727,7 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::test_support::with_decode_context(|ctx| {
-            crate::native::attach::attach_expression_parameters(
+            crate::native::attach::expressions::attach_expression_parameters(
                 ctx,
                 &mut ir,
                 &expressions,
@@ -7784,7 +7784,7 @@ mod tests {
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
         crate::test_support::with_decode_context(|ctx| {
-            crate::native::attach::attach_expression_parameters(
+            crate::native::attach::expressions::attach_expression_parameters(
                 ctx,
                 &mut ir,
                 &expressions,
@@ -7876,7 +7876,7 @@ mod tests {
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
         crate::test_support::with_decode_context(|ctx| {
-            crate::native::attach::attach_expression_parameters(
+            crate::native::attach::expressions::attach_expression_parameters(
                 ctx,
                 &mut ir,
                 &expressions,
@@ -8004,7 +8004,7 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::test_support::with_decode_context(|ctx| {
-            crate::native::attach::attach_expression_parameters(
+            crate::native::attach::expressions::attach_expression_parameters(
                 ctx,
                 &mut ir,
                 &expressions,
@@ -8067,7 +8067,7 @@ mod tests {
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
         crate::test_support::with_decode_context(|ctx| {
-            crate::native::attach::attach_expression_parameters(
+            crate::native::attach::expressions::attach_expression_parameters(
                 ctx,
                 &mut ir,
                 &expressions,
@@ -8169,7 +8169,7 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::test_support::with_decode_context(|ctx| {
-            crate::native::attach::attach_expression_parameters(
+            crate::native::attach::expressions::attach_expression_parameters(
                 ctx,
                 &mut ir,
                 &[expression],
@@ -8222,7 +8222,7 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::test_support::with_decode_context(|ctx| {
-            crate::native::attach::attach_expression_parameters(
+            crate::native::attach::expressions::attach_expression_parameters(
                 ctx,
                 &mut ir,
                 &[expression],
@@ -8270,7 +8270,7 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::test_support::with_decode_context(|ctx| {
-            crate::native::attach::attach_expression_parameters(
+            crate::native::attach::expressions::attach_expression_parameters(
                 ctx,
                 &mut ir,
                 &[expression],

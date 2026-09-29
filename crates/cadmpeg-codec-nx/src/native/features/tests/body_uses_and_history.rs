@@ -991,8 +991,8 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
 
 #[test]
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
-    use crate::native::features::feature_block_payload_point_groups;
-    use crate::native::features::feature_block_payload_points;
+    use crate::native::features::construction_records::feature_block_payload_point_groups;
+    use crate::native::features::construction_records::feature_block_payload_points;
     use crate::native::features::FeatureBlockPayloadNamedRecord;
     use crate::native::features::FeaturePayloadScalar;
 

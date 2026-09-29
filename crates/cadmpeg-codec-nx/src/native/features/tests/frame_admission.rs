@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::features::construction_records::{
+    feature_surface_construction_scalar_pairs, feature_surface_construction_strings,
+};
 use crate::native::features::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use crate::native::features::{
     feature_datum_csys_payload_fixed_pairs, feature_datum_csys_payload_scalar_pairs,
     feature_datum_csys_payload_scalars, feature_datum_plane_payload_scalar_pairs,
     feature_sketch_payload_coordinate_pairs, feature_sketch_payload_fixed_pairs,
     feature_sketch_payload_mixed_pairs, feature_sketch_payload_named_records,
-    feature_sketch_payload_names, feature_sketch_payload_scalar_lanes,
-    feature_surface_construction_scalar_pairs, feature_surface_construction_strings,
-    offset_data_block_bytes, FeatureConstructionOwner, FeatureConstructionPayload,
-    FeatureDatumCsysPayload, FeatureDatumPlanePayload, FeaturePayloadName,
-    FeatureSketchConstructionInputs, FeatureSurfaceConstructionPayload,
+    feature_sketch_payload_names, feature_sketch_payload_scalar_lanes, offset_data_block_bytes,
+    FeatureConstructionOwner, FeatureConstructionPayload, FeatureDatumCsysPayload,
+    FeatureDatumPlanePayload, FeaturePayloadName, FeatureSketchConstructionInputs,
+    FeatureSurfaceConstructionPayload,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;

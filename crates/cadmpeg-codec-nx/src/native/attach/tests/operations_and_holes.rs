@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::block_placement;
-use crate::native::attach::new_body_boolean_op;
-use crate::native::attach::non_boolean_feature_definition;
-use crate::native::attach::non_modeling_history_definition;
+use crate::native::attach::feature_projection::block_placement;
+use crate::native::attach::feature_projection::new_body_boolean_op;
+use crate::native::attach::feature_projection::non_boolean_feature_definition;
+use crate::native::attach::feature_projection::non_modeling_history_definition;
 use crate::native::attach::projects_neutral_feature;
-use crate::native::attach::sphere_body_projection;
+use crate::native::attach::feature_projection::sphere_body_projection;
 use crate::native::attach::text_semantic_annotation;
 use crate::native::attach::BodyId;
 use crate::native::attach::BooleanOp;
@@ -15,9 +15,9 @@ use crate::native::attach::FeatureDefinition;
 use crate::native::attach::FeatureId;
 use crate::native::attach::FeatureOperation;
 use crate::native::attach::FeatureTreeNodeRole;
-use crate::native::attach::NewBodyEvidence;
-use crate::native::attach::Point3;
-use crate::native::attach::UnresolvedFamily;
+use crate::native::attach::feature_projection::NewBodyEvidence;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::features::UnresolvedFamily;
 use crate::native::history::BodyWriterHistory;
 use crate::native::segments::BooleanOffsetStoreResolution;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};

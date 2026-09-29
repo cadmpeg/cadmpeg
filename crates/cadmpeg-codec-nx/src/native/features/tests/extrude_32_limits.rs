@@ -5,7 +5,7 @@ fn extrude_32_join_refusal(
 ) -> cadmpeg_core::CodecError {
     let (reference, branch) = super::source_and_sketch::extrude_32_fixture();
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::native::features::feature_extrude_32_constructions(
+        crate::native::features::construction_records::feature_extrude_32_constructions(
             ctx,
             std::slice::from_ref(&reference),
             std::slice::from_ref(&branch),
