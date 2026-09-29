@@ -28,7 +28,7 @@ use crate::math::unit_vector;
 /// Binary32 multiplication and addition can leave a unit XY direction just
 /// below the unit circle.  Treat that deficit as roundoff instead of creating
 /// a false binary64 Z component when the carrier stores only the Z sign.
-const F32_UNIT_NORM2_ROUNDING_TOLERANCE: f64 = 4.0 * (f32::EPSILON as f64);
+const F32_UNIT_NORM2_ROUNDING_TOLERANCE: f64 = 4.0 * 0.000_000_119_209_289_550_781_25;
 
 /// The standard-nested plane bounds record. Its three-byte tag is the bridge to
 /// the matching `SurfacicReps` plane marker.
@@ -195,11 +195,12 @@ const MAX_F32_CONTAINMENT_ULPS: f64 = 3.0;
 
 /// Return the spacing between adjacent finite binary32 values at `value`.
 fn f32_ulp(value: f32) -> f64 {
-    let exponent = (value.abs().to_bits() >> 23) & 0xff;
+    let [_, _, low, high] = value.abs().to_bits().to_le_bytes();
+    let exponent = i32::from(high & 0x7f) * 2 + i32::from(low >> 7);
     if exponent == 0 {
         f64::from(f32::from_bits(1))
     } else {
-        2.0_f64.powi(exponent as i32 - 127 - 23)
+        2.0_f64.powi(exponent - 127 - 23)
     }
 }
 
@@ -492,7 +493,7 @@ pub(super) fn standard_surface_records(
     let ordered_records = &table.records;
     let successors = &table.successors;
     let remaining_steps = face_count - 1;
-    let level_count = usize::BITS as usize - remaining_steps.leading_zeros() as usize;
+    let level_count = cadmpeg_core::decode::index_from_u32(usize::BITS) - cadmpeg_core::decode::index_from_u32(remaining_steps.leading_zeros());
     let mut jumps = Vec::new();
     ctx.reserve_vec(&mut jumps, level_count, "catia_surface_jump_levels")?;
     if level_count > 0 {
@@ -1063,13 +1064,13 @@ fn f32_le(bytes: &[u8], at: usize) -> Option<f32> {
 
 fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
     match *bytes.get(at)? {
-        0xff => Some((View::u32_le_at(bytes, at + 1)? as usize, at + 5)),
-        value => Some((value as usize, at + 1)),
+        0xff => Some((cadmpeg_core::decode::index_from_u32(View::u32_le_at(bytes, at + 1)?), at + 5)),
+        value => Some((usize::from(value), at + 1)),
     }
 }
 
 fn u24_le(bytes: &[u8], at: usize) -> u32 {
-    bytes[at] as u32 | ((bytes[at + 1] as u32) << 8) | ((bytes[at + 2] as u32) << 16)
+    u32::from(bytes[at]) | ((u32::from(bytes[at + 1])) << 8) | ((u32::from(bytes[at + 2])) << 16)
 }
 
 #[cfg(test)]

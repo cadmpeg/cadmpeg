@@ -1345,7 +1345,7 @@ let BuildStandardEdgeCurveInputs { ir, annotations, bindings, surface_indices, b
         annotations,
         &id,
         "MainDataStream+SurfacicReps",
-        support.pos as u64,
+        cadmpeg_core::decode::u64_from_index(support.pos),
         "curve_support_60",
         match (&support.geometry, &geometry) {
             (_, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })) => Exactness::Unknown,
@@ -1551,7 +1551,7 @@ let BuildStandardEdgeCurveInputs { ir, annotations, bindings, surface_indices, b
                     annotations,
                     &procedural_id,
                     "MainDataStream+SurfacicReps",
-                    support.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(support.pos),
                     "standard_surface_intersection",
                     Exactness::Derived,
                 )?;
@@ -2088,7 +2088,7 @@ pub(super) fn attach_standard_circles(
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
-            support.pos as u64,
+            cadmpeg_core::decode::u64_from_index(support.pos),
             "curve_support_60_circle",
             Exactness::ByteExact,
         )?;
@@ -2323,7 +2323,7 @@ pub(super) fn attach_standard_lines(
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
-            support.pos as u64,
+            cadmpeg_core::decode::u64_from_index(support.pos),
             "curve_support_60_line",
             Exactness::ByteExact,
         )?;

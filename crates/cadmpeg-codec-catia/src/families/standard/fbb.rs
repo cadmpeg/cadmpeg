@@ -1304,7 +1304,7 @@ mod allocation_tests {
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 4 * std::mem::size_of::<[f64; 3]>() as u64 - 1;
+        policy.limits.max_retained_bytes = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<[f64; 3]>()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("fixture fits the input limit");
         let refusal = parse_vertex_table(&ctx, &bytes, vertex_header)
