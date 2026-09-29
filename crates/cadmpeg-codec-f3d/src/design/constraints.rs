@@ -274,7 +274,11 @@ pub(crate) fn project_sketch_constraints(
                 ctx,
             )?;
         }
-        let definition = definition.or_else(|| exact_offset_constraint(relation, scope, &projected));
+        let definition = if definition.is_some() {
+            definition
+        } else {
+            exact_offset_constraint(ctx, relation, scope, &projected).transpose()?
+        };
         let definition = match definition {
             Some(definition) => Some(definition),
             None => exact_text_relation(relation, scope, &projected, ctx)?,

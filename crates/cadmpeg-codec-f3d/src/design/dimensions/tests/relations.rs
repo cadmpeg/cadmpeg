@@ -152,7 +152,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
     );
 
     assert!(matches!(
-        exact_counted_dimension_relation(&[&first, &axis, &second]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(None, &[&first, &axis, &second]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
@@ -166,7 +166,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
         radius: Length::new(2.0).unwrap(),
     })
     .unwrap();
-    assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).expect("resource allocation did not fail").is_none());
+    assert!(exact_counted_dimension_relation(None, &[&first, &axis, &mismatched]).expect("resource allocation did not fail").is_none());
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
     );
 
     assert!(matches!(
-        exact_counted_dimension_relation(&[&first, &axis, &second]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(None, &[&first, &axis, &second]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
@@ -224,7 +224,7 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
         end_angle: Angle::new(5.0 * std::f64::consts::FRAC_PI_4 + 0.1).unwrap(),
     })
     .unwrap();
-    assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).expect("resource allocation did not fail").is_none());
+    assert!(exact_counted_dimension_relation(None, &[&first, &axis, &mismatched]).expect("resource allocation did not fail").is_none());
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        exact_counted_dimension_relation(&[&circle, &arc]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(None, &[&circle, &arc]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == arc.id().clone()
     ));
@@ -269,7 +269,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        exact_counted_dimension_relation(&[&circle, &coradial]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(None, &[&circle, &coradial]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Coradial { first, second })
             if first == circle.id().clone() && second == coradial.id().clone()
     ));
@@ -288,7 +288,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        exact_counted_dimension_relation(&[&circle, &ellipse]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(None, &[&circle, &ellipse]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == ellipse.id().clone()
     ));
@@ -301,7 +301,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         end_angle: Angle::new(1.0).unwrap(),
     })
     .unwrap();
-    assert!(exact_counted_dimension_relation(&[&circle, &displaced]).expect("resource allocation did not fail").is_none());
+    assert!(exact_counted_dimension_relation(None, &[&circle, &displaced]).expect("resource allocation did not fail").is_none());
 }
 
 #[test]
@@ -587,7 +587,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         (("native", 4), &result_vertical),
     ]);
 
-    let definition = exact_offset_constraint(&relation, "native", &projected).unwrap();
+    let definition = exact_offset_constraint(None, &relation, "native", &projected).transpose().unwrap().unwrap();
     let SketchConstraintDefinitionInput::Offset {
         pairs,
         distance,
@@ -627,7 +627,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
             draft.return_members = returned.try_into().expect("uniform member resolution");
         })
         .unwrap();
-    assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
+    assert!(exact_offset_constraint(None, &repeated_pair, "native", &projected).transpose().unwrap().is_none());
 }
 
 #[test]
@@ -750,14 +750,14 @@ fn single_curve_annotation_projects_parameterized_offset() {
     let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
 
     let definition = crate::design::dimensions::annotation_offset_dimension_definition(
-        &frame,
-        &parameter,
-        &parameter_id,
-        stream,
-        &[source_curve.clone(), result_curve.clone()],
-        &projected,
-        1.0e-6,
-    )
+None,
+&frame,
+(&parameter, &parameter_id),
+stream,
+&[source_curve.clone(), result_curve.clone()],
+&projected,
+1.0e-6,
+).transpose().unwrap()
     .expect("single-curve annotation offset");
     assert!(matches!(
         definition,
@@ -815,14 +815,14 @@ fn single_curve_annotation_projects_parameterized_offset() {
     )
     .unwrap();
     let explicit_definition = crate::design::dimensions::annotation_offset_dimension_definition(
-        &explicit_frame,
-        &parameter,
-        &parameter_id,
-        stream,
-        &[source_curve.clone(), result_curve.clone()],
-        &projected,
-        1.0e-6,
-    )
+None,
+&explicit_frame,
+(&parameter, &parameter_id),
+stream,
+&[source_curve.clone(), result_curve.clone()],
+&projected,
+1.0e-6,
+).transpose().unwrap()
     .expect("explicit two-curve annotation offset");
     assert!(matches!(
         explicit_definition,
@@ -855,18 +855,18 @@ fn single_curve_annotation_projects_parameterized_offset() {
     ]);
     assert!(
         crate::design::dimensions::annotation_offset_dimension_definition(
-            &frame,
-            &parameter,
-            &parameter_id,
-            stream,
-            &[
+None,
+&frame,
+(&parameter, &parameter_id),
+stream,
+&[
                 curve(format!("{stream}:sketch-curve#10"), 10, 20, 0),
                 curve(format!("{stream}:sketch-curve#11"), 11, 21, 7),
                 duplicate_curve
             ],
-            &projected_with_duplicate,
-            1.0e-6,
-        )
+&projected_with_duplicate,
+1.0e-6,
+).transpose().unwrap()
         .is_none()
     );
 }
@@ -957,20 +957,20 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
         (("native", 4), &horizontal),
     ]);
 
-    let lines = indirect_angular_lines(
+    let lines = indirect_angular_lines(None,
         "native",
         &[&point, &explicit],
         std::f64::consts::FRAC_PI_4,
         &projected,
-    )
+    ).unwrap()
     .unwrap();
     assert_eq!(lines, (diagonal.id().clone(), explicit.id().clone()));
-    let supplementary = indirect_angular_lines(
+    let supplementary = indirect_angular_lines(None,
         "native",
         &[&point, &explicit],
         3.0 * std::f64::consts::FRAC_PI_4,
         &projected,
-    )
+    ).unwrap()
     .unwrap();
     assert_eq!(supplementary, lines);
     let duplicate_diagonal = entity(
@@ -988,12 +988,12 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
         (("native", 4), &horizontal),
         (("native", 5), &duplicate_diagonal),
     ]);
-    assert!(indirect_angular_lines(
+    assert!(indirect_angular_lines(None,
         "native",
         &[&point, &explicit],
         std::f64::consts::FRAC_PI_4,
         &projected_with_duplicate,
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -1266,11 +1266,11 @@ fn parallel_group_binds_one_common_axis_angle() {
         ParameterId::mint("generated:test:parameter#axis-angle").expect("identity grammar");
 
     assert!(matches!(
-        crate::design::dimensions::parallel_group_axis_angle_definition(
+        crate::design::dimensions::parallel_group_axis_angle_definition(None,
             &[&first, &second],
             &parameter,
             &parameter_id,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity,
             axis: SketchAxis::Horizontal,
@@ -1278,19 +1278,29 @@ fn parallel_group_binds_one_common_axis_angle() {
         }) if entity == first.id().clone() && parameter == parameter_id
     ));
     assert!(
-        crate::design::dimensions::parallel_group_axis_angle_definition(
+        crate::design::dimensions::parallel_group_axis_angle_definition(None,
             &[&first, &mismatch],
             &parameter,
             &parameter_id,
-        )
+        ).transpose().unwrap()
         .is_none()
     );
     assert!(
-        crate::design::dimensions::parallel_group_axis_angle_definition(
+        crate::design::dimensions::parallel_group_axis_angle_definition(None,
             &[&first, &crossed],
             &parameter,
             &parameter_id,
-        )
+        ).transpose().unwrap()
         .is_none()
     );
 }
+
+mod refusal_parallel_group_axis_angle;
+
+mod refusal_exact_centered_entity_relation;
+
+mod refusal_indirect_angular_lines;
+
+mod refusal_annotation_offset;
+
+mod refusal_exact_offset_constraint;

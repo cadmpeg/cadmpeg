@@ -27,6 +27,15 @@ use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
 
+macro_rules! dimension_resource {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 fn insert_dimension_index<K: Eq + Hash, V>(
     ctx: Option<&DecodeContext<'_>>,
     index: &mut HashMap<K, V>,
@@ -76,6 +85,18 @@ fn push_dimension_item<T>(
     Ok(())
 }
 
+fn collect_dimension_items<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut collected = Vec::new();
+    for item in items {
+        push_dimension_item(ctx, &mut collected, item, operation)?;
+    }
+    Ok(collected)
+}
+
 fn copy_dimension_entity_id(
     ctx: Option<&DecodeContext<'_>>,
     id: &cadmpeg_ir::sketches::SketchEntityId,
@@ -122,6 +143,18 @@ fn copy_spatial_entity_id(
     let text = String::from_utf8(bytes)
         .map_err(|_| CodecError::malformed("validated spatial entity ID is not UTF-8"))?;
     cadmpeg_ir::sketches::SpatialSketchEntityId::try_from(text).map_err(CodecError::malformed)
+}
+
+fn copy_spatial_entity_members(
+    ctx: Option<&DecodeContext<'_>>,
+    entities: &[&cadmpeg_ir::sketches::SpatialSketchEntity],
+) -> Result<Vec<cadmpeg_ir::sketches::SpatialSketchEntityId>, CodecError> {
+    let mut members = Vec::new();
+    for entity in entities {
+        let id = copy_spatial_entity_id(ctx, entity.id(), "f3d spatial carrier output entity id")?;
+        push_dimension_item(ctx, &mut members, id, "f3d spatial carrier output member")?;
+    }
+    Ok(members)
 }
 
 fn copy_dimension_parameter_id(
@@ -586,7 +619,7 @@ fn project_all_dimension_constraints(
             let copied = copy_dimension_parameter_id(ctx, &parameter,
                 "f3d exact radial parameter id")?;
             if let Some(definition) =
-                radial_dimension_definition(entity, source_kind, evaluated_value, copied)
+                radial_dimension_definition(ctx, entity, source_kind, evaluated_value, copied).transpose()?
             {
                 return Ok(Some(definition));
             }
@@ -600,9 +633,9 @@ fn project_all_dimension_constraints(
             let evaluated_mm = evaluated_value * 10.0;
             let copied = copy_dimension_parameter_id(ctx, &parameter,
                 "f3d exact directional parameter id")?;
-            if let Some(definition) = directional_point_dimension(
+            if let Some(definition) = directional_point_dimension(ctx,
                 &entities, evaluated_mm, copied, linear_tolerance,
-            ) {
+            ).transpose()? {
                 return Ok(Some(definition));
             }
             if point_line_separation(entities[0], entities[1], evaluated_mm, linear_tolerance)
@@ -665,7 +698,7 @@ fn project_all_dimension_constraints(
         }
         if source_kind.starts_with("Angular Dimension") && entities.len() == 2 {
             let Some((first, second)) =
-                indirect_angular_lines(scope, &entities, evaluated_value, &projected) else {
+                indirect_angular_lines(ctx, scope, &entities, evaluated_value, &projected)? else {
                 return Ok(None);
             };
             return Ok(Some(Definition::Angle { first, second, parameter }));
@@ -708,25 +741,25 @@ fn project_all_dimension_constraints(
             }
         }
         if group.state == 0 {
-            let counted_definition = counted_role_relation_at_tolerance(
+            let counted_definition = dimension_resource!(counted_role_relation_at_tolerance(ctx,
                 &locus_entities,
                 &group.owner_kinds(),
                 linear_tolerance,
-            );
+            ).transpose());
             if let Some(definition) = counted_definition {
                 return Some(Ok(definition));
             }
-            if let Some(definition) = exact_counted_dimension_relation(&locus_entities).transpose() {
-                return Some(definition.map_err(CodecError::ResourceLimit));
+            if let Some(definition) = exact_counted_dimension_relation(ctx, &locus_entities).transpose() {
+                return Some(definition);
             }
         }
-        if let Some(definition) = radial_locus_dimension_definition(
+        if let Some(definition) = dimension_resource!(radial_locus_dimension_definition(ctx,
             &locus_entities,
             entities,
             parameter.source_kind(),
             parameter.evaluated_value().get(),
             &parameter_id,
-        ) {
+        ).transpose()) {
             return Some(Ok(definition));
         }
         if parameter.source_kind().starts_with("Linear Dimension") {
@@ -778,16 +811,16 @@ fn project_all_dimension_constraints(
                 Ok(copied) => copied,
                 Err(error) => return Some(Err(error)),
             };
-            if let Some(definition) = directional_point_dimension(
+            if let Some(definition) = dimension_resource!(directional_point_dimension(ctx,
                 &locus_entities,
                 parameter.evaluated_value().get() * 10.0,
                 copied,
                 linear_tolerance,
-            ) {
+            ).transpose()) {
                 return Some(Ok(definition));
             }
             if group.state == 0 {
-                return two_locus_distance_dimension(&locus_entities, parameter_id).map(Ok);
+                return dimension_resource!(two_locus_distance_dimension(ctx, &locus_entities, parameter_id).transpose()).map(Ok);
             }
         }
         None
@@ -834,13 +867,13 @@ fn project_all_dimension_constraints(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            owner_scoped_radial_dimension_definition(
+            dimension_resource!(owner_scoped_radial_dimension_definition(ctx,
                 entities,
                 &sketch,
                 parameter,
                 &parameter_id,
                 linear_tolerance,
-            )?;
+            ).transpose())?;
             Some(Ok((scope, group.record_index)))
         })();
         if let Some(result) = candidate {
@@ -1032,21 +1065,22 @@ fn project_all_dimension_constraints(
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
             let copied = copy_dimension_parameter_id(ctx, &parameter_id,
                 "f3d pair exact parameter id")?;
-            let definition = exact_definition(scope, parameter, &indices, copied)?
+            let definition = exact_definition(scope, parameter, &indices, copied)?.map(Ok)
                 .or_else(|| {
                     let [first_index, second_index] = indices;
                     let first = projected.get(&(scope, first_index))?;
                     let second = projected.get(&(scope, second_index))?;
                     symmetric_parallel_line_dimension_definition(
-                        first,
-                        second,
-                        pair.loci()[0].role,
-                        pair.loci()[1].role,
-                        parameter,
-                        parameter_id.clone(),
-                        linear_tolerance,
-                    )
-                });
+ctx,
+first,
+second,
+(pair.loci()[0].role, pair.loci()[1].role),
+parameter,
+dimension_resource!(copy_dimension_parameter_id(ctx, &parameter_id,
+                            "f3d symmetric pair parameter id")),
+linear_tolerance,
+)
+                }).transpose()?;
             let definition = if let Some(definition) = definition {
                 definition
             } else {
@@ -1120,18 +1154,19 @@ fn project_all_dimension_constraints(
             let exact = match exact_definition(scope, parameter, &indices, copied) {
                 Ok(definition) => definition,
                 Err(error) => return Some(Err(error)),
-            }
+            }.map(Ok)
                 .or_else(|| {
                     annotation_offset_dimension_definition(
-                        frame,
-                        parameter,
-                        &parameter_id,
-                        scope,
-                        curves,
-                        &projected,
-                        linear_tolerance,
-                    )
+ctx,
+frame,
+(parameter, &parameter_id),
+scope,
+curves,
+&projected,
+linear_tolerance,
+)
                 });
+            let exact = dimension_resource!(exact.transpose());
             let definition = if let Some(definition) = exact {
                 definition
             } else {
@@ -1230,14 +1265,14 @@ fn project_all_dimension_constraints(
                         Ok(copied) => copied,
                         Err(error) => return Some(Err(error)),
                     };
-                    if let Some(definition) = null_locus_dimension_definition(
+                    if let Some(definition) = dimension_resource!(null_locus_dimension_definition(ctx,
                         pair,
                         entity,
                         parameter.source_kind(),
                         parameter.evaluated_value().get(),
                         copied,
                         linear_tolerance,
-                    ) {
+                    ).transpose()) {
                         let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                             definition,
                         ).ok()?;
@@ -1386,26 +1421,26 @@ fn project_all_dimension_constraints(
         let linear_candidates = if parameter.source_kind().starts_with("Linear Dimension")
             && design_dimension_unit(parameter)
         {
-            recipe_linear_dimension_candidates(
+            recipe_linear_dimension_candidates(ctx,
                 entities,
                 &sketch,
                 parameter.evaluated_value().get() * 10.0,
                 &parameter_id,
                 linear_tolerance,
-            )
+            )?
         } else {
             Vec::default()
         };
         let copied = copy_dimension_parameter_id(ctx, &parameter_id,
             "f3d recipe repeated parameter id")?;
-        let repeated = repeated_linear_dimension(&linear_candidates, copied);
-        let extension = recipe_extension_point_dimension(&linear_candidates, entities, &sketch);
-        let radial = owner_scoped_radial_dimension_definition(
+        let repeated = repeated_linear_dimension(ctx, &linear_candidates, copied).transpose()?;
+        let extension = recipe_extension_point_dimension(ctx, &linear_candidates, entities, &sketch).transpose()?;
+        let radial = owner_scoped_radial_dimension_definition(ctx,
             entities, &sketch, parameter, &parameter_id, linear_tolerance,
-        );
-        let concentric = concentric_circle_dimension_definition(
+        ).transpose()?;
+        let concentric = concentric_circle_dimension_definition(ctx,
             entities, &sketch, parameter, &parameter_id, linear_tolerance,
-        );
+        ).transpose()?;
         let definition = if let Some(radial) = radial {
             radial
         } else if linear_candidates.len() == 1 {
@@ -1439,7 +1474,7 @@ fn project_all_dimension_constraints(
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
-                entities: recipe_dimension_candidate_entities(&linear_candidates),
+                entities: recipe_dimension_candidate_entities(ctx, &linear_candidates)?,
                 parameter: Some(parameter_id),
                 operands,
             }
@@ -1524,9 +1559,10 @@ fn project_all_dimension_constraints(
                 entities.iter().find(|entity| entity.id() == &second),
             ];
             let [Some(first), Some(second)] = members else { continue; };
-            let Some(definition) = parallel_group_axis_angle_definition(
+            let Some(definition) = parallel_group_axis_angle_definition(ctx,
                 &[first, second], parameter, &parameter_id,
             ) else { continue; };
+            let definition = dimension_resource!(definition);
             if saw_parallel_axis_angle {
                 multiple_parallel_axis_angles = true;
                 parallel_axis_angle = None;
@@ -1538,7 +1574,7 @@ fn project_all_dimension_constraints(
         if multiple_parallel_axis_angles {
             parallel_axis_angle = None;
         }
-        let owner_scoped_definition = owner_scoped_radial_dimension_definition(
+        let owner_scoped_definition = owner_scoped_radial_dimension_definition(ctx,
             entities,
             &sketch,
             parameter,
@@ -1547,20 +1583,20 @@ fn project_all_dimension_constraints(
         )
         .or_else(|| {
             preceding_incident_angular_dimension_definition(
-                scope,
-                points,
-                curves,
-                &projected,
-                &sketch,
-                parameter,
-                &parameter_id,
-            )
+ctx,
+scope,
+points,
+curves,
+&projected,
+&sketch,
+(parameter, &parameter_id),
+)
         })
         .or_else(|| {
-            owner_scoped_angular_dimension_definition(entities, &sketch, parameter, &parameter_id)
+            owner_scoped_angular_dimension_definition(ctx, entities, &sketch, parameter, &parameter_id)
         })
         .or_else(|| {
-            owner_scoped_line_length_dimension_definition(
+            owner_scoped_line_length_dimension_definition(ctx,
                 entities,
                 &sketch,
                 parameter,
@@ -1569,7 +1605,7 @@ fn project_all_dimension_constraints(
             )
         })
         .or_else(|| {
-            unique_parallel_line_dimension_definition(
+            unique_parallel_line_dimension_definition(ctx,
                 entities,
                 &sketch,
                 parameter,
@@ -1578,7 +1614,7 @@ fn project_all_dimension_constraints(
             )
         })
         .or_else(|| {
-            owner_scoped_parallel_line_set_dimension_definition(
+            owner_scoped_parallel_line_set_dimension_definition(ctx,
                 entities,
                 &sketch,
                 parameter,
@@ -1587,7 +1623,7 @@ fn project_all_dimension_constraints(
             )
         })
         .or_else(|| {
-            unique_point_line_dimension_definition(
+            unique_point_line_dimension_definition(ctx,
                 entities,
                 &sketch,
                 parameter,
@@ -1596,7 +1632,7 @@ fn project_all_dimension_constraints(
             )
         })
         .or_else(|| {
-            unique_point_class_dimension_definition(
+            unique_point_class_dimension_definition(ctx,
                 entities,
                 &sketch,
                 parameter,
@@ -1605,7 +1641,7 @@ fn project_all_dimension_constraints(
             )
         })
         .or_else(|| {
-            concentric_circle_dimension_definition(
+            concentric_circle_dimension_definition(ctx,
                 entities,
                 &sketch,
                 parameter,
@@ -1613,9 +1649,10 @@ fn project_all_dimension_constraints(
                 linear_tolerance,
             )
         });
+        let owner_scoped_definition = dimension_resource!(owner_scoped_definition.transpose());
         let presentation_definition =
             presentation_for_owner(scope, owner.record_index()).and_then(|frame| {
-                presentation_dimension_definition(
+                presentation_dimension_definition(ctx,
                     scope,
                     frame,
                     &projected,
@@ -1624,6 +1661,7 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             });
+        let presentation_definition = dimension_resource!(presentation_definition.transpose());
         let exact_definition = presentation_definition
             .or(parallel_axis_angle)
             .or(owner_scoped_definition);
@@ -1702,13 +1740,14 @@ fn project_all_dimension_constraints(
 /// selection, while the geometric check prevents a presentation record from
 /// assigning a nearby entity with the same source sketch.
 fn presentation_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &str,
     frame: &crate::records::dimensions::DesignDimensionPresentationFrame,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -1716,15 +1755,12 @@ fn presentation_dimension_definition(
     if !design_dimension_unit(parameter) {
         return None;
     }
-    let entities = frame
-        .operands
-        .iter()
-        .map(|operand| {
-            projected
-                .get(&(scope, operand.geometry_record_index.get()))
-                .copied()
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let mut entities = Vec::new();
+    for operand in &frame.operands {
+        let entity = projected.get(&(scope, operand.geometry_record_index.get())).copied()?;
+        dimension_resource!(push_dimension_item(ctx, &mut entities, entity,
+            "f3d presentation dimension entity"));
+    }
     if entities.is_empty()
         || entities
             .iter()
@@ -1734,13 +1770,13 @@ fn presentation_dimension_definition(
     }
     match entities.as_slice() {
         [entity] if parameter.source_kind().starts_with("Tangent Dimension") => {
-            tangent_radius_dimension_definition(entity, parameter, parameter_id, linear_tolerance)
+            tangent_radius_dimension_definition(ctx, entity, parameter, parameter_id, linear_tolerance)
         }
-        [entity] => radial_dimension_definition_at_tolerance(
+        [entity] => radial_dimension_definition_at_tolerance(ctx,
             entity,
             parameter.source_kind(),
             parameter.evaluated_value().get(),
-            parameter_id.clone(),
+            dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d presentation parameter id")),
             linear_tolerance,
         )
         .or_else(|| {
@@ -1756,14 +1792,14 @@ fn presentation_dimension_definition(
                 parameter.evaluated_value().get() * 10.0,
                 linear_tolerance,
             )
-            .then(|| Definition::DistanceLoci {
-                first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id().clone()),
-                second: cadmpeg_ir::sketches::SketchLocus::End(entity.id().clone()),
-                parameter: parameter_id.clone(),
-            })
+            .then(|| -> Result<_, CodecError> { Ok(Definition::DistanceLoci {
+                first: cadmpeg_ir::sketches::SketchLocus::Start(copy_dimension_entity_id(ctx, entity.id(), "f3d presentation entity id")?),
+                second: cadmpeg_ir::sketches::SketchLocus::End(copy_dimension_entity_id(ctx, entity.id(), "f3d presentation entity id")?),
+                parameter: copy_dimension_parameter_id(ctx, parameter_id, "f3d presentation parameter id")?,
+            }) })
         }),
         [first, second] if parameter.source_kind().starts_with("Tangent Dimension") => {
-            tangent_entity_distance_definition(
+            tangent_entity_distance_definition(ctx,
                 first,
                 second,
                 parameter,
@@ -1772,7 +1808,7 @@ fn presentation_dimension_definition(
             )
         }
         [first, second] if parameter.source_kind().starts_with("Linear Dimension") => {
-            explicit_linear_dimension_definition(
+            explicit_linear_dimension_definition(ctx,
                 first,
                 second,
                 parameter,
@@ -1786,22 +1822,23 @@ fn presentation_dimension_definition(
                 &second.geometry,
                 parameter.evaluated_value().get(),
             )
-            .then(|| Definition::Angle {
-                first: first.id().clone(),
-                second: second.id().clone(),
-                parameter: parameter_id.clone(),
-            })
+            .then(|| -> Result<_, CodecError> { Ok(Definition::Angle {
+                first: copy_dimension_entity_id(ctx, first.id(), "f3d presentation first id")?,
+                second: copy_dimension_entity_id(ctx, second.id(), "f3d presentation second id")?,
+                parameter: copy_dimension_parameter_id(ctx, parameter_id, "f3d presentation parameter id")?,
+            }) })
         }
         _ => None,
     }
 }
 
 fn tangent_radius_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -1816,19 +1853,20 @@ fn tangent_radius_dimension_definition(
         parameter.evaluated_value().get() * 10.0,
         linear_tolerance,
     )
-    .then(|| Definition::Radius {
-        entity: entity.id().clone(),
-        parameter: parameter_id.clone(),
-    })
+    .then(|| -> Result<_, CodecError> { Ok(Definition::Radius {
+        entity: copy_dimension_entity_id(ctx, entity.id(), "f3d tangent radius entity id")?,
+        parameter: copy_dimension_parameter_id(ctx, parameter_id, "f3d tangent radius parameter id")?,
+    }) })
 }
 
 fn tangent_entity_distance_definition(
+    ctx: Option<&DecodeContext<'_>>,
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -1901,32 +1939,33 @@ fn tangent_entity_distance_definition(
                 linear_tolerance,
             )
         })
-        .collect::<Vec<_>>();
-    let [_measured] = matches.as_slice() else {
+        .count();
+    if matches != 1 {
         return None;
     };
-    Some(Definition::Distance {
-        entities: vec![first.id().clone(), second.id().clone()],
-        parameter: parameter_id.clone(),
-    })
+    Some(Ok(Definition::Distance {
+        entities: vec![dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d tangent entity distance first id")), dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d tangent entity distance second id"))],
+        parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d tangent entity distance parameter id")),
+    }))
 }
 
 fn explicit_linear_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     let expected = parameter.evaluated_value().get() * 10.0;
-    if let Some(definition) = directional_point_dimension(
+    if let Some(definition) = directional_point_dimension(ctx,
         &[first, second],
         expected,
-        parameter_id.clone(),
+        dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d explicit linear parameter id")),
         linear_tolerance,
     ) {
         return Some(definition);
@@ -1935,10 +1974,10 @@ fn explicit_linear_dimension_definition(
         || parallel_line_separation(first, second, expected, linear_tolerance)
         || concentric_circle_separation(first, second, expected, linear_tolerance)
     {
-        return Some(Definition::Distance {
-            entities: vec![first.id().clone(), second.id().clone()],
-            parameter: parameter_id.clone(),
-        });
+        return Some(Ok(Definition::Distance {
+            entities: vec![dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d explicit linear first id")), dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d explicit linear second id"))],
+            parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d explicit linear parameter id")),
+        }));
     }
     let (
         SketchGeometryDefinition::Point {
@@ -1953,26 +1992,25 @@ fn explicit_linear_dimension_definition(
     };
     let measured =
         (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
-    linear_measurement_matches(measured, expected, linear_tolerance).then(|| {
-        Definition::DistanceLoci {
-            first: SketchLocus::Entity(first.id().clone()),
-            second: SketchLocus::Entity(second.id().clone()),
-            parameter: parameter_id.clone(),
-        }
-    })
+    linear_measurement_matches(measured, expected, linear_tolerance).then(|| -> Result<_, CodecError> { Ok(Definition::DistanceLoci {
+            first: SketchLocus::Entity(copy_dimension_entity_id(ctx, first.id(), "f3d explicit linear first id")?),
+            second: SketchLocus::Entity(copy_dimension_entity_id(ctx, second.id(), "f3d explicit linear second id")?),
+            parameter: copy_dimension_parameter_id(ctx, parameter_id, "f3d explicit linear parameter id")?,
+        }) })
 }
 
 /// Resolve an angular parameter from the unique two-line point incidence
 /// serialized before the parameter in its owning sketch.
 fn preceding_incident_angular_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &str,
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     sketch: &cadmpeg_ir::sketches::SketchId,
-    parameter: &DesignParameter,
-    parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    parameter: (&DesignParameter, &cadmpeg_ir::features::ParameterId),
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+    let (parameter, parameter_id) = parameter;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -1982,13 +2020,11 @@ fn preceding_incident_angular_dimension_definition(
     {
         return None;
     }
-    let preceding_curves = curves
-        .iter()
-        .filter(|curve| {
-            native_stream(&curve.id) == Some(scope) && curve.byte_offset < parameter.byte_offset()
-        })
-        .map(|curve| (curve.record_index, curve))
-        .collect::<HashMap<_, _>>();
+    let preceding_curve = |record| curves.iter().any(|curve| {
+        native_stream(&curve.id) == Some(scope)
+            && curve.byte_offset < parameter.byte_offset()
+            && curve.record_index == record
+    });
     let mut matched = None::<(
         u32,
         u32,
@@ -2002,8 +2038,8 @@ fn preceding_incident_angular_dimension_definition(
         let [first_record, second_record] = companion.incident_curves else {
             continue;
         };
-        if !preceding_curves.contains_key(first_record)
-            || !preceding_curves.contains_key(second_record)
+        if !preceding_curve(*first_record)
+            || !preceding_curve(*second_record)
         {
             continue;
         }
@@ -2045,21 +2081,22 @@ fn preceding_incident_angular_dimension_definition(
         matched = Some((key.0, key.1, first, second));
     }
     let (_, _, first, second) = matched?;
-    Some(Definition::Angle {
-        first: first.id().clone(),
-        second: second.id().clone(),
-        parameter: parameter_id.clone(),
-    })
+    Some(Ok(Definition::Angle {
+        first: dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d preceding incident angular first id")),
+        second: dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d preceding incident angular second id")),
+        parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d preceding incident angular parameter id")),
+    }))
 }
 
 /// Resolve an angular parameter when exactly one unordered line pair in its
 /// owning sketch has the evaluated supporting-line angle.
 fn owner_scoped_angular_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -2096,20 +2133,21 @@ fn owner_scoped_angular_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Definition::Angle {
-        first: first.id().clone(),
-        second: second.id().clone(),
-        parameter: parameter_id.clone(),
-    })
+    Some(Ok(Definition::Angle {
+        first: dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d owner scoped angular first id")),
+        second: dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d owner scoped angular second id")),
+        parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d owner scoped angular parameter id")),
+    }))
 }
 
 /// Bind an angular parameter to the common direction of one exact parallel
 /// relation carried by the same dimension companion.
 fn parallel_group_axis_angle_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchAxis, SketchConstraintDefinitionInput as Definition, SketchGeometry,
         SketchGeometryDefinition,
@@ -2138,22 +2176,23 @@ fn parallel_group_axis_angle_definition(
         &horizontal_axis,
         parameter.evaluated_value().get(),
     ))
-    .then(|| Definition::AngleToAxis {
-        entity: first.id().clone(),
+    .then(|| -> Result<_, CodecError> { Ok(Definition::AngleToAxis {
+        entity: copy_dimension_entity_id(ctx, first.id(), "f3d parallel group axis angle first id")?,
         axis: SketchAxis::Horizontal,
-        parameter: parameter_id.clone(),
-    })
+        parameter: copy_dimension_parameter_id(ctx, parameter_id, "f3d parallel group axis angle parameter id")?,
+    }) })
 }
 
 /// Resolve one or more disjoint owner-scoped concentric-circle separations
 /// controlled by one linear parameter.
 fn concentric_circle_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchDistanceMeasurement as Measurement,
         SketchGeometryDefinition, SketchLocus,
@@ -2167,7 +2206,7 @@ fn concentric_circle_dimension_definition(
     if !evaluated_mm.is_finite() {
         return None;
     }
-    let circles = entities
+    let circles = dimension_resource!(collect_dimension_items(ctx, entities
         .iter()
         .filter(|entity| {
             &entity.sketch == sketch
@@ -2175,8 +2214,7 @@ fn concentric_circle_dimension_definition(
                     *entity.geometry.definition(),
                     SketchGeometryDefinition::Circle { .. }
                 )
-        })
-        .collect::<Vec<_>>();
+        }), "f3d concentric circle candidate"));
     let mut pairs = Vec::new();
     let mut paired_entities = HashSet::new();
     for first in 0..circles.len() {
@@ -2189,42 +2227,57 @@ fn concentric_circle_dimension_definition(
             ) {
                 continue;
             }
-            if !paired_entities.insert(circles[first].id().clone())
-                || !paired_entities.insert(circles[second].id().clone())
-            {
+            let first_id = circles[first].id();
+            let second_id = circles[second].id();
+            if paired_entities.contains(first_id) || paired_entities.contains(second_id) {
                 return None;
             }
-            pairs.push((circles[first], circles[second]));
+            dimension_resource!(insert_dimension_set(ctx, &mut paired_entities, first_id,
+                "f3d concentric used first"));
+            dimension_resource!(insert_dimension_set(ctx, &mut paired_entities, second_id,
+                "f3d concentric used second"));
+            dimension_resource!(push_dimension_item(ctx, &mut pairs, (circles[first], circles[second]),
+                "f3d concentric pair"));
         }
     }
     match pairs.as_slice() {
         [] => None,
-        [(first, second)] => Some(Definition::Distance {
-            entities: vec![first.id().clone(), second.id().clone()],
-            parameter: parameter_id.clone(),
-        }),
-        _ => Some(Definition::RepeatedDistance {
-            measurements: pairs
-                .into_iter()
-                .map(|(first, second)| Measurement::Distance {
-                    first: SketchLocus::Entity(first.id().clone()),
-                    second: SketchLocus::Entity(second.id().clone()),
-                })
-                .collect(),
-            parameter: parameter_id.clone(),
-        }),
+        [(first, second)] => Some(Ok(Definition::Distance {
+            entities: vec![dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d concentric circle first id")), dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d concentric circle second id"))],
+            parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d concentric circle parameter id")),
+        })),
+        _ => {
+            let mut measurements = Vec::new();
+            for (first, second) in pairs {
+                let measurement = Measurement::Distance {
+                    first: SketchLocus::Entity(dimension_resource!(copy_dimension_entity_id(ctx,
+                        first.id(), "f3d concentric repeated first id"))),
+                    second: SketchLocus::Entity(dimension_resource!(copy_dimension_entity_id(ctx,
+                        second.id(), "f3d concentric repeated second id"))),
+                };
+                dimension_resource!(push_dimension_item(ctx, &mut measurements, measurement,
+                    "f3d concentric measurement"));
+            }
+            Some(Ok(Definition::RepeatedDistance {
+                measurements,
+                parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id,
+                    "f3d concentric repeated parameter id")),
+            }))
+        }
     }
 }
+
 
 /// Resolve an owner-scoped linear dimension when exactly one point-line pair
 /// has the evaluated perpendicular separation.
 fn unique_point_line_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -2263,21 +2316,22 @@ fn unique_point_line_dimension_definition(
         }
     }
     let (point, line) = matched?;
-    Some(Definition::Distance {
-        entities: vec![point.id().clone(), line.id().clone()],
-        parameter: parameter_id.clone(),
-    })
+    Some(Ok(Definition::Distance {
+        entities: vec![dimension_resource!(copy_dimension_entity_id(ctx, point.id(), "f3d unique point line point id")), dimension_resource!(copy_dimension_entity_id(ctx, line.id(), "f3d unique point line line id"))],
+        parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d unique point line parameter id")),
+    }))
 }
 
 /// Resolve an owner-scoped linear dimension when exactly one parallel-line
 /// pair has the evaluated supporting-line separation.
 fn unique_parallel_line_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -2310,20 +2364,21 @@ fn unique_parallel_line_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Definition::Distance {
-        entities: vec![first.id().clone(), second.id().clone()],
-        parameter: parameter_id.clone(),
-    })
+    Some(Ok(Definition::Distance {
+        entities: vec![dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d unique parallel line first id")), dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d unique parallel line second id"))],
+        parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d unique parallel line parameter id")),
+    }))
 }
 
 /// Resolve an owner-scoped distance between fragmented parallel line carriers.
 fn owner_scoped_parallel_line_set_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -2339,7 +2394,7 @@ fn owner_scoped_parallel_line_set_dimension_definition(
     if !evaluated_mm.is_finite() {
         return None;
     }
-    let lines = entities
+    let lines = dimension_resource!(collect_dimension_items(ctx, entities
         .iter()
         .filter(|entity| {
             &entity.sketch == sketch
@@ -2347,15 +2402,14 @@ fn owner_scoped_parallel_line_set_dimension_definition(
                     *entity.geometry.definition(),
                     SketchGeometryDefinition::Line { .. }
                 )
-        })
-        .collect::<Vec<_>>();
+        }), "f3d parallel line set candidate"));
     let collinear = |first: &cadmpeg_ir::sketches::SketchEntity,
                      second: &cadmpeg_ir::sketches::SketchEntity| {
         parallel_line_distance(first, second).is_some_and(|distance| distance <= linear_tolerance)
     };
     let mut carriers = Vec::<Vec<&cadmpeg_ir::sketches::SketchEntity>>::new();
     for line in lines {
-        let matches = carriers
+        let matches = dimension_resource!(collect_dimension_items(ctx, carriers
             .iter()
             .enumerate()
             .filter_map(|(index, carrier)| {
@@ -2363,11 +2417,17 @@ fn owner_scoped_parallel_line_set_dimension_definition(
                     .iter()
                     .all(|member| collinear(member, line))
                     .then_some(index)
-            })
-            .collect::<Vec<_>>();
+            }), "f3d parallel line carrier candidate"));
         match matches.as_slice() {
-            [] => carriers.push(vec![line]),
-            [index] => carriers[*index].push(line),
+            [] => {
+                let mut carrier = Vec::new();
+                dimension_resource!(push_dimension_item(ctx, &mut carrier, line,
+                    "f3d planar carrier member"));
+                dimension_resource!(push_dimension_item(ctx, &mut carriers, carrier,
+                    "f3d planar carrier"));
+            }
+            [index] => dimension_resource!(push_dimension_item(ctx, &mut carriers[*index], line,
+                "f3d planar carrier member")),
             _ => return None,
         }
     }
@@ -2400,27 +2460,22 @@ fn owner_scoped_parallel_line_set_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Definition::ParallelLineSetDistance {
-        first: carriers[first]
-            .iter()
-            .map(|entity| entity.id().clone())
-            .collect(),
-        second: carriers[second]
-            .iter()
-            .map(|entity| entity.id().clone())
-            .collect(),
-        parameter: parameter_id.clone(),
-    })
+    Some(Ok(Definition::ParallelLineSetDistance {
+        first: dimension_resource!(copy_dimension_entity_members(ctx, &carriers[first])),
+        second: dimension_resource!(copy_dimension_entity_members(ctx, &carriers[second])),
+        parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d owner scoped parallel line set parameter id")),
+    }))
 }
 
 /// Resolve the owner-scoped line lengths governed by one linear parameter.
 fn owner_scoped_line_length_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
@@ -2436,7 +2491,7 @@ fn owner_scoped_line_length_dimension_definition(
     if !expected.is_finite() {
         return None;
     }
-    let matches = entities
+    let matches = dimension_resource!(collect_dimension_items(ctx, entities
         .iter()
         .filter(|entity| {
             if &entity.sketch != sketch {
@@ -2451,33 +2506,30 @@ fn owner_scoped_line_length_dimension_definition(
                     * (1.0 + measured.abs().max(expected.abs())),
             );
             (measured - expected.abs()).abs() <= tolerance
-        })
-        .collect::<Vec<_>>();
+        }), "f3d line length candidate"));
     match matches.as_slice() {
         [] => None,
-        [entity] => Some(Definition::DistanceLoci {
-            first: SketchLocus::Start(entity.id().clone()),
-            second: SketchLocus::End(entity.id().clone()),
-            parameter: parameter_id.clone(),
-        }),
-        _ => Some(Definition::RepeatedLength {
-            entities: matches
-                .into_iter()
-                .map(|entity| entity.id().clone())
-                .collect(),
-            parameter: parameter_id.clone(),
-        }),
+        [entity] => Some(Ok(Definition::DistanceLoci {
+            first: SketchLocus::Start(dimension_resource!(copy_dimension_entity_id(ctx, entity.id(), "f3d owner scoped line length entity id"))),
+            second: SketchLocus::End(dimension_resource!(copy_dimension_entity_id(ctx, entity.id(), "f3d owner scoped line length entity id"))),
+            parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d owner scoped line length parameter id")),
+        })),
+        _ => Some(Ok(Definition::RepeatedLength {
+            entities: dimension_resource!(copy_dimension_entity_members(ctx, &matches)),
+            parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d owner scoped line length parameter id")),
+        })),
     }
 }
 
 /// Resolve the unique owner-scoped distance between solved point loci.
 fn unique_point_class_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
@@ -2493,14 +2545,13 @@ fn unique_point_class_dimension_definition(
     if !expected.is_finite() {
         return None;
     }
-    let points = entities
+    let points = dimension_resource!(collect_dimension_items(ctx, entities
         .iter()
         .filter(|entity| &entity.sketch == sketch)
         .filter_map(|entity| match *entity.geometry.definition() {
             SketchGeometryDefinition::Point { position } => Some((entity, position.get())),
             _ => None,
-        })
-        .collect::<Vec<_>>();
+        }), "f3d point class candidate"));
     let coincident = |first: Point2, second: Point2| {
         let scale = 1.0
             + first
@@ -2514,7 +2565,7 @@ fn unique_point_class_dimension_definition(
     };
     let mut classes = Vec::<Vec<(&cadmpeg_ir::sketches::SketchEntity, Point2)>>::new();
     for point in points {
-        let matches = classes
+        let matches = dimension_resource!(collect_dimension_items(ctx, classes
             .iter()
             .enumerate()
             .filter_map(|(index, class)| {
@@ -2522,16 +2573,20 @@ fn unique_point_class_dimension_definition(
                     .iter()
                     .any(|member| coincident(member.1, point.1))
                     .then_some(index)
-            })
-            .collect::<Vec<_>>();
+            }), "f3d point class match"));
         let Some((&first, rest)) = matches.split_first() else {
-            classes.push(vec![point]);
+            let mut class = Vec::new();
+            dimension_resource!(push_dimension_item(ctx, &mut class, point, "f3d point class member"));
+            dimension_resource!(push_dimension_item(ctx, &mut classes, class, "f3d point class"));
             continue;
         };
-        classes[first].push(point);
+        dimension_resource!(push_dimension_item(ctx, &mut classes[first], point, "f3d point class member"));
         for &index in rest.iter().rev() {
             let merged = classes.remove(index);
-            classes[first].extend(merged);
+            for member in merged {
+                dimension_resource!(push_dimension_item(ctx, &mut classes[first], member,
+                    "f3d point class merged member"));
+            }
         }
     }
     let mut matched = None;
@@ -2556,93 +2611,78 @@ fn unique_point_class_dimension_definition(
         }
     }
     let (first, second, du, dv, tolerance) = matched?;
-    let first = SketchLocus::Entity(first.id().clone());
-    let second = SketchLocus::Entity(second.id().clone());
-    Some(if du.abs() <= tolerance {
+    let first = SketchLocus::Entity(dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d unique point class first id")));
+    let second = SketchLocus::Entity(dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d unique point class second id")));
+    Some(Ok(if du.abs() <= tolerance {
         Definition::VerticalDistance {
             first,
             second,
-            parameter: parameter_id.clone(),
+            parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d unique point class parameter id")),
         }
     } else if dv.abs() <= tolerance {
         Definition::HorizontalDistance {
             first,
             second,
-            parameter: parameter_id.clone(),
+            parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d unique point class parameter id")),
         }
     } else {
         Definition::DistanceLoci {
             first,
             second,
-            parameter: parameter_id.clone(),
+            parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d unique point class parameter id")),
         }
-    })
+    }))
 }
 
 /// Resolve the owner-scoped circular measurements governed by one radial
 /// parameter.
 fn owner_scoped_radial_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     if !design_dimension_unit(parameter) {
         return None;
     }
 
-    let definitions = entities
-        .iter()
-        .filter(|entity| &entity.sketch == sketch)
-        .filter_map(|entity| {
-            radial_dimension_definition_at_tolerance(
-                entity,
-                parameter.source_kind(),
-                parameter.evaluated_value().get(),
-                parameter_id.clone(),
-                linear_tolerance,
-            )
-        })
-        .collect::<Vec<_>>();
-    match definitions.as_slice() {
-        [] => None,
-        [definition] => Some(definition.clone()),
-        _ if definitions
-            .iter()
-            .all(|definition| matches!(definition, Definition::Radius { .. })) =>
-        {
-            Some(Definition::RepeatedRadius {
-                entities: definitions
-                    .into_iter()
-                    .filter_map(|definition| match definition {
-                        Definition::Radius { entity, .. } => Some(entity),
-                        _ => None,
-                    })
-                    .collect(),
-                parameter: parameter_id.clone(),
-            })
+    let mut definitions = Vec::new();
+    for entity in entities.iter().filter(|entity| &entity.sketch == sketch) {
+        if let Some(result) = radial_dimension_definition_at_tolerance(ctx, entity,
+            parameter.source_kind(), parameter.evaluated_value().get(),
+            dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id,
+                "f3d owner scoped radial parameter id")), linear_tolerance) {
+            dimension_resource!(push_dimension_item(ctx, &mut definitions,
+                dimension_resource!(result), "f3d owner radial definition"));
         }
-        _ if definitions
-            .iter()
-            .all(|definition| matches!(definition, Definition::Diameter { .. })) =>
-        {
-            Some(Definition::RepeatedDiameter {
-                entities: definitions
-                    .into_iter()
-                    .filter_map(|definition| match definition {
-                        Definition::Diameter { entity, .. } => Some(entity),
-                        _ => None,
-                    })
-                    .collect(),
-                parameter: parameter_id.clone(),
-            })
-        }
-        _ => None,
     }
+    if definitions.len() < 2 {
+        return definitions.pop().map(Ok);
+    }
+    let radius = definitions.iter().all(|definition| matches!(definition, Definition::Radius { .. }));
+    let diameter = definitions.iter().all(|definition| matches!(definition, Definition::Diameter { .. }));
+    if !radius && !diameter { return None; }
+    let mut members = Vec::new();
+    for definition in definitions {
+        let entity = match definition {
+            Definition::Radius { entity, .. } | Definition::Diameter { entity, .. } => entity,
+            _ => return None,
+        };
+        dimension_resource!(push_dimension_item(ctx, &mut members, entity, "f3d owner radial member"));
+    }
+    let parameter = dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id,
+        "f3d owner scoped radial repeated parameter id"));
+    Some(Ok(if radius {
+        Definition::RepeatedRadius { entities: members, parameter }
+    } else {
+        Definition::RepeatedDiameter { entities: members, parameter }
+    }))
 }
+
 
 pub(crate) fn constraint_parameters(
     definition: &cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
@@ -2969,46 +3009,42 @@ pub(crate) fn project_spatial_dimension_constraints(
                     operands,
                     ..
                 } => {
-                    let symmetry = spatial_reflection_symmetry(
+                    let symmetry = spatial_reflection_symmetry(ctx,
                         native_kind.as_str(),
                         native_state,
                         &operands,
                         constraint.native_ref.as_deref(),
                         &sketch,
                         &spatial_by_record,
-                    );
+                    ).transpose()?;
                     let offset = parameter.as_ref().and_then(|parameter_id| {
                         let expected = *parameter_lengths.get(parameter_id)?;
                         let parameter = parameters_by_id.get(parameter_id)?;
                         let signed = design_length(parameter)?.get();
                         spatial_counted_offset_dimension_definition(
-                            native_kind.as_str(),
-                            native_state,
-                            &operands,
-                            parameter_id,
-                            expected,
-                            signed,
-                            &sketch,
-                            spatial_sketches,
-                            &spatial_by_record,
-                        )
-                    });
+ctx,
+(native_kind.as_str(), native_state, &operands),
+(parameter_id, expected, signed),
+&sketch,
+spatial_sketches,
+&spatial_by_record,
+)
+                    }).transpose()?;
                     let distance = parameter.as_ref().and_then(|parameter| {
                         let expected = *parameter_lengths.get(parameter)?;
                         let scope = native_stream(constraint.native_ref.as_deref()?)?;
-                        let measured = operands
+                        let mut measured = Vec::new();
+                        for operand in operands
                             .iter()
                             .filter(|operand| {
                                 operand_field(operand).is_some_and(|field| {
                                     field == "locus" || field.ends_with("_locus")
                                 }) && operand.object_index.is_some()
-                            })
-                            .map(|operand| {
-                                spatial_by_record
-                                    .get(&(scope, operand.object_index?))
-                                    .copied()
-                            })
-                            .collect::<Option<Vec<_>>>()?;
+                            }) {
+                            let entity = spatial_by_record.get(&(scope, operand.object_index?)).copied()?;
+                            dimension_resource!(push_dimension_item(ctx, &mut measured, entity,
+                                "f3d spatial distance locus"));
+                        }
                         let [first, second] = measured.as_slice() else {
                             return None;
                         };
@@ -3024,27 +3060,27 @@ pub(crate) fn project_spatial_dimension_constraints(
                             &second.geometry,
                             expected,
                         ) {
-                            Some(SpatialSketchConstraintDefinitionInput::PointDistance {
-                                first: first.id().clone(),
-                                second: second.id().clone(),
-                                parameter: parameter.clone(),
-                            })
+                            Some(Ok(SpatialSketchConstraintDefinitionInput::PointDistance {
+                                first: dimension_resource!(copy_spatial_entity_id(ctx, first.id(), "f3d spatial distance first id")),
+                                second: dimension_resource!(copy_spatial_entity_id(ctx, second.id(), "f3d spatial distance second id")),
+                                parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter, "f3d spatial distance parameter id")),
+                            }))
                         } else if spatial_parallel_line_distance_matches(
                             &first.geometry,
                             &second.geometry,
                             expected,
                         ) {
-                            Some(
+                            Some(Ok(
                                 SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
-                                    first: first.id().clone(),
-                                    second: second.id().clone(),
-                                    parameter: parameter.clone(),
+                                    first: dimension_resource!(copy_spatial_entity_id(ctx, first.id(), "f3d spatial distance first id")),
+                                    second: dimension_resource!(copy_spatial_entity_id(ctx, second.id(), "f3d spatial distance second id")),
+                                    parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter, "f3d spatial distance parameter id")),
                                 },
-                            )
+                            ))
                         } else {
                             None
                         }
-                    });
+                    }).transpose()?;
                     let owner_scoped = (|| -> Result<Option<SpatialSketchConstraintDefinitionInput>, CodecError> {
                         if operands.len() != 1
                             || operands[0].native_kind != "dimension_companion"
@@ -3065,9 +3101,9 @@ pub(crate) fn project_spatial_dimension_constraints(
                             parameter_id,
                             linear_tolerance,
                         )?;
-                        Ok(line_length
+                        line_length.map(Ok)
                         .or_else(|| {
-                            unique_spatial_parallel_line_dimension_definition(
+                            unique_spatial_parallel_line_dimension_definition(ctx,
                                 spatial_entities,
                                 &sketch,
                                 parameter,
@@ -3075,7 +3111,7 @@ pub(crate) fn project_spatial_dimension_constraints(
                             )
                         })
                         .or_else(|| {
-                            owner_scoped_spatial_repeated_profile_line_distance_definition(
+                            owner_scoped_spatial_repeated_profile_line_distance_definition(ctx,
                                 spatial_entities,
                                 spatial_sketches,
                                 &sketch,
@@ -3084,14 +3120,14 @@ pub(crate) fn project_spatial_dimension_constraints(
                             )
                         })
                         .or_else(|| {
-                            owner_scoped_spatial_parallel_line_set_dimension_definition(
+                            owner_scoped_spatial_parallel_line_set_dimension_definition(ctx,
                                 spatial_entities,
                                 &sketch,
                                 parameter,
                                 parameter_id,
                                 linear_tolerance,
                             )
-                        }))
+                        }).transpose()
                     })()?;
                     symmetry.or(offset).or(distance).or(owner_scoped).unwrap_or(
                         SpatialSketchConstraintDefinitionInput::Native {
@@ -3283,11 +3319,12 @@ fn owner_scoped_spatial_line_length_dimension_definition(
 }
 
 fn unique_spatial_parallel_line_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
@@ -3300,7 +3337,7 @@ fn unique_spatial_parallel_line_dimension_definition(
     if !expected.is_finite() {
         return None;
     }
-    let lines = entities
+    let lines = dimension_resource!(collect_dimension_items(ctx, entities
         .iter()
         .filter(|entity| {
             &entity.sketch == sketch
@@ -3308,8 +3345,7 @@ fn unique_spatial_parallel_line_dimension_definition(
                     *entity.geometry.definition(),
                     SpatialSketchGeometryDefinition::Line { .. }
                 )
-        })
-        .collect::<Vec<_>>();
+        }), "f3d spatial parallel line candidate"));
     let mut matched = None;
     for first in 0..lines.len() {
         for second in first + 1..lines.len() {
@@ -3326,20 +3362,21 @@ fn unique_spatial_parallel_line_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Definition::ParallelLineDistance {
-        first: first.id().clone(),
-        second: second.id().clone(),
-        parameter: parameter_id.clone(),
-    })
+    Some(Ok(Definition::ParallelLineDistance {
+        first: dimension_resource!(copy_spatial_entity_id(ctx, first.id(), "f3d unique spatial parallel line first id")),
+        second: dimension_resource!(copy_spatial_entity_id(ctx, second.id(), "f3d unique spatial parallel line second id")),
+        parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d unique spatial parallel line parameter id")),
+    }))
 }
 
 fn owner_scoped_spatial_repeated_profile_line_distance_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchEntityPair,
     };
@@ -3352,11 +3389,11 @@ fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     if !expected.is_finite() {
         return None;
     }
-    let entities = entities
-        .iter()
-        .filter(|entity| &entity.sketch == sketch)
-        .map(|entity| (entity.id(), entity))
-        .collect::<HashMap<_, _>>();
+    let mut entities_by_id = HashMap::new();
+    for entity in entities.iter().filter(|entity| &entity.sketch == sketch) {
+        dimension_resource!(insert_dimension_index(ctx, &mut entities_by_id, entity.id(), entity,
+            "f3d spatial repeated entity index"));
+    }
     let sketch = sketches.iter().find(|candidate| &candidate.id == sketch)?;
     let mut seen_pairs = HashSet::new();
     let mut used_entities = HashSet::new();
@@ -3373,37 +3410,43 @@ fn owner_scoped_spatial_repeated_profile_line_distance_definition(
             } else {
                 (second_id, first_id)
             };
-            if !seen_pairs.insert(key) {
+            if seen_pairs.contains(&key) {
                 continue;
             }
-            let first = entities.get(first_id)?;
-            let second = entities.get(second_id)?;
+            dimension_resource!(insert_dimension_set(ctx, &mut seen_pairs, key, "f3d spatial repeated pair key"));
+            let first = entities_by_id.get(first_id)?;
+            let second = entities_by_id.get(second_id)?;
             if !spatial_parallel_line_distance_matches(&first.geometry, &second.geometry, expected)
             {
                 continue;
             }
-            if !used_entities.insert(first_id) || !used_entities.insert(second_id) {
+            if used_entities.contains(first_id) || used_entities.contains(second_id) {
                 return None;
             }
-            pairs.push(SpatialSketchEntityPair {
-                first: (*first_id).clone(),
-                second: (*second_id).clone(),
-            });
+            dimension_resource!(insert_dimension_set(ctx, &mut used_entities, first_id,
+                "f3d spatial repeated first member"));
+            dimension_resource!(insert_dimension_set(ctx, &mut used_entities, second_id,
+                "f3d spatial repeated second member"));
+            dimension_resource!(push_dimension_item(ctx, &mut pairs, SpatialSketchEntityPair {
+                first: dimension_resource!(copy_spatial_entity_id(ctx, first_id, "f3d spatial repeated first id")),
+                second: dimension_resource!(copy_spatial_entity_id(ctx, second_id, "f3d spatial repeated second id")),
+            }, "f3d spatial repeated pair"));
         }
     }
-    (pairs.len() >= 2).then(|| Definition::RepeatedParallelLineDistance {
+    (pairs.len() >= 2).then(|| -> Result<_, CodecError> { Ok(Definition::RepeatedParallelLineDistance {
         pairs,
-        parameter: parameter_id.clone(),
-    })
+        parameter: copy_dimension_parameter_id(ctx, parameter_id, "f3d owner scoped spatial repeated profile line distance parameter id")?,
+    }) })
 }
 
 fn owner_scoped_spatial_parallel_line_set_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
@@ -3419,7 +3462,7 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     if !expected.is_finite() {
         return None;
     }
-    let lines = entities
+    let lines = dimension_resource!(collect_dimension_items(ctx, entities
         .iter()
         .filter(|entity| {
             &entity.sketch == sketch
@@ -3427,8 +3470,7 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
                     *entity.geometry.definition(),
                     SpatialSketchGeometryDefinition::Line { .. }
                 )
-        })
-        .collect::<Vec<_>>();
+        }), "f3d spatial line set candidate"));
     let collinear = |first: &cadmpeg_ir::sketches::SpatialSketchEntity,
                      second: &cadmpeg_ir::sketches::SpatialSketchEntity| {
         spatial_parallel_line_distance(&first.geometry, &second.geometry)
@@ -3436,7 +3478,7 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     };
     let mut carriers = Vec::<Vec<&cadmpeg_ir::sketches::SpatialSketchEntity>>::new();
     for line in lines {
-        let matches = carriers
+        let matches = dimension_resource!(collect_dimension_items(ctx, carriers
             .iter()
             .enumerate()
             .filter_map(|(index, carrier)| {
@@ -3444,11 +3486,17 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
                     .iter()
                     .all(|member| collinear(member, line))
                     .then_some(index)
-            })
-            .collect::<Vec<_>>();
+            }), "f3d spatial line carrier candidate"));
         match matches.as_slice() {
-            [] => carriers.push(vec![line]),
-            [index] => carriers[*index].push(line),
+            [] => {
+                let mut carrier = Vec::new();
+                dimension_resource!(push_dimension_item(ctx, &mut carrier, line,
+                    "f3d spatial carrier member"));
+                dimension_resource!(push_dimension_item(ctx, &mut carriers, carrier,
+                    "f3d spatial carrier"));
+            }
+            [index] => dimension_resource!(push_dimension_item(ctx, &mut carriers[*index], line,
+                "f3d spatial carrier member")),
             _ => return None,
         }
     }
@@ -3487,17 +3535,11 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Definition::ParallelLineSetDistance {
-        first: carriers[first]
-            .iter()
-            .map(|entity| entity.id().clone())
-            .collect(),
-        second: carriers[second]
-            .iter()
-            .map(|entity| entity.id().clone())
-            .collect(),
-        parameter: parameter_id.clone(),
-    })
+    Some(Ok(Definition::ParallelLineSetDistance {
+        first: dimension_resource!(copy_spatial_entity_members(ctx, &carriers[first])),
+        second: dimension_resource!(copy_spatial_entity_members(ctx, &carriers[second])),
+        parameter: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d owner scoped spatial parallel line set parameter id")),
+    }))
 }
 
 fn operand_field(operand: &cadmpeg_ir::sketches::SketchNativeOperand) -> Option<&str> {
@@ -3509,13 +3551,14 @@ fn operand_role(operand: &cadmpeg_ir::sketches::SketchNativeOperand) -> Option<u
 }
 
 fn spatial_reflection_symmetry(
+    ctx: Option<&DecodeContext<'_>>,
     native_kind: &str,
     native_state: Option<u64>,
     operands: &[cadmpeg_ir::sketches::SketchNativeOperand],
     native_ref: Option<&str>,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
@@ -3538,18 +3581,14 @@ fn spatial_reflection_symmetry(
         return None;
     }
     let scope = native_stream(native_ref?)?;
-    let entities = operands
-        .iter()
-        .filter(|operand| operand_field(operand) == Some("locus"))
-        .map(|operand| {
-            spatial_by_record
-                .get(&(scope, operand.object_index?))
-                .copied()
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second, third] = entities.as_slice() else {
-        return None;
+    let mut loci = operands.iter().filter(|operand| operand_field(operand) == Some("locus"));
+    let mut entity_for = || {
+        let operand = loci.next()?;
+        spatial_by_record.get(&(scope, operand.object_index?)).copied()
     };
+    let entities = [entity_for()?, entity_for()?, entity_for()?];
+    if loci.next().is_some() { return None; }
+    let [first, second, third] = entities;
     if entities.iter().any(|entity| &entity.sketch != sketch)
         || first.id() == second.id()
         || first.id() == third.id()
@@ -3557,12 +3596,15 @@ fn spatial_reflection_symmetry(
     {
         return None;
     }
-    let mut points = Vec::with_capacity(2);
+    let mut points = [None; 2];
+    let mut point_count = 0;
     let mut axis = None;
     for entity in entities {
         match *entity.geometry.definition() {
             SpatialSketchGeometryDefinition::Point { position } => {
-                points.push((entity, position.get()));
+                let slot = points.get_mut(point_count)?;
+                *slot = Some((entity, position.get()));
+                point_count += 1;
             }
             SpatialSketchGeometryDefinition::Line { start, end } if axis.is_none() => {
                 axis = Some((entity, start.get(), end.get()));
@@ -3570,35 +3612,33 @@ fn spatial_reflection_symmetry(
             _ => return None,
         }
     }
-    let [(first, first_position), (second, second_position)] = points.as_slice() else {
+    let [Some((first, first_position)), Some((second, second_position))] = points else {
         return None;
     };
     let (axis, axis_start, axis_end) = axis?;
     cadmpeg_ir::eval::spatial_points_are_reflections(
-        *first_position,
-        *second_position,
+        first_position,
+        second_position,
         axis_start,
         axis_end,
     )
-    .then(|| Definition::Symmetric {
-        first: first.id().clone(),
-        second: second.id().clone(),
-        axis: axis.id().clone(),
-    })
+    .then(|| -> Result<_, CodecError> { Ok(Definition::Symmetric {
+        first: copy_spatial_entity_id(ctx, first.id(), "f3d spatial reflection symmetry first id")?,
+        second: copy_spatial_entity_id(ctx, second.id(), "f3d spatial reflection symmetry second id")?,
+        axis: copy_spatial_entity_id(ctx, axis.id(), "f3d spatial reflection symmetry axis id")?,
+    }) })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spatial_counted_offset_dimension_definition(
-    native_kind: &str,
-    native_state: Option<u64>,
-    operands: &[cadmpeg_ir::sketches::SketchNativeOperand],
-    parameter: &cadmpeg_ir::features::ParameterId,
-    distance: f64,
-    signed_parameter: f64,
+    ctx: Option<&DecodeContext<'_>>,
+    native: (&str, Option<u64>, &[cadmpeg_ir::sketches::SketchNativeOperand]),
+    measurement: (&cadmpeg_ir::features::ParameterId, f64, f64),
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
+    let (native_kind, native_state, operands) = native;
+    let (parameter, distance, signed_parameter) = measurement;
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Definition;
 
@@ -3613,11 +3653,9 @@ fn spatial_counted_offset_dimension_definition(
     let scope = operands
         .iter()
         .find_map(|operand| native_stream(operand.native_ref.as_deref()?))?;
-    let loci = operands
-        .iter()
-        .take_while(|operand| operand_field(operand) == Some("locus"))
-        .collect::<Vec<_>>();
-    let owner_position = loci.len();
+    let owner_position = operands.iter()
+        .take_while(|operand| operand_field(operand) == Some("locus")).count();
+    let loci = &operands[..owner_position];
     let owner = operands.get(owner_position)?;
     let returns = operands.get(owner_position + 1..)?;
     if operand_field(owner) != Some("owner")
@@ -3649,56 +3687,51 @@ fn spatial_counted_offset_dimension_definition(
     {
         return None;
     }
-    let roles = loci
-        .iter()
-        .map(|operand| Some((operand.object_index?, operand_role(operand)?)))
-        .collect::<Option<HashMap<_, _>>>()?;
-    if roles.len() != loci.len() {
-        return None;
+    let mut roles = HashMap::new();
+    for operand in loci {
+        dimension_resource!(insert_dimension_index(ctx, &mut roles, operand.object_index?,
+            operand_role(operand)?, "f3d spatial offset role"));
     }
-    let result_records = returns
-        .chunks_exact(2)
-        .map(|pair| pair[1].object_index)
-        .collect::<Option<HashSet<_>>>()?;
-    let result_ids = result_records
-        .iter()
-        .filter_map(|record| {
-            spatial_by_record
-                .get(&(scope, *record))
-                .map(|entity| entity.id())
-        })
-        .collect::<HashSet<_>>();
-    if result_ids.len() != result_records.len() {
-        return None;
+    if roles.len() != loci.len() { return None; }
+    let mut result_records = HashSet::new();
+    for pair in returns.chunks_exact(2) {
+        dimension_resource!(insert_dimension_set(ctx, &mut result_records, pair[1].object_index?,
+            "f3d spatial offset result record"));
     }
+    let mut result_ids = HashSet::new();
+    for record in &result_records {
+        if let Some(entity) = spatial_by_record.get(&(scope, *record)) {
+            dimension_resource!(insert_dimension_set(ctx, &mut result_ids, entity.id(),
+                "f3d spatial offset result identity"));
+        }
+    }
+    if result_ids.len() != result_records.len() { return None; }
     let spatial = spatial_sketches
         .iter()
         .find(|candidate| &candidate.id == sketch)?;
     let mut matching_profiles = spatial.profiles.iter().filter(|profile| {
-        let boundary = profile
-            .boundary()
-            .iter()
-            .map(|use_| &use_.entity)
-            .collect::<HashSet<_>>();
-        boundary == result_ids
+        profile.boundary().iter().all(|use_| result_ids.contains(&use_.entity))
+            && result_ids.iter().all(|id| profile.boundary().iter().any(|use_| &use_.entity == *id))
     });
     let normal = matching_profiles.next()?.normal();
     if matching_profiles.next().is_some() {
         return None;
     }
-    let mut sources = Vec::with_capacity(source_count);
-    let mut results = Vec::with_capacity(source_count);
+    let mut sources = Vec::new();
+    let mut results = Vec::new();
     let mut used = HashSet::new();
     for operands in returns.chunks_exact(2) {
         let source_record = operands[0].object_index?;
         let result_record = operands[1].object_index?;
         if !matches!(roles.get(&source_record), Some(role) if *role != 0)
             || roles.get(&result_record) != Some(&0)
-            || !used.insert(source_record)
-            || !used.insert(result_record)
+            || used.contains(&source_record)
+            || used.contains(&result_record)
         {
             return None;
         }
+        dimension_resource!(insert_dimension_set(ctx, &mut used, source_record, "f3d spatial offset used source"));
+        dimension_resource!(insert_dimension_set(ctx, &mut used, result_record, "f3d spatial offset used result"));
         let source = *spatial_by_record.get(&(scope, source_record))?;
         let result = *spatial_by_record.get(&(scope, result_record))?;
         if source.sketch != *sketch
@@ -3708,22 +3741,22 @@ fn spatial_counted_offset_dimension_definition(
         {
             return None;
         }
-        sources.push(source.id().clone());
-        results.push(result.id().clone());
+        dimension_resource!(push_dimension_item(ctx, &mut sources, dimension_resource!(copy_spatial_entity_id(ctx, source.id(), "f3d spatial counted offset source id")), "f3d spatial offset source member"));
+        dimension_resource!(push_dimension_item(ctx, &mut results, dimension_resource!(copy_spatial_entity_id(ctx, result.id(), "f3d spatial counted offset result id")), "f3d spatial offset result member"));
     }
     if used.len() != loci.len() {
         return None;
     }
-    Some(Definition::Offset {
+    Some(Ok(Definition::Offset {
         sources,
         results,
         normal: normal.into(),
         distance: Length::new(distance)?,
         parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-            id: parameter.clone(),
+            id: dimension_resource!(copy_dimension_parameter_id(ctx, parameter, "f3d spatial counted offset parameter id")),
             negated: parameter_factor.is_sign_negative(),
         }),
-    })
+    }))
 }
 
 fn spatial_curve(geometry: &cadmpeg_ir::sketches::SpatialSketchGeometry) -> bool {
@@ -3836,9 +3869,10 @@ fn spatial_parallel_line_span_distance(
 }
 
 fn repeated_linear_dimension(
+    ctx: Option<&DecodeContext<'_>>,
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
     parameter: cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchDistanceMeasurement as Measurement,
         SketchLocus,
@@ -3848,7 +3882,7 @@ fn repeated_linear_dimension(
         return None;
     }
     let mut entities = HashSet::new();
-    let mut measurements = Vec::with_capacity(candidates.len());
+    let mut measurements = Vec::new();
     for candidate in candidates {
         let (first, second, measurement) = match candidate {
             Definition::Distance { entities: pair, .. } => {
@@ -3859,8 +3893,8 @@ fn repeated_linear_dimension(
                     first,
                     second,
                     Measurement::Distance {
-                        first: SketchLocus::Entity(first.clone()),
-                        second: SketchLocus::Entity(second.clone()),
+                        first: SketchLocus::Entity(dimension_resource!(copy_dimension_entity_id(ctx, first, "f3d repeated distance first id"))),
+                        second: SketchLocus::Entity(dimension_resource!(copy_dimension_entity_id(ctx, second, "f3d repeated distance second id"))),
                     },
                 )
             }
@@ -3868,29 +3902,32 @@ fn repeated_linear_dimension(
                 locus_entity_id(first),
                 locus_entity_id(second),
                 Measurement::Horizontal {
-                    first: first.clone(),
-                    second: second.clone(),
+                    first: dimension_resource!(copy_dimension_locus(ctx, first, "f3d repeated directional first locus")),
+                    second: dimension_resource!(copy_dimension_locus(ctx, second, "f3d repeated directional second locus")),
                 },
             ),
             Definition::VerticalDistance { first, second, .. } => (
                 locus_entity_id(first),
                 locus_entity_id(second),
                 Measurement::Vertical {
-                    first: first.clone(),
-                    second: second.clone(),
+                    first: dimension_resource!(copy_dimension_locus(ctx, first, "f3d repeated directional first locus")),
+                    second: dimension_resource!(copy_dimension_locus(ctx, second, "f3d repeated directional second locus")),
                 },
             ),
             _ => return None,
         };
-        if first == second || !entities.insert(first.clone()) || !entities.insert(second.clone()) {
+        if first == second || entities.contains(first) || entities.contains(second) {
             return None;
         }
-        measurements.push(measurement);
+        dimension_resource!(insert_dimension_set(ctx, &mut entities, first, "f3d repeated first member"));
+        dimension_resource!(insert_dimension_set(ctx, &mut entities, second, "f3d repeated second member"));
+        dimension_resource!(push_dimension_item(ctx, &mut measurements, measurement,
+            "f3d repeated distance measurement"));
     }
-    Some(Definition::RepeatedDistance {
+    Some(Ok(Definition::RepeatedDistance {
         measurements,
         parameter,
-    })
+    }))
 }
 
 fn locus_entity_id(
@@ -3906,23 +3943,24 @@ fn locus_entity_id(
 }
 
 pub(super) fn null_locus_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     pair: &DesignDimensionLocusPair,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     source_kind: &str,
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchAxis, SketchConstraintDefinitionInput as Definition, SketchGeometry,
         SketchGeometryDefinition,
     };
 
-    if let Some(definition) = radial_dimension_definition_at_tolerance(
+    if let Some(definition) = radial_dimension_definition_at_tolerance(ctx,
         entity,
         source_kind,
         evaluated_value,
-        parameter.clone(),
+        dimension_resource!(copy_dimension_parameter_id(ctx, &parameter, "f3d null locus parameter id")),
         linear_tolerance,
     ) {
         return Some(definition);
@@ -3942,31 +3980,31 @@ pub(super) fn null_locus_dimension_definition(
         end: Point2::new(1.0, 0.0),
     })
     .ok()?;
-    line_angle_matches(&entity.geometry, &horizontal_axis, evaluated_value).then(|| {
-        Definition::AngleToAxis {
-            entity: entity.id().clone(),
+    line_angle_matches(&entity.geometry, &horizontal_axis, evaluated_value).then(|| -> Result<_, CodecError> { Ok(Definition::AngleToAxis {
+            entity: copy_dimension_entity_id(ctx, entity.id(), "f3d null locus entity id")?,
             axis: SketchAxis::Horizontal,
             parameter,
-        }
-    })
+        }) })
 }
 
 fn radial_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     source_kind: &str,
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
-    radial_dimension_definition_at_tolerance(entity, source_kind, evaluated_value, parameter, 0.0)
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+    radial_dimension_definition_at_tolerance(ctx, entity, source_kind, evaluated_value, parameter, 0.0)
 }
 
 fn radial_dimension_definition_at_tolerance(
+    ctx: Option<&DecodeContext<'_>>,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     source_kind: &str,
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
     };
@@ -3995,17 +4033,17 @@ fn radial_dimension_definition_at_tolerance(
     {
         return None;
     }
-    Some(if is_radius {
+    Some(Ok(if is_radius {
         Definition::Radius {
-            entity: entity.id().clone(),
+            entity: dimension_resource!(copy_dimension_entity_id(ctx, entity.id(), "f3d radial at tolerance entity id")),
             parameter,
         }
     } else {
         Definition::Diameter {
-            entity: entity.id().clone(),
+            entity: dimension_resource!(copy_dimension_entity_id(ctx, entity.id(), "f3d radial at tolerance entity id")),
             parameter,
         }
-    })
+    }))
 }
 
 /// Resolve a parameterized linear annotation that governs an offset pair.
@@ -4018,14 +4056,15 @@ fn radial_dimension_definition_at_tolerance(
 /// parallel or concentric offset. Requiring all three facts avoids assigning
 /// an arbitrary offset when the sketch contains several generated curves.
 fn annotation_offset_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     frame: &DesignDimensionAnnotationFrame,
-    parameter: &DesignParameter,
-    parameter_id: &cadmpeg_ir::features::ParameterId,
+    parameter: (&DesignParameter, &cadmpeg_ir::features::ParameterId),
     scope: &str,
     curves: &[SketchCurveIdentity],
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+    let (parameter, parameter_id) = parameter;
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
@@ -4046,11 +4085,10 @@ fn annotation_offset_dimension_definition(
         let curve = matches.next()?;
         matches.next().is_none().then_some(curve)
     };
-    let non_null_indices = frame
+    let non_null_indices = dimension_resource!(collect_dimension_items(ctx, frame
         .operands()
         .iter()
-        .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
-        .collect::<Vec<_>>();
+        .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get)), "f3d annotation offset index"));
     let null_locus_count = frame
         .operands()
         .iter()
@@ -4110,7 +4148,7 @@ fn annotation_offset_dimension_definition(
             && (distance.abs() - expected.abs()).abs() <= tolerance)
             .then_some((result, distance))?
     } else {
-        let matches = curves
+        let mut matches = curves
             .iter()
             .filter(|curve| {
                 native_stream(&curve.id) == Some(scope)
@@ -4129,85 +4167,75 @@ fn annotation_offset_dimension_definition(
                     && (distance.abs() - expected.abs()).abs() <= tolerance)
                     .then_some((result, distance))
             })
-            .collect::<Vec<_>>();
-        let [(result, distance)] = matches.as_slice() else {
-            return None;
-        };
-        (*result, *distance)
+            ;
+        let result = matches.next()?;
+        if matches.next().is_some() { return None; }
+        result
     };
     let parameter_factor = offset_parameter_factor(distance.abs(), expected)?;
-    Some(Definition::Offset {
+    Some(Ok(Definition::Offset {
         pairs: vec![SketchOffsetPair {
-            source: source.id().clone(),
-            result: result.id().clone(),
+            source: dimension_resource!(copy_dimension_entity_id(ctx, source.id(), "f3d annotation offset source id")),
+            result: dimension_resource!(copy_dimension_entity_id(ctx, result.id(), "f3d annotation offset result id")),
             source_reversed: distance.is_sign_negative(),
         }],
         distance: Length::new(distance.abs())?,
         parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-            id: parameter_id.clone(),
+            id: dimension_resource!(copy_dimension_parameter_id(ctx, parameter_id, "f3d annotation offset parameter id")),
             negated: parameter_factor.is_sign_negative(),
         }),
-    })
+    }))
 }
 
 /// Resolve a radial locus group from its selected circular entity or from a
 /// selected center point that uniquely identifies a measured circle or arc.
 fn radial_locus_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     loci: &[&cadmpeg_ir::sketches::SketchEntity],
     all_entities: &[cadmpeg_ir::sketches::SketchEntity],
     source_kind: &str,
     evaluated_value: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
-    let unique = |mut definitions: Vec<_>| {
-        let definition = definitions.pop()?;
-        definitions.is_empty().then_some(definition)
-    };
-    let direct = loci
-        .iter()
-        .filter_map(|entity| {
-            radial_dimension_definition(entity, source_kind, evaluated_value, (*parameter).clone())
-        })
-        .collect::<Vec<_>>();
+    let mut direct = Vec::new();
+    for entity in loci {
+        if let Some(result) = radial_dimension_definition(ctx, entity, source_kind, evaluated_value,
+            dimension_resource!(copy_dimension_parameter_id(ctx, parameter,
+                "f3d radial locus parameter id"))) {
+            dimension_resource!(push_dimension_item(ctx, &mut direct, dimension_resource!(result),
+                "f3d radial locus definition"));
+        }
+    }
+    if direct.len() == 1 { return direct.pop().map(Ok); }
     if !direct.is_empty() {
-        let mut entity_ids = direct
-            .iter()
-            .filter_map(|definition| match definition {
-                Definition::Radius { entity, .. } | Definition::Diameter { entity, .. } => {
-                    Some(entity.clone())
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        let distinct = entity_ids.iter().collect::<HashSet<_>>().len() == entity_ids.len();
-        return match direct.as_slice() {
-            [definition] => Some(definition.clone()),
-            _ if distinct
-                && direct
-                    .iter()
-                    .all(|definition| matches!(definition, Definition::Radius { .. })) =>
-            {
-                Some(Definition::RepeatedRadius {
-                    entities: std::mem::take(&mut entity_ids),
-                    parameter: parameter.clone(),
-                })
-            }
-            _ if distinct
-                && direct
-                    .iter()
-                    .all(|definition| matches!(definition, Definition::Diameter { .. })) =>
-            {
-                Some(Definition::RepeatedDiameter {
-                    entities: entity_ids,
-                    parameter: parameter.clone(),
-                })
-            }
-            _ => None,
-        };
+        let radius = direct.iter().all(|definition| matches!(definition, Definition::Radius { .. }));
+        let diameter = direct.iter().all(|definition| matches!(definition, Definition::Diameter { .. }));
+        if !radius && !diameter { return None; }
+        let mut ids = Vec::new();
+        for definition in direct {
+            let entity = match definition {
+                Definition::Radius { entity, .. } | Definition::Diameter { entity, .. } => entity,
+                _ => return None,
+            };
+            dimension_resource!(push_dimension_item(ctx, &mut ids, entity, "f3d radial locus member"));
+        }
+        let mut unique = HashSet::new();
+        for id in &ids {
+            if unique.contains(id) { return None; }
+            dimension_resource!(insert_dimension_set(ctx, &mut unique, id,
+                "f3d radial locus unique member"));
+        }
+        let parameter = dimension_resource!(copy_dimension_parameter_id(ctx, parameter,
+            "f3d radial locus repeated parameter id"));
+        return Some(Ok(if radius {
+            Definition::RepeatedRadius { entities: ids, parameter }
+        } else {
+            Definition::RepeatedDiameter { entities: ids, parameter }
+        }));
     }
 
     let sketch = &loci.first()?.sketch;
@@ -4242,12 +4270,21 @@ fn radial_locus_dimension_definition(
                     <= EPS_DIMENSIONS_RADIAL_LOCUS_DIMENSION_DEFINITION_E9 * scale
             })
         })
-        .filter_map(|entity| {
-            radial_dimension_definition(entity, source_kind, evaluated_value, (*parameter).clone())
-        })
-        .collect::<Vec<_>>();
-    unique(candidates)
+;
+    let mut matched = None;
+    let mut multiple = false;
+    for entity in candidates {
+        if let Some(result) = radial_dimension_definition(ctx, entity, source_kind, evaluated_value,
+            dimension_resource!(copy_dimension_parameter_id(ctx, parameter,
+                "f3d radial center parameter id"))) {
+            let definition = dimension_resource!(result);
+            if matched.is_some() { multiple = true; }
+            matched = Some(definition);
+        }
+    }
+    if multiple { None } else { matched.map(Ok) }
 }
+
 
 /// Identify a point-and-line radial annotation whose point lies on the
 /// line's infinite carrier. The pair locates a virtual sharp corner and does
@@ -4816,14 +4853,16 @@ fn midpoint_constraint(
 }
 
 fn indirect_angular_lines(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &str,
     operands: &[&cadmpeg_ir::sketches::SketchEntity],
     evaluated_value: f64,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
-) -> Option<(
+) -> Result<Option<(
     cadmpeg_ir::sketches::SketchEntityId,
     cadmpeg_ir::sketches::SketchEntityId,
-)> {
+)>, CodecError> {
+    let pair = (|| {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let [first, second] = operands else {
@@ -4877,18 +4916,26 @@ fn indirect_angular_lines(
     }
     let candidate = candidate?;
     Some(if point_ordinal == 0 {
-        (candidate.id().clone(), explicit_line.id().clone())
+        (candidate.id(), explicit_line.id())
     } else {
-        (explicit_line.id().clone(), candidate.id().clone())
+        (explicit_line.id(), candidate.id())
     })
+    })();
+    let Some((first, second)) = pair else { return Ok(None); };
+    Ok(Some((
+        copy_dimension_entity_id(ctx, first, "f3d indirect angular first id")?,
+        copy_dimension_entity_id(ctx, second, "f3d indirect angular second id")?,
+    )))
 }
 
+
 fn directional_point_dimension(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     evaluated_mm: f64,
     parameter: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
@@ -4908,8 +4955,8 @@ fn directional_point_dimension(
     else {
         return None;
     };
-    let first_locus = SketchLocus::Entity(first.id().clone());
-    let second_locus = SketchLocus::Entity(second.id().clone());
+    let first_locus = SketchLocus::Entity(dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d directional point dimension first id")));
+    let second_locus = SketchLocus::Entity(dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d directional point dimension second id")));
     let horizontal = linear_measurement_matches(
         first_position.u - second_position.u,
         evaluated_mm,
@@ -4921,44 +4968,43 @@ fn directional_point_dimension(
         linear_tolerance,
     );
     match (horizontal, vertical) {
-        (true, false) => Some(Definition::HorizontalDistance {
+        (true, false) => Some(Ok(Definition::HorizontalDistance {
             first: first_locus,
             second: second_locus,
             parameter,
-        }),
-        (false, true) => Some(Definition::VerticalDistance {
+        })),
+        (false, true) => Some(Ok(Definition::VerticalDistance {
             first: first_locus,
             second: second_locus,
             parameter,
-        }),
+        })),
         (false, false) | (true, true) => None,
     }
 }
 
 fn recipe_linear_dimension_candidates(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     evaluated_mm: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Vec<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
-    let sketch_entities = entities
+    let sketch_entities = collect_dimension_items(ctx, entities
         .iter()
-        .filter(|entity| &entity.sketch == sketch)
-        .collect::<Vec<_>>();
-    let points = sketch_entities
+        .filter(|entity| &entity.sketch == sketch), "f3d recipe sketch candidate")?;
+    let points = collect_dimension_items(ctx, sketch_entities
         .iter()
         .copied()
         .filter_map(|entity| match *entity.geometry.definition() {
             SketchGeometryDefinition::Point { position } => Some((entity, position.get())),
             _ => None,
-        })
-        .collect::<Vec<_>>();
-    let lines = sketch_entities
+        }), "f3d recipe point candidate")?;
+    let lines = collect_dimension_items(ctx, sketch_entities
         .iter()
         .copied()
         .filter(|entity| {
@@ -4966,14 +5012,13 @@ fn recipe_linear_dimension_candidates(
                 *entity.geometry.definition(),
                 cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
             )
-        })
-        .collect::<Vec<_>>();
+        }), "f3d recipe line candidate")?;
     let mut line_pairs = Vec::new();
     for first in 0..lines.len() {
         for second in first + 1..lines.len() {
             if parallel_line_separation(lines[first], lines[second], evaluated_mm, linear_tolerance)
             {
-                line_pairs.push((lines[first], lines[second]));
+                push_dimension_item(ctx, &mut line_pairs, (lines[first], lines[second]), "f3d recipe line pair")?;
             }
         }
     }
@@ -5009,37 +5054,40 @@ fn recipe_linear_dimension_candidates(
             if subsumed_by_line_pair {
                 continue;
             }
-            if let Some(definition) = directional_point_dimension(
+            if let Some(definition) = directional_point_dimension(ctx,
                 &[points[first].0, points[second].0],
                 evaluated_mm,
-                parameter.clone(),
+                copy_dimension_parameter_id(ctx, parameter, "f3d recipe directional parameter id")?,
                 0.0,
-            ) {
-                candidates.push(definition);
+            ).transpose()? {
+                push_dimension_item(ctx, &mut candidates, definition, "f3d recipe point definition")?;
             }
         }
     }
-    candidates.extend(
-        line_pairs
-            .iter()
-            .map(|(first, second)| Definition::Distance {
-                entities: vec![first.id().clone(), second.id().clone()],
-                parameter: parameter.clone(),
-            }),
-    );
-    candidates
+    for (first, second) in line_pairs {
+        let definition = Definition::Distance {
+            entities: copy_dimension_entity_members(ctx, &[first, second])?,
+            parameter: copy_dimension_parameter_id(ctx, parameter, "f3d recipe line parameter id")?,
+        };
+        push_dimension_item(ctx, &mut candidates, definition, "f3d recipe line definition")?;
+    }
+    Ok(candidates)
 }
 
+
 fn recipe_dimension_candidate_entities(
+    ctx: Option<&DecodeContext<'_>>,
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
-) -> Vec<cadmpeg_ir::sketches::SketchEntityId> {
+) -> Result<Vec<cadmpeg_ir::sketches::SketchEntityId>, CodecError> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     let mut entities = Vec::new();
-    let mut add = |entity: &cadmpeg_ir::sketches::SketchEntityId| {
+    let mut add = |entity: &cadmpeg_ir::sketches::SketchEntityId| -> Result<(), CodecError> {
         if !entities.contains(entity) {
-            entities.push(entity.clone());
+            let copied = copy_dimension_entity_id(ctx, entity, "f3d recipe native entity id")?;
+            push_dimension_item(ctx, &mut entities, copied, "f3d recipe native entity")?;
         }
+        Ok(())
     };
     for candidate in candidates {
         match candidate {
@@ -5048,28 +5096,29 @@ fn recipe_dimension_candidate_entities(
                 ..
             } => {
                 for entity in candidate_entities {
-                    add(entity);
+                    add(entity)?;
                 }
             }
             Definition::HorizontalDistance { first, second, .. }
             | Definition::VerticalDistance { first, second, .. } => {
-                add(locus_entity_id(first));
-                add(locus_entity_id(second));
+                add(locus_entity_id(first))?;
+                add(locus_entity_id(second))?;
             }
             _ => {}
         }
     }
-    entities
+    Ok(entities)
 }
 
 /// Resolve an ambiguous recipe-backed directional distance through one
 /// detached point on the extension of an axis-aligned bounded line. The other
 /// measured point must be an endpoint of that same line.
 fn recipe_extension_point_dimension(
+    ctx: Option<&DecodeContext<'_>>,
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -5153,7 +5202,17 @@ fn recipe_extension_point_dimension(
             matched = Some(candidate);
         }
     }
-    matched.cloned()
+    let (first, second, parameter, horizontal) = match matched? {
+        Definition::HorizontalDistance { first, second, parameter } => (first, second, parameter, true),
+        Definition::VerticalDistance { first, second, parameter } => (first, second, parameter, false),
+        _ => return None,
+    };
+    Some((|| -> Result<_, CodecError> {
+        let first = copy_dimension_locus(ctx, first, "f3d recipe extension first locus")?;
+        let second = copy_dimension_locus(ctx, second, "f3d recipe extension second locus")?;
+        let parameter = copy_dimension_parameter_id(ctx, parameter, "f3d recipe extension parameter id")?;
+        Ok(if horizontal { Definition::HorizontalDistance { first, second, parameter } } else { Definition::VerticalDistance { first, second, parameter } })
+    })())
 }
 
 fn parallel_line_separation(
@@ -5174,14 +5233,15 @@ fn parallel_line_separation(
 /// stored value is twice the perpendicular carrier separation. Zero roles use
 /// the ordinary direct separation rules in `exact_definition`.
 fn symmetric_parallel_line_dimension_definition(
+    ctx: Option<&DecodeContext<'_>>,
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
-    first_role: u32,
-    second_role: u32,
+    roles: (u32, u32),
     parameter: &DesignParameter,
     parameter_id: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+    let (first_role, second_role) = roles;
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     if first_role == 0
@@ -5193,12 +5253,10 @@ fn symmetric_parallel_line_dimension_definition(
     }
     let separation = parallel_line_distance(first, second)?;
     let expected = parameter.evaluated_value().get() * 10.0;
-    linear_measurement_matches(2.0 * separation, expected, linear_tolerance).then(|| {
-        Definition::Distance {
-            entities: vec![first.id().clone(), second.id().clone()],
+    linear_measurement_matches(2.0 * separation, expected, linear_tolerance).then(|| -> Result<_, CodecError> { Ok(Definition::Distance {
+            entities: vec![copy_dimension_entity_id(ctx, first.id(), "f3d symmetric parallel line first id")?, copy_dimension_entity_id(ctx, second.id(), "f3d symmetric parallel line second id")?],
             parameter: parameter_id,
-        }
-    })
+        }) })
 }
 
 fn line_segment(geometry: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
@@ -5341,34 +5399,38 @@ fn linear_measurement_matches(measured: f64, expected: f64, linear_tolerance: f6
 }
 
 fn two_locus_distance_dimension(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
-    (entities.len() == 2 && entities[0].id() != entities[1].id()).then(|| Definition::Distance {
-        entities: entities.iter().map(|entity| entity.id().clone()).collect(),
+    if entities.len() != 2 || entities[0].id() == entities[1].id() { return None; }
+    Some(Ok(Definition::Distance {
+        entities: dimension_resource!(copy_dimension_entity_members(ctx, entities)),
         parameter,
-    })
+    }))
 }
+
 
 #[cfg(test)]
 fn counted_role_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     owner_role: u64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
-    counted_role_relation_at_tolerance(
+    counted_role_relation_at_tolerance(None,
         entities,
         &crate::records::sketch_relations::constraint_kinds_from_state(owner_role).0,
         0.0,
-    )
+    ).transpose().unwrap()
 }
 
 fn counted_role_relation_at_tolerance(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     owner_kinds: &[SketchConstraintKind],
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
     };
@@ -5388,17 +5450,17 @@ fn counted_role_relation_at_tolerance(
                     if dv.abs()
                         <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
-                    Some(Definition::Horizontal {
-                        entity: entity.id().clone(),
-                    })
+                    Some(Ok(Definition::Horizontal {
+                        entity: dimension_resource!(copy_dimension_entity_id(ctx, entity.id(), "f3d counted role relation at tolerance entity id")),
+                    }))
                 }
                 SketchConstraintKind::Vertical
                     if du.abs()
                         <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
-                    Some(Definition::Vertical {
-                        entity: entity.id().clone(),
-                    })
+                    Some(Ok(Definition::Vertical {
+                        entity: dimension_resource!(copy_dimension_entity_id(ctx, entity.id(), "f3d counted role relation at tolerance entity id")),
+                    }))
                 }
                 _ => None,
             }
@@ -5407,16 +5469,16 @@ fn counted_role_relation_at_tolerance(
             if exact_line_arc_tangency(entities, linear_tolerance)
                 || exact_circular_tangency(entities, linear_tolerance) =>
         {
-            Some(Definition::Tangent {
-                first: first.id().clone(),
-                second: second.id().clone(),
-            })
+            Some(Ok(Definition::Tangent {
+                first: dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d counted role relation at tolerance first id")),
+                second: dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d counted role relation at tolerance second id")),
+            }))
         }
         (SketchConstraintKind::Equal, [first, second]) if exact_equal_size(entities) => {
-            Some(Definition::Equal {
-                first: first.id().clone(),
-                second: second.id().clone(),
-            })
+            Some(Ok(Definition::Equal {
+                first: dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d counted role relation at tolerance first id")),
+                second: dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d counted role relation at tolerance second id")),
+            }))
         }
         _ => None,
     })
@@ -5658,8 +5720,9 @@ const EPS_CENTERED_RELATION: f64 = 1.0e-9;
 const EPS_OFFSET_SWEEP: f64 = 1.0e-12;
 
 fn exact_centered_entity_relation(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -5687,33 +5750,34 @@ fn exact_centered_entity_relation(
     if let (Some(first_radius), Some(second_radius)) = (first_radius, second_radius) {
         let scale = 1.0 + first_radius.abs().max(second_radius.abs());
         if (first_radius - second_radius).abs() <= EPS_CENTERED_RELATION * scale {
-            return Some(Definition::Coradial {
-                first: first.id().clone(),
-                second: second.id().clone(),
-            });
+            return Some(Ok(Definition::Coradial {
+                first: dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d exact centered entity relation first id")),
+                second: dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d exact centered entity relation second id")),
+            }));
         }
     }
-    Some(Definition::Concentric {
-        first: first.id().clone(),
-        second: second.id().clone(),
-    })
+    Some(Ok(Definition::Concentric {
+        first: dimension_resource!(copy_dimension_entity_id(ctx, first.id(), "f3d exact centered entity relation first id")),
+        second: dimension_resource!(copy_dimension_entity_id(ctx, second.id(), "f3d exact centered entity relation second id")),
+    }))
 }
 
 fn exact_counted_dimension_relation(
+    ctx: Option<&DecodeContext<'_>>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
-    if let Some(definition) = exact_centered_entity_relation(entities) {
+    if let Some(definition) = exact_centered_entity_relation(ctx, entities).transpose()? {
         return Ok(Some(definition));
     }
     if let Some((first, second, axis)) = reflected_symmetry(entities) {
         return Ok(Some(Definition::Symmetric {
-            first: SketchLocus::Entity(first.id().clone()),
-            second: SketchLocus::Entity(second.id().clone()),
-            axis: axis.id().clone(),
+            first: SketchLocus::Entity(copy_dimension_entity_id(ctx, first.id(), "f3d exact counted first id")?),
+            second: SketchLocus::Entity(copy_dimension_entity_id(ctx, second.id(), "f3d exact counted second id")?),
+            axis: copy_dimension_entity_id(ctx, axis.id(), "f3d exact counted axis id")?,
         }));
     }
     let [first, second] = entities else {
@@ -5724,15 +5788,15 @@ fn exact_counted_dimension_relation(
     }
     let point_on_geometry =
         |point: &cadmpeg_ir::sketches::SketchEntity,
-         geometry: &cadmpeg_ir::sketches::SketchEntity| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+         geometry: &cadmpeg_ir::sketches::SketchEntity| -> Result<bool, CodecError> {
             let SketchGeometryDefinition::Point { position } = *point.geometry.definition() else {
                 return Ok(false);
             };
-            point_lies_on_sketch_geometry(position.get(), &geometry.geometry)
+            point_lies_on_sketch_geometry(position.get(), &geometry.geometry).map_err(CodecError::ResourceLimit)
         };
     if point_on_geometry(first, second)? || point_on_geometry(second, first)? {
         return Ok(Some(Definition::Coincident {
-            entities: vec![first.id().clone(), second.id().clone()],
+            entities: vec![copy_dimension_entity_id(ctx, first.id(), "f3d exact counted first id")?, copy_dimension_entity_id(ctx, second.id(), "f3d exact counted second id")?],
         }));
     }
     let (
@@ -5780,13 +5844,13 @@ fn exact_counted_dimension_relation(
                 <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 * (1.0 + first_length)
             {
                 Definition::Collinear {
-                    first: first.id().clone(),
-                    second: second.id().clone(),
+                    first: copy_dimension_entity_id(ctx, first.id(), "f3d exact counted first id")?,
+                    second: copy_dimension_entity_id(ctx, second.id(), "f3d exact counted second id")?,
                 }
             } else {
                 Definition::Parallel {
-                    first: first.id().clone(),
-                    second: second.id().clone(),
+                    first: copy_dimension_entity_id(ctx, first.id(), "f3d exact counted first id")?,
+                    second: copy_dimension_entity_id(ctx, second.id(), "f3d exact counted second id")?,
                 }
             },
         ));
@@ -5794,12 +5858,12 @@ fn exact_counted_dimension_relation(
     let dot = first_direction
         .u
         .mul_add(second_direction.u, first_direction.v * second_direction.v);
-    Ok((dot.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9).then(|| {
+    (dot.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9).then(|| -> Result<_, CodecError> { Ok(
         Definition::Perpendicular {
-            first: first.id().clone(),
-            second: second.id().clone(),
+            first: copy_dimension_entity_id(ctx, first.id(), "f3d exact counted first id")?,
+            second: copy_dimension_entity_id(ctx, second.id(), "f3d exact counted second id")?,
         }
-    }))
+    ) }).transpose()
 }
 
 pub(super) fn point_lies_on_sketch_geometry(
@@ -6119,10 +6183,11 @@ fn line_angle_matches(
 }
 
 pub(super) fn exact_offset_constraint(
+    ctx: Option<&DecodeContext<'_>>,
     relation: &SketchRelation,
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
@@ -6173,26 +6238,28 @@ pub(super) fn exact_offset_constraint(
             };
         let source = projected.get(&(scope, source_record_index))?;
         let result = projected.get(&(scope, result_record_index))?;
-        if !used_entities.insert(source.id().clone()) || !used_entities.insert(result.id().clone())
+        if used_entities.contains(source.id()) || used_entities.contains(result.id())
         {
             return None;
         }
+        dimension_resource!(insert_dimension_set(ctx, &mut used_entities, source.id(), "f3d relation offset used source"));
+        dimension_resource!(insert_dimension_set(ctx, &mut used_entities, result.id(), "f3d relation offset used result"));
         let distance = parallel_line_offset(&source.geometry, &result.geometry)?;
         if distance.abs() <= EPS_DIMENSIONS_EXACT_OFFSET_CONSTRAINT_E9 {
             return None;
         }
         let source_reversed = offset_source_reversed(distance, &mut canonical_distance)?;
-        pairs.push(SketchOffsetPair {
-            source: source.id().clone(),
-            result: result.id().clone(),
+        dimension_resource!(push_dimension_item(ctx, &mut pairs, SketchOffsetPair {
+            source: dimension_resource!(copy_dimension_entity_id(ctx, source.id(), "f3d relation offset source id")),
+            result: dimension_resource!(copy_dimension_entity_id(ctx, result.id(), "f3d relation offset result id")),
             source_reversed,
-        });
+        }, "f3d relation offset pair"));
     }
-    Some(Definition::Offset {
+    Some(Ok(Definition::Offset {
         pairs,
         distance: Length::new(canonical_distance?)?,
         parameter: None,
-    })
+    }))
 }
 
 fn offset_source_reversed(distance: f64, canonical: &mut Option<f64>) -> Option<bool> {

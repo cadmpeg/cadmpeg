@@ -929,40 +929,40 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#angle")
         .expect("identity grammar");
     assert!(matches!(
-        null_locus_dimension_definition(
+        null_locus_dimension_definition(None,
             &axis_pair,
             &entity,
             "Angular Dimension-2",
             std::f64::consts::FRAC_PI_4,
             parameter.clone(),
             TEST_LINEAR_TOLERANCE,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity: ref actual_entity,
             axis: SketchAxis::Horizontal,
             parameter: ref actual_parameter,
         }) if actual_entity == entity.id() && actual_parameter == &parameter
     ));
-    assert!(null_locus_dimension_definition(
+    assert!(null_locus_dimension_definition(None,
         &axis_pair,
         &entity,
         "Angular Dimension-2",
         0.5,
         parameter.clone(),
         TEST_LINEAR_TOLERANCE,
-    )
+    ).transpose().unwrap()
     .is_none());
     let mut draft = axis_pair.into_draft();
     draft.loci[0].role = 13;
     axis_pair = crate::records::dimensions::DesignDimensionLocusPair::try_new(draft).unwrap();
-    assert!(null_locus_dimension_definition(
+    assert!(null_locus_dimension_definition(None,
         &axis_pair,
         &entity,
         "Angular Dimension-2",
         std::f64::consts::FRAC_PI_4,
         parameter.clone(),
         TEST_LINEAR_TOLERANCE,
-    )
+    ).transpose().unwrap()
     .is_none());
 
     let radial_entity = SketchEntity::new(
@@ -975,27 +975,27 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         .unwrap(),
     );
     assert!(matches!(
-        null_locus_dimension_definition(
+        null_locus_dimension_definition(None,
             &pair,
             &radial_entity,
             "Diameter Dimension-2",
             0.2,
             parameter.clone(),
             TEST_LINEAR_TOLERANCE,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual_entity,
             parameter: ref actual_parameter,
         }) if actual_entity == radial_entity.id() && actual_parameter == &parameter
     ));
-    assert!(null_locus_dimension_definition(
+    assert!(null_locus_dimension_definition(None,
         &pair,
         &radial_entity,
         "Diameter Dimension-2",
         0.2,
         parameter,
         0.0,
-    )
+    ).transpose().unwrap()
     .is_none());
 }
 
