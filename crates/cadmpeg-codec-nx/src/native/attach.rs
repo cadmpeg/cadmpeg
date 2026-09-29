@@ -1549,7 +1549,7 @@ fn attach_feature_operations(
             .push(block_use);
     }
     let chronological_labels =
-        crate::native::features::feature_operation_chronological_labels(labels);
+        crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
     let operation_positions = chronological_labels
         .iter()
         .enumerate()

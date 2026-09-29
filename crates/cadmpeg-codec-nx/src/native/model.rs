@@ -1314,12 +1314,13 @@ impl NativeModel {
             &feature_sketch_named_point_block_uses,
         );
         let feature_sketch_datum_csys_dependencies = feature_sketch_datum_csys_dependencies(
+            ctx,
             &feature_operation_labels,
             &offset_store_named_points,
             &feature_sketch_point_uses,
             &feature_datum_csys_constructions,
             &feature_datum_csys_payload_scalars,
-        );
+        )?;
         let expression_declarations = expression_declarations(ctx, container)?;
         let expressions = expressions(ctx, container, &expression_declarations)?;
         let classes = class_definitions(ctx, container)?;

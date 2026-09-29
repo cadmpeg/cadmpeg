@@ -124,34 +124,44 @@ pub(super) struct FeatureOperationLabel {
 /// Each feature-history section stores its operation records newest first. The
 /// native label arena retains that source order, but neutral dependencies and
 /// feature ordinals use oldest-first construction order within each section.
-pub(super) fn feature_operation_chronological_labels(
-    labels: &[FeatureOperationLabel],
-) -> Vec<&FeatureOperationLabel> {
-    let mut sections = Vec::<(&str, Vec<&FeatureOperationLabel>)>::new();
+pub(super) fn feature_operation_chronological_labels<'a>(
+    ctx: &DecodeContext<'_>,
+    labels: &'a [FeatureOperationLabel],
+) -> Result<Vec<&'a FeatureOperationLabel>, CodecError> {
+    let work = labels.len().checked_mul(labels.len())
+        .and_then(|count| count.checked_add(labels.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("order NX feature labels", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "order NX feature labels")?;
+    let mut sections = BTreeMap::<&str, u64>::new();
+    let mut section_reservation = ctx.reserve_scoped(0, "NX feature label sections")?;
     for label in labels {
-        if let Some((_, section)) = sections
-            .iter_mut()
-            .find(|(section_link, _)| *section_link == label.section_link)
-        {
-            section.push(label);
-        } else {
-            sections.push((label.section_link.as_str(), vec![label]));
-        }
+        ctx.charge_collection_items(1, "NX feature label sections")?;
+        section_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, u64)>() * 4,
+        ))?;
+        sections.entry(label.section_link.as_str())
+            .and_modify(|first| *first = (*first).min(label.source_offset))
+            .or_insert(label.source_offset);
     }
-    sections.sort_by(|(left_link, left), (right_link, right)| {
-        left.iter()
-            .map(|label| label.source_offset)
-            .min()
-            .cmp(&right.iter().map(|label| label.source_offset).min())
-            .then_with(|| left_link.cmp(right_link))
+    let count = cadmpeg_core::decode::u64_from_index(labels.len());
+    ctx.charge_collection_items(count, "NX chronological feature labels")?;
+    let bytes = labels.len().checked_mul(std::mem::size_of::<&FeatureOperationLabel>())
+        .ok_or_else(|| ctx.refuse_codec_limit("retain NX chronological feature labels", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX chronological feature labels")?;
+    let mut ordered = Vec::new();
+    ordered.try_reserve_exact(labels.len())
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX chronological feature labels", 0, 1))?;
+    ordered.extend(labels);
+    let _sorting = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(bytes), "sort NX chronological feature labels",
+    )?;
+    ordered.sort_by(|left, right| {
+        sections.get(left.section_link.as_str())
+            .cmp(&sections.get(right.section_link.as_str()))
+            .then_with(|| left.section_link.cmp(&right.section_link))
+            .then_with(|| right.source_offset.cmp(&left.source_offset))
     });
-    sections
-        .into_iter()
-        .flat_map(|(_, mut section)| {
-            section.sort_by_key(|label| std::cmp::Reverse(label.source_offset));
-            section
-        })
-        .collect()
+    Ok(ordered)
 }
 
 /// Exact body-write frame retained from one feature operation.
@@ -6936,13 +6946,14 @@ pub(super) fn feature_sketch_point_uses(
 
 /// Join one uniquely sketch-owned named-point block to a later datum-CSYS construction.
 pub(super) fn feature_sketch_datum_csys_dependencies(
+    ctx: &DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     named_points: &[OffsetStoreNamedPoint],
     point_uses: &[FeatureSketchPointUse],
     constructions: &[FeatureDatumCsysConstruction],
     scalars: &[FeaturePayloadScalar],
-) -> Vec<FeatureSketchDatumCsysDependency> {
-    let positions = feature_operation_chronological_labels(labels)
+) -> Result<Vec<FeatureSketchDatumCsysDependency>, CodecError> {
+    let positions = feature_operation_chronological_labels(ctx, labels)?
         .into_iter()
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
@@ -7070,7 +7081,7 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
         });
     }
     dependencies.sort_by(|left, right| left.id.cmp(&right.id));
-    dependencies
+    Ok(dependencies)
 }
 
 fn parse_sketch_point_name(value: &str) -> Option<u32> {

@@ -16,6 +16,59 @@ use crate::test_support::test_om::composed_feature_history_payload;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::NxCodec;
 
+fn chronological_label_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let labels = [FeatureOperationLabel {
+        id: "operation#0".to_string(),
+        section_link: "section#0".to_string(),
+        ordinal: 0,
+        value: "EXTRUDE".to_string(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
+        stable_identity: None,
+        source_offset: 10,
+    }];
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_chronological_labels(ctx, &labels)
+    }).expect("admitted chronological labels");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_operation_chronological_labels(&ctx, &labels)
+        .expect_err("chronological label resource limit")
+}
+
+#[test]
+fn chronological_labels_refuse_collection_limit() {
+    let error = chronological_label_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn chronological_labels_refuse_retained_limit() {
+    let error = chronological_label_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn chronological_labels_refuse_scoped_limit() {
+    let error = chronological_label_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn chronological_labels_refuse_work_limit() {
+    let error = chronological_label_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn segment_body_lineage_statuses_cover_every_bound_image() {
     use crate::native::features::FeatureBodyReference;
@@ -852,7 +905,7 @@ fn operation_history_reverses_source_order_within_each_section() {
         label("second", 1, "oldest-second"),
     ];
 
-    let values = feature_operation_chronological_labels(&labels)
+    let values = crate::test_support::with_decode_context(|ctx| feature_operation_chronological_labels(ctx, &labels)).expect("admitted chronological labels")
         .into_iter()
         .map(|label| label.value.as_str())
         .collect::<Vec<_>>();
@@ -886,7 +939,7 @@ fn operation_history_groups_interleaved_sections_before_reversing() {
         label("second", 1, "oldest-second"),
     ];
 
-    let values = feature_operation_chronological_labels(&labels)
+    let values = crate::test_support::with_decode_context(|ctx| feature_operation_chronological_labels(ctx, &labels)).expect("admitted chronological labels")
         .into_iter()
         .map(|label| label.value.as_str())
         .collect::<Vec<_>>();
@@ -920,7 +973,7 @@ fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
         label("second", 0, "newest-second", 100),
     ];
 
-    let values = feature_operation_chronological_labels(&labels)
+    let values = crate::test_support::with_decode_context(|ctx| feature_operation_chronological_labels(ctx, &labels)).expect("admitted chronological labels")
         .into_iter()
         .map(|label| label.value.as_str())
         .collect::<Vec<_>>();

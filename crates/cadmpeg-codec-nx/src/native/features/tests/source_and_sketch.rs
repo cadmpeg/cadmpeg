@@ -48,6 +48,20 @@ use crate::test_support::test_om::size_framed_om_section_with_repeated_operation
 use crate::test_support::test_prt::prt_with_named_payloads;
 
 use std::io::Cursor;
+
+fn sketch_datum_dependencies_for_test(
+    labels: &[FeatureOperationLabel],
+    named_points: &[crate::native::features::OffsetStoreNamedPoint],
+    point_uses: &[crate::native::features::FeatureSketchPointUse],
+    constructions: &[FeatureDatumCsysConstruction],
+    scalars: &[crate::native::features::FeaturePayloadScalar],
+) -> Vec<crate::native::features::FeatureSketchDatumCsysDependency> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_sketch_datum_csys_dependencies(
+            ctx, labels, named_points, point_uses, constructions, scalars,
+        )
+    }).expect("admitted sketch datum dependencies")
+}
 use std::sync::Arc;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -914,7 +928,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         source_offset: 220,
     };
 
-    let dependencies = feature_sketch_datum_csys_dependencies(
+    let dependencies = sketch_datum_dependencies_for_test(
         &labels,
         std::slice::from_ref(&point),
         std::slice::from_ref(&point_use),
@@ -943,7 +957,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
 
     let mut equal_at_another_offset = scalar.clone();
     equal_at_another_offset.source_offset = 219;
-    let unaliased = feature_sketch_datum_csys_dependencies(
+    let unaliased = sketch_datum_dependencies_for_test(
         &labels,
         std::slice::from_ref(&point),
         std::slice::from_ref(&point_use),
@@ -979,7 +993,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     members[0].1 = "nx:om:offset-store#7:block#12".to_string();
     consecutive_construction.frame =
         crate::om::datum_csys::DatumCsysFrame::new(19, 386, members).unwrap();
-    let consecutive_dependencies = feature_sketch_datum_csys_dependencies(
+    let consecutive_dependencies = sketch_datum_dependencies_for_test(
         &labels,
         &[consecutive_point],
         &[consecutive_use],
@@ -1001,7 +1015,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         named_point: ambiguous_point.id.clone(),
         ..point_use.clone()
     };
-    assert!(feature_sketch_datum_csys_dependencies(
+    assert!(sketch_datum_dependencies_for_test(
         &labels,
         &[point.clone(), ambiguous_point],
         &[point_use.clone(), ambiguous_use],
@@ -1011,7 +1025,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     .is_empty());
 
     let reversed_labels = [label("sketch", "SKETCH", 0), label("csys", "DATUM_CSYS", 1)];
-    assert!(feature_sketch_datum_csys_dependencies(
+    assert!(sketch_datum_dependencies_for_test(
         &reversed_labels,
         &[point],
         &[point_use],
