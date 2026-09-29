@@ -1385,6 +1385,7 @@ fn bspline_basis_derivative(scratch: &admitted::Scratch<'_, '_>, knots: &[f64], 
         return scratch.filled(1, 0.0, "IR B-spline derivative basis");
     }
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
+    scratch.work(degree.checked_add(1)?, "IR B-spline derivative work")?;
     let lower_start = span - (degree - 1);
     scratch.collect((0..=degree)
         .map(|local| {
@@ -1446,6 +1447,7 @@ fn bspline_basis_second_derivative(scratch: &admitted::Scratch<'_, '_>,
         return Some(Cow::Borrowed(&[0.0, 0.0]));
     }
     let lower = bspline_basis_derivative(scratch, knots, degree - 1, span, t)?;
+    scratch.work(degree.checked_add(1)?, "IR B-spline second derivative work")?;
     let lower_start = span - (degree - 1);
     let basis = scratch.collect((0..=degree)
         .map(|local| {
@@ -1533,6 +1535,7 @@ fn bspline_basis_scaled_derivative_level(scratch: &admitted::Scratch<'_, '_>,
         0.0,
         "IR scaled B-spline derivative basis",
     )?;
+    scratch.work(derivative.len(), "IR scaled B-spline derivative work")?;
     for (local, derivative_value) in derivative.iter_mut().enumerate() {
         let index = span - degree + local;
         let lower_at = |values: &[f64], global: usize| {

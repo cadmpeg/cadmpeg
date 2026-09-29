@@ -152,3 +152,110 @@ fn reusable_nurbs_evaluator_refuses_work_and_depth() {
         assert!(matches!(evaluator.point(&ctx, 0.5), Err(CodecError::ResourceLimit(resource)) if resource.operation == operation));
     }
 }
+
+fn with_policy<T>(policy: DecodePolicy, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    run(&ctx)
+}
+
+#[test]
+fn admitted_curve_tangent_refuses_rational_weight_copy() {
+    let curve = curve();
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(NurbsCurve::from_lanes(
+        curve.degree(), curve.knots().to_vec(), curve.control_points().into_iter().map(|point| point.get()).collect(),
+        Some(vec![1.0; 3]), false).expect("rational curve")));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    assert!(matches!(with_policy(policy, |ctx| super::curve_tangent(ctx, &geometry, 0.5)),
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS derivative weights"));
+    assert_eq!(with_policy(DecodePolicy::service(), |ctx| super::curve_tangent(ctx, &geometry, 0.5)).expect("service"),
+        crate::eval::curve_tangent(&geometry, 0.5));
+}
+
+#[test]
+fn admitted_polyline_tangent_refuses_points_and_parameters() {
+    use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    for parameterized in [false, true] {
+        let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)];
+        let samples = if parameterized {
+            PolylineSamples::Parameterized { vertices: points.into_iter().enumerate().map(|(index, point)|
+                PolylineVertex { parameter: f64::from(u32::try_from(index).expect("three points")), point })
+                .collect::<Vec<_>>().try_into().expect("nonempty vertices") }
+        } else { PolylineSamples::Unparameterized { points: points.try_into().expect("nonempty points") } };
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(PolylineCurve::new(samples, 0.0).expect("polyline")));
+        for (cap, operation) in [(2, "IR polyline derivative points"), (5, "IR polyline derivative parameters")] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            assert!(matches!(with_policy(policy, |ctx| super::curve_tangent(ctx, &geometry, 0.5)),
+                Err(CodecError::ResourceLimit(resource)) if resource.operation == operation));
+        }
+        assert_eq!(with_policy(DecodePolicy::service(), |ctx| super::curve_tangent(ctx, &geometry, 0.5)).expect("service"),
+            crate::eval::curve_tangent(&geometry, 0.5));
+    }
+}
+
+#[test]
+fn admitted_polar_pcurve_refuses_weight_copy() {
+    use crate::geometry::pcurve::{PcurveGeometry, PolarPcurveNurbs, PolarNurbsPole};
+    use crate::math::Point2;
+    let geometry = PcurveGeometry::PolarNurbs { nurbs: PolarPcurveNurbs::from_lanes(2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![PolarNurbsPole { radial: Point2::new(1.0, 0.0), axial: 0.0 },
+             PolarNurbsPole { radial: Point2::new(1.0, 0.5), axial: 0.5 },
+             PolarNurbsPole { radial: Point2::new(1.0, 1.0), axial: 1.0 }],
+        Some(vec![1.0; 3]), false).expect("polar pcurve") };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    assert!(matches!(with_policy(policy, |ctx| super::pcurve_uv(ctx, &geometry, 0.5)),
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR polar NURBS weights"));
+    assert_eq!(with_policy(DecodePolicy::service(), |ctx| super::pcurve_uv(ctx, &geometry, 0.5)).expect("service"),
+        crate::eval::pcurve_uv(&geometry, 0.5));
+}
+
+#[test]
+fn admitted_scaled_derivatives_refuse_each_collection() {
+    for (degree, cap, operation) in [(0, 0, "IR scaled B-spline first basis"),
+        (0, 1, "IR scaled B-spline second basis"), (1, 1, "IR scaled B-spline derivative basis"),
+        (1, 3, "IR scaled B-spline second basis"), (2, 2, "IR scaled B-spline derivative basis"),
+        (2, 4, "IR scaled B-spline derivative basis"), (2, 7, "IR scaled B-spline derivative basis")] {
+        let mut knots = vec![0.0; degree + 1];
+        knots.extend(vec![1.0; degree + 1]);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let result = with_policy(policy, |ctx| {
+            let scratch = super::Scratch::new(ctx);
+            let result = crate::eval::bspline_basis_scaled_derivatives(&scratch, &knots, degree, degree, 0.5, crate::scalar::PositiveReal::ONE);
+            scratch.finish(result)
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation));
+        let result = with_policy(DecodePolicy::service(), |ctx| {
+            let scratch = super::Scratch::new(ctx);
+            let result = crate::eval::bspline_basis_scaled_derivatives(&scratch, &knots, degree, degree, 0.5, crate::scalar::PositiveReal::ONE);
+            scratch.finish(result)
+        }).expect("service");
+        assert_eq!(result, crate::eval::bspline_basis_scaled_derivatives(&super::Scratch::default(), &knots, degree, degree, 0.5, crate::scalar::PositiveReal::ONE));
+        assert!(result.is_some());
+    }
+}
+
+#[test]
+fn admitted_derivative_arithmetic_refuses_each_work_loop() {
+    let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    for (kind, cap, operation) in [(0, 2, "IR B-spline derivative work"),
+        (1, 1, "IR B-spline derivative work"), (1, 4, "IR B-spline second derivative work"),
+        (2, 2, "IR scaled B-spline derivative work")] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let result = with_policy(policy, |ctx| {
+            let scratch = super::Scratch::new(ctx);
+            let result = match kind {
+                0 => crate::eval::bspline_basis_derivative(&scratch, &knots, 2, 2, 0.5).map(|_| ()),
+                1 => crate::eval::bspline_basis_second_derivative(&scratch, &knots, 2, 2, 0.5).map(|_| ()),
+                _ => crate::eval::bspline_basis_scaled_derivatives(&scratch, &knots, 2, 2, 0.5, crate::scalar::PositiveReal::ONE).map(|_| ()),
+            };
+            scratch.finish(result)
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation));
+    }
+}
