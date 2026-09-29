@@ -55,6 +55,22 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
 }
 
 #[test]
+fn tree_children_charged_insert_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"children", &arena, &policy,
+    ).unwrap();
+    let mut children = TreeChildren::default();
+    let error = children
+        .try_insert_charged(feature_id("child"), &ctx, "collect tree children")
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    assert!(children.is_empty());
+}
+
+#[test]
 fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
     let first = BodySelection::Bodies(vec![body_id("first")].try_into().expect("distinct bodies"));
     let second =

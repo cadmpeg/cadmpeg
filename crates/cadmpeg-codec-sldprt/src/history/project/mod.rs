@@ -225,39 +225,49 @@ pub(crate) fn project_feature_model(
         .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?
         .into_iter()
         .unzip();
-    let tree_nodes = features
-        .iter()
-        .filter(|feature| {
-            matches!(
-                feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::TreeNode { .. })
-            )
-        })
-        .map(|feature| feature.id.clone())
-        .collect::<std::collections::HashSet<_>>();
     let mut regeneration_parents = Vec::new();
     for (child_index, parent) in parents.into_iter().enumerate() {
         let Some(parent) = parent else {
             continue;
         };
-        let child = features[child_index].id.clone();
-        if !tree_nodes.contains(&parent) {
-            // Offer every edge the source states. Whether the parent exists and
-            // precedes the child is the model's condition, and `install` reports
-            // the model's refusal rather than recomputing it here.
+        let child_text = ctx.format_retained(
+            format_args!("{}", features[child_index].id.as_str()),
+            "copy SLDPRT tree child ID",
+        )?;
+        let child = FeatureId::mint(child_text).map_err(CodecError::malformed)?;
+        let mut tree_parent_index = None;
+        for (index, feature) in features.iter().enumerate() {
+            ctx.charge_work(1, "scan SLDPRT tree parent")?;
+            if feature.id == parent
+                && matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::TreeNode { .. })
+                )
+            {
+                tree_parent_index = Some(index);
+                break;
+            }
+        }
+        let Some(tree_parent_index) = tree_parent_index else {
+            ctx.reserve_collection_vec(
+                &mut regeneration_parents,
+                1,
+                "collect SLDPRT regeneration parents",
+            )?;
             regeneration_parents.push((child, parent));
             continue;
-        }
-        let Some(parent) = features.iter_mut().find(|feature| feature.id == parent) else {
-            continue;
         };
-        parent.evaluation.edit(|definition, _| {
+        let mut result = Ok(());
+        features[tree_parent_index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
                 definition
             {
-                children.insert(child);
+                result = children
+                    .try_insert_charged(child, ctx, "collect SLDPRT tree children")
+                    .map(|_| ());
             }
         });
+        result?;
     }
     bind_offset_plane_references(&mut features);
     bind_native_construction_features(&mut features, histories);

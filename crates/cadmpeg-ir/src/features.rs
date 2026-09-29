@@ -2630,6 +2630,16 @@ impl TreeChildren {
     pub fn insert(&mut self, child: FeatureId) {
         self.children.insert(child);
     }
+
+    /// Add a decoded child after reserving its collection slot.
+    pub fn try_insert_charged(
+        &mut self,
+        child: FeatureId,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        self.children.try_insert_charged(child, ctx, operation)
+    }
 }
 
 impl std::ops::Deref for TreeChildren {

@@ -1953,3 +1953,31 @@ fn a_regeneration_edge_the_model_refuses_is_reported_as_one_loss() {
         losses[0].message
     );
 }
+
+#[test]
+fn projected_tree_child_refuses_collection_limit() {
+    let mut parent = feature("sldprt:history:feature#0:1", None, 0);
+    parent.xml_tag = "Feature".to_owned();
+    parent.kind = "EquationDriven".to_owned();
+    let mut child = feature("sldprt:history:feature#0:2", None, 1);
+    child.tree_parent = Some(crate::records::TreeParent::Record {
+        record_id: parent.id.clone(),
+        source_id: None,
+    });
+    let history = FeatureHistory {
+        id: "history".to_owned(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![parent, child],
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"tree", &arena, &policy,
+    ).unwrap();
+    let error = project_feature_model(&ctx, &[history]).err().unwrap();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
