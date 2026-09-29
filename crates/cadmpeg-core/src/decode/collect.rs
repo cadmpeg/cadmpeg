@@ -7,7 +7,51 @@ use std::hash::Hash;
 
 use crate::CodecError;
 
-use super::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, ScopedReservation};
+use super::{u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceLimit, ScopedReservation};
+
+/// A vector that must contain exactly a count proven against input.
+#[derive(Debug)]
+pub struct ExactVec<T> {
+    values: Vec<T>,
+    capacity: usize,
+}
+
+impl<T> ExactVec<T> {
+    /// Charges and allocates storage for a count bounded by the input window.
+    pub fn new(
+        ctx: &DecodeContext<'_>,
+        count: BoundedCount,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let capacity = count.get();
+        let values = ctx.collection_vec(capacity, operation)?;
+        Ok(Self { values, capacity })
+    }
+
+    /// Appends one value without exceeding the bounded count.
+    pub fn push(&mut self, value: T) -> Result<(), CodecError> {
+        if self.values.len() == self.capacity {
+            return Err(CodecError::Malformed(
+                "fixed-capacity vector overflow".to_owned(),
+            ));
+        }
+        self.values.push(value);
+        Ok(())
+    }
+
+    /// Returns the values if the bounded count was filled exactly.
+    pub fn finish(self) -> Result<Vec<T>, CodecError> {
+        if self.values.len() == self.capacity {
+            Ok(self.values)
+        } else {
+            Err(CodecError::malformed(format_args!(
+                "fixed-capacity vector contains {} of {} values",
+                self.values.len(),
+                self.capacity
+            )))
+        }
+    }
+}
 
 impl DecodeContext<'_> {
     fn collection_allocation_failed(&self, count: usize, operation: &'static str) -> CodecError {
@@ -907,6 +951,7 @@ impl DecodeContext<'_> {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
+    use super::ExactVec;
     use super::super::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
 
@@ -939,6 +984,31 @@ mod tests {
     collection_case!(collection_vec_charges_before_allocation, 2,
         |ctx: &DecodeContext<'_>| ctx.collection_vec::<u8>(2, "test collection vec").map(|_| ()),
         |ctx: &DecodeContext<'_>| ctx.collection_vec::<u8>(2, "test collection vec").map(|_| ()));
+
+    #[test]
+    fn exact_vec_charges_before_allocation_and_requires_full_count() {
+        let bytes = [0_u8, 0];
+        let count = super::super::View::over_retained(&bytes)
+            .counted(2, 1)
+            .expect("two bytes prove two items");
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 1);
+        assert!(matches!(
+            ExactVec::<u8>::new(&ctx, count, "test exact vec"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+        ));
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        let mut values = ExactVec::new(&ctx, count, "test exact vec").expect("service profile");
+        values.push(1_u8).expect("first item fits");
+        values.push(2_u8).expect("second item fits");
+        assert!(values.push(3_u8).is_err());
+        assert_eq!(values.finish().expect("exact count"), [1, 2]);
+        let mut short = ExactVec::new(&ctx, count, "test exact vec").expect("service profile");
+        short.push(1_u8).expect("first item fits");
+        assert!(short.finish().is_err());
+    }
     collection_case!(reserve_vec_charges_before_growth, 1,
         |ctx: &DecodeContext<'_>| ctx.reserve_vec(&mut Vec::<u8>::new(), 1, "test reserve vec"),
         |ctx: &DecodeContext<'_>| ctx.reserve_vec(&mut Vec::<u8>::new(), 1, "test reserve vec"));

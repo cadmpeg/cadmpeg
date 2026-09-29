@@ -6,7 +6,7 @@ use std::fmt;
 use std::hash::Hash;
 
 use cadmpeg_core::decode::{
-    u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceLimit,
+    u64_from_index, DecodeContext, ResourceDimension, ResourceLimit,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -17,13 +17,6 @@ use crate::chunks::{checked_count_bytes, BoundedReader, FramingError};
 use crate::curves::GeometryError;
 use crate::layout::uuid_wire_form as uuid_wire;
 use crate::settings::MillimeterScale;
-
-/// A vector that must contain exactly a count proven against input.
-#[derive(Debug)]
-pub(crate) struct ExactVec<T> {
-    values: Vec<T>,
-    capacity: usize,
-}
 
 /// Admits both the formatted source text and the loss note's retained copy.
 pub(crate) fn admitted_loss(
@@ -257,43 +250,6 @@ impl CanonicalSeed<'_, '_> {
     fn fail<E: serde::de::Error>(&self, error: CodecError) -> E {
         *self.failure.borrow_mut() = Some(error);
         E::custom("JSON allocation refused")
-    }
-}
-
-impl<T> ExactVec<T> {
-    /// Charges and allocates storage for a count bounded by the input window.
-    pub(crate) fn new(
-        ctx: &DecodeContext<'_>,
-        count: BoundedCount,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        let capacity = count.get();
-        let values = ctx.collection_vec(capacity, operation)?;
-        Ok(Self { values, capacity })
-    }
-
-    /// Appends one value without exceeding the bounded count.
-    pub(crate) fn push(&mut self, value: T) -> Result<(), CodecError> {
-        if self.values.len() == self.capacity {
-            return Err(CodecError::Malformed(
-                "fixed-capacity vector overflow".to_owned(),
-            ));
-        }
-        self.values.push(value);
-        Ok(())
-    }
-
-    /// Returns the values if the bounded count was filled exactly.
-    pub(crate) fn finish(self) -> Result<Vec<T>, CodecError> {
-        if self.values.len() == self.capacity {
-            Ok(self.values)
-        } else {
-            Err(CodecError::malformed(format_args!(
-                "fixed-capacity vector contains {} of {} values",
-                self.values.len(),
-                self.capacity
-            )))
-        }
     }
 }
 

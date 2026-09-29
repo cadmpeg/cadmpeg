@@ -16,7 +16,8 @@ use crate::mesh::MeshExpand;
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::objects::parse_class_wrapper;
-use crate::wire::{ExactVec, Uuid};
+use crate::wire::Uuid;
+use cadmpeg_core::decode::collect::ExactVec;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const ITEM_CAP: usize = 1 << 20;
