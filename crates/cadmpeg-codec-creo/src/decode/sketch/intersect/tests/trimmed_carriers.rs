@@ -20,13 +20,14 @@ fn trimmed_section_segment_geometry(
         let missing_line = saved_section_missing_line_geometry(ctx, definition)?;
         let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, definition)?;
         Ok::<_, cadmpeg_core::CodecError>(trimmed_section_segment_geometry_with_missing_line(
+            ctx,
             definition,
             points,
             &radii,
             trim_vertices,
             segment,
             missing_line.as_ref(),
-        ))
+        )?)
     })
     .expect("test section geometry")
 }

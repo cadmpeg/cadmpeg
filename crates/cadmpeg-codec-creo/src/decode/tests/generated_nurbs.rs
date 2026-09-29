@@ -12,7 +12,7 @@ use crate::decode::sketch::geometry::{section_line_geometry, section_point_geome
 use crate::decode::sketch::intersect::{
     intersect_section_line_arc, intersect_section_lines, intersect_tangent_section_arcs,
 };
-use crate::decode::sketch::radii::{resolved_section_radii, section_axis_reference_line_geometry};
+use crate::decode::sketch::radii::{resolved_section_radii, section_axis_reference_line_geometry as section_axis_reference_line_geometry_admitted};
 use crate::decode::sketch_transfer::constraints::{
     reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
     section_equation_same_coordinate_constraints,
@@ -30,6 +30,15 @@ use crate::decode::uniqueness::{
 use crate::feature::definitions::ScalarLane;
 use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_ir::document::CadIr;
+
+fn section_axis_reference_line_geometry(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    variable_points: &std::collections::BTreeMap<u32, [Option<f64>; 2]>,
+    segment: &crate::feature::definitions::FeatureSegment,
+) -> Option<cadmpeg_ir::sketches::SketchGeometry> {
+    crate::decode::with_test_decode_ctx(|ctx| section_axis_reference_line_geometry_admitted(ctx, definition, variable_points, segment))
+        .expect("test axis reference line")
+}
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};

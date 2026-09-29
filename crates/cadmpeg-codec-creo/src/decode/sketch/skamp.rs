@@ -4,6 +4,8 @@
 use super::axis::SectionAxis;
 
 use std::collections::{BTreeMap, BTreeSet};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use crate::decode::sketch_transfer::identity::{
     saved_section_entity_fallback_allowed, saved_section_line_witness_allowed,
@@ -18,39 +20,47 @@ const EPS_SAVED_LINE_AXIS: f64 = 1.0e-9;
 const EPS_SKAMP_AGREEMENT: f64 = 1.0e-9;
 
 pub(in crate::decode) fn section_line_fixed_coordinate(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SectionAxis> {
-    let segment = unique_section_skamp_segment(definition, segment.external_id)?;
-    matches!(
+) -> Result<Option<SectionAxis>, CodecError> {
+    let Some(segment) = unique_section_skamp_segment(definition, segment.external_id) else {
+        return Ok(None);
+    };
+    if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Line(_)
-    )
-    .then_some(())?;
-    section_line_entity_fixed_coordinate(definition, segment.external_id)
+    ) {
+        return Ok(None);
+    }
+    section_line_entity_fixed_coordinate(ctx, definition, segment.external_id)
 }
 
 pub(super) fn section_line_entity_fixed_coordinate(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
-) -> Option<SectionAxis> {
-    section_line_entity_fixed_coordinate_with_mode(definition, entity_id, false)
+) -> Result<Option<SectionAxis>, CodecError> {
+    section_line_entity_fixed_coordinate_with_mode(ctx, definition, entity_id, false)
 }
 
 pub(super) fn section_line_entity_fixed_coordinate_with_unique_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
-) -> Option<SectionAxis> {
-    section_line_entity_fixed_coordinate_with_mode(definition, entity_id, true)
+) -> Result<Option<SectionAxis>, CodecError> {
+    section_line_entity_fixed_coordinate_with_mode(ctx, definition, entity_id, true)
 }
 
 fn section_line_entity_fixed_coordinate_with_mode(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
     include_unique_rows: bool,
-) -> Option<SectionAxis> {
+) -> Result<Option<SectionAxis>, CodecError> {
     let mut adjacency = BTreeMap::<u32, Vec<(u32, bool)>>::new();
     for skamp in active_complete_section_skamps(definition) {
+        ctx.charge_work(1, "creo fixed-coordinate skamp graph scan")?;
         let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
             (5 | 7, [first, second]) if first.sense == 0 && second.sense == 0 => {
                 (skamp.kind == 5, first, second)
@@ -60,25 +70,31 @@ fn section_line_entity_fixed_coordinate_with_mode(
         if !section_skamp_is_line(definition, first) || !section_skamp_is_line(definition, second) {
             continue;
         }
-        adjacency
-            .entry(first.entity_id)
-            .or_default()
-            .push((second.entity_id, parity));
-        adjacency
-            .entry(second.entity_id)
-            .or_default()
-            .push((first.entity_id, parity));
+        for (entity_id, neighbor) in [(first.entity_id, second.entity_id), (second.entity_id, first.entity_id)] {
+            if !adjacency.contains_key(&entity_id) {
+                ctx.charge_collection_items(1, "creo fixed-coordinate adjacency nodes")?;
+            }
+            let neighbors = adjacency.entry(entity_id).or_default();
+            ctx.try_reserve_items(neighbors, 1, "creo fixed-coordinate adjacency links")?;
+            neighbors.push((neighbor, parity));
+        }
     }
+    ctx.charge_collection_items(1, "creo fixed-coordinate parity seed")?;
     let mut parities = BTreeMap::from([(entity_id, false)]);
-    let mut pending = std::collections::VecDeque::from([entity_id]);
+    let mut pending = std::collections::VecDeque::new();
+    ctx.try_collection(1, "creo fixed-coordinate pending seed", || pending.try_reserve(1))?;
+    pending.push_back(entity_id);
     while let Some(entity_id) = pending.pop_front() {
+        ctx.charge_work(1, "creo fixed-coordinate graph traversal")?;
         let parity = parities[&entity_id];
         for &(neighbor, edge_parity) in adjacency.get(&entity_id).into_iter().flatten() {
             let neighbor_parity = parity ^ edge_parity;
             match parities.get(&neighbor) {
-                Some(stored) if *stored != neighbor_parity => return None,
+                Some(stored) if *stored != neighbor_parity => return Ok(None),
                 Some(_) => {}
                 None => {
+                    ctx.charge_collection_items(1, "creo fixed-coordinate parity nodes")?;
+                    ctx.try_collection(1, "creo fixed-coordinate pending nodes", || pending.try_reserve(1))?;
                     parities.insert(neighbor, neighbor_parity);
                     pending.push_back(neighbor);
                 }
@@ -87,39 +103,32 @@ fn section_line_entity_fixed_coordinate_with_mode(
     }
     let mut coordinates = BTreeSet::new();
     for (entity_id, parity) in parities {
-        coordinates.extend(
-            section_line_direct_fixed_coordinates_with_mode(
-                definition,
-                entity_id,
-                include_unique_rows,
-            )
-            .into_iter()
-            .map(|coordinate| {
-                if parity {
-                    coordinate.other()
-                } else {
-                    coordinate
-                }
-            }),
-        );
+        for coordinate in section_line_direct_fixed_coordinates_with_mode(ctx, definition, entity_id, include_unique_rows)? {
+            let coordinate = if parity { coordinate.other() } else { coordinate };
+            if !coordinates.contains(&coordinate) {
+                ctx.charge_collection_items(1, "creo fixed-coordinate result nodes")?;
+                coordinates.insert(coordinate);
+            }
+        }
     }
-    coordinates
+    Ok(coordinates
         .first()
         .copied()
-        .filter(|_| coordinates.len() == 1)
+        .filter(|_| coordinates.len() == 1))
 }
 
 fn section_line_direct_fixed_coordinates_with_mode(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
     include_unique_rows: bool,
-) -> BTreeSet<SectionAxis> {
+) -> Result<BTreeSet<SectionAxis>, CodecError> {
     let segment = if include_unique_rows {
         unique_decoded_section_segment(definition, entity_id)
     } else {
         unique_section_skamp_segment(definition, entity_id)
     };
-    let mut coordinates = segment
+    let segment_coordinate = segment
         .filter(|segment| {
             matches!(
                 segment.kind,
@@ -132,20 +141,27 @@ fn section_line_direct_fixed_coordinates_with_mode(
             1 => Some(SectionAxis::V),
             _ => None,
         })
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    coordinates.extend(
-        unique_reference_line_segment(definition, entity_id)
+        ;
+    let mut coordinates = BTreeSet::new();
+    if let Some(coordinate) = segment_coordinate {
+        ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
+        coordinates.insert(coordinate);
+    }
+    if let Some(coordinate) = unique_reference_line_segment(definition, entity_id)
             .and_then(|segment| segment.vertical_horizontal)
             .and_then(|selector| match selector {
                 0 => Some(SectionAxis::U),
                 1 => Some(SectionAxis::V),
                 _ => None,
-            }),
-    );
-    coordinates.extend(
-        active_complete_section_skamps(definition).filter_map(|skamp| {
-            match (skamp.kind, skamp.items.as_slice()) {
+            }) {
+        if !coordinates.contains(&coordinate) {
+            ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
+            coordinates.insert(coordinate);
+        }
+    }
+    for skamp in active_complete_section_skamps(definition) {
+        ctx.charge_work(1, "creo direct fixed-coordinate skamp scan")?;
+        let coordinate = match (skamp.kind, skamp.items.as_slice()) {
                 (1, [item]) if item.sense == 0 && item.entity_id == entity_id => {
                     Some(SectionAxis::V)
                 }
@@ -153,15 +169,19 @@ fn section_line_direct_fixed_coordinates_with_mode(
                     Some(SectionAxis::U)
                 }
                 _ => None,
-            }
-        }),
-    );
+            };
+        let Some(coordinate) = coordinate else { continue; };
+        if !coordinates.contains(&coordinate) {
+            ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
+            coordinates.insert(coordinate);
+        }
+    }
     if saved_section_line_witness_allowed(definition, entity_id) {
         if let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
             section_saved_entity(definition, entity_id)
         {
             let [[Some(x0), Some(y0), _], [Some(x1), Some(y1), _]] = line.endpoints else {
-                return coordinates;
+                return Ok(coordinates);
             };
             let scale = [x0, y0, x1, y1]
                 .into_iter()
@@ -170,22 +190,30 @@ fn section_line_direct_fixed_coordinates_with_mode(
             let tolerance = EPS_SAVED_LINE_AXIS * scale;
             match [(x0 - x1).abs() <= tolerance, (y0 - y1).abs() <= tolerance] {
                 [true, false] => {
+                    if !coordinates.contains(&SectionAxis::U) {
+                        ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
+                    }
                     coordinates.insert(SectionAxis::U);
                 }
                 [false, true] => {
+                    if !coordinates.contains(&SectionAxis::V) {
+                        ctx.charge_collection_items(1, "creo direct fixed-coordinate nodes")?;
+                    }
                     coordinates.insert(SectionAxis::V);
                 }
                 _ => {}
             }
         }
     }
-    coordinates
+    Ok(coordinates)
 }
 
 pub(in crate::decode) fn section_skamp_point_on_line(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
-) -> Option<(u32, u32, SectionAxis)> {
+) -> Result<Option<(u32, u32, SectionAxis)>, CodecError> {
+    let pair = (|| {
     let [first, second] = skamp.items.as_slice() else {
         return None;
     };
@@ -208,7 +236,7 @@ pub(in crate::decode) fn section_skamp_point_on_line(
             })
         })
     };
-    let pair = match skamp.kind {
+    match skamp.kind {
         3 => [(first, second), (second, first)]
             .into_iter()
             .find_map(|(line_item, point_item)| {
@@ -237,19 +265,24 @@ pub(in crate::decode) fn section_skamp_point_on_line(
                 Some((line, selected_point_id(point_item)?))
             }),
         _ => None,
-    }?;
-    let coordinate = if definition.segments.as_ref()?.is_complete() {
-        section_line_fixed_coordinate(definition, pair.0)?
+    }
+    })();
+    let Some(pair) = pair else { return Ok(None); };
+    let Some(segment_table) = definition.segments.as_ref() else { return Ok(None); };
+    let coordinate = if segment_table.is_complete() {
+        section_line_fixed_coordinate(ctx, definition, pair.0)?
     } else {
-        section_line_entity_fixed_coordinate_with_unique_rows(definition, pair.0.external_id)?
+        section_line_entity_fixed_coordinate_with_unique_rows(ctx, definition, pair.0.external_id)?
     };
-    Some((pair.0.point_ids()[0], pair.1, coordinate))
+    Ok(coordinate.map(|coordinate| (pair.0.point_ids()[0], pair.1, coordinate)))
 }
 
 pub(in crate::decode) fn section_skamp_saved_point_on_line(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
-) -> Option<(u32, SectionAxis, f64)> {
+) -> Result<Option<(u32, SectionAxis, f64)>, CodecError> {
+    let selected = (|| {
     let [first, second] = skamp.items.as_slice() else {
         return None;
     };
@@ -289,12 +322,13 @@ pub(in crate::decode) fn section_skamp_saved_point_on_line(
     else {
         return None;
     };
-    let coordinate = section_line_entity_fixed_coordinate(definition, line_item.entity_id)?;
-    Some((
-        point_id,
-        coordinate,
-        saved_line_fixed_coordinate_value(line, coordinate)?,
-    ))
+    Some((line_item, point_id, line))
+    })();
+    let Some((line_item, point_id, line)) = selected else { return Ok(None); };
+    let coordinate = section_line_entity_fixed_coordinate(ctx, definition, line_item.entity_id)?;
+    Ok(coordinate.and_then(|coordinate| {
+        Some((point_id, coordinate, saved_line_fixed_coordinate_value(line, coordinate)?))
+    }))
 }
 
 #[derive(Clone, Copy)]
@@ -304,21 +338,26 @@ pub(super) enum SectionSymmetryAxis {
 }
 
 pub(super) fn section_skamp_axis_symmetry(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
-) -> Option<(
+) -> Result<Option<(
     SectionSymmetryAxis,
     SectionPointSource,
     SectionPointSource,
     SectionAxis,
-)> {
+)>, CodecError> {
     let (14, [axis_item, first_item, second_item]) = (skamp.kind, skamp.items.as_slice()) else {
-        return None;
+        return Ok(None);
     };
-    (axis_item.sense == 0 && section_skamp_is_line(definition, axis_item)).then_some(())?;
+    if axis_item.sense != 0 || !section_skamp_is_line(definition, axis_item) {
+        return Ok(None);
+    }
     let unique_row = unique_decoded_section_segment(definition, axis_item.entity_id);
-    let coordinate =
-        section_line_entity_fixed_coordinate_with_unique_rows(definition, axis_item.entity_id)?;
+    let Some(coordinate) = section_line_entity_fixed_coordinate_with_unique_rows(ctx, definition, axis_item.entity_id)? else {
+        return Ok(None);
+    };
+    Ok((|| {
     let axis = if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id)
     {
         SectionSymmetryAxis::Point(segment.point_ids()[0])
@@ -341,6 +380,7 @@ pub(super) fn section_skamp_axis_symmetry(
         section_skamp_incidence_point(definition, second_item)?,
         coordinate,
     ))
+    })())
 }
 
 pub(super) fn section_skamp_point_symmetry(
@@ -557,11 +597,28 @@ fn saved_section_point(
 #[cfg(test)]
 mod tests {
     use super::{
-        section_line_entity_fixed_coordinate,
-        section_line_entity_fixed_coordinate_with_unique_rows, section_skamp_axis_symmetry,
-        section_skamp_point_entity_id, section_skamp_point_on_line, section_skamp_point_symmetry,
+        section_line_entity_fixed_coordinate as section_line_entity_fixed_coordinate_admitted,
+        section_line_entity_fixed_coordinate_with_unique_rows as section_line_entity_fixed_coordinate_with_unique_rows_admitted,
+        section_skamp_axis_symmetry as section_skamp_axis_symmetry_admitted,
+        section_skamp_point_entity_id, section_skamp_point_on_line as section_skamp_point_on_line_admitted, section_skamp_point_symmetry,
         section_skamp_selected_point_id, SectionPointSource,
     };
+
+    fn section_line_entity_fixed_coordinate(definition: &crate::feature::definitions::FeatureDefinition, entity_id: u32) -> Option<super::SectionAxis> {
+        crate::decode::with_test_decode_ctx(|ctx| section_line_entity_fixed_coordinate_admitted(ctx, definition, entity_id)).expect("test fixed-coordinate graph")
+    }
+
+    fn section_line_entity_fixed_coordinate_with_unique_rows(definition: &crate::feature::definitions::FeatureDefinition, entity_id: u32) -> Option<super::SectionAxis> {
+        crate::decode::with_test_decode_ctx(|ctx| section_line_entity_fixed_coordinate_with_unique_rows_admitted(ctx, definition, entity_id)).expect("test fixed-coordinate graph")
+    }
+
+    fn section_skamp_axis_symmetry(definition: &crate::feature::definitions::FeatureDefinition, skamp: &crate::feature::definitions::FeatureSkamp) -> Option<(super::SectionSymmetryAxis, super::SectionPointSource, super::SectionPointSource, super::SectionAxis)> {
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_axis_symmetry_admitted(ctx, definition, skamp)).expect("test axis symmetry")
+    }
+
+    fn section_skamp_point_on_line(definition: &crate::feature::definitions::FeatureDefinition, skamp: &crate::feature::definitions::FeatureSkamp) -> Option<(u32, u32, super::SectionAxis)> {
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_point_on_line_admitted(ctx, definition, skamp)).expect("test point-on-line")
+    }
 
     fn point_definition(
         declared_count: u32,
@@ -600,6 +657,131 @@ mod tests {
             relations: None,
             saved_section: None,
             offset: 0,
+        }
+    }
+
+    fn fixed_coordinate_graph_fixture() -> crate::feature::definitions::FeatureDefinition {
+        let line = |external_id, vertical_horizontal| crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([external_id, external_id + 1]),
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        };
+        let mut definition = point_definition(2, vec![line(10, Some(0)), line(20, None)], Vec::new());
+        definition.relations = Some(crate::feature::definitions::FeatureRelationTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: Vec::new(),
+            skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                header: crate::feature::definitions::FeatureSolverTableHeader {
+                    declared_count: 1,
+                    entity_ref: 0,
+                    offset: 0,
+                },
+                rows: vec![crate::feature::definitions::FeatureSkamp {
+                    id: 1,
+                    kind: 7,
+                    flags: 0,
+                    status: 1,
+                    items: vec![
+                        crate::feature::definitions::FeatureSkampItem { entity_id: 10, sense: 0 },
+                        crate::feature::definitions::FeatureSkampItem { entity_id: 20, sense: 0 },
+                    ],
+                    offset: 0,
+                }],
+            }),
+            triples: None,
+            offset: 0,
+        });
+        definition
+    }
+
+    fn assert_fixed_coordinate_graph_refusal(limit: u64, operation: &'static str) {
+        let definition = fixed_coordinate_graph_fixture();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test decode context");
+        assert!(matches!(super::section_line_entity_fixed_coordinate(&ctx, &definition, 20),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && refusal.operation == operation));
+    }
+
+    #[test]
+    fn fixed_coordinate_adjacency_node_refuses_before_insertion() {
+        assert_fixed_coordinate_graph_refusal(0, "creo fixed-coordinate adjacency nodes");
+        assert_fixed_coordinate_graph_refusal(2, "creo fixed-coordinate adjacency nodes");
+    }
+
+    #[test]
+    fn fixed_coordinate_adjacency_link_refuses_before_reservation() {
+        assert_fixed_coordinate_graph_refusal(1, "creo fixed-coordinate adjacency links");
+        assert_fixed_coordinate_graph_refusal(3, "creo fixed-coordinate adjacency links");
+    }
+
+    #[test]
+    fn fixed_coordinate_parity_seed_refuses_before_insertion() {
+        assert_fixed_coordinate_graph_refusal(4, "creo fixed-coordinate parity seed");
+    }
+
+    #[test]
+    fn fixed_coordinate_pending_seed_refuses_before_reservation() {
+        assert_fixed_coordinate_graph_refusal(5, "creo fixed-coordinate pending seed");
+    }
+
+    #[test]
+    fn fixed_coordinate_parity_node_refuses_before_insertion() {
+        assert_fixed_coordinate_graph_refusal(6, "creo fixed-coordinate parity nodes");
+    }
+
+    #[test]
+    fn fixed_coordinate_pending_node_refuses_before_reservation() {
+        assert_fixed_coordinate_graph_refusal(7, "creo fixed-coordinate pending nodes");
+    }
+
+    #[test]
+    fn direct_fixed_coordinate_node_refuses_before_insertion() {
+        assert_fixed_coordinate_graph_refusal(8, "creo direct fixed-coordinate nodes");
+    }
+
+    #[test]
+    fn fixed_coordinate_result_node_refuses_before_insertion() {
+        assert_fixed_coordinate_graph_refusal(9, "creo fixed-coordinate result nodes");
+    }
+
+    #[test]
+    fn fixed_coordinate_graph_service_keeps_axis() {
+        let definition = fixed_coordinate_graph_fixture();
+        assert_eq!(section_line_entity_fixed_coordinate(&definition, 20), Some(super::SectionAxis::U));
+    }
+
+    #[test]
+    fn fixed_coordinate_graph_work_refuses_before_scan_and_traversal() {
+        let definition = fixed_coordinate_graph_fixture();
+        for (limit, operation) in [
+            (0, "creo fixed-coordinate skamp graph scan"),
+            (1, "creo fixed-coordinate graph traversal"),
+            (2, "creo fixed-coordinate graph traversal"),
+            (3, "creo direct fixed-coordinate skamp scan"),
+            (4, "creo direct fixed-coordinate skamp scan"),
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("test decode context");
+            assert!(matches!(super::section_line_entity_fixed_coordinate(&ctx, &definition, 20),
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        && refusal.operation == operation));
         }
     }
 
