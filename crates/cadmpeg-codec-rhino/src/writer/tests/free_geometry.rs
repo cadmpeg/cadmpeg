@@ -630,8 +630,8 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         ir.model.points.push(cadmpeg_ir::topology::Point::new(
             point,
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                index as f64,
-                index as f64 + 2.0,
+                cadmpeg_core::convert::f64_from_index(index).expect("fixture index is exactly representable"),
+                cadmpeg_core::convert::f64_from_index(index).expect("fixture index is exactly representable") + 2.0,
                 3.0,
             ))
             .expect("a finite position is a point"),

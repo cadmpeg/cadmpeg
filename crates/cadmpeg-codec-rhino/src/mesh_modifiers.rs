@@ -1068,7 +1068,7 @@ mod tests {
 
     fn v2_payload(xml: &str) -> Vec<u8> {
         let mut payload = XML_USERDATA_VERSION.to_le_bytes().to_vec();
-        payload.extend((xml.len() as i32).to_le_bytes());
+        payload.extend((i32::try_from(xml.len()).expect("fixture value fits i32")).to_le_bytes());
         payload.extend(xml.as_bytes());
         payload.extend([0xde, 0xad]);
         payload
@@ -1078,7 +1078,7 @@ mod tests {
         let mut units = xml.encode_utf16().collect::<Vec<_>>();
         units.push(0);
         let mut payload = 1_i32.to_le_bytes().to_vec();
-        payload.extend((units.len() as u32).to_le_bytes());
+        payload.extend((u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes());
         for unit in units {
             payload.extend(unit.to_le_bytes());
         }

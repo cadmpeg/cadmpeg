@@ -168,7 +168,7 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
 
     let body = b"body";
     let mut bytes = (TCODE_CRC | 9).to_le_bytes().to_vec();
-    bytes.extend(((body.len() + 4) as i32).to_le_bytes());
+    bytes.extend((i32::try_from(body.len() + 4).expect("fixture value fits i32")).to_le_bytes());
     bytes.extend(body);
     bytes.extend(crc32fast::hash(body).to_le_bytes());
     let chunk =

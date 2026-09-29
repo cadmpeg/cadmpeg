@@ -178,7 +178,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
             .next()
             .expect("retained record")
             .byte_len(),
-        large.len() as u64
+        cadmpeg_core::decode::u64_from_index(large.len())
     );
     assert_eq!(
         retained.values().next().expect("retained record").sha256(),
@@ -194,7 +194,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
             .nth(1)
             .expect("retained record")
             .byte_len(),
-        point.len() as u64
+        cadmpeg_core::decode::u64_from_index(point.len())
     );
     assert_eq!(
         retained.values().nth(1).expect("retained record").sha256(),
@@ -882,7 +882,7 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             .values()
             .next()
             .expect("retained record");
-        assert_eq!(retained.byte_len(), failure.len() as u64);
+        assert_eq!(retained.byte_len(), cadmpeg_core::decode::u64_from_index(failure.len()));
         assert_eq!(retained.sha256(), sha256_hex(&failure));
         assert_eq!(retained.data(), Some(failure.as_slice()));
         assert!(unknown.links.is_empty());
@@ -908,11 +908,11 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
 #[test]
 fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     let mut payload = brep_payload(false);
-    let nested_length = i64::from_le_bytes(
+    let nested_length = usize::try_from(i64::from_le_bytes(
         payload[(1 + long_wide::DECLARED_LENGTH)..=long_wide::LEN]
             .try_into()
             .expect("required invariant"),
-    ) as usize;
+    )).expect("fixture value fits usize");
     let nested_end = 1 + long_wide::LEN + nested_length;
     payload[nested_end - 1] ^= 1;
     let brep = object_record(0x10, BREP_CLASS, &payload);

@@ -330,11 +330,11 @@ mod tests {
         }
         for axis in 0..3 {
             body.extend(0.0_f64.to_le_bytes());
-            body.extend((axis as f64 + 1.0).to_le_bytes());
+            body.extend((f64::from(axis) + 1.0).to_le_bytes());
         }
         for index in 0..8 {
             let weight = if index == 7 { 2.0 } else { 1.0 };
-            for coordinate in [index as f64 * weight, 0.0, 0.0, weight] {
+            for coordinate in [f64::from(index) * weight, 0.0, 0.0, weight] {
                 body.extend(coordinate.to_le_bytes());
             }
         }

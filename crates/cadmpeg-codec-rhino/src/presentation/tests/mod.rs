@@ -130,7 +130,7 @@ fn anonymous(minor: i32, body: &[u8]) -> Vec<u8> {
     payload.extend(body);
     payload.extend(crc32fast::hash(&payload).to_le_bytes());
     let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
-    bytes.extend((payload.len() as i64).to_le_bytes());
+    bytes.extend((i64::try_from(payload.len()).expect("fixture value fits i64")).to_le_bytes());
     bytes.extend(payload);
     bytes
 }
@@ -139,7 +139,7 @@ fn anonymous_body(body: &[u8]) -> Vec<u8> {
     let mut payload = body.to_vec();
     payload.extend(crc32fast::hash(&payload).to_le_bytes());
     let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
-    bytes.extend((payload.len() as i64).to_le_bytes());
+    bytes.extend((i64::try_from(payload.len()).expect("fixture value fits i64")).to_le_bytes());
     bytes.extend(payload);
     bytes
 }
@@ -155,7 +155,7 @@ fn physically_based_payload(version: i32, suffix: &[u8]) -> Vec<u8> {
         body.extend(value.to_le_bytes());
     }
     for value in 1..=14 {
-        body.extend((value as f64).to_le_bytes());
+        body.extend((f64::from(value)).to_le_bytes());
     }
     for value in [0.11_f32, 0.22, 0.33, 0.44] {
         body.extend(value.to_le_bytes());
@@ -168,7 +168,7 @@ fn physically_based_payload(version: i32, suffix: &[u8]) -> Vec<u8> {
     let mut payload = inner.clone();
     payload.extend(crc32fast::hash(&inner).to_le_bytes());
     let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
-    bytes.extend((payload.len() as i64).to_le_bytes());
+    bytes.extend((i64::try_from(payload.len()).expect("fixture value fits i64")).to_le_bytes());
     bytes.extend(payload);
     bytes
 }
@@ -178,7 +178,7 @@ fn wide_string_chunk(value: &str) -> Vec<u8> {
     payload.extend(value.as_bytes());
     payload.extend(crc32fast::hash(&payload).to_le_bytes());
     let mut bytes = 0x4000_8001_u32.to_le_bytes().to_vec();
-    bytes.extend((payload.len() as i64).to_le_bytes());
+    bytes.extend((i64::try_from(payload.len()).expect("fixture value fits i64")).to_le_bytes());
     bytes.extend(payload);
     bytes
 }
@@ -188,7 +188,7 @@ fn panose_chunk() -> Vec<u8> {
     payload.extend([2, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     payload.extend(crc32fast::hash(&payload).to_le_bytes());
     let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
-    bytes.extend((payload.len() as i64).to_le_bytes());
+    bytes.extend((i64::try_from(payload.len()).expect("fixture value fits i64")).to_le_bytes());
     bytes.extend(payload);
     bytes
 }
@@ -223,7 +223,7 @@ fn model_attributes_chunk(index: i32, name: &str) -> Vec<u8> {
     payload.extend(utf16_bytes(name));
     payload.extend(crc32fast::hash(&payload).to_le_bytes());
     let mut bytes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
-    bytes.extend((payload.len() as i64).to_le_bytes());
+    bytes.extend((i64::try_from(payload.len()).expect("fixture value fits i64")).to_le_bytes());
     bytes.extend(payload);
     bytes
 }
@@ -250,7 +250,7 @@ fn model_attributes_status_chunk(statuses: [u8; 5], name: &str, suffix: &[u8]) -
     payload.extend(suffix);
     payload.extend(crc32fast::hash(&payload).to_le_bytes());
     let mut bytes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
-    bytes.extend((payload.len() as i64).to_le_bytes());
+    bytes.extend((i64::try_from(payload.len()).expect("fixture value fits i64")).to_le_bytes());
     bytes.extend(payload);
     bytes
 }
@@ -489,7 +489,7 @@ fn bitmap_header(
 }
 
 fn stored_bitmap_buffer(bytes: &[u8]) -> Vec<u8> {
-    let mut buffer = (bytes.len() as u32).to_le_bytes().to_vec();
+    let mut buffer = (u32::try_from(bytes.len()).expect("fixture value fits u32")).to_le_bytes().to_vec();
     if !bytes.is_empty() {
         buffer.extend(crc32fast::hash(bytes).to_le_bytes());
         buffer.push(0);
@@ -502,7 +502,7 @@ fn compressed_bitmap_buffer(bytes: &[u8]) -> Vec<u8> {
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(bytes).expect("bitmap zlib input");
     let compressed = encoder.finish().expect("bitmap zlib output");
-    let mut buffer = (bytes.len() as u32).to_le_bytes().to_vec();
+    let mut buffer = (u32::try_from(bytes.len()).expect("fixture value fits u32")).to_le_bytes().to_vec();
     buffer.extend(crc32fast::hash(bytes).to_le_bytes());
     buffer.push(1);
     buffer.extend(crate::test_support::test_dump::crc_chunk(
@@ -697,7 +697,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         WINDOWS_BITMAP,
         0,
         "",
-        bitmap_header(3, 2, 24, image.len() as i32, 0),
+        bitmap_header(3, 2, 24, i32::try_from(image.len()).expect("fixture value fits i32"), 0),
         &[stored_bitmap_buffer(&image)],
         &[0xaa, 0xbb],
     );
@@ -714,7 +714,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
     assert_eq!(contiguous_record.height_pixels, 2);
     assert_eq!(contiguous_record.pixel_buffer_offset, 40);
     assert_eq!(
-        contiguous_record.pixel_buffer_byte_len as usize,
+        cadmpeg_core::decode::index_from_u64(contiguous_record.pixel_buffer_byte_len).expect("fixture offset fits usize"),
         contiguous.len() - 42
     );
 
@@ -724,7 +724,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         WINDOWS_BITMAP,
         0,
         "",
-        bitmap_header(2, 2, 8, pixels.len() as i32, 0),
+        bitmap_header(2, 2, 8, i32::try_from(pixels.len()).expect("fixture value fits i32"), 0),
         &[
             compressed_bitmap_buffer(&palette),
             stored_bitmap_buffer(&pixels),
@@ -743,7 +743,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
     assert_eq!(split_record.bits_per_pixel, 8);
     assert_eq!(split_record.colors_used, 0);
     assert_eq!(
-        split_record.pixel_buffer_byte_len as usize,
+        cadmpeg_core::decode::index_from_u64(split_record.pixel_buffer_byte_len).expect("fixture offset fits usize"),
         split.len() - 42
     );
 
@@ -751,7 +751,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         WINDOWS_BITMAP_EX,
         5,
         "relative/example.bmp",
-        bitmap_header(2, 2, 24, pixels.len() as i32, 0),
+        bitmap_header(2, 2, 24, i32::try_from(pixels.len()).expect("fixture value fits i32"), 0),
         &[stored_bitmap_buffer(&pixels)],
         &[0xee, 0xff],
     );
@@ -766,7 +766,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
     .expect("minor-five Windows bitmap Ex");
     assert_eq!(ex_record.file_path, "relative/example.bmp");
     assert_eq!(
-        ex_record.pixel_buffer_byte_len as usize,
+        cadmpeg_core::decode::index_from_u64(ex_record.pixel_buffer_byte_len).expect("fixture offset fits usize"),
         ex.len() - 47 - 40 - 2
     );
 }
@@ -794,7 +794,7 @@ fn legacy_windows_bitmap_uses_raw_palette_and_pixels() {
         74,
     )
     .expect("legacy raw Windows bitmap");
-    assert_eq!(record.pixel_buffer_byte_len, (256 * 4 + 8) as u64);
+    assert_eq!(record.pixel_buffer_byte_len, u64::from(256_u32 * 4 + 8));
 }
 
 #[test]
@@ -804,7 +804,7 @@ fn windows_bitmap_rejects_a_buffer_size_that_disagrees_with_header() {
         WINDOWS_BITMAP,
         0,
         "",
-        bitmap_header(3, 2, 24, image.len() as i32, 0),
+        bitmap_header(3, 2, 24, i32::try_from(image.len()).expect("fixture value fits i32"), 0),
         &[stored_bitmap_buffer(&image[..1])],
         &[],
     );
@@ -1436,7 +1436,7 @@ fn legacy_rdk_payload(xml: &str, terminated: bool, suffix: &[u8]) -> Vec<u8> {
         xml.push(0);
     }
     let mut bytes = 2_i32.to_le_bytes().to_vec();
-    bytes.extend((xml.len() as i32).to_le_bytes());
+    bytes.extend((i32::try_from(xml.len()).expect("fixture value fits i32")).to_le_bytes());
     bytes.extend(xml);
     bytes.extend(suffix);
     bytes
@@ -1555,7 +1555,7 @@ fn object_rendering_with_negative_minor(
         let mut channel_body = 7_i32.to_le_bytes().to_vec();
         channel_body.extend([0; 16]);
         if channel_minor >= 1 {
-            channel_body.extend((0..16).flat_map(|value| (value as f64).to_le_bytes()));
+            channel_body.extend((0..16).flat_map(|value| (f64::from(value)).to_le_bytes()));
         }
         mapping_body.extend(anonymous(channel_minor, &channel_body));
     }
@@ -1715,7 +1715,7 @@ fn texture_file_reference_checksum_warning_is_located() {
         .provenance
         .as_ref()
         .expect("texture checksum loss is located");
-    assert_eq!(provenance.offset, reference_start as u64);
+    assert_eq!(provenance.offset, cadmpeg_core::decode::u64_from_index(reference_start));
     assert_eq!(
         provenance.tag.as_deref(),
         Some("PRESENTATION/TEXTURE/FILE_REFERENCE")

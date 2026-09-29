@@ -119,7 +119,7 @@ fn invalid_instance_inverse_is_located_and_later_reference_survives() {
     ] {
         let source = document(&[invalid, Transform::identity().rows()]);
         let scan = crate::container::scan_owned(source.clone()).unwrap();
-        let offset = scan.objects[1].range().start as u64;
+        let offset = cadmpeg_core::decode::u64_from_index(scan.objects[1].range().start);
         let decoded = crate::RhinoCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .unwrap();

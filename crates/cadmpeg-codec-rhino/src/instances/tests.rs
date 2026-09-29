@@ -205,7 +205,7 @@ fn append_crc_suffix(chunk: &mut Vec<u8>, suffix: &[u8]) {
     let crc_offset = chunk.len() - 4;
     chunk.splice(crc_offset..crc_offset, suffix.iter().copied());
     let length = i64::from_le_bytes(chunk[4..12].try_into().expect("chunk header"));
-    chunk[4..12].copy_from_slice(&(length + suffix.len() as i64).to_le_bytes());
+    chunk[4..12].copy_from_slice(&(length + i64::try_from(suffix.len()).expect("fixture value fits i64")).to_le_bytes());
     let crc = crc32fast::hash(&chunk[12..chunk.len() - 4]);
     let crc_offset = chunk.len() - 4;
     chunk[crc_offset..].copy_from_slice(&crc.to_le_bytes());
@@ -586,7 +586,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .source_fidelity()
         .retained_records()
         .values()
-        .find(|source| source.offset() == malformed_range.start as u64)
+        .find(|source| source.offset() == cadmpeg_core::decode::u64_from_index(malformed_range.start))
         .expect("malformed definition fidelity");
     assert_eq!(
         malformed_retained.data(),
@@ -655,7 +655,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .source_fidelity()
         .retained_records()
         .values()
-        .find(|source| source.offset() == future_range.start as u64)
+        .find(|source| source.offset() == cadmpeg_core::decode::u64_from_index(future_range.start))
         .expect("future definition fidelity");
     assert_eq!(future_retained.data(), Some(future_record.as_slice()));
 }
@@ -705,8 +705,8 @@ pub(crate) fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
         ("70", ArchiveVersion::V7),
         ("80", ArchiveVersion::V8),
     ] {
-        let definition_id = [archive.value() as u8; 16];
-        let member_id = [archive.value() as u8 + 1; 16];
+        let definition_id = [u8::try_from(archive.value()).expect("fixture value fits u8"); 16];
+        let member_id = [u8::try_from(archive.value()).expect("fixture value fits u8") + 1; 16];
         let static_record = definition_record(
             archive,
             &v6_definition_payload(archive, definition_id, &[member_id], 1, false, false),

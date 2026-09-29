@@ -375,7 +375,7 @@ fn rendering_attributes_parse_object_mapping_and_future_suffix() {
     let mut channel_body = 7_i32.to_le_bytes().to_vec();
     channel_body.extend(uuid_bytes());
     for value in 0..16 {
-        channel_body.extend((value as f64).to_le_bytes());
+        channel_body.extend((f64::from(value)).to_le_bytes());
     }
     let channel = anonymous_chunk(ArchiveVersion::V8, 1, &channel_body);
     let mut mapping_body = uuid_bytes();

@@ -51,7 +51,7 @@ fn double_userdata(
         body.extend(4_i32.to_le_bytes());
         body.extend(0_u32.to_le_bytes());
         body.extend(0_u32.to_le_bytes());
-        body.extend((points.len() as i32).to_le_bytes());
+        body.extend((i32::try_from(points.len()).expect("fixture value fits i32")).to_le_bytes());
         body.extend(
             points
                 .iter()

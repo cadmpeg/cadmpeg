@@ -3541,8 +3541,8 @@ mod tests {
                 index: i32::try_from(index).expect("index"),
                 point: super::CoordinateLane::Admitted(
                     crate::test_support::point3([
-                        f64::from((index == 1) as u8),
-                        f64::from((index == 2) as u8),
+                        f64::from(u8::from(index == 1)),
+                        f64::from(u8::from(index == 2)),
                         0.0,
                     ])
                     .0,

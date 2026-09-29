@@ -1183,13 +1183,13 @@ pub(crate) mod tests {
         }
         let point_count = points.len();
         let mut payload = vec![0x10];
-        push_i32(&mut payload, point_count as i32);
+        push_i32(&mut payload, i32::try_from(point_count).expect("fixture value fits i32"));
         for point in points {
             for value in point {
                 push_f64(&mut payload, value);
             }
         }
-        push_i32(&mut payload, point_count as i32);
+        push_i32(&mut payload, i32::try_from(point_count).expect("fixture value fits i32"));
         for value in 0..point_count {
             push_f64(
                 &mut payload,
@@ -1356,7 +1356,7 @@ pub(crate) mod tests {
         mesh.extend([0, 0, 0, 0, 0]);
         push_i32(&mut mesh, 1);
         let vertex = [0_u8; 12];
-        mesh.extend((vertex.len() as u32).to_le_bytes());
+        mesh.extend((u32::try_from(vertex.len()).expect("fixture value fits u32")).to_le_bytes());
         mesh.extend(crc32fast::hash(&vertex).to_le_bytes());
         mesh.push(0);
         mesh.extend(vertex);
@@ -1420,7 +1420,7 @@ pub(crate) mod tests {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
                     1,
-                    (0..count + 2).map(|value| value as f64).collect(),
+                    (0..count + 2).map(|value| cadmpeg_core::convert::f64_from_index(value).expect("fixture index is exactly representable")).collect(),
                     points,
                     None,
                     false,
@@ -1742,7 +1742,7 @@ pub(crate) mod tests {
     fn extrusion_transformed_nurbs_refuses_collection_limit() {
         let curve = polygon_nurbs();
         let needed = curve.knots().len() + curve.pole_count();
-        let refusal = with_collection_limit((needed - 1) as u64, |ctx| {
+        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
             transform_nurbs(
                 ctx,
                 &curve,
@@ -1799,7 +1799,7 @@ pub(crate) mod tests {
     fn extrusion_start_curve_copy_refuses_collection_limit() {
         let curve = polygon_nurbs();
         let needed = curve.knots().len() + curve.pole_count();
-        let refusal = with_collection_limit((needed - 1) as u64, |ctx| {
+        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
             curve.try_clone_for_decode(ctx, "Rhino extrusion start curve")
         })
         .expect_err("start curve copy exceeds collection limit");
@@ -1842,7 +1842,7 @@ pub(crate) mod tests {
             0,
         )
         .expect("unit cap frame");
-        let refusal = with_collection_limit((curve.pole_count() - 1) as u64, |ctx| {
+        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(curve.pole_count() - 1), |ctx| {
             cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
         })
         .expect_err("cap points exceed collection limit");
@@ -1865,7 +1865,7 @@ pub(crate) mod tests {
         )
         .expect("unit cap frame");
         let needed = curve.pole_count() + curve.knots().len();
-        let refusal = with_collection_limit((needed - 1) as u64, |ctx| {
+        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
             cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
         })
         .expect_err("cap knots exceed collection limit");
@@ -1895,7 +1895,7 @@ pub(crate) mod tests {
         )
         .expect("unit cap frame");
         let needed = curve.pole_count() * 2 + curve.knots().len();
-        let refusal = with_collection_limit((needed - 1) as u64, |ctx| {
+        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
             cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
         })
         .expect_err("cap weights exceed collection limit");

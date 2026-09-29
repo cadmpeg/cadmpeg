@@ -2108,7 +2108,7 @@ mod tests {
     fn unbound_view_loss_message_refuses_retained_limit() {
         let record = Record::short(super::NAMED_VIEWS, 0..0, 0);
         let binding = crate::settings::UnitBinding::from_units(None);
-        let error = with_retained_limit(&[], "VIEW/named-view list".len() as u64, |ctx| {
+        let error = with_retained_limit(&[], cadmpeg_core::decode::u64_from_index("VIEW/named-view list".len()), |ctx| {
             super::retain_unbound_view_record(
                 ctx,
                 &mut Vec::new(),
@@ -3408,7 +3408,7 @@ mod tests {
             .as_ref()
             .expect("nested checksum loss is located");
         assert_eq!(
-            provenance.offset as usize,
+            cadmpeg_core::decode::index_from_u64(provenance.offset).expect("fixture offset fits usize"),
             4 + trace_chunk_header_len * 2 + trace_reference_start
         );
         assert_eq!(
