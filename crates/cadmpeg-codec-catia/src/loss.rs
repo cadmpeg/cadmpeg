@@ -293,8 +293,8 @@ impl CatiaLossCode {
         message: String,
         operation: &'static str,
     ) -> Result<LossNote, cadmpeg_core::CodecError> {
-        let namespace = crate::resource::copy_retained_str(ctx, "catia", operation)?;
-        let code = crate::resource::copy_retained_str(ctx, self.code(), operation)?;
+        let namespace = ctx.copy_retained_text("catia", operation)?;
+        let code = ctx.copy_retained_text(self.code(), operation)?;
         let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new_owned(
             namespace,
             code,

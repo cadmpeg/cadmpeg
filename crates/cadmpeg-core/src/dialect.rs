@@ -419,9 +419,14 @@ impl DialectLayers {
         let count = crate::decode::u64_from_index(self.extra.len());
         ctx.charge_collection_items(count, "dialect layer copies")?;
         let mut extra = Vec::new();
-        extra
-            .try_reserve_exact(self.extra.len())
-            .map_err(|_| ctx.refuse_codec_limit("dialect layer copies", 0, count))?;
+        extra.try_reserve_exact(self.extra.len()).map_err(|_| {
+            crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(
+                crate::decode::ResourceDimension::Codec("dialect layer copies"),
+                0,
+                count,
+                "dialect layer copies",
+            ))
+        })?;
         for layer in &self.extra {
             extra.push(layer.try_clone_for_decode(ctx)?);
         }
@@ -472,9 +477,14 @@ impl DialectLayers {
             return Ok(Err(layer));
         }
         ctx.charge_collection_items(1, operation)?;
-        self.extra
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        self.extra.try_reserve(1).map_err(|_| {
+            crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(
+                crate::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ))
+        })?;
         self.extra.push(layer);
         Ok(Ok(()))
     }
@@ -604,7 +614,7 @@ impl DialectMatch {
             value: match &self.dialect.value {
                 Cow::Borrowed(value) => Cow::Borrowed(value),
                 Cow::Owned(value) => {
-                    Cow::Owned(copy_decode_text(ctx, value, "dialect identity copy")?)
+                    Cow::Owned(ctx.copy_retained_text(value, "dialect identity copy")?)
                 }
             },
             namespace_len: self.dialect.namespace_len,
@@ -612,32 +622,26 @@ impl DialectMatch {
         let mut declared = BTreeMap::new();
         for (key, value) in &self.declared {
             ctx.charge_collection_items(1, "dialect declaration copies")?;
-            let key = NonBlankString::new(copy_decode_text(
-                ctx,
-                key.as_str(),
-                "dialect declaration key",
-            )?)
+            let key = NonBlankString::new(
+                ctx.copy_retained_text(key.as_str(), "dialect declaration key")?,
+            )
             .ok_or_else(|| crate::CodecError::malformed("dialect declaration key is blank"))?;
             declared.insert(
                 key,
-                copy_decode_text(ctx, value, "dialect declaration value")?,
+                ctx.copy_retained_text(value, "dialect declaration value")?,
             );
         }
         let instance = self
             .instance
             .as_ref()
-            .map(|value| copy_decode_text(ctx, value, "dialect instance copy"))
+            .map(|value| ctx.copy_retained_text(value, "dialect instance copy"))
             .transpose()?;
         let admission = match &self.admission {
             Admission::Admitted => Admission::Admitted,
             Admission::Residual => Admission::Residual,
             Admission::Refused => Admission::Refused,
             Admission::Unverified { using } => Admission::Unverified {
-                using: Grammar(copy_decode_text(
-                    ctx,
-                    using.as_str(),
-                    "dialect grammar copy",
-                )?),
+                using: Grammar(ctx.copy_retained_text(using.as_str(), "dialect grammar copy")?),
             },
         };
         Ok(Self {
@@ -702,7 +706,7 @@ impl DialectMatch {
         if !self.declared.contains_key(&key) {
             ctx.charge_collection_items(1, operation)?;
         }
-        let value = copy_decode_text(ctx, value, operation)?;
+        let value = ctx.copy_retained_text(value, operation)?;
         let previous = self.declared.insert(key, value);
         drop(previous);
         Ok(self)
@@ -764,15 +768,6 @@ impl DialectMatch {
             namespace_len: namespace.len(),
         }
     }
-}
-
-fn copy_decode_text(
-    ctx: &crate::decode::DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, crate::CodecError> {
-    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
-        .map_err(|_| crate::CodecError::malformed("admitted dialect text is not UTF-8"))
 }
 
 #[cfg(test)]

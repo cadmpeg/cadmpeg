@@ -196,19 +196,10 @@ fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
     )
     .expect("rational fixture curve");
     for source in [curve(), rational] {
-        let mut expected = source.clone();
-        expected
-            .map_control_points(|point| {
-                FinitePoint3::new(Point3::new(
-                    point.get().x + 1.0,
-                    point.get().y,
-                    point.get().z,
-                ))
-                .ok_or_else(|| crate::geometry::nurbs::NurbsError::EditRefused("finite map".into()))
-            })
-            .expect("finite point map");
-        let actual = source
-            .try_map_owned_control_points(|point| {
+        let mut actual = source.clone();
+        let weights = actual.weights();
+        actual
+            .try_map_control_points(|_, point| {
                 FinitePoint3::new(Point3::new(
                     point.get().x + 1.0,
                     point.get().y,
@@ -216,8 +207,17 @@ fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
                 ))
                 .ok_or("finite map")
             })
-            .expect("finite owned point map");
-        assert_eq!(actual, expected);
+            .expect("finite point map");
+        assert_eq!(actual.weights(), weights);
+        assert_eq!(actual.control_points().len(), source.control_points().len());
+        assert_eq!(actual.degree(), source.degree());
+        assert_eq!(actual.knots(), source.knots());
+        assert_eq!(actual.periodic(), source.periodic());
+        for (mapped, original) in actual.control_points().iter().zip(source.control_points()) {
+            assert_eq!(mapped.get().x, original.get().x + 1.0);
+            assert_eq!(mapped.get().y, original.get().y);
+            assert_eq!(mapped.get().z, original.get().z);
+        }
     }
 }
 
@@ -225,8 +225,7 @@ fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
 fn a_refused_curve_pole_edit_keeps_the_prior_poles() {
     let mut curve = curve();
     let original = curve.clone();
-    let refusal = curve.edit_control_points(|point| {
-        point.z = 9.0;
+    let refusal = curve.try_map_control_points(|_, _| {
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
             "caller refused this pole".into(),
         ))
@@ -244,8 +243,7 @@ fn a_refused_curve_pole_edit_keeps_the_prior_poles() {
 fn a_refused_surface_pole_edit_keeps_the_prior_poles() {
     let mut surface = surface();
     let original = surface.clone();
-    let refusal = surface.edit_control_points(|point| {
-        point.z = 9.0;
+    let refusal = surface.try_map_control_points(|_, _| {
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
             "caller refused this pole".into(),
         ))
@@ -257,6 +255,124 @@ fn a_refused_surface_pole_edit_keeps_the_prior_poles() {
         ))
     );
     assert_eq!(surface, original);
+}
+
+#[test]
+fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::NurbsCurve;
+
+    let polynomial = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    for mut curve in [polynomial, curve()] {
+        let original = curve.clone();
+        let weights = curve.weights();
+        let last = curve.pole_count() - 1;
+        assert_eq!(
+            curve.try_map_control_points(|index, point| {
+                if index == last {
+                    Err("last pole")
+                } else {
+                    FinitePoint3::new(Point3::new(
+                        point.get().x + 1.0,
+                        point.get().y,
+                        point.get().z,
+                    ))
+                    .ok_or("non-finite point")
+                }
+            }),
+            Err("last pole")
+        );
+        assert_eq!(curve, original);
+        curve
+            .try_map_control_points(|index, point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("non-finite point")
+            })
+            .unwrap();
+        for (index, (mapped, prior)) in curve
+            .control_points()
+            .iter()
+            .zip(original.control_points())
+            .enumerate()
+        {
+            assert_eq!(
+                mapped.get().x,
+                prior.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0
+            );
+        }
+        assert_eq!(curve.weights(), weights);
+    }
+}
+
+#[test]
+fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+
+    let rational = surface();
+    let polynomial = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, rational.u_knots().to_vec(), rational.u_periodic()),
+        NurbsSurfaceAxis::new(1, rational.v_knots().to_vec(), rational.v_periodic()),
+        NurbsSurfaceLanes::new(
+            rational
+                .control_grid()
+                .into_iter()
+                .map(|row| row.into_iter().map(FinitePoint3::get).collect())
+                .collect(),
+            None::<Vec<Vec<f64>>>,
+        ),
+        rational.normal_reversed(),
+    )
+    .unwrap();
+    for mut surface in [polynomial, rational] {
+        let original = surface.clone();
+        let weights = surface.weights();
+        let last = surface.poles().len() - 1;
+        assert_eq!(
+            surface.try_map_control_points(|index, point| {
+                if index == last {
+                    Err("last pole")
+                } else {
+                    FinitePoint3::new(Point3::new(
+                        point.get().x + 1.0,
+                        point.get().y,
+                        point.get().z,
+                    ))
+                    .ok_or("non-finite point")
+                }
+            }),
+            Err("last pole")
+        );
+        assert_eq!(surface, original);
+        surface
+            .try_map_control_points(|index, point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("non-finite point")
+            })
+            .unwrap();
+        for (index, (mapped, prior)) in surface.poles().iter().zip(original.poles()).enumerate() {
+            assert_eq!(
+                mapped.get().x,
+                prior.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0
+            );
+        }
+        assert_eq!(surface.weights(), weights);
+    }
 }
 
 /// The control grid states both pole counts, so the surface wire carries no
@@ -339,9 +455,14 @@ fn bspline_surface_edit_refusal_keeps_control_points() {
     let knots = vec![0.0, 0.0, 1.0, 1.0];
     let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
     let original = surface.clone();
-    let refusal = surface.edit_control_points(|point| {
-        point.z = 3.0;
-        Err(NurbsError::EditRefused("caller refused this pole".into()))
+    let refusal = surface.try_map_control_points(|index, point| {
+        if index == 3 {
+            return Err(NurbsError::EditRefused("caller refused this pole".into()));
+        }
+        let mut moved = point.get();
+        moved.z = 3.0;
+        crate::features::FinitePoint3::new(moved)
+            .ok_or_else(|| NurbsError::Structure("non-finite pole".into()))
     });
     assert_eq!(
         refusal,
@@ -367,9 +488,10 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
     let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
     let original = surface.clone();
     assert!(surface
-        .edit_control_points(|point| {
-            point.x = f64::NAN;
-            Ok(())
+        .try_map_control_points(|_, point| {
+            let mut moved = point.get();
+            moved.x = f64::NAN;
+            crate::features::FinitePoint3::new(moved).ok_or(())
         })
         .is_err());
     assert_eq!(surface, original);
@@ -377,9 +499,10 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
     wire["u_knots"] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
     assert!(serde_json::from_value::<BsplineSurface>(wire).is_err());
     surface
-        .edit_control_points(|point| {
-            point.z = 2.0;
-            Ok(())
+        .try_map_control_points(|_, point| {
+            let mut moved = point.get();
+            moved.z = 2.0;
+            crate::features::FinitePoint3::new(moved).ok_or(())
         })
         .unwrap();
     assert!(surface
@@ -688,11 +811,11 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
 
     let mut mapped = curve.clone();
-    let refusal = mapped.map_control_points(|_| Err(NurbsError::EditRefused("kept".into())));
+    let refusal = mapped.try_map_control_points(|_, _| Err(NurbsError::EditRefused("kept".into())));
     assert_eq!(refusal, Err(NurbsError::EditRefused("kept".into())));
     assert_eq!(mapped, curve);
     mapped
-        .map_control_points(|point| Ok(point.negated()))
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.control_points(),
@@ -737,7 +860,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
     let mut mapped = surface.clone();
     mapped
-        .map_control_points(|point| Ok(point.negated()))
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.pole(1, 1).map(FinitePoint3::get),
@@ -763,7 +886,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
     let mut mapped = pcurve.clone();
     mapped
-        .map_control_points(|point| Ok(point.negated()))
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.control_points(),

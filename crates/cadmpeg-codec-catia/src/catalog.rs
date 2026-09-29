@@ -106,11 +106,9 @@ fn parse_candidate(
                 return None;
             }
             let raw = &bytes[value_start..next];
-            let value = admitted!(crate::resource::copy_retained_str(
-                ctx,
-                std::str::from_utf8(raw).ok()?,
-                "catia_catalog_entry_value"
-            ));
+            let value = admitted!(
+                ctx.copy_retained_text(std::str::from_utf8(raw).ok()?, "catia_catalog_entry_value")
+            );
             entries.push(CatalogEntry {
                 ordinal: u32::try_from(ordinal).ok()?,
                 pos: at,

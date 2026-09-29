@@ -442,7 +442,9 @@ impl ParameterRecord {
             .and_then(|value| usize::try_from(value).ok())?;
         let required = count.checked_mul(stride)?;
         let end = end.min(self.parameter_end());
-        (required <= end.saturating_sub(item_start)).then_some(count)
+        end.checked_sub(item_start)
+            .filter(|available| required <= *available)
+            .map(|_| count)
     }
 
     /// Report the declared count before the entity-specific end when the final
@@ -479,10 +481,17 @@ impl ParameterRecord {
         else {
             return DefaultTailCount::Unreadable;
         };
-        let present = end
-            .min(self.parameter_end())
-            .saturating_sub(item_start)
-            .div_euclid(stride);
+        let Some(available) = end.min(self.parameter_end()).checked_sub(item_start) else {
+            return if count == 0 {
+                DefaultTailCount::Held(0)
+            } else {
+                DefaultTailCount::Overdeclared(OverdeclaredCount {
+                    declared: count,
+                    present: 0,
+                })
+            };
+        };
+        let present = available.div_euclid(stride);
         if count <= present {
             DefaultTailCount::Held(count)
         } else {
@@ -536,7 +545,7 @@ impl ParameterRecord {
             return None;
         }
         let end = end.min(self.parameter_end());
-        let available = end.saturating_sub(item_start);
+        let available = end.checked_sub(item_start)?;
         Some(if end < self.tokens.len() {
             available / stride
         } else {
@@ -1608,7 +1617,13 @@ fn tabular_data_primary_end(record: &ParameterRecord) -> usize {
     else {
         return record.tokens.len();
     };
-    if record.integer(1) != i64::try_from(end.saturating_sub(2)).ok() {
+    let Some(count) = end
+        .checked_sub(2)
+        .and_then(|count| i64::try_from(count).ok())
+    else {
+        return record.tokens.len();
+    };
+    if record.integer(1) != Some(count) {
         return record.tokens.len();
     }
     end
@@ -1712,7 +1727,13 @@ fn level_to_lep_layer_map_primary_end(record: &ParameterRecord) -> usize {
     else {
         return record.tokens.len();
     };
-    if record.integer(1) != i64::try_from(end.saturating_sub(2)).ok() {
+    let Some(count) = end
+        .checked_sub(2)
+        .and_then(|count| i64::try_from(count).ok())
+    else {
+        return record.tokens.len();
+    };
+    if record.integer(1) != Some(count) {
         return record.tokens.len();
     }
     end
@@ -1732,7 +1753,13 @@ fn lep_artwork_stackup_primary_end(record: &ParameterRecord) -> usize {
     else {
         return record.tokens.len();
     };
-    if record.integer(1) != i64::try_from(end.saturating_sub(2)).ok() {
+    let Some(count) = end
+        .checked_sub(2)
+        .and_then(|count| i64::try_from(count).ok())
+    else {
+        return record.tokens.len();
+    };
+    if record.integer(1) != Some(count) {
         return record.tokens.len();
     }
     end
@@ -2940,8 +2967,16 @@ fn layout_parameter_card(ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u8>, Cod
         ctx.charge_retained(64, "iges parameter layout card bytes")?;
     }
     let mut card = Vec::new();
-    card.try_reserve_exact(64)
-        .map_err(|_| refuse_local_limit("iges parameter layout card bytes", 64, 64))?;
+    card.try_reserve_exact(64).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("iges parameter layout card bytes"),
+                64,
+                64,
+                "iges parameter layout card bytes",
+            ),
+        )
+    })?;
     Ok(card)
 }
 
@@ -3400,7 +3435,7 @@ fn integer_within_bits(value: i64, bits: u32) -> bool {
     let maximum = if bits >= 64 {
         (1_u128 << 63) - 1
     } else {
-        (1_u128 << bits.saturating_sub(1)) - 1
+        (1_u128 << (bits - 1)) - 1
     };
     u128::from(value.unsigned_abs()) <= maximum
 }
@@ -3462,10 +3497,13 @@ fn numeric_with_limits(
             .map_err(TokenizeFailure::Refusal)?;
         let mut normalized = String::new();
         normalized.try_reserve_exact(text.len()).map_err(|_| {
-            TokenizeFailure::Refusal(refuse_local_limit(
-                "iges numeric token text",
-                u64_from_index(text.len()),
-                u64_from_index(text.len()),
+            TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("iges numeric token text"),
+                    u64_from_index(text.len()),
+                    u64_from_index(text.len()),
+                    "iges numeric token text",
+                ),
             ))
         })?;
         normalized.extend(text.bytes().map(|byte| {
@@ -3717,10 +3755,13 @@ fn owned_bytes(
     }
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(byte_count).map_err(|_| {
-        refuse_local_limit(
-            "iges owned parameter bytes",
-            u64_from_index(byte_count),
-            u64_from_index(byte_count),
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("iges owned parameter bytes"),
+                u64_from_index(byte_count),
+                u64_from_index(byte_count),
+                "iges owned parameter bytes",
+            ),
         )
     })?;
     let mut card_boundaries =
@@ -3768,7 +3809,10 @@ fn quarantine(
     let ownership = match retained.next() {
         Some((first, line)) => {
             let first_offset = line.offset;
-            let mut range = first..first.saturating_add(1);
+            let range_end = first
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
+            let mut range = first..range_end;
             if let Some(ctx) = ctx {
                 ctx.charge_retained(
                     u64_from_index(byte_count),
@@ -3777,15 +3821,22 @@ fn quarantine(
             }
             let mut bytes = Vec::new();
             bytes.try_reserve_exact(byte_count).map_err(|_| {
-                refuse_local_limit(
-                    "iges quarantined parameter bytes",
-                    u64_from_index(byte_count),
-                    u64_from_index(byte_count),
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "iges quarantined parameter bytes",
+                        ),
+                        u64_from_index(byte_count),
+                        u64_from_index(byte_count),
+                        "iges quarantined parameter bytes",
+                    ),
                 )
             })?;
             bytes.extend_from_slice(&line.payload);
             for (sequence, line) in retained {
-                range.end = sequence.saturating_add(1);
+                range.end = sequence.checked_add(1).ok_or_else(|| {
+                    CodecError::malformed("IGES parameter card sequence overflow")
+                })?;
                 bytes.extend_from_slice(&line.payload);
             }
             QuarantinedCards::Owned {
@@ -3843,12 +3894,20 @@ fn resolve_ownership<'a>(
             candidates.push(entry);
         }
     }
-    let census = lines
+    let census = match lines
         .keys()
         .next()
         .copied()
         .zip(lines.keys().next_back().copied())
-        .map_or(0..0, |(first, last)| first..last.saturating_add(1));
+    {
+        Some((first, last)) => {
+            first
+                ..last
+                    .checked_add(1)
+                    .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?
+        }
+        None => 0..0,
+    };
     let mut named_by = BTreeMap::<u32, Vec<u32>>::new();
     for (sequence, pointer) in back_pointers {
         if let Some(owner) = pointer {
@@ -4151,10 +4210,12 @@ pub(crate) fn assemble_with_context(
             continue;
         }
         let line_start = owned.cards.first().copied().unwrap_or_default();
-        let line_end = owned
-            .cards
-            .last()
-            .map_or(line_start, |last| last.saturating_add(1));
+        let line_end = match owned.cards.last() {
+            Some(last) => last
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?,
+            None => line_start,
+        };
         let parameter_end = tokens.len();
         let record = ParameterRecord {
             directory_sequence: entry.sequence,
@@ -4273,10 +4334,15 @@ fn copy_token_bytes(
         None => {
             let mut copy = Vec::new();
             copy.try_reserve_exact(bytes.len()).map_err(|_| {
-                TokenizeFailure::Refusal(refuse_local_limit(
-                    "iges parameter string token",
-                    u64_from_index(bytes.len()),
-                    u64_from_index(bytes.len()),
+                TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "iges parameter string token",
+                        ),
+                        u64_from_index(bytes.len()),
+                        u64_from_index(bytes.len()),
+                        "iges parameter string token",
+                    ),
                 ))
             })?;
             copy.extend_from_slice(bytes);

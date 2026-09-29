@@ -1816,19 +1816,23 @@ fn bounded_nurbs_for_id(
             policy.min(MAX_COMPOSITE_DEPTH)
         });
     if depth >= depth_limit {
-        let requested = cadmpeg_core::decode::u64_from_index(depth.saturating_add(1));
-        return Err(CompositeCurveError::Budget(match ctx {
+        let refusal = |requested| match ctx {
             Some(ctx) => ctx.refuse_codec_limit(
                 "iges_composite_depth",
-                cadmpeg_core::decode::u64_from_index(depth_limit),
+                u64_from_index(depth_limit),
                 requested,
             ),
             None => refuse_local_limit(
                 "iges_composite_depth",
-                cadmpeg_core::decode::u64_from_index(depth_limit),
+                u64_from_index(depth_limit),
                 requested,
             ),
-        }));
+        };
+        let requested = depth
+            .checked_add(1)
+            .map(u64_from_index)
+            .ok_or_else(|| CompositeCurveError::Budget(refusal(u64::MAX)))?;
+        return Err(CompositeCurveError::Budget(refusal(requested)));
     }
     let curve = match index {
         Some(index) => index
@@ -2127,20 +2131,20 @@ fn anchor_analytic_nurbs_endpoint_poles(
     let Some(last) = nurbs.pole_count().checked_sub(1) else {
         return Ok(None);
     };
-    let mut visited = 0usize;
+    let mut nurbs = nurbs;
     Ok(nurbs
-        .try_map_owned_control_points(|point| {
-            let mapped = if visited == last {
+        .try_map_control_points(|index, point| {
+            let mapped = if index == last {
                 end
-            } else if visited == 0 {
+            } else if index == 0 {
                 start
             } else {
                 point
             };
-            visited += 1;
             Ok::<_, ()>(mapped)
         })
-        .ok())
+        .ok()
+        .map(|()| nurbs))
 }
 
 fn project_native_composite(

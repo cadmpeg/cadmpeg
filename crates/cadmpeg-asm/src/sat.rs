@@ -84,9 +84,7 @@ impl TextHeader {
     /// the same unit a binary stream carries.
     pub fn as_kernel_header(&self, ctx: &DecodeContext<'_>) -> Result<KernelHeader, CodecError> {
         let copy = |value: &str| -> Result<String, CodecError> {
-            let requested = u64::try_from(value.len()).map_err(|_| {
-                ctx.refuse_codec_limit("retain SAT kernel header string", u64::MAX, u64::MAX)
-            })?;
+            let requested = cadmpeg_core::decode::u64_from_index(value.len());
             ctx.charge_retained(requested, "retain SAT kernel header string")?;
             copy_sat_string(ctx, value, "SAT kernel header string")
         };
@@ -162,15 +160,22 @@ fn is_ws(b: u8) -> bool {
 }
 
 fn copy_sat_string(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     value: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let amount = u64::try_from(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let amount = cadmpeg_core::decode::u64_from_index(value.len());
     let mut copy = String::new();
-    copy.try_reserve(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, amount))?;
+    copy.try_reserve(value.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                amount,
+                operation,
+            ),
+        )
+    })?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -473,13 +478,19 @@ fn record_error_reason(
         .and_then(|length| length.checked_add("` ".len()))
         .and_then(|length| length.checked_add(description.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("SAT record error text", u64::MAX, u64::MAX))?;
-    let requested = u64::try_from(length)
-        .map_err(|_| ctx.refuse_codec_limit("SAT record error text", u64::MAX, u64::MAX))?;
+    let requested = cadmpeg_core::decode::u64_from_index(length);
     ctx.charge_retained(requested, "SAT record error text")?;
     let mut reason = String::new();
-    reason
-        .try_reserve(length)
-        .map_err(|_| ctx.refuse_codec_limit("SAT record error text", 0, requested))?;
+    reason.try_reserve(length).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("SAT record error text"),
+                0,
+                requested,
+                "SAT record error text",
+            ),
+        )
+    })?;
     reason.push_str("record `");
     reason.push_str(name);
     reason.push_str("` ");
@@ -569,9 +580,16 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             ctx.charge_collection_items(1, "frame SAT primitive")?;
             scratch.grow(std::mem::size_of::<Prim>() as u64)?;
             ctx.charge_work(1, "lex SAT primitive")?;
-            prims
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("frame SAT primitive", 0, 1))?;
+            prims.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("frame SAT primitive"),
+                        0,
+                        1,
+                        "frame SAT primitive",
+                    ),
+                )
+            })?;
             prims.push(prim);
         }
         let head = name.split_once('-').map_or(name.as_str(), |(head, _)| head);
@@ -620,9 +638,16 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             &mut admitted_entities,
             "admit SAT native records",
         )?;
-        records
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("frame SAT record", 0, 1))?;
+        records.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("frame SAT record"),
+                    0,
+                    1,
+                    "frame SAT record",
+                ),
+            )
+        })?;
         records.push(Record {
             index: records.len(),
             name,
@@ -848,7 +873,14 @@ impl<'a> Cur<'a, '_, '_> {
                 return;
             }
             if out.try_reserve(1).is_err() {
-                self.resource = Some(ctx.refuse_codec_limit("type SAT tokens", 0, 1));
+                self.resource = Some(CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("type SAT tokens"),
+                        0,
+                        1,
+                        "type SAT tokens",
+                    ),
+                ));
                 return;
             }
         }
@@ -860,11 +892,7 @@ impl<'a> Cur<'a, '_, '_> {
             return;
         }
         let copy = if let Some(ctx) = self.ctx {
-            let Ok(requested) = u64::try_from(value.len()) else {
-                self.resource =
-                    Some(ctx.refuse_codec_limit("retain SAT typed string", u64::MAX, u64::MAX));
-                return;
-            };
+            let requested = cadmpeg_core::decode::u64_from_index(value.len());
             if let Err(error) = ctx.charge_retained(requested, "retain SAT typed string") {
                 self.resource = Some(error);
                 return;
@@ -1038,9 +1066,14 @@ impl<'a> Cur<'a, '_, '_> {
         }
         let mut values = Vec::new();
         if values.try_reserve_exact(count).is_err() {
-            self.resource = self
-                .ctx
-                .map(|ctx| ctx.refuse_codec_limit("SAT float array values", 0, count as u64));
+            self.resource = self.ctx.map(|_| {
+                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("SAT float array values"),
+                    0,
+                    cadmpeg_core::decode::u64_from_index(count),
+                    "SAT float array values",
+                ))
+            });
             return None;
         }
         for _ in 0..count {
@@ -1065,8 +1098,13 @@ impl<'a> Cur<'a, '_, '_> {
             }
         }
         if out.try_reserve(output_count).is_err() {
-            self.resource = self.ctx.map(|ctx| {
-                ctx.refuse_codec_limit("SAT float array tokens", 0, output_count as u64)
+            self.resource = self.ctx.map(|_| {
+                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("SAT float array tokens"),
+                    0,
+                    cadmpeg_core::decode::u64_from_index(output_count),
+                    "SAT float array tokens",
+                ))
             });
             return None;
         }

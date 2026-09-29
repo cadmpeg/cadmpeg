@@ -581,7 +581,10 @@ pub(crate) fn project_parameters(
     }
     let (projected, graph_rejections) = close_parameter_graph(ctx, projected)?;
     *admitted_entities = projected.len() as u64;
-    Ok((projected, unresolved.saturating_add(graph_rejections)))
+    let unresolved = unresolved.checked_add(graph_rejections).ok_or_else(|| {
+        ctx.refuse_codec_limit("Inventor unresolved design parameters", u64::MAX, u64::MAX)
+    })?;
+    Ok((projected, unresolved))
 }
 
 fn close_parameter_graph(
@@ -767,10 +770,15 @@ fn render_expression<'a>(
         let length = plan.lengths[&ordinal].length;
         let mut text = String::new();
         text.try_reserve_exact(length).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "Inventor expression string allocation",
-                length as u64,
-                length as u64 + 1,
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "Inventor expression string allocation",
+                    ),
+                    length as u64,
+                    length as u64 + 1,
+                    "Inventor expression string allocation",
+                ),
             )
         })?;
         let expression = expressions[&(token, ordinal)];

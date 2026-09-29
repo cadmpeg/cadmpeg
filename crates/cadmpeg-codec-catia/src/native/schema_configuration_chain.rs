@@ -310,7 +310,7 @@ pub(super) fn derive_schema_configuration_row_chains(
             format_args!("{format}:{scope}:schema-configuration-row-chain#{graph_key}:{root}"),
             "catia_configuration_chain_id",
         )?;
-        let object_graph = resource::copy_retained_str(ctx, graph, "catia_configuration_graph_id")?;
+        let object_graph = ctx.copy_retained_text(graph, "catia_configuration_graph_id")?;
         resource::push(
             ctx,
             &mut chains,
@@ -343,12 +343,10 @@ fn copy_reference(
             class_name,
         } => CatiaEntityReference::Resolved {
             entity_id: *entity_id,
-            entity: resource::copy_retained_str(ctx, entity, "catia_configuration_entity_id")?,
+            entity: ctx.copy_retained_text(entity, "catia_configuration_entity_id")?,
             class_name: class_name
                 .as_ref()
-                .map(|name| {
-                    resource::copy_retained_str(ctx, name, "catia_configuration_class_name")
-                })
+                .map(|name| ctx.copy_retained_text(name, "catia_configuration_class_name"))
                 .transpose()?,
         },
     })
@@ -374,11 +372,11 @@ fn charged_entity_reference(
     let class_name = entity_classes
         .iter()
         .find(|((key_graph, key_id), _)| key_graph == graph && *key_id == entity_id)
-        .map(|(_, name)| resource::copy_retained_str(ctx, name, "catia_configuration_class_name"))
+        .map(|(_, name)| ctx.copy_retained_text(name, "catia_configuration_class_name"))
         .transpose()?;
     Ok(CatiaEntityReference::Resolved {
         entity_id,
-        entity: resource::copy_retained_str(ctx, entity, "catia_configuration_entity_id")?,
+        entity: ctx.copy_retained_text(entity, "catia_configuration_entity_id")?,
         class_name,
     })
 }

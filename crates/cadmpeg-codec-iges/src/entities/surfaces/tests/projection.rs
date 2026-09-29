@@ -426,15 +426,17 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
         Some(true)
     );
-
-    let mut scaled_index = 0usize;
     scaled
-        .edit_control_points(|point| {
-            if scaled_index == 1 {
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
                 point.x = 1.1;
             }
-            scaled_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     assert_eq!(

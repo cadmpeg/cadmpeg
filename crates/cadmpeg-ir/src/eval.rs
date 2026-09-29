@@ -1133,9 +1133,14 @@ fn complete_nurbs_surface_starts(
         else {
             return Ok(None);
         };
-        queue
-            .try_reserve(1)
-            .map_err(|_| scratch::allocation_failed(1, "IR surface patch queue"))?;
+        queue.try_reserve(1).map_err(|_| {
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("IR surface patch queue"),
+                1,
+                1,
+                "IR surface patch queue",
+            )
+        })?;
         queue.push(SurfacePatchQueueEntry {
             lower_bound,
             diameter,
@@ -1243,9 +1248,14 @@ fn complete_nurbs_surface_starts(
             else {
                 return Ok(None);
             };
-            queue
-                .try_reserve(1)
-                .map_err(|_| scratch::allocation_failed(1, "IR surface patch queue"))?;
+            queue.try_reserve(1).map_err(|_| {
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("IR surface patch queue"),
+                    1,
+                    1,
+                    "IR surface patch queue",
+                )
+            })?;
             queue.push(SurfacePatchQueueEntry {
                 lower_bound,
                 diameter,
@@ -2337,9 +2347,14 @@ fn bounded_nearest_intervals(
 ) -> Result<Vec<[FiniteReal; 2]>, ResourceLimit> {
     let mut nearest = BinaryHeap::new();
     let capacity = boundaries.len().min(NURBS_SEARCH_MAX_INTERVALS + 1);
-    nearest
-        .try_reserve(capacity)
-        .map_err(|_| scratch::allocation_failed(capacity, "IR curve inversion interval heap"))?;
+    nearest.try_reserve(capacity).map_err(|_| {
+        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::Codec("IR curve inversion interval heap"),
+            cadmpeg_core::decode::u64_from_index(capacity),
+            cadmpeg_core::decode::u64_from_index(capacity),
+            "IR curve inversion interval heap",
+        )
+    })?;
     for pair in boundaries.windows(2) {
         if pair[0] >= pair[1] {
             continue;
