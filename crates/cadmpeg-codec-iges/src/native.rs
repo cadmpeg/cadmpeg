@@ -2416,7 +2416,10 @@ pub(crate) fn store(
         sequences,
         boundary_vertex_derivations,
     } = inputs;
-    ctx.charge_entities(cadmpeg_core::decode::u64_from_index(scan.lines.len()), "iges_native_entities")?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(scan.lines.len()),
+        "iges_native_entities",
+    )?;
     let NativeInputIndexes {
         quarantined_directory_records,
         quarantined_parameter_records,
@@ -2606,7 +2609,10 @@ pub(crate) fn store(
             ambiguity,
         });
     }
-    ctx.charge_entities(cadmpeg_core::decode::u64_from_index(directory.len()), "iges_native_entities")?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(directory.len()),
+        "iges_native_entities",
+    )?;
     let mut entities =
         ctx.collect_indexed_vec(directory.len(), "iges native entity slots", |index| {
             let entry = &directory[index];

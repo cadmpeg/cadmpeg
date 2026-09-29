@@ -68,7 +68,10 @@ impl SurfaceGridWeight for f64 {
         match NonZeroReal::new(self) {
             Some(value) => Ok(Ok(value)),
             None => Ok(Err(NurbsError::UnusableWeight {
-                field: ctx.format_retained(format_args!("pole grid row"), "iges surface grid error field")?,
+                field: ctx.format_retained(
+                    format_args!("pole grid row"),
+                    "iges surface grid error field",
+                )?,
                 index,
                 weight: self,
             })),
@@ -88,7 +91,8 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     };
     if rows.len() != weights.len() {
         return Ok(Err(NurbsError::WeightLaneLength {
-            field: ctx.format_retained(format_args!("pole grid"), "iges surface grid error field")?,
+            field: ctx
+                .format_retained(format_args!("pole grid"), "iges surface grid error field")?,
             poles: rows.len(),
             weights: weights.len(),
         }));
@@ -97,7 +101,10 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     for (row, weight_row) in rows.into_iter().zip(weights) {
         if row.len() != weight_row.len() {
             return Ok(Err(NurbsError::WeightLaneLength {
-                field: ctx.format_retained(format_args!("pole grid row"), "iges surface grid error field")?,
+                field: ctx.format_retained(
+                    format_args!("pole grid row"),
+                    "iges surface grid error field",
+                )?,
                 poles: row.len(),
                 weights: weight_row.len(),
             }));

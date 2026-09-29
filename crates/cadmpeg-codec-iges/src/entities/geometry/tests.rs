@@ -1079,7 +1079,7 @@ fn transform_depth_overflow_is_a_structured_resource_refusal() {
                     && limit.used == 64
                     && limit.additional == 1
         ));
-    })
+    });
 }
 
 #[test]
@@ -1837,7 +1837,7 @@ fn transform_translation_overflow_after_inch_scaling_is_rejected() {
             decode_ctx,
         );
         assert!(result.is_err());
-    })
+    });
 }
 
 #[test]

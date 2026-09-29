@@ -629,7 +629,7 @@ fn analyze_trailing_pointer_groups_from_end(
     // supplies NV when it defines the primary layout. Use that table boundary
     // before applying the generic CADIR recovery for an entity without a
     // registered layout.
-    let candidates = match primary_end {
+    let mut candidates = match primary_end {
         Some(start) => {
             let prefix = non_integer_prefix(record, ctx)?;
             let candidate = pointer_group_candidate_with_prefix(record, start, &prefix, true);
@@ -640,31 +640,79 @@ fn analyze_trailing_pointer_groups_from_end(
         }
         None => structural_pointer_group_candidates_with_context(record, ctx)?,
     };
-    let mut valid_groups = Vec::new();
-    for candidate in &candidates {
-        if let Some(groups) = groups_for_candidate_with_context(record, directory, *candidate, ctx)?
-        {
-            if let Some(resolved) = groups.fully_valid_with_context(ctx)? {
-                ctx.reserve_vec(&mut valid_groups, 1, "iges valid pointer groups")?;
-                valid_groups.push(resolved);
+    if candidates.len() > 1 {
+        let prefix_count = record
+            .tokens
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| refuse_local_limit("iges pointer class prefixes", u64::MAX, 1))?;
+        let mut prefix = ctx.collection_vec(prefix_count, "iges pointer class prefixes")?;
+        let mut invalid = [0_usize; 2];
+        prefix.push(invalid);
+        ctx.charge_work(
+            u64_from_index(record.tokens.len()),
+            "iges pointer class classification",
+        )?;
+        for index in 0..record.tokens.len() {
+            let kind = record
+                .raw_integer(index)
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|sequence| sequence % 2 == 1)
+                .and_then(|sequence| directory.get(&sequence))
+                .map(|entry| entry.entity_type);
+            invalid[0] += usize::from(!matches!(kind, Some(212 | 312 | 402)));
+            invalid[1] += usize::from(!matches!(kind, Some(316 | 322 | 406 | 422)));
+            prefix.push(invalid);
+        }
+        let valid_range = |start: usize, end: usize, class: usize| {
+            prefix
+                .get(start)
+                .zip(prefix.get(end))
+                .is_some_and(|(first, last)| first[class] == last[class])
+        };
+        let mut valid = 0;
+        let mut sole = None;
+        for candidate in &candidates {
+            if valid_range(
+                candidate.association_start,
+                candidate.property_count_index,
+                0,
+            ) && candidate
+                .property_count_index
+                .checked_add(1)
+                .is_some_and(|start| valid_range(start, record.tokens.len(), 1))
+            {
+                valid += 1;
+                sole = Some(*candidate);
+            }
+        }
+        match (valid, sole) {
+            (1, Some(candidate)) => {
+                candidates.clear();
+                candidates.push(candidate);
+            }
+            _ => {
+                return Ok(TrailingPointerAnalysis::Ambiguous {
+                    candidates: candidates.len(),
+                    valid,
+                })
             }
         }
     }
-    let valid = valid_groups.len();
-    match valid_groups.into_iter().next() {
-        Some(groups) if valid == 1 => Ok(TrailingPointerAnalysis::Unambiguous(groups)),
-        None if candidates.len() == 1 => {
-            match groups_for_candidate_with_context(record, directory, candidates[0], ctx)? {
-                Some(groups) => Ok(TrailingPointerAnalysis::SingleInvalid(groups)),
-                None => Ok(TrailingPointerAnalysis::Ambiguous {
-                    candidates: 1,
-                    valid: 0,
-                }),
-            }
-        }
-        Some(_) | None => Ok(TrailingPointerAnalysis::Ambiguous {
+    let [candidate] = candidates.as_slice() else {
+        return Ok(TrailingPointerAnalysis::Ambiguous {
             candidates: candidates.len(),
-            valid,
+            valid: 0,
+        });
+    };
+    match groups_for_candidate_with_context(record, directory, *candidate, ctx)? {
+        Some(groups) => match groups.fully_valid_with_context(ctx)? {
+            Some(resolved) => Ok(TrailingPointerAnalysis::Unambiguous(resolved)),
+            None => Ok(TrailingPointerAnalysis::SingleInvalid(groups)),
+        },
+        None => Ok(TrailingPointerAnalysis::Ambiguous {
+            candidates: 1,
+            valid: 0,
         }),
     }
 }
@@ -2989,7 +3037,10 @@ fn hollerith(
     }
     Ok(Some((
         Token {
-            value: TokenValue::String(ctx.copy_retained(payload, "iges parameter string token").map_err(TokenizeFailure::Refusal)?),
+            value: TokenValue::String(
+                ctx.copy_retained(payload, "iges parameter string token")
+                    .map_err(TokenizeFailure::Refusal)?,
+            ),
             span: start..end,
         },
         end,
@@ -3247,7 +3298,8 @@ fn tokenize_macro(
             MacroDataError::Refusal(error) => TokenizeFailure::Refusal(error),
         })?;
     let mut tokens = Vec::new();
-    ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens").map_err(TokenizeFailure::Refusal)?;
+    ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+        .map_err(TokenizeFailure::Refusal)?;
     tokens.push(Token {
         value: TokenValue::Integer(306),
         span: data.entity_type_span,
@@ -3258,16 +3310,24 @@ fn tokenize_macro(
         .map(|statement| data.header_payload_start..statement.end)
         .filter(|span| span.start < span.end)
     {
-        ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens").map_err(TokenizeFailure::Refusal)?;
+        ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+            .map_err(TokenizeFailure::Refusal)?;
         tokens.push(Token {
-            value: TokenValue::String(ctx.copy_retained(&bytes[span.clone()], "iges parameter string token").map_err(TokenizeFailure::Refusal)?),
+            value: TokenValue::String(
+                ctx.copy_retained(&bytes[span.clone()], "iges parameter string token")
+                    .map_err(TokenizeFailure::Refusal)?,
+            ),
             span,
         });
     }
     for span in data.statement_spans.iter().skip(1) {
-        ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens").map_err(TokenizeFailure::Refusal)?;
+        ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+            .map_err(TokenizeFailure::Refusal)?;
         tokens.push(Token {
-            value: TokenValue::String(ctx.copy_retained(&bytes[span.clone()], "iges parameter string token").map_err(TokenizeFailure::Refusal)?),
+            value: TokenValue::String(
+                ctx.copy_retained(&bytes[span.clone()], "iges parameter string token")
+                    .map_err(TokenizeFailure::Refusal)?,
+            ),
             span: span.clone(),
         });
     }
@@ -3468,7 +3528,8 @@ fn tokenize_with_limits(
             return Ok((tokens, cursor + 1));
         }
         if bytes.get(cursor) == Some(&parameter_delimiter) {
-            ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens").map_err(TokenizeFailure::Refusal)?;
+            ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+                .map_err(TokenizeFailure::Refusal)?;
             tokens.push(Token {
                 value: TokenValue::Omitted,
                 span: cursor..cursor,
@@ -3515,7 +3576,8 @@ fn tokenize_with_limits(
             }
             (numeric_with_limits(bytes, span, limits, ctx)?, end)
         };
-        ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens").map_err(TokenizeFailure::Refusal)?;
+        ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
+            .map_err(TokenizeFailure::Refusal)?;
         tokens.push(token);
         match bytes.get(end).copied() {
             Some(value) if value == parameter_delimiter => cursor = end + 1,

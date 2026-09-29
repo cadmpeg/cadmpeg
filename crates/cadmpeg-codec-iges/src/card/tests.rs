@@ -92,7 +92,7 @@ fn merging_framing_recoveries_refuses_new_node_limit() {
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         merged.merge(incoming, &ctx).unwrap();
         assert_eq!(merged.notes(&ctx).unwrap().len(), 1);
-    })
+    });
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn framing_recovery_losses_refuse_slot_and_retained_limits() {
         assert!(notes[0]
             .message
             .contains("which declared D1, and the decoder used D3"));
-    })
+    });
 }
 
 #[test]

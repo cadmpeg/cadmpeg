@@ -134,7 +134,7 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
                 "{actual:?} != {expected:?}"
             );
         }
-    })
+    });
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn a_parabola_arc_has_exact_quadratic_points() {
                 "{actual:?} != {expected:?}"
             );
         }
-    })
+    });
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn parabola_arc_keeps_finite_poles_across_an_overflowing_parameter_span() {
             .control_points()
             .iter()
             .all(|point| point.get().is_finite()));
-    })
+    });
 }
 
 #[test]
@@ -214,5 +214,5 @@ fn audit_regression_parabola_keeps_finite_scaled_coordinates() {
             assert!((point.y / expected - 1.).abs() <= 8. * f64::EPSILON);
             assert!(point.is_finite());
         }
-    })
+    });
 }

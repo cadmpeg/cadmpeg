@@ -1114,7 +1114,7 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
         )
         .expect("carrier lanes pair")
         .is_some());
-    })
+    });
 }
 
 #[test]
@@ -1332,7 +1332,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
         assert_eq!(range, [0.0, 1.0]);
         assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
         assert_eq!(carrier.control_points()[1], Point3::new(2.0, 0.0, 0.0));
-    })
+    });
 }
 
 #[test]
@@ -1410,7 +1410,7 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         assert!(bounded_nurbs_for_curve(&ir, &curve_id, decode_ctx, None)
             .expect("carrier lanes pair")
             .is_none());
-    })
+    });
 }
 
 #[test]
@@ -1515,7 +1515,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         )
         .expect("carrier lanes pair")
         .is_none());
-    })
+    });
 }
 
 #[test]
@@ -1584,7 +1584,7 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
         assert!(before.distance(after.get()) <= 1.0e-12);
         assert_eq!(curve.control_points()[1], Point3::new(1.5, 0.0, 0.0));
         assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 2.0, 3.0]));
-    })
+    });
 }
 
 #[test]
