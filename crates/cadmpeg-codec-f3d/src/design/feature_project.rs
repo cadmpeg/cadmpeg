@@ -4978,10 +4978,9 @@ fn legacy_form_owner_count(
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<usize> {
-    let frames = records.frames(record_index).collect::<Vec<_>>();
-    let [(start, paired)] = frames.as_slice() else {
-        return None;
-    };
+    let mut frames = records.frames(record_index);
+    let (start, paired) = frames.next()?;
+    if frames.next().is_some() { return None; }
     let owner_class = bytes.get(start + 4..start + 7)?;
     let paired_class = bytes.get(paired + 4..paired + 7)?;
     let nested_class: &[u8] = if owner_class == b"335" && paired_class == b"262" {
@@ -4995,7 +4994,7 @@ fn legacy_form_owner_count(
     } else {
         return None;
     };
-    if paired.checked_sub(*start)? != legacy_form_cage::LEN
+    if paired.checked_sub(start)? != legacy_form_cage::LEN
         || View::u64_le_at(bytes, start + 7)? != u64::from(record_index)
         || bytes
             .get(start + legacy_form_cage::ZERO_RUN_14..start + legacy_form_cage::OWNER_MARKER)?
@@ -5294,11 +5293,9 @@ fn unique_record_has_class(
 }
 
 fn one_indexed_frame(records: &IndexedRecordOffsets, record_index: u32) -> Option<(usize, usize)> {
-    let frames = records.frames(record_index).collect::<Vec<_>>();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+    let mut frames = records.frames(record_index);
+    let frame = frames.next()?;
+    frames.next().is_none().then_some(frame)
 }
 
 fn form_class_325_cage_objects(
@@ -5310,13 +5307,11 @@ fn form_class_325_cage_objects(
     const CAGE_COUNT: usize = 32;
     const TYPE_DISCRIMINATOR_FIRST: u32 = 307;
 
-    let frames = records.frames(scope_record_index).collect::<Vec<_>>();
-    let [(start, paired)] = frames.as_slice() else {
-        return None;
-    };
-    let start = *start;
+    let mut frames = records.frames(scope_record_index);
+    let (start, paired) = frames.next()?;
+    if frames.next().is_some() { return None; }
     if bytes.get(start + 4..start + 7) != Some(b"325")
-        || bytes.get(*paired + 4..*paired + 7) != Some(b"258")
+        || bytes.get(paired + 4..paired + 7) != Some(b"258")
         || paired.checked_sub(start)? != form_325::LEN
         || bytes.get(start + form_325::ZERO_RUN_9..start + form_325::LIST_MARKER)? != [0; 9]
         || bytes.get(start + form_325::LIST_MARKER) != Some(&1)
@@ -5385,17 +5380,15 @@ fn form_class_325_cage_objects(
             entry + form_325_entry::COMPANION_RECORD_INDEX,
         )?)
         .ok()?;
-        let object_frames = records
+        let mut object_frames = records
             .frames(object)
-            .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"))
-            .collect::<Vec<_>>();
-        let [(object_at, _)] = object_frames.as_slice() else {
-            return None;
-        };
+            .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"));
+        let (object_at, _) = object_frames.next()?;
+        if object_frames.next().is_some() { return None; }
         let [companion_at, ..] = records.offsets(companion) else {
             return None;
         };
-        if bytes.get(*object_at + 4..*object_at + 7) != Some(b"289")
+        if bytes.get(object_at + 4..object_at + 7) != Some(b"289")
             || bytes.get(*companion_at + 4..*companion_at + 7) != Some(b"273")
         {
             return None;
@@ -5410,19 +5403,16 @@ fn form_class_325_cage_surface(
     records: &IndexedRecordOffsets,
     object_record: u32,
 ) -> Option<u32> {
-    let frames = records
+    let mut frames = records
         .frames(object_record)
-        .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"))
-        .collect::<Vec<_>>();
-    let [(start, paired)] = frames.as_slice() else {
-        return None;
-    };
-    let start = *start;
+        .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"));
+    let (start, paired) = frames.next()?;
+    if frames.next().is_some() { return None; }
     if bytes.get(start + 4..start + 7) != Some(b"289") {
         return None;
     }
-    let mut surfaces = Vec::new();
-    for at in start.checked_add(11)?..*paired {
+    let mut surface = None;
+    for at in start.checked_add(11)?..paired {
         if bytes.get(at) != Some(&1) {
             continue;
         }
@@ -5431,13 +5421,10 @@ fn form_class_325_cage_surface(
             continue;
         };
         if bytes.get(target_at + 4..target_at + 7) == Some(b"310") {
-            surfaces.push(target);
+            if surface.replace(target).is_some() { return None; }
         }
     }
-    let [surface] = surfaces.as_slice() else {
-        return None;
-    };
-    Some(*surface)
+    surface
 }
 
 fn form_cage_objects(
@@ -5446,13 +5433,11 @@ fn form_cage_objects(
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<Vec<u32>> {
-    let frames = records
+    let mut frames = records
         .frames(record_index)
-        .filter(|(_, paired)| matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264")))
-        .collect::<Vec<_>>();
-    let [(offset, paired)] = frames.as_slice() else {
-        return None;
-    };
+        .filter(|(_, paired)| matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264")));
+    let (offset, paired) = frames.next()?;
+    if frames.next().is_some() { return None; }
     if View::u64_le_at(bytes, offset + 7)? != record_index as u64
         || bytes.get(offset + 15..offset + 21)? != [0; 6]
         || bytes.get(offset + 21) != Some(&1)
@@ -5462,7 +5447,7 @@ fn form_cage_objects(
         return None;
     }
     let count = usize::try_from(View::u32_le_at(bytes, offset + 32)?).ok()?;
-    if paired.checked_sub(*offset)? != 88usize.checked_add(11usize.checked_mul(count)?)? {
+    if paired.checked_sub(offset)? != 88usize.checked_add(11usize.checked_mul(count)?)? {
         return None;
     }
     let mut cursor = offset.checked_add(36)?;
@@ -5518,11 +5503,10 @@ fn form_cage_surface(
         return None;
     }
     let carrier = u32::try_from(View::u64_le_at(bytes, second_at + 21)?).ok()?;
-    let carrier_frames = records.frames(carrier).collect::<Vec<_>>();
-    let [(carrier_at, carrier_paired)] = carrier_frames.as_slice() else {
-        return None;
-    };
-    if carrier_paired.checked_sub(*carrier_at)? != 665
+    let mut carrier_frames = records.frames(carrier);
+    let (carrier_at, carrier_paired) = carrier_frames.next()?;
+    if carrier_frames.next().is_some() { return None; }
+    if carrier_paired.checked_sub(carrier_at)? != 665
         || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
         || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
         || bytes.get(carrier_at + 317) != Some(&1)
