@@ -2854,11 +2854,15 @@ impl ExpressionValue for AffineValue {
         _context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
         scope.is_none().then_some(())?;
-        let constants = arguments
-            .iter()
-            .map(|argument| (argument.linear == 0.0).then_some(argument.constant))
-            .collect::<Option<Vec<_>>>()?;
-        evaluate_creo_math_function(name, &constants).map(Self::number)
+        let mut constants = [0.0; 3];
+        if arguments.len() > constants.len() {
+            return None;
+        }
+        for (slot, argument) in constants.iter_mut().zip(arguments) {
+            (argument.linear == 0.0).then_some(())?;
+            *slot = argument.constant;
+        }
+        evaluate_creo_math_function(name, &constants[..arguments.len()]).map(Self::number)
     }
 
     fn negate(self) -> Option<Self> {
