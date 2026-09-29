@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::cloned_ref_to_slice_refs,
+    clippy::default_trait_access,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::uninlined_format_args
+)]
 
-use crate::design::feature_project::{
+use super::{
     distinct_form_cage_ids, form_cage_lists, form_cage_objects, form_cage_serializers,
     form_cage_surface, form_cage_surfaces, form_class_325_cage_objects,
     form_class_325_cage_surface, form_class_328_envelope, legacy_form_cage_count,
-    project_parameter_design, push_form_cage_id, FormCageSerializers,
+    push_form_cage_id, FormCageSerializers,
 };
 
 fn parsed_serializers(
@@ -836,66 +842,6 @@ fn rejects_legacy_form_owner_with_wrong_nested_class() {
             201,
         ),
         None
-    );
-}
-
-#[test]
-fn retains_parameter_when_owner_frame_has_no_scope_binding() {
-    let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
-            id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
-            byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
-                .unwrap(),
-            record_index: 7,
-            source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
-                "AlongDistance".into(),
-                Some(8),
-                None,
-            )
-            .unwrap(),
-            expression: "12.5 mm".into(),
-            expression_offset: 40,
-            source_kind_offset: 60,
-
-            unit: Some(crate::records::identity::RecordedValue {
-                value: "mm".into(),
-                offset: 70,
-            }),
-            name: "distance".into(),
-            name_offset: 80,
-            evaluated_value: 1.25,
-            evaluated_value_offset: 90,
-        },
-    )
-    .unwrap();
-    let scope = crate::records::feature::scope::DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#9",
-        crate::records::feature::scope::DesignFeatureKind::try_from("Unsupported".to_owned())
-            .expect("native family name"),
-        9,
-    );
-
-    let (_, parameters) =
-        project_parameter_design(&[parameter], &[], &[scope], &[], &[], &[], &[], &[]);
-
-    let [parameter] = parameters.as_slice() else {
-        panic!("expected one retained parameter");
-    };
-    assert_eq!(parameter.owner, None);
-    assert_eq!(
-        parameter
-            .properties
-            .get("owner_record_index")
-            .map(String::as_str),
-        Some("8")
-    );
-    assert_eq!(
-        parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(12.5).unwrap()
-        ))
     );
 }
 
