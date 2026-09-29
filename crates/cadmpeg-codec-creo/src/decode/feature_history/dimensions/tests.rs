@@ -12,7 +12,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::dimensions::{
-    dimension_expression, feature_dimension_parameter_layout, insert_dimension_property,
+    dimension_expression, feature_dimension_parameter_layout,
+    feature_dimension_parameter_row_id_admitted, insert_dimension_property,
     planned_feature_dimension_parameter_ids, push_feature_source_parameter,
     transfer_feature_dimensions, HexToken,
 };
@@ -20,6 +21,125 @@ use super::super::dimensions::{
 fn layout_key() -> cadmpeg_ir::sketches::SketchId {
     cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917".to_string())
         .expect("valid test identity")
+}
+
+#[test]
+fn dimension_row_identity_refuses_before_formatting() {
+    let sketch = layout_key();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = "creo:featdefs:parameter#917:3:2".len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = feature_dimension_parameter_row_id_admitted(&ctx, &sketch, 3, Some(1))
+        .expect_err("dimension row ID exceeds retained cap");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo dimension parameter identity"));
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+    assert_eq!(feature_dimension_parameter_row_id_admitted(&ctx, &sketch, 3, Some(1))
+        .expect("service ID")
+        .expect("valid ID")
+        .as_str(), "creo:featdefs:parameter#917:3:2");
+}
+
+fn one_dimension_transfer() -> (crate::container::ContainerScan<'static>, CadIr) {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.definitions.push(crate::feature::definitions::FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: None,
+        },
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![crate::feature::definitions::FeatureDimension {
+                dimension_type: 2,
+                value: crate::feature::definitions::DimensionValue::Resolved(5.0),
+                value_body: Vec::new(),
+                direction_byte: 0,
+                auxiliary_value: None,
+                auxiliary_body: Vec::new(),
+                external_id: 3,
+                references: None,
+                offset: 10,
+            }],
+            offset: 9,
+        }),
+        relations: None,
+        saved_section: None,
+        offset: 8,
+    });
+    let mut ir = CadIr::empty();
+    ir.model.features.push(Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("creo:model:sketch_feature#917")
+            .expect("feature ID"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                kind: "test".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    });
+    (scan, ir)
+}
+
+#[test]
+fn dimension_transfer_refuses_staging_and_tree_nodes() {
+    let (scan, ir) = one_dimension_transfer();
+    let arena = DecodeArena::new();
+    let operations = [
+        "creo dimension owner feature ID nodes",
+        "creo dimension candidates",
+        "creo dimension layout keys",
+        "creo dimension layout count nodes",
+        "creo dimension parameter layout",
+        "creo dimension layout ordinal nodes",
+        "creo unique dimension external ID nodes",
+        "creo relation parameter nodes",
+    ];
+    for (cap, operation) in operations.into_iter().enumerate() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut ir = ir.clone();
+        let error = transfer_feature_dimensions(
+            &ctx, &scan, &mut ir, &mut AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ).expect_err("next dimension collection item exceeds cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == operation), "cap {cap}: {error}");
+    }
+    let mut ir = ir;
+    let (transferred, parameters) = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_feature_dimensions(
+            ctx, &scan, &mut ir, &mut AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    }).expect("service dimension transfer");
+    assert_eq!(transferred, 1);
+    assert_eq!(parameters.get("d3").map(ParameterId::as_str),
+        Some("creo:featdefs:parameter#917:3"));
+    assert_eq!(ir.model.parameters.len(), 1);
 }
 
 #[test]

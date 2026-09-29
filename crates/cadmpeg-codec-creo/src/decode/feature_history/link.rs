@@ -42,7 +42,7 @@ pub(in super::super) fn link_feature_sketch_history(
             continue;
         };
         let Some(sketch_feature) =
-            section_owner_feature_id(scan, transform.definition_id, &sketch)
+            section_owner_feature_id(ctx, scan, transform.definition_id, &sketch)?
         else {
             continue;
         };

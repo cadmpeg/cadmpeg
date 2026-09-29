@@ -105,6 +105,35 @@ pub(in super::super) fn feature_dimension_parameter_row_id(
     )
 }
 
+fn feature_dimension_parameter_row_id_admitted(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    sketch: &SketchId,
+    external_id: u32,
+    occurrence: Option<usize>,
+) -> Result<Option<ParameterId>, cadmpeg_core::CodecError> {
+    let text = if let Some(occurrence) = occurrence {
+        let ordinal = occurrence.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("creo dimension parameter identity", u64::MAX, u64::MAX)
+        })?;
+        ctx.format_retained(
+            format_args!(
+                "creo:featdefs:parameter#{}:{external_id}:{ordinal}",
+                sketch_identity_scope(sketch),
+            ),
+            "creo dimension parameter identity",
+        )?
+    } else {
+        ctx.format_retained(
+            format_args!(
+                "creo:featdefs:parameter#{}:{external_id}",
+                sketch_identity_scope(sketch),
+            ),
+            "creo dimension parameter identity",
+        )?
+    };
+    Ok(ParameterId::try_from(text).ok())
+}
+
 pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
     sketch: &SketchId,
     table: &'a crate::feature::definitions::FeatureDimensionTable,
@@ -286,18 +315,19 @@ pub(in super::super) fn transfer_feature_dimensions(
     annotations: &mut AnnotationBuilder,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, BTreeMap<String, ParameterId>), cadmpeg_core::CodecError> {
-    let feature_ids = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| feature.id.clone())
-        .collect::<BTreeSet<_>>();
+    let mut feature_ids = BTreeSet::new();
+    for feature in &ir.model.features {
+        if !feature_ids.contains(&feature.id) {
+            ctx.charge_collection_items(1, "creo dimension owner feature ID nodes")?;
+            feature_ids.insert(feature.id.copy_admitted(ctx, "creo dimension owner feature IDs")?);
+        }
+    }
     let mut candidates = Vec::new();
     for definition in &scan.features.definitions {
         let Some(sketch) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
-        let Some(owner) = section_owner_feature_id(scan, definition.identity.id(), &sketch) else {
+        let Some(owner) = section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch)? else {
             continue;
         };
         if !feature_ids.contains(&owner) {
@@ -307,41 +337,59 @@ pub(in super::super) fn transfer_feature_dimensions(
             continue;
         };
         for (source_ordinal, dimension) in table.rows.iter().enumerate() {
-            candidates.push((sketch.clone(), definition, source_ordinal, dimension));
+            ctx.try_reserve_items(&mut candidates, 1, "creo dimension candidates")?;
+            candidates.push((
+                sketch.copy_admitted(ctx, "creo dimension candidate sketch IDs")?,
+                definition,
+                source_ordinal,
+                dimension,
+            ));
         }
     }
     candidates.sort_by_key(|(_, definition, source_ordinal, _)| {
         (definition.offset, definition.identity.id(), *source_ordinal)
     });
-    let keys = candidates
-        .iter()
-        .map(|(sketch, _, _, dimension)| (sketch.clone(), dimension.external_id))
-        .collect::<Vec<_>>();
+    let mut keys = Vec::new();
+    ctx.try_reserve_items(&mut keys, candidates.len(), "creo dimension layout keys")?;
+    for (sketch, _, _, dimension) in &candidates {
+        keys.push((
+            sketch.copy_admitted(ctx, "creo dimension layout sketch IDs")?,
+            dimension.external_id,
+        ));
+    }
     let Some(layout) = feature_dimension_parameter_layout(ctx, &keys)? else {
         return Ok((0, BTreeMap::new()));
     };
-    let unique_external_ids = keys
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, (_, external_id)| {
-            *counts.entry(*external_id).or_insert(0usize) += 1;
-            counts
-        });
+    let mut unique_external_ids = BTreeMap::new();
+    for (_, external_id) in &keys {
+        if !unique_external_ids.contains_key(external_id) {
+            ctx.charge_collection_items(1, "creo unique dimension external ID nodes")?;
+        }
+        *unique_external_ids.entry(*external_id).or_insert(0usize) += 1;
+    }
     let transferred = layout.len();
     let mut relation_parameters = BTreeMap::new();
     for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
-        let Some(owner_id) = section_owner_feature_id(scan, definition.identity.id(), &sketch)
+        let Some(owner_id) = section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch)?
         else {
             continue;
         };
         let Some(id) =
-            feature_dimension_parameter_row_id(&sketch, dimension.external_id, occurrence)
+            feature_dimension_parameter_row_id_admitted(ctx, &sketch, dimension.external_id, occurrence)?
         else {
             continue;
         };
         if unique_external_ids[&dimension.external_id] == 1 {
-            relation_parameters.insert(format!("d{}", dimension.external_id), id.clone());
+            ctx.charge_collection_items(1, "creo relation parameter nodes")?;
+            relation_parameters.insert(
+                ctx.format_retained(
+                    format_args!("d{}", dimension.external_id),
+                    "creo relation parameter names",
+                )?,
+                id.copy_admitted(ctx, "creo relation parameter identities")?,
+            );
         }
         annotate(
             annotations,
@@ -394,8 +442,8 @@ pub(in super::super) fn transfer_feature_dimensions(
             ctx,
             ir,
             DesignParameter {
-                id: id.clone(),
-                owner: Some(owner_id.clone()),
+                id: id.copy_admitted(ctx, "creo design parameter identity copy")?,
+                owner: Some(owner_id.copy_admitted(ctx, "creo design parameter owner identity")?),
                 ordinal,
                 name,
                 expression,
