@@ -320,8 +320,33 @@ pub(super) fn sketch_constraint_id(
     ))
 }
 
+pub(super) fn sketch_constraint_id_admitted(
+    ctx: &DecodeContext<'_>,
+    sketch: &SketchId,
+    suffix: impl std::fmt::Display,
+) -> Result<Option<SketchConstraintId>, CodecError> {
+    let text = ctx.format_retained(
+        format_args!(
+            "creo:featdefs:sketch_constraint#{}:{suffix}",
+            sketch_identity_scope(sketch),
+        ),
+        "creo sketch constraint identity",
+    )?;
+    Ok(SketchConstraintId::try_from(text).ok())
+}
+
 pub(super) fn sketch_native_ref(sketch: &SketchId) -> String {
     format!("creo:featdefs:sketch#{}", sketch_identity_scope(sketch))
+}
+
+pub(super) fn sketch_native_ref_admitted(
+    ctx: &DecodeContext<'_>,
+    sketch: &SketchId,
+) -> Result<String, CodecError> {
+    ctx.format_retained(
+        format_args!("creo:featdefs:sketch#{}", sketch_identity_scope(sketch)),
+        "creo sketch native reference",
+    )
 }
 
 pub(super) fn sketch_section_curve_id(sketch: &SketchId, suffix: impl std::fmt::Display) -> String {
