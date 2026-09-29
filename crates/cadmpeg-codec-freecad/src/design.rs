@@ -4086,23 +4086,12 @@ fn build_profiles(
                 )
             };
             unused.remove(&candidate.entity);
-            ctx.charge_collection_items(1, "FCStd profile uses")?;
-            chain.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "FCStd profile uses",
-                    ),
-                )
-            })?;
-            chain.push_front(SketchEntityUse {
+            ctx.push_front(&mut chain, SketchEntityUse {
                 entity: entities[candidate.entity]
                     .id()
                     .try_clone_for_decode(ctx, "FCStd profile use identity")?,
                 reversed,
-            });
+            }, "FCStd profile uses")?;
             head = next_head;
         }
         ctx.reserve_vec(&mut profiles, 1, "FCStd profile chains")?;
