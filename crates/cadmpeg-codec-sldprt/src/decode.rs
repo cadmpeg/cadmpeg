@@ -2873,16 +2873,11 @@ fn build_geometry_ir(
     attributes.extend(crate::history::project::custom_property_attributes(
         &histories,
     ));
-    let mut native = crate::native::SldprtNative {
-        feature_histories: histories.clone(),
-        feature_input_lanes: all_lanes,
-        pmi_dimensions,
-    };
     ir.model.attributes = attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
     ir.model.sketch_constraints = sketch_constraints;
-    stamp_sketch_baseline(&mut ir, &native)?;
+    stamp_sketch_baseline(&mut ir, &all_lanes)?;
 
     let brep_entities = brep.neutral_entity_count()?;
     ir.model.bodies = brep.bodies;
@@ -2971,7 +2966,7 @@ fn build_geometry_ir(
         surfaces: &ir.model.surfaces,
         edges: &ir.model.edges,
         curves: &ir.model.curves,
-        lanes: &native.feature_input_lanes,
+        lanes: &all_lanes,
         face_identities: &face_identities,
     };
     crate::history::selections::bind_topology_selections(
@@ -2982,7 +2977,7 @@ fn build_geometry_ir(
     crate::resolved_features::bindings::bind_mirror_surface_planes(
         &mut ir.model.features,
         &histories,
-        &native.feature_input_lanes,
+        &all_lanes,
         &face_identities,
         &ir.model.faces,
         &ir.model.surfaces,
@@ -2992,14 +2987,14 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &histories,
-        &native.feature_input_lanes,
+        &all_lanes,
     )?;
     crate::resolved_features::holes::project_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
         &histories,
-        &native.feature_input_lanes,
+        &all_lanes,
     );
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         &mut ir.model.features,
@@ -3007,12 +3002,12 @@ fn build_geometry_ir(
         &ir.model.spatial_sketch_entities,
         &ir.model.surfaces,
         &histories,
-        &native.feature_input_lanes,
+        &all_lanes,
     );
     crate::resolved_features::holes::project_generated_hole_axes(
         &mut ir.model.features,
         &histories,
-        &native.feature_input_lanes,
+        &all_lanes,
         &face_identities,
         &ir.model.faces,
         &ir.model.surfaces,
@@ -3043,7 +3038,7 @@ fn build_geometry_ir(
             points: &ir.model.points,
         },
         &histories,
-        &native.feature_input_lanes,
+        &all_lanes,
     )?;
     crate::resolved_features::holes::project_hole_topology_axes(
         ctx,
@@ -3064,7 +3059,7 @@ fn build_geometry_ir(
         &mut ir.model.sketch_entities,
         &ir.model.surfaces,
         &histories,
-        &native.feature_input_lanes,
+        &all_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         &mut ir.model.sketch_constraints,
@@ -3072,7 +3067,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
-        &native.feature_input_lanes,
+        &all_lanes,
     );
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(ctx, &mut ir, configuration_bodies)?;
@@ -3081,7 +3076,7 @@ fn build_geometry_ir(
             ctx,
             &mut ir,
             &histories,
-            &native.feature_input_lanes,
+            &all_lanes,
             &mut annotations,
         )?;
     ctx.reserve_collection_vec(
@@ -3093,14 +3088,14 @@ fn build_geometry_ir(
     crate::history::configuration::bind_configuration_topology_selections(
         &mut ir,
         &histories,
-        &native.feature_input_lanes,
+        &all_lanes,
         &face_identities,
     )?;
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         &mut ir.model.features,
         &histories,
-        &native.feature_input_lanes,
+        &all_lanes,
         &ir.model.faces,
         &ir.model.surfaces,
     );
@@ -3120,6 +3115,11 @@ fn build_geometry_ir(
         Some(&pattern_hole_nominals),
     );
     stamp_feature_baseline(&mut ir)?;
+    let mut native = crate::native::SldprtNative {
+        feature_histories: histories,
+        feature_input_lanes: all_lanes,
+        pmi_dimensions,
+    };
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -4283,7 +4283,7 @@ fn build_metadata_ir(
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(&mut ir)?;
     let native = crate::native::SldprtNative {
-        feature_histories: histories.clone(),
+        feature_histories: histories,
         feature_input_lanes: all_lanes,
         pmi_dimensions,
     };
@@ -4293,7 +4293,7 @@ fn build_metadata_ir(
         "admit SLDPRT entities",
     )?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
-    stamp_sketch_baseline(&mut ir, &native)?;
+    stamp_sketch_baseline(&mut ir, &native.feature_input_lanes)?;
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(&mut ir)?;
@@ -5063,11 +5063,11 @@ fn stamp_configuration_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
 /// patterns from the payload.
 fn stamp_sketch_baseline(
     ir: &mut CadIr,
-    native: &crate::native::SldprtNative,
+    lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), CodecError> {
     let neutral_hash = crate::resolved_features::hashes::sketch_hash(ir)?;
     let constraint_hash = crate::resolved_features::hashes::constraint_hash(ir)?;
-    let native_hash = crate::resolved_features::hashes::lane_hash(native)?;
+    let native_hash = crate::resolved_features::hashes::lane_hash(lanes)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_sketch_local_sha256"),
