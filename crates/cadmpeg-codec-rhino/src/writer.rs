@@ -1181,10 +1181,15 @@ fn generated_projected_brep_c2_curve(
         WritableEdgeCurve::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
             projected
-                .edit_control_points(|point| {
-                    let uv = plane_uv(*point, origin, u_axis, v_axis);
-                    *point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                    Ok(())
+                .try_map_control_points(|_, point| {
+                    let mut point = point.get();
+                    let uv = plane_uv(point, origin, u_axis, v_axis);
+                    point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
                 })
                 .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             if sense == Sense::Reversed {
@@ -1661,7 +1666,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
     let mut shells = std::collections::BTreeSet::new();
     let mut vertices = std::collections::BTreeSet::new();
     let mut points = std::collections::BTreeSet::new();
-    let mut groups = Vec::with_capacity(model.bodies.len());
+    let mut groups = Vec::new();
     for body in &model.bodies {
         if body.kind != BodyKind::General || body.regions.len() != 1 || body.transform.is_some() {
             return Err(CodecError::NotImplemented(format!(
@@ -1704,7 +1709,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 body.id.as_str()
             )));
         }
-        let mut group = Vec::with_capacity(shell.free_vertices().len());
+        let mut group = Vec::new();
         for vertex_id in shell.free_vertices() {
             let vertex = model
                 .vertices
@@ -1863,7 +1868,7 @@ fn check_knot_roundtrip(
 fn header(version: RhinoArchiveVersion) -> Vec<u8> {
     let text = version.value().to_string();
     let mut bytes = MAGIC.to_vec();
-    bytes.extend(std::iter::repeat_n(b' ', 8 - text.len()));
+    bytes.extend(std::iter::repeat_with(|| b' ').take(8 - text.len()));
     bytes.extend(text.bytes());
     bytes
 }

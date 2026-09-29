@@ -16,26 +16,33 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::scalar::PositiveReal;
 
-use crate::decode_resource::{clone_optional_identity, reserve_optional_vec};
-
 fn copy_nurbs_curve(
     curve: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NurbsCurve, CodecError> {
-    let mut knots =
-        reserve_optional_vec(ctx, curve.knots().len(), "iges solved curve copied knots")?;
+    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        curve.knots().len(),
+        "iges solved curve copied knots",
+    )?;
     knots.extend_from_slice(curve.knots().as_slice());
     let knots = KnotVector::new(knots).map_err(CodecError::malformed)?;
     let poles = match curve.pole_rows() {
         NurbsPoles3::Polynomial { points } => {
-            let mut copied =
-                reserve_optional_vec(ctx, points.len(), "iges solved curve copied poles")?;
+            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                points.len(),
+                "iges solved curve copied poles",
+            )?;
             copied.extend_from_slice(points);
             NurbsPoles3::Polynomial { points: copied }
         }
         NurbsPoles3::Rational { points } => {
-            let mut copied =
-                reserve_optional_vec(ctx, points.len(), "iges solved curve copied weighted poles")?;
+            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                points.len(),
+                "iges solved curve copied weighted poles",
+            )?;
             copied.extend_from_slice(points);
             NurbsPoles3::Rational { points: copied }
         }
@@ -47,11 +54,17 @@ fn copy_nurbs_surface(
     surface: &NurbsSurface,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NurbsSurface, CodecError> {
-    let mut u_knots =
-        reserve_optional_vec(ctx, surface.u_knots().len(), "iges copied support u knots")?;
+    let mut u_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        surface.u_knots().len(),
+        "iges copied support u knots",
+    )?;
     u_knots.extend_from_slice(surface.u_knots().as_slice());
-    let mut v_knots =
-        reserve_optional_vec(ctx, surface.v_knots().len(), "iges copied support v knots")?;
+    let mut v_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        surface.v_knots().len(),
+        "iges copied support v knots",
+    )?;
     v_knots.extend_from_slice(surface.v_knots().as_slice());
     let u = NurbsSurfaceAxis::new(
         surface.u_degree(),
@@ -65,22 +78,34 @@ fn copy_nurbs_surface(
     );
     let poles = match surface.pole_grid() {
         NurbsPoleGrid::Polynomial { rows } => {
-            let mut copied =
-                reserve_optional_vec(ctx, rows.len(), "iges copied support pole rows")?;
+            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                rows.len(),
+                "iges copied support pole rows",
+            )?;
             for row in rows {
-                let mut points =
-                    reserve_optional_vec(ctx, row.len(), "iges copied support pole row")?;
+                let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                    ctx,
+                    row.len(),
+                    "iges copied support pole row",
+                )?;
                 points.extend_from_slice(row);
                 copied.push(points);
             }
             NurbsPoleGrid::Polynomial { rows: copied }
         }
         NurbsPoleGrid::Rational { rows } => {
-            let mut copied =
-                reserve_optional_vec(ctx, rows.len(), "iges copied support weighted rows")?;
+            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                rows.len(),
+                "iges copied support weighted rows",
+            )?;
             for row in rows {
-                let mut points =
-                    reserve_optional_vec(ctx, row.len(), "iges copied support weighted row")?;
+                let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                    ctx,
+                    row.len(),
+                    "iges copied support weighted row",
+                )?;
                 points.extend_from_slice(row);
                 copied.push(points);
             }
@@ -94,13 +119,13 @@ fn copy_polygonal_surface(
     surface: &PolygonalSurface,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<PolygonalSurface, CodecError> {
-    let mut vertices = reserve_optional_vec(
+    let mut vertices = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
         ctx,
         surface.vertices().len(),
         "iges copied support polygon vertices",
     )?;
     vertices.extend_from_slice(surface.vertices());
-    let mut triangles = reserve_optional_vec(
+    let mut triangles = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
         ctx,
         surface.triangles().len(),
         "iges copied support polygon triangles",
@@ -149,7 +174,7 @@ pub(super) fn copy_solved_surface(
         SolvedSurfaceGeometry::Unknown { record } => SolvedSurfaceGeometry::Unknown {
             record: record
                 .as_ref()
-                .map(|id| clone_optional_identity(ctx, id, "iges copied support unknown ID"))
+                .map(|id| id.try_clone_for_decode(ctx, "iges copied support unknown ID"))
                 .transpose()?,
         },
     })
@@ -167,11 +192,8 @@ pub(super) fn copy_surface_geometry(
             construction,
             cache,
         } => SurfaceGeometry::Procedural {
-            construction: clone_optional_identity(
-                ctx,
-                construction,
-                "iges copied support construction ID",
-            )?,
+            construction: construction
+                .try_clone_for_decode(ctx, "iges copied support construction ID")?,
             cache: cache
                 .as_ref()
                 .map(|solved| copy_solved_surface(solved, ctx))
@@ -186,8 +208,11 @@ fn copy_polyline(
 ) -> Result<PolylineCurve, CodecError> {
     let count = curve.point_count();
     let samples = if let Some(parameters) = curve.parameters() {
-        let mut vertices =
-            reserve_optional_vec(ctx, count, "iges solved curve copied polyline samples")?;
+        let mut vertices = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+            ctx,
+            count,
+            "iges solved curve copied polyline samples",
+        )?;
         vertices.extend(
             parameters
                 .zip(curve.points())
@@ -197,8 +222,11 @@ fn copy_polyline(
             vertices: NonEmptyMembers::try_from(vertices).map_err(CodecError::malformed)?,
         }
     } else {
-        let mut points =
-            reserve_optional_vec(ctx, count, "iges solved curve copied polyline samples")?;
+        let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+            ctx,
+            count,
+            "iges solved curve copied polyline samples",
+        )?;
         points.extend(curve.points());
         PolylineSamples::Unparameterized {
             points: NonEmptyMembers::try_from(points).map_err(CodecError::malformed)?,
@@ -229,18 +257,16 @@ pub(super) fn copy_solved_curve(
             segments,
             self_intersect,
         } => {
-            let mut copied = reserve_optional_vec(
+            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
                 ctx,
                 segments.len(),
                 "iges solved curve copied composite segments",
             )?;
             for segment in segments {
                 copied.push(cadmpeg_ir::geometry::CompositeCurveSegment {
-                    curve: clone_optional_identity(
-                        ctx,
-                        &segment.curve,
-                        "iges solved curve copied composite ID",
-                    )?,
+                    curve: segment
+                        .curve
+                        .try_clone_for_decode(ctx, "iges solved curve copied composite ID")?,
                     same_sense: segment.same_sense,
                     transition: segment.transition,
                 });
@@ -269,7 +295,7 @@ pub(super) fn copy_solved_curve(
         SolvedCurveGeometry::Unknown { record } => SolvedCurveGeometry::Unknown {
             record: record
                 .as_ref()
-                .map(|id| clone_optional_identity(ctx, id, "iges solved curve copied unknown ID"))
+                .map(|id| id.try_clone_for_decode(ctx, "iges solved curve copied unknown ID"))
                 .transpose()?,
         },
     })

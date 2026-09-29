@@ -195,7 +195,8 @@ fn parse_stream_grammar<'a>(
         section_count as u64,
         "admit UFRxDoc section-version entries",
     )?;
-    let mut section_versions = Vec::with_capacity(section_count);
+    let mut section_versions =
+        DecodeContext::admitted_vec(section_count, "admit UFRxDoc section-version entries")?;
     for _ in 0..section_count {
         section_versions.push(cursor.u16("section version")?);
     }
@@ -322,7 +323,8 @@ fn parse_stream_grammar<'a>(
     let caption = cursor.utf16(ctx, "external-reference caption", 65_536)?;
     cursor.u32("external-reference table state")?;
     ctx.charge_collection_items(reference_count as u64, "admit Inventor external references")?;
-    let mut references = Vec::with_capacity(reference_count);
+    let mut references =
+        DecodeContext::admitted_vec(reference_count, "admit Inventor external references")?;
     for _ in 0..reference_count {
         let path = cursor.utf16(ctx, "external path", 65_536)?;
         let library_id = cursor.i32("reference library id")?;
@@ -340,7 +342,10 @@ fn parse_stream_grammar<'a>(
             state_count as u64,
             "admit Inventor external-reference state groups",
         )?;
-        let mut state_groups = Vec::with_capacity(state_count);
+        let mut state_groups = DecodeContext::admitted_vec(
+            state_count,
+            "admit Inventor external-reference state groups",
+        )?;
         for _ in 0..state_count {
             state_groups.push([
                 cursor.u16("reference state-group entry")?,
@@ -421,7 +426,7 @@ fn parse_embedded_references<'a>(
 ) -> Result<Vec<InventorEmbeddedReference<'a>>, CodecError> {
     let count = cursor.count32("embedded-reference count", 1_000_000)?;
     ctx.charge_collection_items(count as u64, "admit UFRxDoc embedded references")?;
-    let mut references = Vec::with_capacity(count);
+    let mut references = DecodeContext::admitted_vec(count, "admit UFRxDoc embedded references")?;
     for _ in 0..count {
         let start = cursor.position();
         let value_0 = cursor.u32("embedded-reference value 0")?;
@@ -476,7 +481,7 @@ fn parse_occurrences<'a>(
 ) -> Result<Vec<UfrxOccurrence<'a>>, CodecError> {
     let count = cursor.count32("occurrence count", 1_000_000)?;
     ctx.charge_collection_items(count as u64, "admit UFRxDoc occurrences")?;
-    let mut occurrences = Vec::with_capacity(count);
+    let mut occurrences = DecodeContext::admitted_vec(count, "admit UFRxDoc occurrences")?;
     for _ in 0..count {
         let start = cursor.position();
         let end_string_flag = cursor.u32("occurrence end-string flag")?;
@@ -744,7 +749,7 @@ fn parse_model_states<'a>(
     count: usize,
 ) -> Result<Vec<UfrxModelState<'a>>, CodecError> {
     ctx.charge_collection_items(count as u64, "admit UFRxDoc model states")?;
-    let mut states = Vec::with_capacity(count);
+    let mut states = DecodeContext::admitted_vec(count, "admit UFRxDoc model states")?;
     for _ in 0..count {
         let prefix = cursor.u8("model-state prefix")?;
         let name = cursor.utf16(ctx, "model-state name", 65_536)?;
@@ -758,7 +763,8 @@ fn parse_model_states<'a>(
             parameter_count as u64,
             "admit UFRxDoc model-state parameters",
         )?;
-        let mut parameters = Vec::with_capacity(parameter_count);
+        let mut parameters =
+            DecodeContext::admitted_vec(parameter_count, "admit UFRxDoc model-state parameters")?;
         for _ in 0..parameter_count {
             parameters.push(UfrxModelStateParameter {
                 name: cursor.utf16(ctx, "model-state parameter name", 65_536)?,
@@ -802,7 +808,8 @@ fn parse_schema_table(
         section_count as u64,
         "admit UFRxDoc section-version entries",
     )?;
-    let mut section_versions = Vec::with_capacity(section_count);
+    let mut section_versions =
+        DecodeContext::admitted_vec(section_count, "admit UFRxDoc section-version entries")?;
     for _ in 0..section_count {
         section_versions.push(cursor.u16("section version")?);
     }
@@ -912,15 +919,11 @@ impl<'a> Cursor<'a> {
         let utf8_len = crate::reader::utf16_utf8_len(self.view, count)
             .ok_or_else(|| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-16")))?;
         let _units = ctx.reserve_scoped(
-            u64::try_from(len).map_err(|_| {
-                ctx.refuse_codec_limit("UFRxDoc UTF-16 unit byte count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(len),
             "decode UFRxDoc UTF-16 units",
         )?;
         ctx.charge_retained(
-            u64::try_from(utf8_len).map_err(|_| {
-                ctx.refuse_codec_limit("UFRxDoc UTF-8 byte count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(utf8_len),
             "retain UFRxDoc string",
         )?;
         // `utf16_le` proves the byte count before it reads a code unit, so a

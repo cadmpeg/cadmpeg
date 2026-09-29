@@ -141,7 +141,9 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
         },
         cache: None,
     });
-    let revision = offset(OffsetExtension::Revision { form: form.clone() });
+    let revision = offset(OffsetExtension::Revision {
+        form: Box::new(form.clone()),
+    });
 
     let legacy_wire = serde_json::to_value(&legacy).unwrap();
     assert_eq!(
@@ -241,7 +243,7 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
     let revision = ExactSurfacePayload::try_new(ExactSpline::Revision {
         intervals: [[Some(0.0), Some(1.0)]; 2],
         extension: 0,
-        form: form.clone(),
+        form: Box::new(form.clone()),
     })
     .unwrap();
 
@@ -979,14 +981,14 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
             None,
             false,
             OffsetExtension::Revision {
-                form: offset_form(fields),
+                form: Box::new(offset_form(fields)),
             },
         )
     };
     let spline = |fields: Fields| ExactSpline::Revision {
         intervals: [[Some(0.0), None], [None, Some(1.0)]],
         extension: 0,
-        form: form(fields),
+        form: Box::new(form(fields)),
     };
     let exact = |fields: Fields| ExactSurfacePayload::try_new(spline(fields));
     let exact_wire = |fields: Fields| {

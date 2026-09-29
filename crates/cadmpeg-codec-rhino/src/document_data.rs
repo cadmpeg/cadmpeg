@@ -98,10 +98,6 @@ struct SettingRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent serialized annotation scaling switches"
-)]
 struct AnnotationSettingsRecord {
     id: String,
     source_offset: u64,
@@ -144,14 +140,11 @@ struct GridDefaultsRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent serialized render switches"
-)]
 struct RenderSettingsRecord {
     id: String,
     source_offset: u64,
-    custom_image_size: bool,
+    #[serde(flatten)]
+    image_flags: RenderImageFlags,
     image_width_pixels: i32,
     image_height_pixels: i32,
     image_dpi: Option<f64>,
@@ -161,17 +154,12 @@ struct RenderSettingsRecord {
     background_color: [u8; 4],
     background_bottom_color: Option<[u8; 4]>,
     background_bitmap_path: String,
-    use_hidden_lights: bool,
-    depth_cue: bool,
-    flat_shade: bool,
-    render_backfaces: bool,
-    render_points: bool,
-    render_curves: bool,
-    render_isoparams: bool,
-    render_mesh_edges: bool,
-    render_annotations: bool,
-    scale_background_to_fit: bool,
-    transparent_background: bool,
+    #[serde(flatten)]
+    lighting_flags: RenderLightingFlags,
+    #[serde(flatten)]
+    surface_flags: RenderSurfaceFlags,
+    #[serde(flatten)]
+    detail_flags: RenderDetailFlags,
     antialias_style: i32,
     shadowmap_style: i32,
     shadowmap_size_pixels: [i32; 2],
@@ -182,6 +170,34 @@ struct RenderSettingsRecord {
     named_view: String,
     snapshot: String,
     force_viewport_aspect_ratio: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct RenderImageFlags {
+    custom_image_size: bool,
+    scale_background_to_fit: bool,
+    transparent_background: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct RenderLightingFlags {
+    use_hidden_lights: bool,
+    depth_cue: bool,
+    flat_shade: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct RenderSurfaceFlags {
+    render_backfaces: bool,
+    render_points: bool,
+    render_curves: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct RenderDetailFlags {
+    render_isoparams: bool,
+    render_mesh_edges: bool,
+    render_annotations: bool,
 }
 
 fn length(
@@ -218,8 +234,7 @@ fn annotation_settings(
     }
     let dimension_scale = annotation_scale(&mut reader)?;
     let value = AnnotationSettingsRecord {
-        id: crate::wire::copy_retained_string(
-            ctx,
+        id: ctx.copy_retained_text(
             "rhino:document:annotation_settings#current",
             "Rhino annotation settings ID",
         )?,
@@ -255,8 +270,7 @@ fn annotation_settings(
             if id.is_nil() {
                 None
             } else {
-                Some(crate::wire::admitted_format(
-                    ctx,
+                Some(ctx.format_retained(
                     format_args!("{id}"),
                     "Rhino annotation dimension layer UUID",
                 )?)
@@ -284,8 +298,7 @@ fn grid_defaults(
         ));
     }
     let value = GridDefaultsRecord {
-        id: crate::wire::copy_retained_string(
-            ctx,
+        id: ctx.copy_retained_text(
             "rhino:document:grid_defaults#current",
             "Rhino grid defaults ID",
         )?,
@@ -436,13 +449,16 @@ fn render_settings(
     };
     reader.skip_remaining()?;
     Ok(RenderSettingsRecord {
-        id: crate::wire::copy_retained_string(
-            ctx,
+        id: ctx.copy_retained_text(
             "rhino:document:render_settings#current",
             "Rhino render settings ID",
         )?,
         source_offset: source_offset as u64,
-        custom_image_size,
+        image_flags: RenderImageFlags {
+            custom_image_size,
+            scale_background_to_fit,
+            transparent_background,
+        },
         image_width_pixels,
         image_height_pixels,
         image_dpi,
@@ -452,17 +468,21 @@ fn render_settings(
         background_color,
         background_bottom_color,
         background_bitmap_path,
-        use_hidden_lights,
-        depth_cue,
-        flat_shade,
-        render_backfaces,
-        render_points,
-        render_curves,
-        render_isoparams,
-        render_mesh_edges,
-        render_annotations,
-        scale_background_to_fit,
-        transparent_background,
+        lighting_flags: RenderLightingFlags {
+            use_hidden_lights,
+            depth_cue,
+            flat_shade,
+        },
+        surface_flags: RenderSurfaceFlags {
+            render_backfaces,
+            render_points,
+            render_curves,
+        },
+        detail_flags: RenderDetailFlags {
+            render_isoparams,
+            render_mesh_edges,
+            render_annotations,
+        },
         antialias_style,
         shadowmap_style,
         shadowmap_size_pixels,
@@ -550,18 +570,14 @@ fn retained_numbered_id(
     index: usize,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    crate::wire::admitted_format(ctx, format_args!("{prefix}{index:04}"), operation)
+    ctx.format_retained(format_args!("{prefix}{index:04}"), operation)
 }
 
 fn retained_typecode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     typecode: u32,
 ) -> Result<String, CodecError> {
-    crate::wire::admitted_format(
-        ctx,
-        format_args!("{typecode:#010x}"),
-        "Rhino setting typecode",
-    )
+    ctx.format_retained(format_args!("{typecode:#010x}"), "Rhino setting typecode")
 }
 
 fn retained_sha256(
@@ -572,7 +588,7 @@ fn retained_sha256(
     use std::fmt::Write;
 
     let digest = cadmpeg_ir::hash::sha256(bytes);
-    let mut text = crate::wire::admitted_retained_string(ctx, 64, operation)?;
+    let mut text = ctx.retained_string(64, operation)?;
     for byte in digest {
         write!(&mut text, "{byte:02x}")
             .map_err(|_| CodecError::malformed("Rhino setting SHA-256 formatting failed"))?;
@@ -590,80 +606,54 @@ pub(crate) fn install(
     ir: &mut CadIr,
 ) -> Result<NativeInstall, CodecError> {
     let properties = &scan.metadata.properties;
-    let mut revisions = crate::wire::admitted_collection(
-        ctx,
+    let mut revisions = ctx.collection_vec(
         usize::from(properties.revision_history.is_some()),
         "Rhino document revisions",
     )?;
     if let Some(value) = &properties.revision_history {
         revisions.push(RevisionRecord {
-            id: crate::wire::copy_retained_string(
-                ctx,
-                "rhino:document:revision#current",
-                "Rhino revision ID",
-            )?,
+            id: ctx.copy_retained_text("rhino:document:revision#current", "Rhino revision ID")?,
             source_offset: value.source.range.start as u64,
-            created_by: crate::wire::copy_retained_string(
-                ctx,
-                &value.created_by,
-                "Rhino revision creator",
-            )?,
+            created_by: ctx.copy_retained_text(&value.created_by, "Rhino revision creator")?,
             created_utc_fields: value.created.fields,
-            last_edited_by: crate::wire::copy_retained_string(
-                ctx,
-                &value.last_edited_by,
-                "Rhino revision editor",
-            )?,
+            last_edited_by: ctx
+                .copy_retained_text(&value.last_edited_by, "Rhino revision editor")?,
             last_edited_utc_fields: value.last_edited.fields,
             revision_count: value.revision_count,
         });
     }
-    let mut notes = crate::wire::admitted_collection(
-        ctx,
+    let mut notes = ctx.collection_vec(
         usize::from(properties.notes.is_some()),
         "Rhino document notes",
     )?;
     if let Some(value) = &properties.notes {
         notes.push(NotesRecord {
-            id: crate::wire::copy_retained_string(
-                ctx,
-                "rhino:document:notes#current",
-                "Rhino notes ID",
-            )?,
+            id: ctx.copy_retained_text("rhino:document:notes#current", "Rhino notes ID")?,
             source_offset: value.source.range.start as u64,
             html: value.html,
-            text: crate::wire::copy_retained_string(ctx, &value.text, "Rhino notes text")?,
+            text: ctx.copy_retained_text(&value.text, "Rhino notes text")?,
             visible: value.visible,
             window_rectangle: value.rectangle,
             locked: value.locked,
         });
     }
-    let mut applications = crate::wire::admitted_collection(
-        ctx,
+    let mut applications = ctx.collection_vec(
         usize::from(properties.application.is_some()),
         "Rhino document applications",
     )?;
     if let Some(value) = &properties.application {
         applications.push(ApplicationRecord {
-            id: crate::wire::copy_retained_string(
-                ctx,
-                "rhino:document:application#writer",
-                "Rhino application ID",
-            )?,
+            id: ctx
+                .copy_retained_text("rhino:document:application#writer", "Rhino application ID")?,
             source_offset: value.source.range.start as u64,
-            name: crate::wire::copy_retained_string(ctx, &value.name, "Rhino application name")?,
-            url: crate::wire::copy_retained_string(ctx, &value.url, "Rhino application URL")?,
-            details: crate::wire::copy_retained_string(
-                ctx,
-                &value.details,
-                "Rhino application details",
-            )?,
+            name: ctx.copy_retained_text(&value.name, "Rhino application name")?,
+            url: ctx.copy_retained_text(&value.url, "Rhino application URL")?,
+            details: ctx.copy_retained_text(&value.details, "Rhino application details")?,
         });
     }
     let settings = &scan.metadata.settings;
     let document_settings = [DocumentSettingsRecord {
-        id: crate::wire::copy_retained_string(
-            ctx,
+        id: ctx.copy_retained_text(
             "rhino:document:settings#current",
             "Rhino document settings ID",
         )?,
@@ -671,12 +661,12 @@ pub(crate) fn install(
         archive_file_name: properties
             .as_file_name
             .as_deref()
-            .map(|value| crate::wire::copy_retained_string(ctx, value, "Rhino archive file name"))
+            .map(|value| ctx.copy_retained_text(value, "Rhino archive file name"))
             .transpose()?,
         model_url: settings
             .model_url
             .as_deref()
-            .map(|value| crate::wire::copy_retained_string(ctx, value, "Rhino model URL"))
+            .map(|value| ctx.copy_retained_text(value, "Rhino model URL"))
             .transpose()?,
         current_layer_index: settings.current_layer,
         current_material_index: settings.current_material.map(|selection| selection.value),
@@ -687,11 +677,7 @@ pub(crate) fn install(
         current_font_index: settings.current_font,
         current_dimension_style_index: settings.current_dimstyle,
     }];
-    let mut previews = crate::wire::admitted_collection(
-        ctx,
-        properties.previews.len(),
-        "Rhino document previews",
-    )?;
+    let mut previews = ctx.collection_vec(properties.previews.len(), "Rhino document previews")?;
     for (index, value) in properties.previews.iter().enumerate() {
         previews.push(PreviewRecord {
             id: retained_numbered_id(ctx, "rhino:document:preview#", index, "Rhino preview ID")?,
@@ -705,8 +691,7 @@ pub(crate) fn install(
             )?,
         });
     }
-    let mut setting_records = crate::wire::admitted_collection(
-        ctx,
+    let mut setting_records = ctx.collection_vec(
         settings.unsupported.len(),
         "Rhino unsupported setting records",
     )?;
@@ -741,39 +726,24 @@ pub(crate) fn install(
                 ANNOTATION_SETTINGS | GRID_DEFAULTS | RENDER_SETTINGS
             ) && binding.neutral_scale().is_none()
             {
-                let message = crate::wire::admitted_format(ctx, format_args!(
+                let message = ctx.format_retained(format_args!(
                     "setting record {:#010x} at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
                     record.typecode,
                     record.range.start,
                     binding.label()
                 ), "Rhino unit-binding setting message")?;
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut losses,
-                    1,
-                    "Rhino document setting losses",
-                )?;
+                ctx.reserve_vec(&mut losses, 1, "Rhino document setting losses")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(message.len()),
                     "Rhino unit-binding loss message",
                 )?;
                 losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(&message));
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut opaque_records,
-                    1,
-                    "Rhino opaque setting records",
-                )?;
+                ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
                 opaque_records.push(OpaqueRecord {
                     table_typecode: table.typecode,
                     record: record.clone(),
                 });
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut setting_records,
-                    1,
-                    "Rhino retained setting records",
-                )?;
+                ctx.reserve_vec(&mut setting_records, 1, "Rhino retained setting records")?;
                 setting_records.push(SettingRecord {
                     id: retained_numbered_id(
                         ctx,
@@ -800,12 +770,7 @@ pub(crate) fn install(
                 match annotation_settings(ctx, scan.data, record.body(), record.range.start, scale)
                 {
                     Ok(value) => {
-                        crate::wire::reserve_collection(
-                            ctx,
-                            &mut annotations,
-                            1,
-                            "Rhino annotation settings",
-                        )?;
+                        ctx.reserve_vec(&mut annotations, 1, "Rhino annotation settings")?;
                         annotations.push(value);
                         Ok(())
                     }
@@ -817,7 +782,7 @@ pub(crate) fn install(
                 };
                 match grid_defaults(ctx, scan.data, record.body(), record.range.start, scale) {
                     Ok(value) => {
-                        crate::wire::reserve_collection(ctx, &mut grids, 1, "Rhino grid defaults")?;
+                        ctx.reserve_vec(&mut grids, 1, "Rhino grid defaults")?;
                         grids.push(value);
                         Ok(())
                     }
@@ -836,12 +801,7 @@ pub(crate) fn install(
                     scale,
                 ) {
                     Ok(value) => {
-                        crate::wire::reserve_collection(
-                            ctx,
-                            &mut renders,
-                            1,
-                            "Rhino render settings",
-                        )?;
+                        ctx.reserve_vec(&mut renders, 1, "Rhino render settings")?;
                         renders.push(value);
                         render_settings_seen = true;
                         Ok(())
@@ -852,8 +812,7 @@ pub(crate) fn install(
                 if render_settings_seen {
                     match render_userdata(ctx, scan.data, record, scan.archive) {
                         Ok(_) => {
-                            crate::wire::reserve_collection(
-                                ctx,
+                            ctx.reserve_vec(
                                 &mut opaque_records,
                                 1,
                                 "Rhino opaque setting records",
@@ -870,12 +829,7 @@ pub(crate) fn install(
                         Err(error) => Err(error),
                     }
                 } else {
-                    crate::wire::reserve_collection(
-                        ctx,
-                        &mut opaque_records,
-                        1,
-                        "Rhino opaque setting records",
-                    )?;
+                    ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),
@@ -889,22 +843,12 @@ pub(crate) fn install(
                 if let FramingError::Resource(limit) = &error {
                     return Err(CodecError::ResourceLimit(*limit));
                 }
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut opaque_records,
-                    1,
-                    "Rhino opaque setting records",
-                )?;
+                ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
                 opaque_records.push(OpaqueRecord {
                     table_typecode: table.typecode,
                     record: record.clone(),
                 });
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut setting_records,
-                    1,
-                    "Rhino retained setting records",
-                )?;
+                ctx.reserve_vec(&mut setting_records, 1, "Rhino retained setting records")?;
                 setting_records.push(SettingRecord {
                     id: retained_numbered_id(
                         ctx,
@@ -920,11 +864,9 @@ pub(crate) fn install(
                         &scan.data[record.range.clone()],
                         "Rhino setting SHA-256",
                     )?,
-                    parse_error: Some(crate::wire::admitted_format(
-                        ctx,
-                        format_args!("{error}"),
-                        "Rhino setting parse error",
-                    )?),
+                    parse_error: Some(
+                        ctx.format_retained(format_args!("{error}"), "Rhino setting parse error")?,
+                    ),
                 });
             }
         }

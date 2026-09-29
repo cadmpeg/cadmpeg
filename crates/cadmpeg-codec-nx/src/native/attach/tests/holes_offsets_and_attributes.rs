@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 
 fn insert_test_procedural_surface(
     ir: &mut cadmpeg_ir::document::CadIr,
-    owner: SurfaceId,
+    owner: &SurfaceId,
     procedural: ProceduralSurface,
 ) {
     ir.model.surfaces.push(Surface {
@@ -50,8 +50,8 @@ fn attach_test_body_procedural_surface(
     owner: SurfaceId,
     procedural: ProceduralSurface,
 ) {
-    attach_test_body_surface(ir, body, owner.clone());
-    insert_test_procedural_surface(ir, owner, procedural);
+    insert_test_procedural_surface(ir, &owner, procedural);
+    attach_test_body_surface(ir, body, owner);
 }
 
 #[test]
@@ -905,7 +905,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     ));
 
     let (unowned, procedural) = make_offset(99, -40.0);
-    insert_test_procedural_surface(&mut ir, unowned, procedural);
+    insert_test_procedural_surface(&mut ir, &unowned, procedural);
     assert!(project_offset(&ir, std::slice::from_ref(&output)).is_some());
     ir.model.procedural_surfaces.pop();
     ir.model.surfaces.pop();
@@ -1018,7 +1018,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     ));
 
     let (unowned, procedural) = make_offset(99, 40.0);
-    insert_test_procedural_surface(&mut ir, unowned, procedural);
+    insert_test_procedural_surface(&mut ir, &unowned, procedural);
     assert!(project_thicken(&ir, std::slice::from_ref(&output)).is_some());
     ir.model.procedural_surfaces.pop();
     ir.model.surfaces.pop();
@@ -1313,7 +1313,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             },) if faces.len() == 1 && second.len() == 1 && faces != second)));
 
     let (unowned, procedural) = make_blend(99, BlendRadiusLaw::constant(17.0).unwrap());
-    insert_test_procedural_surface(&mut ir, unowned, procedural);
+    insert_test_procedural_surface(&mut ir, &unowned, procedural);
     let (definition, _) = project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
         .expect("required invariant");
     assert!(matches!(

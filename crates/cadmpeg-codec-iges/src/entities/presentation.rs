@@ -3,9 +3,7 @@
 
 use super::geometry::ProjectionOutcome;
 use super::{mirror_flag_valid, push_attributed_loss, vertical_text_flag_valid};
-use crate::decode_resource::{
-    format_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec_growth,
-};
+
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -46,11 +44,9 @@ fn retained_utf8(
     let Ok(value) = std::str::from_utf8(bytes) else {
         return Ok(None);
     };
-    Ok(Some(format_retained(
-        ctx,
-        format_args!("{value}"),
-        operation,
-    )?))
+    Ok(Some(
+        ctx.format_retained(format_args!("{value}"), operation)?,
+    ))
 }
 
 fn push_presentation_loss(
@@ -167,8 +163,7 @@ fn appearance(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if ir.model.appearances.iter().all(|item| item.id != id) {
-        reserve_vec_growth(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.appearances,
             1,
             "iges neutral appearance slots",
@@ -185,11 +180,9 @@ fn appearance(
             library_id: None,
             visual_guid: None,
             physical_token: None,
-            schema: Some(format_retained(
-                ctx,
-                format_args!("IGES color"),
-                "iges appearance schema",
-            )?),
+            schema: Some(
+                ctx.format_retained(format_args!("IGES color"), "iges appearance schema")?,
+            ),
             category: None,
             base_color: Some(color),
             properties: BTreeMap::new(),
@@ -271,7 +264,7 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut records,
             record.directory_sequence,
@@ -281,7 +274,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut entries,
             entry.sequence,
@@ -302,7 +295,7 @@ pub(super) fn project(
             .copied()
             .and_then(|record| text_font_definition(entry, record, &entries, global.global_table()))
         {
-            insert_optional_btree_map(
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                 Some(ctx),
                 &mut text_fonts,
                 entry.sequence,
@@ -329,7 +322,7 @@ pub(super) fn project(
                 .is_none_or(|target| text_fonts.contains_key(&target))
         });
         if target_valid && !cyclic {
-            insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -369,7 +362,7 @@ pub(super) fn project(
                 .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some());
         if directory_valid && fields_valid {
-            insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -396,7 +389,7 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                if !insert_optional_btree_set(
+                if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                     Some(ctx),
                     &mut levels,
                     level,
@@ -411,7 +404,7 @@ pub(super) fn project(
             false
         };
         if levels_valid {
-            insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -481,7 +474,7 @@ pub(super) fn project(
             })
         };
         if valid {
-            insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -554,12 +547,11 @@ pub(super) fn project(
             )?;
             continue;
         }
-        let Some(color) = Color::new(
-            (red / 100.0) as f32,
-            (green / 100.0) as f32,
-            (blue / 100.0) as f32,
-            1.0,
-        ) else {
+        let color = cadmpeg_core::convert::f32_from_f64(red / 100.0)
+            .zip(cadmpeg_core::convert::f32_from_f64(green / 100.0))
+            .zip(cadmpeg_core::convert::f32_from_f64(blue / 100.0))
+            .and_then(|((red, green), blue)| Color::new(red, green, blue, 1.0));
+        let Some(color) = color else {
             push_presentation_loss(
                 ctx,
                 &mut losses,
@@ -568,7 +560,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut defined,
             entry.sequence,
@@ -585,7 +577,7 @@ pub(super) fn project(
             color,
             ctx,
         )?;
-        insert_optional_btree_set(
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             Some(ctx),
             &mut decoded,
             entry.sequence,
@@ -696,26 +688,19 @@ pub(super) fn project(
             continue;
         };
         let body = &mut ir.model.bodies[index];
-        let body_id = crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &body.id,
-            "iges appearance body ID copy",
-        )?;
+        let body_id = body
+            .id
+            .try_clone_for_decode(Some(ctx), "iges appearance body ID copy")?;
         body.color = Some(color);
         body.visible = Some(visible);
         appearance(
             ir,
-            crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &appearance_id,
-                "iges appearance ID copy",
-            )?,
+            appearance_id.try_clone_for_decode(Some(ctx), "iges appearance ID copy")?,
             None,
             color,
             ctx,
         )?;
-        reserve_vec_growth(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.appearance_bindings,
             1,
             "iges appearance binding slots",
@@ -733,11 +718,9 @@ pub(super) fn project(
             target: AppearanceTarget::Body(body_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some(format_retained(
-                ctx,
-                format_args!("Body"),
-                "iges appearance object type",
-            )?),
+            object_type: Some(
+                ctx.format_retained(format_args!("Body"), "iges appearance object type")?,
+            ),
             visible: None,
             channels: BTreeMap::new(),
         });
@@ -806,25 +789,18 @@ pub(super) fn project(
             continue;
         };
         let face = &mut ir.model.faces[index];
-        let face_id = crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &face.id,
-            "iges appearance face ID copy",
-        )?;
+        let face_id = face
+            .id
+            .try_clone_for_decode(Some(ctx), "iges appearance face ID copy")?;
         face.color = Some(color);
         appearance(
             ir,
-            crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &appearance_id,
-                "iges appearance ID copy",
-            )?,
+            appearance_id.try_clone_for_decode(Some(ctx), "iges appearance ID copy")?,
             None,
             color,
             ctx,
         )?;
-        reserve_vec_growth(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.appearance_bindings,
             1,
             "iges appearance binding slots",
@@ -842,11 +818,9 @@ pub(super) fn project(
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some(format_retained(
-                ctx,
-                format_args!("Face"),
-                "iges appearance object type",
-            )?),
+            object_type: Some(
+                ctx.format_retained(format_args!("Face"), "iges appearance object type")?,
+            ),
             visible: None,
             channels: BTreeMap::new(),
         });

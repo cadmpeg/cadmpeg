@@ -18,3 +18,4 @@ mod topology;
 mod xref;
 
 mod projection_gaps;
+mod resource_limits;

@@ -551,14 +551,13 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     return;
                 };
-                let mut pole_index = 0usize;
                 curve
-                    .edit_control_points(|point| {
+                    .try_map_control_points(|pole_index, point| {
+                        let mut point = point.get();
                         if pole_index == 1 {
                             point.v += 250.0;
                         }
-                        pole_index += 1;
-                        Ok(())
+                        cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
                     })
                     .unwrap();
                 if let Some(mut weights) = curve.pole_rows().weights() {

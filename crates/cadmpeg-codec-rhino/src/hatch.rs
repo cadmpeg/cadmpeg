@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded hatch payload decoding.
-#![deny(clippy::disallowed_methods)]
 
 use crate::loss::Diagnostics;
 use std::ops::Range;
@@ -14,7 +13,8 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, FramingError}
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
 use crate::settings::{CoordinateLane, MillimeterScale, Plane};
-use crate::wire::{scaled_coordinate, ExactVec, Uuid};
+use crate::wire::{scaled_coordinate, Uuid};
+use cadmpeg_core::decode::collect::ExactVec;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 

@@ -63,6 +63,7 @@ mod native;
 mod nurbs;
 mod object_graph;
 mod pmi;
+mod resource;
 mod sketch;
 mod solve;
 mod unique_index;
@@ -114,7 +115,7 @@ impl CodecBackend for CatiaCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan_bytes(ctx, root.window())?;
-        Ok(container::summarize(&scan))
+        container::summarize(ctx, &scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

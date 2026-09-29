@@ -62,7 +62,7 @@ fn brep_counted_vectors_refuse_before_nested_allocation() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::decode_resource::reserve_vec::<u8>(&ctx, 2, operation);
+        let result = ctx.collection_vec::<u8>(2, operation);
         assert!(matches!(
             result,
             Err(CodecError::ResourceLimit(limit))
@@ -74,8 +74,9 @@ fn brep_counted_vectors_refuse_before_nested_allocation() {
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let admitted =
-        crate::decode_resource::reserve_vec::<u8>(&ctx, 2, "iges B-rep use pcurves").unwrap();
+    let admitted = ctx
+        .collection_vec::<u8>(2, "iges B-rep use pcurves")
+        .unwrap();
     assert!(admitted.capacity() >= 2);
 }
 

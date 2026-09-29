@@ -795,7 +795,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .find(|candidate| candidate.id == edge)
         .and_then(|edge| edge.tolerance);
     let _attached = ir.model.add_procedural_curve(
-        curve,
+        &curve,
         cadmpeg_ir::geometry::ProceduralCurve::new(
             cadmpeg_ir::ids::ProceduralCurveId::mint("nx:test:intersection#0")
                 .expect("identity grammar"),
@@ -839,17 +839,20 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             .unwrap();
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
 
-    crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
-        &mut ir,
-        &graph,
-        &crate::decode::ids::IdScope::stream(0),
-        target_index + 1,
-        0,
-        source_stream.clone(),
-        &mut annotations,
-        &std::collections::BTreeMap::new(),
-        &geometry_budget,
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
+            ctx,
+            &mut ir,
+            &graph,
+            &crate::decode::ids::IdScope::stream(0),
+            target_index + 1,
+            0,
+            source_stream.clone(),
+            &mut annotations,
+            &std::collections::BTreeMap::new(),
+            &geometry_budget,
+        )
+    })
     .expect("valid exactness fields");
     assert!(!ir
         .model
@@ -863,13 +866,16 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         coedge_start: 0,
         procedural_start: 0,
     };
-    crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
-        &mut ir,
-        std::slice::from_ref(&source),
-        &mut annotations,
-        &std::collections::BTreeMap::new(),
-        &geometry_budget,
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
+            ctx,
+            &mut ir,
+            std::slice::from_ref(&source),
+            &mut annotations,
+            &std::collections::BTreeMap::new(),
+            &geometry_budget,
+        )
+    })
     .expect("valid exactness fields");
 
     let completed = ir
@@ -1122,7 +1128,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
-        curve_id,
+        &curve_id,
         ProceduralCurve::new(
             procedural_id.clone(),
             ProceduralCurveDefinition::Intersection {
@@ -1297,7 +1303,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
-        carrier,
+        &carrier,
         ProceduralCurve::new(
             procedural_id.clone(),
             ProceduralCurveDefinition::Intersection {
@@ -1735,17 +1741,17 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                     let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
                         panic!("NURBS support lane");
                     };
-                    let mut pole_index = 0usize;
                     nurbs
-                        .edit_control_points(|point| {
+                        .try_map_control_points(|pole_index, point| {
                             if pole_index == 1 {
-                                *point = Point2::new(
+                                cadmpeg_ir::units::FinitePoint2::new(Point2::new(
                                     crate::decode::MISSING_TOLERANCE,
                                     crate::decode::MISSING_TOLERANCE,
-                                );
+                                ))
+                                .ok_or(())
+                            } else {
+                                Ok(point)
                             }
-                            pole_index += 1;
-                            Ok(())
                         })
                         .unwrap();
                 };
@@ -1823,9 +1829,13 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                         panic!("NURBS support lane");
                     };
                     nurbs
-                        .edit_control_points(|point| {
-                            point.u += 100.0;
-                            Ok(())
+                        .try_map_control_points(|_, point| {
+                            let point = point.get();
+                            cadmpeg_ir::units::FinitePoint2::new(Point2::new(
+                                point.u + 100.0,
+                                point.v,
+                            ))
+                            .ok_or(())
                         })
                         .unwrap();
                 };

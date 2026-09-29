@@ -2,7 +2,6 @@
 //! Placement property admission and quaternion frames.
 use crate::native::frame::FiniteFrame;
 use crate::native::PropertyRecord;
-use crate::resource::retained_format;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FiniteVector3;
@@ -16,8 +15,7 @@ pub(crate) fn placement_matrix(
 ) -> Result<Option<FiniteFrame>, CodecError> {
     match placement_matrix_value(property) {
         Ok(value) => Ok(Some(value)),
-        Err(issue) => Err(CodecError::Malformed(retained_format(
-            ctx,
+        Err(issue) => Err(CodecError::Malformed(ctx.format_retained(
             format_args!("placement property {} {issue}", property.id),
             "FreeCAD placement error",
         )?)),

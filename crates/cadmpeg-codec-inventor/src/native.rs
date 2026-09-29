@@ -23,9 +23,7 @@ fn retained_copy(
     value: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let len = u64::try_from(value.len()).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor native string length", u64::MAX - 1, u64::MAX)
-    })?;
+    let len = cadmpeg_core::decode::u64_from_index(value.len());
     ctx.charge_retained(len, operation)?;
     Ok(value.to_owned())
 }
@@ -37,9 +35,7 @@ fn retained_digest(
 ) -> Result<String, CodecError> {
     ctx.charge_retained(64, operation)?;
     ctx.charge_work(
-        u64::try_from(bytes.len()).map_err(|_| {
-            ctx.refuse_codec_limit("Inventor native digest work", u64::MAX - 1, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
         "hash Inventor native record bytes",
     )?;
     Ok(cadmpeg_ir::hash::sha256_hex(bytes))
@@ -412,9 +408,7 @@ impl AssemblyOccurrenceRecord {
             "retain Inventor assembly occurrence token",
         )?;
         ctx.charge_collection_items(
-            u64::try_from(occurrence.related_references.len()).map_err(|_| {
-                ctx.refuse_codec_limit("Inventor related-reference count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(occurrence.related_references.len()),
             "copy Inventor assembly related references",
         )?;
         Ok(Self {
@@ -510,9 +504,7 @@ impl AssemblyPlacementRecordWire {
             occurrence_id: placement.occurrence_id,
             graphics_index: placement.graphics_index,
             object_reference: placement.object_reference,
-            suffix_len: u64::try_from(placement.suffix.window().len()).map_err(|_| {
-                ctx.refuse_codec_limit("Inventor placement suffix length", u64::MAX - 1, u64::MAX)
-            })?,
+            suffix_len: cadmpeg_core::decode::u64_from_index(placement.suffix.window().len()),
             suffix_sha256: retained_digest(
                 ctx,
                 placement.suffix.window(),
@@ -1237,9 +1229,7 @@ impl RseRecordRecord {
                 "retain Inventor RSe payload digest",
             )?,
             trailing_payload_len: frame.trailing_payload_len(),
-            trailer_len: u64::try_from(frame.trailer.window().len()).map_err(|_| {
-                ctx.refuse_codec_limit("Inventor record trailer length", u64::MAX - 1, u64::MAX)
-            })?,
+            trailer_len: cadmpeg_core::decode::u64_from_index(frame.trailer.window().len()),
             trailer_sha256: retained_digest(
                 ctx,
                 frame.trailer.window(),

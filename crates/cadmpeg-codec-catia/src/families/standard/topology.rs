@@ -15,7 +15,43 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
+
+fn duplicate_degree(row: &[(usize, u8)], point: usize) -> Option<u8> {
+    row.binary_search_by_key(&point, |(key, _)| *key)
+        .ok()
+        .map(|index| row[index].1)
+}
+
+fn set_duplicate_degree(
+    ctx: &DecodeContext<'_>,
+    row: &mut Vec<(usize, u8)>,
+    point: usize,
+    degree: u8,
+) -> Result<(), CodecError> {
+    match row.binary_search_by_key(&point, |(key, _)| *key) {
+        Ok(index) => row[index].1 = degree,
+        Err(index) => {
+            ctx.push_vec(
+                row,
+                (point, degree),
+                "catia_standard_endpoint_degree_entries",
+            )?;
+            row[index..].rotate_right(1);
+        }
+    }
+    Ok(())
+}
+
+fn restore_duplicate_degree(row: &mut Vec<(usize, u8)>, point: usize, before: Option<u8>) {
+    if let Ok(index) = row.binary_search_by_key(&point, |(key, _)| *key) {
+        if let Some(degree) = before {
+            row[index].1 = degree;
+        } else {
+            row.remove(index);
+        }
+    }
+}
 
 /// Reconstructed standard-nested (or FBB-only) topology: the counted spine's
 /// face boundaries recovered from the trim-mesh triangle packets, plus the
@@ -33,16 +69,15 @@ pub(crate) struct StandardTopology {
 /// to exactly one partition. Each component is closed when all its edges have
 /// two uses; an isolated face has no closed component.
 fn classify_body_groups(
+    ctx: &DecodeContext<'_>,
     groups: &[impl AsRef<[FaceTopology]>],
     edge_count: usize,
-) -> Option<Vec<BodyKind>> {
-    use std::collections::hash_map::Entry;
-
+) -> Result<Option<Vec<BodyKind>>, CodecError> {
     let mut seen_edges = HashSet::new();
     let mut kinds = Vec::new();
     for group in groups {
         let faces = group.as_ref();
-        let mut union = UnionFind::new(faces.len());
+        let mut union = UnionFind::charged(ctx, faces.len(), "catia_body_group_union")?;
         let mut uses = HashMap::<usize, (usize, usize)>::new();
         for (face, topology) in faces.iter().enumerate() {
             for coedge in topology
@@ -51,38 +86,49 @@ fn classify_body_groups(
                 .flat_map(|boundary| &boundary.coedges)
             {
                 if coedge.edge_row >= edge_count {
-                    return None;
+                    return Ok(None);
                 }
-                match uses.entry(coedge.edge_row) {
-                    Entry::Occupied(mut entry) => {
-                        let (first_face, count) = entry.get_mut();
-                        union.union(face, *first_face);
-                        *count += 1;
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert((face, 1));
-                    }
+                if let Some((first_face, count)) = uses.get_mut(&coedge.edge_row) {
+                    union.union(face, *first_face);
+                    *count += 1;
+                } else {
+                    ctx.insert_hash_map(
+                        &mut uses,
+                        coedge.edge_row,
+                        (face, 1),
+                        "catia_body_group_uses",
+                    )?;
                 }
             }
         }
-        let components = (0..faces.len())
-            .map(|face| union.find(face))
-            .collect::<HashSet<_>>();
+        let mut components = HashSet::new();
+        for face in 0..faces.len() {
+            ctx.insert_hash_set(
+                &mut components,
+                union.find(face),
+                "catia_body_group_components",
+            )?;
+        }
         let mut paired_components = HashSet::new();
         let mut unpaired_components = HashSet::new();
         for (&edge, &(first_face, count)) in &uses {
-            if !seen_edges.insert(edge) {
-                return None;
+            if !ctx.insert_hash_set(&mut seen_edges, edge, "catia_body_group_seen_edges")? {
+                return Ok(None);
             }
             let component = union.find(first_face);
             if count == 2 {
-                paired_components.insert(component);
+                ctx.insert_hash_set(&mut paired_components, component, "catia_body_group_paired")?;
             } else {
-                unpaired_components.insert(component);
+                ctx.insert_hash_set(
+                    &mut unpaired_components,
+                    component,
+                    "catia_body_group_unpaired",
+                )?;
             }
         }
         let closed_count = paired_components.difference(&unpaired_components).count();
-        kinds.push(
+        ctx.push_vec(
+            &mut kinds,
             if uses.values().any(|(_, count)| *count > 2)
                 || (closed_count != 0 && closed_count != components.len())
             {
@@ -92,12 +138,54 @@ fn classify_body_groups(
             } else {
                 BodyKind::Sheet
             },
-        );
+            "catia_body_group_kinds",
+        )?;
     }
-    (seen_edges.len() == edge_count).then_some(kinds)
+    Ok((seen_edges.len() == edge_count).then_some(kinds))
 }
 
 impl StandardTopology {
+    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let mut faces = Vec::new();
+        for face in &self.faces {
+            let mut boundaries = Vec::new();
+            for boundary in &face.boundaries {
+                let coedges = ctx.copy_retained_slice(
+                    boundary.coedges.as_slice(),
+                    "catia_standard_topology_copy_coedges",
+                )?;
+                let coedges = NonEmptyCoedges::try_from(coedges).map_err(CodecError::malformed)?;
+                ctx.push_vec(
+                    &mut boundaries,
+                    Boundary { coedges },
+                    "catia_standard_topology_copy_boundaries",
+                )?;
+            }
+            ctx.push_vec(
+                &mut faces,
+                FaceTopology { boundaries },
+                "catia_standard_topology_copy_faces",
+            )?;
+        }
+        let mut edge_rows = Vec::new();
+        for row in &self.edge_rows {
+            ctx.push_vec(
+                &mut edge_rows,
+                row.clone_charged(ctx)?,
+                "catia_standard_topology_copy_edge_rows",
+            )?;
+        }
+        Ok(Self {
+            faces,
+            edge_rows,
+            vertex_points: ctx.copy_retained_slice(
+                &self.vertex_points,
+                "catia_standard_topology_copy_vertex_points",
+            )?,
+            logical_vertex_count: self.logical_vertex_count,
+        })
+    }
+
     /// Number of faces, equal to the largest contiguous `30 04 04 ff` FBB
     /// run's row count ([spec §5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
     #[must_use]
@@ -114,9 +202,11 @@ impl StandardTopology {
 
     /// Face-index components connected through shared physical edge rows, in
     /// first-face order.
-    #[must_use]
-    pub(super) fn face_components(&self) -> Vec<Vec<usize>> {
-        let mut union = UnionFind::new(self.faces.len());
+    pub(super) fn face_components(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<Vec<usize>>, CodecError> {
+        let mut union = UnionFind::charged(ctx, self.faces.len(), "catia_face_component_union")?;
         let mut first_face_by_edge = HashMap::<usize, usize>::new();
         for (face, topology) in self.faces.iter().enumerate() {
             for edge in topology
@@ -125,8 +215,15 @@ impl StandardTopology {
                 .flat_map(|boundary| &boundary.coedges)
                 .map(|coedge| coedge.edge_row)
             {
-                if let Some(other) = first_face_by_edge.insert(edge, face) {
+                if let Some(&other) = first_face_by_edge.get(&edge) {
                     union.union(face, other);
+                } else {
+                    ctx.insert_hash_map(
+                        &mut first_face_by_edge,
+                        edge,
+                        face,
+                        "catia_face_component_edges",
+                    )?;
                 }
             }
         }
@@ -135,13 +232,20 @@ impl StandardTopology {
         for face in 0..self.faces.len() {
             let root = union.find(face);
             let next = labels.len();
-            let component = *labels.entry(root).or_insert(next);
-            if component == components.len() {
-                components.push(Vec::new());
+            if !labels.contains_key(&root) {
+                ctx.insert_hash_map(&mut labels, root, next, "catia_face_component_labels")?;
             }
-            components[component].push(face);
+            let component = labels[&root];
+            if component == components.len() {
+                ctx.push_vec(&mut components, Vec::new(), "catia_face_components")?;
+            }
+            ctx.push_vec(
+                &mut components[component],
+                face,
+                "catia_face_component_members",
+            )?;
         }
-        components
+        Ok(components)
     }
 
     /// The counted spine's physical edge rows, in table order ([spec §5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
@@ -168,19 +272,24 @@ impl StandardTopology {
 
     /// Classify each consecutive FBB face group from physical-edge incidence.
     /// An edge cannot belong to faces in two different groups.
-    #[must_use]
-    pub(super) fn body_kinds(&self, face_groups: &[usize]) -> Option<Vec<BodyKind>> {
+    pub(super) fn body_kinds(
+        &self,
+        ctx: &DecodeContext<'_>,
+        face_groups: &[usize],
+    ) -> Result<Option<Vec<BodyKind>>, CodecError> {
         let mut remaining = self.faces.as_slice();
         let mut groups = Vec::new();
         for &count in face_groups {
-            let (group, rest) = remaining.split_at_checked(count)?;
-            groups.push(group);
+            let Some((group, rest)) = remaining.split_at_checked(count) else {
+                return Ok(None);
+            };
+            ctx.push_vec(&mut groups, group, "catia_body_group_slices")?;
             remaining = rest;
         }
         if !remaining.is_empty() {
-            return None;
+            return Ok(None);
         }
-        classify_body_groups(&groups, self.edge_rows.len())
+        classify_body_groups(ctx, &groups, self.edge_rows.len())
     }
 
     /// Orient every incidence-closed FBB face group independently. Open sheet
@@ -196,13 +305,13 @@ impl StandardTopology {
             let Some((group, rest)) = remaining.split_at_mut_checked(count) else {
                 return Ok(None);
             };
-            groups.push(group);
+            ctx.push_vec(&mut groups, group, "catia_body_group_slices")?;
             remaining = rest;
         }
         if !remaining.is_empty() {
             return Ok(None);
         }
-        let Some(kinds) = classify_body_groups(&groups, self.edge_rows.len()) else {
+        let Some(kinds) = classify_body_groups(ctx, &groups, self.edge_rows.len())? else {
             return Ok(None);
         };
         for (group, kind) in groups.into_iter().zip(kinds) {
@@ -229,20 +338,26 @@ impl StandardTopology {
         let Some(edge_vertices) = self.edge_vertices(ctx)? else {
             return Ok(None);
         };
-        let all_points: HashSet<usize> = (0..self.vertex_points.len()).collect();
         let mut domains = ctx.alloc_filled(
             self.logical_vertex_count,
-            all_points,
+            HashSet::new(),
             "catia standard vertex point domains",
         )?;
+        for domain in &mut domains {
+            ctx.reserve_set(
+                domain,
+                self.vertex_points.len(),
+                "catia standard vertex point domain entries",
+            )?;
+            domain.extend(0..self.vertex_points.len());
+        }
         for (edge, pair) in edge_vertices.into_iter().zip(edge_point_pairs) {
             if pair[0] >= self.vertex_points.len() || pair[1] >= self.vertex_points.len() {
                 return Ok(None);
             }
             let [start, end] = edge;
-            let candidates = HashSet::from(*pair);
-            domains[start].retain(|point| candidates.contains(point));
-            domains[end].retain(|point| candidates.contains(point));
+            domains[start].retain(|point| pair.contains(point));
+            domains[end].retain(|point| pair.contains(point));
         }
         if domains.iter().any(HashSet::is_empty) {
             return Ok(None);
@@ -275,7 +390,18 @@ impl StandardTopology {
             }
         }
 
-        Ok(edge_vertices.into_iter().collect())
+        let mut complete = Vec::new();
+        for vertices in edge_vertices {
+            let Some(vertices) = vertices else {
+                return Ok(None);
+            };
+            ctx.push_vec(
+                &mut complete,
+                vertices,
+                "catia_standard_edge_vertices_complete",
+            )?;
+        }
+        Ok(Some(complete))
     }
 
     /// Replace provisional trim-handle endpoint components with the quotient
@@ -284,21 +410,37 @@ impl StandardTopology {
     /// Native identities are global within the parsed topology. Equal values
     /// collapse face-local corners even when adjacent faces use different trim
     /// handles. The pair order is the physical edge-row direction.
-    #[must_use]
-    fn with_native_edge_vertices(&self, edge_ports: &[[u32; 2]]) -> Option<Self> {
+    fn with_native_edge_vertices(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge_ports: &[[u32; 2]],
+    ) -> Result<Option<Self>, CodecError> {
         if edge_ports.len() != self.edge_rows.len() {
-            return None;
+            return Ok(None);
         }
         let mut identities = HashMap::new();
-        let mut edge_vertices = Vec::with_capacity(edge_ports.len());
+        let mut edge_vertices = Vec::new();
         for ports in edge_ports {
-            let pair = ports.map(|identity| {
-                let next = identities.len();
-                *identities.entry(identity).or_insert(next)
-            });
-            edge_vertices.push(pair);
+            let mut pair = [0; 2];
+            for (port, identity) in ports.iter().copied().enumerate() {
+                if !identities.contains_key(&identity) {
+                    let next = identities.len();
+                    ctx.insert_hash_map(
+                        &mut identities,
+                        identity,
+                        next,
+                        "catia_standard_native_vertex_identities",
+                    )?;
+                }
+                pair[port] = identities[&identity];
+            }
+            ctx.push_vec(
+                &mut edge_vertices,
+                pair,
+                "catia_standard_native_edge_vertices",
+            )?;
         }
-        let mut topology = self.clone();
+        let mut topology = self.clone_charged(ctx)?;
         for face in &mut topology.faces {
             for boundary in &mut face.boundaries {
                 for coedge in &mut boundary.coedges {
@@ -312,7 +454,7 @@ impl StandardTopology {
             }
         }
         topology.logical_vertex_count = identities.len();
-        Some(topology)
+        Ok(Some(topology))
     }
 }
 
@@ -339,6 +481,15 @@ pub(crate) struct EdgeRow {
 }
 
 impl EdgeRow {
+    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            kind: self.kind,
+            handles: ctx
+                .copy_retained_slice(&self.handles, "catia_standard_edge_row_copy_handles")?,
+            boundary_layout: self.boundary_layout,
+        })
+    }
+
     pub(crate) fn boundary_pattern(&self) -> Option<&[u32]> {
         match self.boundary_layout {
             EdgeBoundaryLayout::InteriorWithFlankingCorners => {
@@ -499,40 +650,52 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
         let Some(face) = face_edges.get_mut(left) else {
             return Ok(None);
         };
-        face.push(edge);
+        ctx.push_vec(face, edge, "catia_standard_face_edge_entries")?;
         if right != left {
             let Some(face) = face_edges.get_mut(right) else {
                 return Ok(None);
             };
-            face.push(edge);
+            ctx.push_vec(face, edge, "catia_standard_face_edge_entries")?;
         }
     }
-    let mut faces = Vec::with_capacity(face_count);
+    let mut faces = Vec::new();
     for incident in face_edges {
-        let Some(cycles) = incidence_cycles(&incident, edge_points) else {
+        let Some(cycles) = incidence_cycles(ctx, &incident, edge_points)? else {
             return Ok(None);
         };
-        faces.push(FaceTopology {
-            boundaries: cycles
-                .into_iter()
-                .map(|cycle| Boundary {
-                    coedges: cycle.map(|(edge_row, reversed)| {
-                        let [stored_start, stored_end] = edge_points[edge_row];
-                        let [start_vertex, end_vertex] = if reversed {
-                            [stored_end, stored_start]
-                        } else {
-                            [stored_start, stored_end]
-                        };
-                        CoedgeUse {
-                            edge_row,
-                            reversed,
-                            start_vertex,
-                            end_vertex,
-                        }
-                    }),
-                })
-                .collect(),
-        });
+        let mut boundaries = Vec::new();
+        for cycle in cycles {
+            let mut coedges = Vec::new();
+            for (edge_row, reversed) in cycle {
+                let [stored_start, stored_end] = edge_points[edge_row];
+                let [start_vertex, end_vertex] = if reversed {
+                    [stored_end, stored_start]
+                } else {
+                    [stored_start, stored_end]
+                };
+                ctx.push_vec(
+                    &mut coedges,
+                    CoedgeUse {
+                        edge_row,
+                        reversed,
+                        start_vertex,
+                        end_vertex,
+                    },
+                    "catia_standard_incidence_coedges",
+                )?;
+            }
+            let coedges = NonEmptyCoedges::try_from(coedges).map_err(CodecError::malformed)?;
+            ctx.push_vec(
+                &mut boundaries,
+                Boundary { coedges },
+                "catia_standard_incidence_boundaries",
+            )?;
+        }
+        ctx.push_vec(
+            &mut faces,
+            FaceTopology { boundaries },
+            "catia_standard_incidence_faces",
+        )?;
     }
     if orient_face_cycles(ctx, &mut faces)?.is_none() {
         return Ok(None);
@@ -568,24 +731,30 @@ pub(super) fn complete_duplicate_face_slots(
 
     fn search(
         inputs: &SearchInputs<'_, '_>,
-        degrees: &mut [BTreeMap<usize, u8>],
+        degrees: &mut [Vec<(usize, u8)>],
         assignment: &mut [usize],
         used: &mut [bool],
         solutions: &mut Vec<Vec<usize>>,
         operations: &mut usize,
         exhausted: &mut bool,
     ) -> Result<(), CodecError> {
+        let _depth = inputs
+            .ctx
+            .enter_nested("catia_standard_duplicate_face_search")?;
         if *exhausted || solutions.len() > 1 {
             return Ok(());
         }
         if used.iter().all(|value| *value) {
             let closed = degrees
                 .iter()
-                .all(|face| face.values().all(|degree| *degree == 2));
+                .all(|face| face.iter().all(|(_, degree)| *degree == 2));
             let mesh_valid = if !closed {
                 false
             } else if let Some(bytes) = inputs.mesh_bytes {
-                let mut completed = inputs.edge_faces.to_vec();
+                let mut completed = inputs.ctx.copy_slice(
+                    inputs.edge_faces,
+                    "catia_standard_duplicate_mesh_edge_faces",
+                )?;
                 for (&edge, &face) in inputs.unresolved.iter().zip(assignment.iter()) {
                     completed[edge][1] = face;
                 }
@@ -608,7 +777,12 @@ pub(super) fn complete_duplicate_face_slots(
                     true
                 };
                 if distinct {
-                    solutions.push(assignment.to_vec());
+                    let copy = inputs
+                        .ctx
+                        .copy_slice(assignment, "catia_standard_duplicate_solution_values")?;
+                    inputs
+                        .ctx
+                        .push_vec(solutions, copy, "catia_standard_duplicate_solutions")?;
                 }
             }
             return Ok(());
@@ -616,35 +790,45 @@ pub(super) fn complete_duplicate_face_slots(
         let deficit = degrees.iter().enumerate().find_map(|(face, values)| {
             values
                 .iter()
-                .find_map(|(&point, &degree)| (degree == 1).then_some((face, point)))
+                .find_map(|&(point, degree)| (degree == 1).then_some((face, point)))
         });
-        let unresolved = inputs
-            .unresolved
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !used[*index]);
-        let candidates: Box<dyn Iterator<Item = (usize, &usize)>> = match deficit {
-            Some((_, point)) => Box::new(unresolved.filter(move |(_, edge)| {
-                let [start, end] = inputs.edge_points[**edge];
-                start == point || end == point
-            })),
-            None => Box::new(unresolved.take(1)),
-        };
-        let choices = candidates
-            .flat_map(|(index, &edge)| {
-                let faces: Box<dyn Iterator<Item = usize>> = match deficit {
-                    Some((face, _)) => Box::new(std::iter::once(face)),
-                    None => Box::new(0..degrees.len()),
-                };
-                faces.map(move |face| (index, edge, face))
-            })
-            .filter(|(_, edge, face)| {
-                let [start, end] = inputs.edge_points[*edge];
-                degrees[*face].get(&start).copied().unwrap_or_default() + 1 + u8::from(start == end)
+        let mut choices = Vec::new();
+        for (index, &edge) in inputs.unresolved.iter().enumerate() {
+            inputs
+                .ctx
+                .charge_work(1, "catia_standard_duplicate_choice_scan")?;
+            if used[index] {
+                continue;
+            }
+            let [start, end] = inputs.edge_points[edge];
+            if let Some((_, point)) = deficit {
+                if start != point && end != point {
+                    continue;
+                }
+            }
+            let faces = deficit.map_or(0..degrees.len(), |(face, _)| face..face + 1);
+            for face in faces {
+                inputs
+                    .ctx
+                    .charge_work(1, "catia_standard_duplicate_choice_scan")?;
+                if duplicate_degree(&degrees[face], start).unwrap_or_default()
+                    + 1
+                    + u8::from(start == end)
                     <= 2
-                    && (start == end || degrees[*face].get(&end).copied().unwrap_or_default() < 2)
-            })
-            .collect::<Vec<_>>();
+                    && (start == end
+                        || duplicate_degree(&degrees[face], end).unwrap_or_default() < 2)
+                {
+                    inputs.ctx.push_vec(
+                        &mut choices,
+                        (index, edge, face),
+                        "catia_standard_duplicate_choices",
+                    )?;
+                }
+            }
+            if deficit.is_none() {
+                break;
+            }
+        }
         for (index, edge, face) in choices {
             if *operations == MAX_DUPLICATE_FACE_OPERATIONS {
                 *exhausted = true;
@@ -653,15 +837,25 @@ pub(super) fn complete_duplicate_face_slots(
             *operations += 1;
             let [start, end] = inputs.edge_points[edge];
             let start_add = 1 + u8::from(start == end);
-            let start_degree_before = degrees[face].get(&start).copied();
+            let start_degree_before = duplicate_degree(&degrees[face], start);
             let end_degree_before = if start == end {
                 None
             } else {
-                degrees[face].get(&end).copied()
+                duplicate_degree(&degrees[face], end)
             };
-            *degrees[face].entry(start).or_default() += start_add;
+            set_duplicate_degree(
+                inputs.ctx,
+                &mut degrees[face],
+                start,
+                start_degree_before.unwrap_or_default() + start_add,
+            )?;
             if start != end {
-                *degrees[face].entry(end).or_default() += 1;
+                set_duplicate_degree(
+                    inputs.ctx,
+                    &mut degrees[face],
+                    end,
+                    end_degree_before.unwrap_or_default() + 1,
+                )?;
             }
             assignment[index] = face;
             used[index] = true;
@@ -669,23 +863,9 @@ pub(super) fn complete_duplicate_face_slots(
                 inputs, degrees, assignment, used, solutions, operations, exhausted,
             )?;
             used[index] = false;
-            match start_degree_before {
-                Some(degree) => {
-                    degrees[face].insert(start, degree);
-                }
-                None => {
-                    degrees[face].remove(&start);
-                }
-            }
+            restore_duplicate_degree(&mut degrees[face], start, start_degree_before);
             if start != end {
-                match end_degree_before {
-                    Some(degree) => {
-                        degrees[face].insert(end, degree);
-                    }
-                    None => {
-                        degrees[face].remove(&end);
-                    }
-                }
+                restore_duplicate_degree(&mut degrees[face], end, end_degree_before);
             }
             if *exhausted || solutions.len() > 1 {
                 return Ok(());
@@ -701,18 +881,23 @@ pub(super) fn complete_duplicate_face_slots(
         return Ok(None);
     }
 
-    let mut completed = edge_faces.to_vec();
-    let mut unresolved = edge_faces
-        .iter()
-        .enumerate()
-        .filter_map(|(edge, faces)| (faces[0] == faces[1]).then_some(edge))
-        .collect::<Vec<_>>();
+    let mut completed = ctx.copy_slice(edge_faces, "catia_standard_duplicate_edge_faces")?;
+    let mut unresolved = Vec::new();
+    for (edge, faces) in edge_faces.iter().enumerate() {
+        if faces[0] == faces[1] {
+            ctx.push_vec(
+                &mut unresolved,
+                edge,
+                "catia_standard_duplicate_unresolved_edges",
+            )?;
+        }
+    }
     if unresolved.is_empty() {
         return Ok(Some(completed));
     }
     let mut degrees = ctx.alloc_filled(
         face_count,
-        BTreeMap::<usize, u8>::new(),
+        Vec::<(usize, u8)>::new(),
         "catia standard endpoint degrees",
     )?;
     for (edge, faces) in edge_faces.iter().enumerate() {
@@ -724,17 +909,19 @@ pub(super) fn complete_duplicate_face_slots(
             &incident[..]
         } {
             for &point in &edge_points[edge] {
-                let degree = degrees[face].entry(point).or_default();
-                let Some(next) = degree.checked_add(1) else {
+                let Some(next) = duplicate_degree(&degrees[face], point)
+                    .unwrap_or_default()
+                    .checked_add(1)
+                else {
                     return Ok(None);
                 };
-                *degree = next;
+                set_duplicate_degree(ctx, &mut degrees[face], point, next)?;
             }
         }
     }
     if degrees
         .iter()
-        .flat_map(BTreeMap::values)
+        .flat_map(|row| row.iter().map(|(_, degree)| degree))
         .any(|degree| *degree > 2)
     {
         return Ok(None);
@@ -744,8 +931,8 @@ pub(super) fn complete_duplicate_face_slots(
         degrees
             .iter()
             .filter(|face| {
-                face.get(&start).copied().unwrap_or_default() + 1 + u8::from(start == end) <= 2
-                    && (start == end || face.get(&end).copied().unwrap_or_default() < 2)
+                duplicate_degree(face, start).unwrap_or_default() + 1 + u8::from(start == end) <= 2
+                    && (start == end || duplicate_degree(face, end).unwrap_or_default() < 2)
             })
             .count()
     });
@@ -870,8 +1057,16 @@ fn duplicate_face_assignments_equivalent(
                 && edge_faces[first_edge][0] == edge_faces[edge][0]
             {
                 classified[index] = true;
-                left_faces.push(left[index]);
-                right_faces.push(right[index]);
+                ctx.push_vec(
+                    &mut left_faces,
+                    left[index],
+                    "catia_standard_duplicate_left_faces",
+                )?;
+                ctx.push_vec(
+                    &mut right_faces,
+                    right[index],
+                    "catia_standard_duplicate_right_faces",
+                )?;
             }
         }
         left_faces.sort_unstable();
@@ -887,17 +1082,29 @@ pub(crate) fn orient_face_cycles(
     ctx: &DecodeContext<'_>,
     faces: &mut [FaceTopology],
 ) -> Result<Option<()>, CodecError> {
-    let boundaries = faces
-        .iter_mut()
-        .flat_map(|face| &mut face.boundaries)
-        .collect::<Vec<_>>();
+    let mut boundaries = Vec::new();
+    for face in faces {
+        for boundary in &mut face.boundaries {
+            ctx.push_vec(
+                &mut boundaries,
+                boundary,
+                "catia_standard_orientation_boundaries",
+            )?;
+        }
+    }
     let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
     for (node, boundary) in boundaries.iter().enumerate() {
         for coedge in &boundary.coedges {
-            edge_uses
-                .entry(coedge.edge_row)
-                .or_default()
-                .push((node, coedge.reversed));
+            ctx.admit_hash_map_entry(
+                &mut edge_uses,
+                &coedge.edge_row,
+                "catia_standard_orientation_edge_uses",
+            )?;
+            ctx.push_vec(
+                edge_uses.entry(coedge.edge_row).or_default(),
+                (node, coedge.reversed),
+                "catia_standard_orientation_edge_use_entries",
+            )?;
         }
     }
     let Some(flips) =
@@ -944,8 +1151,16 @@ pub(crate) fn solve_boundary_orientation_constraints(
                 return Ok(None);
             }
         } else {
-            constraints[*left_node].push((*right_node, parity));
-            constraints[*right_node].push((*left_node, parity));
+            ctx.push_vec(
+                &mut constraints[*left_node],
+                (*right_node, parity),
+                "catia_standard_boundary_constraint_entries",
+            )?;
+            ctx.push_vec(
+                &mut constraints[*right_node],
+                (*left_node, parity),
+                "catia_standard_boundary_constraint_entries",
+            )?;
         }
     }
 
@@ -953,11 +1168,12 @@ pub(crate) fn solve_boundary_orientation_constraints(
     let mut result = Vec::new();
     for root in 0..boundary_count {
         if let Some(flip) = flips[root] {
-            result.push(flip);
+            ctx.push_vec(&mut result, flip, "catia_standard_boundary_result")?;
             continue;
         }
         flips[root] = Some(false);
-        let mut stack = vec![(root, false)];
+        let mut stack = Vec::new();
+        ctx.push_vec(&mut stack, (root, false), "catia_standard_boundary_stack")?;
         while let Some((face, flip)) = stack.pop() {
             for &(neighbor, parity) in &constraints[face] {
                 let required = flip ^ parity;
@@ -966,20 +1182,27 @@ pub(crate) fn solve_boundary_orientation_constraints(
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
-                        stack.push((neighbor, required));
+                        ctx.push_vec(
+                            &mut stack,
+                            (neighbor, required),
+                            "catia_standard_boundary_stack",
+                        )?;
                     }
                 }
             }
         }
-        result.push(false);
+        ctx.push_vec(&mut result, false, "catia_standard_boundary_result")?;
     }
     Ok(Some(result))
 }
 
+type IncidenceCycle = NonEmptyMembers<(usize, bool)>;
+
 pub(crate) fn incidence_cycles(
+    ctx: &DecodeContext<'_>,
     incident: &[usize],
     edge_points: &[[usize; 2]],
-) -> Option<Vec<NonEmptyMembers<(usize, bool)>>> {
+) -> Result<Option<Vec<IncidenceCycle>>, CodecError> {
     #[derive(Clone, Copy)]
     struct AdjacentEdge {
         edge: usize,
@@ -988,65 +1211,110 @@ pub(crate) fn incidence_cycles(
     }
 
     if incident.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut vertex_indices = HashMap::<usize, usize>::new();
     let mut at_vertex = Vec::<Vec<AdjacentEdge>>::new();
-    let mut unseen = BTreeMap::new();
+    let mut unseen = Vec::<(usize, [usize; 2])>::new();
     let mut seen_edges = HashSet::new();
     let mut cycles = Vec::new();
     for &edge in incident {
-        if !seen_edges.insert(edge) {
-            return None;
+        if !ctx.insert_hash_set(&mut seen_edges, edge, "catia_incidence_seen_edges")? {
+            return Ok(None);
         }
-        let [start, end] = *edge_points.get(edge)?;
+        let Some(&[start, end]) = edge_points.get(edge) else {
+            return Ok(None);
+        };
         if start == end {
-            cycles.push(NonEmptyMembers::one((edge, false)));
+            let mut members = Vec::new();
+            ctx.push_vec(&mut members, (edge, false), "catia_incidence_cycle_members")?;
+            let members = NonEmptyMembers::try_from(members).map_err(CodecError::malformed)?;
+            ctx.push_vec(&mut cycles, members, "catia_incidence_cycles")?;
             continue;
         }
-        let [start, end] = [start, end].map(|vertex| {
-            *vertex_indices.entry(vertex).or_insert_with(|| {
-                let index = at_vertex.len();
-                at_vertex.push(Vec::new());
+        let mut endpoints = [0; 2];
+        for (slot, vertex) in [start, end].into_iter().enumerate() {
+            let index = if let Some(&index) = vertex_indices.get(&vertex) {
                 index
-            })
-        });
-        at_vertex[start].push(AdjacentEdge {
-            edge,
-            vertex: end,
-            reversed: false,
-        });
-        at_vertex[end].push(AdjacentEdge {
-            edge,
-            vertex: start,
-            reversed: true,
-        });
-        unseen.insert(edge, [start, end]);
+            } else {
+                let index = at_vertex.len();
+                ctx.insert_hash_map(
+                    &mut vertex_indices,
+                    vertex,
+                    index,
+                    "catia_incidence_vertex_indices",
+                )?;
+                ctx.push_vec(&mut at_vertex, Vec::new(), "catia_incidence_vertex_rows")?;
+                index
+            };
+            endpoints[slot] = index;
+        }
+        let [start, end] = endpoints;
+        ctx.push_vec(
+            &mut at_vertex[start],
+            AdjacentEdge {
+                edge,
+                vertex: end,
+                reversed: false,
+            },
+            "catia_incidence_vertex_edges",
+        )?;
+        ctx.push_vec(
+            &mut at_vertex[end],
+            AdjacentEdge {
+                edge,
+                vertex: start,
+                reversed: true,
+            },
+            "catia_incidence_vertex_edges",
+        )?;
+        ctx.push_vec(
+            &mut unseen,
+            (edge, [start, end]),
+            "catia_incidence_unseen_edges",
+        )?;
     }
-    let at_vertex = at_vertex
-        .into_iter()
-        .map(|edges| <[AdjacentEdge; 2]>::try_from(edges).ok())
-        .collect::<Option<Vec<_>>>()?;
-    while let Some((first, [start_vertex, mut vertex])) = unseen.pop_first() {
-        let mut cycle = NonEmptyMembers::one((first, false));
+    if at_vertex.iter().any(|edges| edges.len() != 2) {
+        return Ok(None);
+    }
+    unseen.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.0));
+    while let Some((first, [start_vertex, mut vertex])) = unseen.pop() {
+        let mut members = Vec::new();
+        ctx.push_vec(
+            &mut members,
+            (first, false),
+            "catia_incidence_cycle_members",
+        )?;
         let mut previous_edge = first;
         while vertex != start_vertex {
             // Every vertex has two distinct incident edges. The edge other
             // than the one just traversed continues this closed component.
-            let [left, right] = at_vertex[vertex];
+            let [left, right] = at_vertex[vertex].as_slice() else {
+                return Ok(None);
+            };
             let next = if left.edge == previous_edge {
                 right
             } else {
                 left
             };
-            unseen.remove(&next.edge);
+            let scan_len = cadmpeg_core::decode::u64_from_index(unseen.len());
+            ctx.charge_work(scan_len, "catia_incidence_unseen_scan")?;
+            let Some(index) = unseen.iter().position(|(edge, _)| *edge == next.edge) else {
+                return Ok(None);
+            };
+            unseen.remove(index);
             vertex = next.vertex;
             previous_edge = next.edge;
-            cycle.push((next.edge, next.reversed));
+            ctx.push_vec(
+                &mut members,
+                (next.edge, next.reversed),
+                "catia_incidence_cycle_members",
+            )?;
         }
-        cycles.push(cycle);
+        let members = NonEmptyMembers::try_from(members).map_err(CodecError::malformed)?;
+        ctx.push_vec(&mut cycles, members, "catia_incidence_cycles")?;
     }
-    Some(cycles)
+    Ok(Some(cycles))
 }
 
 /// Parses the FBB-only spine. Its edge rows and trim handles use one selected
@@ -1063,17 +1331,17 @@ pub(crate) fn parse_fbb(
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let Some((mut edge_rows, _, vertex_header, handle_width)) =
-        parse_fbb_edge_tables(bytes, after_faces)
+        parse_fbb_edge_tables(ctx, bytes, after_faces)?
     else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    if classify_fbb_edge_layouts(&mut edge_rows, &trims).is_none() {
+    if classify_fbb_edge_layouts(ctx, &mut edge_rows, &trims)?.is_none() {
         return Ok(None);
     }
     reconstruct(ctx, edge_rows, vertex_points, &trims)
@@ -1087,7 +1355,10 @@ pub(super) fn parse_fbb_with_native_vertices(
     bytes: &[u8],
     edge_ports: &[[u32; 2]],
 ) -> Result<Option<StandardTopology>, CodecError> {
-    Ok(parse_fbb(ctx, bytes)?.and_then(|topology| topology.with_native_edge_vertices(edge_ports)))
+    let Some(topology) = parse_fbb(ctx, bytes)? else {
+        return Ok(None);
+    };
+    topology.with_native_edge_vertices(ctx, edge_ports)
 }
 
 pub(super) fn reconstruct(
@@ -1096,27 +1367,37 @@ pub(super) fn reconstruct(
     vertex_points: Vec<[f64; 3]>,
     trims: &[TrimRecord],
 ) -> Result<Option<StandardTopology>, CodecError> {
-    let mut union = UnionFind::new(edge_rows.len() * 2);
-    let mut faces = Vec::with_capacity(trims.len());
+    let node_count = edge_rows
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_reconstruct_union", u64::MAX, u64::MAX))?;
+    let mut union = UnionFind::charged(ctx, node_count, "catia_reconstruct_union")?;
+    let mut faces = Vec::new();
     for trim in trims {
-        let Some(cycles) = boundary_cycles(trim.packet.triangles()) else {
+        let Some(cycles) = boundary_cycles(ctx, trim.packet.triangles(ctx)?)? else {
             return Ok(None);
         };
-        let mut boundaries = Vec::with_capacity(cycles.len());
+        let mut boundaries = Vec::new();
         for cycle in cycles {
             let Some(boundary) = cover_cycle(ctx, &cycle, &edge_rows, &mut union)? else {
                 return Ok(None);
             };
-            boundaries.push(boundary);
+            ctx.push_vec(&mut boundaries, boundary, "catia_reconstruct_boundaries")?;
         }
-        faces.push(FaceTopology { boundaries });
+        ctx.push_vec(
+            &mut faces,
+            FaceTopology { boundaries },
+            "catia_reconstruct_faces",
+        )?;
     }
 
     let mut roots = HashMap::new();
     for node in 0..union.len() {
         let root = union.find(node);
         let next = roots.len();
-        roots.entry(root).or_insert(next);
+        if !roots.contains_key(&root) {
+            ctx.insert_hash_map(&mut roots, root, next, "catia_reconstruct_roots")?;
+        }
     }
     for face in &mut faces {
         for boundary in &mut face.boundaries {
@@ -1136,28 +1417,40 @@ pub(super) fn reconstruct(
 }
 
 pub(crate) fn reconstruct_mesh_selection(
-    edge_rows: Vec<EdgeRow>,
-    vertex_points: Vec<[f64; 3]>,
-    selected: &[MeshFaceBoundaryAssignment],
+    ctx: &DecodeContext<'_>,
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    selected: &[impl std::borrow::Borrow<MeshFaceBoundaryAssignment>],
     unmatched_reversed: &[Vec<Vec<bool>>],
-) -> Option<StandardTopology> {
+) -> Result<Option<StandardTopology>, CodecError> {
     if selected.len() != unmatched_reversed.len() {
-        return None;
+        return Ok(None);
     }
-    let mut union = UnionFind::new(edge_rows.len() * 2);
-    let mut faces = Vec::with_capacity(selected.len());
+    let node_count = edge_rows
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_mesh_selection_union", u64::MAX, u64::MAX))?;
+    let mut union = UnionFind::charged(ctx, node_count, "catia_mesh_selection_union")?;
+    let mut faces = Vec::new();
     for (face, directions) in selected.iter().zip(unmatched_reversed) {
+        let face = std::borrow::Borrow::borrow(face);
         if face.boundaries.len() != directions.len() {
-            return None;
+            return Ok(None);
         }
-        let mut boundaries = Vec::with_capacity(face.boundaries.len());
+        let mut boundaries = Vec::new();
         for (uses, directions) in face.boundaries.iter().zip(directions) {
             if uses.len() != directions.len() {
-                return None;
+                return Ok(None);
             }
             let mut paired_uses = uses.iter().zip(directions).enumerate();
-            let (first_index, (first_use, &first_reversed)) = paired_uses.next()?;
-            let corners = (0..uses.len()).map(|_| union.push()).collect::<Vec<_>>();
+            let Some((first_index, (first_use, &first_reversed))) = paired_uses.next() else {
+                return Ok(None);
+            };
+            let mut corners = Vec::new();
+            for _ in 0..uses.len() {
+                let corner = union.push_charged(ctx, "catia_mesh_selection_corner_nodes")?;
+                ctx.push_vec(&mut corners, corner, "catia_mesh_selection_corners")?;
+            }
             let mut admit_coedge = |use_index: usize,
                                     use_: &MeshBoundaryEdgeCandidate,
                                     unmatched_reversed: bool|
@@ -1170,7 +1463,7 @@ pub(crate) fn reconstruct_mesh_selection(
                 let end_vertex = corners[(use_index + 1) % corners.len()];
                 let edge_start = use_.edge.checked_mul(2)?;
                 let edge_end = edge_start.checked_add(1)?;
-                if edge_end >= edge_rows.len() * 2 {
+                if edge_end >= node_count {
                     return None;
                 }
                 if reversed {
@@ -1187,20 +1480,39 @@ pub(crate) fn reconstruct_mesh_selection(
                     end_vertex,
                 })
             };
-            let mut coedges =
-                NonEmptyCoedges::one(admit_coedge(first_index, first_use, first_reversed)?);
+            let Some(first) = admit_coedge(first_index, first_use, first_reversed) else {
+                return Ok(None);
+            };
+            let mut coedges = Vec::new();
+            ctx.push_vec(&mut coedges, first, "catia_mesh_selection_coedges")?;
             for (use_index, (use_, &unmatched_reversed)) in paired_uses {
-                coedges.push(admit_coedge(use_index, use_, unmatched_reversed)?);
+                let Some(coedge) = admit_coedge(use_index, use_, unmatched_reversed) else {
+                    return Ok(None);
+                };
+                ctx.push_vec(&mut coedges, coedge, "catia_mesh_selection_coedges")?;
             }
-            boundaries.push(Boundary { coedges });
+            let Ok(coedges) = NonEmptyCoedges::try_from(coedges) else {
+                return Ok(None);
+            };
+            ctx.push_vec(
+                &mut boundaries,
+                Boundary { coedges },
+                "catia_mesh_selection_boundaries",
+            )?;
         }
-        faces.push(FaceTopology { boundaries });
+        ctx.push_vec(
+            &mut faces,
+            FaceTopology { boundaries },
+            "catia_mesh_selection_faces",
+        )?;
     }
     let mut roots = HashMap::new();
     for node in 0..union.len() {
         let root = union.find(node);
         let next = roots.len();
-        roots.entry(root).or_insert(next);
+        if !roots.contains_key(&root) {
+            ctx.insert_hash_map(&mut roots, root, next, "catia_mesh_selection_roots")?;
+        }
     }
     for face in &mut faces {
         for boundary in &mut face.boundaries {
@@ -1210,12 +1522,25 @@ pub(crate) fn reconstruct_mesh_selection(
             }
         }
     }
-    Some(StandardTopology {
+    let mut owned_rows = Vec::new();
+    ctx.reserve_vec(
+        &mut owned_rows,
+        edge_rows.len(),
+        "catia_mesh_selection_edge_copy",
+    )?;
+    for row in edge_rows {
+        owned_rows.push(EdgeRow {
+            kind: row.kind,
+            handles: ctx.copy_retained_slice(&row.handles, "catia_mesh_selection_handle_copy")?,
+            boundary_layout: row.boundary_layout,
+        });
+    }
+    Ok(Some(StandardTopology {
         faces,
-        edge_rows,
+        edge_rows: owned_rows,
         logical_vertex_count: roots.len(),
-        vertex_points,
-    })
+        vertex_points: ctx.copy_retained_slice(vertex_points, "catia_mesh_selection_point_copy")?,
+    }))
 }
 
 #[cfg(test)]

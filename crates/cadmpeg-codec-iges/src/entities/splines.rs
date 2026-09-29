@@ -2,7 +2,7 @@
 //! Piecewise parametric spline projection.
 
 use super::geometry::{resolve_transform, source_object, DeclaredInterval, WireProjectionOutcome};
-use crate::decode_resource::{collect_optional_vec, reserve_vec, reserve_vec_growth};
+
 use crate::directory::DirectoryEntry;
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -187,35 +187,21 @@ fn add_edge(
     let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
     let curve = crate::ids::curve_admitted(&stem, ctx)?;
     let edge = crate::ids::edge_admitted(&stem, ctx)?;
-    reserve_vec_growth(
-        ctx,
-        &mut ir.model.points,
-        2,
-        "iges spline neutral point slots",
-    )?;
+    ctx.reserve_vec(&mut ir.model.points, 2, "iges spline neutral point slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_splines")?;
     ir.model.points.extend([
         Point::new(
-            crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &start_point,
-                "iges splines identity copy",
-            )?,
+            start_point.try_clone_for_decode(Some(ctx), "iges splines identity copy")?,
             start,
             None,
         ),
         Point::new(
-            crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &end_point,
-                "iges splines identity copy",
-            )?,
+            end_point.try_clone_for_decode(Some(ctx), "iges splines identity copy")?,
             end,
             None,
         ),
     ]);
-    reserve_vec_growth(
-        ctx,
+    ctx.reserve_vec(
         &mut ir.model.vertices,
         2,
         "iges spline neutral vertex slots",
@@ -223,38 +209,21 @@ fn add_edge(
     crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_splines")?;
     ir.model.vertices.extend([
         Vertex {
-            id: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &start_vertex,
-                "iges splines identity copy",
-            )?,
+            id: start_vertex.try_clone_for_decode(Some(ctx), "iges splines identity copy")?,
             point: start_point,
             tolerance: None,
         },
         Vertex {
-            id: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &end_vertex,
-                "iges splines identity copy",
-            )?,
+            id: end_vertex.try_clone_for_decode(Some(ctx), "iges splines identity copy")?,
             point: end_point,
             tolerance: None,
         },
     ]);
     sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
-    reserve_vec_growth(
-        ctx,
-        &mut ir.model.curves,
-        1,
-        "iges spline neutral curve slots",
-    )?;
+    ctx.reserve_vec(&mut ir.model.curves, 1, "iges spline neutral curve slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_splines")?;
     ir.model.curves.push(Curve {
-        id: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &curve,
-            "iges splines identity copy",
-        )?,
+        id: curve.try_clone_for_decode(Some(ctx), "iges splines identity copy")?,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         source_object: Some(match source_object(entry, Some(ctx)) {
             Ok(source) => source,
@@ -264,19 +233,10 @@ fn add_edge(
             }
         }),
     });
-    reserve_vec_growth(
-        ctx,
-        &mut ir.model.edges,
-        1,
-        "iges spline neutral edge slots",
-    )?;
+    ctx.reserve_vec(&mut ir.model.edges, 1, "iges spline neutral edge slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_splines")?;
     ir.model.edges.push(Edge {
-        id: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &edge,
-            "iges splines identity copy",
-        )?,
+        id: edge.try_clone_for_decode(Some(ctx), "iges splines identity copy")?,
         carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
         start: start_vertex,
         end: end_vertex,
@@ -295,7 +255,7 @@ pub(super) fn project(
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut records,
             record.directory_sequence,
@@ -305,7 +265,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut entries,
             entry.sequence,
@@ -365,11 +325,11 @@ pub(super) fn project(
         };
         if let Some(observed) = u64::try_from(raw_segment_count)
             .ok()
-            .filter(|count| *count > MAX_SPLINE_SEGMENTS as u64)
+            .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SEGMENTS))
         {
             return Err(refuse_local_limit(
                 "iges_spline_segments",
-                MAX_SPLINE_SEGMENTS as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SEGMENTS),
                 observed,
             ));
         }
@@ -394,8 +354,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(breakpoints) = collect_optional_vec(
-            ctx,
+        let Some(breakpoints) = ctx.collect_options(
             (5..5 + breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
             "iges spline curve breakpoints",
         )?
@@ -430,8 +389,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(coefficients) = collect_optional_vec(
-            ctx,
+        let Some(coefficients) = ctx.collect_options(
             (coefficient_start..coefficient_start + coefficient_count)
                 .map(|index| record.number(index).and_then(FiniteReal::new)),
             "iges spline curve coefficients",
@@ -467,7 +425,7 @@ pub(super) fn project(
             }
         };
         let control_count = segment_count * 3 + 1;
-        let mut control_points = reserve_vec(ctx, control_count, "iges spline curve controls")?;
+        let mut control_points = ctx.collection_vec(control_count, "iges spline curve controls")?;
         let mut continuous = true;
         let precision = global.real_precision();
         let resolution = global.minimum_resolution_mm();
@@ -631,8 +589,7 @@ pub(super) fn project(
                     }
                 }
             }
-            let Some(bezier) = collect_optional_vec(
-                ctx,
+            let Some(bezier) = ctx.collect_options(
                 (0..4).map(|index| {
                     transform.apply_point(Point3::new(
                         x[index] * factor,
@@ -666,8 +623,7 @@ pub(super) fn project(
             continue;
         }
         let tail_start = coefficient_start + coefficient_count;
-        let Some(tail) = collect_optional_vec(
-            ctx,
+        let Some(tail) = ctx.collect_options(
             (tail_start..tail_start + 12)
                 .map(|index| record.number(index).and_then(FiniteReal::new)),
             "iges spline curve terminal derivatives",
@@ -721,13 +677,13 @@ pub(super) fn project(
                 ),
             )?;
         }
-        let mut knots = reserve_vec(ctx, segment_count * 3 + 5, "iges spline curve knots")?;
+        let mut knots = ctx.collection_vec(segment_count * 3 + 5, "iges spline curve knots")?;
         knots.extend([breakpoints[0]; 4]);
         for breakpoint in &breakpoints[1..segment_count] {
             knots.extend([*breakpoint; 3]);
         }
         knots.extend([breakpoints[segment_count]; 4]);
-        let mut raw_knots = reserve_vec(ctx, knots.len(), "iges spline curve admitted knots")?;
+        let mut raw_knots = ctx.collection_vec(knots.len(), "iges spline curve admitted knots")?;
         raw_knots.extend(knots.into_iter().map(FiniteReal::get));
         let nurbs = match KnotVector::new(raw_knots).and_then(|knots| {
             NurbsPoles3::from_checked_lanes(control_points, None)
@@ -761,11 +717,11 @@ pub(super) fn project(
             )?;
             continue;
         };
-        reserve_vec_growth(ctx, &mut wire_edges, 1, "iges spline wire edge slots")?;
+        ctx.reserve_vec(&mut wire_edges, 1, "iges spline wire edge slots")?;
         wire_edges.push(edge);
         super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 112 curve type, continuity, and dimensionality are retained only in native parameters"))?;
-        crate::decode_resource::insert_optional_btree_set(
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             Some(ctx),
             &mut decoded,
             entry.sequence,
@@ -831,14 +787,17 @@ pub(super) fn project(
                 None => {
                     return Err(refuse_local_limit(
                         "iges_spline_surface_poles",
-                        MAX_SPLINE_SURFACE_POLES as u64,
+                        cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                         u64::MAX,
                     ));
                 }
-                Some(requested) if requested > MAX_SPLINE_SURFACE_POLES as u64 => {
+                Some(requested)
+                    if requested
+                        > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES) =>
+                {
                     return Err(refuse_local_limit(
                         "iges_spline_surface_poles",
-                        MAX_SPLINE_SURFACE_POLES as u64,
+                        cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                         requested,
                     ));
                 }
@@ -875,15 +834,15 @@ pub(super) fn project(
         let Some(pole_count) = u_count.checked_mul(v_count) else {
             return Err(refuse_local_limit(
                 "iges_spline_surface_poles",
-                MAX_SPLINE_SURFACE_POLES as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                 u64::MAX,
             ));
         };
         if pole_count > MAX_SPLINE_SURFACE_POLES {
             return Err(refuse_local_limit(
                 "iges_spline_surface_poles",
-                MAX_SPLINE_SURFACE_POLES as u64,
-                pole_count as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
+                cadmpeg_core::decode::u64_from_index(pole_count),
             ));
         }
         let Some(u_breakpoint_count) = u_segments.checked_add(1) else {
@@ -904,8 +863,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(u_breakpoints) = collect_optional_vec(
-            ctx,
+        let Some(u_breakpoints) = ctx.collect_options(
             (5..5 + u_breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
             "iges spline surface u breakpoints",
         )?
@@ -919,8 +877,7 @@ pub(super) fn project(
             continue;
         };
         let v_breakpoint_start = 5 + u_breakpoint_count;
-        let Some(v_breakpoints) = collect_optional_vec(
-            ctx,
+        let Some(v_breakpoints) = ctx.collect_options(
             (v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
                 .map(|index| record.number(index).and_then(FiniteReal::new)),
             "iges spline surface v breakpoints",
@@ -1031,8 +988,7 @@ pub(super) fn project(
                     valid = false;
                     break 'patches;
                 };
-                let Some(values) = collect_optional_vec(
-                    ctx,
+                let Some(values) = ctx.collect_options(
                     (block_start..block_start + 48)
                         .map(|index| record.number(index).and_then(FiniteReal::new)),
                     "iges spline surface patch coefficients",
@@ -1086,7 +1042,7 @@ pub(super) fn project(
             continue;
         }
         let Some(control_points) =
-            collect_optional_vec(ctx, grid, "iges spline surface completed controls")?
+            ctx.collect_options(grid, "iges spline surface completed controls")?
         else {
             super::push_optional_entity_loss(
                 Some(ctx),
@@ -1096,13 +1052,13 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut u_knots = reserve_vec(ctx, u_segments * 3 + 5, "iges spline surface u knots")?;
+        let mut u_knots = ctx.collection_vec(u_segments * 3 + 5, "iges spline surface u knots")?;
         u_knots.extend([u_breakpoints[0]; 4]);
         for breakpoint in &u_breakpoints[1..u_segments] {
             u_knots.extend([*breakpoint; 3]);
         }
         u_knots.extend([u_breakpoints[u_segments]; 4]);
-        let mut v_knots = reserve_vec(ctx, v_segments * 3 + 5, "iges spline surface v knots")?;
+        let mut v_knots = ctx.collection_vec(v_segments * 3 + 5, "iges spline surface v knots")?;
         v_knots.extend([v_breakpoints[0]; 4]);
         for breakpoint in &v_breakpoints[1..v_segments] {
             v_knots.extend([*breakpoint; 3]);
@@ -1117,17 +1073,18 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut rows = reserve_vec(ctx, u_count, "iges spline surface pole rows")?;
+        let mut rows = ctx.collection_vec(u_count, "iges spline surface pole rows")?;
         for points in control_points.chunks(v_count) {
-            let mut row = reserve_vec(ctx, points.len(), "iges spline surface pole row controls")?;
+            let mut row =
+                ctx.collection_vec(points.len(), "iges spline surface pole row controls")?;
             row.extend_from_slice(points);
             rows.push(row);
         }
         let mut raw_u_knots =
-            reserve_vec(ctx, u_knots.len(), "iges spline surface admitted u knots")?;
+            ctx.collection_vec(u_knots.len(), "iges spline surface admitted u knots")?;
         raw_u_knots.extend(u_knots.into_iter().map(FiniteReal::get));
         let mut raw_v_knots =
-            reserve_vec(ctx, v_knots.len(), "iges spline surface admitted v knots")?;
+            ctx.collection_vec(v_knots.len(), "iges spline surface admitted v knots")?;
         raw_v_knots.extend(v_knots.into_iter().map(FiniteReal::get));
         let nurbs = match KnotVector::new(raw_u_knots).and_then(|u_knots| {
             KnotVector::new(raw_v_knots).and_then(|v_knots| {
@@ -1159,8 +1116,7 @@ pub(super) fn project(
             entry.sequence,
             Some(ctx),
         )?;
-        reserve_vec_growth(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.surfaces,
             1,
             "iges spline neutral surface slots",
@@ -1178,7 +1134,7 @@ pub(super) fn project(
             IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 114 curve and patch types are retained only in native parameters"),
         )?;
-        crate::decode_resource::insert_optional_btree_set(
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             Some(ctx),
             &mut decoded,
             entry.sequence,

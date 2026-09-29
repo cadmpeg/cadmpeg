@@ -296,7 +296,7 @@ where
     F: FnMut(u64) -> Result<(), E>,
 {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if let Err(error) = (self.charge)(buf.len() as u64) {
+        if let Err(error) = (self.charge)(cadmpeg_core::decode::u64_from_index(buf.len())) {
             self.error = Some(error);
             return Err(std::io::Error::other("digest work charge rejected"));
         }
@@ -790,6 +790,10 @@ mod tests {
             .collect(),
         ));
         let body_id = ir.model.bodies[0].id.as_str().to_owned();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         let mut source_fidelity = crate::SourceFidelity::default();
         source_fidelity
             .attach_native_unknown_records(
@@ -803,7 +807,9 @@ mod tests {
                         vec![4, 5],
                         vec![body_id],
                     ),
-                ],
+                ]
+                .into(),
+                &ctx,
             )
             .unwrap();
         let namespace = ir.native.namespace_mut("other");

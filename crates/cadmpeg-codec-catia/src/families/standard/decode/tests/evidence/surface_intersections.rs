@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::families::standard::decode::build_standard_edge_curve;
-use crate::families::standard::decode::standard_spline_line;
+use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
+use crate::families::standard::decode::edge_geometry::ensure_native_edge_support_surface;
+use crate::families::standard::decode::edge_geometry::standard_spline_line;
 use crate::families::standard::decode::StandardEdgeSupport;
 use crate::families::standard::decode::CYLINDER_PLANE_CONIC_TOLERANCE;
 use crate::families::standard::decode::PERPENDICULAR_CYLINDER_CONIC_TOLERANCE;
@@ -70,6 +71,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     let (id, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut annotations,
             &[
@@ -200,6 +202,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     let (id, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut annotations,
             &[(sphere_id.clone(), false, 0), (plane_id.clone(), false, 1)],
@@ -291,6 +294,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
     let (id, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut annotations,
             &[
@@ -395,6 +399,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     let (id, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut annotations,
             &[(first_id.clone(), false, 0), (second_id.clone(), false, 1)],
@@ -521,9 +526,34 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         pcurves: [pcurve.clone(), pcurve],
         parameter_range: [2.0, 5.0],
     };
+    let mut saw_copy_refusal = false;
+    for cap in 0..32 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            let mut candidate = CadIr::empty();
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            ensure_native_edge_support_surface(
+                &mut candidate,
+                &mut AnnotationBuilder::new(),
+                21,
+                &native.carriers[1],
+                &mut admission,
+            )
+        });
+        if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_b5_rolling_ball_jet_stations")
+        {
+            saw_copy_refusal = true;
+            break;
+        }
+    }
+    assert!(
+        saw_copy_refusal,
+        "rolling-ball station copy must refuse at its own admission"
+    );
     let (curve, _) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[],
@@ -608,6 +638,7 @@ fn standard_intersection_entity_limit_refuses_before_procedural_curve_creation()
     crate::test_support::with_entity_limit(3, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[],
@@ -677,6 +708,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
             &support,
             [0, 1],
         )
+        .expect("surface evaluator accepts the fixture")
     };
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -772,15 +804,18 @@ fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
         ),
         (Point3::new(0.1, 0., 1.), true),
     ] {
-        let result = crate::families::standard::decode::standard_pcurve_geometry(
-            &surface,
-            &support,
-            start,
-            end,
-            None,
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
-        );
+        let result = crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::decode::edge_geometry::standard_pcurve_geometry(
+                ctx,
+                &surface,
+                &support,
+                (start, end),
+                None,
+                None,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service budget admits standard pcurve");
         assert_eq!(result.is_some(), accepted);
     }
 }

@@ -307,10 +307,13 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     product_by_object
         .try_reserve(product_nodes.len())
         .map_err(|_| {
-            resource::collection_allocation_failed(
-                ctx,
-                product_nodes.len() as u64,
-                "fcstd product validation index",
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    ctx.policy().limits.max_collection_items,
+                    product_nodes.len() as u64,
+                    "fcstd product validation index",
+                ),
             )
         })?;
     for node in &product_nodes {
@@ -851,14 +854,16 @@ impl CodecBackend for FcstdCodec {
                     0,
                     ctx.copy_retained(bytes, "retain FCStd thumbnail")?,
                     vec![native::native_id("document", "0")],
-                )],
+                )]
+                .into(),
+                ctx,
             )?;
         }
         let namespace = ir.native.namespace_mut("fcstd");
         namespace.set_arena(ctx, "document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena(ctx, "physical_ledger", &scan.ledger)?;
-        #[allow(clippy::if_not_else)]
-        if !ctx.container_only() {
+        let decode_document = !ctx.container_only();
+        if decode_document {
             let document_bytes = scan
                 .data
                 .get("Document.xml")
@@ -871,8 +876,7 @@ impl CodecBackend for FcstdCodec {
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
-                        return Err(CodecError::Malformed(resource::retained_format(
-                            ctx,
+                        return Err(CodecError::Malformed(ctx.format_retained(
                             format_args!(
                                 "property {} references missing side entry {side_entry}",
                                 property.id
@@ -941,13 +945,13 @@ impl CodecBackend for FcstdCodec {
             ir.model.curves = curve_transfer.curves;
             for (owner, procedural) in curve_transfer.procedural {
                 ir.model
-                    .add_procedural_curve(owner, procedural)
+                    .add_procedural_curve(&owner, procedural)
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
             ir.model.surfaces = surface_transfer.surfaces;
             for (owner, procedural) in surface_transfer.procedural {
                 ir.model
-                    .add_procedural_surface(owner, procedural)
+                    .add_procedural_surface(&owner, procedural)
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
             geometry_transferred |=
@@ -996,12 +1000,16 @@ impl CodecBackend for FcstdCodec {
                     ctx,
                     &mut ir,
                     gui_view.window(),
-                    &scan.data,
-                    &graph.objects,
-                    &graph.properties,
-                    &shape_payloads,
-                    &element_maps,
-                    gui::requires_alpha_conversion(scan.document.program_version.as_deref()),
+                    &gui::GuiSources {
+                        entries: &scan.data,
+                        objects: &graph.objects,
+                        properties: &graph.properties,
+                        payloads: &shape_payloads,
+                        element_maps: &element_maps,
+                        requires_alpha_conversion: gui::requires_alpha_conversion(
+                            scan.document.program_version.as_deref(),
+                        ),
+                    },
                 )?
             } else {
                 gui::Graph::default()
@@ -1101,16 +1109,14 @@ impl CodecBackend for FcstdCodec {
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
-        resource::reserve_vec_items(
-            ctx,
+        ctx.reserve_vec(
             &mut losses,
             topology_losses.len(),
             "FCStd topology loss output",
         )?;
         losses.extend(topology_losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
-        resource::reserve_vec_items(
-            ctx,
+        ctx.reserve_vec(
             &mut losses,
             usize::from(dialect_losses.is_some()),
             "FCStd dialect loss output",
@@ -1242,11 +1248,11 @@ fn push_semantic_loss(
     tag: Option<&str>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let message = resource::retained_join(ctx, message_parts, "", operation)?;
+    let message = ctx.join_retained(message_parts, "", operation)?;
     let tag = tag
-        .map(|tag| resource::retained_string(ctx, tag, operation))
+        .map(|tag| ctx.copy_retained_text(tag, operation))
         .transpose()?;
-    resource::reserve_vec_items(ctx, losses, 1, "FCStd semantic loss output")?;
+    ctx.reserve_vec(losses, 1, "FCStd semantic loss output")?;
     losses.push(
         code.note(message).with_provenance(
             cadmpeg_ir::SourceProvenance::in_stream(

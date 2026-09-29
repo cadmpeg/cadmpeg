@@ -666,11 +666,9 @@ fn rolling_ball_third_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedRollingBallThirdSide, cadmpeg_core::CodecError>> {
-    let label = propagate_resource!(crate::decode_alloc::copy_string(
-        ctx,
-        cur.take_str()?,
-        "ASM rolling ball third-side label"
-    ));
+    let label = propagate_resource!(
+        ctx.copy_retained_text(cur.take_str()?, "ASM rolling ball third-side label")
+    );
     let surface = propagate_resource!(embedded_surface(ctx, cur)?);
     let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
     cur.set_pos(curve_end);
@@ -704,9 +702,13 @@ fn blend_value_name<'a>(cur: &mut Cur<'a>) -> Option<&'a str> {
 
 fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry> {
     function
-        .edit_control_points(|point| {
-            point.u *= LEN_TO_MM;
-            Ok(())
+        .try_map_control_points(|_, point| {
+            let point = point.get();
+            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                point.u * LEN_TO_MM,
+                point.v,
+            ))
+            .ok_or(())
         })
         .ok()?;
     Some(PcurveGeometry::Nurbs { nurbs: function })
@@ -762,10 +764,9 @@ fn variable_blend_value(
             let terminal = if matches!(cur.peek(), Some(Token::Double(_))) {
                 VariableBlendTerminal::Double(cur.take_f64()?)
             } else {
-                VariableBlendTerminal::Text(propagate_resource!(crate::decode_alloc::copy_string(
-                    ctx,
+                VariableBlendTerminal::Text(propagate_resource!(ctx.copy_retained_text(
                     blend_value_name(cur)?,
-                    "ASM variable blend terminal text",
+                    "ASM variable blend terminal text"
                 )))
             };
             VariableBlendValuePayload::Functional {
@@ -813,10 +814,15 @@ fn variable_blend_value(
             }
             let mut points = Vec::new();
             if points.try_reserve(count).is_err() {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "reserve variable blend interpolation points",
-                    count as u64,
-                    count as u64,
+                return Some(Err(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "reserve variable blend interpolation points",
+                        ),
+                        cadmpeg_core::decode::u64_from_index(count),
+                        cadmpeg_core::decode::u64_from_index(count),
+                        "reserve variable blend interpolation points",
+                    ),
                 )));
             }
             for _ in 0..count {
@@ -1642,11 +1648,13 @@ fn revision_vertex_blend_boundary(
             }
         }
         "pcurve" => {
-            let (surface, support_bounds) =
-                match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-                    Ok(surface) => surface,
-                    Err(error) => return Some(Err(error)),
-                };
+            let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+                surface,
+                bounds: support_bounds,
+            } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+                Ok(surface) => surface,
+                Err(error) => return Some(Err(error)),
+            };
             let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
             let sense = cur.take_bool()?;
             let fit_tolerance =
@@ -1717,11 +1725,10 @@ pub(super) fn vertex_blend_spl_sur(
     if count > 100_000 {
         return None;
     }
-    let mut boundaries =
-        match crate::decode_alloc::counted_vec(ctx, count, "ASM vertex blend boundaries") {
-            Ok(boundaries) => boundaries,
-            Err(error) => return Some(Err(error)),
-        };
+    let mut boundaries = match ctx.collection_vec(count, "ASM vertex blend boundaries") {
+        Ok(boundaries) => boundaries,
+        Err(error) => return Some(Err(error)),
+    };
     for _ in 0..count {
         boundaries.push(if revision.is_some() {
             match revision_vertex_blend_boundary(ctx, &mut cur, resolver)? {

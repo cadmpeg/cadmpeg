@@ -22,12 +22,12 @@ pub(super) enum ReadPoles3 {
 }
 
 impl ReadPoles3 {
-    /// Start a read of `count` poles in the marker-selected form.
-    pub(super) fn with_capacity(count: usize, rational: bool) -> Self {
+    /// Start a read of poles in the marker-selected form.
+    pub(super) fn empty(rational: bool) -> Self {
         if rational {
-            Self::Rational(Vec::with_capacity(count))
+            Self::Rational(Vec::new())
         } else {
-            Self::Polynomial(Vec::with_capacity(count))
+            Self::Polynomial(Vec::new())
         }
     }
 
@@ -37,17 +37,13 @@ impl ReadPoles3 {
         rational: bool,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         if rational {
-            Ok(Self::Rational(crate::decode_alloc::counted_vec(
-                ctx,
-                count,
-                "ASM rational NURBS poles",
-            )?))
+            Ok(Self::Rational(
+                ctx.collection_vec(count, "ASM rational NURBS poles")?,
+            ))
         } else {
-            Ok(Self::Polynomial(crate::decode_alloc::counted_vec(
-                ctx,
-                count,
-                "ASM polynomial NURBS poles",
-            )?))
+            Ok(Self::Polynomial(
+                ctx.collection_vec(count, "ASM polynomial NURBS poles")?,
+            ))
         }
     }
 
@@ -110,17 +106,12 @@ impl ReadPoles3 {
             v_count: usize,
         ) -> Option<Result<Vec<Vec<T>>, cadmpeg_core::CodecError>> {
             (flat.len() == u_count.checked_mul(v_count)?).then_some(())?;
-            let mut rows =
-                match crate::decode_alloc::counted_vec(ctx, u_count, "ASM NURBS grid rows") {
-                    Ok(rows) => rows,
-                    Err(error) => return Some(Err(error)),
-                };
+            let mut rows = match ctx.collection_vec(u_count, "ASM NURBS grid rows") {
+                Ok(rows) => rows,
+                Err(error) => return Some(Err(error)),
+            };
             for u in 0..u_count {
-                let mut row = match crate::decode_alloc::counted_vec(
-                    ctx,
-                    v_count,
-                    "ASM NURBS grid row poles",
-                ) {
+                let mut row = match ctx.collection_vec(v_count, "ASM NURBS grid row poles") {
                     Ok(row) => row,
                     Err(error) => return Some(Err(error)),
                 };
@@ -394,7 +385,7 @@ pub(super) fn read_knots(
         mults.push(take_tagged_int(b, pos, 0x04, int_width)?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    let mut expanded = Vec::with_capacity(expansion.expanded_len());
+    let mut expanded = Vec::new();
     for (index, (kv, multiplicity)) in knots.iter().zip(&mults).enumerate() {
         let run_length = usize::try_from(*multiplicity).ok()?
             + usize::from(index == 0 || index + 1 == mults.len());
@@ -413,7 +404,7 @@ pub(super) fn read_control_points(
     count: usize,
     marker: BsplineMarker,
 ) -> Option<ReadPoles3> {
-    let mut poles = ReadPoles3::with_capacity(count, marker.rational());
+    let mut poles = ReadPoles3::empty(marker.rational());
     for _ in 0..count {
         let mut comps = [0.0f64; 4];
         for comp in comps.iter_mut().take(marker.cp_dims()) {
@@ -662,7 +653,7 @@ mod string_width_tests {
     /// read instead.
     #[test]
     fn read_poles_state_rows_and_refuse_an_unusable_weight() {
-        let mut poles = ReadPoles3::with_capacity(2, true);
+        let mut poles = ReadPoles3::empty(true);
         assert!(poles.push(Point3::new(0.0, 0.0, 0.0), 1.0).is_some());
         assert!(poles.push(Point3::new(1.0, 0.0, 0.0), 0.0).is_none());
         let ReadPoles3::Rational(rows) = poles else {
@@ -670,7 +661,7 @@ mod string_width_tests {
         };
         assert_eq!(rows.len(), 1);
 
-        let mut grid = ReadPoles3::with_capacity(4, false);
+        let mut grid = ReadPoles3::empty(false);
         for index in 0..4 {
             assert!(grid
                 .push(Point3::new(f64::from(index), 0.0, 0.0), 1.0)

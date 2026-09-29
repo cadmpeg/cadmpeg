@@ -8,31 +8,30 @@ use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::{AttributeId, Identity, IdentityComponent, UnknownId};
 use cadmpeg_ir::topology::Color;
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::RandomState, HashMap, HashSet};
 
 /// Follow `entity`'s attribute chain, emitting each record not yet in
 /// `emitted` as a [`SourceAttribute`] bound to `target`.
-#[allow(clippy::implicit_hasher)]
 pub fn collect_attributes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     target: &AttributeTarget,
-    by_index: &HashMap<i64, &Record>,
-    emitted: &mut HashSet<i64>,
+    by_index: &HashMap<i64, &Record, RandomState>,
+    emitted: &mut HashSet<i64, RandomState>,
     out: &mut Vec<SourceAttribute>,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
     while let Some(index) = current {
-        if !crate::decode_alloc::insert_hash_set(ctx, &mut chain, index, "ASM attribute chain")? {
+        if !ctx.insert_hash_set(&mut chain, index, "ASM attribute chain")? {
             break;
         }
         let Some(record) = by_index.get(&index) else {
             break;
         };
-        if crate::decode_alloc::insert_hash_set(ctx, emitted, index, "ASM emitted attributes")? {
-            crate::decode_alloc::reserve_vec_slot(ctx, out, "ASM source attributes")?;
+        if ctx.insert_hash_set(emitted, index, "ASM emitted attributes")? {
+            ctx.reserve_vec(out, 1, "ASM source attributes")?;
             out.push(source_attribute(ctx, record, target.clone(), format)?);
         }
         current = attribute_next(record);
@@ -158,7 +157,7 @@ pub fn source_attribute(
     // rather than carrying an attribute value.
     let mut values = Vec::new();
     for token in record.chunks() {
-        crate::decode_alloc::reserve_vec_slot(ctx, &mut values, "ASM attribute values")?;
+        ctx.reserve_vec(&mut values, 1, "ASM attribute values")?;
         let value = attribute_value(ctx, token, format)?.ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "attribute record {} ({}) holds a non-finite number",
@@ -170,7 +169,7 @@ pub fn source_attribute(
     Ok(SourceAttribute {
         id: brep_id!(format, AttributeId, "attribute", record.index),
         target,
-        name: crate::decode_alloc::copy_string(ctx, &record.name, "ASM attribute record name")?,
+        name: ctx.copy_retained_text(&record.name, "ASM attribute record name")?,
         values,
     })
 }
@@ -196,11 +195,9 @@ fn attribute_value(
             Some(value) => value,
             None => return Ok(None),
         },
-        Token::Str(value) => AttributeValue::String(crate::decode_alloc::copy_string(
-            ctx,
-            value,
-            "ASM attribute string",
-        )?),
+        Token::Str(value) => {
+            AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute string")?)
+        }
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
         Token::Ref(value) => {
@@ -216,9 +213,9 @@ fn attribute_value(
             Some(value) => value,
             None => return Ok(None),
         },
-        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(
-            crate::decode_alloc::copy_string(ctx, value, "ASM attribute identifier")?,
-        ),
+        Token::Ident(value) | Token::SubIdent(value) => {
+            AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute identifier")?)
+        }
     }))
 }
 
@@ -404,8 +401,10 @@ pub fn attribute_chain_color_carrier<'a>(
 }
 
 /// The first well-formed exact direct color on `entity`'s attribute chain.
-#[allow(clippy::implicit_hasher)]
-pub fn attribute_chain_color(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<Color> {
+pub fn attribute_chain_color(
+    entity: &Record,
+    by_index: &HashMap<i64, &Record, RandomState>,
+) -> Option<Color> {
     attribute_chain_color_carrier(entity, by_index.len(), |index| {
         by_index.get(&index).copied()
     })
@@ -413,11 +412,10 @@ pub fn attribute_chain_color(entity: &Record, by_index: &HashMap<i64, &Record>) 
 }
 
 /// The first non-empty name attribute on `entity`'s attribute chain.
-#[allow(clippy::implicit_hasher)]
 pub fn attribute_chain_name(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
-    by_index: &HashMap<i64, &Record>,
+    by_index: &HashMap<i64, &Record, RandomState>,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
     let Some(mut current) = entity.ref_at(0) else {
         return Ok(None);
@@ -439,7 +437,7 @@ pub fn attribute_chain_name(
             }
             if let (Some("name"), Some(value)) = (previous, last) {
                 if !value.is_empty() {
-                    let name = crate::decode_alloc::copy_string(ctx, value, "ASM attribute name")?;
+                    let name = ctx.copy_retained_text(value, "ASM attribute name")?;
                     return Ok(Some(name));
                 }
             }
@@ -460,7 +458,7 @@ pub fn unknown_record_id(
     rec: &Record,
     format: IdFormat,
 ) -> Result<UnknownId, cadmpeg_core::CodecError> {
-    let name = crate::decode_alloc::copy_string(ctx, rec.head(), "ASM unknown record kind")?;
+    let name = ctx.copy_retained_text(rec.head(), "ASM unknown record kind")?;
     let kind = IdentityComponent::try_new(name).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid ASM source identity component: {error}"

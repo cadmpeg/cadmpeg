@@ -161,8 +161,23 @@ impl MeshBudget {
     }
 
     /// Records retained bytes after admission.
-    fn commit(&mut self, bytes: usize) {
-        self.used = self.used.saturating_add(bytes);
+    fn commit(&mut self, bytes: usize) -> Result<(), CodecError> {
+        let total = self.used.checked_add(bytes).ok_or_else(|| {
+            cadmpeg_core::decode::refuse_local_limit(
+                "Rhino document mesh buffer bytes",
+                u64::MAX,
+                u64::MAX,
+            )
+        })?;
+        if total > self.limit {
+            return Err(cadmpeg_core::decode::refuse_local_limit(
+                "Rhino document mesh buffer bytes",
+                u64_from_index(self.limit),
+                u64_from_index(total),
+            ));
+        }
+        self.used = total;
+        Ok(())
     }
 }
 
@@ -220,16 +235,14 @@ impl MeshId {
         match self {
             Self::Ready(id) => Ok(id),
             Self::ExtrusionCache(index) => {
-                cadmpeg_ir::tessellation::TessellationId::mint(crate::wire::admitted_format(
-                    ctx,
+                cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(
                     format_args!("rhino:extrusion:mesh-cache#{index}"),
                     "Rhino extrusion mesh-cache ID",
                 )?)
                 .map_err(|error| CodecError::Malformed(error.to_string()))
             }
             Self::V5ExtrusionCache(index) => {
-                cadmpeg_ir::tessellation::TessellationId::mint(crate::wire::admitted_format(
-                    ctx,
+                cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(
                     format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
                     "Rhino V5 extrusion mesh-cache ID",
                 )?)
@@ -362,9 +375,11 @@ pub(crate) fn decode(
         let surface = read_buffer(
             expand,
             &mut reader,
-            vertex_count * 16,
+            MeshBufferSpec {
+                expected: vertex_count * 16,
+                name: "surface parameters",
+            },
             &mut decoded.warnings,
-            "surface parameters",
             &mut decompressed_bytes,
             document_budget,
             archive,
@@ -500,12 +515,9 @@ pub(crate) fn decode(
     if major == 3 && minor >= 4 && !post_2006_fields {
         let dropped = reader.skip_remaining()?;
         if dropped != 0 && writer_version.is_none() {
-            crate::wire::reserve_collection(
-                expand.ctx(),
-                &mut decoded.losses,
-                1,
-                "Rhino mesh losses",
-            )?;
+            expand
+                .ctx()
+                .reserve_vec(&mut decoded.losses, 1, "Rhino mesh losses")?;
             decoded.losses.push(crate::wire::admitted_loss(
                 expand.ctx(),
                 crate::loss::RhinoLossCode::SourceWriterStampUnverified,
@@ -941,9 +953,11 @@ fn read_compressed_channels(
         let bytes = read_buffer(
             expand,
             reader,
-            vertices * spec.item_size as usize,
+            MeshBufferSpec {
+                expected: vertices * spec.item_size as usize,
+                name: spec.name,
+            },
             &mut decoded.warnings,
-            spec.name,
             decompressed_bytes,
             document_budget,
             archive,
@@ -1008,17 +1022,22 @@ fn read_counted_raw<'a>(
     Ok(Some(data))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct MeshBufferSpec<'a> {
+    expected: usize,
+    name: &'a str,
+}
+
 fn read_buffer<'a>(
     expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
-    expected: usize,
+    spec: MeshBufferSpec<'_>,
     warnings: &mut Diagnostics,
-    name: &str,
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
 ) -> Result<Option<Cow<'a, [u8]>>, GeometryError> {
+    let MeshBufferSpec { expected, name } = spec;
     let declared = reader.u32()? as usize;
     if declared == 0 {
         return Ok(None);
@@ -1051,7 +1070,7 @@ fn read_buffer<'a>(
             let stored = expand
                 .ctx()
                 .copy_retained(input.take(declared)?, "rhino_mesh_buffer")?;
-            document_budget.commit(declared);
+            document_budget.commit(declared)?;
             (Cow::Owned(stored), declared)
         }
         1 => {
@@ -1101,7 +1120,7 @@ fn read_buffer<'a>(
                 .ctx()
                 .charge_retained(u64_from_index(declared), "rhino_mesh_buffer")?;
             let (view, compressed) = inflate(expand, source, declared)?;
-            document_budget.commit(declared);
+            document_budget.commit(declared)?;
             if compressed != chunk.body().len() {
                 return Err(error(
                     chunk.body().start + compressed,
@@ -1169,9 +1188,11 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     let _probe = read_buffer(
         expand,
         &mut reader,
-        expected,
+        MeshBufferSpec {
+            expected,
+            name: "fuzz",
+        },
         &mut warnings,
-        "fuzz",
         &mut decompressed_bytes,
         &mut document_budget,
         ArchiveVersion::V8,
@@ -1340,9 +1361,11 @@ fn read_double_chunk<'a>(
     let bytes = read_buffer(
         expand,
         &mut child,
-        expected,
+        MeshBufferSpec {
+            expected,
+            name: "double vertices",
+        },
         warnings,
-        "double vertices",
         decompressed_bytes,
         document_budget,
         archive,
@@ -1684,6 +1707,15 @@ fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, Geom
 #[cfg(test)]
 mod tests {
     #[test]
+    fn document_mesh_budget_commit_refuses_overflow() {
+        let mut budget = super::MeshBudget {
+            used: usize::MAX,
+            limit: usize::MAX,
+        };
+        assert!(format!("{:?}", budget.commit(1)).contains("ResourceLimit"));
+    }
+
+    #[test]
     fn numerical_audit_quad_uses_shorter_large_diagonal() {
         let vertices = [
             Point3::new(0.0, 0.0, 0.0),
@@ -1710,7 +1742,7 @@ mod tests {
     use super::{
         consume_optional_chunk, decode, parse_f32_points, parse_mesh_correspondence_userdata,
         quad_face_count, read_buffer, read_faces, read_mapping_tag, read_ngons, read_raw_channels,
-        read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, MeshBudget,
+        read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, MeshBudget, MeshBufferSpec,
         MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT, OPENNURBS4, V4V5_MESH_NGON_USERDATA,
         V5_MESH_DOUBLE_VERTICES,
     };
@@ -2534,9 +2566,11 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut reader,
-                    3,
+                    MeshBufferSpec {
+                        expected: 3,
+                        name: "test"
+                    },
                     &mut warnings,
-                    "test",
                     &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2563,9 +2597,11 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut reader,
-                    4,
+                    MeshBufferSpec {
+                        expected: 4,
+                        name: "test"
+                    },
                     &mut warnings,
-                    "test",
                     &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2578,9 +2614,11 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut reader,
-                    1,
+                    MeshBufferSpec {
+                        expected: 1,
+                        name: "test"
+                    },
                     &mut warnings,
-                    "test",
                     &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2605,9 +2643,11 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut reader,
-                    2,
+                    MeshBufferSpec {
+                        expected: 2,
+                        name: "test"
+                    },
                     &mut warnings,
-                    "test",
                     &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2635,9 +2675,11 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut first,
-                    4,
+                    MeshBufferSpec {
+                        expected: 4,
+                        name: "first"
+                    },
                     &mut warnings,
-                    "first",
                     &mut 0,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2651,9 +2693,11 @@ mod tests {
             let refused = read_buffer(
                 expand,
                 &mut second,
-                4,
+                MeshBufferSpec {
+                    expected: 4,
+                    name: "second",
+                },
                 &mut warnings,
-                "second",
                 &mut 0,
                 &mut document_budget,
                 ArchiveVersion::V8,
@@ -2675,9 +2719,11 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                1,
+                MeshBufferSpec {
+                    expected: 1,
+                    name: "bad"
+                },
                 &mut Diagnostics::new(),
-                "bad",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -2691,9 +2737,11 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "short"
+                },
                 &mut Diagnostics::new(),
-                "short",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -2713,9 +2761,11 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                1,
+                MeshBufferSpec {
+                    expected: 1,
+                    name: "bomb"
+                },
                 &mut Diagnostics::new(),
-                "bomb",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -2733,9 +2783,11 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                1,
+                MeshBufferSpec {
+                    expected: 1,
+                    name: "budget"
+                },
                 &mut Diagnostics::new(),
-                "budget",
                 &mut budget,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -2754,9 +2806,11 @@ mod tests {
                 let result = read_buffer(
                     expand,
                     &mut reader,
-                    1,
+                    MeshBufferSpec {
+                        expected: 1,
+                        name: "aggregate",
+                    },
                     &mut Diagnostics::new(),
-                    "aggregate",
                     &mut 0,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -3019,9 +3073,11 @@ mod tests {
             let decoded = read_buffer(
                 expand,
                 &mut child,
-                4,
+                MeshBufferSpec {
+                    expected: 4,
+                    name: "nested",
+                },
                 &mut Diagnostics::new(),
-                "nested",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -3045,9 +3101,11 @@ mod tests {
             let decoded = read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "first",
+                },
                 &mut Diagnostics::new(),
-                "first",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -3057,9 +3115,11 @@ mod tests {
             let refused = read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "second",
+                },
                 &mut Diagnostics::new(),
-                "second",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -3078,9 +3138,11 @@ mod tests {
             read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "vertices",
+                },
                 &mut Diagnostics::new(),
-                "vertices",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -3103,9 +3165,11 @@ mod tests {
             read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec {
+                    expected: 3,
+                    name: "vertices",
+                },
                 &mut Diagnostics::new(),
-                "vertices",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,

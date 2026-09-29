@@ -4,7 +4,6 @@
 use super::attributes::unknown_record_id;
 use super::geometry::is_edge_record;
 use super::{id, AsmBrep, Carriers};
-use crate::decode_alloc::CountedIteratorExt;
 use crate::ids::{brep_id, IdFormat};
 use crate::sab::Record;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
@@ -64,51 +63,52 @@ pub(super) fn emit_annotation_records(
     stream: &str,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let curve_geometries = out
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry))
-        .collect_counted_map(ctx, "ASM annotation curve geometry index")?;
-    let emitted_ids = out
-        .bodies
-        .iter()
-        .map(|entity| entity.id.as_str())
-        .chain(out.regions.iter().map(|entity| entity.id.as_str()))
-        .chain(out.shells.iter().map(|entity| entity.id.as_str()))
-        .chain(out.faces.iter().map(|entity| entity.id.as_str()))
-        .chain(out.loops.iter().map(|entity| entity.id.as_str()))
-        .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
-        .chain(out.edges.iter().map(|entity| entity.id.as_str()))
-        .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
-        .chain(out.points.iter().map(|entity| entity.id.as_str()))
-        .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
-        .chain(out.curves.iter().map(|entity| entity.id.as_str()))
-        .chain(out.pcurves.iter().map(|entity| entity.id.as_str()))
-        .collect_counted_set(ctx, "ASM annotation emitted IDs")?;
-    let attribute_ids = out
-        .attributes
-        .iter()
-        .map(|attribute| attribute.id.as_str())
-        .collect_counted_set(ctx, "ASM annotation attribute IDs")?;
-    let unknown_ids = out
-        .unknowns
-        .iter()
-        .map(|unknown| unknown.id().as_str())
-        .collect_counted_set(ctx, "ASM annotation unknown IDs")?;
-    let procedural_ids = out
-        .procedural_surfaces
-        .iter()
-        .map(|(_, entity)| entity.id.as_str())
-        .chain(
-            out.procedural_curves
-                .iter()
-                .map(|(_, entity)| entity.id.as_str()),
-        )
-        .collect_counted_set(ctx, "ASM annotation procedural IDs")?;
+    let curve_geometries = ctx.collect_hash_map(
+        out.curves
+            .iter()
+            .map(|curve| (curve.id.as_str(), &curve.geometry)),
+        "ASM annotation curve geometry index",
+    )?;
+    let emitted_ids = ctx.collect_hash_set(
+        out.bodies
+            .iter()
+            .map(|entity| entity.id.as_str())
+            .chain(out.regions.iter().map(|entity| entity.id.as_str()))
+            .chain(out.shells.iter().map(|entity| entity.id.as_str()))
+            .chain(out.faces.iter().map(|entity| entity.id.as_str()))
+            .chain(out.loops.iter().map(|entity| entity.id.as_str()))
+            .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
+            .chain(out.edges.iter().map(|entity| entity.id.as_str()))
+            .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
+            .chain(out.points.iter().map(|entity| entity.id.as_str()))
+            .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
+            .chain(out.curves.iter().map(|entity| entity.id.as_str()))
+            .chain(out.pcurves.iter().map(|entity| entity.id.as_str())),
+        "ASM annotation emitted IDs",
+    )?;
+    let attribute_ids = ctx.collect_hash_set(
+        out.attributes.iter().map(|attribute| attribute.id.as_str()),
+        "ASM annotation attribute IDs",
+    )?;
+    let unknown_ids = ctx.collect_hash_set(
+        out.unknowns.iter().map(|unknown| unknown.id().as_str()),
+        "ASM annotation unknown IDs",
+    )?;
+    let procedural_ids = ctx.collect_hash_set(
+        out.procedural_surfaces
+            .iter()
+            .map(|(_, entity)| entity.id.as_str())
+            .chain(
+                out.procedural_curves
+                    .iter()
+                    .map(|(_, entity)| entity.id.as_str()),
+            ),
+        "ASM annotation procedural IDs",
+    )?;
     for record in records {
         let entity_id = id(format, record.index as i64).into_string();
         if emitted_ids.contains(entity_id.as_str()) {
-            let mut derived_fields = Vec::with_capacity(2);
+            let mut derived_fields = Vec::new();
             match record.head() {
                 "plane" => {
                     derived_fields.extend(["geometry.normal", "geometry.u_axis"]);
@@ -144,58 +144,40 @@ pub(super) fn emit_annotation_records(
                     }
                 }
             }
-            crate::decode_alloc::reserve_vec_slot(
-                ctx,
-                &mut out.annotation_records,
-                "ASM annotation records",
-            )?;
+            ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: entity_id,
-                stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
+                stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(
-                    ctx,
-                    &record.name,
-                    "ASM annotation record name",
-                )?),
+                tag: AnnotationTag::Record(
+                    ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
+                ),
                 derived_fields,
             });
         }
         let attribute_id = brep_id!(format, AttributeId, "attribute", record.index).into_string();
         if attribute_ids.contains(attribute_id.as_str()) {
-            crate::decode_alloc::reserve_vec_slot(
-                ctx,
-                &mut out.annotation_records,
-                "ASM annotation records",
-            )?;
+            ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
-                stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
+                stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(
-                    ctx,
-                    &record.name,
-                    "ASM annotation record name",
-                )?),
+                tag: AnnotationTag::Record(
+                    ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
+                ),
                 derived_fields: Vec::new(),
             });
         }
         let unknown_id = unknown_record_id(ctx, record, format)?;
         if unknown_ids.contains(unknown_id.as_str()) {
-            crate::decode_alloc::reserve_vec_slot(
-                ctx,
-                &mut out.annotation_records,
-                "ASM annotation records",
-            )?;
+            ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id.into_string(),
-                stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
+                stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(
-                    ctx,
-                    &record.name,
-                    "ASM annotation record name",
-                )?),
+                tag: AnnotationTag::Record(
+                    ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
+                ),
                 derived_fields: Vec::new(),
             });
         }
@@ -216,14 +198,10 @@ pub(super) fn emit_annotation_records(
             ),
         ] {
             if procedural_ids.contains(synthetic_id.as_str()) {
-                crate::decode_alloc::reserve_vec_slot(
-                    ctx,
-                    &mut out.annotation_records,
-                    "ASM annotation records",
-                )?;
+                ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
-                    stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
+                    stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
                     offset: record.offset as u64,
                     tag,
                     derived_fields: Vec::new(),
@@ -247,14 +225,10 @@ pub(super) fn emit_annotation_records(
                 "synthetic entity {entity_id} source record {index} is missing"
             ))
         })?;
-        crate::decode_alloc::reserve_vec_slot(
-            ctx,
-            &mut out.annotation_records,
-            "ASM annotation records",
-        )?;
+        ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
         out.annotation_records.push(AnnotationRecord {
-            id: crate::decode_alloc::copy_string(ctx, entity_id, "ASM synthetic annotation id")?,
-            stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
+            id: ctx.copy_retained_text(entity_id, "ASM synthetic annotation id")?,
+            stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
             offset: record.offset as u64,
             tag,
             derived_fields: Vec::new(),

@@ -87,11 +87,30 @@ fn binary_brep_location_capacity_refuses_on_collection_limit() {
 #[test]
 fn text_brep_location_capacity_refuses_on_collection_limit() {
     let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 1 1 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0";
-    let result = with_collection_limit(bytes, 0, |ctx| parse_text(ctx, bytes));
+    let token_count = std::str::from_utf8(bytes)
+        .expect("ASCII fixture")
+        .split_ascii_whitespace()
+        .count() as u64;
+    let result = with_collection_limit(bytes, token_count, |ctx| parse_text(ctx, bytes));
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD B-rep parse_locations"
+    ));
+}
+
+#[test]
+fn text_brep_token_capacity_refuses_on_collection_limit() {
+    let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 1 1 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0";
+    let token_count = std::str::from_utf8(bytes)
+        .expect("ASCII fixture")
+        .split_ascii_whitespace()
+        .count() as u64;
+    let result = with_collection_limit(bytes, token_count - 1, |ctx| parse_text(ctx, bytes));
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD text B-rep tokens"
     ));
 }
 
@@ -799,9 +818,21 @@ fn binary_edge_continuity_retains_decimal_byte_spelling() {
                     bytes.extend_from_slice(&0_i32.to_le_bytes());
                 }
                 let mut cursor = BinaryCursor::new(ctx, &bytes);
-                let record =
-                    parse_binary_edge_representation(&mut cursor, 1, kind, 0, 2, 1, 0, 0, 0, 0)
-                        .unwrap();
+                let record = parse_binary_edge_representation(
+                    &mut cursor,
+                    1,
+                    kind,
+                    super::BinaryGeometryCounts {
+                        curves: 0,
+                        curves2d: 2,
+                        surfaces: 1,
+                        locations: 0,
+                        polygons3d: 0,
+                        indexed_polygons: 0,
+                        triangulations: 0,
+                    },
+                )
+                .unwrap();
                 let (TextEdgeRepresentation::PcurvePair { continuity, .. }
                 | TextEdgeRepresentation::Regularity { continuity, .. }) = record
                 else {

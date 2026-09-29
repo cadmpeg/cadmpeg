@@ -40,7 +40,7 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let count = self.0.len();
         let count_u64 = cadmpeg_core::decode::u64_from_index(count);
         let operation = "NX solved support-UV lane copy";
@@ -380,6 +380,74 @@ pub(crate) struct CurveScan {
     pub(crate) uncharted: Vec<UnchartedIntersection>,
     /// Exact rejection census for the remaining parsed constructions.
     pub(crate) rejected: RejectionCounts,
+}
+
+impl CurveScan {
+    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        fn copy_records<T: Copy>(
+            ctx: &DecodeContext<'_>,
+            records: &[T],
+            operation: &'static str,
+        ) -> Result<Vec<T>, CodecError> {
+            let count = cadmpeg_core::decode::u64_from_index(records.len());
+            ctx.charge_collection_items(count, operation)?;
+            ctx.charge_work(count, operation)?;
+            let mut copied = Vec::new();
+            copied
+                .try_reserve_exact(records.len())
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+            copied.extend_from_slice(records);
+            Ok(copied)
+        }
+
+        let mut curves = Vec::new();
+        let count = cadmpeg_core::decode::u64_from_index(self.curves.len());
+        ctx.charge_collection_items(count, "NX intersection curve copy")?;
+        curves
+            .try_reserve_exact(self.curves.len())
+            .map_err(|_| ctx.refuse_codec_limit("NX intersection curve copy", 0, count))?;
+        for curve in &self.curves {
+            ctx.charge_work(1, "copy NX intersection curves")?;
+            let [support_first, support_second] = [0, 1].map(|side| {
+                curve.support_uv[side]
+                    .as_ref()
+                    .map(|lane| lane.clone_charged(ctx))
+                    .transpose()
+            });
+            let [ext_first, ext_second] = [0, 1].map(|side| {
+                curve.ext_support_uv[side]
+                    .as_ref()
+                    .map(|lane| lane.clone_charged(ctx))
+                    .transpose()
+            });
+            curves.push(IntersectionCurve {
+                references: curve.references,
+                xmt: curve.xmt,
+                primary_support: curve.primary_support,
+                secondary_support: curve.secondary_support,
+                pos: curve.pos,
+                samples: curve.samples.clone_charged(ctx)?,
+                fit_tolerance: curve.fit_tolerance,
+                support_uv: [support_first?, support_second?],
+                ext_support_uv: [ext_first?, ext_second?],
+            });
+        }
+        Ok(Self {
+            source_constructions: copy_records(
+                ctx,
+                &self.source_constructions,
+                "NX source intersection copy",
+            )?,
+            constructions: copy_records(
+                ctx,
+                &self.constructions,
+                "NX intersection construction copy",
+            )?,
+            curves,
+            uncharted: copy_records(ctx, &self.uncharted, "NX uncharted intersection copy")?,
+            rejected: self.rejected,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

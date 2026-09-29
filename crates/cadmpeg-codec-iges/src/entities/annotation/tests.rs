@@ -781,10 +781,12 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &record,
         &entries,
         0,
-        GlobalTable::V4_0,
-        Transform::identity(),
-        1.0,
-        0.001,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V4_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
         None
     )
     .unwrap());
@@ -793,10 +795,12 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &record,
         &entries,
         0,
-        GlobalTable::V5_0,
-        Transform::identity(),
-        1.0,
-        0.001,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
         None
     )
     .unwrap());
@@ -828,10 +832,12 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &record,
         &entries,
         0,
-        GlobalTable::V5_0,
-        translated_pattern_plane,
-        1.0,
-        0.001,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: translated_pattern_plane,
+            length_factor: 1.0,
+            resolution: 0.001
+        },
         None
     )
     .unwrap());
@@ -908,10 +914,12 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         &record(1),
         &entries,
         1,
-        GlobalTable::V5_0,
-        Transform::identity(),
-        1.0,
-        0.001,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
         None
     )
     .unwrap());
@@ -920,10 +928,12 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         &record(0),
         &entries,
         1,
-        GlobalTable::V5_0,
-        Transform::identity(),
-        1.0,
-        0.001,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
         None
     )
     .unwrap());
@@ -932,10 +942,12 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         &record(1),
         &entries,
         0,
-        GlobalTable::V5_0,
-        Transform::identity(),
-        1.0,
-        0.001,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
         None
     )
     .unwrap());

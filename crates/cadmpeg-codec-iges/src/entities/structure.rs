@@ -6,9 +6,6 @@ use super::geometry::{
     curve_geometry_coplanar, linear_nurbs_parameters, planar_polyline_has_self_intersection,
     plane_coordinates, resolve_transform, ProjectionOutcome, TransformResolutionError,
 };
-use crate::decode_resource::{
-    collect_optional_vec, copy_optional_identity, reserve_vec, reserve_vec_growth,
-};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::parameter::{
@@ -119,7 +116,7 @@ fn network_connect_points(
             };
             Some(sequence)
         };
-        reserve_vec_growth(ctx, &mut points, 1, operation)?;
+        ctx.reserve_vec(&mut points, 1, operation)?;
         points.push(point);
     }
     Ok(Some(points))
@@ -214,7 +211,7 @@ fn single_target_cycle(
         ctx.charge_work(1, "iges structure cycle traversal")?;
         if visited.contains(&current) {
             for node in path {
-                crate::decode_resource::insert_optional_btree_set(
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                     Some(ctx),
                     visited,
                     node,
@@ -223,7 +220,7 @@ fn single_target_cycle(
             }
             return Ok(false);
         }
-        if !crate::decode_resource::insert_optional_btree_set(
+        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             Some(ctx),
             &mut visiting,
             current,
@@ -231,7 +228,7 @@ fn single_target_cycle(
         )? {
             return Ok(true);
         }
-        reserve_vec_growth(ctx, &mut path, 1, "iges structure cycle path")?;
+        ctx.reserve_vec(&mut path, 1, "iges structure cycle path")?;
         path.push(current);
         let Some(target) = targets
             .get(&current)
@@ -239,7 +236,7 @@ fn single_target_cycle(
             .filter(|target| targets.contains_key(target))
         else {
             for node in path {
-                crate::decode_resource::insert_optional_btree_set(
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                     Some(ctx),
                     visited,
                     node,
@@ -421,7 +418,7 @@ fn array_mask_valid(
         else {
             return Ok(false);
         };
-        if !crate::decode_resource::insert_optional_btree_set(
+        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             Some(ctx),
             &mut positions,
             position,
@@ -986,7 +983,10 @@ fn property_fields_valid(
         }),
         13 => {
             matches!(record.integer(1), Some(2 | 3))
-                && end == record.integer(1).unwrap_or_default() as usize + 2
+                && record
+                    .integer(1)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .is_some_and(|value| end == value + 2)
                 && record.number(2).is_some()
                 && record.string(3).is_some()
                 && (record.integer(1) == Some(2) || record.string(4).is_some())
@@ -1154,7 +1154,10 @@ fn property_fields_valid(
             }),
         36 => {
             matches!(record.integer(1), Some(1 | 2))
-                && end == record.integer(1).unwrap_or_default() as usize + 2
+                && record
+                    .integer(1)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .is_some_and(|value| end == value + 2)
                 && integer_range(2, 0..=2)
                 && (record.integer(1) == Some(1) || integer_range(3, 0..=2))
         }
@@ -1460,8 +1463,7 @@ fn linear_nurbs_boundary_points(
     ) else {
         return Ok(None);
     };
-    let mut points = reserve_vec(
-        ctx,
+    let mut points = ctx.collection_vec(
         parameters.clone().count(),
         "iges plane NURBS boundary points",
     )?;
@@ -1487,8 +1489,7 @@ fn linear_nurbs_is_simple_closed(
     let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range, ctx)? else {
         return Ok(false);
     };
-    let Some(points) = collect_optional_vec(
-        ctx,
+    let Some(points) = ctx.collect_options(
         points.into_iter().map(|point| {
             transform
                 .apply_point(point)
@@ -1562,12 +1563,11 @@ fn bounded_plane_curve_is_simple(
                 if active.contains(&segment.curve) {
                     return Ok(false);
                 }
-                let active_id = copy_optional_identity(
+                let active_id = segment.curve.try_clone_for_decode(
                     Some(context.ctx),
-                    segment.curve.as_str(),
                     "iges plane boundary child curve ID",
                 )?;
-                crate::decode_resource::insert_optional_btree_set(
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                     Some(context.ctx),
                     active,
                     active_id,
@@ -1632,8 +1632,7 @@ fn bounded_plane_curve_is_simple(
             if !active_range_matches {
                 return Ok(false);
             }
-            let points = collect_optional_vec(
-                context.ctx,
+            let points = context.ctx.collect_options(
                 polyline.points().map(|point| {
                     context
                         .transform
@@ -1740,12 +1739,9 @@ fn plane_boundary_edge(
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
     let mut active = BTreeSet::new();
-    let active_id = copy_optional_identity(
-        Some(ctx),
-        curve_id.as_str(),
-        "iges plane boundary active curve ID",
-    )?;
-    if !crate::decode_resource::insert_optional_btree_set(
+    let active_id =
+        curve_id.try_clone_for_decode(Some(ctx), "iges plane boundary active curve ID")?;
+    if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
         Some(ctx),
         &mut active,
         active_id,
@@ -1811,15 +1807,12 @@ fn plane_face_draft(
     let face_id = crate::ids::face_admitted(stem, ctx)?;
     sequences.record_face(&face_id, source_sequence, Some(ctx))?;
     let mut candidate = ModelDraft::new();
-    let mut loop_ids = reserve_vec(ctx, boundary_edges.len(), "iges legacy plane loop IDs")?;
+    let mut loop_ids = ctx.collection_vec(boundary_edges.len(), "iges legacy plane loop IDs")?;
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
-        let edge_id = crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &edge.id,
-            "iges structure identity copy",
-        )?;
-        reserve_vec_growth(
-            ctx,
+        let edge_id = edge
+            .id
+            .try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+        ctx.reserve_vec(
             &mut candidate.model_mut().edges,
             1,
             "iges legacy plane edge slots",
@@ -1828,35 +1821,23 @@ fn plane_face_draft(
         candidate.model_mut().edges.push(edge);
         let loop_id = crate::ids::loop_admitted(&stem.slot(boundary_index), ctx)?;
         let coedge_id = crate::ids::coedge_admitted(&stem.slot(boundary_index), ctx)?;
-        reserve_vec_growth(
-            ctx,
+        ctx.reserve_vec(
             &mut candidate.model_mut().coedges,
             1,
             "iges legacy plane coedge slots",
         )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().coedges.push(Coedge {
-            id: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &coedge_id,
-                "iges structure identity copy",
-            )?,
-            owner_loop: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &loop_id,
-                "iges structure identity copy",
-            )?,
+            id: coedge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+            owner_loop: loop_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
             edge: edge_id,
-            radial_next: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &coedge_id,
-                "iges structure identity copy",
-            )?,
+            radial_next: coedge_id
+                .try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
         });
-        let mut ring_coedges = reserve_vec(ctx, 1, "iges legacy plane ring coedges")?;
+        let mut ring_coedges = ctx.collection_vec(1, "iges legacy plane ring coedges")?;
         ring_coedges.push(coedge_id);
         let ring =
             match cadmpeg_ir::topology::LoopRing::try_new_for_decode(ctx, ring_coedges, Vec::new())
@@ -1865,24 +1846,15 @@ fn plane_face_draft(
                 Ok(Err(_)) => return Err("legacy plane loop ring is invalid".into()),
                 Err(error) => return Err(error.into()),
             };
-        reserve_vec_growth(
-            ctx,
+        ctx.reserve_vec(
             &mut candidate.model_mut().loops,
             1,
             "iges legacy plane loop slots",
         )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().loops.push(Loop {
-            id: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &loop_id,
-                "iges structure identity copy",
-            )?,
-            face: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &face_id,
-                "iges structure identity copy",
-            )?,
+            id: loop_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+            face: face_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
         loop_ids.push(loop_id);
@@ -1893,24 +1865,15 @@ fn plane_face_draft(
         let outer = loop_ids.remove(0);
         cadmpeg_ir::topology::FaceLoops::classified(outer, loop_ids)
     };
-    reserve_vec_growth(
-        ctx,
+    ctx.reserve_vec(
         &mut candidate.model_mut().faces,
         1,
         "iges legacy plane face slots",
     )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().faces.push(Face {
-        id: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &face_id,
-            "iges structure identity copy",
-        )?,
-        shell: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &shell_id,
-            "iges structure identity copy",
-        )?,
+        id: face_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+        shell: shell_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
         surface: crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?,
         sense: Sense::Forward,
         loops: face_loops,
@@ -1918,58 +1881,39 @@ fn plane_face_draft(
         color: None,
         tolerance,
     });
-    let mut shell_faces = reserve_vec(ctx, 1, "iges legacy plane shell faces")?;
+    let mut shell_faces = ctx.collection_vec(1, "iges legacy plane shell faces")?;
     shell_faces.push(face_id);
     let shell = Shell::new(
-        crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &shell_id,
-            "iges structure identity copy",
-        )?,
-        crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &region_id,
-            "iges structure identity copy",
-        )?,
+        shell_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+        region_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
         shell_faces,
         Vec::new(),
         Vec::new(),
     )
     .map_err(|_| LegacyPlaneError::Invalid("legacy plane shell is empty"))?;
-    reserve_vec_growth(
-        ctx,
+    ctx.reserve_vec(
         &mut candidate.model_mut().shells,
         1,
         "iges legacy plane shell slots",
     )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().shells.push(shell);
-    let mut region_shells = reserve_vec(ctx, 1, "iges legacy plane region shells")?;
+    let mut region_shells = ctx.collection_vec(1, "iges legacy plane region shells")?;
     region_shells.push(shell_id);
-    reserve_vec_growth(
-        ctx,
+    ctx.reserve_vec(
         &mut candidate.model_mut().regions,
         1,
         "iges legacy plane region slots",
     )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().regions.push(Region {
-        id: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &region_id,
-            "iges structure identity copy",
-        )?,
-        body: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &body_id,
-            "iges structure identity copy",
-        )?,
+        id: region_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+        body: body_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
         shells: region_shells,
     });
-    let mut body_regions = reserve_vec(ctx, 1, "iges legacy plane body regions")?;
+    let mut body_regions = ctx.collection_vec(1, "iges legacy plane body regions")?;
     body_regions.push(region_id);
-    reserve_vec_growth(
-        ctx,
+    ctx.reserve_vec(
         &mut candidate.model_mut().bodies,
         1,
         "iges legacy plane body slots",
@@ -2042,7 +1986,7 @@ fn legacy_single_parent_face(
     let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
         return Err("legacy single-parent plane hole has no children".into());
     };
-    let mut children = reserve_vec(ctx, child_count, "iges legacy plane child pointers")?;
+    let mut children = ctx.collection_vec(child_count, "iges legacy plane child pointers")?;
     for offset in 0..child_count {
         let Some(child) = existing_pointer(record, 4 + offset, entries) else {
             return Err("legacy single-parent plane hole has an invalid child pointer".into());
@@ -2071,7 +2015,7 @@ fn legacy_single_parent_face(
         .checked_add(1)
         .ok_or("legacy single-parent plane hole has an invalid child pointer")?;
     let mut boundary_sequences =
-        reserve_vec(ctx, boundary_count, "iges legacy plane boundary pointers")?;
+        ctx.collection_vec(boundary_count, "iges legacy plane boundary pointers")?;
     for sequence in std::iter::once(parent_sequence).chain(children.iter().copied()) {
         boundary_sequences.push(
             records
@@ -2084,11 +2028,8 @@ fn legacy_single_parent_face(
     let parent_plane = plane_carrier(&index, parent_sequence)
         .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = global.minimum_resolution_mm();
-    let mut boundary_edges = reserve_vec(
-        ctx,
-        boundary_sequences.len(),
-        "iges legacy plane boundary edges",
-    )?;
+    let mut boundary_edges =
+        ctx.collection_vec(boundary_sequences.len(), "iges legacy plane boundary edges")?;
     for (boundary_index, (plane_sequence, boundary_sequence)) in std::iter::once(parent_sequence)
         .chain(children.iter().copied())
         .zip(boundary_sequences.iter().copied())
@@ -2110,21 +2051,15 @@ fn legacy_single_parent_face(
                 .tail_index(boundary_index),
             ctx,
         )?;
-        edge.id = crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &edge_id,
-            "iges structure identity copy",
-        )?;
-        edge.end = crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &edge.start,
-            "iges structure identity copy",
-        )?;
+        edge.id = edge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+        edge.end = edge
+            .start
+            .try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
         boundary_edges.push(edge);
     }
     let stem =
         crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence);
-    reserve_vec_growth(ctx, &mut children, 1, "iges legacy plane sequence list")?;
+    ctx.reserve_vec(&mut children, 1, "iges legacy plane sequence list")?;
     children.insert(0, parent_sequence);
     Ok(Some((
         plane_face_draft(
@@ -2168,7 +2103,7 @@ fn read_flow_required_pointers(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let mut pointers = reserve_vec(ctx, count, operation)?;
+    let mut pointers = ctx.collection_vec(count, operation)?;
     for _ in 0..count {
         let Some(FlowPointer::Sequence(sequence)) =
             read_flow_pointer(record, entries, cursor, false)
@@ -2187,7 +2122,7 @@ fn read_flow_optional_pointers(
     count: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Option<u32>>>, CodecError> {
-    let mut pointers = reserve_vec(ctx, count, "iges flow continuation pointers")?;
+    let mut pointers = ctx.collection_vec(count, "iges flow continuation pointers")?;
     for _ in 0..count {
         let Some(pointer) = read_flow_pointer(record, entries, cursor, true) else {
             return Ok(None);
@@ -2207,7 +2142,7 @@ fn definition_members(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let mut members = reserve_vec(ctx, count, operation)?;
+    let mut members = ctx.collection_vec(count, operation)?;
     for index in 0..count {
         let Some(sequence) = record
             .integer(4 + index)
@@ -2502,7 +2437,7 @@ pub(super) fn project(
 ) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut records,
             record.directory_sequence,
@@ -2512,7 +2447,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut entries,
             entry.sequence,
@@ -2544,7 +2479,7 @@ pub(super) fn project(
             global.global_table(),
             ctx,
         )? {
-            crate::decode_resource::insert_optional_btree_map(
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                 Some(ctx),
                 &mut flows,
                 entry.sequence,
@@ -2572,7 +2507,7 @@ pub(super) fn project(
             if *sequence != entry.sequence
                 && has_property_pointer(owner_record, entry.sequence, trailing_pointer_analysis)
             {
-                reserve_vec_growth(ctx, &mut owners, 1, "iges property owner sequences")?;
+                ctx.reserve_vec(&mut owners, 1, "iges property owner sequences")?;
                 owners.push(*sequence);
             }
         }
@@ -2763,7 +2698,7 @@ pub(super) fn project(
             _ => true,
         };
         if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -2806,15 +2741,14 @@ pub(super) fn project(
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
         let mut attribute_types = BTreeSet::new();
-        let mut shape = reserve_vec(
-            ctx,
+        let mut shape = ctx.collection_vec(
             attribute_count.unwrap_or_default(),
             "iges attribute shape descriptors",
         )?;
         for _ in 0..attribute_count.unwrap_or_default() {
             let attribute_type_valid = match record.integer(cursor) {
                 Some(value) if (0..=9999).contains(&value) => {
-                    crate::decode_resource::insert_optional_btree_set(
+                    cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                         Some(ctx),
                         &mut attribute_types,
                         value,
@@ -2831,7 +2765,10 @@ pub(super) fn project(
                 Some(TokenValue::Integer(value)) => {
                     usize::try_from(*value).ok().and_then(|count| {
                         (entry.form == 0
-                            || count <= record.parameter_end().saturating_sub(cursor + 3))
+                            || cursor
+                                .checked_add(3)
+                                .and_then(|start| record.parameter_end().checked_sub(start))
+                                .is_some_and(|available| count <= available))
                         .then_some(count)
                     })
                 }
@@ -2864,14 +2801,14 @@ pub(super) fn project(
             }
         }
         if name_valid && list_type_valid && attributes_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
             if entry.form == 0 {
-                crate::decode_resource::insert_optional_btree_map(
+                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                     Some(ctx),
                     &mut attribute_shapes,
                     entry.sequence,
@@ -2917,8 +2854,10 @@ pub(super) fn project(
         let row_count = declared_row_count
             .zip(values_per_row)
             .and_then(|(rows, width)| {
-                let available = record.parameter_end().saturating_sub(value_start);
-                (width == 0 || rows <= available / width).then_some(rows)
+                record
+                    .parameter_end()
+                    .checked_sub(value_start)
+                    .and_then(|available| (width == 0 || rows <= available / width).then_some(rows))
             });
         let mut cursor = value_start;
         let mut values_valid = shape.is_some() && row_count.is_some();
@@ -2931,7 +2870,7 @@ pub(super) fn project(
             }
         }
         if values_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -2973,7 +2912,7 @@ pub(super) fn project(
                     record.string(start).zip(record.string(start + 1))
                 {
                     unit_value_valid(unit_type, value)
-                        && crate::decode_resource::insert_optional_btree_set(
+                        && cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                             Some(ctx),
                             &mut types,
                             unit_type,
@@ -2994,7 +2933,7 @@ pub(super) fn project(
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if units_valid && directory_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -3039,7 +2978,7 @@ pub(super) fn project(
             && entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if directory_valid && classes_valid && cursor == record.parameter_end() {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -3083,7 +3022,7 @@ pub(super) fn project(
             })
         });
         if members_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -3135,7 +3074,7 @@ pub(super) fn project(
                 )
             };
         if valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -3153,15 +3092,14 @@ pub(super) fn project(
                 ) {
                     Ok(Some((candidate, plane_sequences))) => {
                         for sequence in plane_sequences {
-                            crate::decode_resource::insert_optional_btree_set(
+                            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                                 Some(ctx),
                                 &mut legacy_plane_sequences,
                                 sequence,
                                 "iges legacy plane sequence nodes",
                             )?;
                         }
-                        reserve_vec_growth(
-                            ctx,
+                        ctx.reserve_vec(
                             &mut legacy_face_candidates,
                             1,
                             "iges legacy face candidates",
@@ -3216,17 +3154,15 @@ pub(super) fn project(
                         ),
                         ctx,
                     )?;
-                    edge.end = crate::decode_resource::clone_optional_identity(
-                        Some(ctx),
-                        &edge.start,
-                        "iges structure identity copy",
-                    )?;
+                    edge.end = edge
+                        .start
+                        .try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
                     let stem = crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
                     );
                     let mut boundary_edges =
-                        reserve_vec(ctx, 1, "iges bounded plane boundary edges")?;
+                        ctx.collection_vec(1, "iges bounded plane boundary edges")?;
                     boundary_edges.push(edge);
                     let candidate = plane_face_draft(
                         entry.sequence,
@@ -3239,8 +3175,7 @@ pub(super) fn project(
                     );
                     match candidate {
                         Ok(candidate) => {
-                            reserve_vec_growth(
-                                ctx,
+                            ctx.reserve_vec(
                                 &mut legacy_face_candidates,
                                 1,
                                 "iges legacy face candidates",
@@ -3338,7 +3273,7 @@ pub(super) fn project(
                     .filter(|target| flows.contains_key(target))
             })?;
         if flow_targets_valid && !cyclic {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -3369,7 +3304,7 @@ pub(super) fn project(
             _ => false,
         };
         if fields_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -3398,7 +3333,7 @@ pub(super) fn project(
             .and_then(|record| record.integer(1))
             .and_then(|value| u32::try_from(value).ok())
         {
-            crate::decode_resource::insert_optional_btree_map(
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                 Some(ctx),
                 &mut array_targets,
                 entry.sequence,
@@ -3469,7 +3404,7 @@ pub(super) fn project(
                 }
         };
         if target_valid && !cyclic && transform_valid && fields_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -3556,7 +3491,7 @@ pub(super) fn project(
             && transform_valid
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::LogicalPositional)
         {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -3594,7 +3529,7 @@ pub(super) fn project(
             (sequence % 2 == 1).then_some(sequence)
         });
         if let Some(target) = target {
-            crate::decode_resource::insert_optional_btree_map(
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                 Some(ctx),
                 &mut solid_instances,
                 entry.sequence,
@@ -3628,7 +3563,7 @@ pub(super) fn project(
             subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
         let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances, ctx)?;
         if target_valid && transform_valid && !cyclic {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 *sequence,
@@ -3669,7 +3604,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut items = reserve_vec(ctx, count, "iges solid assembly items")?;
+        let mut items = ctx.collection_vec(count, "iges solid assembly items")?;
         let mut items_valid = true;
         for index in 0..count {
             let Some(item) = (|| {
@@ -3696,7 +3631,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut assemblies,
             entry.sequence,
@@ -3779,7 +3714,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             Some(ctx),
             &mut decoded,
             *sequence,
@@ -3829,7 +3764,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut definitions,
             entry.sequence,
@@ -3841,7 +3776,7 @@ pub(super) fn project(
             && subfigure_definition_label_display_valid(entry, &entries)
             && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
         {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut definition_fields_valid,
                 entry.sequence,
@@ -3857,7 +3792,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 408 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            crate::decode_resource::insert_optional_btree_map(
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                 Some(ctx),
                 &mut placement_rejections,
                 entry.sequence,
@@ -3892,7 +3827,7 @@ pub(super) fn project(
             }
         };
         if !placement_valid {
-            crate::decode_resource::insert_optional_btree_map(
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                 Some(ctx),
                 &mut placement_rejections,
                 entry.sequence,
@@ -3902,7 +3837,7 @@ pub(super) fn project(
         }
         let Some(definition) = definition else {
             if !placement_rejections.contains_key(&entry.sequence) {
-                crate::decode_resource::insert_optional_btree_map(
+                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                     Some(ctx),
                     &mut placement_rejections,
                     entry.sequence,
@@ -3918,7 +3853,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut instances,
             entry.sequence,
@@ -3926,7 +3861,7 @@ pub(super) fn project(
             "iges subfigure instance nodes",
         )?;
         if placement_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut instance_fields_valid,
                 entry.sequence,
@@ -4008,7 +3943,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut network_definitions,
             entry.sequence,
@@ -4027,7 +3962,7 @@ pub(super) fn project(
             && subfigure_definition_label_display_valid(entry, &entries)
             && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
         {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut network_definition_fields_valid,
                 entry.sequence,
@@ -4043,7 +3978,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 420 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            crate::decode_resource::insert_optional_btree_map(
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                 Some(ctx),
                 &mut placement_rejections,
                 entry.sequence,
@@ -4101,7 +4036,7 @@ pub(super) fn project(
             }
         };
         if !placement_valid {
-            crate::decode_resource::insert_optional_btree_map(
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                 Some(ctx),
                 &mut placement_rejections,
                 entry.sequence,
@@ -4115,7 +4050,7 @@ pub(super) fn project(
                     Some(definition) => PlacementRejection::InvalidMetadata { definition },
                     None => PlacementRejection::InvalidDefinition,
                 };
-                crate::decode_resource::insert_optional_btree_map(
+                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
                     Some(ctx),
                     &mut placement_rejections,
                     entry.sequence,
@@ -4131,7 +4066,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut network_instances,
             entry.sequence,
@@ -4142,7 +4077,7 @@ pub(super) fn project(
             "iges network instance nodes",
         )?;
         if placement_valid && type_flag_valid && designator_valid && display_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut network_instance_fields_valid,
                 entry.sequence,
@@ -4179,7 +4114,7 @@ pub(super) fn project(
             }
         });
         if definition_fields_valid.contains(sequence) && nesting_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 *sequence,
@@ -4203,7 +4138,7 @@ pub(super) fn project(
             && definition_fields_valid.contains(definition_sequence)
             && decoded.contains(definition_sequence)
         {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 *sequence,
@@ -4249,7 +4184,7 @@ pub(super) fn project(
             }
         });
         if network_definition_fields_valid.contains(sequence) && nesting_valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 *sequence,
@@ -4283,7 +4218,7 @@ pub(super) fn project(
             && definition_valid
             && decoded.contains(&instance.definition)
         {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 *sequence,

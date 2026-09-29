@@ -48,7 +48,7 @@ use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::Exchange;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, Grammar};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
@@ -273,13 +273,19 @@ impl StepDialect {
             charge_declared_entry(ctx)?;
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIER),
-                copy_declared(identifier, ctx)?,
+                match ctx {
+                    Some(ctx) => ctx.copy_retained_text(identifier, "step_dialect_declared_text"),
+                    None => Ok::<String, CodecError>(identifier.to_owned()),
+                }?,
             );
             if let Some((_, Some(arcs))) = split_schema_identifier(identifier) {
                 charge_declared_entry(ctx)?;
                 declared.insert(
                     cadmpeg_core::nonblank_const!(DECLARED_LONG_FORM_ARCS),
-                    copy_declared(arcs, ctx)?,
+                    match ctx {
+                        Some(ctx) => ctx.copy_retained_text(arcs, "step_dialect_declared_text"),
+                        None => Ok::<String, CodecError>(arcs.to_owned()),
+                    }?,
                 );
             }
         }
@@ -293,7 +299,13 @@ impl StepDialect {
         charge_declared_entry(ctx)?;
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_IMPLEMENTATION_LEVEL),
-            copy_declared(exchange.implementation_level(), ctx)?,
+            match ctx {
+                Some(ctx) => ctx.copy_retained_text(
+                    exchange.implementation_level(),
+                    "step_dialect_declared_text",
+                ),
+                None => Ok::<String, CodecError>(exchange.implementation_level().to_owned()),
+            }?,
         );
 
         Ok(if dialect == Self::Unknown {
@@ -310,20 +322,6 @@ fn charge_declared_entry(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecErr
         ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
     }
     Ok(())
-}
-
-fn copy_declared(text: &str, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError> {
-    let operation = "step_dialect_declared_text";
-    if let Some(ctx) = ctx {
-        ctx.charge_retained(u64_from_index(text.len()), operation)?;
-    }
-    let mut copy = String::new();
-    copy.try_reserve_exact(text.len()).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, u64_from_index(text.len())),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(text.len())),
-    })?;
-    copy.push_str(text);
-    Ok(copy)
 }
 
 /// The dialect-unverified loss a match requires.
@@ -371,7 +369,7 @@ fn format_dialect_loss(
     arguments: std::fmt::Arguments<'_>,
 ) -> Result<String, CodecError> {
     match ctx {
-        Some(ctx) => crate::decode_alloc::charged_format(ctx, operation, arguments),
+        Some(ctx) => ctx.format_retained(arguments, operation),
         None => Ok(arguments.to_string()),
     }
 }

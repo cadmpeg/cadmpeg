@@ -228,20 +228,25 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs)
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
             pcurve
-                .edit_control_points(|point| {
-                    point.u *= LEN_TO_MM;
-                    point.v *= -LEN_TO_MM;
-                    Ok(())
+                .try_map_control_points(|_, point| {
+                    let point = point.get();
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        point.u * LEN_TO_MM,
+                        point.v * -LEN_TO_MM,
+                    ))
+                    .ok_or(())
                 })
                 .ok()?;
         }
         NativeSupportChart::Cone { axial_scale } => {
             pcurve
-                .edit_control_points(|point| {
-                    let native = *point;
-                    point.u = native.v;
-                    point.v = native.u * axial_scale;
-                    Ok(())
+                .try_map_control_points(|_, point| {
+                    let native = point.get();
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        native.v,
+                        native.u * axial_scale,
+                    ))
+                    .ok_or(())
                 })
                 .ok()?;
         }
@@ -414,15 +419,13 @@ pub enum EmbeddedSpringPcurve {
 }
 
 /// Structurally selected spring layout.
-// Keep typed source payloads inline without an allocation for each admitted record.
-#[allow(clippy::large_enum_variant)]
 pub enum EmbeddedSpringLayout {
     /// Context-first form with inline replacement ranges.
     ContextFirst {
         /// Ordered support slots.
-        supports: [EmbeddedSpringSupport; 2],
+        supports: Box<[EmbeddedSpringSupport; 2]>,
         /// First pcurve slot.
-        first_pcurve: EmbeddedSpringPcurve,
+        first_pcurve: Box<EmbeddedSpringPcurve>,
         /// Nullable second pcurve slot.
         second_pcurve: Option<PcurveNurbs>,
         /// Shared parameter interval.
@@ -435,7 +438,7 @@ pub enum EmbeddedSpringLayout {
     /// Cache-first form with no inline replacement ranges.
     CacheFirst {
         /// Shared embedded support context.
-        context: CacheFirstCurveContext,
+        context: Box<CacheFirstCurveContext>,
     },
 }
 
@@ -673,12 +676,7 @@ fn pcurve_for_selector_recursive(
     if let Some(index) = direct_subtype_reference(ctx, toks) {
         let index = propagate_resource!(index);
         if !seen.contains(&index) {
-            propagate_resource!(crate::decode_alloc::push_vec(
-                ctx,
-                seen,
-                index,
-                "ASM pcurve references",
-            ));
+            propagate_resource!(ctx.push_vec(seen, index, "ASM pcurve references"));
             // Not the search refusal the four `for` loops over
             // `subtype_refs` state. This is the single record-level
             // delegation, and the wrapper's own routes below run whenever the
@@ -850,7 +848,7 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<&Pcu
                 ..
             } => matches!(supports.get(slot), Some(EmbeddedSpringSupport::Surface(_)))
                 .then(|| match slot {
-                    0 => match first_pcurve {
+                    0 => match first_pcurve.as_ref() {
                         EmbeddedSpringPcurve::Pcurve(pcurve) => Some(pcurve),
                         EmbeddedSpringPcurve::Range(_) => None,
                     },
@@ -919,12 +917,7 @@ fn cacheless_procedural_curve_recursive(
         // decoder does about it is the decoder's decision: the search refuses
         // the stream rather than skipping the reference and reading the one
         // behind it.
-        propagate_resource!(crate::decode_alloc::push_vec(
-            ctx,
-            seen,
-            index,
-            "ASM cacheless curve references",
-        ));
+        propagate_resource!(ctx.push_vec(seen, index, "ASM cacheless curve references"));
         let target = table.span(index)?;
         if let Some(decoded) =
             cacheless_procedural_curve_recursive(ctx, target.tokens(), table, seen)
@@ -1068,12 +1061,7 @@ fn procedural_curve_recursive(
         // decoder does about it is the decoder's decision: the search refuses
         // the stream rather than skipping the reference and reading the one
         // behind it.
-        propagate_resource!(crate::decode_alloc::push_vec(
-            ctx,
-            seen,
-            index,
-            "ASM procedural curve references",
-        ));
+        propagate_resource!(ctx.push_vec(seen, index, "ASM procedural curve references"));
         let target = table.span(index)?;
         if let Some(decoded) = procedural_curve_recursive(ctx, target.tokens(), table, seen) {
             return Some(decoded);
@@ -1212,14 +1200,11 @@ fn embedded_deformable(
             }
             let count = cur.take_long()?;
             let count = usize::try_from(count).ok()?;
-            let mut parameter_pairs = match crate::decode_alloc::counted_vec(
-                ctx,
-                count,
-                "ASM deformable curve parameter pairs",
-            ) {
-                Ok(parameter_pairs) => parameter_pairs,
-                Err(error) => return Some(Err(error)),
-            };
+            let mut parameter_pairs =
+                match ctx.collection_vec(count, "ASM deformable curve parameter pairs") {
+                    Ok(parameter_pairs) => parameter_pairs,
+                    Err(error) => return Some(Err(error)),
+                };
             for _ in 0..count {
                 parameter_pairs.push([cur.take_f64()?, cur.take_f64()?]);
             }
@@ -1386,11 +1371,8 @@ fn embedded_law_curve(
     if count > 100_000 {
         return None;
     }
-    let mut additional = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        count,
-        "ASM law curve additional formulas",
-    ));
+    let mut additional =
+        propagate_resource!(ctx.collection_vec(count, "ASM law curve additional formulas"));
     for _ in 0..count {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
     }
@@ -1423,7 +1405,9 @@ fn embedded_spring(
         };
         let direction = cur.take_enum()?;
         return Some(Ok(EmbeddedSpring {
-            layout: EmbeddedSpringLayout::CacheFirst { context },
+            layout: EmbeddedSpringLayout::CacheFirst {
+                context: Box::new(context),
+            },
             direction,
         }));
     }
@@ -1488,8 +1472,8 @@ fn embedded_spring(
     let direction = cur.take_enum()?;
     Some(Ok(EmbeddedSpring {
         layout: EmbeddedSpringLayout::ContextFirst {
-            supports: [first_support, second_support],
-            first_pcurve,
+            supports: Box::new([first_support, second_support]),
+            first_pcurve: Box::new(first_pcurve),
             second_pcurve,
             parameter_range,
             discontinuities,
@@ -1620,7 +1604,7 @@ pub fn compound_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<Compou
     if component_count == 0 {
         return None;
     }
-    let mut component_parameters = Vec::with_capacity(component_count);
+    let mut component_parameters = Vec::new();
     for _ in 0..component_count {
         component_parameters.push(take_double_payload(bytes, &mut position)?);
     }
@@ -2417,21 +2401,25 @@ fn cache_first_curve_context(
         Ok(present) => present,
         Err(error) => return Some(Err(error)),
     };
-    let (first_surface, first_bounds) =
-        match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-            Ok(surface) => surface,
-            Err(error) => return Some(Err(error)),
-        };
+    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+        surface: first_surface,
+        bounds: first_bounds,
+    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+        Ok(surface) => surface,
+        Err(error) => return Some(Err(error)),
+    };
     let second_surface_start = cur.pos();
     let second_support_present = match support_slot_present(ctx, cur, table) {
         Ok(present) => present,
         Err(error) => return Some(Err(error)),
     };
-    let (second_surface, second_bounds) =
-        match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-            Ok(surface) => surface,
-            Err(error) => return Some(Err(error)),
-        };
+    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+        surface: second_surface,
+        bounds: second_bounds,
+    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+        Ok(surface) => surface,
+        Err(error) => return Some(Err(error)),
+    };
     let mut pcurves = [
         propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value(),
         propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value(),
@@ -2876,7 +2864,7 @@ fn cache_first_intersection(
         Err(error) => return Some(Err(error)),
     };
     let first_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.0,
+        Ok(surface) => surface.surface,
         Err(error) => return Some(Err(error)),
     };
     let second_surface_start = cur.pos();
@@ -2885,7 +2873,7 @@ fn cache_first_intersection(
         Err(error) => return Some(Err(error)),
     };
     let second_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.0,
+        Ok(surface) => surface.surface,
         Err(error) => return Some(Err(error)),
     };
     let surfaces = [
@@ -3059,7 +3047,7 @@ fn support_slot_present(
 
     let mut parsed = *cur;
     if let Some(parsed) = optional_embedded_surface_with_bounds(ctx, &mut parsed, table) {
-        if parsed?.0.is_some() {
+        if parsed?.surface.is_some() {
             return Ok(true);
         }
     }
@@ -3513,17 +3501,25 @@ fn decode_embedded_surface_fields(
 }
 
 /// Optional embedded support surface plus its four optional U/V bound fields.
-#[allow(clippy::type_complexity)]
+pub(super) struct EmbeddedSurfaceWithBounds {
+    pub(super) surface: Option<SurfaceGeometry>,
+    pub(super) bounds: [Option<f64>; 4],
+}
+
+/// Parse an optional embedded support surface and its U/V bounds.
 pub(super) fn optional_embedded_surface_with_bounds(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
-) -> Option<Result<(Option<SurfaceGeometry>, [Option<f64>; 4]), cadmpeg_core::CodecError>> {
+) -> Option<Result<EmbeddedSurfaceWithBounds, cadmpeg_core::CodecError>> {
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident();
     if kind == Some("null_surface") {
-        return Some(Ok((None, [None; 4])));
+        return Some(Ok(EmbeddedSurfaceWithBounds {
+            surface: None,
+            bounds: [None; 4],
+        }));
     }
     if kind == Some("spline") {
         if matches!(cur.peek(), Some(Token::True | Token::False)) {
@@ -3554,7 +3550,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?.value();
             }
-            return Some(Ok((surface, bounds)));
+            return Some(Ok(EmbeddedSurfaceWithBounds { surface, bounds }));
         }
     }
     cur.set_pos(saved);
@@ -3565,7 +3561,10 @@ pub(super) fn optional_embedded_surface_with_bounds(
                 *bound = cur.take_optional_range_value()?.value();
             }
         }
-        return Some(Ok((Some(propagate_resource!(surface)), bounds)));
+        return Some(Ok(EmbeddedSurfaceWithBounds {
+            surface: Some(propagate_resource!(surface)),
+            bounds,
+        }));
     }
     // Inline `spline { <subtype> }` support scope: resolve a solved surface
     // cache when present, or validate the procedural surface construction when
@@ -3601,7 +3600,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?.value();
             }
-            return Some(Ok((surface, bounds)));
+            return Some(Ok(EmbeddedSurfaceWithBounds { surface, bounds }));
         }
     }
     cur.set_pos(saved);
@@ -3623,11 +3622,11 @@ fn compound_definition(
     if count == 0 {
         return None;
     }
-    let mut component_parameters =
-        match crate::decode_alloc::counted_vec(ctx, count, "ASM compound curve parameters") {
-            Ok(component_parameters) => component_parameters,
-            Err(error) => return Some(Err(error)),
-        };
+    let mut component_parameters = match ctx.collection_vec(count, "ASM compound curve parameters")
+    {
+        Ok(component_parameters) => component_parameters,
+        Err(error) => return Some(Err(error)),
+    };
     for _ in 0..count {
         component_parameters.push(cur.take_f64()?);
     }
@@ -3635,11 +3634,10 @@ fn compound_definition(
         return None;
     }
     cur.bump();
-    let mut components =
-        match crate::decode_alloc::counted_vec(ctx, count, "ASM compound curve components") {
-            Ok(components) => components,
-            Err(error) => return Some(Err(error)),
-        };
+    let mut components = match ctx.collection_vec(count, "ASM compound curve components") {
+        Ok(components) => components,
+        Err(error) => return Some(Err(error)),
+    };
     for parameter in component_parameters {
         let (curve, end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
         components.push(cadmpeg_ir::geometry::CompoundComponent {

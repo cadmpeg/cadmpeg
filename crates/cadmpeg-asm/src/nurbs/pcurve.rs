@@ -136,8 +136,8 @@ pub(super) fn decode_pcurve_block_with_end(
         read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
     // The record states a pole and its weight together, so the reader states
     // rows: there is no pole lane and no weight lane for a reader to pair.
-    let mut points = Vec::with_capacity(n_poles);
-    let mut weighted = Vec::with_capacity(n_poles);
+    let mut points = Vec::new();
+    let mut weighted = Vec::new();
     for _ in 0..n_poles {
         if *b.get(pos)? != 0x06 {
             return None;
@@ -220,14 +220,12 @@ pub(super) fn pcurve_block_with_end(
     let mut points = Vec::new();
     let mut weighted = Vec::new();
     if rational {
-        weighted = match crate::decode_alloc::counted_vec(ctx, n_poles, "ASM rational pcurve poles")
-        {
+        weighted = match ctx.collection_vec(n_poles, "ASM rational pcurve poles") {
             Ok(weighted) => weighted,
             Err(error) => return Some(Err(error)),
         };
     } else {
-        points = match crate::decode_alloc::counted_vec(ctx, n_poles, "ASM polynomial pcurve poles")
-        {
+        points = match ctx.collection_vec(n_poles, "ASM polynomial pcurve poles") {
             Ok(points) => points,
             Err(error) => return Some(Err(error)),
         };

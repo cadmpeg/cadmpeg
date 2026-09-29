@@ -981,10 +981,10 @@ fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing()
         .expect("fin record");
     put_ref(&mut stream, fin + 16, 99);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    assert!(topology_body_node_ids(0, &graph).is_empty());
+    crate::test_support::with_decode_context(|ctx| {
+        let graph = crate::topology::Graph::parse(ctx, &stream).unwrap();
+        assert!(topology_body_node_ids(ctx, 0, &graph).unwrap().is_empty());
+    });
 }
 
 #[test]

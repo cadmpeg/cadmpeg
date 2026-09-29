@@ -2,14 +2,10 @@
 //! Global delimiters, count-driven Hollerith values, units, and metadata.
 
 use crate::card::{CardScan, Section};
-use crate::decode_resource::{
-    format_retained, lossy_retained, push_formatted_note, reserve_vec_growth,
-};
+use crate::decode_resource::lossy_retained;
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit,
-};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
@@ -363,8 +359,7 @@ fn global_loss_note(
     defect: Defect,
     consequence: &str,
 ) -> Result<LossNote, CodecError> {
-    let message = format_retained(
-        ctx,
+    let message = ctx.format_retained(
         format_args!(
             "IGES Global field {} ({}) is {}; {consequence}",
             index + 1,
@@ -381,7 +376,10 @@ fn admitted_global_loss(
     code: IgesLossCode,
     message: String,
 ) -> Result<LossNote, CodecError> {
-    ctx.charge_retained(4 + code.code().len() as u64, "iges global loss kind")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges global loss kind",
+    )?;
     Ok(code.note(message))
 }
 
@@ -391,15 +389,11 @@ fn recovered_real_loss_note(
     source: &str,
     value: f64,
 ) -> Result<LossNote, CodecError> {
-    let message = format_retained(
-        ctx,
-        format_args!(
+    let message = ctx.format_retained(format_args!(
             "IGES Global field {} ({}) uses noncanonical real syntax {source:?}; the decoder recovered finite value {value}; {REAL_SYNTAX_RECOVERY_CONSEQUENCE}",
             index + 1,
             field_name(index),
-        ),
-        "iges global recovered real loss message",
-    )?;
+        ), "iges global recovered real loss message")?;
     admitted_global_loss(ctx, IgesLossCode::GlobalNumericSyntaxRecovered, message)
 }
 
@@ -485,8 +479,11 @@ pub(crate) fn layout_global_cards(
         delimiter
     };
 
-    let mut fields =
-        crate::decode_resource::reserve_optional_vec(ctx, 1, "iges global layout fields")?;
+    let mut fields = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        1,
+        "iges global layout fields",
+    )?;
     fields.push(0..cursor);
     while cursor < bytes.len() {
         let start = cursor;
@@ -505,7 +502,7 @@ pub(crate) fn layout_global_cards(
             .ok_or_else(|| malformed("Global record delimiter is missing"))?
             == &record_delimiter;
         end += 1;
-        crate::decode_resource::reserve_optional_vec_growth(
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
             ctx,
             &mut fields,
             1,
@@ -535,8 +532,8 @@ pub(crate) fn layout_global_cards(
             return Err(malformed("Global field exceeds one card"));
         }
         if card.len() + minimum > 72 {
-            card.resize(72, b' ');
-            crate::decode_resource::reserve_optional_vec_growth(
+            card.extend(std::iter::repeat_with(|| b' ').take(72 - card.len()));
+            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
                 ctx,
                 &mut cards,
                 1,
@@ -547,7 +544,7 @@ pub(crate) fn layout_global_cards(
         }
         for byte in field.iter().copied() {
             if card.len() == 72 {
-                crate::decode_resource::reserve_optional_vec_growth(
+                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
                     ctx,
                     &mut cards,
                     1,
@@ -560,7 +557,7 @@ pub(crate) fn layout_global_cards(
         }
     }
     if !card.is_empty() {
-        crate::decode_resource::reserve_optional_vec_growth(
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
             ctx,
             &mut cards,
             1,
@@ -577,7 +574,14 @@ fn layout_global_card(ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u8>, CodecE
     }
     let mut card = Vec::new();
     card.try_reserve_exact(72).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit("iges global layout card bytes", 72, 72)
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("iges global layout card bytes"),
+                72,
+                72,
+                "iges global layout card bytes",
+            ),
+        )
     })?;
     Ok(card)
 }
@@ -653,11 +657,15 @@ fn delimited_value(
     retain: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Value, usize, bool), CodecError> {
+    let remaining = bytes
+        .len()
+        .checked_sub(start)
+        .ok_or_else(|| CodecError::malformed("IGES Global value offset exceeds input"))?;
     let value_start = start
         + bytes[start..]
             .iter()
             .position(|byte| *byte != b' ')
-            .unwrap_or(bytes.len().saturating_sub(start));
+            .unwrap_or(remaining);
     if bytes.get(value_start) == Some(&parameter_delimiter) {
         return Ok((Value::Omitted, value_start + 1, false));
     }
@@ -705,10 +713,14 @@ fn delimited_value(
             }
         };
     let separator_start = if allow_padding_after {
+        let remaining = bytes
+            .len()
+            .checked_sub(end)
+            .ok_or_else(|| CodecError::malformed("IGES Global separator exceeds input"))?;
         end + bytes[end..]
             .iter()
             .position(|byte| *byte != b' ')
-            .unwrap_or(bytes.len().saturating_sub(end))
+            .unwrap_or(remaining)
     } else {
         end
     };
@@ -731,14 +743,12 @@ fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>,
     ctx.charge_retained(u64_from_index(length), "iges_global_stream")?;
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(length).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit {
-            dimension: ResourceDimension::RetainedBytes,
-            reason: ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_retained_bytes,
-            used: 0,
-            additional: u64_from_index(length),
-            operation: "iges_global_stream",
-        })
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            u64_from_index(length),
+            "iges_global_stream",
+        ))
     })?;
     for (_, line) in scan.section(Section::Global) {
         bytes.extend_from_slice(&line.payload[..72]);
@@ -936,7 +946,14 @@ fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteR
     let _reservation = ctx.reserve_scoped(count, "iges global numeric text")?;
     let mut normalized = Vec::new();
     normalized.try_reserve_exact(text.len()).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit("iges global numeric text", count, count)
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("iges global numeric text"),
+                count,
+                count,
+                "iges global numeric text",
+            ),
+        )
     })?;
     normalized.extend_from_slice(text.as_bytes());
     for byte in &mut normalized {
@@ -994,7 +1011,8 @@ impl Resolution<'_, '_> {
         consequence: &str,
     ) -> Result<(), CodecError> {
         let note = global_loss_note(self.ctx, code, index, defect, consequence)?;
-        reserve_vec_growth(self.ctx, &mut self.losses, 1, "iges global loss notes")?;
+        self.ctx
+            .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
         self.losses.push(note);
         Ok(())
     }
@@ -1006,11 +1024,7 @@ impl Resolution<'_, '_> {
                 lossy_retained(self.ctx, bytes, "iges global declaration text")
             }
             Value::ForbiddenString => {
-                format_retained(
-                    self.ctx,
-                    format_args!("a string payload contains a byte forbidden by the effective specification family"),
-                    "iges global declaration text",
-                )
+                self.ctx.format_retained(format_args!("a string payload contains a byte forbidden by the effective specification family"), "iges global declaration text")
             }
         }
     }
@@ -1082,7 +1096,8 @@ impl Resolution<'_, '_> {
     fn charge_recovered_real(&mut self, index: usize, value: f64) -> Result<(), CodecError> {
         let source = self.declaration_text(index)?;
         let note = recovered_real_loss_note(self.ctx, index, &source, value)?;
-        reserve_vec_growth(self.ctx, &mut self.losses, 1, "iges global loss notes")?;
+        self.ctx
+            .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
         self.losses.push(note);
         Ok(())
     }
@@ -1400,8 +1415,7 @@ impl Resolution<'_, '_> {
             let name = match self.supplied_string(FIELD_UNITS_NAME)? {
                 Supplied::Absent if global_table.defaults_units_name() => {
                     match units_flag.and_then(enumerated_unit_name) {
-                        Some(name) => Some(format_retained(
-                            self.ctx,
+                        Some(name) => Some(self.ctx.format_retained(
                             format_args!("{name}"),
                             "iges global default units name",
                         )?),
@@ -1451,23 +1465,20 @@ impl Resolution<'_, '_> {
                     LENGTH_CONSEQUENCE,
                 )?,
                 None => {
-                    let message = format_retained(
-                        self.ctx,
-                        format_args!(
+                    let message = self.ctx.format_retained(format_args!(
                             "IGES Global fields {} ({}) and {} ({}) produce no finite positive millimetre length factor; {LENGTH_CONSEQUENCE}",
                             FIELD_MODEL_SCALE + 1,
                             field_name(FIELD_MODEL_SCALE),
                             FIELD_UNITS_FLAG + 1,
                             field_name(FIELD_UNITS_FLAG),
-                        ),
-                        "iges global length loss message",
-                    )?;
+                        ), "iges global length loss message")?;
                     let note = admitted_global_loss(
                         self.ctx,
                         IgesLossCode::GlobalLengthUnitUnresolved,
                         message,
                     )?;
-                    reserve_vec_growth(self.ctx, &mut self.losses, 1, "iges global loss notes")?;
+                    self.ctx
+                        .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
                     self.losses.push(note);
                 }
             }
@@ -1508,16 +1519,12 @@ fn resolve(
     let global_field_count = global_table.global_field_count();
 
     if field_count > global_field_count {
-        let message = format_retained(
-            ctx,
-            format_args!(
+        let message = ctx.format_retained(format_args!(
                 "IGES Global record has {field_count} fields; IGES {} Table 1 defines {global_field_count} and the decoder ignored the rest",
                 effective_version.name(),
-            ),
-            "iges global framing loss message",
-        )?;
+            ), "iges global framing loss message")?;
         let note = admitted_global_loss(ctx, IgesLossCode::GlobalNoncanonicalFraming, message)?;
-        reserve_vec_growth(ctx, &mut resolution.losses, 1, "iges global loss notes")?;
+        ctx.reserve_vec(&mut resolution.losses, 1, "iges global loss notes")?;
         resolution.losses.push(note);
     }
 
@@ -1546,8 +1553,7 @@ fn resolve(
         Supplied::Absent if global_table.defaults_receiver_product_to_sender() => sender_product
             .as_deref()
             .map(|value| {
-                format_retained(
-                    ctx,
+                ctx.format_retained(
                     format_args!("{value}"),
                     "iges global default receiver product",
                 )
@@ -1708,7 +1714,7 @@ impl ResolvedGlobal {
                 Defect::Absent,
                 METADATA_CONSEQUENCE,
             )?;
-            reserve_vec_growth(ctx, &mut losses, 1, "iges global conditional loss notes")?;
+            ctx.reserve_vec(&mut losses, 1, "iges global conditional loss notes")?;
             losses.push(note);
         }
         if matches!(self.numeric.double_significance, Supplied::Absent) {
@@ -1719,7 +1725,7 @@ impl ResolvedGlobal {
                 Defect::Absent,
                 SIGNIFICANCE_CONSEQUENCE,
             )?;
-            reserve_vec_growth(ctx, &mut losses, 1, "iges global conditional loss notes")?;
+            ctx.reserve_vec(&mut losses, 1, "iges global conditional loss notes")?;
             losses.push(note);
         }
         Ok(losses)
@@ -1733,8 +1739,7 @@ impl ResolvedGlobal {
     /// recovery rather than presenting it as the document's verified version.
     pub(crate) fn summary_notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<String>, CodecError> {
         let mut notes = Vec::new();
-        push_formatted_note(
-            ctx,
+        ctx.push_formatted_retained(
             &mut notes,
             format_args!(
                 "parameter_delimiter={}",
@@ -1743,16 +1748,14 @@ impl ResolvedGlobal {
             "iges global summary notes",
             "iges global summary text",
         )?;
-        push_formatted_note(
-            ctx,
+        ctx.push_formatted_retained(
             &mut notes,
             format_args!("record_delimiter={}", char::from(self.record_delimiter)),
             "iges global summary notes",
             "iges global summary text",
         )?;
         if let Some(product) = self.sender_product() {
-            push_formatted_note(
-                ctx,
+            ctx.push_formatted_retained(
                 &mut notes,
                 format_args!("sender_product={product}"),
                 "iges global summary notes",
@@ -1761,8 +1764,7 @@ impl ResolvedGlobal {
         }
         if self.global_table() == GlobalTable::V5_0 {
             if let Some(product) = self.receiver_product() {
-                push_formatted_note(
-                    ctx,
+                ctx.push_formatted_retained(
                     &mut notes,
                     format_args!("receiver_product={product}"),
                     "iges global summary notes",
@@ -1771,8 +1773,7 @@ impl ResolvedGlobal {
             }
         }
         if let Some(units) = self.units_name() {
-            push_formatted_note(
-                ctx,
+            ctx.push_formatted_retained(
                 &mut notes,
                 format_args!("units={units}"),
                 "iges global summary notes",
@@ -1780,23 +1781,20 @@ impl ResolvedGlobal {
             )?;
         }
         if matches!(self.dialect_recovery(), DialectRecovery::Verified) {
-            push_formatted_note(
-                ctx,
+            ctx.push_formatted_retained(
                 &mut notes,
                 format_args!("iges_version={}", self.version_name()),
                 "iges global summary notes",
                 "iges global summary text",
             )?;
         } else {
-            push_formatted_note(
-                ctx,
+            ctx.push_formatted_retained(
                 &mut notes,
                 format_args!("iges_version=unverified"),
                 "iges global summary notes",
                 "iges global summary text",
             )?;
-            push_formatted_note(
-                ctx,
+            ctx.push_formatted_retained(
                 &mut notes,
                 format_args!(
                     "iges_declared_version_flag={}",
@@ -1805,8 +1803,7 @@ impl ResolvedGlobal {
                 "iges global summary notes",
                 "iges global summary text",
             )?;
-            push_formatted_note(
-                ctx,
+            ctx.push_formatted_retained(
                 &mut notes,
                 format_args!("iges_effective_version={}", self.version_name()),
                 "iges global summary notes",
@@ -1847,8 +1844,10 @@ impl ProjectedGlobal {
             return None;
         };
         Some(
-            number as f64 * maximum_width.get() * self.length_factor_mm.get()
-                / scale.gradations as f64,
+            cadmpeg_core::convert::f64_from_i64(number)?
+                * maximum_width.get()
+                * self.length_factor_mm.get()
+                / cadmpeg_core::convert::f64_from_i64(scale.gradations)?,
         )
     }
 

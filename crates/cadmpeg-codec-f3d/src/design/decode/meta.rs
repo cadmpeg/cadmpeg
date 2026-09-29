@@ -56,14 +56,17 @@ impl<'a> MetaStreamEntry<'a> {
 }
 
 /// Decode the type table of every Design `MetaStream` entry.
-pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError> {
+pub(crate) fn decode_types(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
         .iter()
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(&entry.entry.name)?;
+        let meta = scan.parsed_metastream(ctx, &entry.entry.name)?;
         out.extend(meta.types.iter().cloned().map(|mut design_type| {
             design_type.id = ids::native_design_type_id(&entry.entry.name, design_type.byte_offset);
             design_type
@@ -100,6 +103,7 @@ fn insert_component_naming_space(
 
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
     let mut out = Vec::new();
@@ -108,7 +112,7 @@ pub(crate) fn decode_component_naming_spaces(
         .iter()
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(&meta_entry.entry.name)?;
+        let meta = scan.parsed_metastream(ctx, &meta_entry.entry.name)?;
         let component_entities = meta
             .types
             .iter()
@@ -227,6 +231,7 @@ pub(crate) fn decode_component_naming_spaces(
 
 /// Parse the `MetaStream` paired with one Design `BulkStream`.
 pub(crate) fn metadata_for_bulk_stream(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     bulk_entry_name: &str,
 ) -> Result<Option<crate::metastream::MetaStream>, CodecError> {
@@ -237,7 +242,7 @@ pub(crate) fn metadata_for_bulk_stream(
     if !scan.entries.iter().any(|entry| entry.name == meta_name) {
         return Ok(None);
     }
-    scan.parsed_metastream(&meta_name)
+    scan.parsed_metastream(ctx, &meta_name)
         .map(|meta| Some((*meta).clone()))
 }
 
@@ -289,10 +294,11 @@ fn record_header_class_tag(
 /// primary class-member sequence and must point to a nested header for the same
 /// entity.
 pub(super) fn design_primary_frames<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let indexed = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
     let registered_entities = meta
         .types
         .iter()
@@ -361,6 +367,7 @@ pub(super) struct TypedPrimaryFrame<'a> {
 /// Resolve every entity registered to `type_guid` through the sibling
 /// `MetaStream` primary index and verify its dynamic class tag.
 pub(super) fn typed_primary_frames<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
     type_guid: &str,
@@ -386,7 +393,7 @@ pub(super) fn typed_primary_frames<'a>(
 
     let mut resolved_entities = HashSet::new();
     let mut frames = Vec::new();
-    for primary_frame in design_primary_frames(bytes, meta)? {
+    for primary_frame in design_primary_frames(ctx, bytes, meta)? {
         if !primary_frame
             .design_type
             .type_guid
@@ -654,6 +661,7 @@ pub(crate) fn decode_feature_timelines(
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = crate::metastream::parse(
+            ctx,
             scan.entry_bytes(&meta_entry.entry.name)?,
             &meta_entry.entry.name,
         )?;

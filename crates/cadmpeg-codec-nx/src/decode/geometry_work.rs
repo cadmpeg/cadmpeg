@@ -42,6 +42,11 @@ pub(super) struct GeometryWorkBudget<'a> {
 
 trait ScratchCharges {
     fn charge_items(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit>;
+    fn copy_retained_text(
+        &self,
+        text: &str,
+        operation: &'static str,
+    ) -> Result<String, ResourceLimit>;
     fn resource_refusal(&self) -> Option<ResourceLimit>;
     fn fuse_local_work(&self, limit: u64);
     fn reserve_bytes(
@@ -54,6 +59,14 @@ trait ScratchCharges {
 impl ScratchCharges for DecodeContext<'_> {
     fn charge_items(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit> {
         self.charge_collection_items_limit(count, operation)
+    }
+
+    fn copy_retained_text(
+        &self,
+        text: &str,
+        operation: &'static str,
+    ) -> Result<String, ResourceLimit> {
+        self.copy_retained_text_limit(text, operation)
     }
 
     fn resource_refusal(&self) -> Option<ResourceLimit> {
@@ -133,6 +146,39 @@ impl<'a> GeometryWorkBudget<'a> {
             operation,
         })?;
         Ok(reservation)
+    }
+
+    pub(super) fn charge_collection_items(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        if let Some(charges) = self.charges {
+            charges.charge_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn copy_retained_text(
+        &self,
+        text: &str,
+        operation: &'static str,
+    ) -> Result<String, ResourceLimit> {
+        if let Some(charges) = self.charges {
+            return charges.copy_retained_text(text, operation);
+        }
+        let mut copy = String::new();
+        copy.try_reserve_exact(text.len())
+            .map_err(|_| ResourceLimit {
+                dimension: ResourceDimension::Codec(operation),
+                reason: ResourceFailure::AllocationFailed,
+                limit: cadmpeg_core::decode::u64_from_index(text.len()),
+                used: 0,
+                additional: cadmpeg_core::decode::u64_from_index(text.len()),
+                operation,
+            })?;
+        copy.push_str(text);
+        Ok(copy)
     }
 
     pub(super) fn resource_refusal(&self) -> Option<ResourceLimit> {

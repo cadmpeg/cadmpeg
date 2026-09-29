@@ -6,9 +6,7 @@ use super::geometry::{
 };
 use super::pointer;
 use super::push_optional_entity_loss;
-use crate::decode_resource::{
-    insert_optional_btree_map, insert_optional_btree_set, reserve_optional_vec_growth,
-};
+
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -132,7 +130,6 @@ impl fmt::Display for AnalyticDirectionError {
     }
 }
 
-#[allow(clippy::many_single_char_names)]
 fn direction(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -160,10 +157,10 @@ fn direction(
         .copied()
         .ok_or(DirectionError::MissingParameters(sequence))?;
     let components = [record.number(1), record.number(2), record.number(3)];
-    let [Some(x), Some(y), Some(z)] = components else {
+    let [Some(x_component), Some(y_component), Some(z_component)] = components else {
         return Err(DirectionError::NonNumeric(sequence));
     };
-    FiniteVector3::new(Vector3::new(x, y, z))
+    FiniteVector3::new(Vector3::new(x_component, y_component, z_component))
         .and_then(UnitVector3::normalized_nonzero)
         .ok_or(DirectionError::ZeroOrNonFinite(sequence))
 }
@@ -276,7 +273,7 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             ctx,
             &mut records,
             record.directory_sequence,
@@ -286,7 +283,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             ctx,
             &mut entries,
             entry.sequence,
@@ -760,7 +757,7 @@ pub(super) fn project(
             entry.sequence,
             ctx,
         )?;
-        reserve_optional_vec_growth(
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
             ctx,
             &mut ir.model.surfaces,
             1,
@@ -779,7 +776,7 @@ pub(super) fn project(
                 }
             }),
         });
-        insert_optional_btree_set(
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             ctx,
             &mut decoded,
             entry.sequence,

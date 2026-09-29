@@ -181,12 +181,64 @@ fn native_design_inventory_excludes_records_inside_value_payloads() {
         "",
     ]));
 
-    assert_eq!(crate::value_block::parse(&bytes).len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| { crate::value_block::parse(ctx, &bytes) })
+            .expect("service budget")
+            .len(),
+        1
+    );
     let native = crate::native::CatiaNative::decode(&bytes);
     assert!(native.alias_rows.is_empty());
     assert_eq!(native.value_blocks.len(), 1);
     assert_eq!(native.catalogs.len(), 1);
     assert_eq!(native.value_blocks[0].catalog, native.catalogs[0].id);
+}
+
+#[test]
+fn native_value_selector_views_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = value_block_stream(&[0x32, 4, 0, 0, 0, 0x81]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let mut operations = std::collections::BTreeSet::new();
+    let mut completed = false;
+    for limit in 0..=512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("value selector fixture fits the input limit");
+        match crate::native::CatiaNative::decode_with_records(
+            &ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(native) => {
+                assert_eq!(native.value_blocks.len(), 1);
+                assert_eq!(native.value_blocks[0].schema_selections.len(), 1);
+                completed = true;
+                break;
+            }
+            Err(error) => panic!("unexpected native decode refusal: {error}"),
+        }
+    }
+    assert!(completed, "the service fixture fits 512 collection items");
+    assert!(operations.contains("catia_value_fields"));
+    assert!(operations.contains("catia_value_selector_indices"));
+    assert!(operations.contains("catia_value_selection_fields"));
+    assert!(operations.contains("catia_value_selections"));
 }
 
 #[test]
@@ -201,7 +253,14 @@ fn native_design_inventory_excludes_object_graphs_inside_value_payloads() {
         "",
     ]));
 
-    assert_eq!(crate::object_graph::parse_all(&bytes).len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::object_graph::parse_all(ctx, &bytes)
+        })
+        .expect("service budget")
+        .len(),
+        1
+    );
     let native = crate::native::CatiaNative::decode(&bytes);
     assert!(native.object_graphs.is_empty());
     assert!(native.design_objects.is_empty());
@@ -227,7 +286,14 @@ fn native_design_inventory_excludes_alias_rows_inside_catalog_entries() {
         &entry,
     ]);
 
-    assert_eq!(crate::object_graph::surface_aliases(&bytes).len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::object_graph::surface_aliases(ctx, &bytes)
+        })
+        .expect("service budget")
+        .len(),
+        1
+    );
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.catalogs.len(), 1);
     assert!(native.alias_rows.is_empty());
@@ -638,6 +704,74 @@ fn grouped_non_surface_alias_rejects_ambiguous_surface_storage() {
 }
 
 #[test]
+fn alias_surface_resolution_refuses_collection_limit() {
+    let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
+    bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut rows = native.alias_rows.clone();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("alias fixture fits the input limit");
+    assert!(matches!(
+        super::super::projection::resolve_alias_surface_tags(&ctx, &mut rows),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
+fn native_alias_row_id_refuses_retained_limit() {
+    let bytes = surface_alias_stream();
+    let rows = crate::test_support::with_service_context(|ctx| {
+        crate::object_graph::surface_aliases(ctx, &bytes)
+    })
+    .expect("service resource budget");
+    let row = rows.first().expect("alias row").clone();
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::CatiaAliasRow::from_source(ctx, row.clone())
+    })
+    .is_ok());
+    assert!(matches!(
+        crate::test_support::with_retained_limit(0, |ctx| {
+            super::super::CatiaAliasRow::from_source(ctx, row.clone())
+        }),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
+fn native_catalog_projection_refuses_id_and_entry_limits() {
+    let catalog = crate::catalog::Catalog {
+        pos: 16,
+        total_len: 24,
+        entries: vec![crate::catalog::CatalogEntry {
+            ordinal: 0,
+            pos: 20,
+            value: "Part".to_string(),
+        }],
+    };
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::CatiaCatalog::from_source(ctx, catalog.clone())
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run)
+            .expect("service resource budget")
+            .entries
+            .len(),
+        1
+    );
+    assert!(matches!(
+        crate::test_support::with_retained_limit(0, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
 fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
     fn read_tags(bytes: &[u8]) -> std::collections::HashMap<u32, Option<u32>> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -751,6 +885,43 @@ fn native_alias_f1_resolves_record_in_declared_part_container() {
         .expect("store alias linked to declared part container");
     crate::native::CatiaNative::load(&namespace)
         .expect("load alias linked to declared part container");
+}
+
+#[test]
+fn native_alias_graph_link_refuses_retained_limit() {
+    let mut stream = object_graph_stream();
+    let mut alias = surface_alias_stream();
+    alias[13..16].copy_from_slice(&[3, 0, 2]);
+    stream.extend(alias);
+    let (bytes, _) = outer_container_catpart(&stream);
+    let mut found = false;
+    for cap in 0..=4096 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("fixture fits input limit");
+        match super::super::CatiaNative::decode_with_record_sources(
+            &ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_native_alias_object_graph_id" =>
+            {
+                found = true;
+                break;
+            }
+            Ok(native) => {
+                assert!(native.alias_rows[0].object_graph.is_some());
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(found, "retained sweep must reach the alias graph link");
 }
 
 #[test]

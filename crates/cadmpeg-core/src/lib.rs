@@ -4,6 +4,7 @@
 pub mod absent_key;
 pub mod bytes;
 pub mod container;
+pub mod convert;
 pub mod decode;
 pub mod dialect;
 pub mod distinct_keys;

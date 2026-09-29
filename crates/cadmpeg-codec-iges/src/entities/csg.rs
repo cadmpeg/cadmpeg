@@ -5,9 +5,7 @@ use super::geometry::{
     declared_orthogonal_vectors, declared_unit_vector, resolve_transform, ProjectionOutcome,
 };
 use super::pointer;
-use crate::decode_resource::{
-    insert_optional_btree_map, insert_optional_btree_set, reserve_optional_vec,
-};
+
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -79,7 +77,12 @@ fn boolean_tree_is_valid(
     if let Some(valid) = memo.get(&sequence) {
         return Ok(*valid);
     }
-    if !insert_optional_btree_set(ctx, path, sequence, "iges boolean validation path")? {
+    if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+        ctx,
+        path,
+        sequence,
+        "iges boolean validation path",
+    )? {
         return Ok(false);
     }
     let Some(entry) = entries.get(&sequence) else {
@@ -134,7 +137,13 @@ fn boolean_tree_is_valid(
     }
     let valid = operands_valid && has_direct_brep == (entry.form == 1);
     path.remove(&sequence);
-    insert_optional_btree_map(ctx, memo, sequence, valid, "iges boolean validity memo")?;
+    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+        ctx,
+        memo,
+        sequence,
+        valid,
+        "iges boolean validity memo",
+    )?;
     Ok(valid)
 }
 
@@ -147,7 +156,7 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             ctx,
             &mut records,
             record.directory_sequence,
@@ -157,7 +166,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             ctx,
             &mut entries,
             entry.sequence,
@@ -340,7 +349,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             ctx,
             &mut decoded,
             entry.sequence,
@@ -467,7 +476,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             ctx,
             &mut decoded,
             entry.sequence,
@@ -498,7 +507,11 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut terms = reserve_optional_vec(ctx, count, "iges Boolean postfix terms")?;
+        let mut terms = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+            ctx,
+            count,
+            "iges Boolean postfix terms",
+        )?;
         let mut terms_valid = true;
         for index in 0..count {
             let term = (|| {
@@ -549,7 +562,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             ctx,
             &mut boolean_definitions,
             entry.sequence,
@@ -612,7 +625,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             ctx,
             &mut decoded,
             *sequence,
@@ -679,7 +692,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             ctx,
             &mut decoded,
             entry.sequence,

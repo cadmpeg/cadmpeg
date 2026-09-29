@@ -1,9 +1,10 @@
+use crate::native::projection::{zero_entity_record, zero_entity_vertex_owner};
 use crate::native::{
     zero_entity_endpoint_locus_candidates, zero_entity_endpoint_pair_candidates,
-    zero_entity_record, zero_entity_vertex_owner, CatiaZeroEntityEdgeStride,
-    CatiaZeroEntityEndpointLocusCandidate, CatiaZeroEntityEndpointPairCandidate,
-    CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord,
-    CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
+    CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
+    CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
+    CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
+    CatiaZeroEntityVertexIncidence,
 };
 use std::collections::HashSet;
 
@@ -133,12 +134,16 @@ pub(super) fn validate_zero_entity_support_runs(
                                             })
                                             .collect::<Vec<_>>();
                                         let expected =
-                                            crate::families::zero_entity::records::
-                                                oriented_closed_model_endpoints(
-                                                    &endpoints,
-                                                    &loop_record.forward_senses,
-                                                )
-                                                .unwrap_or_default();
+                                            crate::test_support::with_service_context(|ctx| {
+                                                crate::families::zero_entity::records::
+                                                    oriented_closed_model_endpoints(
+                                                        ctx,
+                                                        &endpoints,
+                                                        &loop_record.forward_senses,
+                                                    )
+                                            })
+                                            .expect("native test endpoints fit the service profile")
+                                            .unwrap_or_default();
                                         loop_record.oriented_model_endpoints == expected
                                     }
                                     && loop_record.terminal_id == *terminal
@@ -386,7 +391,10 @@ pub(super) fn validate_zero_entity_endpoint_pair_candidates(
     endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let expected = zero_entity_endpoint_pair_candidates(derived_zero_entity_endpoint_pairs(runs));
+    let expected = crate::test_support::with_service_context(|ctx| {
+        zero_entity_endpoint_pair_candidates(ctx, derived_zero_entity_endpoint_pairs(runs))
+    })
+    .expect("test endpoint pairs fit the service profile");
     if endpoint_pairs != expected {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity endpoint-pair candidates disagree with their radial support occurrences"
@@ -430,7 +438,10 @@ fn derived_zero_entity_endpoint_pairs(
             }
         }
     }
-    crate::families::zero_entity::topology::endpoint_pair_candidates(&occurrences)
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::zero_entity::topology::endpoint_pair_candidates(ctx, &occurrences)
+    })
+    .expect("test endpoint pairs fit the service profile")
 }
 
 pub(super) fn validate_zero_entity_endpoint_locus_candidates(
@@ -438,9 +449,13 @@ pub(super) fn validate_zero_entity_endpoint_locus_candidates(
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let derived_pairs = derived_zero_entity_endpoint_pairs(runs);
-    let expected = zero_entity_endpoint_locus_candidates(
-        crate::families::zero_entity::topology::endpoint_locus_candidates(&derived_pairs),
-    );
+    let expected = crate::test_support::with_service_context(|ctx| {
+        zero_entity_endpoint_locus_candidates(
+            ctx,
+            crate::families::zero_entity::topology::endpoint_locus_candidates(ctx, &derived_pairs)?,
+        )
+    })
+    .expect("test endpoint loci fit the service profile");
     if endpoint_loci != expected {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity endpoint-locus candidates disagree with their endpoint-pair endpoints"

@@ -82,7 +82,7 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
             HashSet::from(["plane-record".to_string()])
         );
         assert_eq!(
-            transfer.consumed_records(),
+            transfer.consumed_records().cloned().collect::<HashSet<_>>(),
             HashSet::from(["plane-record".to_string()])
         );
     }

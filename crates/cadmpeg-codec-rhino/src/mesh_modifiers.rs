@@ -88,7 +88,6 @@ pub(crate) struct MeshModifiers {
 
 /// The XML parameters written by `ON_DisplacementUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct DisplacementModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
@@ -130,7 +129,6 @@ pub(crate) struct DisplacementModifier {
 
 /// A displacement override for one sub-object face index.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct DisplacementSubItem {
     /// Sub-object face index.
     pub(crate) face_index: i32,
@@ -148,7 +146,6 @@ pub(crate) struct DisplacementSubItem {
 
 /// The XML parameters written by `ON_EdgeSofteningUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct EdgeSofteningModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
@@ -156,37 +153,43 @@ pub(crate) struct EdgeSofteningModifier {
     pub(crate) on: bool,
     /// Edge-softening radius.
     pub(crate) softening: FiniteReal,
-    /// Whether softened edges are chamfered.
-    pub(crate) chamfer: bool,
-    /// Whether edges are left faceted; serialized as `unweld`.
-    pub(crate) faceted: bool,
-    /// Whether to soften edges despite an excessive radius.
-    pub(crate) force_softening: bool,
+    /// Edge treatment switches.
+    pub(crate) options: EdgeSofteningOptions,
     /// Adjacent-face angle threshold in degrees.
     pub(crate) edge_angle_threshold: FiniteReal,
 }
 
+/// Edge treatment switches for a softening modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct EdgeSofteningOptions {
+    pub(crate) chamfer: bool,
+    pub(crate) faceted: bool,
+    pub(crate) force_softening: bool,
+}
+
 /// The XML parameters written by `ON_ThickeningUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ThickeningModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
     /// Whether thickening is enabled.
     pub(crate) on: bool,
-    /// Whether an open mesh receives side walls.
-    pub(crate) solid: bool,
-    /// Whether thickening is applied to both sides.
-    pub(crate) both_sides: bool,
-    /// Whether only the offset surface is produced.
-    pub(crate) offset_only: bool,
+    /// Thickening side and surface switches.
+    pub(crate) options: ThickeningOptions,
     /// Thickening distance.
     pub(crate) distance: FiniteReal,
 }
 
+/// Side and surface switches for a thickening modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct ThickeningOptions {
+    pub(crate) solid: bool,
+    pub(crate) both_sides: bool,
+    pub(crate) offset_only: bool,
+}
+
 /// The XML parameters written by `ON_CurvePipingUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct CurvePipingModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
@@ -236,7 +239,6 @@ impl CapType {
 
 /// One ordered curve entry written by `ON_ShutLining`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ShutLiningCurve {
     /// Curve object UUID; nil UUIDs are represented as `None`.
     pub(crate) uuid: Option<Uuid>,
@@ -254,20 +256,23 @@ pub(crate) struct ShutLiningCurve {
 
 /// The XML parameters and ordered curves written by `ON_ShutLiningUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ShutLiningModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
     /// Whether shut lining is enabled.
     pub(crate) on: bool,
-    /// Whether shut lining is faceted.
-    pub(crate) faceted: bool,
-    /// Whether shut lining updates automatically.
-    pub(crate) auto_update: bool,
-    /// Whether shut lining updates are forced.
-    pub(crate) force_update: bool,
+    /// Shut-lining update and facet switches.
+    pub(crate) options: ShutLiningOptions,
     /// Direct curve children, including empty entries, in serialized order.
     pub(crate) curves: Vec<ShutLiningCurve>,
+}
+
+/// Update and facet switches for a shut-lining modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct ShutLiningOptions {
+    pub(crate) faceted: bool,
+    pub(crate) auto_update: bool,
+    pub(crate) force_update: bool,
 }
 
 /// Reads the first matching mesh-modifier items from an object-attributes userdata stream.
@@ -553,9 +558,11 @@ fn parse_edge_softening_xml(
         xml_version,
         on: field_bool(edge_softening, "on", false)?,
         softening: field_f64(edge_softening, "softening", 0.1)?,
-        chamfer: field_bool(edge_softening, "chamfer", false)?,
-        faceted: field_bool(edge_softening, "unweld", false)?,
-        force_softening: field_bool(edge_softening, "force-softening", false)?,
+        options: EdgeSofteningOptions {
+            chamfer: field_bool(edge_softening, "chamfer", false)?,
+            faceted: field_bool(edge_softening, "unweld", false)?,
+            force_softening: field_bool(edge_softening, "force-softening", false)?,
+        },
         edge_angle_threshold: field_f64(edge_softening, "edge-threshold", 5.0)?,
     })
 }
@@ -576,9 +583,11 @@ fn parse_thickening_xml(xml: &str, xml_version: i32) -> Result<ThickeningModifie
     Ok(ThickeningModifier {
         xml_version,
         on: field_bool(thickening, "on", false)?,
-        solid: field_bool(thickening, "solid", true)?,
-        both_sides: field_bool(thickening, "both-sides", false)?,
-        offset_only: field_bool(thickening, "offset-only", false)?,
+        options: ThickeningOptions {
+            solid: field_bool(thickening, "solid", true)?,
+            both_sides: field_bool(thickening, "both-sides", false)?,
+            offset_only: field_bool(thickening, "offset-only", false)?,
+        },
         distance: field_f64(thickening, "distance", 0.1)?,
     })
 }
@@ -634,9 +643,11 @@ fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifi
     Ok(ShutLiningModifier {
         xml_version,
         on: field_bool(shut_lining, "on", false)?,
-        faceted: field_bool(shut_lining, "faceted", false)?,
-        auto_update: field_bool(shut_lining, "auto-update", false)?,
-        force_update: field_bool(shut_lining, "force-update", false)?,
+        options: ShutLiningOptions {
+            faceted: field_bool(shut_lining, "faceted", false)?,
+            auto_update: field_bool(shut_lining, "auto-update", false)?,
+            force_update: field_bool(shut_lining, "force-update", false)?,
+        },
         curves,
     })
 }
@@ -1209,9 +1220,9 @@ mod tests {
         assert_eq!(edge_softening.xml_version, 2);
         assert!(edge_softening.on);
         assert_eq!(edge_softening.softening.get(), 0.25);
-        assert!(edge_softening.chamfer);
-        assert!(!edge_softening.faceted);
-        assert!(edge_softening.force_softening);
+        assert!(edge_softening.options.chamfer);
+        assert!(!edge_softening.options.faceted);
+        assert!(edge_softening.options.force_softening);
         assert_eq!(edge_softening.edge_angle_threshold.get(), 17.5);
         assert!(modifiers.displacement.is_none());
         assert!(warnings.is_empty());
@@ -1237,9 +1248,9 @@ mod tests {
         let edge_softening = modifiers.edge_softening.expect("edge softening");
         assert!(edge_softening.on);
         assert_eq!(edge_softening.softening.get(), 0.1);
-        assert!(!edge_softening.chamfer);
-        assert!(!edge_softening.faceted);
-        assert!(!edge_softening.force_softening);
+        assert!(!edge_softening.options.chamfer);
+        assert!(!edge_softening.options.faceted);
+        assert!(!edge_softening.options.force_softening);
         assert_eq!(edge_softening.edge_angle_threshold.get(), 12.5);
         assert!(warnings.is_empty());
     }
@@ -1258,9 +1269,9 @@ mod tests {
         let thickening = modifiers.thickening.expect("thickening");
         assert_eq!(thickening.xml_version, 2);
         assert!(thickening.on);
-        assert!(!thickening.solid);
-        assert!(thickening.both_sides);
-        assert!(thickening.offset_only);
+        assert!(!thickening.options.solid);
+        assert!(thickening.options.both_sides);
+        assert!(thickening.options.offset_only);
         assert_eq!(thickening.distance.get(), 0.25);
         assert!(modifiers.displacement.is_none());
         assert!(modifiers.edge_softening.is_none());
@@ -1288,9 +1299,9 @@ mod tests {
         .expect("thickening userdata");
         let thickening = modifiers.thickening.expect("thickening");
         assert!(thickening.on);
-        assert!(!thickening.solid);
-        assert!(thickening.both_sides);
-        assert!(thickening.offset_only);
+        assert!(!thickening.options.solid);
+        assert!(thickening.options.both_sides);
+        assert!(thickening.options.offset_only);
         assert_eq!(thickening.distance.get(), 0.1);
         assert!(warnings.is_empty());
     }
@@ -1366,9 +1377,9 @@ mod tests {
         let shut_lining = modifiers.shut_lining.expect("shut lining");
         assert_eq!(shut_lining.xml_version, 2);
         assert!(shut_lining.on);
-        assert!(shut_lining.faceted);
-        assert!(shut_lining.auto_update);
-        assert!(shut_lining.force_update);
+        assert!(shut_lining.options.faceted);
+        assert!(shut_lining.options.auto_update);
+        assert!(shut_lining.options.force_update);
         assert_eq!(shut_lining.curves.len(), 3);
         assert_eq!(shut_lining.curves[0].uuid, None);
         assert_eq!(shut_lining.curves[0].radius.get(), 1.0);
@@ -1412,9 +1423,9 @@ mod tests {
         .expect("shut-lining userdata");
         let shut_lining = modifiers.shut_lining.expect("shut lining");
         assert!(!shut_lining.on);
-        assert!(!shut_lining.faceted);
-        assert!(!shut_lining.auto_update);
-        assert!(!shut_lining.force_update);
+        assert!(!shut_lining.options.faceted);
+        assert!(!shut_lining.options.auto_update);
+        assert!(!shut_lining.options.force_update);
         assert_eq!(shut_lining.curves.len(), 1);
         let curve = &shut_lining.curves[0];
         assert_eq!(curve.radius.get(), 3.25);
@@ -1440,9 +1451,9 @@ mod tests {
         let shut_lining = modifiers.shut_lining.expect("shut lining");
         assert_eq!(shut_lining.xml_version, 1);
         assert!(!shut_lining.on);
-        assert!(!shut_lining.faceted);
-        assert!(!shut_lining.auto_update);
-        assert!(!shut_lining.force_update);
+        assert!(!shut_lining.options.faceted);
+        assert!(!shut_lining.options.auto_update);
+        assert!(!shut_lining.options.force_update);
         assert_eq!(shut_lining.curves.len(), 1);
         assert_eq!(shut_lining.curves[0].radius.get(), 2.75);
         assert_eq!(shut_lining.curves[0].profile, 3);

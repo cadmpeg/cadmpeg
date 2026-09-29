@@ -6,7 +6,9 @@
 //! allocation reference tokens; and fixed-size finite `f64` array reads.
 
 use super::cursor::Cursor;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
@@ -17,11 +19,36 @@ pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<FiniteReal>> {
         return None;
     }
     let mut view = View::over_retained(bytes);
-    let mut values = Vec::with_capacity(bytes.len() / 8);
+    let mut values = Vec::new();
+    values.try_reserve_exact(bytes.len() / 8).ok()?;
     while !view.is_empty() {
         values.push(FiniteReal::new(view.f64_le()?)?);
     }
     Some(values)
+}
+
+/// Read a finite lane retained by a decoded record after charging its bytes
+/// and collection slots to the active decode.
+pub(crate) fn finite_f64_lane_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<Option<Vec<FiniteReal>>, CodecError> {
+    if !bytes.len().is_multiple_of(8) {
+        return Ok(None);
+    }
+    let retained = cadmpeg_core::decode::u64_from_index(bytes.len());
+    ctx.charge_retained(retained, operation)?;
+    let mut values = Vec::new();
+    ctx.reserve_vec(&mut values, bytes.len() / 8, operation)?;
+    let mut view = View::over_retained(bytes);
+    while !view.is_empty() {
+        let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
+            return Ok(None);
+        };
+        values.push(value);
+    }
+    Ok(Some(values))
 }
 
 /// Read `N` consecutive little-endian `f64` values, each finite.

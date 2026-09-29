@@ -21,6 +21,56 @@ mod feature_parents;
 mod unknowns;
 
 #[test]
+fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
+    let build = || {
+        let owner = CurveId::mint("test:model:curve#charged").expect("valid curve identity");
+        let mut model = Model::default();
+        model.curves.push(Curve {
+            id: owner.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let procedural = ProceduralCurve::new(
+            ProceduralCurveId::mint("test:model:construction#charged")
+                .expect("valid construction identity"),
+            ProceduralCurveDefinition::Exact { cache: None },
+        );
+        (model, owner, procedural)
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("input admitted");
+    let (mut model, owner, procedural) = build();
+    let refused = model.add_procedural_curve_charged(&ctx, &owner, procedural);
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "ir_procedural_curve_construction_id")
+    );
+    assert!(matches!(model.curves[0].geometry, CurveGeometry::Solved(_)));
+    assert!(model.procedural_curves.is_empty());
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("input admitted");
+    let (mut model, owner, procedural) = build();
+    assert!(model
+        .add_procedural_curve_charged(&ctx, &owner, procedural)
+        .expect("service budget admits construction copy")
+        .is_ok());
+    assert!(matches!(
+        model.curves[0].geometry,
+        CurveGeometry::Procedural {
+            cache: Some(SolvedCurveGeometry::Unknown { record: None }),
+            ..
+        }
+    ));
+    assert_eq!(model.procedural_curves.len(), 1);
+}
+
+#[test]
 fn procedural_surface_attachment_moves_the_solved_knot_storage() {
     let surface_id = SurfaceId::mint("test:model:surface#move-cache").unwrap();
     let procedural_id =
@@ -47,7 +97,7 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
     });
     model
         .add_procedural_surface(
-            surface_id,
+            &surface_id,
             ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Unknown {
@@ -87,7 +137,7 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     });
     model
         .add_procedural_curve(
-            curve_id,
+            &curve_id,
             ProceduralCurve::new(
                 procedural_id,
                 ProceduralCurveDefinition::Unknown {
@@ -146,7 +196,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
         }
     };
     macro_rules! visit_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.model.$field {
                 crate::schema::EntitySchema::visit_references(entity, &mut visit)
                     .expect("every entity states its typed references");
@@ -434,7 +484,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_surface(
-            surface.clone(),
+            &surface,
             ProceduralSurface::new(
                 surface_construction,
                 ProceduralSurfaceDefinition::Unknown {
@@ -459,7 +509,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_curve(
-            curve.clone(),
+            &curve,
             ProceduralCurve::new(
                 curve_construction,
                 ProceduralCurveDefinition::Exact { cache: None },

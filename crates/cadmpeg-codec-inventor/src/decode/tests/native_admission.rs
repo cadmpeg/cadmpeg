@@ -1530,10 +1530,7 @@ fn rejected_representation_does_not_fail_decode() {
         .expect("native namespace");
     assert!(matches!(
         UfrxRecord::read(namespace).expect("admitted UFRx arenas agree"),
-        UfrxRecord::ParsedPrefix {
-            representation: None,
-            ..
-        }
+        UfrxRecord::ParsedPrefix(payload) if payload.representation.is_none()
     ));
 }
 

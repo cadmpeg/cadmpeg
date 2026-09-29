@@ -38,7 +38,7 @@ fn push_report_loss(
     code: RhinoLossCode,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    crate::wire::reserve_collection(ctx, losses, 1, "Rhino typed decode losses")?;
+    ctx.reserve_vec(losses, 1, "Rhino typed decode losses")?;
     losses.push(crate::wire::admitted_loss(
         ctx,
         code,
@@ -53,7 +53,7 @@ fn append_report_losses(
     destination: &mut Vec<LossNote>,
     mut source: Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    crate::wire::reserve_collection(ctx, destination, source.len(), "Rhino typed decode losses")?;
+    ctx.reserve_vec(destination, source.len(), "Rhino typed decode losses")?;
     destination.append(&mut source);
     Ok(())
 }
@@ -78,7 +78,7 @@ fn insert_feature_property(
     key: std::fmt::Arguments<'_>,
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let value = crate::wire::admitted_format(ctx, value, "Rhino feature property value")?;
+    let value = ctx.format_retained(value, "Rhino feature property value")?;
     insert_feature_property_owned(ctx, properties, key, value)
 }
 
@@ -88,7 +88,7 @@ fn insert_feature_property_owned(
     key: std::fmt::Arguments<'_>,
     value: String,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let key = crate::wire::admitted_format(ctx, key, "Rhino feature property key")?;
+    let key = ctx.format_retained(key, "Rhino feature property key")?;
     let key = cadmpeg_core::text::NonBlankString::new(key)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank generated Rhino property key"))?;
     ctx.charge_collection_items(1, "Rhino feature property entries")?;
@@ -314,20 +314,6 @@ pub(crate) fn session_ceiling(limit: u64, ceiling: usize) -> usize {
     }
 }
 
-fn transaction_allocation_failed(
-    operation: &'static str,
-    additional: usize,
-) -> cadmpeg_core::CodecError {
-    cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-        dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-        limit: u64::MAX,
-        used: 0,
-        additional: u64_from_index(additional),
-        operation,
-    })
-}
-
 fn reserve_transaction_vec<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     values: &mut Vec<T>,
@@ -335,9 +321,16 @@ fn reserve_transaction_vec<T>(
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_collection_items(u64_from_index(additional), operation)?;
-    values
-        .try_reserve(additional)
-        .map_err(|_| transaction_allocation_failed(operation, additional))
+    values.try_reserve(additional).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(additional),
+                operation,
+            ),
+        )
+    })
 }
 
 fn reserve_transaction_map<K: Eq + std::hash::Hash, V>(
@@ -347,9 +340,16 @@ fn reserve_transaction_map<K: Eq + std::hash::Hash, V>(
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_collection_items(u64_from_index(additional), operation)?;
-    values
-        .try_reserve(additional)
-        .map_err(|_| transaction_allocation_failed(operation, additional))
+    values.try_reserve(additional).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(additional),
+                operation,
+            ),
+        )
+    })
 }
 
 struct InstanceLinkSnapshot<'a> {
@@ -397,14 +397,14 @@ fn snapshot_instance_links<'a>(
         for link in record.links() {
             let mut copy = String::new();
             copy.try_reserve_exact(link.len()).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                    dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                    reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-                    limit: u64::MAX,
-                    used: 0,
-                    additional: u64_from_index(link.len()),
-                    operation: BYTES,
-                })
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                        u64::MAX,
+                        u64_from_index(link.len()),
+                        BYTES,
+                    ),
+                )
             })?;
             copy.push_str(link);
             row.push(copy);
@@ -684,7 +684,10 @@ impl<'a> DecodeContext<'a> {
         {
             return Ok(true);
         }
-        let copy = copy_retained_link(self.expand.ctx(), link)?;
+        let copy = self
+            .expand
+            .ctx()
+            .copy_retained_text(link, "Rhino unknown record link copy")?;
         append_link_to_record(self.expand.ctx(), record, copy)
     }
 
@@ -701,7 +704,7 @@ impl<'a> DecodeContext<'a> {
             if link.as_str() == record.id().as_str() || record.links().binary_search(link).is_ok() {
                 continue;
             }
-            let copy = copy_retained_link(ctx, link)?;
+            let copy = ctx.copy_retained_text(link, "Rhino unknown record link copy")?;
             append_link_to_record(ctx, record, copy)?;
         }
         Ok(true)
@@ -826,8 +829,7 @@ impl<'a> DecodeContext<'a> {
         }
         let code = match self.resolve_object(id) {
             ObjectReference::Resolved(order) => {
-                return Ok(Some(crate::wire::admitted_format(
-                    self.expand.ctx(),
+                return Ok(Some(self.expand.ctx().format_retained(
                     format_args!("{}", Self::mint_unknown_id(order)),
                     "Rhino resolved object record ID",
                 )?));
@@ -835,8 +837,7 @@ impl<'a> DecodeContext<'a> {
             ObjectReference::Missing => RhinoLossCode::ReferenceMemberUnresolved,
             ObjectReference::Ambiguous => RhinoLossCode::ReferenceMemberAmbiguous,
         };
-        crate::wire::reserve_collection(
-            self.expand.ctx(),
+        self.expand.ctx().reserve_vec(
             &mut self.report.typed_losses,
             1,
             "Rhino typed decode losses",
@@ -1175,7 +1176,10 @@ impl<'a> DecodeContext<'a> {
                             ),
                         )?;
                     }
-                    let links = [annotation.id.as_str().to_owned()];
+                    let links = [self
+                        .expand
+                        .ctx()
+                        .copy_retained_text(annotation.id.as_str(), "Rhino annotation link")?];
                     let result = self.validate_candidate(|candidate, _annotations| {
                         candidate.model.semantic_annotations.push(annotation);
                     });
@@ -2585,9 +2589,11 @@ impl<'a> DecodeContext<'a> {
             self.expand,
             self.scan.data,
             object.class_data_range.clone(),
-            self.archive(),
-            self.scan.metadata.properties.writer_version,
-            scale,
+            crate::extrusion::ExtrusionFormat {
+                archive: self.archive(),
+                writer_version: self.scan.metadata.properties.writer_version,
+                scale,
+            },
             &object.userdata,
             &mut self.mesh_budget,
         );
@@ -2630,8 +2636,7 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
         let ctx = self.expand.ctx();
         for loss in &self.scan.metadata.losses {
-            crate::wire::reserve_collection(
-                ctx,
+            ctx.reserve_vec(
                 &mut self.report.phase_losses,
                 1,
                 "Rhino phase decode losses",
@@ -2673,7 +2678,7 @@ impl<'a> DecodeContext<'a> {
             .map(|(_, outcome)| outcome.decoded)
             .sum::<usize>();
         let total = self.scan.objects.len();
-        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+        ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
         losses.push(crate::wire::admitted_loss(
             ctx,
             RhinoLossCode::ObjectRecordCensus,
@@ -2683,12 +2688,7 @@ impl<'a> DecodeContext<'a> {
         let mut omissions: Vec<LossNote> = Vec::new();
         for (class, outcome) in &outcomes {
             if outcome.retained > 0 {
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut omissions,
-                    1,
-                    "Rhino class omission losses",
-                )?;
+                ctx.reserve_vec(&mut omissions, 1, "Rhino class omission losses")?;
                 omissions.push(
                     crate::wire::admitted_loss(ctx, RhinoLossCode::ObjectFamilyNotTransferred, format_args!(
                             "retained {} object record(s) for class {class}; geometry is not decoded",
@@ -2698,12 +2698,7 @@ impl<'a> DecodeContext<'a> {
                 );
             }
             if let Some((code, count)) = outcome.native {
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut omissions,
-                    1,
-                    "Rhino class omission losses",
-                )?;
+                ctx.reserve_vec(&mut omissions, 1, "Rhino class omission losses")?;
                 omissions.push(
                     crate::wire::admitted_loss(
                         ctx,
@@ -2719,7 +2714,7 @@ impl<'a> DecodeContext<'a> {
                 );
             }
             if outcome.attribute_degraded > 0 {
-                crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+                ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
                 losses.push(
                     crate::wire::admitted_loss(
                         ctx,
@@ -2734,7 +2729,7 @@ impl<'a> DecodeContext<'a> {
                 );
             }
             if outcome.failed_framed > 0 {
-                crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+                ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
                 losses.push(
                     crate::wire::admitted_loss(
                         ctx,
@@ -2749,31 +2744,26 @@ impl<'a> DecodeContext<'a> {
                 );
             }
         }
-        crate::wire::reserve_collection(
-            ctx,
+        ctx.reserve_vec(
             &mut self.report.typed_losses,
             omissions.len(),
             "Rhino typed decode losses",
         )?;
         self.report.typed_losses.extend(omissions);
         for diagnostic in self.scan.definitions.diagnostics() {
-            crate::wire::reserve_collection(
-                self.expand.ctx(),
-                &mut losses,
-                1,
-                "Rhino final decode losses",
-            )?;
+            self.expand
+                .ctx()
+                .reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
             losses.push(diagnostic.to_loss(self.expand.ctx())?);
         }
-        crate::wire::reserve_collection(
-            ctx,
+        ctx.reserve_vec(
             &mut losses,
             self.report.typed_losses.len(),
             "Rhino final decode losses",
         )?;
         losses.append(&mut self.report.typed_losses);
         for diagnostic in &self.scan.warnings {
-            crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+            ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
             losses.push(crate::wire::admitted_loss(
                 ctx,
                 diagnostic
@@ -2783,8 +2773,7 @@ impl<'a> DecodeContext<'a> {
                 "Rhino final decode loss message",
             )?);
         }
-        crate::wire::reserve_collection(
-            ctx,
+        ctx.reserve_vec(
             &mut losses,
             self.report.phase_losses.len(),
             "Rhino final decode losses",
@@ -2793,7 +2782,7 @@ impl<'a> DecodeContext<'a> {
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
         for diagnostic in &self.report.phase_warnings {
             if let Some(code) = diagnostic.code {
-                crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+                ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
                 losses.push(crate::wire::admitted_loss(
                     ctx,
                     code,
@@ -2810,10 +2799,8 @@ impl<'a> DecodeContext<'a> {
                 });
             if !phase_families.contains_key(family) {
                 ctx.charge_collection_items(1, "Rhino warning family groups")?;
-                let family_key =
-                    crate::wire::copy_retained_string(ctx, family, "Rhino warning family key")?;
-                let first_detail =
-                    crate::wire::copy_retained_string(ctx, detail, "Rhino warning family detail")?;
+                let family_key = ctx.copy_retained_text(family, "Rhino warning family key")?;
+                let first_detail = ctx.copy_retained_text(detail, "Rhino warning family detail")?;
                 phase_families.insert(family_key, (0, first_detail));
             }
             let entry = phase_families.get_mut(family).ok_or_else(|| {
@@ -2822,7 +2809,7 @@ impl<'a> DecodeContext<'a> {
             entry.0 += 1;
         }
         for (family, (count, first)) in phase_families {
-            crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+            ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
             let loss = if count == 1 {
                 crate::wire::admitted_loss(
                     ctx,
@@ -2851,7 +2838,7 @@ impl<'a> DecodeContext<'a> {
                 .filter(|record| record.data().is_some())
                 .count();
         let note = if self.opaque_records.is_empty() {
-            crate::wire::admitted_format(ctx, format_args!(
+            ctx.format_retained(format_args!(
                 "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
                  records and complete bytes for {byte_records}; document cap {} bytes, per-record cap {} bytes",
                 self.unknowns.len(),
@@ -2859,8 +2846,7 @@ impl<'a> DecodeContext<'a> {
                 RETAINED_RECORD_CAP
             ), "Rhino final decode note")?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!(
                 "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
                  object records and {} opaque records, with complete bytes for {byte_records}; \
@@ -2874,16 +2860,16 @@ impl<'a> DecodeContext<'a> {
             )?
         };
         let mut notes = Vec::new();
-        crate::wire::reserve_collection(ctx, &mut notes, 1, "Rhino final decode notes")?;
+        ctx.reserve_vec(&mut notes, 1, "Rhino final decode notes")?;
         notes.push(note);
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
-        source_fidelity.attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)?;
+        source_fidelity.attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns, ctx)?;
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.
         if let Some(loss) = crate::dialect::admission_loss(ctx, &primary)? {
-            crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+            ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
             losses.push(loss);
         }
         let attributes = full_source_attributes(self.expand.ctx(), self.scan)?;
@@ -3245,7 +3231,14 @@ impl<'a> DecodeContext<'a> {
                 self.charge_session_collections(points.len(), "Rhino point-cloud vertices")?;
                 let mut vertices = Vec::new();
                 vertices.try_reserve_exact(points.len()).map_err(|_| {
-                    transaction_allocation_failed("Rhino point-cloud vertices", points.len())
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            u64::MAX,
+                            cadmpeg_core::decode::u64_from_index(points.len()),
+                            "Rhino point-cloud vertices",
+                        ),
+                    )
                 })?;
                 for (index, position) in points.into_iter().enumerate() {
                     let point_key = key.clone().then(cadmpeg_ir::identity_key!(".")).then(index);
@@ -3445,7 +3438,7 @@ impl<'a> DecodeContext<'a> {
             candidate
                 .model
                 .add_procedural_surface(
-                    surface_id.clone(),
+                    &surface_id,
                     ProceduralSurface::new(procedural_id.clone(), ir_definition, None),
                 )
                 .map_err(|error| error.to_string())?;
@@ -3500,11 +3493,7 @@ impl<'a> DecodeContext<'a> {
         let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             let mut links = Vec::new();
-            let mut boundaries = crate::wire::admitted_collection(
-                session,
-                extrusion.boundaries.len(),
-                "Rhino committed extrusion boundaries",
-            )?;
+            let mut boundaries = session.collection_vec(extrusion.boundaries.len(), "Rhino committed extrusion boundaries")?;
             for (index, boundary) in extrusion.boundaries.iter().enumerate() {
                 let id = commit_curve_tree(
                     session,
@@ -3546,7 +3535,7 @@ impl<'a> DecodeContext<'a> {
                 candidate
                     .model
                     .add_procedural_surface(
-                        surface_id.clone(),
+                        &surface_id,
                         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                             boundary.directrix.clone(),
                             None,
@@ -3700,14 +3689,12 @@ impl<'a> DecodeContext<'a> {
             return Ok(false);
         }
         for mut loss in mesh.losses {
-            crate::wire::reserve_collection(
-                self.expand.ctx(),
+            self.expand.ctx().reserve_vec(
                 &mut self.report.phase_losses,
                 1,
                 "Rhino phase decode losses",
             )?;
-            loss.message = crate::wire::admitted_format(
-                self.expand.ctx(),
+            loss.message = self.expand.ctx().format_retained(
                 format_args!("{}: {}", identity.source_id, loss.message),
                 "Rhino phase decode loss message",
             )?;
@@ -3812,16 +3799,14 @@ impl<'a> DecodeContext<'a> {
         }
         let identity = &object.identity;
         for loss in &raw.losses {
-            crate::wire::reserve_collection(
-                self.expand.ctx(),
+            self.expand.ctx().reserve_vec(
                 &mut self.report.phase_losses,
                 1,
                 "Rhino phase decode losses",
             )?;
             let mut copied =
                 loss.clone_admitted(self.expand.ctx(), "Rhino phase decode loss copy")?;
-            copied.message = crate::wire::admitted_format(
-                self.expand.ctx(),
+            copied.message = self.expand.ctx().format_retained(
                 format_args!("{}: {}", object.class_uuid, loss.message),
                 "Rhino phase decode loss message",
             )?;
@@ -3897,8 +3882,7 @@ impl<'a> DecodeContext<'a> {
                 } else {
                     self.expansion_budget = budget;
                     self.append_links(source_order, &links)?;
-                    crate::wire::reserve_collection(
-                        self.expand.ctx(),
+                    self.expand.ctx().reserve_vec(
                         &mut self.report.typed_losses,
                         typed_losses.len(),
                         "Rhino typed decode losses",
@@ -4007,11 +3991,8 @@ impl<'a> DecodeContext<'a> {
         let mut sorted = Vec::new();
         reserve_transaction_vec(ctx, &mut sorted, outcomes.len(), "Rhino class outcome rows")?;
         for (class, outcome) in outcomes {
-            let label = crate::wire::admitted_format(
-                ctx,
-                format_args!("{class}"),
-                "Rhino class outcome label",
-            )?;
+            let label =
+                ctx.format_retained(format_args!("{class}"), "Rhino class outcome label")?;
             sorted.push((label, outcome));
         }
         sorted.sort_unstable_by(|(first, _), (second, _)| first.cmp(second));
@@ -4063,27 +4044,6 @@ fn append_link_to_record(
         record.links_mut().insert(index, link);
     }
     Ok(true)
-}
-
-fn copy_retained_link(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    source: &str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let bytes = u64_from_index(source.len());
-    ctx.charge_retained(bytes, "Rhino unknown record link copy")?;
-    let mut copy = String::new();
-    copy.try_reserve_exact(source.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: bytes,
-            operation: "Rhino unknown record link copy",
-        })
-    })?;
-    copy.push_str(source);
-    Ok(copy)
 }
 
 fn validation_findings(report: &cadmpeg_ir::report::check::ValidationReport) -> String {
@@ -4179,11 +4139,7 @@ fn stage_extrusion_caps(
             )),
             source_object: Some(association.clone()),
         });
-        let mut loop_ids = crate::wire::admitted_collection(
-            ctx,
-            boundaries.len(),
-            "Rhino extrusion cap loop IDs",
-        )?;
+        let mut loop_ids = ctx.collection_vec(boundaries.len(), "Rhino extrusion cap loop IDs")?;
         for (profile, committed) in boundaries.iter().enumerate() {
             let boundary = committed.boundary;
             let suffix = key
@@ -4389,9 +4345,7 @@ fn stage_extrusion_caps(
         name: association
             .name
             .as_deref()
-            .map(|name| {
-                crate::wire::copy_retained_string(ctx, name, "Rhino extrusion cap body name")
-            })
+            .map(|name| ctx.copy_retained_text(name, "Rhino extrusion cap body name"))
             .transpose()?,
         color: association.color,
         visible: association.visible,
@@ -4525,11 +4479,7 @@ impl BrepDraft {
         {
             if !emitted.contains(id) {
                 ctx.charge_collection_items(1, "Rhino Brep emitted fallback IDs")?;
-                emitted.insert(crate::wire::copy_retained_string(
-                    ctx,
-                    id,
-                    "Rhino Brep emitted fallback ID text",
-                )?);
+                emitted.insert(ctx.copy_retained_text(id, "Rhino Brep emitted fallback ID text")?);
             }
         }
         self.links.retain(|id| emitted.contains(id));
@@ -4659,8 +4609,7 @@ fn stage_brep_carriers(
                     Ok(id) => id,
                     Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                     Err(error) => {
-                        child_cause = Some(crate::wire::admitted_format(
-                            expand.ctx(),
+                        child_cause = Some(expand.ctx().format_retained(
                             format_args!("C3 slot {index}: {error}"),
                             "Rhino Brep fallback cause",
                         )?);
@@ -4671,16 +4620,14 @@ fn stage_brep_carriers(
                 c3.insert(index, id);
             }
             Ok(_) => {
-                child_cause = Some(crate::wire::admitted_format(
-                    expand.ctx(),
+                child_cause = Some(expand.ctx().format_retained(
                     format_args!("C3 slot {index} is not a curve"),
                     "Rhino Brep fallback cause",
                 )?);
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                child_cause = Some(crate::wire::admitted_format(
-                    expand.ctx(),
+                child_cause = Some(expand.ctx().format_retained(
                     format_args!("C3 slot {index}: {error}"),
                     "Rhino Brep fallback cause",
                 )?);
@@ -4710,8 +4657,7 @@ fn stage_brep_carriers(
                 let surface_key = match IdentityKey::try_new(key.to_owned()) {
                     Ok(key) => key,
                     Err(error) => {
-                        child_cause = Some(crate::wire::admitted_format(
-                            expand.ctx(),
+                        child_cause = Some(expand.ctx().format_retained(
                             format_args!("surface slot {index}: {error}"),
                             "Rhino Brep fallback cause",
                         )?);
@@ -4786,24 +4732,21 @@ fn stage_brep_carriers(
                 }
                 Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                 Err(error) => {
-                    child_cause = Some(crate::wire::admitted_format(
-                        expand.ctx(),
+                    child_cause = Some(expand.ctx().format_retained(
                         format_args!("surface slot {index}: {error}"),
                         "Rhino Brep fallback cause",
                     )?);
                 }
             },
             Ok(_) => {
-                child_cause = Some(crate::wire::admitted_format(
-                    expand.ctx(),
+                child_cause = Some(expand.ctx().format_retained(
                     format_args!("surface slot {index} is not a surface"),
                     "Rhino Brep fallback cause",
                 )?);
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                child_cause = Some(crate::wire::admitted_format(
-                    expand.ctx(),
+                child_cause = Some(expand.ctx().format_retained(
                     format_args!("surface slot {index}: {error}"),
                     "Rhino Brep fallback cause",
                 )?);
@@ -5255,8 +5198,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     );
     let (body_kind, body_kind_substituted) = brep.body_kind(ctx, writer_version)?;
     if let Some(loss) = body_kind_substituted {
-        crate::wire::reserve_collection(
-            ctx,
+        ctx.reserve_vec(
             &mut staged.typed_losses,
             1,
             "Rhino staged Brep typed losses",
@@ -5280,7 +5222,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         name: association
             .name
             .as_deref()
-            .map(|name| crate::wire::copy_retained_string(ctx, name, "Rhino staged Brep body name"))
+            .map(|name| ctx.copy_retained_text(name, "Rhino staged Brep body name"))
             .transpose()?,
         color: association.color,
         visible: association.visible,
@@ -5292,24 +5234,19 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         "Rhino staged Brep links",
     )?;
     for curve in &staged.draft.model().curves {
-        staged.links.push(crate::wire::admitted_format(
-            ctx,
-            format_args!("{}", curve.id),
-            "Rhino staged Brep link text",
-        )?);
+        staged.links.push(
+            ctx.format_retained(format_args!("{}", curve.id), "Rhino staged Brep link text")?,
+        );
     }
     for surface in &staged.draft.model().surfaces {
-        staged.links.push(crate::wire::admitted_format(
-            ctx,
+        staged.links.push(ctx.format_retained(
             format_args!("{}", surface.id),
             "Rhino staged Brep link text",
         )?);
     }
-    staged.links.push(crate::wire::admitted_format(
-        ctx,
-        format_args!("{body_id}"),
-        "Rhino staged Brep link text",
-    )?);
+    staged
+        .links
+        .push(ctx.format_retained(format_args!("{body_id}"), "Rhino staged Brep link text")?);
     let derived_ids = {
         let model = staged.draft.model();
         let count = model.bodies.len()
@@ -5326,8 +5263,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         macro_rules! append_ids {
             ($field:ident) => {
                 for value in &model.$field {
-                    ids.push(crate::wire::admitted_format(
-                        ctx,
+                    ids.push(ctx.format_retained(
                         format_args!("{}", value.id),
                         "Rhino staged Brep derived ID text",
                     )?);
@@ -5373,12 +5309,10 @@ fn finish_brep_fallback(
                 .map(|surface| surface.id.as_str()),
         )
     {
-        crate::wire::reserve_collection(ctx, &mut staged.links, 1, "Rhino Brep fallback links")?;
-        staged.links.push(crate::wire::copy_retained_string(
-            ctx,
-            id,
-            "Rhino Brep fallback link text",
-        )?);
+        ctx.reserve_vec(&mut staged.links, 1, "Rhino Brep fallback links")?;
+        staged
+            .links
+            .push(ctx.copy_retained_text(id, "Rhino Brep fallback link text")?);
     }
     Ok(staged.free_carrier_fallback(ctx, cause)?)
 }
@@ -5472,11 +5406,7 @@ fn scale_plane_pcurves(
     ) -> Result<(), cadmpeg_core::CodecError> {
         if !values.contains(id) {
             ctx.charge_collection_items(1, "Rhino plane pcurve lookup IDs")?;
-            values.insert(crate::wire::copy_retained_string(
-                ctx,
-                id,
-                "Rhino plane pcurve lookup ID text",
-            )?);
+            values.insert(ctx.copy_retained_text(id, "Rhino plane pcurve lookup ID text")?);
         }
         Ok(())
     }
@@ -5518,10 +5448,15 @@ fn scale_plane_pcurves(
         }
         if let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry {
             nurbs
-                .edit_control_points(|pole| {
-                    pole.u *= scale.value();
-                    pole.v *= scale.value();
-                    Ok(())
+                .try_map_control_points(|_, pole| {
+                    let pole = pole.get();
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        pole.u * scale.value(),
+                        pole.v * scale.value(),
+                    ))
+                    .ok_or_else(|| {
+                        NurbsError::Structure("control_points contains a non-finite point".into())
+                    })
                 })
                 .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
         }
@@ -5602,7 +5537,7 @@ fn stage_brep_procedural_surface(
         .draft
         .model_mut()
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id,
             ProceduralSurface::new(procedural_id.clone(), definition, None),
         )
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
@@ -5645,10 +5580,14 @@ fn stage_curve_tree(
             )?;
             let mut parameters = Vec::new();
             parameters.try_reserve_exact(parameter_count).map_err(|_| {
-                crate::curves::collection_allocation_failed(
-                    "Rhino Brep curve tree parameters",
-                    parameter_count,
-                )
+                crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        u64::MAX,
+                        cadmpeg_core::decode::u64_from_index(parameter_count),
+                        "Rhino Brep curve tree parameters",
+                    ),
+                ))
             })?;
             ctx.charge_collection_items(
                 u64_from_index(children.len()),
@@ -5656,10 +5595,14 @@ fn stage_curve_tree(
             )?;
             let mut components = Vec::new();
             components.try_reserve_exact(children.len()).map_err(|_| {
-                crate::curves::collection_allocation_failed(
-                    "Rhino Brep curve tree components",
-                    children.len(),
-                )
+                crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        u64::MAX,
+                        cadmpeg_core::decode::u64_from_index(children.len()),
+                        "Rhino Brep curve tree components",
+                    ),
+                ))
             })?;
             for (index, (parameter, child)) in children.into_iter().enumerate() {
                 let parameter = parameter.get();
@@ -5733,7 +5676,7 @@ fn stage_curve_tree(
         staged
             .draft
             .model_mut()
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition))
+            .add_procedural_curve(&id, ProceduralCurve::new(procedure_id, definition))
             .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     }
     Ok(id)
@@ -5743,22 +5686,6 @@ struct DecodedPcurves {
     ids: HashMap<usize, cadmpeg_ir::ids::PcurveId>,
     values: Vec<Pcurve>,
     warnings: Diagnostics,
-}
-
-fn clone_pcurve_nurbs(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    nurbs: &NurbsCurve,
-    operation: &'static str,
-) -> Result<NurbsCurve, crate::curves::GeometryError> {
-    let items = nurbs
-        .knots()
-        .len()
-        .checked_add(nurbs.pole_count())
-        .ok_or_else(|| crate::curves::GeometryError::unpositioned("C2 curve size overflow"))?;
-    ctx.charge_collection_items(u64_from_index(items), operation)?;
-    nurbs
-        .try_clone()
-        .map_err(|_| crate::curves::collection_allocation_failed(operation, items))
 }
 
 fn decode_pcurves(
@@ -5773,24 +5700,21 @@ fn decode_pcurves(
     let mut ids = HashMap::new();
     let mut values = Vec::new();
     let mut warnings = Diagnostics::new();
-    let key = match IdentityKey::try_new(crate::wire::copy_retained_string(
-        ctx,
-        key,
-        "Rhino Brep pcurve source key",
-    )?) {
-        Ok(key) => key,
-        Err(error) => {
-            warnings.push_admitted(
-                ctx,
-                format_args!("Brep pcurve identity key is invalid: {error}"),
-            )?;
-            return Ok(DecodedPcurves {
-                ids,
-                values,
-                warnings,
-            });
-        }
-    };
+    let key =
+        match IdentityKey::try_new(ctx.copy_retained_text(key, "Rhino Brep pcurve source key")?) {
+            Ok(key) => key,
+            Err(error) => {
+                warnings.push_admitted(
+                    ctx,
+                    format_args!("Brep pcurve identity key is invalid: {error}"),
+                )?;
+                return Ok(DecodedPcurves {
+                    ids,
+                    values,
+                    warnings,
+                });
+            }
+        };
     let mut decoded_slots = HashMap::<usize, Option<NurbsCurve>>::new();
     for (index, trim) in raw.trims.iter().enumerate() {
         if trim.trim_type == crate::brep::RawTrimKind::PointOnSurface {
@@ -5802,7 +5726,7 @@ fn decode_pcurves(
         };
         let nurbs = if let Some(nurbs) = decoded_slots.get(&trim_curve) {
             let Some(nurbs) = nurbs else { continue };
-            clone_pcurve_nurbs(ctx, nurbs, "Rhino Brep reused C2 curve")?
+            nurbs.try_clone_for_decode(ctx, "Rhino Brep reused C2 curve")?
         } else {
             let decoded = (|| -> Result<crate::curves::NurbsJoin, crate::curves::GeometryError> {
                 let child = raw
@@ -5835,13 +5759,20 @@ fn decode_pcurves(
                         joined.warnings,
                         format_args!("trim {index}"),
                     )?;
-                    let cached =
-                        clone_pcurve_nurbs(ctx, &joined.curve, "Rhino Brep cached C2 curve")?;
+                    let cached = joined
+                        .curve
+                        .try_clone_for_decode(ctx, "Rhino Brep cached C2 curve")?;
                     ctx.charge_collection_items(1, "Rhino Brep decoded C2 slots")?;
                     decoded_slots.try_reserve(1).map_err(|_| {
-                        crate::curves::collection_allocation_failed(
-                            "Rhino Brep decoded C2 slots",
-                            1,
+                        crate::curves::GeometryError::Codec(
+                            cadmpeg_core::CodecError::ResourceLimit(
+                                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                                    u64::MAX,
+                                    cadmpeg_core::decode::u64_from_index(1),
+                                    "Rhino Brep decoded C2 slots",
+                                ),
+                            ),
                         )
                     })?;
                     decoded_slots.insert(trim_curve, Some(cached));
@@ -5856,9 +5787,15 @@ fn decode_pcurves(
                     )?;
                     ctx.charge_collection_items(1, "Rhino Brep decoded C2 slots")?;
                     decoded_slots.try_reserve(1).map_err(|_| {
-                        crate::curves::collection_allocation_failed(
-                            "Rhino Brep decoded C2 slots",
-                            1,
+                        crate::curves::GeometryError::Codec(
+                            cadmpeg_core::CodecError::ResourceLimit(
+                                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                                    u64::MAX,
+                                    cadmpeg_core::decode::u64_from_index(1),
+                                    "Rhino Brep decoded C2 slots",
+                                ),
+                            ),
                         )
                     })?;
                     decoded_slots.insert(trim_curve, None);
@@ -5920,16 +5857,9 @@ fn decode_pcurves(
                 .then(cadmpeg_ir::identity_key!(".trim-"))
                 .then(index),
         );
-        ctx.charge_collection_items(
-            u64_from_index(nurbs.knots().len()),
-            "Rhino Brep pcurve knots",
-        )?;
-        let knots = nurbs.knots().try_clone().map_err(|_| {
-            crate::curves::collection_allocation_failed(
-                "Rhino Brep pcurve knots",
-                nurbs.knots().len(),
-            )
-        })?;
+        let knots = nurbs
+            .knots()
+            .try_clone_for_decode(ctx, "Rhino Brep pcurve knots")?;
         let nurbs =
             match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
                 Ok(nurbs) => nurbs,
@@ -5952,8 +5882,16 @@ fn decode_pcurves(
             ),
         });
         ctx.charge_collection_items(1, "Rhino Brep pcurve IDs")?;
-        ids.try_reserve(1)
-            .map_err(|_| crate::curves::collection_allocation_failed("Rhino Brep pcurve IDs", 1))?;
+        ids.try_reserve(1).map_err(|_| {
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "Rhino Brep pcurve IDs",
+                ),
+            ))
+        })?;
         ids.insert(index, id);
     }
     Ok(DecodedPcurves {
@@ -6093,7 +6031,14 @@ fn brep_free_vertex_indices(
     ctx.charge_collection_items(free_count as u64, "Rhino Brep free vertices")?;
     let mut free = Vec::new();
     free.try_reserve_exact(free_count).map_err(|_| {
-        crate::curves::collection_allocation_failed("Rhino Brep free vertices", free_count)
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(free_count),
+                "Rhino Brep free vertices",
+            ),
+        ))
     })?;
     for (index, attached) in attached.into_iter().enumerate() {
         if !attached {
@@ -6223,13 +6168,27 @@ fn push_group_face<K: Eq + std::hash::Hash>(
     if !groups.contains_key(&key) {
         ctx.charge_collection_items(1, "Rhino Brep shell group keys")?;
         groups.try_reserve(1).map_err(|_| {
-            crate::curves::collection_allocation_failed("Rhino Brep shell group keys", 1)
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "Rhino Brep shell group keys",
+                ),
+            ))
         })?;
     }
     ctx.charge_collection_items(1, "Rhino Brep shell group faces")?;
     let faces = groups.entry(key).or_default();
     faces.try_reserve(1).map_err(|_| {
-        crate::curves::collection_allocation_failed("Rhino Brep shell group faces", 1)
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(1),
+                "Rhino Brep shell group faces",
+            ),
+        ))
     })?;
     faces.push(face);
     Ok(())
@@ -6253,7 +6212,14 @@ fn shell_slots(
     ctx.charge_collection_items(count as u64, "Rhino Brep shell groups")?;
     let mut shells = Vec::new();
     shells.try_reserve_exact(count).map_err(|_| {
-        crate::curves::collection_allocation_failed("Rhino Brep shell groups", count)
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(count),
+                "Rhino Brep shell groups",
+            ),
+        ))
     })?;
     Ok(shells)
 }
@@ -6319,9 +6285,13 @@ fn commit_curve_tree(
             )?;
             let mut parameters = Vec::new();
             parameters.try_reserve_exact(parameter_count).map_err(|_| {
-                transaction_allocation_failed(
-                    "Rhino committed curve tree parameters",
-                    parameter_count,
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        u64::MAX,
+                        cadmpeg_core::decode::u64_from_index(parameter_count),
+                        "Rhino committed curve tree parameters",
+                    ),
                 )
             })?;
             ctx.charge_collection_items(
@@ -6330,9 +6300,13 @@ fn commit_curve_tree(
             )?;
             let mut components = Vec::new();
             components.try_reserve_exact(children.len()).map_err(|_| {
-                transaction_allocation_failed(
-                    "Rhino committed curve tree components",
-                    children.len(),
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        u64::MAX,
+                        cadmpeg_core::decode::u64_from_index(children.len()),
+                        "Rhino committed curve tree components",
+                    ),
                 )
             })?;
             for (index, (parameter, child)) in children.into_iter().enumerate() {
@@ -6393,7 +6367,7 @@ fn commit_curve_tree(
             curve_key,
         );
         ir.model
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition))
+            .add_procedural_curve(&id, ProceduralCurve::new(procedure_id, definition))
             .map_err(|error| error.to_string())?;
     }
     Ok(id)
@@ -6406,7 +6380,7 @@ fn hatch_loop_ids(
 ) -> Result<Vec<(crate::hatch::LoopKind, String)>, cadmpeg_core::CodecError> {
     use std::fmt::Write;
 
-    let mut ids = crate::wire::admitted_collection(ctx, kinds.len(), "Rhino hatch loop IDs")?;
+    let mut ids = ctx.collection_vec(kinds.len(), "Rhino hatch loop IDs")?;
     for (index, kind) in kinds.enumerate() {
         let mut value = index;
         let mut digits = 1_usize;
@@ -6420,8 +6394,7 @@ fn hatch_loop_ids(
             .and_then(|length| length.checked_add(".hatch-loop-".len()))
             .and_then(|length| length.checked_add(digits))
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("hatch loop ID length overflow"))?;
-        let mut id =
-            crate::wire::admitted_retained_string(ctx, length, "Rhino hatch loop ID text")?;
+        let mut id = ctx.retained_string(length, "Rhino hatch loop ID text")?;
         write!(&mut id, "rhino:object:curve#{key}.hatch-loop-{index}")
             .map_err(|_| cadmpeg_core::CodecError::malformed("hatch loop ID formatting failed"))?;
         ids.push((kind, id));
@@ -6438,13 +6411,9 @@ fn hatch_source_links(
         .len()
         .checked_add(1)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("hatch source link count overflow"))?;
-    let mut links = crate::wire::admitted_collection(ctx, count, "Rhino hatch source links")?;
+    let mut links = ctx.collection_vec(count, "Rhino hatch source links")?;
     links.extend(loop_ids.into_iter().map(|(_, id)| id));
-    links.push(crate::wire::copy_retained_string(
-        ctx,
-        feature_id.as_str(),
-        "Rhino hatch feature link text",
-    )?);
+    links.push(ctx.copy_retained_text(feature_id.as_str(), "Rhino hatch feature link text")?);
     Ok(links)
 }
 
@@ -6548,7 +6517,7 @@ fn transform_curve(
     curve.geometry = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .map_control_points(|pole| {
+                .try_map_control_points(|_, pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "instance control point transform produced a non-finite coordinate"
@@ -6572,7 +6541,7 @@ fn transform_curve(
                     )),
                 })?;
             nurbs
-                .map_control_points(|pole| {
+                .try_map_control_points(|_, pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "instance control point transform produced a non-finite coordinate"
@@ -6644,7 +6613,7 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     surface.geometry = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .map_control_points(|pole| {
+                .try_map_control_points(|_, pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "instance control point transform produced a non-finite coordinate"
@@ -6718,45 +6687,32 @@ fn source_association(
     parent_color: Option<Color>,
     parent_visible: Option<bool>,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
-    let object_id = crate::wire::admitted_format(
-        ctx,
+    let object_id = ctx.format_retained(
         format_args!("{}", identity.object_id),
         "Rhino source association object ID",
     )?;
     let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino object UUID is blank"))?;
     let name = (!identity.name.is_empty())
-        .then(|| {
-            crate::wire::copy_retained_string(ctx, &identity.name, "Rhino source association name")
-        })
+        .then(|| ctx.copy_retained_text(&identity.name, "Rhino source association name"))
         .transpose()?;
     let layer = identity
         .layer
         .as_ref()
         .map(|layer| match layer.id {
-            Some(id) => crate::wire::admitted_format(
-                ctx,
-                format_args!("{id}"),
-                "Rhino source association layer ID",
-            ),
-            None => crate::wire::copy_retained_string(
-                ctx,
-                &layer.name,
-                "Rhino source association layer name",
-            ),
+            Some(id) => {
+                ctx.format_retained(format_args!("{id}"), "Rhino source association layer ID")
+            }
+            None => ctx.copy_retained_text(&layer.name, "Rhino source association layer name"),
         })
         .transpose()?;
-    let mut admitted_path = crate::wire::admitted_collection(
-        ctx,
+    let mut admitted_path = ctx.collection_vec(
         instance_path.len(),
         "Rhino source association instance path",
     )?;
     for segment in instance_path {
-        admitted_path.push(crate::wire::copy_retained_string(
-            ctx,
-            segment,
-            "Rhino source association instance ID",
-        )?);
+        admitted_path
+            .push(ctx.copy_retained_text(segment, "Rhino source association instance ID")?);
     }
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
@@ -6795,8 +6751,7 @@ fn loss_provenance(
     class: &str,
     outcome: &ClassOutcome<'_>,
 ) -> Result<SourceProvenance, cadmpeg_core::CodecError> {
-    let tag = crate::wire::admitted_format(
-        ctx,
+    let tag = ctx.format_retained(
         format_args!(
             "OBJECT_RECORD/class={class}/type=0x{:08x}",
             outcome
@@ -6972,7 +6927,7 @@ pub(crate) fn admitted_tolerance<T: Copy + Into<f64>>(
     losses: &mut Vec<LossNote>,
 ) -> Result<T, cadmpeg_core::CodecError> {
     let Some(value_admitted) = admitted else {
-        crate::wire::reserve_collection(ctx, losses, 1, "Rhino V1 tolerance losses")?;
+        ctx.reserve_vec(losses, 1, "Rhino V1 tolerance losses")?;
         losses.push(crate::wire::admitted_loss(
             ctx,
             RhinoLossCode::RedundantFieldRepaired,
@@ -7005,11 +6960,11 @@ fn insert_full_source_attribute(
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_collection_items(1, "Rhino full source attributes")?;
-    let key = crate::wire::admitted_format(ctx, key, "Rhino full source attribute key")?;
+    let key = ctx.format_retained(key, "Rhino full source attribute key")?;
     let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("generated Rhino source attribute key is blank")
     })?;
-    let value = crate::wire::admitted_format(ctx, value, "Rhino full source attribute value")?;
+    let value = ctx.format_retained(value, "Rhino full source attribute value")?;
     attributes.insert(key, value);
     Ok(())
 }

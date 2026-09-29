@@ -164,11 +164,10 @@ impl<'a> Cur<'a> {
             self.pos = mark;
             return None;
         };
-        let mut values =
-            match crate::decode_alloc::counted_vec(ctx, count, "ASM counted float array") {
-                Ok(values) => values,
-                Err(error) => return Some(Err(error)),
-            };
+        let mut values = match ctx.collection_vec(count, "ASM counted float array") {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        };
         for _ in 0..count {
             let Some(value) = self.take_f64() else {
                 self.pos = mark;
@@ -227,11 +226,11 @@ pub(super) fn take_knot_table(
     n: usize,
     degree: i64,
 ) -> Option<Result<(Vec<f64>, usize), cadmpeg_core::CodecError>> {
-    let mut values = match crate::decode_alloc::counted_vec(ctx, n, "ASM unique knot values") {
+    let mut values = match ctx.collection_vec(n, "ASM unique knot values") {
         Ok(values) => values,
         Err(error) => return Some(Err(error)),
     };
-    let mut mults = match crate::decode_alloc::counted_vec(ctx, n, "ASM knot multiplicities") {
+    let mut mults = match ctx.collection_vec(n, "ASM knot multiplicities") {
         Ok(mults) => mults,
         Err(error) => return Some(Err(error)),
     };
@@ -240,12 +239,10 @@ pub(super) fn take_knot_table(
         mults.push(cur.take_long()?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    let mut expanded =
-        match crate::decode_alloc::counted_vec(ctx, expansion.expanded_len(), "ASM expanded knots")
-        {
-            Ok(expanded) => expanded,
-            Err(error) => return Some(Err(error)),
-        };
+    let mut expanded = match ctx.collection_vec(expansion.expanded_len(), "ASM expanded knots") {
+        Ok(expanded) => expanded,
+        Err(error) => return Some(Err(error)),
+    };
     for (index, (value, multiplicity)) in values.iter().zip(&mults).enumerate() {
         let run_length = usize::try_from(*multiplicity).ok()?
             + usize::from(index == 0 || index + 1 == mults.len());
@@ -309,7 +306,7 @@ fn walk_owned_markers(
             },
             _ => {
                 if depth == 0 && marker_at(toks, pos).is_some() {
-                    crate::decode_alloc::push_vec(ctx, &mut out, pos, "ASM owned spline markers")?;
+                    ctx.push_vec(&mut out, pos, "ASM owned spline markers")?;
                 }
             }
         }
@@ -335,8 +332,7 @@ pub(super) fn owned_subtype_defs<'a>(
             Token::SubtypeOpen => {
                 if depth == 0 {
                     if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1) {
-                        if let Err(error) = crate::decode_alloc::push_vec(
-                            ctx,
+                        if let Err(error) = ctx.push_vec(
                             &mut owned,
                             (pos, name.as_str()),
                             "ASM owned subtype definitions",
@@ -394,7 +390,7 @@ pub fn owned_construction_subtype(
         .find(|name| *name != "ref")
         .map(|name| {
             let name = canonical_intcurve_kind(name);
-            crate::decode_alloc::copy_string(ctx, name, "ASM construction subtype name")
+            ctx.copy_retained_text(name, "ASM construction subtype name")
         })
 }
 
@@ -464,8 +460,7 @@ pub(super) fn cache_scope<'a>(
             Err(error) => return Some(Err(error)),
         };
         if !markers.is_empty() {
-            if let Err(error) = crate::decode_alloc::push_vec(
-                ctx,
+            if let Err(error) = ctx.push_vec(
                 &mut cache_bearing,
                 scope.tokens(),
                 "ASM cache bearing scopes",
@@ -696,7 +691,16 @@ impl SubtypeTable {
                         if name != "ref" {
                             ctx.charge_collection_items(1, "index ASM subtype definitions")?;
                             defs.try_reserve(1).map_err(|_| {
-                                ctx.refuse_codec_limit("ASM subtype definitions", 0, 1)
+                                cadmpeg_core::CodecError::ResourceLimit(
+                                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                        cadmpeg_core::decode::ResourceDimension::Codec(
+                                            "ASM subtype definitions",
+                                        ),
+                                        0,
+                                        1,
+                                        "ASM subtype definitions",
+                                    ),
+                                )
                             })?;
                             defs.push((record.tokens.clone(), pos));
                         }
@@ -745,7 +749,14 @@ pub(crate) fn admit_subtype_references(
         ctx.charge_collection_items(1, "walk ASM subtype stack")?;
         scratch.grow(std::mem::size_of_val(&root) as u64)?;
         pending.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("ASM subtype stack allocation", u64::MAX, u64::MAX)
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("ASM subtype stack allocation"),
+                    u64::MAX,
+                    u64::MAX,
+                    "ASM subtype stack allocation",
+                ),
+            )
         })?;
         pending.push(root);
         while let Some((references, _guard)) = pending.last_mut() {
@@ -758,12 +769,20 @@ pub(crate) fn admit_subtype_references(
                 continue;
             }
             ctx.charge_collection_items(1, "visit ASM subtype reference")?;
-            let visited_slot_bytes = u64::try_from(std::mem::size_of::<usize>()).map_err(|_| {
-                ctx.refuse_codec_limit("ASM subtype visited bytes", u64::MAX, u64::MAX)
-            })?;
+            let visited_slot_bytes =
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
             scratch.grow(visited_slot_bytes)?;
             visited.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("ASM subtype visited allocation", u64::MAX, u64::MAX)
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "ASM subtype visited allocation",
+                        ),
+                        u64::MAX,
+                        u64::MAX,
+                        "ASM subtype visited allocation",
+                    ),
+                )
             })?;
             visited.insert(index);
             let Some((tokens, _)) = table.defs.get(index) else {
@@ -778,7 +797,16 @@ pub(crate) fn admit_subtype_references(
             ctx.charge_collection_items(1, "walk ASM subtype stack")?;
             scratch.grow(std::mem::size_of_val(&frame) as u64)?;
             pending.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("ASM subtype stack allocation", u64::MAX, u64::MAX)
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "ASM subtype stack allocation",
+                        ),
+                        u64::MAX,
+                        u64::MAX,
+                        "ASM subtype stack allocation",
+                    ),
+                )
             })?;
             pending.push(frame);
         }

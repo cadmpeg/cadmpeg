@@ -684,8 +684,13 @@ fn edge_prefix(
 ) -> Result<(PmDcReferenceList, Vec<PmDcReferenceList>), CodecError> {
     let points = reference_list(ctx, cursor, 2, &format!("{field} point list"))?;
     let mut auxiliary = Vec::new();
-    if cursor.remaining() >= fixed_tail.saturating_add(8)
-        && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
+    let tail8 = fixed_tail
+        .checked_add(8)
+        .ok_or_else(|| CodecError::malformed("Inventor edge tail size overflow"))?;
+    let tail16 = fixed_tail
+        .checked_add(16)
+        .ok_or_else(|| CodecError::malformed("Inventor edge tail size overflow"))?;
+    if cursor.remaining() >= tail8 && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
     {
         auxiliary.push(reference_list(
             ctx,
@@ -693,7 +698,7 @@ fn edge_prefix(
             2,
             &format!("{field} auxiliary list 0"),
         )?);
-    } else if cursor.remaining() >= fixed_tail.saturating_add(16) {
+    } else if cursor.remaining() >= tail16 {
         let gate = [
             cursor.u32("edge list gate 0")?,
             cursor.u32("edge list gate 1")?,
@@ -709,7 +714,7 @@ fn edge_prefix(
             2,
             &format!("{field} auxiliary list 0"),
         )?);
-        if cursor.remaining() >= fixed_tail.saturating_add(8)
+        if cursor.remaining() >= tail8
             && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
         {
             auxiliary.push(reference_list(
@@ -870,7 +875,7 @@ fn reference_scalar_map(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferenceScalarMap, CodecError> {
     let (count, metadata) = map_header(ctx, cursor, "constraint scalar map")?;
-    let mut entries = Vec::with_capacity(count);
+    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor sketch constraint map")?;
     for index in 0..count {
         entries.push((
             cursor.reference("constraint scalar-map key")?,
@@ -887,7 +892,7 @@ fn reference_pair_map(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferencePairMap, CodecError> {
     let (count, metadata) = map_header(ctx, cursor, "constraint reference map")?;
-    let mut entries = Vec::with_capacity(count);
+    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor sketch constraint map")?;
     for _ in 0..count {
         entries.push((
             cursor.reference("constraint reference-map key")?,
@@ -1021,6 +1026,21 @@ fn distance_constraint_fields(
     Ok((first, second, parameter, values))
 }
 
+fn count_removed(
+    ctx: &DecodeContext<'_>,
+    unresolved: usize,
+    before: usize,
+    after: usize,
+    operation: &'static str,
+) -> Result<usize, CodecError> {
+    let removed = before
+        .checked_sub(after)
+        .ok_or_else(|| CodecError::malformed("Inventor projected count exceeds prior count"))?;
+    unresolved
+        .checked_add(removed)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+}
+
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     inventory: &SketchInventory,
@@ -1118,12 +1138,13 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
-        if !sketch
-            .entities
-            .references()
-            .iter()
-            .any(|reference| reference.index == entity.identity.record_ordinal.saturating_add(1))
-        {
+        if !sketch.entities.references().iter().any(|reference| {
+            entity
+                .identity
+                .record_ordinal
+                .checked_add(1)
+                .is_some_and(|next| reference.index == next)
+        }) {
             unresolved_entities += 1;
             continue;
         }
@@ -1279,8 +1300,13 @@ pub(crate) fn project(
         .collect::<HashSet<_>>();
     let previous_entity_count = projected_entities.len();
     projected_entities.retain(|entity| projected_sketch_ids.contains(&entity.sketch));
-    unresolved_entities = unresolved_entities
-        .saturating_add(previous_entity_count.saturating_sub(projected_entities.len()));
+    unresolved_entities = count_removed(
+        ctx,
+        unresolved_entities,
+        previous_entity_count,
+        projected_entities.len(),
+        "Inventor unresolved sketch entities",
+    )?;
     ctx.charge_collection_items(
         projected_entities.len() as u64,
         "reindex projected Inventor sketch entities",
@@ -1334,7 +1360,8 @@ pub(crate) fn project(
     let mut unresolved_constraints = inventory
         .constraints
         .len()
-        .saturating_sub(constraints.len());
+        .checked_sub(constraints.len())
+        .ok_or_else(|| CodecError::malformed("Inventor constraints exceed inventory"))?;
     ctx.charge_collection_items(
         projected_entity_by_key.len() as u64,
         "index projected Inventor sketch entity closure keys",
@@ -1406,8 +1433,13 @@ pub(crate) fn project(
             projected_entity_keys.contains(&key) || projected_constraint_keys.contains(&key)
         })
     });
-    unresolved_sketches =
-        unresolved_sketches.saturating_add(previous_sketch_count.saturating_sub(sketches.len()));
+    unresolved_sketches = count_removed(
+        ctx,
+        unresolved_sketches,
+        previous_sketch_count,
+        sketches.len(),
+        "Inventor unresolved sketches",
+    )?;
     ctx.charge_collection_items(sketches.len() as u64, "index closed Inventor sketch ids")?;
     for sketch in &sketches {
         ctx.charge_retained(
@@ -1421,8 +1453,13 @@ pub(crate) fn project(
         .collect::<HashSet<_>>();
     let previous_entity_count = projected_entities.len();
     projected_entities.retain(|entity| closed_sketch_ids.contains(&entity.sketch));
-    unresolved_entities = unresolved_entities
-        .saturating_add(previous_entity_count.saturating_sub(projected_entities.len()));
+    unresolved_entities = count_removed(
+        ctx,
+        unresolved_entities,
+        previous_entity_count,
+        projected_entities.len(),
+        "Inventor unresolved sketch entities",
+    )?;
     let mut raw_constraint_by_native = HashMap::new();
     for constraint in &inventory.constraints {
         ctx.charge_collection_items(1, "index Inventor raw constraint native refs")?;
@@ -1467,12 +1504,21 @@ pub(crate) fn project(
             .get(&constraint.sketch)
             .is_some_and(|sketch| {
                 sketch.entities.references().iter().any(|reference| {
-                    reference.index == raw_constraint.identity.record_ordinal.saturating_add(1)
+                    raw_constraint
+                        .identity
+                        .record_ordinal
+                        .checked_add(1)
+                        .is_some_and(|next| reference.index == next)
                 })
             })
     });
-    unresolved_constraints = unresolved_constraints
-        .saturating_add(previous_constraint_count.saturating_sub(constraints.len()));
+    unresolved_constraints = count_removed(
+        ctx,
+        unresolved_constraints,
+        previous_constraint_count,
+        constraints.len(),
+        "Inventor unresolved sketch constraints",
+    )?;
     Ok(SketchProjection {
         sketches,
         entities: projected_entities,
@@ -2572,6 +2618,47 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
         assert!(project(&ctx, &inventory, &[]).is_ok());
+    }
+
+    #[test]
+    fn sketch_reference_cannot_name_the_maximum_record_ordinal() {
+        let mut sketch_bytes = content(0);
+        sketch_bytes.extend_from_slice(&0_i32.to_le_bytes());
+        sketch_bytes.extend_from_slice(&1_u32.to_le_bytes());
+        sketch_bytes.extend(list(8, &[u32::MAX]));
+        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
+        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
+        sketch_bytes.extend_from_slice(&[0; 8]);
+        sketch_bytes.extend(list(2, &[]));
+        let sketch = parse(&sketch_bytes, |ctx, source| {
+            parse_sketch(ctx, source, 22).expect("sketch record")
+        });
+        let point = parse(&point_bytes(1, 1, [0.0, 0.0]), |ctx, source| {
+            parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point record")
+        });
+        let inventory = SketchInventory {
+            sketches: vec![Located::new(
+                sketch,
+                type_id_string(SKETCH_TYPE),
+                &cadmpeg_ir::identity_key!("segment"),
+                0,
+            )],
+            entities: vec![Located::new(
+                point,
+                type_id_string(POINT_TYPE),
+                &cadmpeg_ir::identity_key!("segment"),
+                u32::MAX,
+            )],
+            transforms: Vec::new(),
+            directions: Vec::new(),
+            constraints: Vec::new(),
+            issues: Vec::new(),
+        };
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projection = project(&ctx, &inventory, &[]).expect("sketch projection");
+        assert_eq!(projection.unresolved_entities, 1);
     }
 
     #[test]

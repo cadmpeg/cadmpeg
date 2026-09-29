@@ -798,11 +798,14 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
             bulk_offset: 141,
         }],
     };
-    let curves = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
+    let curves = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+            ctx,
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat",
+        )
+    })
     .expect("primary NURBS frame with a nested subtype header");
     let [curve] = curves.as_slice() else {
         panic!("one indexed NURBS curve");
@@ -936,6 +939,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     // that sketch; records the run does not name stay unowned.
     let mut points = [point(20), point(21), point(22)];
     bind_sketch_graph(
+        &cadmpeg_test_support::service_decode_context(),
         &[header(100, vec![20, 21, 99])],
         &mut points,
         &mut [],
@@ -950,6 +954,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     // Two sketches claiming one record is a structural conflict.
     let mut points = [point(20)];
     assert!(bind_sketch_graph(
+        &cadmpeg_test_support::service_decode_context(),
         &[header(100, vec![20]), header(101, vec![20])],
         &mut points,
         &mut [],

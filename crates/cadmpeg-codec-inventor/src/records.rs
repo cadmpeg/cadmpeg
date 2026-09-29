@@ -180,7 +180,8 @@ pub(crate) fn parse_meta_tables<'a>(
     let (block_count, section_1_payload, section_1_footer) =
         counted_section(&mut view, 4, "block-size table")?;
     ctx.charge_collection_items(block_count as u64, "admit Inventor RSe block descriptors")?;
-    let mut blocks = Vec::with_capacity(block_count);
+    let mut blocks =
+        DecodeContext::admitted_vec(block_count, "admit Inventor RSe block descriptors")?;
     let mut sizes = section_1_payload;
     for ordinal in 0..block_count {
         let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
@@ -221,7 +222,7 @@ pub(crate) fn parse_meta_tables<'a>(
         type_count as u64 + SECTION_COUNT as u64,
         "admit Inventor RSe metadata tables",
     )?;
-    let mut types = Vec::with_capacity(type_count);
+    let mut types = DecodeContext::admitted_vec(type_count, "admit Inventor RSe metadata tables")?;
     for index in 0..type_count {
         let entry = child(
             section_4_payload,
@@ -295,7 +296,8 @@ pub(crate) fn frame_bulk_records<'a>(
     let stored_count = tables.blocks.iter().filter(|block| block.stored).count();
     ctx.charge_collection_items(stored_count as u64, "admit Inventor RSe record frames")?;
     let mut cursor = Cursor::new(bulk);
-    let mut records = Vec::with_capacity(stored_count);
+    let mut records =
+        DecodeContext::admitted_vec(stored_count, "admit Inventor RSe record frames")?;
     for block in tables.blocks.iter().filter(|block| block.stored) {
         let selector = cursor.u32("record type selector")?;
         let type_index = selector as u8;

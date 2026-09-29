@@ -5,6 +5,13 @@ use super::validate_detached_cms;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 #[test]
+fn ber_cursor_past_input_refuses_remaining_length() {
+    let mut ber = super::Ber::new(b"");
+    ber.at = 1;
+    assert_eq!(super::require_empty(&ber), Err("BER cursor exceeds input"));
+}
+
+#[test]
 fn signature_compact_refuses_collection_limit() {
     let input = b"AAAA";
     let arena = cadmpeg_core::decode::DecodeArena::new();

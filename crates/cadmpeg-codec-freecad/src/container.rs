@@ -20,10 +20,6 @@ use crate::native::{
     ArchiveSpan, ByteCoverageRecord, DocumentFacts, EntryRecord, LogicalClassification,
     LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
 };
-use crate::resource::{
-    collection_vec, insert_hash_set, reserve_vec_items, retained_format, retained_string,
-    retained_suffix,
-};
 
 const DETECTION_XML_BYTES: usize = 8 * 1024;
 
@@ -108,7 +104,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     let (document, schema_version) = parse_document(ctx, document_bytes)?;
     let mut data = BTreeMap::new();
     for file in archive.entries() {
-        let name = retained_string(ctx, &file.name, "FCStd archive entry name")?;
+        let name = ctx.copy_retained_text(&file.name, "FCStd archive entry name")?;
         if !crate::native::is_safe_entry_name(&name) {
             return Err(crate::resource::malformed_charged(
                 ctx,
@@ -125,7 +121,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         data.insert(name, view);
     }
     let physical_ledger = archive.physical_ledger(ctx)?;
-    let mut ledger = collection_vec(ctx, physical_ledger.len(), "FCStd archive ledger records")?;
+    let mut ledger = ctx.collection_vec(physical_ledger.len(), "FCStd archive ledger records")?;
     for (index, span) in physical_ledger.into_iter().enumerate() {
         ledger.push(ArchiveSpan {
             id: crate::native::native_id_charged(ctx, "archive-span", &index.to_string())?,
@@ -148,11 +144,10 @@ pub(crate) fn entry_records(
     scan: &Scan<'_>,
     properties: &[PropertyRecord],
 ) -> Result<Vec<EntryRecord>, CodecError> {
-    let mut records = collection_vec(ctx, scan.entries.len(), "FCStd entry records")?;
+    let mut records = ctx.collection_vec(scan.entries.len(), "FCStd entry records")?;
     for entry in &scan.entries {
         let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
-            return Err(CodecError::Malformed(retained_format(
-                ctx,
+            return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!("entry {} disappeared after scan", entry.name),
                 "FCStd missing entry error",
             )?));
@@ -162,21 +157,13 @@ pub(crate) fn entry_records(
             .iter()
             .filter(|property| property.side_entries().contains(&entry.name))
         {
-            reserve_vec_items(
-                ctx,
-                &mut referenced_by,
-                1,
-                "FCStd entry referencing properties",
-            )?;
-            referenced_by.push(retained_string(
-                ctx,
-                &property.id,
-                "FCStd entry referencing identity",
-            )?);
+            ctx.reserve_vec(&mut referenced_by, 1, "FCStd entry referencing properties")?;
+            referenced_by
+                .push(ctx.copy_retained_text(&property.id, "FCStd entry referencing identity")?);
         }
         records.push(EntryRecord {
             id: crate::native::native_id_charged(ctx, "entry", &entry.name)?,
-            name: retained_string(ctx, &entry.name, "FCStd entry record name")?,
+            name: ctx.copy_retained_text(&entry.name, "FCStd entry record name")?,
             role: entry.role,
             referenced_by,
             data: ctx.copy_retained(bytes, "retain FCStd entry")?,
@@ -197,17 +184,10 @@ pub(crate) fn add_entry_reference(
     {
         return Ok(());
     }
-    reserve_vec_items(
-        ctx,
-        &mut entry.referenced_by,
-        1,
-        "FCStd GUI entry references",
-    )?;
-    entry.referenced_by.push(retained_string(
-        ctx,
-        owner,
-        "FCStd GUI entry reference identity",
-    )?);
+    ctx.reserve_vec(&mut entry.referenced_by, 1, "FCStd GUI entry references")?;
+    entry
+        .referenced_by
+        .push(ctx.copy_retained_text(owner, "FCStd GUI entry reference identity")?);
     Ok(())
 }
 
@@ -230,12 +210,7 @@ pub(crate) fn source_attributes(
     );
     attributes.insert(
         cadmpeg_core::nonblank_literal!("application_domains"),
-        crate::resource::retained_join(
-            ctx,
-            &scan.document.domains,
-            ",",
-            "FCStd source domain list",
-        )?,
+        ctx.join_retained(&scan.document.domains, ",", "FCStd source domain list")?,
     );
     attributes.insert(
         cadmpeg_core::nonblank_literal!("archive_entry_count"),
@@ -254,7 +229,7 @@ pub(crate) fn source_attributes(
     if let Some(value) = &scan.document.program_version {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("program_version"),
-            retained_string(ctx, value, "FCStd source program version")?,
+            ctx.copy_retained_text(value, "FCStd source program version")?,
         );
     }
     Ok(attributes)
@@ -269,18 +244,18 @@ pub(crate) fn summarize(
     let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
         .into_iter()
         .collect();
-    let mut entries = collection_vec(ctx, scan.entries.len(), "FCStd summary entries")?;
+    let mut entries = ctx.collection_vec(scan.entries.len(), "FCStd summary entries")?;
     for entry in &scan.entries {
         let mut attributes = BTreeMap::new();
         for (key, value) in &entry.attributes {
             ctx.charge_collection_items(1, "FCStd summary entry attributes")?;
             attributes.insert(
-                retained_string(ctx, key, "FCStd summary attribute key")?,
-                retained_string(ctx, value, "FCStd summary attribute value")?,
+                ctx.copy_retained_text(key, "FCStd summary attribute key")?,
+                ctx.copy_retained_text(value, "FCStd summary attribute value")?,
             );
         }
         entries.push(ContainerEntry {
-            name: retained_string(ctx, &entry.name, "FCStd summary entry name")?,
+            name: ctx.copy_retained_text(&entry.name, "FCStd summary entry name")?,
             role: entry.role,
             storage: entry.storage.clone(),
             attributes,
@@ -301,26 +276,18 @@ pub(crate) fn summary_notes(
     scan: &Scan,
 ) -> Result<Vec<String>, CodecError> {
     let mut notes = vec![
-        retained_suffix(
-            ctx,
-            "SchemaVersion=",
-            &scan.schema_version,
-            "FCStd schema note",
-        )?,
-        retained_suffix(
-            ctx,
+        ctx.retained_suffix("SchemaVersion=", &scan.schema_version, "FCStd schema note")?,
+        ctx.retained_suffix(
             "FileVersion=",
             scan.document.file_version.as_str(),
             "FCStd file version note",
         )?,
-        retained_suffix(
-            ctx,
+        ctx.retained_suffix(
             "document root=",
             &scan.document.root_name,
             "FCStd document root note",
         )?,
-        retained_suffix(
-            ctx,
+        ctx.retained_suffix(
             "document kind=",
             scan.document.document_kind().as_str(),
             "FCStd document kind note",
@@ -329,8 +296,7 @@ pub(crate) fn summary_notes(
         format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
     ];
     if let Some(version) = &scan.document.program_version {
-        notes.push(retained_suffix(
-            ctx,
+        notes.push(ctx.retained_suffix(
             "ProgramVersion=",
             version,
             "FCStd program version note",
@@ -365,11 +331,9 @@ pub(crate) fn canonical_attribute(
         (Some(_), Some(_)) => Err(CodecError::malformed(format_args!(
             "Document element has both {canonical} and {alias} attributes"
         ))),
-        (Some(value), None) => Ok(Some(retained_string(
-            ctx,
-            value,
-            "FCStd document attribute",
-        )?)),
+        (Some(value), None) => Ok(Some(
+            ctx.copy_retained_text(value, "FCStd document attribute")?,
+        )),
         (None, Some(_)) => Err(CodecError::malformed(format_args!(
             "Document element uses unsupported {alias}; expected {canonical}"
         ))),
@@ -506,8 +470,7 @@ pub(crate) fn parse_document(
     let xml = match roxmltree::Document::parse(text) {
         Ok(xml) => xml,
         Err(error) => {
-            return Err(CodecError::Malformed(retained_format(
-                ctx,
+            return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!("invalid Document.xml: {error}"),
                 "FCStd document parse error",
             )?))
@@ -515,8 +478,7 @@ pub(crate) fn parse_document(
     };
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
-        return Err(CodecError::WrongFormat(retained_format(
-            ctx,
+        return Err(CodecError::WrongFormat(ctx.format_retained(
             format_args!(
                 "Document.xml root is {}, expected Document",
                 root.tag_name().name()
@@ -552,11 +514,11 @@ pub(crate) fn parse_document(
         {
             if !domain_set.contains(domain) {
                 ctx.charge_collection_items(1, "FCStd document domains")?;
-                domain_set.insert(retained_string(ctx, domain, "FCStd document domain name")?);
+                domain_set.insert(ctx.copy_retained_text(domain, "FCStd document domain name")?);
             }
         }
     }
-    let mut domains = collection_vec(ctx, domain_set.len(), "FCStd document domain list")?;
+    let mut domains = ctx.collection_vec(domain_set.len(), "FCStd document domain list")?;
     domains.extend(domain_set);
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
@@ -580,8 +542,7 @@ pub(crate) fn logical_ledger(
 ) -> Result<Vec<LogicalSpan>, CodecError> {
     let mut typed_entries = HashSet::new();
     for payload in shape_payloads {
-        insert_hash_set(
-            ctx,
+        ctx.insert_hash_set(
             &mut typed_entries,
             payload.entry.as_str(),
             "FCStd typed entry identities",
@@ -591,23 +552,13 @@ pub(crate) fn logical_ledger(
         .iter()
         .filter_map(|table| table.source_entry.as_deref())
     {
-        insert_hash_set(
-            ctx,
-            &mut typed_entries,
-            name,
-            "FCStd typed entry identities",
-        )?;
+        ctx.insert_hash_set(&mut typed_entries, name, "FCStd typed entry identities")?;
     }
     for name in element_maps
         .iter()
         .filter_map(|map| map.source_entry.as_deref())
     {
-        insert_hash_set(
-            ctx,
-            &mut typed_entries,
-            name,
-            "FCStd typed entry identities",
-        )?;
+        ctx.insert_hash_set(&mut typed_entries, name, "FCStd typed entry identities")?;
     }
     let mut output = Vec::new();
     for entry in entries {
@@ -620,14 +571,14 @@ pub(crate) fn logical_ledger(
                 0,
                 entry.byte_len(),
                 LogicalClassification::Typed {
-                    owner: retained_string(ctx, &entry.id, "FCStd logical span owner")?,
+                    owner: ctx.copy_retained_text(&entry.id, "FCStd logical span owner")?,
                 },
             )?;
         } else if entry.name == "Document.xml" || entry.name == "GuiDocument.xml" {
             let mut ranges = Vec::new();
             if entry.name == "Document.xml" {
                 for property in properties {
-                    reserve_vec_items(ctx, &mut ranges, 1, "FCStd logical property ranges")?;
+                    ctx.reserve_vec(&mut ranges, 1, "FCStd logical property ranges")?;
                     ranges.push((
                         property.xml.start(),
                         property.xml.end(),
@@ -636,12 +587,12 @@ pub(crate) fn logical_ledger(
                         } else {
                             "typed"
                         },
-                        retained_string(ctx, &property.id, "FCStd logical range owner")?,
+                        ctx.copy_retained_text(&property.id, "FCStd logical range owner")?,
                     ));
                 }
             } else {
                 for property in &gui.properties {
-                    reserve_vec_items(ctx, &mut ranges, 1, "FCStd logical GUI ranges")?;
+                    ctx.reserve_vec(&mut ranges, 1, "FCStd logical GUI ranges")?;
                     ranges.push((
                         property.xml.start(),
                         property.xml.end(),
@@ -651,17 +602,17 @@ pub(crate) fn logical_ledger(
                         } else {
                             "named_opaque"
                         },
-                        retained_string(ctx, &property.id, "FCStd logical range owner")?,
+                        ctx.copy_retained_text(&property.id, "FCStd logical range owner")?,
                     ));
                 }
                 for document in &gui.documents {
                     for state in &document.states {
-                        reserve_vec_items(ctx, &mut ranges, 1, "FCStd logical GUI ranges")?;
+                        ctx.reserve_vec(&mut ranges, 1, "FCStd logical GUI ranges")?;
                         ranges.push((
                             state.xml.start(),
                             state.xml.end(),
                             "typed",
-                            retained_string(ctx, &state.id, "FCStd logical range owner")?,
+                            ctx.copy_retained_text(&state.id, "FCStd logical range owner")?,
                         ));
                     }
                 }
@@ -670,8 +621,7 @@ pub(crate) fn logical_ledger(
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
                 if start < cursor || end < start || end > entry.byte_len() {
-                    return Err(CodecError::Malformed(retained_format(
-                        ctx,
+                    return Err(CodecError::Malformed(ctx.format_retained(
                         format_args!("overlapping or invalid {} record spans", entry.name),
                         "FCStd logical span error",
                     )?));
@@ -707,7 +657,7 @@ pub(crate) fn logical_ledger(
                 0,
                 entry.byte_len(),
                 LogicalClassification::NamedOpaque {
-                    owner: retained_string(ctx, &entry.id, "FCStd logical span owner")?,
+                    owner: ctx.copy_retained_text(&entry.id, "FCStd logical span owner")?,
                 },
             )?;
         }
@@ -729,7 +679,7 @@ pub(crate) fn byte_coverage(
         if !classification_bytes.contains_key(classification) {
             ctx.charge_collection_items(1, "FCStd coverage classifications")?;
             classification_bytes.insert(
-                retained_string(ctx, classification, "FCStd coverage classification name")?,
+                ctx.copy_retained_text(classification, "FCStd coverage classification name")?,
                 0,
             );
         }
@@ -742,14 +692,12 @@ pub(crate) fn byte_coverage(
         ) && !named_opaque_entries.contains(&span.entry)
         {
             ctx.charge_collection_items(1, "FCStd opaque coverage entries")?;
-            named_opaque_entries.insert(retained_string(
-                ctx,
-                &span.entry,
-                "FCStd opaque entry name",
-            )?);
+            named_opaque_entries
+                .insert(ctx.copy_retained_text(&span.entry, "FCStd opaque entry name")?);
         }
     }
-    let mut ordered_physical = collection_vec(ctx, physical.len(), "FCStd ordered physical spans")?;
+    let mut ordered_physical =
+        ctx.collection_vec(physical.len(), "FCStd ordered physical spans")?;
     ordered_physical.extend(physical.iter());
     ordered_physical.sort_by_key(|span| span.span.start());
     let physical_exact = ordered_physical
@@ -768,7 +716,7 @@ pub(crate) fn byte_coverage(
         for entry in entries {
             let mut spans = Vec::new();
             for span in logical.iter().filter(|span| span.entry == entry.name) {
-                reserve_vec_items(ctx, &mut spans, 1, "FCStd entry logical spans")?;
+                ctx.reserve_vec(&mut spans, 1, "FCStd entry logical spans")?;
                 spans.push(span);
             }
             spans.sort_by_key(|span| span.span.start());
@@ -789,11 +737,8 @@ pub(crate) fn byte_coverage(
             }
         }
     }
-    let mut opaque_entries = collection_vec(
-        ctx,
-        named_opaque_entries.len(),
-        "FCStd opaque coverage list",
-    )?;
+    let mut opaque_entries =
+        ctx.collection_vec(named_opaque_entries.len(), "FCStd opaque coverage list")?;
     opaque_entries.extend(named_opaque_entries);
     Ok(ByteCoverageRecord {
         id: crate::native::native_id("byte-coverage", "0"),
@@ -822,10 +767,10 @@ fn push_logical_span(
     if start == end {
         return Ok(());
     }
-    reserve_vec_items(ctx, output, 1, "FCStd logical ledger spans")?;
+    ctx.reserve_vec(output, 1, "FCStd logical ledger spans")?;
     output.push(LogicalSpan {
         id: crate::native::native_id("logical-span", output.len().to_string()),
-        entry: retained_string(ctx, &entry.name, "FCStd logical span entry")?,
+        entry: ctx.copy_retained_text(&entry.name, "FCStd logical span entry")?,
         span: crate::native::ByteSpan::try_new(start, end).map_err(CodecError::Malformed)?,
         classification,
     });

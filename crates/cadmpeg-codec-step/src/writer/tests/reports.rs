@@ -1776,7 +1776,7 @@ fn degenerate_torus_report(
     let owner = ir.model.surfaces[0].id.clone();
     ir.model
         .add_procedural_surface(
-            owner,
+            &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
                     "test:model:procedural-surface#degenerate_torus",
@@ -1843,7 +1843,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
     // candidate STEP carrier.
     ir.model
         .add_procedural_surface(
-            owner,
+            &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
                     "test:model:procedural-surface#compound",
@@ -1893,7 +1893,7 @@ fn procedural_construction_reduction_is_reported() {
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.01).expect("fit tolerance")),
         },
     );
-    ir.model.add_procedural_curve(owner, procedural).unwrap();
+    ir.model.add_procedural_curve(&owner, procedural).unwrap();
 
     let mut buf = Vec::new();
     let report = write_step(
