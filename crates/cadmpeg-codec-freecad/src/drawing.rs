@@ -27,17 +27,7 @@ pub(crate) fn transfer(
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            ctx.charge_collection_items(1, "fcstd drawing owner index")?;
-            by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "fcstd drawing owner index",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut by_owner, 1, "fcstd drawing owner index")?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -144,20 +134,11 @@ pub(crate) fn transfer_neutral(
     properties: &[PropertyRecord],
 ) -> Result<(), CodecError> {
     let mut neutral_ids = HashMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(records.len()),
+    ctx.reserve_map(
+        &mut neutral_ids,
+        records.len(),
         "fcstd drawing neutral identities",
     )?;
-    neutral_ids.try_reserve(records.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(records.len()),
-                "fcstd drawing neutral identities",
-            ),
-        )
-    })?;
     for record in records {
         neutral_ids.insert(
             record.object.as_str(),
@@ -275,12 +256,7 @@ pub(crate) fn transfer_neutral(
             None
         };
         let template = template_id
-            .map(|id| {
-                DrawingId::mint(
-                    ctx.copy_retained_text(id.as_str(), "fcstd drawing template identity")?,
-                )
-                .map_err(CodecError::malformed)
-            })
+            .map(|id| id.try_clone_for_decode(ctx, "fcstd drawing template identity"))
             .transpose()?;
         ctx.reserve_vec(&mut model.drawings, 1, "fcstd neutral drawings")?;
         let mut parameters = BTreeMap::new();
@@ -304,12 +280,7 @@ pub(crate) fn transfer_neutral(
                         format_args!("drawing {} has no admitted neutral identity", record.id),
                     )
                 })
-                .and_then(|id| {
-                    DrawingId::mint(
-                        ctx.copy_retained_text(id.as_str(), "fcstd drawing neutral identity")?,
-                    )
-                    .map_err(CodecError::malformed)
-                })?,
+                .and_then(|id| id.try_clone_for_decode(ctx, "fcstd drawing neutral identity"))?,
             object: ctx.copy_retained_text(&record.object, "fcstd neutral drawing object")?,
             kind: classify(record.kind.as_str()),
             runtime_type: ctx

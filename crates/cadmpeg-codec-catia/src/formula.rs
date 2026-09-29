@@ -351,9 +351,10 @@ pub(crate) fn transfer_parameters(
                             )?;
                             let program_output = output_id
                                 .try_clone_for_decode(ctx, "catia_formula_program_output")?;
-                            let program_inputs = copy_parameter_ids(
-                                ctx,
-                                &dependencies,
+                            let program_inputs = ctx.try_collect_vec(
+                                dependencies.iter().map(|id| {
+                                    id.try_clone_for_decode(ctx, "catia_formula_program_inputs")
+                                }),
                                 "catia_formula_program_inputs",
                             )?;
                             ctx.push_vec(
@@ -2053,17 +2054,6 @@ fn copy_design_parameter(
         pmi,
         native_ref,
     })
-}
-
-fn copy_parameter_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ids: &[ParameterId],
-    operation: &'static str,
-) -> Result<Vec<ParameterId>, cadmpeg_core::CodecError> {
-    ctx.try_collect_vec(
-        ids.iter().map(|id| id.try_clone_for_decode(ctx, operation)),
-        operation,
-    )
 }
 
 fn string_literal_expression(
@@ -4350,9 +4340,10 @@ mod parser_tests {
         let id =
             ParameterId::mint("synthetic:test:id#input".to_string()).expect("identity grammar");
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            super::copy_parameter_ids(
-                ctx,
-                std::slice::from_ref(&id),
+            ctx.try_collect_vec(
+                std::slice::from_ref(&id)
+                    .iter()
+                    .map(|id| id.try_clone_for_decode(ctx, "catia_formula_program_inputs")),
                 "catia_formula_program_inputs",
             )
         });
@@ -4361,9 +4352,10 @@ mod parser_tests {
             if limit.operation == "catia_formula_program_inputs")
         );
         let admitted = crate::test_support::with_service_context(|ctx| {
-            super::copy_parameter_ids(
-                ctx,
-                std::slice::from_ref(&id),
+            ctx.try_collect_vec(
+                std::slice::from_ref(&id)
+                    .iter()
+                    .map(|id| id.try_clone_for_decode(ctx, "catia_formula_program_inputs")),
                 "catia_formula_program_inputs",
             )
         })

@@ -10,8 +10,8 @@ use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
 use crate::chunks::{
-    chunk_at, direct_checksum_ranges, reserve_admitted_vec, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_ENDOFTABLE,
+    chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion, BoundedReader,
+    ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_ENDOFTABLE,
 };
 use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::instances::hex;
@@ -907,12 +907,12 @@ fn parse_attributes(
         let margins_mm = [left, right, top, bottom];
         let printer_name = utf16_retained(ctx, &mut page, "Rhino view printer name")?;
         page.skip_remaining()?;
-        reserve_admitted_vec(
-            ctx,
+        ctx.reserve_vec(
             &mut checksum_children,
             1,
             "Rhino view attribute checksum children",
-        )?;
+        )
+        .map_err(crate::chunks::FramingError::from)?;
         checksum_children.push(chunk.range());
         reader.skip(chunk.next_offset() - reader.position())?;
         result.page_settings = Some(PageSettings {
@@ -984,12 +984,8 @@ fn parse_attributes(
             } else {
                 legacy_depth_enabled
             };
-            reserve_admitted_vec(
-                ctx,
-                &mut result.clipping_planes,
-                1,
-                "Rhino view clipping planes",
-            )?;
+            ctx.reserve_vec(&mut result.clipping_planes, 1, "Rhino view clipping planes")
+                .map_err(crate::chunks::FramingError::from)?;
             result.clipping_planes.push(ClippingPlane {
                 equation_mm: equation,
                 plane_uuid: (!id.is_nil())
@@ -1001,12 +997,12 @@ fn parse_attributes(
                 depth_mm: depth,
                 depth_enabled,
             });
-            reserve_admitted_vec(
-                ctx,
+            ctx.reserve_vec(
                 &mut checksum_children,
                 1,
                 "Rhino view attribute checksum children",
-            )?;
+            )
+            .map_err(crate::chunks::FramingError::from)?;
             checksum_children.push(chunk.range());
             reader.skip(chunk.next_offset() - reader.position())?;
         }
@@ -1099,7 +1095,8 @@ fn scan_viewport_userdata(
                 value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
             });
         }
-        reserve_admitted_vec(ctx, &mut children, 1, "Rhino viewport userdata children")?;
+        ctx.reserve_vec(&mut children, 1, "Rhino viewport userdata children")
+            .map_err(crate::chunks::FramingError::from)?;
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
         match child.typecode {
@@ -1186,12 +1183,8 @@ fn parse_view(
     let mut terminated = false;
     while offset < record.body().end {
         let child = chunk_at(data, offset, record.body().end, archive, false)?;
-        reserve_admitted_vec(
-            ctx,
-            &mut checksum_children,
-            1,
-            "Rhino view checksum children",
-        )?;
+        ctx.reserve_vec(&mut checksum_children, 1, "Rhino view checksum children")
+            .map_err(crate::chunks::FramingError::from)?;
         checksum_children.push(child.range());
         if matches!(
             child.typecode,
@@ -1399,7 +1392,8 @@ fn parse_view(
             }
             _ => {}
         }
-        reserve_admitted_vec(ctx, &mut children, 1, "Rhino view children")?;
+        ctx.reserve_vec(&mut children, 1, "Rhino view children")
+            .map_err(crate::chunks::FramingError::from)?;
         children.push(ViewChild {
             typecode: ctx.format_retained(
                 format_args!("{:#010x}", child.typecode),
@@ -1584,7 +1578,7 @@ fn parse_list(
             &mut losses,
         ) {
             Ok(value) => {
-                reserve_admitted_vec(ctx, &mut views, 1, "Rhino view list records")
+                ctx.reserve_vec(&mut views, 1, "Rhino view list records").map_err(crate::chunks::FramingError::from)
                     .map_err(codec_error)?;
                 views.push(value);
             }
@@ -1641,7 +1635,8 @@ fn parse_named_cplanes(
                 "named construction-plane record is invalid",
             ));
         }
-        reserve_admitted_vec(ctx, &mut values, 1, "Rhino named construction planes")?;
+        ctx.reserve_vec(&mut values, 1, "Rhino named construction planes")
+            .map_err(crate::chunks::FramingError::from)?;
         values.push(NamedConstructionPlane {
             id: ctx.format_retained(
                 format_args!("rhino:document:construction_plane#{index:04}"),
@@ -1718,12 +1713,12 @@ pub(crate) fn install(
                 };
                 match parse_named_cplanes(ctx, scan.data, record, scan.archive, scale) {
                     Ok(values) => {
-                        reserve_admitted_vec(
-                            ctx,
+                        ctx.reserve_vec(
                             &mut cplanes,
                             values.len(),
                             "Rhino document construction planes",
                         )
+                        .map_err(crate::chunks::FramingError::from)
                         .map_err(codec_error)?;
                         cplanes.extend(values);
                     }
@@ -1779,7 +1774,8 @@ pub(crate) fn install(
                     ViewListKind::Named,
                 )?;
                 let has_parse_losses = !parse_losses.is_empty();
-                reserve_admitted_vec(ctx, &mut views, parsed.len(), "Rhino document views")
+                ctx.reserve_vec(&mut views, parsed.len(), "Rhino document views")
+                    .map_err(crate::chunks::FramingError::from)
                     .map_err(codec_error)?;
                 views.extend(parsed);
                 ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;
@@ -1814,7 +1810,8 @@ pub(crate) fn install(
                     ViewListKind::Active,
                 )?;
                 let has_parse_losses = !parse_losses.is_empty();
-                reserve_admitted_vec(ctx, &mut views, parsed.len(), "Rhino document views")
+                ctx.reserve_vec(&mut views, parsed.len(), "Rhino document views")
+                    .map_err(crate::chunks::FramingError::from)
                     .map_err(codec_error)?;
                 views.extend(parsed);
                 ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;

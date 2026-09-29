@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use std::io::{self, Write};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
@@ -360,24 +360,13 @@ struct SemanticJsonWriter<'a, 'b> {
 
 impl Write for SemanticJsonWriter<'_, '_> {
     fn write(&mut self, chunk: &[u8]) -> io::Result<usize> {
-        let result = self
-            .ctx
-            .charge_retained(u64_from_index(chunk.len()), SEMANTIC_JSON_OPERATION)
-            .and_then(|()| {
-                self.bytes.try_reserve(chunk.len()).map_err(|_| {
-                    CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                        ResourceDimension::RetainedBytes,
-                        u64::MAX,
-                        u64_from_index(chunk.len()),
-                        SEMANTIC_JSON_OPERATION,
-                    ))
-                })
-            });
+        let result =
+            self.ctx
+                .extend_retained_bytes(&mut self.bytes, chunk, SEMANTIC_JSON_OPERATION);
         if let Err(error) = result {
             self.refusal = Some(error);
             return Err(io::ErrorKind::Other.into());
         }
-        self.bytes.extend_from_slice(chunk);
         Ok(chunk.len())
     }
 
