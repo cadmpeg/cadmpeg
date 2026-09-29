@@ -3575,9 +3575,8 @@ fn spatial_reflection_symmetry(
         return None;
     }
     if !operand_role(owner).is_some_and(|role| {
-        crate::records::sketch_relations::constraint_kinds_from_state(u64::from(role))
-            .0
-            .contains(&SketchConstraintKind::Symmetry)
+        crate::records::sketch_relations::constraint_kinds_iter(u64::from(role))
+            .any(|kind| kind == SketchConstraintKind::Symmetry)
     }) {
         return None;
     }
@@ -6192,15 +6191,14 @@ pub(super) fn exact_offset_constraint(
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
-    if relation.unknown_constraint_bits() != 0
-        || !matches!(
-            relation.constraint_kinds().as_slice(),
-            [SketchConstraintKind::Perpendicular | SketchConstraintKind::Offset]
-        )
+    if crate::design::relation_kinds::unknown_constraint_bits(relation.definition.state()) != 0
+        || !matches!(crate::design::relation_kinds::sole_constraint_kind(relation),
+            Some(SketchConstraintKind::Perpendicular | SketchConstraintKind::Offset))
         || relation.return_members().len() < 4
         || !relation.return_members().len().is_multiple_of(2)
         || relation.return_members().len() != relation.members().len()
-        || relation.resolved_return_members().len() != relation.return_members().len()
+        || relation.return_members().iter().any(|member| matches!(member.reference,
+            crate::records::sketch_relations::SketchRelationReference::Index(_)))
     {
         return None;
     }
@@ -6208,22 +6206,23 @@ pub(super) fn exact_offset_constraint(
     // relation's sources can be another offset relation's results, so their
     // secondary identities are not null and only the run order separates the
     // two sides.
-    let ordered_pairs = relation.constraint_kinds() == [SketchConstraintKind::Offset];
+    let ordered_pairs = crate::design::relation_kinds::sole_constraint_kind(relation)
+        == Some(SketchConstraintKind::Offset);
     let mut pairs = Vec::new();
     let mut used_entities = HashSet::new();
     let mut canonical_distance: Option<f64> = None;
-    for operands in relation.resolved_return_members().chunks_exact(2) {
+    for members in relation.return_members().chunks_exact(2) {
         let (first_record_index, first_secondary_id, second_record_index, second_secondary_id) =
-            match operands {
-                [SketchRelationOperand::Curve {
+            match (&members[0].reference, &members[1].reference) {
+                (crate::records::sketch_relations::SketchRelationReference::Resolved(SketchRelationOperand::Curve {
                     record_index: first_record_index,
                     secondary_id: first_secondary_id,
                     ..
-                }, SketchRelationOperand::Curve {
+                }), crate::records::sketch_relations::SketchRelationReference::Resolved(SketchRelationOperand::Curve {
                     record_index: second_record_index,
                     secondary_id: second_secondary_id,
                     ..
-                }] => (
+                })) => (
                     *first_record_index,
                     *first_secondary_id,
                     *second_record_index,
@@ -6668,11 +6667,26 @@ fn sketch_points_close(first: Point2, second: Point2) -> bool {
         && (first.v - second.v).abs() <= scale * EPS_DIMENSIONS_SKETCH_POINTS_CLOSE_E9
 }
 
-pub(super) fn relation_kind_name(relation: &SketchRelation) -> String {
-    let mut names = relation
-        .constraint_kinds()
-        .iter()
-        .map(|kind| match kind {
+pub(super) fn relation_kind_name(
+    relation: &SketchRelation,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<String, CodecError> {
+    struct Names([Option<&'static str>; 21]);
+    impl std::fmt::Display for Names {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let mut separator = "";
+            for name in self.0.iter().flatten() {
+                formatter.write_str(separator)?;
+                formatter.write_str(name)?;
+                separator = "+";
+            }
+            Ok(())
+        }
+    }
+    let mut names = [None; 21];
+    for (slot, kind) in names.iter_mut().zip(
+        crate::records::sketch_relations::constraint_kinds_iter(relation.definition.state())) {
+        *slot = Some(match kind {
             SketchConstraintKind::Coincident => "coincident",
             SketchConstraintKind::Colinear => "collinear",
             SketchConstraintKind::Concentric => "concentric",
@@ -6693,12 +6707,13 @@ pub(super) fn relation_kind_name(relation: &SketchRelation) -> String {
             SketchConstraintKind::RectangularPattern => "rectangular_pattern",
             SketchConstraintKind::TextFrame => "text_frame",
             SketchConstraintKind::TextPath => "text_path",
-        })
-        .collect::<Vec<_>>();
-    if relation.unknown_constraint_bits() != 0 {
-        names.push("unknown_bits");
+        });
     }
-    names.join("+")
+    if crate::design::relation_kinds::unknown_constraint_bits(relation.definition.state()) != 0 {
+        names[20] = Some("unknown_bits");
+    }
+    crate::design::text::format_design_text(ctx, format_args!("{}", Names(names)),
+        "f3d sketch constraint native kind")
 }
 
 pub(super) fn planar_point(point: &Point3) -> bool {
