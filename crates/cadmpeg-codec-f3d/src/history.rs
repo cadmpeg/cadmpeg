@@ -5052,18 +5052,22 @@ pub(crate) fn bind_face_operand_history_candidates(
                 {
                     bounded
                 } else {
-                    let pattern = {
-                        (feature_family
-                            == Some(crate::design::DesignFeatureFamily::CircularPattern))
-                        .then(|| {
+                    let pattern = if feature_family
+                        == Some(crate::design::DesignFeatureFamily::CircularPattern)
+                    {
+                        if let Some(result) = state.topology() {
                             resolve_pattern_face_by_surface_radius(
+                                decode,
                                 crate::design::face_resolve::face_operand_candidates(operand),
                                 topology,
-                                state.topology()?,
+                                result,
                                 &changed_faces,
-                            )
-                        })
-                        .flatten()
+                            )?
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
                     };
                     pattern.into_iter().collect()
                 }
@@ -5131,7 +5135,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         {
             if let Some(result) = state.topology() {
                 if let Some(face) =
-                    resolve_draft_face_by_surface_transition(operand, topology, result)
+                    resolve_draft_face_by_surface_transition(decode, operand, topology, result)?
                 {
                     operand.resolved_face_slots = vec![face];
                 }
@@ -5246,10 +5250,11 @@ fn draft_surface_geometry(
 }
 
 fn resolve_draft_face_by_surface_transition(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operand: &crate::records::topology::face::DesignFaceOperand,
     preceding: &crate::history_records::AsmHistoricalTopology,
     result: &crate::history_records::AsmHistoricalTopology,
-) -> Option<i64> {
+) -> Result<Option<i64>, cadmpeg_core::CodecError> {
     if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
         || !matches!(
             crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program),
@@ -5257,30 +5262,39 @@ fn resolve_draft_face_by_surface_transition(
         )
         || operand.recipe_nodes.is_empty()
     {
-        return None;
+        return Ok(None);
     }
-    let candidate_slots = operand
+    let mut candidate_slots = HashSet::new();
+    for face in operand
         .candidate_faces
         .iter()
         .filter_map(|face| stable_ref(face.as_str()))
-        .collect::<HashSet<_>>();
-    if candidate_slots.is_empty() {
-        return None;
+    {
+        history_hash_set_insert(decode, &mut candidate_slots, face, "index F3D draft face candidates")?;
     }
-    let alternate_slots = operand
+    if candidate_slots.is_empty() {
+        return Ok(None);
+    }
+    let mut alternate_slots = BTreeSet::new();
+    for face in operand
         .recipe_references
         .iter()
         .flat_map(|reference| &reference.alternate_selector_faces)
         .filter_map(|face| stable_ref(face.as_str()))
         .filter(|face| candidate_slots.contains(face))
-        .collect::<BTreeSet<_>>();
-    let exact_slots = operand
+    {
+        history_set_insert(decode, &mut alternate_slots, face, "collect F3D draft alternate faces")?;
+    }
+    let mut exact_slots = BTreeSet::new();
+    for face in operand
         .recipe_references
         .iter()
         .flat_map(|reference| &reference.candidate_faces)
         .filter_map(|face| stable_ref(face.as_str()))
         .filter(|face| candidate_slots.contains(face))
-        .collect::<BTreeSet<_>>();
+    {
+        history_set_insert(decode, &mut exact_slots, face, "collect F3D draft exact faces")?;
+    }
     let has_alternates = !alternate_slots.is_empty();
     let candidates = if has_alternates {
         alternate_slots
@@ -5288,17 +5302,20 @@ fn resolve_draft_face_by_surface_transition(
         exact_slots
     };
     if candidates.is_empty() {
-        return None;
+        return Ok(None);
     }
     if !has_alternates {
         let mut faces = candidates.iter();
-        let face = *faces.next()?;
+        let Some(face) = faces.next().copied() else {
+            return Ok(None);
+        };
         if faces.next().is_some() {
-            return None;
+            return Ok(None);
         }
-        return (preceding.faces.contains(&face) && result.faces.contains(&face)).then_some(face);
+        return Ok((preceding.faces.contains(&face) && result.faces.contains(&face)).then_some(face));
     }
-    let changed = candidates
+    let mut changed = None;
+    for face in candidates
         .into_iter()
         .filter(|face| preceding.faces.contains(face) && result.faces.contains(face))
         .filter(|face| {
@@ -5306,25 +5323,27 @@ fn resolve_draft_face_by_surface_transition(
                 .zip(draft_surface_geometry(result, *face))
                 .is_some_and(|(before, after)| before != after)
         })
-        .collect::<Vec<_>>();
-    let [face] = changed.as_slice() else {
-        return None;
-    };
-    Some(*face)
+    {
+        if changed.replace(face).is_some() {
+            return Ok(None);
+        }
+    }
+    Ok(changed)
 }
 
 fn resolve_pattern_face_by_surface_radius(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     candidates: &[cadmpeg_ir::ids::FaceId],
     preceding: &crate::history_records::AsmHistoricalTopology,
     result: &crate::history_records::AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
-) -> Option<i64> {
-    let candidate_faces = candidates
-        .iter()
-        .filter_map(|face| stable_ref(face.as_str()))
-        .collect::<HashSet<_>>();
+) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+    let mut candidate_faces = HashSet::new();
+    for face in candidates.iter().filter_map(|face| stable_ref(face.as_str())) {
+        history_hash_set_insert(decode, &mut candidate_faces, face, "index F3D pattern face candidates")?;
+    }
     if candidate_faces.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut result_radius = None;
     let mut bound_candidates = HashSet::new();
@@ -5333,27 +5352,36 @@ fn resolve_pattern_face_by_surface_radius(
         .iter()
         .filter(|binding| candidate_faces.contains(&binding.entity))
     {
-        if !bound_candidates.insert(binding.entity) {
-            return None;
+        if !history_hash_set_insert(
+            decode,
+            &mut bound_candidates,
+            binding.entity,
+            "index F3D pattern bound faces",
+        )? {
+            return Ok(None);
         }
         let mut radii = result
             .surface_radii
             .iter()
             .filter(|radius| radius.surface == binding.carrier);
-        let radius = radii.next()?.radius;
+        let Some(radius) = radii.next().map(|radius| radius.radius) else {
+            return Ok(None);
+        };
         if radii.next().is_some() || !radius.is_finite() || radius <= 0.0 {
-            return None;
+            return Ok(None);
         }
         match result_radius {
             None => result_radius = Some(radius.to_bits()),
             Some(expected) if expected == radius.to_bits() => {}
-            Some(_) => return None,
+            Some(_) => return Ok(None),
         }
     }
     if bound_candidates != candidate_faces {
-        return None;
+        return Ok(None);
     }
-    let result_radius = result_radius?;
+    let Some(result_radius) = result_radius else {
+        return Ok(None);
+    };
     let mut matches = preceding
         .face_surfaces
         .iter()
@@ -5367,8 +5395,10 @@ fn resolve_pattern_face_by_surface_radius(
             (radii.next().is_none() && radius.radius.to_bits() == result_radius)
                 .then_some(binding.entity)
         });
-    let face = matches.next()?;
-    matches.next().is_none().then_some(face)
+    let Some(face) = matches.next() else {
+        return Ok(None);
+    };
+    Ok(matches.next().is_none().then_some(face))
 }
 
 fn resolve_split_tool_face(
@@ -6207,12 +6237,18 @@ fn bind_profile_face_group_cardinality(
                 operands,
             );
             let faces = if paired_aggregate {
-                (|| {
-                    let transition = state.transition.as_ref().filter(|transition| {
-                        transition.previous_state_id == Some(previous_state_id)
-                    })?;
-                    let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
-                    let mut deleted = transition.topology.faces.deleted.clone();
+                if let Some(transition) = state.transition.as_ref().filter(|transition| {
+                    transition.previous_state_id == Some(previous_state_id)
+                }) {
+                    let mut preceding_faces = HashSet::new();
+                    for face in &topology.faces {
+                        history_hash_set_insert(decode, &mut preceding_faces, *face, "index F3D profile preceding faces")?;
+                    }
+                    let mut deleted = history_collect(
+                        decode,
+                        transition.topology.faces.deleted.iter().copied(),
+                        "copy F3D profile deleted faces",
+                    )?;
                     deleted.sort_unstable();
                     deleted.dedup();
                     (deleted.len() == group.members().len()
@@ -6227,21 +6263,33 @@ fn bind_profile_face_group_cardinality(
                                     == 1
                         }))
                     .then_some(deleted)
-                })()
+                } else {
+                    None
+                }
             } else {
                 profile_face_group_cardinality_candidates(
+                    decode,
                     topology,
                     &changed_faces,
                     group.members().len(),
-                )
+                )?
             };
             let Some(faces) = faces else {
                 continue;
             };
             for (index, face) in indices.into_iter().zip(faces) {
-                let face_id = crate::ids::brep_face_id(face);
-                operands[index].preceding_candidate_faces = vec![face_id.clone()];
-                operands[index].changed_candidate_faces = vec![face_id];
+                let face_id = historical_face_id(decode, face)?;
+                let preceding_id = copy_historical_face_id(decode, &face_id)?;
+                operands[index].preceding_candidate_faces = history_collect(
+                    decode,
+                    std::iter::once(preceding_id),
+                    "bind F3D profile preceding face",
+                )?;
+                operands[index].changed_candidate_faces = history_collect(
+                    decode,
+                    std::iter::once(face_id),
+                    "bind F3D profile changed face",
+                )?;
                 operands[index].resolved_face_slots = vec![face];
             }
         }
@@ -6250,11 +6298,15 @@ fn bind_profile_face_group_cardinality(
 }
 
 fn profile_face_group_cardinality_candidates(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
     member_count: usize,
-) -> Option<Vec<i64>> {
-    let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
+    let mut preceding_faces = HashSet::new();
+    for face in &topology.faces {
+        history_hash_set_insert(decode, &mut preceding_faces, *face, "index F3D profile candidate faces")?;
+    }
     let mut faces_by_carrier = HashMap::<i64, Vec<i64>>::new();
     for face in changed_faces
         .iter()
@@ -6269,19 +6321,32 @@ fn profile_face_group_cardinality_candidates(
             continue;
         };
         if bindings.next().is_none() {
-            faces_by_carrier.entry(carrier).or_default().push(face);
+            if !faces_by_carrier.contains_key(&carrier) {
+                charge_history_item(decode, "index F3D profile face carriers")?;
+                faces_by_carrier.try_reserve(1).map_err(|_| {
+                    history_reserve_error(decode, "index F3D profile face carriers")
+                })?;
+            }
+            let faces = faces_by_carrier.entry(carrier).or_default();
+            charge_history_item(decode, "collect F3D profile carrier faces")?;
+            faces.try_reserve(1).map_err(|_| {
+                history_reserve_error(decode, "collect F3D profile carrier faces")
+            })?;
+            faces.push(face);
         }
     }
     let mut candidates = faces_by_carrier
         .into_values()
         .filter(|faces| faces.len() == member_count);
-    let mut faces = candidates.next()?;
+    let Some(mut faces) = candidates.next() else {
+        return Ok(None);
+    };
     if candidates.next().is_some() {
-        return None;
+        return Ok(None);
     }
     faces.sort_unstable();
     faces.dedup();
-    (faces.len() == member_count).then_some(faces)
+    Ok((faces.len() == member_count).then_some(faces))
 }
 
 fn face_changes_across_state_chain<'a>(
