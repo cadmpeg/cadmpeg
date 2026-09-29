@@ -421,3 +421,28 @@ fn local_wire_errors_name_the_rejected_field() {
         assert!(error.to_string().contains(field), "{field}: {error}");
     }
 }
+
+#[test]
+fn selection_operand_parts_move_retained_storage() {
+    let target_text = String::from("target-native");
+    let tools_text = String::from("tools-native");
+    let target_pointer = target_text.as_ptr();
+    let tools_pointer = tools_text.as_ptr();
+    let operands = CombineOperands::new(BodySelection::Native(target_text), BodySelection::Native(tools_text)).unwrap();
+    let (target, tools) = operands.into_parts();
+    let BodySelection::Native(target) = target else { panic!("native target"); };
+    let BodySelection::Native(tools) = tools else { panic!("native tools"); };
+    assert_eq!(target.as_ptr(), target_pointer);
+    assert_eq!(tools.as_ptr(), tools_pointer);
+
+    let targets_text = String::from("targets-native");
+    let replacements_text = String::from("replacements-native");
+    let targets_pointer = targets_text.as_ptr();
+    let replacements_pointer = replacements_text.as_ptr();
+    let operands = crate::features::ReplaceFaceOperands::new(crate::features::FaceSelection::Native(targets_text), crate::features::FaceSelection::Native(replacements_text)).unwrap();
+    let (targets, replacements) = operands.into_parts();
+    let crate::features::FaceSelection::Native(targets) = targets else { panic!("native targets"); };
+    let crate::features::FaceSelection::Native(replacements) = replacements else { panic!("native replacements"); };
+    assert_eq!(targets.as_ptr(), targets_pointer);
+    assert_eq!(replacements.as_ptr(), replacements_pointer);
+}

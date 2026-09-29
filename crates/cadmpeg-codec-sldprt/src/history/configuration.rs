@@ -429,6 +429,7 @@ pub(crate) fn bind_configuration_topology_selections(
                 face_identities,
             };
             crate::history::selections::bind_topology_selections(
+                ctx,
                 &mut features,
                 histories,
                 &topology_selection_inputs,

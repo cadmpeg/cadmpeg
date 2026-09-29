@@ -2509,6 +2509,20 @@ selection_operands!(
     |first, second| !body_selections_overlap(first, second)
 );
 
+impl CombineOperands {
+    /// Move both selections out of this admitted pair.
+    pub fn into_parts(self) -> (BodySelection, BodySelection) {
+        (self.target, self.tools)
+    }
+}
+
+impl ReplaceFaceOperands {
+    /// Move both selections out of this admitted pair.
+    pub fn into_parts(self) -> (FaceSelection, FaceSelection) {
+        (self.targets, self.replacements)
+    }
+}
+
 fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
     fn direct(selection: &FaceSelection) -> Option<&[crate::ids::FaceId]> {
         match selection {
@@ -2550,48 +2564,35 @@ fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> boo
 }
 
 fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
-    fn direct(selection: &BodySelection) -> Option<Vec<&crate::ids::BodyId>> {
+    fn any_direct(selection: &BodySelection, predicate: impl FnMut(&crate::ids::BodyId) -> bool) -> Option<bool> {
         match selection {
-            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                Some(bodies.iter().collect())
-            }
-            BodySelection::ResolvedSet { members } => Some(members.bodies().collect()),
+            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies.iter().any(predicate)),
+            BodySelection::ResolvedSet { members } => Some(members.bodies().any(predicate)),
             _ => None,
         }
     }
-    fn historical(
-        selection: &BodySelection,
-    ) -> Option<(
-        &crate::ids::FeatureInputTopologyId,
-        Vec<&crate::ids::HistoricalBodyId>,
-    )> {
+    fn historical_state(selection: &BodySelection) -> Option<&crate::ids::FeatureInputTopologyId> {
         match selection {
-            BodySelection::Historical { state, bodies, .. } => {
-                Some((state, bodies.iter().collect()))
-            }
-            BodySelection::HistoricalSet { state, members } => {
-                Some((state, members.bodies().collect()))
-            }
+            BodySelection::Historical { state, .. } | BodySelection::HistoricalSet { state, .. } => Some(state),
             _ => None,
         }
     }
-    if let Some((first, second)) = direct(first).zip(direct(second)) {
-        return first.iter().any(|body| second.contains(body));
+    fn any_historical(selection: &BodySelection, predicate: impl FnMut(&crate::ids::HistoricalBodyId) -> bool) -> bool {
+        match selection {
+            BodySelection::Historical { bodies, .. } => bodies.iter().any(predicate),
+            BodySelection::HistoricalSet { members, .. } => members.bodies().any(predicate),
+            _ => false,
+        }
     }
-    if let Some(((first_state, first), (second_state, second))) =
-        historical(first).zip(historical(second))
-    {
-        return first_state == second_state && first.iter().any(|body| second.contains(body));
+    if let Some(overlap) = any_direct(first, |body| any_direct(second, |candidate| body == candidate) == Some(true)) {
+        return overlap;
+    }
+    if let Some((first_state, second_state)) = historical_state(first).zip(historical_state(second)) {
+        return first_state == second_state && any_historical(first, |body| any_historical(second, |candidate| body == candidate));
     }
     match (first, second) {
-        (
-            BodySelection::Generated { bodies: first, .. },
-            BodySelection::Generated { bodies: second, .. },
-        ) => first.iter().any(|body| second.contains(body)),
-        (
-            BodySelection::Local { bodies: first, .. },
-            BodySelection::Local { bodies: second, .. },
-        ) => first.iter().any(|body| second.contains(body)),
+        (BodySelection::Generated { bodies: first, .. }, BodySelection::Generated { bodies: second, .. }) => first.iter().any(|body| second.contains(body)),
+        (BodySelection::Local { bodies: first, .. }, BodySelection::Local { bodies: second, .. }) => first.iter().any(|body| second.contains(body)),
         _ => false,
     }
 }
