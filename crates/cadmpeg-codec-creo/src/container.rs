@@ -3072,17 +3072,18 @@ pub(crate) fn scan_bytes<'a>(
 
     // The `Cow` takes the bytes here, so the scan's borrowed regions end and
     // the framing keeps the owned sections.
-    let sections = sections
-        .into_iter()
-        .map(|section| section.section)
-        .collect::<Vec<_>>();
+    let mut retained_sections = Vec::new();
+    for section in sections {
+        ctx.try_reserve_items(&mut retained_sections, 1, "creo retained scan sections")?;
+        retained_sections.push(section.section);
+    }
 
     Ok(ContainerScan {
         framing: FramingScan {
             data,
             version_line,
             model_name,
-            sections,
+            sections: retained_sections,
             expanded_sections,
             layout,
             census,
