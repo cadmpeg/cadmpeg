@@ -11,6 +11,7 @@ mod boundary_fill_limits;
 mod coil;
 mod combine_limits;
 mod dispatcher;
+mod direct_face_limits;
 mod extrude;
 mod extrude_limits;
 mod loft_limits;
