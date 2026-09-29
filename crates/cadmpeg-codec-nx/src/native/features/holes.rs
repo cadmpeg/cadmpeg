@@ -780,113 +780,156 @@ pub(in crate::native) fn feature_symbolic_threads(
     Ok(threads)
 }
 
-/// Join exact hole payload templates to their operation identities.
-pub(in crate::native) fn feature_simple_hole_templates(
+fn copy_template_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+    replacement: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let marker = "payload-string";
+    let Some(start) = source.find(marker) else {
+        return copy_operation_text(ctx, source, "NX hole template identity");
+    };
+    let end = start.checked_add(marker.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX hole template identity", 0, 1))?;
+    let length = source.len().checked_sub(marker.len())
+        .and_then(|length| length.checked_add(replacement.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX hole template identity", 0, 1))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length), "NX hole template identity",
+    )?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX hole template identity", 0, 1))?;
+    id.push_str(&source[..start]);
+    id.push_str(replacement);
+    id.push_str(&source[end..]);
+    Ok(id)
+}
+
+fn hole_template_candidates<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     strings: &[FeaturePayloadString],
-) -> Vec<FeatureSimpleHoleTemplate> {
-    let labels_by_id = labels
-        .iter()
-        .map(|label| (label.id.as_str(), label))
-        .collect::<BTreeMap<_, _>>();
-    let records_by_id = records
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let mut templates_by_operation = BTreeMap::<String, Vec<_>>::new();
+    eligible: impl Fn(&FeatureOperationLabel) -> bool,
+    mut build: impl FnMut(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &FeaturePayloadString,
+        &FeatureOperationLabel,
+    ) -> Result<Option<T>, cadmpeg_core::CodecError>,
+) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let mut reservation = ctx.reserve_scoped(0, "NX hole template indexes")?;
+    let mut labels_by_id = BTreeMap::<&str, &FeatureOperationLabel>::new();
+    for label in labels {
+        ctx.charge_work(1, "index NX hole template labels")?;
+        ctx.charge_collection_items(1, "NX hole template label index")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, &FeatureOperationLabel)>() * 4,
+        ))?;
+        labels_by_id.insert(label.id.as_str(), label);
+    }
+    let mut records_by_id = BTreeMap::<&str, &FeatureOperationRecord>::new();
+    for record in records {
+        ctx.charge_work(1, "index NX hole template records")?;
+        ctx.charge_collection_items(1, "NX hole template record index")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, &FeatureOperationRecord)>() * 4,
+        ))?;
+        records_by_id.insert(record.id.as_str(), record);
+    }
+    let mut candidates = BTreeMap::<&str, (usize, &FeaturePayloadString, &FeatureOperationLabel)>::new();
     for string in strings {
+        ctx.charge_work(1, "join NX hole template strings")?;
         let Some(record) = records_by_id.get(string.operation_record.as_str()) else {
             continue;
         };
         let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
             continue;
         };
-        if !matches!(
-            label.value.as_str(),
-            "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE"
-        ) || !string.value.as_str().starts_with("Hole_")
-        {
+        if !eligible(label) || !string.value.as_str().starts_with("Hole_") {
             continue;
         }
-        templates_by_operation
-            .entry(label.id.clone())
-            .or_default()
-            .push((string, *label));
+        if let Some((count, _, _)) = candidates.get_mut(label.id.as_str()) {
+            *count = count.checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX hole template candidates", 0, 1))?;
+        } else {
+            ctx.charge_collection_items(1, "NX hole template candidate index")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(&str, (usize, &FeaturePayloadString, &FeatureOperationLabel))>() * 4,
+            ))?;
+            candidates.insert(label.id.as_str(), (1, string, label));
+        }
     }
-    templates_by_operation
-        .into_values()
-        .filter_map(|candidates| {
-            let [(string, label)] = candidates.as_slice() else {
-                return None;
+    let mut output = Vec::new();
+    for (_, (count, string, label)) in candidates {
+        ctx.charge_work(1, "build NX hole templates")?;
+        if count != 1 {
+            continue;
+        }
+        let Some(item) = build(ctx, string, label)? else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "NX hole templates")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
+            "NX hole templates",
+        )?;
+        output.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX hole templates", 0, 1))?;
+        output.push(item);
+    }
+    Ok(output)
+}
+
+/// Join exact hole payload templates to their operation identities.
+pub(in crate::native) fn feature_simple_hole_templates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    labels: &[FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    strings: &[FeaturePayloadString],
+) -> Result<Vec<FeatureSimpleHoleTemplate>, cadmpeg_core::CodecError> {
+    hole_template_candidates(ctx, labels, records, strings,
+        |label| matches!(label.value.as_str(), "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE"),
+        |ctx, string, label| {
+            let Some((form, extent, start_treatment, end_treatment)) =
+                parse_simple_hole_template(string.value.as_str()) else {
+                return Ok(None);
             };
-            let (form, extent, start_treatment, end_treatment) =
-                parse_simple_hole_template(string.value.as_str())?;
-            Some(FeatureSimpleHoleTemplate {
-                id: string
-                    .id
-                    .replacen("payload-string", "simple-hole-template", 1),
-                operation_label: label.id.clone(),
-                payload_string: string.id.clone(),
+            Ok(Some(FeatureSimpleHoleTemplate {
+                id: copy_template_id(ctx, &string.id, "simple-hole-template")?,
+                operation_label: copy_operation_text(ctx, &label.id, "NX simple hole template label")?,
+                payload_string: copy_operation_text(ctx, &string.id, "NX simple hole template source")?,
                 family: SimpleHoleFamily::GeneralHole,
                 form,
                 extent,
                 start_treatment,
                 end_treatment,
-            })
+            }))
         })
-        .collect()
 }
 
 /// Join exact threaded-hole payload templates to their operation identities.
 pub(in crate::native) fn feature_threaded_hole_templates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     strings: &[FeaturePayloadString],
-) -> Vec<FeatureThreadedHoleTemplate> {
-    let labels_by_id = labels
-        .iter()
-        .map(|label| (label.id.as_str(), label))
-        .collect::<BTreeMap<_, _>>();
-    let records_by_id = records
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let mut templates_by_operation = BTreeMap::<String, Vec<_>>::new();
-    for string in strings {
-        let Some(record) = records_by_id.get(string.operation_record.as_str()) else {
-            continue;
-        };
-        let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
-            continue;
-        };
-        if label.value != "SIMPLE HOLE" || !string.value.as_str().starts_with("Hole_") {
-            continue;
-        }
-        templates_by_operation
-            .entry(label.id.clone())
-            .or_default()
-            .push((string, *label));
-    }
-    templates_by_operation
-        .into_values()
-        .filter_map(|candidates| {
-            let [(string, label)] = candidates.as_slice() else {
-                return None;
+) -> Result<Vec<FeatureThreadedHoleTemplate>, cadmpeg_core::CodecError> {
+    hole_template_candidates(ctx, labels, records, strings,
+        |label| label.value == "SIMPLE HOLE",
+        |ctx, string, label| {
+            let Some((family, extent)) = parse_threaded_hole_template(string.value.as_str()) else {
+                return Ok(None);
             };
-            let (family, extent) = parse_threaded_hole_template(string.value.as_str())?;
-            Some(FeatureThreadedHoleTemplate {
-                id: string
-                    .id
-                    .replacen("payload-string", "threaded-hole-template", 1),
-                operation_label: label.id.clone(),
-                payload_string: string.id.clone(),
+            Ok(Some(FeatureThreadedHoleTemplate {
+                id: copy_template_id(ctx, &string.id, "threaded-hole-template")?,
+                operation_label: copy_operation_text(ctx, &label.id, "NX threaded hole template label")?,
+                payload_string: copy_operation_text(ctx, &string.id, "NX threaded hole template source")?,
                 family,
                 extent,
                 source_offset: string.source_offset,
-            })
+            }))
         })
-        .collect()
 }
 
 /// Decode exact nonempty duplicated scalar lanes from simple-hole operations.
@@ -1222,32 +1265,32 @@ pub(in crate::native) fn parse_simple_hole_template(
     SimpleHoleEndTreatment,
     SimpleHoleEndTreatment,
 )> {
-    let tokens = value.split('_').collect::<Vec<_>>();
-    if tokens.len() < 4 || tokens[0] != "Hole" || tokens[1] != "GeneralHole" {
+    let mut tokens = value.split('_');
+    if tokens.next() != Some("Hole") || tokens.next() != Some("GeneralHole") {
         return None;
     }
-    let form = match tokens[2] {
+    let form = match tokens.next()? {
         "Simple" => SimpleHoleForm::Simple,
         "Counterbored" => SimpleHoleForm::Counterbored,
         "Countersunk" => SimpleHoleForm::Countersunk,
         _ => return None,
     };
-    let extent = match tokens[3] {
+    let extent = match tokens.next()? {
         "Through" => SimpleHoleExtent::Through,
         "Blind" => SimpleHoleExtent::Blind,
         _ => return None,
     };
-    let (start_treatment, end_treatment) = match (form, extent, &tokens[4..]) {
-        (SimpleHoleForm::Simple, SimpleHoleExtent::Through, ["StartChamfer", "EndChamfer"]) => (
+    let (start_treatment, end_treatment) = match (form, extent, tokens.next(), tokens.next(), tokens.next()) {
+        (SimpleHoleForm::Simple, SimpleHoleExtent::Through, Some("StartChamfer"), Some("EndChamfer"), None) => (
             SimpleHoleEndTreatment::Chamfer,
             SimpleHoleEndTreatment::Chamfer,
         ),
         (
             SimpleHoleForm::Counterbored | SimpleHoleForm::Countersunk,
             SimpleHoleExtent::Through,
-            [],
+            None, None, None,
         )
-        | (SimpleHoleForm::Simple | SimpleHoleForm::Countersunk, SimpleHoleExtent::Blind, []) => {
+        | (SimpleHoleForm::Simple | SimpleHoleForm::Countersunk, SimpleHoleExtent::Blind, None, None, None) => {
             (SimpleHoleEndTreatment::None, SimpleHoleEndTreatment::None)
         }
         _ => return None,

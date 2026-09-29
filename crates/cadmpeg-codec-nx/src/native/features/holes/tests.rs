@@ -8,6 +8,26 @@ use crate::native::features::operation_record::FeatureOperationRecord;
 
 use crate::native::features::test_support::check_lane_wire;
 
+fn simple_hole_templates(
+    labels: &[crate::native::features::FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    strings: &[crate::native::features::FeaturePayloadString],
+) -> Vec<crate::native::features::holes::FeatureSimpleHoleTemplate> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_simple_hole_templates(ctx, labels, records, strings)
+    }).expect("simple hole templates")
+}
+
+fn threaded_hole_templates(
+    labels: &[crate::native::features::FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    strings: &[crate::native::features::FeaturePayloadString],
+) -> Vec<crate::native::features::holes::FeatureThreadedHoleTemplate> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_threaded_hole_templates(ctx, labels, records, strings)
+    }).expect("threaded hole templates")
+}
+
 #[test]
 fn symbolic_thread_text_frame_derives_marker() {
     let json = r#"{"id":"frame","symbolic_thread":"thread","ordinal":0,"marker":3,"value":"CUT","source_offset":10}"#;
@@ -148,7 +168,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         .unwrap(),
         source_offset: 130,
     };
-    let templates = crate::native::features::holes::feature_simple_hole_templates(
+    let templates = simple_hole_templates(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&string),
@@ -231,7 +251,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         .unwrap(),
         source_offset: 130,
     };
-    let counterbored_templates = crate::native::features::holes::feature_simple_hole_templates(
+    let counterbored_templates = simple_hole_templates(
         &[counterbored_label],
         &[counterbored_record],
         &[counterbored_string],
@@ -258,7 +278,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         .unwrap(),
         source_offset: 130,
     };
-    let countersunk_templates = crate::native::features::holes::feature_simple_hole_templates(
+    let countersunk_templates = simple_hole_templates(
         &[countersunk_label],
         &[countersunk_record],
         &[countersunk_string],
@@ -274,7 +294,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     duplicate.ordinal = 1;
     duplicate.source_offset += 64;
     assert!(
-        crate::native::features::holes::feature_simple_hole_templates(
+        simple_hole_templates(
             std::slice::from_ref(&label),
             std::slice::from_ref(&record),
             &[string.clone(), duplicate],
@@ -290,7 +310,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         source_offset: 194,
     };
     assert!(
-        crate::native::features::holes::feature_simple_hole_templates(
+        simple_hole_templates(
             std::slice::from_ref(&label),
             std::slice::from_ref(&record),
             &[string.clone(), unknown],
@@ -304,7 +324,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     )
     .unwrap();
     assert!(
-        crate::native::features::holes::feature_simple_hole_templates(
+        simple_hole_templates(
             &[label],
             &[record],
             &[malformed]
@@ -349,7 +369,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         .unwrap(),
         source_offset: 130,
     };
-    let templates = crate::native::features::holes::feature_threaded_hole_templates(
+    let templates = threaded_hole_templates(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&string),
@@ -379,7 +399,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
     let mut non_simple_label = label.clone();
     non_simple_label.value = "CBORE_HOLE".to_string();
     assert!(
-        crate::native::features::holes::feature_threaded_hole_templates(
+        threaded_hole_templates(
             &[non_simple_label],
             std::slice::from_ref(&record),
             std::slice::from_ref(&string),
@@ -392,7 +412,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
     duplicate.ordinal = 1;
     duplicate.source_offset += 64;
     assert!(
-        crate::native::features::holes::feature_threaded_hole_templates(
+        threaded_hole_templates(
             std::slice::from_ref(&label),
             std::slice::from_ref(&record),
             &[string.clone(), duplicate],
@@ -406,13 +426,146 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
     )
     .unwrap();
     assert!(
-        crate::native::features::holes::feature_threaded_hole_templates(
+        threaded_hole_templates(
             &[label],
             &[record],
             &[unknown]
         )
         .is_empty()
     );
+}
+
+fn template_inputs(
+    value: &str,
+) -> (
+    crate::native::features::FeatureOperationLabel,
+    FeatureOperationRecord,
+    crate::native::features::FeaturePayloadString,
+) {
+    let label = crate::native::features::FeatureOperationLabel {
+        id: "operation#template".to_string(),
+        section_link: "section#0".to_string(),
+        ordinal: 0,
+        value: "SIMPLE HOLE".to_string(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
+        stable_identity: None,
+        source_offset: 100,
+    };
+    let record = FeatureOperationRecord {
+        id: "record#template".to_string(),
+        operation_label: label.id.clone(),
+        ordinal: 0,
+        sha256: crate::native::hex::Sha256Hex::digest(b"a"),
+        payload_sha256: crate::native::hex::Sha256Hex::digest(b"b"),
+        stable_identity: None,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
+            .unwrap(),
+    };
+    let string = crate::native::features::FeaturePayloadString {
+        id: "payload-string#template-0".to_string(),
+        operation_record: record.id.clone(),
+        ordinal: 0,
+        value: crate::payload_text::PayloadText::new(value.to_string()).unwrap(),
+        source_offset: 130,
+    };
+    (label, record, string)
+}
+
+fn template_route_refusal<T>(
+    value: &str,
+    route: for<'ctx> fn(
+        &cadmpeg_core::decode::DecodeContext<'ctx>,
+        &[crate::native::features::FeatureOperationLabel],
+        &[FeatureOperationRecord],
+        &[crate::native::features::FeaturePayloadString],
+    ) -> Result<Vec<T>, cadmpeg_core::CodecError>,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (label, record, string) = template_inputs(value);
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        route(ctx, std::slice::from_ref(&label), std::slice::from_ref(&record),
+            std::slice::from_ref(&string))
+    }).expect("admitted hole template");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx, &[label], &[record], &[string]).err()
+        .expect("hole template resource limit")
+}
+
+#[test]
+fn simple_hole_template_route_refuses_collection_limit() {
+    let error = template_route_refusal("Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+        crate::native::features::holes::feature_simple_hole_templates,
+        |policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn simple_hole_template_route_refuses_retained_limit() {
+    let error = template_route_refusal("Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+        crate::native::features::holes::feature_simple_hole_templates,
+        |policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn simple_hole_template_route_refuses_scoped_limit() {
+    let error = template_route_refusal("Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+        crate::native::features::holes::feature_simple_hole_templates,
+        |policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn simple_hole_template_route_refuses_work_limit() {
+    let error = template_route_refusal("Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+        crate::native::features::holes::feature_simple_hole_templates,
+        |policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn threaded_hole_template_route_refuses_collection_limit() {
+    let error = template_route_refusal("Hole_ThreadedHole_M Profile_Blind",
+        crate::native::features::holes::feature_threaded_hole_templates,
+        |policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn threaded_hole_template_route_refuses_retained_limit() {
+    let error = template_route_refusal("Hole_ThreadedHole_M Profile_Blind",
+        crate::native::features::holes::feature_threaded_hole_templates,
+        |policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn threaded_hole_template_route_refuses_scoped_limit() {
+    let error = template_route_refusal("Hole_ThreadedHole_M Profile_Blind",
+        crate::native::features::holes::feature_threaded_hole_templates,
+        |policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn threaded_hole_template_route_refuses_work_limit() {
+    let error = template_route_refusal("Hole_ThreadedHole_M Profile_Blind",
+        crate::native::features::holes::feature_threaded_hole_templates,
+        |policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]

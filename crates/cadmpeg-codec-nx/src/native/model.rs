@@ -907,15 +907,17 @@ impl NativeModel {
         let feature_payload_strings = feature_payload_strings(ctx, container)?;
         let feature_symbolic_threads = feature_symbolic_threads(ctx, container)?;
         let feature_threaded_hole_templates = feature_threaded_hole_templates(
+            ctx,
             &feature_operation_labels,
             &feature_operation_records,
             &feature_payload_strings,
-        );
+        )?;
         let feature_simple_hole_templates = feature_simple_hole_templates(
+            ctx,
             &feature_operation_labels,
             &feature_operation_records,
             &feature_payload_strings,
-        );
+        )?;
         let feature_simple_hole_repeated_scalar_lanes =
             feature_simple_hole_repeated_scalar_lanes(ctx, container)?;
         let feature_simple_hole_repeated_scalar_lane_block_references =
