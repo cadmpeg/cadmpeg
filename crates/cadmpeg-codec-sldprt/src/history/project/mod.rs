@@ -854,7 +854,7 @@ fn bind_native_construction_features(
 
     for feature in features {
         let mut dependencies = Vec::new();
-        let mut bind_planar = |profile: &mut PlanarProfileRef| {
+        let bind_planar = |profile: &mut PlanarProfileRef, dependencies: &mut Vec<FeatureId>| {
             let PlanarProfileRef::Native(native) = profile else {
                 return;
             };
@@ -864,38 +864,37 @@ fn bind_native_construction_features(
             *profile = PlanarProfileRef::Feature(target.clone());
             dependencies.push(target.clone());
         };
-        let mut bind = |profile: &mut ProfileRef| {
+        let bind = |profile: &mut ProfileRef, dependencies: &mut Vec<FeatureId>| {
             if let ProfileRef::Planar(profile) = profile {
-                bind_planar(profile);
+                bind_planar(profile, dependencies);
             }
         };
-        let mut definition = feature.evaluation.definition().clone();
-        match &mut definition {
+        feature.evaluation.edit(|definition, _| match definition {
             FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                bind(profile);
+                bind(profile, &mut dependencies);
             }
             FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
-                bind_planar(profile);
+                bind_planar(profile, &mut dependencies);
             }
             FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
                 if let Some(profile) = construction.profile_mut() {
-                    bind_planar(profile);
+                    bind_planar(profile, &mut dependencies);
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => {
                 if let Some(profile) = &mut construction.profile {
-                    bind_planar(profile);
+                    bind_planar(profile, &mut dependencies);
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
                 if let Some(profile) = shape.referenced_profile_mut() {
-                    bind_planar(profile);
+                    bind_planar(profile, &mut dependencies);
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
                 for section in sections {
                     if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
-                        bind(profile);
+                        bind(profile, &mut dependencies);
                     }
                 }
             }
@@ -908,9 +907,7 @@ fn bind_native_construction_features(
                 }
             }
             _ => {}
-        }
-        feature.evaluation.set_definition(definition);
-
+        });
         for dependency in dependencies {
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
                 feature.dependencies.insert(dependency);
