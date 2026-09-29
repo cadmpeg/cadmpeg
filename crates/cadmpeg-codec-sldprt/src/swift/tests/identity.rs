@@ -191,6 +191,9 @@ fn cad_feature(class: &str, identifier: &str) -> Entity {
 
 #[test]
 fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("empty root fits policy");
     let mut datum = entity("GdtDatum");
     datum.strings.insert("DatumIdentifier".into(), "A".into());
     datum.features.references.push(reference("F10", "GdtPlane"));
@@ -214,7 +217,8 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
             face: FaceId::mint("sldprt:brep:face#42").expect("identity grammar"),
         }),
     );
-    let projected = project_with_topology(&root, Some(&index), &[], None);
+    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None)
+        .expect("test projection fits policy");
     let first = projected.first().expect("projected datum");
     assert_eq!(
         first.targets,
@@ -237,7 +241,8 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .entity
         .strings
         .insert("CadIdentifier".into(), "125:99".into());
-    let projected = project_with_topology(&root, Some(&index), &[], None);
+    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None)
+        .expect("test projection fits policy");
     let first = projected.first().expect("projected datum");
     assert_eq!(
         first.targets,

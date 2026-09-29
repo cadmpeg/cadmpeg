@@ -298,7 +298,7 @@ pub(crate) fn annotations(
         return Ok(Vec::new());
     };
     let projected =
-        project_with_topology(&root, topology, &rendered_dimensions, pattern_hole_nominals);
+        project_with_topology(ctx, &root, topology, &rendered_dimensions, pattern_hole_nominals)?;
     for (reference, entity) in root
         .annotations
         .references
@@ -854,7 +854,14 @@ fn peek_pstr<'a>(cursor: &View<'a>) -> Option<&'a str> {
 
 #[cfg(test)]
 fn project(root: &Entity) -> Vec<PmiAnnotation> {
-    project_with_topology(root, None, &[], None)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty root fits test policy");
+    project_with_topology(&ctx, root, None, &[], None).expect("test projection fits policy")
 }
 
 #[cfg(test)]
@@ -863,7 +870,15 @@ fn enrich_implicit_nominals(
     rendered: &[RenderedDimension],
     annotations: &mut Vec<PmiAnnotation>,
 ) {
-    *annotations = project_with_topology(root, None, rendered, None);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty root fits test policy");
+    *annotations =
+        project_with_topology(&ctx, root, None, rendered, None).expect("test projection fits policy");
 }
 
 #[cfg(test)]
@@ -873,49 +888,78 @@ fn enrich_implicit_nominals_with_context(
     annotations: &mut Vec<PmiAnnotation>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) {
-    *annotations = project_with_topology(root, None, rendered, pattern_hole_nominals);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty root fits test policy");
+    *annotations = project_with_topology(&ctx, root, None, rendered, pattern_hole_nominals)
+        .expect("test projection fits policy");
 }
 
 fn project_with_topology(
+    ctx: &DecodeContext<'_>,
     root: &Entity,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
-) -> Vec<PmiAnnotation> {
+) -> Result<Vec<PmiAnnotation>, CodecError> {
     if root.annotations.references.len() != root.annotations.entities.len() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let rows = root
+    let feature_index = feature_index(ctx, root)?;
+    let mut datum_ids = BTreeMap::new();
+    for (reference, entity) in root
         .annotations
         .references
         .iter()
         .zip(&root.annotations.entities)
-        .collect::<Vec<_>>();
-    let feature_index = feature_index(root);
-    let datum_ids = rows
-        .iter()
-        .filter(|(_, entity)| {
+    {
+        ctx.charge_work(1, "scan SWIFT datum annotations")?;
+        if !(
             short_class(&entity.class) == "GdtDatum"
                 && !suppressed(entity)
                 && entity
                     .strings
                     .get("DatumIdentifier")
                     .is_some_and(|value| !value.is_empty())
-        })
-        .filter_map(|(reference, _)| Some((reference.id.as_str(), pmi_id(&reference.id)?)))
-        .collect::<BTreeMap<_, _>>();
+        ) {
+            continue;
+        }
+        let Some(id) = pmi_id_charged(ctx, &reference.id)? else {
+            continue;
+        };
+        if !datum_ids.contains_key(reference.id.as_str()) {
+            ctx.charge_collection_items(1, "index SWIFT datum IDs")?;
+        }
+        datum_ids.insert(reference.id.as_str(), id);
+    }
     let mut projected = Vec::new();
-    let mut datum_systems = Vec::<(cadmpeg_ir::pmi::DatumReferences, PmiId)>::new();
-    for (reference, entity) in &rows {
+    for (reference, entity) in root
+        .annotations
+        .references
+        .iter()
+        .zip(&root.annotations.entities)
+    {
+        ctx.charge_work(1, "project SWIFT datum annotations")?;
         if suppressed(entity) {
             continue;
         }
         if let Some(annotation) = project_datum(reference, entity, &feature_index, topology) {
+            ctx.reserve_collection_vec(&mut projected, 1, "collect SWIFT datum annotations")?;
             projected.push(annotation);
         }
     }
-    for (reference, entity) in rows {
-        let Some(id) = pmi_id(&reference.id) else {
+    for (reference, entity) in root
+        .annotations
+        .references
+        .iter()
+        .zip(&root.annotations.entities)
+    {
+        ctx.charge_work(1, "project SWIFT semantic annotations")?;
+        let Some(id) = pmi_id_charged(ctx, &reference.id)? else {
             continue;
         };
         if suppressed(entity) || short_class(&entity.class) == "GdtDatum" {
@@ -925,23 +969,29 @@ fn project_with_topology(
             let Some(targets) = targets(entity, &feature_index, topology) else {
                 continue;
             };
+            ctx.charge_work(
+                u64_from_index(projected.len()),
+                "match SWIFT datum-system references",
+            )?;
+            let existing_system = projected.iter().find(|annotation| {
+                matches!(&annotation.definition, PmiDefinition::DatumSystem { references }
+                    if *references == tolerance.references)
+            });
             let datum_system = if tolerance.references.as_slice().is_empty() {
                 None
-            } else if let Some((_, id)) = datum_systems
-                .iter()
-                .find(|(candidate, _)| *candidate == tolerance.references)
-            {
-                Some(id.clone())
+            } else if let Some(existing) = existing_system {
+                Some(copy_pmi_id(ctx, &existing.id)?)
             } else {
-                let id = PmiId::from(
-                    cadmpeg_ir::ids::Identity::from(id.clone()).with_key_tail(
-                        &cadmpeg_ir::ids::IdentityKeyTail::empty()
-                            .then(cadmpeg_ir::identity_key!(":datum-system")),
-                    ),
-                );
-                datum_systems.push((tolerance.references.clone(), id.clone()));
+                let system_id = ctx.format_retained(
+                    format_args!("{}:datum-system", id.as_str()),
+                    "format SWIFT datum-system ID",
+                )?;
+                let system_id = PmiId::mint(system_id)
+                    .map_err(|_| CodecError::malformed("invalid SWIFT datum-system ID"))?;
+                let datum_system = copy_pmi_id(ctx, &system_id)?;
+                ctx.reserve_collection_vec(&mut projected, 1, "collect SWIFT datum systems")?;
                 projected.push(PmiAnnotation {
-                    id: id.clone(),
+                    id: system_id,
                     name: None,
                     visible: None,
                     targets: Vec::new(),
@@ -949,9 +999,10 @@ fn project_with_topology(
                         references: tolerance.references,
                     },
                 });
-                Some(id)
+                Some(datum_system)
             };
             let (defined_unit, defined_area_unit, defined_area_second_unit) = defined_area(entity);
+            ctx.reserve_collection_vec(&mut projected, 1, "collect SWIFT tolerances")?;
             projected.push(PmiAnnotation {
                 id,
                 name: object_name(entity),
@@ -971,6 +1022,7 @@ fn project_with_topology(
                 if let Some(lower_tier) =
                     project_lower_profile_tier(reference, entity, &feature_index, topology)
                 {
+                    ctx.reserve_collection_vec(&mut projected, 1, "collect SWIFT lower tiers")?;
                     projected.push(lower_tier);
                 }
             }
@@ -983,10 +1035,11 @@ fn project_with_topology(
             rendered,
             pattern_hole_nominals,
         ) {
+            ctx.reserve_collection_vec(&mut projected, 1, "collect SWIFT dimensions")?;
             projected.push(annotation);
         }
     }
-    projected
+    Ok(projected)
 }
 
 fn project_datum(
@@ -2311,16 +2364,27 @@ fn unique_related<'a>(entity: &'a Entity, name: &str) -> Option<&'a RelatedObjec
     matches.next().is_none().then_some(object)
 }
 
-fn feature_index(root: &Entity) -> BTreeMap<&str, &Entity> {
+fn feature_index<'a>(
+    ctx: &DecodeContext<'_>,
+    root: &'a Entity,
+) -> Result<BTreeMap<&'a str, &'a Entity>, CodecError> {
     if root.features.references.len() != root.features.entities.len() {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     }
-    root.features
+    let mut index = BTreeMap::new();
+    for (reference, entity) in root
+        .features
         .references
         .iter()
         .zip(&root.features.entities)
-        .map(|(reference, entity)| (reference.id.as_str(), entity))
-        .collect()
+    {
+        ctx.charge_work(1, "index SWIFT features")?;
+        if !index.contains_key(reference.id.as_str()) {
+            ctx.charge_collection_items(1, "index SWIFT feature references")?;
+        }
+        index.insert(reference.id.as_str(), entity);
+    }
+    Ok(index)
 }
 
 fn targets(
@@ -2575,6 +2639,19 @@ fn object_name(entity: &Entity) -> Option<String> {
 
 fn pmi_id(source_id: &str) -> Option<PmiId> {
     PmiId::mint(format!("sldprt:model:pmi#{source_id}")).ok()
+}
+
+fn pmi_id_charged(ctx: &DecodeContext<'_>, source_id: &str) -> Result<Option<PmiId>, CodecError> {
+    let text = ctx.format_retained(
+        format_args!("sldprt:model:pmi#{source_id}"),
+        "format SWIFT PMI identity",
+    )?;
+    Ok(PmiId::mint(text).ok())
+}
+
+fn copy_pmi_id(ctx: &DecodeContext<'_>, id: &PmiId) -> Result<PmiId, CodecError> {
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), "copy SWIFT PMI identity")?;
+    PmiId::mint(text).map_err(|_| CodecError::malformed("invalid SWIFT PMI identity"))
 }
 
 fn suppressed(entity: &Entity) -> bool {
