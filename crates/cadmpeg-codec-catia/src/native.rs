@@ -3109,8 +3109,8 @@ fn stored_payload_entity_reference(
 }
 
 /// One stored entity identity and its optional same-graph resolution.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "CatiaEntityReferenceWire", into = "CatiaEntityReferenceWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "CatiaEntityReferenceWire")]
 pub(crate) enum CatiaEntityReference {
     /// The stored identity is the graph's terminal null identity.
     Null { entity_id: u32 },
@@ -3234,6 +3234,33 @@ struct CatiaEntityReferenceWire {
     class_name: Option<String>,
 }
 
+#[derive(Serialize)]
+struct CatiaEntityReferenceWireRef<'a> {
+    entity_id: u32,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    is_null: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entity: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    class_name: Option<&'a str>,
+}
+
+impl Serialize for CatiaEntityReference {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CatiaEntityReferenceWireRef {
+            entity_id: self.entity_id(),
+            is_null: self.is_null(),
+            entity: self.entity(),
+            class_name: self.class_name(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaEntityReference> for CatiaEntityReferenceWire {
     fn from(value: CatiaEntityReference) -> Self {
         match value {
@@ -3337,11 +3364,8 @@ impl TryFrom<CatiaReferenceSignatureWire> for CatiaReferenceSignature {
 }
 
 /// Source-ordered descriptor records sharing one exact reference pair.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaReferenceSignatureCohortWire",
-    into = "CatiaReferenceSignatureCohortWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "CatiaReferenceSignatureCohortWire")]
 pub(crate) struct CatiaReferenceSignatureCohort {
     references: entity_table::ConsecutiveReferences,
     /// Globally unique cohort identity.
@@ -3395,6 +3419,41 @@ struct CatiaReferenceSignatureCohortWire {
     members: Vec<String>,
 }
 
+#[derive(Serialize)]
+struct CatiaReferenceSignatureCohortWireRef<'a> {
+    id: &'a str,
+    parent: &'a str,
+    ordinal: u64,
+    first_reference: u32,
+    first_entity: &'a CatiaEntityReference,
+    second_reference: u32,
+    second_entity: &'a CatiaEntityReference,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    schema_selection: &'a Option<CatiaReferenceSignatureSchemaSelection>,
+    members: &'a [String],
+}
+
+impl Serialize for CatiaReferenceSignatureCohort {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CatiaReferenceSignatureCohortWireRef {
+            id: &self.id,
+            parent: &self.parent,
+            ordinal: self.ordinal,
+            first_reference: self.first_reference(),
+            first_entity: &self.first_entity,
+            second_reference: self.second_reference(),
+            second_entity: &self.second_entity,
+            schema_selection: &self.schema_selection,
+            members: &self.members,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaReferenceSignatureCohort> for CatiaReferenceSignatureCohortWire {
     fn from(value: CatiaReferenceSignatureCohort) -> Self {
         Self {
@@ -3860,11 +3919,8 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
 }
 
 /// One typed payload reference from a `7C09` record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    from = "CatiaObjectRecordReferenceWire",
-    into = "CatiaObjectRecordReferenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "CatiaObjectRecordReferenceWire")]
 pub(crate) enum CatiaObjectRecordReference {
     /// The stored identity is the graph's terminal null identity.
     Null {
@@ -3974,6 +4030,37 @@ struct CatiaObjectRecordReferenceWire {
     design_object: Option<String>,
 }
 
+#[derive(Serialize)]
+struct CatiaObjectRecordReferenceWireRef<'a> {
+    entity_id: u32,
+    payload_offset: u64,
+    source: &'a CatiaObjectRecordReferenceSource,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    is_null: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    design_object: Option<&'a str>,
+}
+
+impl Serialize for CatiaObjectRecordReference {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CatiaObjectRecordReferenceWireRef {
+            entity_id: self.entity_id(),
+            payload_offset: self.payload_offset(),
+            source: self.source(),
+            is_null: self.is_null(),
+            target: self.target(),
+            design_object: self.design_object(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaObjectRecordReference> for CatiaObjectRecordReferenceWire {
     fn from(value: CatiaObjectRecordReference) -> Self {
         match value {
@@ -4092,11 +4179,8 @@ pub(crate) enum CatiaDesignObjectRelationSource {
 }
 
 /// One cell in a row-aligned design-object reference table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    from = "CatiaDesignReferenceCellWire",
-    into = "CatiaDesignReferenceCellWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "CatiaDesignReferenceCellWire")]
 pub(crate) enum CatiaDesignReferenceCell {
     /// The stored identity is the graph's terminal null identity.
     Null { payload_offset: u64, entity_id: u32 },
@@ -4253,6 +4337,43 @@ struct CatiaDesignReferenceCellWire {
     design_object: Option<String>,
 }
 
+#[derive(Serialize)]
+struct CatiaDesignReferenceCellWireRef<'a> {
+    payload_offset: u64,
+    entity_id: u32,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    is_null: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    field: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    field_class: Option<&'a CatiaDesignClass>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    design_object: Option<&'a str>,
+}
+
+impl Serialize for CatiaDesignReferenceCell {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let (payload_offset, entity_id) = match self {
+            Self::Null { payload_offset, entity_id }
+            | Self::Unresolved { payload_offset, entity_id }
+            | Self::Resolved { payload_offset, entity_id, .. } => (*payload_offset, *entity_id),
+        };
+        CatiaDesignReferenceCellWireRef {
+            payload_offset,
+            entity_id,
+            is_null: self.is_null(),
+            field: self.field(),
+            field_class: self.field_class(),
+            design_object: self.design_object(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaDesignReferenceCell> for CatiaDesignReferenceCellWire {
     fn from(value: CatiaDesignReferenceCell) -> Self {
         match value {
@@ -4363,11 +4484,8 @@ where
 }
 
 /// Equal-cardinality reference lists aligned by list-item ordinal.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaDesignParallelReferenceTableWire",
-    into = "CatiaDesignParallelReferenceTableWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "CatiaDesignParallelReferenceTableWire")]
 pub(crate) struct CatiaDesignParallelReferenceTable {
     columns: Vec<CatiaDesignReferenceColumn>,
     rows: Vec<CatiaDesignReferenceRow>,
@@ -4378,6 +4496,25 @@ struct CatiaDesignParallelReferenceTableWire {
     #[serde(deserialize_with = "deserialize_design_reference_columns")]
     columns: Vec<CatiaDesignReferenceColumn>,
     rows: Vec<CatiaDesignReferenceRow>,
+}
+
+#[derive(Serialize)]
+struct CatiaDesignParallelReferenceTableWireRef<'a> {
+    columns: &'a [CatiaDesignReferenceColumn],
+    rows: &'a [CatiaDesignReferenceRow],
+}
+
+impl Serialize for CatiaDesignParallelReferenceTable {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CatiaDesignParallelReferenceTableWireRef {
+            columns: &self.columns,
+            rows: &self.rows,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl CatiaDesignParallelReferenceTable {
@@ -4399,6 +4536,7 @@ impl CatiaDesignParallelReferenceTable {
     }
 }
 
+#[cfg(test)]
 impl From<CatiaDesignParallelReferenceTable> for CatiaDesignParallelReferenceTableWire {
     fn from(value: CatiaDesignParallelReferenceTable) -> Self {
         Self {

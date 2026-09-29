@@ -16,6 +16,103 @@ use crate::test_support::test_object_graph::{
 };
 use crate::CatiaCodec;
 
+fn parallel_table() -> crate::native::CatiaDesignParallelReferenceTable {
+    crate::native::CatiaDesignParallelReferenceTable::new(
+        vec![crate::native::CatiaDesignReferenceColumn {
+            field: "catia:test:field#0".to_owned(),
+            field_class: None,
+            list_payload_offset: 0,
+        }],
+        Vec::new(),
+    )
+    .expect("empty rows satisfy cardinality")
+}
+
+#[test]
+fn design_parallel_table_borrowed_wire_preserves_json_bytes() {
+    let table = parallel_table();
+    let owned: crate::native::CatiaDesignParallelReferenceTableWire = table.clone().into();
+    assert_eq!(
+        serde_json::to_vec(&table).expect("borrowed table JSON"),
+        serde_json::to_vec(&owned).expect("owned table JSON")
+    );
+}
+
+#[test]
+fn design_parallel_table_retained_limit_refuses_json_record() {
+    let table = parallel_table();
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        id: &'static str,
+        #[serde(flatten)]
+        table: &'a crate::native::CatiaDesignParallelReferenceTable,
+    }
+    let record = Record { id: "catia:test:parallel-table#0", table: &table };
+    let arena_name = "parallel_tables";
+    let json_len = serde_json::to_vec(&record).expect("table JSON").len();
+    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+    });
+    let error = refused.expect_err("record exceeds retained-byte limit");
+    assert!(error.to_string().contains("RetainedBytes"), "{error}");
+    crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+            .expect("service profile admits table");
+    });
+}
+
+fn design_reference_cell() -> crate::native::CatiaDesignReferenceCell {
+    crate::native::CatiaDesignReferenceCell::Resolved {
+        payload_offset: 12,
+        entity_id: 7,
+        field: "catia:test:field#7".to_owned(),
+        field_class: Some(crate::native::CatiaDesignClass {
+            entry: "Entry".to_owned(),
+            name: "Name".to_owned(),
+        }),
+        design_object: Some("catia:test:design#0".to_owned()),
+    }
+}
+
+#[test]
+fn design_reference_cell_borrowed_wire_preserves_json_bytes() {
+    let cell = design_reference_cell();
+    let owned: crate::native::CatiaDesignReferenceCellWire = cell.clone().into();
+    assert_eq!(
+        serde_json::to_vec(&cell).expect("borrowed cell JSON"),
+        serde_json::to_vec(&owned).expect("owned cell JSON")
+    );
+}
+
+#[test]
+fn design_reference_cell_retained_limit_refuses_json_record() {
+    let cell = design_reference_cell();
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        id: &'static str,
+        #[serde(flatten)]
+        cell: &'a crate::native::CatiaDesignReferenceCell,
+    }
+    let record = Record { id: "catia:test:reference-cell#0", cell: &cell };
+    let arena_name = "design_reference_cells";
+    let json_len = serde_json::to_vec(&record).expect("cell JSON").len();
+    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+    });
+    let error = refused.expect_err("record exceeds retained-byte limit");
+    assert!(error.to_string().contains("RetainedBytes"), "{error}");
+    crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+            .expect("service profile admits cell");
+    });
+}
+
 #[test]
 fn native_design_objects_refuse_caller_collection_limit() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_nested_design_objects());
