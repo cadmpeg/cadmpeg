@@ -1532,11 +1532,11 @@ pub(crate) fn project_hole_position_sketches(
                         .filter(|marker| marker.object_index().is_some())
                         .count();
                     let paired = paired_object_locus_markers(lane, position_feature.id.as_str());
-                    complete_alternate_encoding &= paired.len() == indexed_markers;
+                    complete_alternate_encoding &= paired.clone().count() == indexed_markers;
                     paired_marker_coordinates.extend(
                         paired
-                            .iter()
-                            .map(|&(marker, coordinates)| (marker.id(), coordinates)),
+                            .clone()
+                            .map(|(marker, coordinates)| (marker.id(), coordinates)),
                     );
                     authored_markers.extend(paired.into_iter().map(|(marker, _)| marker));
                     if indexed_markers == 0
@@ -1661,15 +1661,15 @@ pub(crate) fn project_hole_position_sketches(
 
 fn paired_object_locus_markers<'a>(
     lane: &'a FeatureInputLane,
-    feature: &str,
-) -> Vec<(&'a crate::records::SketchInputEntity, [f64; 2])> {
+    feature: &'a str,
+) -> impl Iterator<Item = (&'a crate::records::SketchInputEntity, [f64; 2])> + Clone + 'a {
     // Object-locus layouts emit an indexed coordinate handle followed by an
     // unindexed zero point. The adjacent anchor distinguishes object loci from
     // the dimension and display handles in the same feature object.
     lane.sketch_entities
         .iter()
         .zip(lane.sketch_entities.iter().skip(1))
-        .filter_map(|(object, anchor)| {
+        .filter_map(move |(object, anchor)| {
             let coordinates = object.coordinates_m?.get();
             (object.feature_ref.as_deref() == Some(feature)
                 && anchor.feature_ref.as_deref() == Some(feature)
@@ -1681,7 +1681,6 @@ fn paired_object_locus_markers<'a>(
                     .is_some_and(|coordinates| coordinates == [0.0, 0.0]))
             .then_some((object, coordinates))
         })
-        .collect()
 }
 
 fn hole_position_feature<'a>(
@@ -3303,12 +3302,13 @@ pub(crate) fn project_hole_axes(
                         })
                         .map(|(_, direction)| direction);
                     if let Some(solution) = marker_pattern_bore_axes(
+                        ctx,
                         lane,
                         position_feature.id.as_str(),
                         radius,
                         surfaces,
                         temporary_axis,
-                    ) {
+                    )? {
                         solutions.push(solution);
                     }
                 }
@@ -3922,23 +3922,27 @@ pub(crate) fn project_bore_backed_position_sketches(
 }
 
 fn marker_pattern_bore_axes(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     feature: &str,
     radius: f64,
     surfaces: &[Surface],
     direction: Option<Vector3>,
-) -> Option<Vec<HolePlacement>> {
-    let paired_markers = paired_object_locus_markers(lane, feature);
-    let paired_marker_ids = paired_markers
-        .iter()
-        .map(|(marker, _)| marker.id())
-        .collect::<HashSet<_>>();
-    let reduced_marker_ids = paired_markers
-        .into_iter()
-        .filter(|&(paired, [paired_u, paired_v])| {
-            if paired.kind() != SketchInputKind::Point {
-                return true;
-            }
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT marker bore patterns";
+    let mut paired_marker_ids = HashSet::new();
+    let mut reduced_marker_ids = HashSet::new();
+    ctx.charge_work(u64_from_index(lane.sketch_entities.len()), OPERATION)?;
+    for (paired, [paired_u, paired_v]) in paired_object_locus_markers(lane, feature) {
+        if !paired_marker_ids.contains(paired.id()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            paired_marker_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            paired_marker_ids.insert(paired.id());
+        }
+        let reduced = if paired.kind() != SketchInputKind::Point {
+            true
+        } else {
+            ctx.charge_work(u64_from_index(lane.sketch_entities.len()), OPERATION)?;
             !lane.sketch_entities.iter().any(|candidate| {
                 candidate.id() != paired.id()
                     && candidate.feature_ref.as_deref() == Some(feature)
@@ -3949,218 +3953,162 @@ fn marker_pattern_bore_axes(
                             && same_dimension_length(paired_v * 1000.0, v * 1000.0)
                     })
             })
-        })
-        .map(|(marker, _)| marker.id())
-        .collect::<HashSet<_>>();
-    let marker_loci = |paired: &HashSet<&str>| {
-        let mut loci = lane
-            .sketch_entities
-            .iter()
-            .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-            .filter(|marker| marker.object_index().is_some())
-            .filter(|marker| {
-                matches!(
-                    marker.kind(),
-                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                ) || paired.contains(marker.id())
-            })
-            .filter_map(|marker| {
-                let [u, v] = marker.coordinates_m?.get();
-                Some(Point2::new(u * 1000.0, v * 1000.0))
-            })
-            .collect::<Vec<_>>();
-        loci.sort_by(|left, right| {
-            left.u
-                .total_cmp(&right.u)
-                .then_with(|| left.v.total_cmp(&right.v))
-        });
-        loci.dedup_by(|left, right| {
-            same_dimension_length(left.u, right.u) && same_dimension_length(left.v, right.v)
-        });
-        loci
+        };
+        if reduced && !reduced_marker_ids.contains(paired.id()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            reduced_marker_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            reduced_marker_ids.insert(paired.id());
+        }
+    }
+    let marker_loci = |paired: &HashSet<&str>| -> Result<Vec<Point2>, CodecError> {
+        let mut loci = Vec::new();
+        for marker in &lane.sketch_entities {
+            ctx.charge_work(1, OPERATION)?;
+            if marker.feature_ref.as_deref() != Some(feature) || marker.object_index().is_none()
+                || !(matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc)
+                    || paired.contains(marker.id()))
+            { continue; }
+            let Some(coordinates) = marker.coordinates_m else { continue; };
+            let [u, v] = coordinates.get();
+            ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+            loci.push(Point2::new(u * 1000.0, v * 1000.0));
+        }
+        charge_hole_sort_work(ctx, loci.len(), OPERATION)?;
+        loci.sort_unstable_by(|left, right| left.u.total_cmp(&right.u).then_with(|| left.v.total_cmp(&right.v)));
+        ctx.charge_work(u64_from_index(loci.len()), OPERATION)?;
+        loci.dedup_by(|left, right| same_dimension_length(left.u, right.u) && same_dimension_length(left.v, right.v));
+        Ok(loci)
     };
-    let curve_loci = marker_loci(&HashSet::new());
-    let complete_loci = marker_loci(&paired_marker_ids);
-    let reduced_loci = marker_loci(&reduced_marker_ids);
-    match_marker_loci_to_bore_axes(&curve_loci, radius, surfaces, direction)
-        .or_else(|| match_marker_loci_to_bore_axes(&complete_loci, radius, surfaces, direction))
-        .or_else(|| {
-            if reduced_loci == complete_loci {
-                None
-            } else {
-                match_marker_loci_to_bore_axes(&reduced_loci, radius, surfaces, direction)
-            }
-        })
+    let curve_loci = marker_loci(&HashSet::new())?;
+    let complete_loci = marker_loci(&paired_marker_ids)?;
+    let reduced_loci = marker_loci(&reduced_marker_ids)?;
+    if let Some(solution) = match_marker_loci_to_bore_axes(ctx, &curve_loci, radius, surfaces, direction)? {
+        return Ok(Some(solution));
+    }
+    if let Some(solution) = match_marker_loci_to_bore_axes(ctx, &complete_loci, radius, surfaces, direction)? {
+        return Ok(Some(solution));
+    }
+    ctx.charge_work(u64_from_index(reduced_loci.len().min(complete_loci.len())), OPERATION)?;
+    if reduced_loci == complete_loci { return Ok(None); }
+    match_marker_loci_to_bore_axes(ctx, &reduced_loci, radius, surfaces, direction)
+}
+
+fn charge_hole_sort_work(ctx: &DecodeContext<'_>, count: usize, operation: &'static str) -> Result<(), CodecError> {
+    ctx.charge_work(u64_from_index(count).checked_mul(u64::from(usize::BITS - count.leading_zeros()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)
 }
 
 fn match_marker_loci_to_bore_axes(
+    ctx: &DecodeContext<'_>,
     marker_loci: &[Point2],
     radius: f64,
     surfaces: &[Surface],
     direction: Option<Vector3>,
-) -> Option<Vec<HolePlacement>> {
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     const QUANTUM: f64 = EPS_HOLE_POSITION;
-    if marker_loci.is_empty() {
-        return None;
-    }
-
+    const OPERATION: &str = "match SLDPRT marker loci to bore axes";
+    if marker_loci.is_empty() { return Ok(None); }
     let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let quantize_scalar = |value: f64| GridCoordinate::new(value, QUANTUM);
-    let mut grouped = HashMap::<
-        [GridCoordinate; 3],
-        HashMap<[GridCoordinate; 3], Vec<(FinitePoint3, FeatureDirection3)>>,
-    >::new();
+    let mut grouped = HashMap::<[GridCoordinate; 3], HashMap<[GridCoordinate; 3], Vec<(FinitePoint3, FeatureDirection3)>>>::new();
     for surface in surfaces {
-        let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
-        else {
-            continue;
-        };
+        ctx.charge_work(1, OPERATION)?;
+        let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else { continue; };
         let origin = cylinder_surface.origin();
         let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
         let candidate = cylinder_surface.radius().get();
-        if (candidate - radius).abs() > radius_tolerance {
-            continue;
-        }
+        if (candidate - radius).abs() > radius_tolerance { continue; }
         let canonical = canonical_axis(axis.get());
         let closest_distance = Vector3::new(origin.x, origin.y, origin.z).dot(canonical);
-        let closest = Point3::new(
-            origin.x - closest_distance * canonical.x,
-            origin.y - closest_distance * canonical.y,
-            origin.z - closest_distance * canonical.z,
-        );
-        if !closest.is_finite() || !canonical.is_finite() {
-            continue;
+        let closest = Point3::new(origin.x - closest_distance * canonical.x, origin.y - closest_distance * canonical.y, origin.z - closest_distance * canonical.z);
+        if !closest.is_finite() || !canonical.is_finite() { continue; }
+        let axis_key = [quantize_scalar(canonical.x), quantize_scalar(canonical.y), quantize_scalar(canonical.z)];
+        let point_key = [quantize_scalar(closest.x), quantize_scalar(closest.y), quantize_scalar(closest.z)];
+        if !grouped.contains_key(&axis_key) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            grouped.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
-        grouped
-            .entry([
-                quantize_scalar(canonical.x),
-                quantize_scalar(canonical.y),
-                quantize_scalar(canonical.z),
-            ])
-            .or_default()
-            .entry([
-                quantize_scalar(closest.x),
-                quantize_scalar(closest.y),
-                quantize_scalar(closest.z),
-            ])
-            .or_default()
-            .push((origin, axis));
+        let lines = grouped.entry(axis_key).or_default();
+        if !lines.contains_key(&point_key) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            lines.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        let origins = lines.entry(point_key).or_default();
+        ctx.reserve_collection_vec(origins, 1, OPERATION)?;
+        origins.push((origin, axis));
     }
-
-    let mut solutions = HashMap::<Vec<[GridCoordinate; 6]>, Vec<HolePlacement>>::new();
+    let mut solutions = HashMap::new();
     for lines in grouped.into_values() {
-        let mut candidates = lines
-            .into_iter()
-            .filter_map(|(point, surfaces)| {
-                let compare_origins =
-                    |left: &&(FinitePoint3, FeatureDirection3),
-                     right: &&(FinitePoint3, FeatureDirection3)| {
-                        left.0
-                            .x
-                            .total_cmp(&right.0.x)
-                            .then_with(|| left.0.y.total_cmp(&right.0.y))
-                            .then_with(|| left.0.z.total_cmp(&right.0.z))
-                    };
-                let (origin, axis) = match direction {
-                    Some(expected) => surfaces
-                        .iter()
-                        .filter(|(_, axis)| expected.dot(axis.get()) >= 1.0 - EPS_HOLE_GEOMETRY)
-                        .min_by(compare_origins)?,
-                    None => surfaces.iter().min_by(compare_origins)?,
-                };
-                let axis = direction.map_or_else(|| canonical_direction(*axis), |_| *axis);
-                Some((point, *origin, axis))
-            })
-            .collect::<Vec<_>>();
+        let mut candidates = Vec::new();
+        for (point, origins) in lines {
+            ctx.charge_work(u64_from_index(origins.len()), OPERATION)?;
+            let compare_origins = |left: &&(FinitePoint3, FeatureDirection3), right: &&(FinitePoint3, FeatureDirection3)| {
+                left.0.x.total_cmp(&right.0.x).then_with(|| left.0.y.total_cmp(&right.0.y)).then_with(|| left.0.z.total_cmp(&right.0.z))
+            };
+            let candidate = match direction {
+                Some(expected) => origins.iter().filter(|(_, axis)| expected.dot(axis.get()) >= 1.0 - EPS_HOLE_GEOMETRY).min_by(compare_origins),
+                None => origins.iter().min_by(compare_origins),
+            };
+            let Some((origin, axis)) = candidate else { continue; };
+            let axis = direction.map_or_else(|| canonical_direction(*axis), |_| *axis);
+            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            candidates.push((point, *origin, axis));
+        }
+        charge_hole_sort_work(ctx, candidates.len(), OPERATION)?;
         candidates.sort_unstable_by_key(|(point, _, _)| *point);
-        let candidate_loci = candidates
-            .iter()
-            .map(|([x, y, z], ..)| {
-                Point3::new(
-                    x.coordinate(QUANTUM),
-                    y.coordinate(QUANTUM),
-                    z.coordinate(QUANTUM),
-                )
-            })
-            .collect::<Vec<_>>();
+        let mut candidate_loci = Vec::new();
+        ctx.reserve_collection_vec(&mut candidate_loci, candidates.len(), OPERATION)?;
+        for ([x, y, z], ..) in &candidates {
+            ctx.charge_work(1, OPERATION)?;
+            candidate_loci.push(Point3::new(x.coordinate(QUANTUM), y.coordinate(QUANTUM), z.coordinate(QUANTUM)));
+        }
         if candidates.len() < marker_loci.len() {
-            // A position sketch can retain construction curves that have no
-            // current B-rep carrier. Accept the topology carrier set only
-            // when it consumes one unique congruent subset of those curves.
-            if !has_unique_marker_loci_subset(marker_loci, &candidate_loci) {
-                continue;
-            }
-            let placements = candidates
-                .iter()
-                .map(|(_, origin, axis)| HolePlacement::Axis {
-                    origin: *origin,
-                    axis: *axis,
-                })
-                .collect::<Vec<_>>();
-            let key = placements
-                .iter()
-                .map(|placement| match placement {
-                    HolePlacement::Axis { origin, axis } => [
-                        quantize_scalar(origin.x),
-                        quantize_scalar(origin.y),
-                        quantize_scalar(origin.z),
-                        quantize_scalar(axis.x),
-                        quantize_scalar(axis.y),
-                        quantize_scalar(axis.z),
-                    ],
-                    HolePlacement::Directed { .. } => [GridCoordinate::Cell(0); 6],
-                })
-                .collect::<Vec<_>>();
-            solutions.insert(key, placements);
-            if solutions.len() > 1 {
-                return None;
+            if !has_unique_marker_loci_subset(ctx, marker_loci, &candidate_loci)? { continue; }
+            if retain_bore_solution(ctx, &candidates, 0..candidates.len(), &mut solutions)? {
+                return Ok(None);
             }
             continue;
         }
         let mut subsets = HashSet::new();
-        if congruent_bore_axis_subsets(
-            0,
-            marker_loci,
-            &candidate_loci,
-            &mut Vec::new(),
-            &mut HashSet::new(),
-            &mut subsets,
-        ) {
-            return None;
-        }
+        if (BoreSubsetSearch { ctx, marker_loci, candidate_loci: &candidate_loci, reverse: false })
+            .collect(0, &mut Vec::new(), &mut HashSet::new(), &mut subsets)?
+        { return Ok(None); }
         for subset in subsets {
-            let placements = subset
-                .iter()
-                .map(|index| HolePlacement::Axis {
-                    origin: candidates[*index].1,
-                    axis: candidates[*index].2,
-                })
-                .collect::<Vec<_>>();
-            let key = placements
-                .iter()
-                .map(|placement| match placement {
-                    HolePlacement::Axis { origin, axis } => [
-                        quantize_scalar(origin.x),
-                        quantize_scalar(origin.y),
-                        quantize_scalar(origin.z),
-                        quantize_scalar(axis.x),
-                        quantize_scalar(axis.y),
-                        quantize_scalar(axis.z),
-                    ],
-                    HolePlacement::Directed { .. } => [GridCoordinate::Cell(0); 6],
-                })
-                .collect::<Vec<_>>();
-            solutions.insert(key, placements);
-            if solutions.len() > 1 {
-                return None;
-            }
+            if retain_bore_solution(ctx, &candidates, subset, &mut solutions)? { return Ok(None); }
         }
     }
-    let solutions = solutions.into_values().collect::<Vec<_>>();
-    let [solution] = solutions.as_slice() else {
-        return None;
-    };
-    Some(solution.clone())
+    let mut solutions = solutions.into_values();
+    Ok(match (solutions.next(), solutions.next()) {
+        (Some(solution), None) => Some(solution),
+        _ => None,
+    })
+}
+
+fn retain_bore_solution(
+    ctx: &DecodeContext<'_>,
+    candidates: &[([GridCoordinate; 3], FinitePoint3, FeatureDirection3)],
+    indices: impl IntoIterator<Item = usize>,
+    solutions: &mut HashMap<Vec<[GridCoordinate; 6]>, Vec<HolePlacement>>,
+) -> Result<bool, CodecError> {
+    const OPERATION: &str = "retain SLDPRT bore pattern solution";
+    let quantize_scalar = |value: f64| GridCoordinate::new(value, EPS_HOLE_POSITION);
+    let mut placements = Vec::new();
+    let mut key = Vec::new();
+    for index in indices {
+        ctx.charge_work(1, OPERATION)?;
+        let (_, origin, axis) = candidates[index];
+        ctx.reserve_collection_vec(&mut placements, 1, OPERATION)?;
+        ctx.reserve_collection_vec(&mut key, 1, OPERATION)?;
+        placements.push(HolePlacement::Axis { origin, axis });
+        key.push([quantize_scalar(origin.x), quantize_scalar(origin.y), quantize_scalar(origin.z), quantize_scalar(axis.x), quantize_scalar(axis.y), quantize_scalar(axis.z)]);
+    }
+    ctx.charge_work(u64_from_index(key.len()), OPERATION)?;
+    if !solutions.contains_key(&key) {
+        ctx.charge_collection_items(1, OPERATION)?;
+        solutions.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    }
+    solutions.insert(key, placements);
+    Ok(solutions.len() > 1)
 }
 
 /// The sign that moves `axis` into the canonical hemisphere: the sign of its
@@ -4188,131 +4136,91 @@ fn canonical_direction(axis: FeatureDirection3) -> FeatureDirection3 {
     }
 }
 
-fn congruent_bore_axis_subsets(
-    marker_index: usize,
-    marker_loci: &[Point2],
-    candidate_loci: &[Point3],
-    assigned: &mut Vec<usize>,
-    used: &mut HashSet<usize>,
-    subsets: &mut HashSet<Vec<usize>>,
-) -> bool {
-    if marker_index == marker_loci.len() {
-        let mut subset = assigned.clone();
-        subset.sort_unstable();
-        subsets.insert(subset);
-        return subsets.len() > 1;
-    }
-    for candidate_index in 0..candidate_loci.len() {
-        if !used.insert(candidate_index) {
-            continue;
-        }
-        let valid =
-            assigned
-                .iter()
-                .copied()
-                .enumerate()
-                .all(|(previous_marker, previous_candidate)| {
-                    let marker_distance = (marker_loci[marker_index].u
-                        - marker_loci[previous_marker].u)
-                        .hypot(marker_loci[marker_index].v - marker_loci[previous_marker].v);
-                    let delta = Vector3::new(
-                        candidate_loci[candidate_index].x - candidate_loci[previous_candidate].x,
-                        candidate_loci[candidate_index].y - candidate_loci[previous_candidate].y,
-                        candidate_loci[candidate_index].z - candidate_loci[previous_candidate].z,
-                    );
-                    same_dimension_length(marker_distance, delta.norm())
-                });
-        if valid {
-            assigned.push(candidate_index);
-            let ambiguous = congruent_bore_axis_subsets(
-                marker_index + 1,
-                marker_loci,
-                candidate_loci,
-                assigned,
-                used,
-                subsets,
-            );
-            assigned.pop();
-            used.remove(&candidate_index);
-            if ambiguous {
-                return true;
-            }
-            continue;
-        }
-        used.remove(&candidate_index);
-    }
-    false
+struct BoreSubsetSearch<'a, 'root> {
+    ctx: &'a DecodeContext<'root>,
+    marker_loci: &'a [Point2],
+    candidate_loci: &'a [Point3],
+    reverse: bool,
 }
 
-fn has_unique_marker_loci_subset(marker_loci: &[Point2], candidate_loci: &[Point3]) -> bool {
-    fn collect_subsets(
-        candidate_index: usize,
-        marker_loci: &[Point2],
-        candidate_loci: &[Point3],
+impl BoreSubsetSearch<'_, '_> {
+    fn collect(
+        &self,
+        index: usize,
         assigned: &mut Vec<usize>,
         used: &mut HashSet<usize>,
         subsets: &mut HashSet<Vec<usize>>,
-    ) -> bool {
-        if candidate_index == candidate_loci.len() {
-            let mut subset = assigned.clone();
+    ) -> Result<bool, CodecError> {
+        const OPERATION: &str = "search SLDPRT congruent bore subsets";
+        let _depth = self.ctx.enter_nested(OPERATION)?;
+        self.ctx.charge_work(1, OPERATION)?;
+        let (count, choices) = if self.reverse {
+            (self.candidate_loci.len(), self.marker_loci.len())
+        } else {
+            (self.marker_loci.len(), self.candidate_loci.len())
+        };
+        if index == count {
+            let mut subset = Vec::new();
+            self.ctx.reserve_collection_vec(&mut subset, assigned.len(), OPERATION)?;
+            subset.extend_from_slice(assigned);
+            charge_hole_sort_work(self.ctx, subset.len(), OPERATION)?;
             subset.sort_unstable();
-            subsets.insert(subset);
-            return subsets.len() > 1;
-        }
-        for marker_index in 0..marker_loci.len() {
-            if !used.insert(marker_index) {
-                continue;
+            self.ctx.charge_work(u64_from_index(subset.len()), OPERATION)?;
+            if !subsets.contains(&subset) {
+                self.ctx.charge_collection_items(1, OPERATION)?;
+                subsets.try_reserve(1).map_err(|_| self.ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                subsets.insert(subset);
             }
-            let valid = assigned.iter().copied().enumerate().all(
-                |(previous_candidate, previous_marker)| {
-                    let marker_delta = Vector3::new(
-                        marker_loci[marker_index].u - marker_loci[previous_marker].u,
-                        marker_loci[marker_index].v - marker_loci[previous_marker].v,
-                        0.0,
-                    );
-                    let candidate_delta = Vector3::new(
-                        candidate_loci[candidate_index].x - candidate_loci[previous_candidate].x,
-                        candidate_loci[candidate_index].y - candidate_loci[previous_candidate].y,
-                        candidate_loci[candidate_index].z - candidate_loci[previous_candidate].z,
-                    );
-                    same_dimension_length(marker_delta.norm(), candidate_delta.norm())
-                },
-            );
-            if valid {
-                assigned.push(marker_index);
-                let ambiguous = collect_subsets(
-                    candidate_index + 1,
-                    marker_loci,
-                    candidate_loci,
-                    assigned,
-                    used,
-                    subsets,
+            return Ok(subsets.len() > 1);
+        }
+        for choice in 0..choices {
+            self.ctx.charge_work(1, OPERATION)?;
+            if used.contains(&choice) { continue; }
+            self.ctx.charge_collection_items(1, OPERATION)?;
+            used.try_reserve(1).map_err(|_| self.ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            used.insert(choice);
+            self.ctx.charge_work(u64_from_index(assigned.len()), OPERATION)?;
+            let valid = assigned.iter().copied().enumerate().all(|(previous, previous_choice)| {
+                let (marker, previous_marker, candidate, previous_candidate) = if self.reverse {
+                    (choice, previous_choice, index, previous)
+                } else {
+                    (index, previous, choice, previous_choice)
+                };
+                let marker_u = self.marker_loci[marker].u - self.marker_loci[previous_marker].u;
+                let marker_v = self.marker_loci[marker].v - self.marker_loci[previous_marker].v;
+                let marker_distance = if self.reverse {
+                    Vector3::new(marker_u, marker_v, 0.0).norm()
+                } else { marker_u.hypot(marker_v) };
+                let delta = Vector3::new(
+                    self.candidate_loci[candidate].x - self.candidate_loci[previous_candidate].x,
+                    self.candidate_loci[candidate].y - self.candidate_loci[previous_candidate].y,
+                    self.candidate_loci[candidate].z - self.candidate_loci[previous_candidate].z,
                 );
+                same_dimension_length(marker_distance, delta.norm())
+            });
+            if valid {
+                self.ctx.reserve_collection_vec(assigned, 1, OPERATION)?;
+                assigned.push(choice);
+                let ambiguous = self.collect(index + 1, assigned, used, subsets)?;
                 assigned.pop();
-                used.remove(&marker_index);
-                if ambiguous {
-                    return true;
-                }
-                continue;
-            }
-            used.remove(&marker_index);
+                used.remove(&choice);
+                if ambiguous { return Ok(true); }
+            } else { used.remove(&choice); }
         }
-        false
+        Ok(false)
     }
+}
 
-    if candidate_loci.is_empty() || candidate_loci.len() > marker_loci.len() {
-        return false;
-    }
+fn has_unique_marker_loci_subset(
+    ctx: &DecodeContext<'_>,
+    marker_loci: &[Point2],
+    candidate_loci: &[Point3],
+) -> Result<bool, CodecError> {
+    if candidate_loci.is_empty() || candidate_loci.len() > marker_loci.len() { return Ok(false); }
     let mut subsets = HashSet::new();
-    collect_subsets(
-        0,
-        marker_loci,
-        candidate_loci,
-        &mut Vec::new(),
-        &mut HashSet::new(),
-        &mut subsets,
-    );
-    subsets.len() == 1
+    (BoreSubsetSearch { ctx, marker_loci, candidate_loci, reverse: true })
+        .collect(0, &mut Vec::new(), &mut HashSet::new(), &mut subsets)?;
+    Ok(subsets.len() == 1)
 }
 
 pub(super) fn feature_object_byte_ranges<'a>(
