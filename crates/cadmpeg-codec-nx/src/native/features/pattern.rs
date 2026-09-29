@@ -1279,10 +1279,10 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
                 return;
             };
             let selectors = match lane.selectors.map_charged(ctx, |token| {
-                crate::om::compact::LocatedCompactIndex {
+                Ok(crate::om::compact::LocatedCompactIndex {
                     atom: token.atom,
                     offset: entry_offset + token.offset as u64,
-                }
+                })
             }) {
                 Ok(selectors) => selectors,
                 Err(error) => {

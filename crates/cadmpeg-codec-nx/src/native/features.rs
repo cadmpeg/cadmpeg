@@ -8830,6 +8830,14 @@ fn charged_unique_offset_data_block(
     let Some(section_ordinal) = unique_offset_data_store(indexed, &[object_index]) else {
         return Ok(None);
     };
+    Ok(Some(format_offset_data_block_id(ctx, section_ordinal, object_index)?))
+}
+
+fn format_offset_data_block_id(
+    ctx: &DecodeContext<'_>,
+    section_ordinal: usize,
+    object_index: u32,
+) -> Result<String, CodecError> {
     let digits = |value: usize| value.checked_ilog10().map_or(1, |count| count as usize + 1);
     let section_digits = digits(section_ordinal);
     let object_digits = digits(usize::try_from(object_index)
@@ -8845,7 +8853,7 @@ fn charged_unique_offset_data_block(
         .map_err(|_| ctx.refuse_codec_limit("allocate NX source block identity", 0, 1))?;
     write!(&mut id, "nx:om-data-blocks-{section_ordinal}:block#{object_index}")
         .map_err(|_| ctx.refuse_codec_limit("write NX source block identity", 0, 1))?;
-    Ok(Some(id))
+    Ok(id)
 }
 
 fn unique_offset_data_store(
