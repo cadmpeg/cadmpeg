@@ -467,6 +467,82 @@ fn active_configuration_inherits_late_feature_resolutions() {
 }
 
 #[test]
+fn active_configuration_hole_placements_refuse_collection_limit() {
+    let feature_id = FeatureId::mint("synthetic:test:id#hole-placement").unwrap();
+    let shape = cadmpeg_ir::features::holes::HoleShape::new(
+        cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
+        None,
+        None,
+    ).unwrap();
+    let definition = |placements| FeatureDefinition::Operation(FeatureOperation::Hole {
+        profile: None,
+        profile_filter: None,
+        face: None,
+        direction: None,
+        placements,
+        shape: shape.clone(),
+        extent: None,
+        bottom: None,
+        taper_angle: None,
+        allow_multi_profile_faces: None,
+    });
+    let mut ir = CadIr::empty();
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition(Some(vec![
+            HolePlacement::Directed {
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            },
+        ]))),
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#active").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Active".to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::from([(
+            feature_id.clone(),
+            ConfigurationFeatureState {
+                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                    outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                },
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                definition: definition(None),
+            },
+        )]),
+        native_ref: None,
+    });
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"configuration", &arena, &policy,
+    ).unwrap();
+    let error = sync_active_configuration_resolutions(&ctx, &mut ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    assert!(matches!(
+        &ir.model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::Operation(FeatureOperation::Hole { placements: None, .. })
+    ));
+}
+
+#[test]
 fn active_configuration_pattern_scan_refuses_work_limit() {
     let feature_id = FeatureId::mint("synthetic:test:id#pattern").unwrap();
     let mut ir = CadIr::empty();
