@@ -34,6 +34,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod configuration_copies;
+mod digest_partition;
 
 use crate::container::configuration_index;
 use crate::container::contains_ascii_case_insensitive;
@@ -5303,12 +5304,38 @@ fn brep_local_sha256_in_place(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result
         })?,
         "filter SLDPRT digest appearances",
     )?;
+    let mut binding_partition = digest_partition::DigestPartition::prepare(
+        ctx,
+        &ir.model.appearance_bindings,
+        |binding| matches!(binding.target, AppearanceTarget::Face(_)),
+        "partition SLDPRT digest bindings",
+    )?;
+    let mut appearance_partition = digest_partition::DigestPartition::prepare(
+        ctx,
+        &ir.model.appearances,
+        |appearance| {
+            ir.model.appearance_bindings.iter().any(|binding| {
+                matches!(binding.target, AppearanceTarget::Face(_))
+                    && binding.appearance == appearance.id
+            })
+        },
+        "partition SLDPRT digest appearances",
+    )?;
     let mut saved_body_display = Vec::new();
     ctx.reserve_collection_vec(
         &mut saved_body_display,
         ir.model.bodies.len(),
         "save SLDPRT body display fields for digest",
     )?;
+    binding_partition.move_from(&mut ir.model.appearance_bindings, |binding| {
+        matches!(binding.target, AppearanceTarget::Face(_))
+    });
+    appearance_partition.move_from(&mut ir.model.appearances, |appearance| {
+        binding_partition
+            .kept()
+            .iter()
+            .any(|binding| binding.appearance == appearance.id)
+    });
     for body in &mut ir.model.bodies {
         saved_body_display.push((take(&mut body.name), body.color));
     }
@@ -5327,10 +5354,8 @@ fn brep_local_sha256_in_place(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result
     partition.pcurves = take(&mut ir.model.pcurves);
     partition.procedural_surfaces = take(&mut ir.model.procedural_surfaces);
     partition.procedural_curves = take(&mut ir.model.procedural_curves);
-    partition.appearances.clone_from(&ir.model.appearances);
-    partition
-        .appearance_bindings
-        .clone_from(&ir.model.appearance_bindings);
+    partition.appearances = appearance_partition.take_kept();
+    partition.appearance_bindings = binding_partition.take_kept();
     let (hash, mut partition) = brep_partition_sha256(ir.tolerances, partition)?;
     ir.model.bodies = take(&mut partition.bodies);
     for (body, (name, color)) in ir.model.bodies.iter_mut().zip(saved_body_display) {
@@ -5350,6 +5375,9 @@ fn brep_local_sha256_in_place(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result
     ir.model.pcurves = take(&mut partition.pcurves);
     ir.model.procedural_surfaces = take(&mut partition.procedural_surfaces);
     ir.model.procedural_curves = take(&mut partition.procedural_curves);
+    ir.model.appearances = appearance_partition.restore(take(&mut partition.appearances))?;
+    ir.model.appearance_bindings =
+        binding_partition.restore(take(&mut partition.appearance_bindings))?;
     Ok(hash)
 }
 
@@ -5359,7 +5387,7 @@ mod digest_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId};
     use cadmpeg_ir::topology::{Body, BodyKind};
     use std::collections::BTreeMap;
@@ -5376,6 +5404,34 @@ mod digest_tests {
             visible: None,
         });
         ir
+    }
+
+    fn appearance(id: &str) -> Appearance {
+        Appearance {
+            id: AppearanceId::mint(id).unwrap(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: None,
+            properties: BTreeMap::new(),
+            textures: Vec::new(),
+        }
+    }
+
+    fn binding(id: &str, target: AppearanceTarget, appearance: &str) -> AppearanceBinding {
+        AppearanceBinding {
+            id: AppearanceBindingId::mint(id).unwrap(),
+            target,
+            appearance: AppearanceId::mint(appearance).unwrap(),
+            source_entity_id: None,
+            object_type: None,
+            visible: None,
+            channels: BTreeMap::new(),
+        }
     }
 
     #[test]
@@ -5421,6 +5477,49 @@ mod digest_tests {
         let error = brep_local_sha256_in_place(&ctx, &mut ir).unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(_)));
         assert_eq!(ir.model.appearance_bindings.len(), 1);
+    }
+
+    #[test]
+    fn digest_appearance_partition_refuses_collection_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"digest", &arena, &policy).unwrap();
+        let mut ir = CadIr::empty();
+        ir.model.appearance_bindings.push(binding(
+            "synthetic:test:id#digest-binding",
+            AppearanceTarget::Face(FaceId::mint("synthetic:test:id#digest-face").unwrap()),
+            "synthetic:test:id#digest-appearance",
+        ));
+        let error = brep_local_sha256_in_place(&ctx, &mut ir).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(_)));
+        assert_eq!(ir.model.appearance_bindings.len(), 1);
+    }
+
+    #[test]
+    fn digest_restores_appearance_order() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            b"digest", &arena, &DecodePolicy::service(),
+        ).unwrap();
+        let mut ir = CadIr::empty();
+        ir.model.appearances.push(appearance("synthetic:test:id#body-appearance"));
+        ir.model.appearances.push(appearance("synthetic:test:id#face-appearance"));
+        ir.model.appearance_bindings.push(binding(
+            "synthetic:test:id#body-binding",
+            AppearanceTarget::Body(BodyId::mint("synthetic:test:id#digest-body").unwrap()),
+            "synthetic:test:id#body-appearance",
+        ));
+        ir.model.appearance_bindings.push(binding(
+            "synthetic:test:id#face-binding",
+            AppearanceTarget::Face(FaceId::mint("synthetic:test:id#digest-face").unwrap()),
+            "synthetic:test:id#face-appearance",
+        ));
+        let appearances = ir.model.appearances.clone();
+        let bindings = ir.model.appearance_bindings.clone();
+        brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
+        assert_eq!(ir.model.appearances, appearances);
+        assert_eq!(ir.model.appearance_bindings, bindings);
     }
 }
 
