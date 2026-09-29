@@ -342,10 +342,11 @@ pub(in super::super) fn schema_feature_definition(
     }
     if schema_class == Some(SchemaClass::Hole) {
         let stepped_form = stepped_hole_form(
+            ctx,
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
-        );
+        )?;
         let stepped_dimensions = if stepped_form == Some(HoleForm::Counterbore) {
             counterbore_dimensions(ctx, scan, ir, feature_id)?
         } else {
@@ -363,10 +364,11 @@ pub(in super::super) fn schema_feature_definition(
             None
         };
         let drilled_recipe = simple_drilled_hole_recipe(
+            ctx,
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
-        );
+        )?;
         let drilled_dimensions = drilled_recipe.and_then(|recipe| {
             simple_drilled_hole_dimensions(
                 scan,
