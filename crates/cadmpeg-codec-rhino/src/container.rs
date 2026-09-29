@@ -862,14 +862,7 @@ fn list_checksum_children(
     })?;
     let mut children = Vec::new();
     children.try_reserve_exact(child_count).map_err(|_| {
-        FramingError::Resource(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: total_bytes,
-            operation: "Rhino view checksum ranges",
-        })
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, u64::MAX, total_bytes, "Rhino view checksum ranges"))
     })?;
     offset = first_child_offset;
     for _ in 0..child_count {
@@ -1561,7 +1554,7 @@ fn insert_source_meta_attribute(
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "Rhino source metadata attributes")?;
-    let key = crate::wire::copy_retained_string(ctx, key, "Rhino source metadata key")?;
+    let key = ctx.copy_retained_text(key, "Rhino source metadata key")?;
     let key = NonBlankString::new(key)
         .ok_or_else(|| CodecError::malformed("generated Rhino source metadata key is blank"))?;
     let value = crate::wire::admitted_format(ctx, value, "Rhino source metadata value")?;

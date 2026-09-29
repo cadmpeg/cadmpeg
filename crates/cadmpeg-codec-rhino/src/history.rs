@@ -2456,18 +2456,10 @@ pub(crate) fn project(
             "Rhino history projected features",
         )
         .map_err(ProjectionError::Codec)?;
-        let feature_id_text = crate::wire::copy_retained_string(
-            ctx,
-            ids[index].as_str(),
-            "Rhino history projected feature identity",
-        )
+        let feature_id_text = ctx.copy_retained_text(ids[index].as_str(), "Rhino history projected feature identity")
         .map_err(ProjectionError::Codec)?;
         let feature_id = FeatureId::mint(feature_id_text).map_err(|error| error.to_string())?;
-        let source_tag = crate::wire::copy_retained_string(
-            ctx,
-            "HistoryRecord",
-            "Rhino history feature source tag",
-        )
+        let source_tag = ctx.copy_retained_text("HistoryRecord", "Rhino history feature source tag")
         .map_err(ProjectionError::Codec)?;
         let kind = crate::wire::admitted_format(
             ctx,
@@ -2475,11 +2467,7 @@ pub(crate) fn project(
             "Rhino history feature kind",
         )
         .map_err(ProjectionError::Codec)?;
-        let native_ref = crate::wire::copy_retained_string(
-            ctx,
-            &native_ids[index],
-            "Rhino history feature native reference",
-        )
+        let native_ref = ctx.copy_retained_text(&native_ids[index], "Rhino history feature native reference")
         .map_err(ProjectionError::Codec)?;
         ir.model.features.push(Feature {
             id: feature_id,

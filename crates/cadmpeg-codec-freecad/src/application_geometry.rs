@@ -2,7 +2,7 @@
 //! Transfer of application-owned mesh and point payloads.
 
 use cadmpeg_core::decode::{
-    BoundedCount, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, View,
+    BoundedCount, DecodeContext, View,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -18,7 +18,7 @@ use crate::layout::mesh_facet;
 use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
 use crate::native::{EntryRecord, PropertyRecord};
 use crate::resource::{
-    collection_vec, reserve_vec_items, retained_format, retained_string, retained_suffix,
+    collection_vec, reserve_vec_items, retained_format, retained_suffix,
 };
 
 const MAX_ELEMENTS: usize = 1_000_000;
@@ -146,7 +146,7 @@ fn validate_value_root(
     };
     root.attribute("file")
         .filter(|value| !value.is_empty())
-        .map(|value| retained_string(ctx, value, "FreeCAD geometry side-entry name"))
+        .map(|value| ctx.copy_retained_text(value, "FreeCAD geometry side-entry name"))
         .transpose()
 }
 
@@ -156,17 +156,9 @@ fn association(
 ) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new(retained_string(
-            ctx,
-            &property.owner,
-            "FreeCAD geometry object identity",
-        )?)
+        object_id: cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(&property.owner, "FreeCAD geometry object identity")?)
         .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-        name: Some(retained_string(
-            ctx,
-            &property.name,
-            "FreeCAD geometry property name",
-        )?),
+        name: Some(ctx.copy_retained_text(&property.name, "FreeCAD geometry property name")?),
         color: None,
         visible: None,
         layer: None,
@@ -198,14 +190,7 @@ fn parse_mesh(
     ctx.charge_collection_items(facet_capacity as u64, "FreeCAD mesh facets")?;
     let mut triangles = Vec::new();
     triangles.try_reserve_exact(facet_capacity).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit {
-            dimension: ResourceDimension::CollectionItems,
-            reason: ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_collection_items,
-            used: 0,
-            additional: facet_capacity as u64,
-            operation: "FreeCAD mesh facets",
-        })
+        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, facet_capacity as u64, "FreeCAD mesh facets"))
     })?;
     for _ in 0..facet_count {
         let triangle = [

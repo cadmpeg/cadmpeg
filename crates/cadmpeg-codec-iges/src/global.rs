@@ -8,7 +8,7 @@ use crate::decode_resource::{
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use cadmpeg_core::decode::{
-    u64_from_index, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit,
+    u64_from_index, DecodeContext, ResourceDimension, ResourceLimit,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
@@ -731,14 +731,7 @@ fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>,
     ctx.charge_retained(u64_from_index(length), "iges_global_stream")?;
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(length).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit {
-            dimension: ResourceDimension::RetainedBytes,
-            reason: ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_retained_bytes,
-            used: 0,
-            additional: u64_from_index(length),
-            operation: "iges_global_stream",
-        })
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, u64_from_index(length), "iges_global_stream"))
     })?;
     for (_, line) in scan.section(Section::Global) {
         bytes.extend_from_slice(&line.payload[..72]);

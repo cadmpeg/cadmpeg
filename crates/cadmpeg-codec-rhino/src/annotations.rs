@@ -13,7 +13,7 @@ use crate::container::Scan;
 use crate::loss::RhinoLossCode;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::settings::{utf16_retained, CoordinateLane, MillimeterScale, Plane, UnitBinding};
-use crate::wire::{admitted_format, copy_retained_string, scaled_coordinate, uuid, Uuid};
+use crate::wire::{admitted_format, scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const TEXT: Uuid = Uuid::from_canonical([
@@ -612,7 +612,7 @@ fn source_key(
             "Rhino annotation source key",
         );
     };
-    copy_retained_string(ctx, key, "Rhino annotation source key")
+    ctx.copy_retained_text(key, "Rhino annotation source key")
 }
 
 fn record_identity(
@@ -685,14 +685,7 @@ fn reserve_record_count<T>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
     records.try_reserve(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: cadmpeg_core::decode::u64_from_index(count),
-            operation,
-        })
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(count), operation))
     })
 }
 

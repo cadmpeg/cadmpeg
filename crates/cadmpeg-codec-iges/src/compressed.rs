@@ -9,7 +9,7 @@
 
 use crate::directory::DirectoryFieldSlot;
 use cadmpeg_core::decode::{
-    u64_from_index, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit,
+    u64_from_index, DecodeContext, ResourceDimension, ResourceLimit,
 };
 use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
@@ -103,21 +103,7 @@ struct ParsedDirectoryRecord {
     next: usize,
 }
 
-fn allocation_failed(
-    dimension: ResourceDimension,
-    limit: u64,
-    bytes: usize,
-    operation: &'static str,
-) -> CodecError {
-    CodecError::ResourceLimit(ResourceLimit {
-        dimension,
-        reason: ResourceFailure::AllocationFailed,
-        limit,
-        used: 0,
-        additional: u64_from_index(bytes),
-        operation,
-    })
-}
+
 
 #[derive(Debug, Clone, Copy)]
 enum ParameterLexState {
@@ -161,12 +147,7 @@ fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a 
             "iges_compressed_ascii_line_index",
         )?;
         lines.try_reserve(1).map_err(|_| {
-            allocation_failed(
-                ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                std::mem::size_of::<&[u8]>(),
-                "iges_compressed_ascii_line_index",
-            )
+            CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, u64_from_index(std::mem::size_of::<&[u8]>()), "iges_compressed_ascii_line_index"))
         })?;
         lines.push(&source[start..end]);
         start = next;
@@ -193,20 +174,10 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
     let mut stream = Vec::new();
     let mut pending_digits = Vec::new();
     stream.try_reserve_exact(length).map_err(|_| {
-        allocation_failed(
-            ResourceDimension::MaterializedBytes,
-            ctx.policy().limits.max_materialized_bytes,
-            length,
-            "iges_compressed_global_stream",
-        )
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::MaterializedBytes, ctx.policy().limits.max_materialized_bytes, u64_from_index(length), "iges_compressed_global_stream"))
     })?;
     pending_digits.try_reserve_exact(length).map_err(|_| {
-        allocation_failed(
-            ResourceDimension::MaterializedBytes,
-            ctx.policy().limits.max_materialized_bytes,
-            length,
-            "iges_compressed_global_digits",
-        )
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::MaterializedBytes, ctx.policy().limits.max_materialized_bytes, u64_from_index(length), "iges_compressed_global_digits"))
     })?;
     let mut hollerith_remaining = 0_usize;
     for card in cards {
@@ -456,12 +427,7 @@ fn parse_directory_record(
     )?;
     let mut spec_bytes = Vec::new();
     spec_bytes.try_reserve_exact(length).map_err(|_| {
-        allocation_failed(
-            ResourceDimension::MaterializedBytes,
-            ctx.policy().limits.max_materialized_bytes,
-            length,
-            "iges_compressed_directory_spec_bytes",
-        )
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::MaterializedBytes, ctx.policy().limits.max_materialized_bytes, u64_from_index(length), "iges_compressed_directory_spec_bytes"))
     })?;
     if line_index == start {
         spec_bytes.extend_from_slice(&first[cursor..cursor + delimiter_offset]);
@@ -923,12 +889,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
             "iges_compressed_entity_record",
         )?;
         entities.try_reserve_exact(1).map_err(|_| {
-            allocation_failed(
-                ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                std::mem::size_of::<DataEntity>(),
-                "iges_compressed_entity_record",
-            )
+            CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, u64_from_index(std::mem::size_of::<DataEntity>()), "iges_compressed_entity_record"))
         })?;
         let (entity, next) = parse_data_entity(
             &lines,
@@ -985,12 +946,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
     let mut output = Vec::new();
     output.try_reserve_exact(output_estimate).map_err(|_| {
-        allocation_failed(
-            ResourceDimension::RetainedBytes,
-            ctx.policy().limits.max_retained_bytes,
-            output_estimate,
-            "iges_compressed_normalized_output",
-        )
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, u64_from_index(output_estimate), "iges_compressed_normalized_output"))
     })?;
     for line in &lines[start_begin..global_begin] {
         append_source_card(&mut output, line, b'S')?;
@@ -1018,12 +974,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     parameter_starts
         .try_reserve_exact(entities.len())
         .map_err(|_| {
-            allocation_failed(
-                ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                parameter_starts_bytes,
-                "iges_compressed_parameter_starts",
-            )
+            CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, u64_from_index(parameter_starts_bytes), "iges_compressed_parameter_starts"))
         })?;
     let mut parameter_sequence = 1_u32;
     for entity in &entities {

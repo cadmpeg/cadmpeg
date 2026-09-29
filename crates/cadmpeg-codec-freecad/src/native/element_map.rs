@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted native element-map nodes and persistent-name bindings.
 
-use crate::resource::{collection_vec, reserve_vec_items, retained_string};
+use crate::resource::{collection_vec, reserve_vec_items};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -218,11 +218,7 @@ impl ElementMapNodes {
                         1,
                         "FreeCAD element topology bindings",
                     )?;
-                    name.topology_ids.push(retained_string(
-                        ctx,
-                        id,
-                        "FreeCAD element topology identity",
-                    )?);
+                    name.topology_ids.push(ctx.copy_retained_text(id, "FreeCAD element topology identity")?);
                 }
             }
         }

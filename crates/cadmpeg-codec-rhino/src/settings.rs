@@ -1092,14 +1092,7 @@ fn parse_layer_extensions(
         })?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        FramingError::Resource(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_retained_bytes,
-            used: 0,
-            additional: retained_bytes,
-            operation: "Rhino layer extension capacity",
-        })
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, retained_bytes, "Rhino layer extension capacity"))
     })?;
     for _ in 0..count {
         let entry = chunk_at(
