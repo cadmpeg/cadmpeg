@@ -1795,7 +1795,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     assert_eq!(uses[0].source_offset, 107);
     assert_eq!(u8::from(uses[1].row_slot), 3);
     assert_eq!(uses[1].source_offset, 114);
-    let targets = feature_input_column_targets(&[input], &uses, &[row], &[]);
+    let targets = crate::test_support::with_decode_context(|ctx| feature_input_column_targets(ctx, &[input], &uses, &[row], &[])).unwrap();
     assert_eq!(targets.len(), 1);
     assert_eq!(
         targets[0].row,
@@ -1889,12 +1889,12 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(uses[0].source_offset, 105);
     assert_eq!(u8::from(uses[1].row_slot), 3);
     assert_eq!(uses[1].source_offset, 112);
-    let targets = feature_input_column_targets(
+    let targets = crate::test_support::with_decode_context(|ctx| feature_input_column_targets(ctx,
         std::slice::from_ref(&input),
         &uses,
         &[],
         std::slice::from_ref(&row),
-    );
+    )).unwrap();
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0].input_block, input.id);
     assert_eq!(targets[0].column_row, "target-row#3");
@@ -1909,7 +1909,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(targets[0].row, FeatureInputColumnTargetRow::Target);
     let mut duplicate = uses.clone();
     duplicate.push(uses[0].clone());
-    assert!(feature_input_column_targets(&[input], &duplicate, &[], &[row]).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| feature_input_column_targets(ctx, &[input], &duplicate, &[], &[row])).unwrap().is_empty());
 }
 
 #[test]
