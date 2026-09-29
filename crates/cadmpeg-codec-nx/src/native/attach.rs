@@ -2430,9 +2430,14 @@ fn attach_feature_operations(
         {
             continue;
         }
-        let Some(id) = feature_ids_by_operation.get(label.id.as_str()).cloned() else {
+        let Some(source_id) = feature_ids_by_operation.get(label.id.as_str()) else {
             continue;
         };
+        let _feature_id_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureId>() + source_id.as_str().len()),
+            "NX current feature identity",
+        )?;
+        let id = source_id.clone();
         let boolean_offset_store_resolution = booleans.get(label.id.as_str()).map(|operation| {
             crate::native::segments::boolean_offset_store_resolution(ctx, operation, data_blocks)
         }).transpose()?;
@@ -3778,6 +3783,13 @@ fn attach_feature_operations(
             .flatten();
         body_writer_history.record_writer(ctx, native_output, offset_store_output, &outputs, &id)?;
         for write in operation_body_writes {
+            if !body_identity_writers.contains_key(&write.frame.body_identity()) {
+                ctx.charge_collection_items(1, "NX body identity writers")?;
+            }
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u8, FeatureId)>() + id.as_str().len()),
+                "NX body identity writer",
+            )?;
             body_identity_writers.insert(write.frame.body_identity(), id.clone());
         }
         if let Some(operation) = (!deletes_body)
@@ -3800,6 +3812,15 @@ fn attach_feature_operations(
         let dependency_check_work = dependencies.len().checked_mul(dependencies.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX feature dependency validation", 0, cadmpeg_core::decode::u64_from_index(dependencies.len())))?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(dependency_check_work), "NX feature dependency validation")?;
+        let feature_text_bytes = id.as_str().len()
+            .checked_add(label.value.len())
+            .and_then(|bytes| bytes.checked_add(label.value.len()))
+            .and_then(|bytes| bytes.checked_add(label.id.len()))
+            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<Feature>()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX feature record", 0, cadmpeg_core::decode::u64_from_index(label.id.len())))?;
+        ctx.charge_collection_items(1, "NX feature records")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(feature_text_bytes), "NX feature record")?;
+        ir.model.features.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX feature records", 0, 1))?;
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
@@ -3898,15 +3919,32 @@ fn attach_feature_operations(
     // native evidence without becoming current-body state roots.
     if !body_references.is_empty() {
         if let Some(initial_body_id) = initial_body_id.as_ref() {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.features.len()), "NX primary body closure feature lookup")?;
             if let Some(initial_feature) = ir
                 .model
                 .features
                 .iter_mut()
                 .find(|feature| feature.id == *initial_body_id)
             {
+                const WITNESS_VALUE: &str = "primary-body-relations";
+                let witness_bytes = std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
+                    .checked_add(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.len())
+                    .and_then(|bytes| bytes.checked_add(WITNESS_VALUE.len()))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX primary body closure witness", 0, cadmpeg_core::decode::u64_from_index(WITNESS_VALUE.len())))?;
+                ctx.charge_collection_items(1, "NX primary body closure witness")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(witness_bytes), "NX primary body closure witness")?;
+                let mut key = String::new();
+                key.try_reserve(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.len())
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX primary body closure witness key", 0, cadmpeg_core::decode::u64_from_index(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.len())))?;
+                key.push_str(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS);
+                let mut value = String::new();
+                value.try_reserve(WITNESS_VALUE.len())
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX primary body closure witness value", 0, cadmpeg_core::decode::u64_from_index(WITNESS_VALUE.len())))?;
+                value.push_str(WITNESS_VALUE);
                 initial_feature.source_properties.insert(
-                    cadmpeg_core::nonblank_const!(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS),
-                    "primary-body-relations".to_string(),
+                    cadmpeg_core::text::NonBlankString::new(key)
+                        .ok_or_else(|| CodecError::malformed("NX primary body closure witness key is blank"))?,
+                    value,
                 );
                 annotations
                     .derived(initial_body_id, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
@@ -3915,6 +3953,7 @@ fn attach_feature_operations(
         }
     }
     if let Some(initial_body_id) = initial_body_id {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.features.len()), "NX initial body output lookup")?;
         let has_outputs = ir
             .model
             .features
