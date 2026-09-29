@@ -34,8 +34,8 @@ use super::super::sketch_ids::{
     sketch_entity_id_admitted, sketch_native_ref, sketch_native_ref_admitted,
 };
 use crate::decode::sketch_transfer::identity::{
-    opaque_section_segment_identity_suffix, section_entity_external_ids,
-    section_segment_identity_suffix, unique_section_segment_external_ids,
+    opaque_section_segment_identity_suffix_admitted, section_entity_external_ids,
+    section_segment_identity_suffix_admitted, unique_section_segment_external_ids,
 };
 use crate::decode::sketch_transfer::loci::{
     section_point_locus, section_skamp_active, section_skamp_locus,
@@ -520,43 +520,61 @@ fn section_angular_entities(
     ])
 }
 
+fn segment_radius_operand(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    sketch: &SketchId,
+    kind: &str,
+    field: &str,
+    object_index: u32,
+) -> Result<SketchNativeOperand, cadmpeg_core::CodecError> {
+    let kind = ctx.copy_retained_text(kind, "creo radius operand kind")?;
+    let field = ctx.copy_retained_text(field, "creo radius operand field")?;
+    Ok(SketchNativeOperand {
+        native_kind: cadmpeg_core::text::NonBlankString::new(kind)
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("radius operand kind must not be empty"))?,
+        field: Some(NativeOperandField {
+            name: cadmpeg_core::text::NonBlankString::new(field)
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("radius operand field must not be empty"))?,
+            role: None,
+        }),
+        object_index: Some(object_index),
+        native_ref: Some(sketch_native_ref_admitted(ctx, sketch)?),
+    })
+}
+
 fn native_section_segment_radius_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     entity: SketchEntityId,
     external_id: u32,
     field: &str,
     dimension_ordinal: u32,
-) -> Option<SketchConstraintDefinitionInput> {
-    Some(SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::new(format!("creo:segtab:{field}"))?,
+) -> Result<SketchConstraintDefinitionInput, cadmpeg_core::CodecError> {
+    let native_kind = ctx.format_retained(format_args!("creo:segtab:{field}"), "creo radius native kind")?;
+    let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("radius native kind must not be empty"))?;
+    let key = ctx.copy_retained_text("dimension_ordinal", "creo radius property key")?;
+    let value = ctx.format_retained(dimension_ordinal, "creo radius property value")?;
+    let mut native_properties = BTreeMap::new();
+    ctx.charge_collection_items(1, "creo radius property nodes")?;
+    native_properties.insert(key, value);
+    let mut entities = Vec::new();
+    ctx.try_reserve_items(&mut entities, 1, "creo radius entity references")?;
+    entities.push(entity);
+    let first = segment_radius_operand(ctx, sketch, "segtab_ptr", "ext_id", external_id)?;
+    let second = segment_radius_operand(ctx, sketch, "dimension_ordinal", field, dimension_ordinal)?;
+    let mut operands = Vec::new();
+    ctx.try_reserve_items(&mut operands, 2, "creo radius operands")?;
+    operands.push(first);
+    operands.push(second);
+    Ok(SketchConstraintDefinitionInput::Native {
+        native_kind,
         native_state: None,
         native_flags: None,
-        native_properties: BTreeMap::from([(
-            "dimension_ordinal".to_string(),
-            dimension_ordinal.to_string(),
-        )]),
-        entities: vec![entity],
+        native_properties,
+        entities,
         parameter: None,
-        operands: vec![
-            SketchNativeOperand {
-                native_kind: cadmpeg_core::text::NonBlankString::new("segtab_ptr")?,
-                field: Some(NativeOperandField {
-                    name: cadmpeg_core::text::NonBlankString::new("ext_id")?,
-                    role: None,
-                }),
-                object_index: Some(external_id),
-                native_ref: Some(sketch_native_ref(sketch)),
-            },
-            SketchNativeOperand {
-                native_kind: cadmpeg_core::text::NonBlankString::new("dimension_ordinal")?,
-                field: Some(NativeOperandField {
-                    name: cadmpeg_core::text::NonBlankString::new(field)?,
-                    role: None,
-                }),
-                object_index: Some(dimension_ordinal),
-                native_ref: Some(sketch_native_ref(sketch)),
-            },
-        ],
+        operands,
     })
 }
 
@@ -595,7 +613,10 @@ fn section_segment_radius_bindings(
         return Ok(bindings);
     };
     for segment in segments.rows.ordinary() {
-        let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
+        if segment.radius_ref.is_none() && segment.radius2_ref.is_none() {
+            continue;
+        }
+        let suffix = section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)?;
         for (field, ordinal) in [
             (SegmentRadiusField::Primary, segment.radius_ref),
             (SegmentRadiusField::Secondary, segment.radius2_ref),
@@ -605,7 +626,7 @@ fn section_segment_radius_bindings(
             };
             ctx.try_reserve_items(&mut bindings, 1, "creo segment radius bindings")?;
             bindings.push(SectionSegmentRadiusBinding {
-                suffix: suffix.clone(),
+                suffix: ctx.copy_retained_text(&suffix, "creo radius binding suffix copy")?,
                 external_id: segment.external_id,
                 field,
                 ordinal,
@@ -616,21 +637,16 @@ fn section_segment_radius_bindings(
     }
     for segment in segments.rows.circles() {
         let suffix = if unique_segment_ids.contains(&segment.external_id) {
-            segment.external_id.to_string()
+            ctx.format_retained(segment.external_id, "creo radius circle suffix")?
         } else {
-            format!("circle:offset:{}", segment.offset)
+            ctx.format_retained(format_args!("circle:offset:{}", segment.offset), "creo radius circle suffix")?
         };
         let typed_circle = if unique_segment_ids.contains(&segment.external_id) {
-            usize::try_from(segment.radius_ref)
-                .ok()
-                .and_then(|ordinal| {
-                    resolved_feature_dimension_parameter(
-                        sketch,
-                        definition.dimensions.as_ref()?,
-                        ordinal,
-                    )
-                })
-                .map(|(dimension, parameter)| (dimension.dimension_type, parameter))
+            match (usize::try_from(segment.radius_ref).ok(), definition.dimensions.as_ref()) {
+                (Some(ordinal), Some(dimensions)) => resolved_feature_dimension_parameter_admitted(ctx, sketch, dimensions, ordinal)?
+                    .map(|(dimension, parameter)| (dimension.dimension_type, parameter)),
+                _ => None,
+            }
         } else {
             None
         };
@@ -645,7 +661,10 @@ fn section_segment_radius_bindings(
         });
     }
     for segment in segments.rows.opaque() {
-        let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
+        if segment.radius_ref.is_none() && segment.radius2_ref.is_none() {
+            continue;
+        }
+        let suffix = opaque_section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)?;
         for (field, ordinal) in [
             (SegmentRadiusField::Primary, segment.radius_ref),
             (SegmentRadiusField::Secondary, segment.radius2_ref),
@@ -655,7 +674,7 @@ fn section_segment_radius_bindings(
             };
             ctx.try_reserve_items(&mut bindings, 1, "creo segment radius bindings")?;
             bindings.push(SectionSegmentRadiusBinding {
-                suffix: suffix.clone(),
+                suffix: ctx.copy_retained_text(&suffix, "creo radius binding suffix copy")?,
                 external_id: segment.external_id,
                 field,
                 ordinal,
@@ -668,13 +687,16 @@ fn section_segment_radius_bindings(
 }
 
 fn section_segment_radius_constraint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     binding: SectionSegmentRadiusBinding,
     sketch: &SketchId,
-) -> Option<(SketchConstraint, usize)> {
-    let entity = sketch_entity_id(sketch, &binding.suffix)?;
+) -> Result<Option<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let Some(entity) = sketch_entity_id_admitted(ctx, sketch, &binding.suffix)? else {
+        return Ok(None);
+    };
     let (definition, kind) = match binding.typed_circle {
         Some((dimension_type, parameter)) if matches!(dimension_type, 3 | 4) => (
-            circular_dimension_constraint(entity.clone(), parameter, dimension_type),
+            circular_dimension_constraint(entity, parameter, dimension_type),
             if dimension_type == 4 {
                 "diameter"
             } else {
@@ -683,8 +705,9 @@ fn section_segment_radius_constraint(
         ),
         _ => (
             native_section_segment_radius_definition(
+                ctx,
                 sketch,
-                entity.clone(),
+                entity,
                 binding.external_id,
                 binding.field.key(),
                 binding.ordinal,
@@ -696,12 +719,17 @@ fn section_segment_radius_constraint(
             },
         ),
     };
-    Some((
+    let Some(id) = sketch_constraint_id_admitted(ctx, sketch, format_args!("{kind}:{}", binding.suffix))? else {
+        return Ok(None);
+    };
+    let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition) else {
+        return Ok(None);
+    };
+    Ok(Some((
         SketchConstraint {
-            id: sketch_constraint_id(sketch, format_args!("{kind}:{}", binding.suffix))?,
-            sketch: sketch.clone(),
-            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
-                .ok()?,
+            id,
+            sketch: sketch.copy_admitted(ctx, "creo radius constraint sketch identity")?,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -711,10 +739,10 @@ fn section_segment_radius_constraint(
             label_distance: None,
             label_position: None,
             metadata: None,
-            native_ref: Some(sketch_native_ref(sketch)),
+            native_ref: Some(sketch_native_ref_admitted(ctx, sketch)?),
         },
         binding.offset,
-    ))
+    )))
 }
 
 pub(in super::super) fn section_segment_radius_constraints(
@@ -722,10 +750,14 @@ pub(in super::super) fn section_segment_radius_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
-    crate::decode::collect_items(ctx, section_segment_radius_bindings(ctx, definition, sketch)?
-        .into_iter()
-        .filter_map(|binding| section_segment_radius_constraint(binding, sketch))
-    , "creo segment radius constraints")
+    let mut constraints = Vec::new();
+    for binding in section_segment_radius_bindings(ctx, definition, sketch)? {
+        if let Some(constraint) = section_segment_radius_constraint(ctx, binding, sketch)? {
+            ctx.try_reserve_items(&mut constraints, 1, "creo segment radius constraints")?;
+            constraints.push(constraint);
+        }
+    }
+    Ok(constraints)
 }
 
 pub(in super::super) fn section_segment_radius_constraints_for_emitted(
@@ -736,55 +768,53 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
     available_parameters: &BTreeSet<ParameterId>,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let bindings = section_segment_radius_bindings(ctx, definition, sketch)?;
-    crate::decode::collect_items(ctx, section_segment_radius_constraints(ctx, definition, sketch)?
+    let mut constraints = Vec::new();
+    for ((mut constraint, offset), binding) in section_segment_radius_constraints(ctx, definition, sketch)?
         .into_iter()
         .zip(bindings)
-        .filter_map(|((mut constraint, offset), binding)| {
-            constraint
-                .definition
-                .edit(|kind| {
-                    reconcile_section_segment_radius_constraint(
-                        kind,
-                        sketch,
-                        &binding,
-                        emitted,
-                        available_parameters,
-                    )
-                })
-                .unwrap_or(false)
-                .then_some((constraint, offset))
-        })
-    , "creo emitted segment radius constraints")
+    {
+        let reconciled = match constraint.definition.edit(|kind| {
+            reconcile_section_segment_radius_constraint(ctx, kind, sketch, &binding, emitted, available_parameters)
+        }) {
+            Ok(result) => result?,
+            Err(_) => false,
+        };
+        if reconciled {
+            ctx.try_reserve_items(&mut constraints, 1, "creo emitted segment radius constraints")?;
+            constraints.push((constraint, offset));
+        }
+    }
+    Ok(constraints)
 }
 
 fn reconcile_section_segment_radius_constraint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     constraint_definition: &mut SketchConstraintDefinitionInput,
     sketch: &SketchId,
     binding: &SectionSegmentRadiusBinding,
     emitted: &BTreeSet<SketchEntityId>,
     available_parameters: &BTreeSet<ParameterId>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let entity_reconciled = reconcile_constraint_entity_references(constraint_definition, emitted);
     let parameter_reconciled =
         reconcile_constraint_parameter_reference(constraint_definition, available_parameters);
     if entity_reconciled && parameter_reconciled {
-        return true;
+        return Ok(true);
     }
-    let Some(entity) = sketch_entity_id(sketch, &binding.suffix) else {
-        return false;
+    let Some(entity) = sketch_entity_id_admitted(ctx, sketch, &binding.suffix)? else {
+        return Ok(false);
     };
-    let Some(native_definition) = native_section_segment_radius_definition(
+    let native_definition = native_section_segment_radius_definition(
+        ctx,
         sketch,
         entity,
         binding.external_id,
         binding.field.key(),
         binding.ordinal,
-    ) else {
-        return false;
-    };
+    )?;
     *constraint_definition = native_definition;
-    reconcile_constraint_entity_references(constraint_definition, emitted)
-        && reconcile_constraint_parameter_reference(constraint_definition, available_parameters)
+    Ok(reconcile_constraint_entity_references(constraint_definition, emitted)
+        && reconcile_constraint_parameter_reference(constraint_definition, available_parameters))
 }
 
 pub(in super::super) fn section_equation_radius_dimension_constraints(
@@ -2401,6 +2431,134 @@ mod tests {
         assert_eq!(native_properties["verhor"], "2");
         assert_eq!(entities, [entity]);
         assert_eq!(operands[0].object_index, Some(42));
+    }
+
+    #[test]
+    fn native_segment_radius_refuses_each_nested_text_and_collection() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
+        let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#5:42")
+            .expect("valid entity ID");
+        let fields = [
+            ("creo:segtab:radius", "creo radius native kind"),
+            ("dimension_ordinal", "creo radius property key"),
+            ("2", "creo radius property value"),
+            ("segtab_ptr", "creo radius operand kind"),
+            ("ext_id", "creo radius operand field"),
+            ("creo:featdefs:sketch#5", "creo sketch native reference"),
+            ("dimension_ordinal", "creo radius operand kind"),
+            ("radius", "creo radius operand field"),
+            ("creo:featdefs:sketch#5", "creo sketch native reference"),
+        ];
+        let mut total = 0u64;
+        for (field, operation) in fields {
+            total += field.len() as u64;
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = total - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            assert!(matches!(super::native_section_segment_radius_definition(&ctx, &sketch, entity.clone(), 42, "radius", 2),
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                        && refusal.operation == operation));
+        }
+        for (limit, operation) in [
+            (0, "creo radius property nodes"),
+            (1, "creo radius entity references"),
+            (3, "creo radius operands"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            assert!(matches!(super::native_section_segment_radius_definition(&ctx, &sketch, entity.clone(), 42, "radius", 2),
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == operation));
+        }
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        let admitted = super::native_section_segment_radius_definition(&ctx, &sketch, entity.clone(), 42, "radius", 2)
+            .expect("service radius admission");
+        let SketchConstraintDefinitionInput::Native { native_properties, entities, operands, .. } = admitted else {
+            panic!("native radius definition");
+        };
+        assert_eq!(native_properties["dimension_ordinal"], "2");
+        assert_eq!(entities, [entity]);
+        assert_eq!(operands.iter().map(|operand| operand.object_index).collect::<Vec<_>>(), [Some(42), Some(2)]);
+    }
+
+    #[test]
+    fn segment_radius_rows_refuse_at_each_output_vector() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let segment = crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([7, 9]),
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: Some(2),
+            radius2_ref: None,
+            external_id: 42,
+            body: Vec::new(),
+            offset: 40,
+        };
+        let definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(5),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::definitions::FeatureSegmentTable {
+                declared_count: 1,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: [crate::feature::segment_rows::SegmentRow::Ordinary(segment)].into_iter().collect(),
+                offset: 38,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let at_six = super::section_segment_radius_constraints(&ctx, &definition, &sketch);
+        assert!(matches!(&at_six, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo segment radius constraints"), "{at_six:?}");
+        policy.limits.max_collection_items = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let rows = super::section_segment_radius_constraints(&ctx, &definition, &sketch)
+            .expect("exact cap admits radius row");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0.id.as_str(), "creo:featdefs:sketch_constraint#5:segtab-radius:42");
+        let emitted = BTreeSet::from([
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID"),
+        ]);
+        policy.limits.max_collection_items = 9;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let at_nine = super::section_segment_radius_constraints_for_emitted(
+            &ctx, &definition, &sketch, &emitted, &BTreeSet::new());
+        assert!(matches!(&at_nine, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo emitted segment radius constraints"), "{at_nine:?}");
+        policy.limits.max_collection_items = 10;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert_eq!(super::section_segment_radius_constraints_for_emitted(
+            &ctx, &definition, &sketch, &emitted, &BTreeSet::new())
+            .expect("exact cap admits emitted radius row").len(), 1);
     }
 
     #[test]

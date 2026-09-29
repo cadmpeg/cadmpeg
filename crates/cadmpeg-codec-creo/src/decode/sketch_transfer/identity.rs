@@ -367,17 +367,6 @@ pub(in super::super) fn section_segment_identity_suffix_admitted(
     }
 }
 
-pub(super) fn opaque_section_segment_identity_suffix(
-    unique_external_ids: &BTreeSet<u32>,
-    segment: &crate::feature::definitions::FeatureOpaqueSegment,
-) -> String {
-    if unique_external_ids.contains(&segment.external_id) {
-        segment.external_id.to_string()
-    } else {
-        format!("opaque:offset:{}", segment.offset)
-    }
-}
-
 pub(super) fn opaque_section_segment_identity_suffix_admitted(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     unique_external_ids: &BTreeSet<u32>,
