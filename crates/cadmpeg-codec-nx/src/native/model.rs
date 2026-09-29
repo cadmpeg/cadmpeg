@@ -873,13 +873,14 @@ impl NativeModel {
                 &segment_body_bindings,
             )?;
         let feature_operation_body_partition_uses = feature_operation_body_partition_uses(
+            ctx,
             &feature_operation_body_writes,
             &feature_operation_body_image_segment_uses,
             &segment_body_bindings,
             streams,
             &parasolid_group_records,
             &parasolid_group_members,
-        );
+        )?;
         let feature_body_write_group_partition_uses = feature_body_write_group_partition_uses(
             &feature_operation_body_writes,
             &feature_unlabeled_operation_body_writes,
