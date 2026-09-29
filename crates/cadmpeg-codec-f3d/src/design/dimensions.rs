@@ -665,8 +665,7 @@ fn project_all_dimension_constraints(
         }
         let owner = indices
             .iter()
-            .filter_map(|record_index| native_geometry.get(&(scope, *record_index))?.1)
-            .next();
+            .find_map(|record_index| native_geometry.get(&(scope, *record_index))?.1);
         let Some(owner) = owner else {
             return Ok(None);
         };
@@ -2512,7 +2511,7 @@ fn tangent_entity_distance_definition(
         .count();
     if matches != 1 {
         return None;
-    };
+    }
     Some(Ok(Definition::Distance {
         entities: vec![
             dimension_resource!(copy_dimension_entity_id(
@@ -2631,10 +2630,11 @@ fn preceding_incident_angular_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: (&DesignParameter, &cadmpeg_ir::features::ParameterId),
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
-    let (parameter, parameter_id) = parameter;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
+
+    let (parameter, parameter_id) = parameter;
 
     if !parameter.source_kind().starts_with("Angular Dimension")
         || !design_dimension_unit(parameter)
@@ -3502,9 +3502,9 @@ fn owner_scoped_radial_dimension_definition(
     }
     let mut members = Vec::new();
     for definition in definitions {
-        let entity = match definition {
-            Definition::Radius { entity, .. } | Definition::Diameter { entity, .. } => entity,
-            _ => return None,
+        let (Definition::Radius { entity, .. } | Definition::Diameter { entity, .. }) = definition
+        else {
+            return None;
         };
         dimension_resource!(push_dimension_item(
             ctx,
@@ -3686,11 +3686,10 @@ pub(crate) fn bind_offset_dimension_parameters(
             };
             if pairs.iter().any(|pair| &pair.source == entity)
                 && scalar_close(distance.get(), parameter_value.abs())
+                && candidate.replace(offset_index).is_some()
             {
-                if candidate.replace(offset_index).is_some() {
-                    ambiguous = true;
-                    break;
-                }
+                ambiguous = true;
+                break;
             }
         }
         if let Some(offset_index) = candidate.filter(|_| !ambiguous) {
@@ -4753,10 +4752,12 @@ fn spatial_counted_offset_dimension_definition(
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
 ) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
+    use cadmpeg_ir::scalar::Length;
+
+    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Definition;
+
     let (native_kind, native_state, operands) = native;
     let (parameter, distance, signed_parameter) = measurement;
-    use cadmpeg_ir::scalar::Length;
-    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Definition;
 
     if !native_kind.starts_with("Linear Dimension")
         || native_state != Some(0x20)
@@ -5298,9 +5299,11 @@ fn annotation_offset_dimension_definition(
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     linear_tolerance: f64,
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
-    let (parameter, parameter_id) = parameter;
     use cadmpeg_ir::scalar::Length;
+
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
+
+    let (parameter, parameter_id) = parameter;
 
     if !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
@@ -5488,9 +5491,10 @@ fn radial_locus_dimension_definition(
         }
         let mut ids = Vec::new();
         for definition in direct {
-            let entity = match definition {
-                Definition::Radius { entity, .. } | Definition::Diameter { entity, .. } => entity,
-                _ => return None,
+            let (Definition::Radius { entity, .. } | Definition::Diameter { entity, .. }) =
+                definition
+            else {
+                return None;
             };
             dimension_resource!(push_dimension_item(
                 ctx,
@@ -5540,9 +5544,7 @@ fn radial_locus_dimension_definition(
                 _ => None,
             })
     };
-    if centers().next().is_none() {
-        return None;
-    }
+    centers().next()?;
     let candidates = all_entities
         .iter()
         .filter(|entity| &entity.sketch == sketch)
@@ -6770,8 +6772,9 @@ fn symmetric_parallel_line_dimension_definition(
     parameter_id: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
-    let (first_role, second_role) = roles;
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
+
+    let (first_role, second_role) = roles;
 
     if first_role == 0
         || second_role == 0
@@ -8162,8 +8165,8 @@ fn reflected_symmetry<'a>(
         return None;
     }
     let mut candidate = None;
-    for axis_ordinal in 0..entities.len() {
-        let axis = entities[axis_ordinal];
+    for (axis_ordinal, axis) in entities.iter().enumerate() {
+        let axis = *axis;
         let SketchGeometryDefinition::Line {
             start: axis_start,
             end: axis_end,
@@ -8181,10 +8184,9 @@ fn reflected_symmetry<'a>(
             &others[1].geometry,
             axis_start,
             axis_end,
-        ) {
-            if candidate.replace((others[0], others[1], axis)).is_some() {
-                return None;
-            }
+        ) && candidate.replace((others[0], others[1], axis)).is_some()
+        {
+            return None;
         }
     }
     candidate

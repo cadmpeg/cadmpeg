@@ -215,9 +215,7 @@ fn assert_projected_constraint_refusal(operation: &'static str) {
             Some(&ctx),
             &placements,
             &[],
-            &points,
-            &[],
-            &[],
+            (&points, &[], &[]),
             &relations,
             &entities,
         ) {
@@ -244,9 +242,7 @@ fn assert_projected_constraint_retained_refusal(operation: &'static str) {
             Some(&ctx),
             &placements,
             &[],
-            &points,
-            &[],
-            &[],
+            (&points, &[], &[]),
             &relations,
             &entities,
         ) {

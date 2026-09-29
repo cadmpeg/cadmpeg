@@ -445,9 +445,12 @@ fn surface_trim_projects_body_target_and_curve_tool() {
 
 #[test]
 fn surface_trim_tool_group_id_refuses_retained_limit() {
-    let (scope, target_group, tool_group, body) = surface_trim_fixture();
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (scope, target_group, tool_group, body) = surface_trim_fixture();
+
     for limit in 0..16_384 {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;

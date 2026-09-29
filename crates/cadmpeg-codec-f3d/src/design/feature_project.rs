@@ -176,8 +176,8 @@ where
     T::try_from(copy_feature_text(ctx, text, operation)?).map_err(CodecError::malformed)
 }
 
-fn temporary_feature_text<'a, 'b>(
-    ctx: Option<&'a DecodeContext<'b>>,
+fn temporary_feature_text<'a>(
+    ctx: Option<&'a DecodeContext<'_>>,
     text: &str,
     operation: &'static str,
 ) -> Result<(String, Option<cadmpeg_core::decode::ScopedReservation<'a>>), CodecError> {
@@ -195,8 +195,8 @@ fn temporary_feature_text<'a, 'b>(
     Ok((copy, reservation))
 }
 
-fn temporary_feature_id<'a, 'b>(
-    ctx: Option<&'a DecodeContext<'b>>,
+fn temporary_feature_id<'a>(
+    ctx: Option<&'a DecodeContext<'_>>,
     id: &cadmpeg_ir::features::FeatureId,
     operation: &'static str,
 ) -> Result<
@@ -254,6 +254,8 @@ fn copy_feature_record_ref(
     tag: &'static str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
+    use std::fmt::Write;
+
     let mut remaining = offset;
     let mut digits = 1usize;
     while remaining >= 10 {
@@ -278,7 +280,7 @@ fn copy_feature_record_ref(
     }
     reference.push_str(stream);
     reference.push_str(tag);
-    use std::fmt::Write;
+
     write!(&mut reference, "{offset}")
         .map_err(|_| CodecError::malformed("Design record reference formatting failed"))?;
     Ok(reference)
@@ -1124,15 +1126,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 )?
                 .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
-                    ctx,
-                    scope,
-                    construction_groups,
-                    edge_operands,
-                    entity_selection_operands,
-                    face_operands,
-                    placements,
-                    curve_identities,
-                )?
+ctx,
+scope,
+construction_groups,
+edge_operands,
+entity_selection_operands,
+face_operands,
+(placements, curve_identities),
+)?
                 .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
@@ -2339,13 +2340,13 @@ fn project_work_point_construction(
         let Some(DesignWorkPointInputCarrier::WorkPlane { selection }) = input.carrier() else {
             return Ok(None);
         };
-        Ok(scope_ids
+        scope_ids
             .get(&(stream, selection.work_plane_scope_record_index))
             .map(|feature| {
                 copy_feature_id(ctx, feature, "f3d WorkPoint plane feature id")
                     .map(|feature| DatumPlaneReference::Feature { feature })
             })
-            .transpose()?)
+            .transpose()
     };
 
     Ok(Some(match construction.rule.form() {
@@ -4519,7 +4520,7 @@ fn project_edge_flange(
                     let target_group = or_none!(target_groups.next());
                     if target_groups.next().is_some() {
                         return Ok(None);
-                    };
+                    }
                     let mut target_selections =
                         entity_selection_operands.iter().filter(|operand| {
                             native_stream(&operand.id) == Some(stream)
@@ -4531,7 +4532,7 @@ fn project_edge_flange(
                     let target_selection = or_none!(target_selections.next());
                     if target_selections.next().is_some() {
                         return Ok(None);
-                    };
+                    }
                     let target_record_index =
                         or_none!(u32::try_from(target_selection.primary_identity)
                             .ok()
@@ -5111,9 +5112,9 @@ fn merge_edge_selections(
     }) {
         let mut resolved = Vec::new();
         for selection in selections {
-            let edges = match selection {
-                EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges,
-                _ => return native(),
+            let (EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. }) = selection
+            else {
+                return native();
             };
             for edge in edges {
                 if let Some(ctx) = ctx {
@@ -5146,7 +5147,7 @@ fn merge_edge_selections(
                 let EdgeSelection::Historical { edges, .. } = selection else {
                     return native();
                 };
-                for edge in edges.iter() {
+                for edge in edges {
                     if let Some(ctx) = ctx {
                         let work = u64::try_from(resolved.len()).map_err(|_| {
                             ctx.refuse_codec_limit(
@@ -6125,10 +6126,10 @@ fn form_class_325_cage_surface(
         let [target_at] = records.offsets(target) else {
             continue;
         };
-        if bytes.get(target_at + 4..target_at + 7) == Some(b"310") {
-            if surface.replace(target).is_some() {
-                return None;
-            }
+        if bytes.get(target_at + 4..target_at + 7) == Some(b"310")
+            && surface.replace(target).is_some()
+        {
+            return None;
         }
     }
     surface
@@ -6688,7 +6689,12 @@ fn cyclic_parameter_components(
                     }
                 }
                 Visit::Leave(node) => {
-                    push_feature_item(ctx, &mut finished, node, "f3d parameter cycle finish order")?
+                    push_feature_item(
+                        ctx,
+                        &mut finished,
+                        node,
+                        "f3d parameter cycle finish order",
+                    )?;
                 }
             }
         }
@@ -7008,6 +7014,12 @@ fn project_chamfer(
     inputs: &ProjectInputs<'_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
+    enum Lanes<'a> {
+        Distance(&'a [&'a DesignParameter]),
+        TwoDistances(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
+        DistanceAngle(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
+    }
+
     use cadmpeg_ir::features::{
         edge_treatments::{ChamferGroup, ChamferSpec},
         FeatureDefinition, FeatureOperation,
@@ -7080,11 +7092,7 @@ fn project_chamfer(
     }) {
         return Ok(None);
     }
-    enum Lanes<'a> {
-        Distance(&'a [&'a DesignParameter]),
-        TwoDistances(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
-        DistanceAngle(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
-    }
+
     let lanes = if !left_distances.is_empty() || !right_distances.is_empty() {
         if !distances.is_empty() || !first_distances.is_empty() || !second_distances.is_empty() {
             return Ok(None);
@@ -7248,8 +7256,7 @@ pub(super) fn project_fixed_revolve_with_entities(
     edge_operands: &[DesignEdgeOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
-    placements: &[DesignSketchPlacement],
-    curve_identities: &[SketchCurveIdentity],
+    (placements, curve_identities): (&[DesignSketchPlacement], &[SketchCurveIdentity]),
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         AngularTermination, FeatureDefinition, FeatureOperation, PlanarProfileRef, RevolutionAxis,
@@ -7923,11 +7930,9 @@ fn resolved_surface_patch_path(
         let path = loft_path_from_edge_selection(ctx, &group.id, selection)?;
         push_feature_item(ctx, &mut paths, path, "f3d surface patch path")?;
     }
-    if matches!(recipe, SurfacePatchRecipe::Grouped) {
-        if paths.len() == 1 {
-            if let Some(path) = paths.pop() {
-                return Ok(path);
-            }
+    if matches!(recipe, SurfacePatchRecipe::Grouped) && paths.len() == 1 {
+        if let Some(path) = paths.pop() {
+            return Ok(path);
         }
     }
     if paths.is_empty() {
@@ -7955,7 +7960,7 @@ fn resolved_surface_patch_path(
                     edges: group_edges, ..
                 } = path
                 {
-                    for edge in group_edges.iter() {
+                    for edge in group_edges {
                         let edge = copy_feature_identity(
                             ctx,
                             edge.as_str(),
@@ -8470,13 +8475,13 @@ pub(super) fn project_fixed_sweep(
             for group in &groups {
                 match group.role() {
                     DesignOperandRole::PROFILE => {
-                        push_feature_item(ctx, &mut profiles, *group, "f3d Sweep profile group")?
+                        push_feature_item(ctx, &mut profiles, *group, "f3d Sweep profile group")?;
                     }
                     DesignOperandRole::ROLE_0X5 => {
-                        push_feature_item(ctx, &mut paths, *group, "f3d Sweep path group")?
+                        push_feature_item(ctx, &mut paths, *group, "f3d Sweep path group")?;
                     }
                     DesignOperandRole::BODIES_A => {
-                        push_feature_item(ctx, &mut bodies, *group, "f3d Sweep body group")?
+                        push_feature_item(ctx, &mut bodies, *group, "f3d Sweep body group")?;
                     }
                     DesignOperandRole::FACES => push_feature_item(
                         ctx,

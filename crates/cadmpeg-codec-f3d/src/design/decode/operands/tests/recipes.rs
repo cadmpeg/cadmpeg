@@ -44,8 +44,7 @@ fn parse_edge_operand(
         bytes,
         records,
         scope,
-        ordinal,
-        header,
+        (ordinal, header),
         recipes,
         terminal_group_limit,
     )
@@ -56,8 +55,7 @@ fn parse_face_operand(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
-    ordinal: u32,
-    group_ownership: Option<(u32, u32)>,
+    (ordinal, group_ownership): (u32, Option<(u32, u32)>),
     next_byte_offset: Option<u64>,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
@@ -198,10 +196,6 @@ fn surface_patch_long_field_rejected_before_copy() {
 
 #[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> u64 {
         let offset = u64::try_from(bytes.len()).expect("generated frame length fits u64");
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -209,6 +203,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
         offset
     }
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
     let mut bytes = Vec::new();
     header(&mut bytes, *b"306", 100);
@@ -1351,8 +1350,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &face_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&face_bytes),
         &face_scope,
-        0,
-        None,
+        (0, None),
         None,
         &record,
         std::slice::from_ref(&face_recipe),
@@ -1378,8 +1376,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &face_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&face_bytes),
         &face_scope,
-        0,
-        None,
+        (0, None),
         None,
         &record,
         std::slice::from_ref(&face_recipe),
@@ -1429,8 +1426,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &prelude_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&prelude_bytes),
         &face_scope,
-        0,
-        None,
+        (0, None),
         None,
         &record,
         std::slice::from_ref(&face_recipe),
@@ -1448,8 +1444,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &face_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&face_bytes),
         &face_scope,
-        0,
-        None,
+        (0, None),
         Some(enclosing_limit),
         &record,
         std::slice::from_ref(&face_recipe),
@@ -1484,8 +1479,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &compact_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
         &face_scope,
-        0,
-        None,
+        (0, None),
         None,
         &record,
         std::slice::from_ref(&compact_recipe),
@@ -1504,8 +1498,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &compact_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
         &face_scope,
-        0,
-        None,
+        (0, None),
         None,
         &record,
         std::slice::from_ref(&compact_recipe),

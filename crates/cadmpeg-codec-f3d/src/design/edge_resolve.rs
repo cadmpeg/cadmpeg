@@ -112,8 +112,7 @@ fn historical_identity_slots(
     previous_state_id: i64,
     slots: &[i64],
     ctx: Option<&DecodeContext<'_>>,
-    slot_operation: &'static str,
-    native_operation: &'static str,
+    (slot_operation, native_operation): (&'static str, &'static str),
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     let mut edges = Vec::new();
     for &slot in slots {
@@ -150,8 +149,7 @@ pub(super) fn resolved_edge_group(
             previous_state_id,
             feature_id,
         },
-        EdgeGroupProof::Generic,
-        None,
+        (EdgeGroupProof::Generic, None),
         ctx,
     )
 }
@@ -526,10 +524,12 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
                 previous_state_id,
                 feature_id,
             },
-            EdgeGroupProof::Treatment {
-                radius: treatment_radius,
-            },
-            None,
+            (
+                EdgeGroupProof::Treatment {
+                    radius: treatment_radius,
+                },
+                None,
+            ),
             ctx,
         );
     }
@@ -588,10 +588,12 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
             previous_state_id,
             feature_id,
         },
-        EdgeGroupProof::Treatment {
-            radius: treatment_radius,
-        },
-        Some(&edge_members),
+        (
+            EdgeGroupProof::Treatment {
+                radius: treatment_radius,
+            },
+            Some(&edge_members),
+        ),
         ctx,
     )?;
     if corner_slots.is_empty() {
@@ -674,8 +676,10 @@ fn resolved_edge_group_with_transition_chain(
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     transition: EdgeGroupTransition<'_>,
-    proof: EdgeGroupProof,
-    members_override: Option<&[crate::records::identity::Located<u32>]>,
+    (proof, members_override): (
+        EdgeGroupProof,
+        Option<&[crate::records::identity::Located<u32>]>,
+    ),
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
@@ -1049,8 +1053,10 @@ fn resolved_edge_group_with_transition_chain(
                 previous_state_id,
                 edges,
                 ctx,
-                "f3d radius identity historical edge",
-                "f3d radius identity historical group id",
+                (
+                    "f3d radius identity historical edge",
+                    "f3d radius identity historical group id",
+                ),
             );
         }
         if let Some(edges) = identity_group_transition_slots.as_ref() {
@@ -1061,8 +1067,10 @@ fn resolved_edge_group_with_transition_chain(
                 previous_state_id,
                 edges,
                 ctx,
-                "f3d group identity historical edge",
-                "f3d group identity historical group id",
+                (
+                    "f3d group identity historical edge",
+                    "f3d group identity historical group id",
+                ),
             );
         }
         if identity_matches.len() == 1 && identity_matches[0].resolved_edge_slot.is_none() {
@@ -1074,8 +1082,10 @@ fn resolved_edge_group_with_transition_chain(
                     previous_state_id,
                     edges,
                     ctx,
-                    "f3d single identity historical edge",
-                    "f3d single identity historical group id",
+                    (
+                        "f3d single identity historical edge",
+                        "f3d single identity historical group id",
+                    ),
                 );
             }
         }
@@ -1387,7 +1397,7 @@ pub(super) fn resolved_hem_edge_group(
         )?],
         copy_edge_text(ctx, &group.id, "f3d hem historical group id")?,
     )
-    .unwrap_or_else(|_| selection))
+    .unwrap_or(selection))
 }
 
 /// Return the one historical edge a single-member Hem operand identifies.
@@ -1420,10 +1430,10 @@ pub(super) fn resolved_hem_edge_slot(
 /// boundary set. The set includes the selected reference contexts because a
 /// structured recipe can carry the operation edge on a reference face that is
 /// not the operand's primary candidate face.
-fn transition_chain_is_supported_by_recipe<'a>(
+fn transition_chain_is_supported_by_recipe(
     chain: &[i64],
     member_count: usize,
-    operands: &[&'a DesignEdgeOperand],
+    operands: &[&DesignEdgeOperand],
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<bool, CodecError> {
     if operands.len() != member_count {
@@ -2020,8 +2030,7 @@ fn bipartite_assignment(
 ) -> Result<Option<Vec<i64>>, CodecError> {
     fn augment(
         member: usize,
-        candidate_sets: &[Vec<i64>],
-        forbidden: Option<(usize, i64)>,
+        (candidate_sets, forbidden): (&[Vec<i64>], Option<(usize, i64)>),
         visited: &mut HashSet<i64>,
         edge_members: &mut HashMap<i64, usize>,
         visited_reservation: &mut Option<ScopedReservation<'_>>,
@@ -2051,8 +2060,7 @@ fn bipartite_assignment(
             let assignable = match displaced {
                 Some(displaced) => augment(
                     displaced,
-                    candidate_sets,
-                    forbidden,
+                    (candidate_sets, forbidden),
                     visited,
                     edge_members,
                     visited_reservation,
@@ -2094,8 +2102,7 @@ fn bipartite_assignment(
             .transpose()?;
         if !augment(
             member,
-            candidate_sets,
-            forbidden,
+            (candidate_sets, forbidden),
             &mut visited,
             &mut edge_members,
             &mut visited_reservation,
@@ -2650,7 +2657,7 @@ where
     let shared_edge_sets = ordered.filter(|edges| !edges.is_empty());
     let references_unavailable = has_reference_sets && shared_edge_sets.clone().next().is_none();
     let reference_candidates = (shared_edge_sets.clone().take(2).count() == 2)
-        .then(|| unique_edge_set_intersection(shared_edge_sets.clone()));
+        .then(|| unique_edge_set_intersection(&shared_edge_sets));
     if reference_candidates == Some(EdgeSetIntersection::Disjoint) {
         return None;
     }
@@ -2662,7 +2669,7 @@ where
         .then(|| {
             corroborated_edge_intersection(
                 selector_contexts,
-                shared_edge_sets.clone(),
+                &shared_edge_sets,
                 SelectorSlots::Incidence,
             )
         })
@@ -2671,15 +2678,15 @@ where
         .then(|| {
             corroborated_edge_intersection(
                 selector_contexts,
-                shared_edge_sets.clone(),
+                &shared_edge_sets,
                 SelectorSlots::BoundaryCount,
             )
         })
         .flatten();
     let common_triplet =
-        corroborated_common_triplet_intersection(selector_contexts, shared_edge_sets.clone());
+        corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
     let cross_clause_triplet =
-        corroborated_cross_clause_triplet_intersection(selector_contexts, shared_edge_sets);
+        corroborated_cross_clause_triplet_intersection(selector_contexts, &shared_edge_sets);
     let mut proofs = [
         reference,
         incidence,
@@ -2737,7 +2744,7 @@ where
 
 fn corroborated_common_triplet_intersection<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: impl Iterator<Item = &'a [i64]> + Clone,
+    shared_edge_sets: &(impl Iterator<Item = &'a [i64]> + Clone),
 ) -> Option<i64> {
     let edge_pairs = selector_contexts.iter().flat_map(|selector| {
         selector.clauses.iter().flatten().filter_map(|clause| {
@@ -2751,7 +2758,7 @@ fn corroborated_common_triplet_intersection<'a>(
 
 fn corroborated_cross_clause_triplet_intersection<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: impl Iterator<Item = &'a [i64]> + Clone,
+    shared_edge_sets: &(impl Iterator<Item = &'a [i64]> + Clone),
 ) -> Option<i64> {
     let edge_pairs = selector_contexts
         .iter()
@@ -2772,7 +2779,7 @@ fn corroborated_cross_clause_triplet_intersection<'a>(
 
 fn corroborated_edge_pair_intersection<'a, 'b>(
     edge_pairs: impl Iterator<Item = (&'a [i64], &'a [i64])> + Clone,
-    shared_edge_sets: impl Iterator<Item = &'b [i64]> + Clone,
+    shared_edge_sets: &(impl Iterator<Item = &'b [i64]> + Clone),
 ) -> Option<i64> {
     let active_pairs =
         edge_pairs.filter(|(left, right)| left.iter().any(|edge| right.contains(edge)));
@@ -2802,7 +2809,7 @@ enum EdgeSetIntersection {
 }
 
 fn unique_edge_set_intersection<'a>(
-    edge_sets: impl Iterator<Item = &'a [i64]> + Clone,
+    edge_sets: &(impl Iterator<Item = &'a [i64]> + Clone),
 ) -> EdgeSetIntersection {
     let mut sets = edge_sets.clone();
     let Some(first) = sets.next() else {
@@ -2828,7 +2835,7 @@ enum SelectorSlots {
 
 fn corroborated_edge_intersection<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: impl Iterator<Item = &'a [i64]> + Clone,
+    shared_edge_sets: &(impl Iterator<Item = &'a [i64]> + Clone),
     slots: SelectorSlots,
 ) -> Option<i64> {
     let mut selectors = selector_contexts.iter();

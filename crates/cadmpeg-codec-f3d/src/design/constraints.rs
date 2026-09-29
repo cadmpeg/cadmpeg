@@ -109,9 +109,7 @@ pub(crate) fn project_sketch_constraints(
     ctx: Option<&DecodeContext<'_>>,
     placements: &[DesignSketchPlacement],
     parameters: &[DesignParameter],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
-    texts: &[SketchText],
+    (points, curves, texts): (&[SketchPoint], &[SketchCurveIdentity], &[SketchText]),
     relations: &[SketchRelation],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {

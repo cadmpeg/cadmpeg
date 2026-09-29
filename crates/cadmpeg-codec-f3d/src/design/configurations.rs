@@ -22,15 +22,6 @@ fn format_configuration_diagnostic(
     arguments: fmt::Arguments<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let Some(ctx) = ctx else {
-        return Ok(arguments.to_string());
-    };
-    struct ChargedFormatter<'a, 'b> {
-        ctx: &'a DecodeContext<'b>,
-        text: String,
-        operation: &'static str,
-        refusal: Option<CodecError>,
-    }
     impl fmt::Write for ChargedFormatter<'_, '_> {
         fn write_str(&mut self, part: &str) -> fmt::Result {
             let result = (|| -> Result<(), CodecError> {
@@ -50,6 +41,18 @@ fn format_configuration_diagnostic(
             Ok(())
         }
     }
+
+    struct ChargedFormatter<'a, 'b> {
+        ctx: &'a DecodeContext<'b>,
+        text: String,
+        operation: &'static str,
+        refusal: Option<CodecError>,
+    }
+
+    let Some(ctx) = ctx else {
+        return Ok(arguments.to_string());
+    };
+
     let mut formatter = ChargedFormatter {
         ctx,
         text: String::new(),

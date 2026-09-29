@@ -90,9 +90,7 @@ pub(super) fn exact_coil_placement(
         let selection_record_index = *scope.reference_members().values().next()?;
         let transform_record_index = *scope.reference_members().values().nth(1)?;
         let mut selection_frames = records.frames(selection_record_index);
-        let Some((selection_start, _)) = selection_frames.next() else {
-            return None;
-        };
+        let (selection_start, _) = selection_frames.next()?;
         if selection_frames.next().is_some() {
             return None;
         }
@@ -104,9 +102,7 @@ pub(super) fn exact_coil_placement(
             return None;
         }
         let mut transform_frames = records.frames(transform_record_index);
-        let Some((transform_start, transform_paired)) = transform_frames.next() else {
-            return None;
-        };
+        let (transform_start, transform_paired) = transform_frames.next()?;
         if transform_frames.next().is_some() {
             return None;
         }
@@ -237,7 +233,7 @@ pub(super) fn exact_coil_placement(
             bytes,
             selection_record_index,
             u64::try_from(selection_start).ok()?,
-            &selection_class_tag,
+            selection_class_tag,
         ) {
             Some(Ok(frame)) => Some(frame),
             Some(Err(error)) => return Some(Err(error)),
@@ -264,9 +260,7 @@ pub(super) fn exact_coil_placement(
                 bytes,
                 records,
                 scope,
-                selection_record_index,
-                selection_start,
-                &selection_class_tag,
+                (selection_record_index, selection_start, selection_class_tag),
                 transform_start,
                 recipes,
             ) {
@@ -450,9 +444,7 @@ fn exact_coil_face_selection(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-    selection_record_index: u32,
-    selection_start: usize,
-    selection_class_tag: &str,
+    (selection_record_index, selection_start, selection_class_tag): (u32, usize, &str),
     transform_start: usize,
     recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignCoilSelection>, CodecError> {

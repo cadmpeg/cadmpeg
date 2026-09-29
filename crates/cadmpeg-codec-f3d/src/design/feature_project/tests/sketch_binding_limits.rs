@@ -70,7 +70,7 @@ fn assert_refusal(operation: &'static str, retained: bool) {
                 return
             }
             Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Ok(()) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
     }
@@ -222,7 +222,7 @@ fn assert_spatial_refusal(operation: &'static str, retained: bool) {
                 return
             }
             Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Ok(()) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
     }

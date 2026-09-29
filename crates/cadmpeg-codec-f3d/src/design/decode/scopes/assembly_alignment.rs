@@ -244,44 +244,29 @@ pub(super) fn exact_assembly_alignment(
                 })
                 .transpose()
                 .ok()?
-        } else {
-            if let Some(frames) = exact_assembly_operand_frames(bytes, scope) {
-                let qualifiers = if legacy_class_383 {
-                    exact_legacy_class_383_operand_paths(bytes, records, scope, &frames).map(
-                        |paths| {
-                            paths
-                                .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-                        },
-                    )
-                } else if legacy_class_388 {
-                    let paths =
-                        match exact_legacy_class_388_operand_paths(ctx, bytes, records, scope) {
-                            Ok(paths) => paths,
-                            Err(error) => return Some(Err(error)),
-                        };
-                    paths.map(|paths| {
-                        paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-                    })
-                } else if crate::design::assembly::variable_reference_assembly_generation(
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                ) {
-                    let direct =
-                        super::assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
-                            bytes, records, scope, &frames,
-                        );
-                    if direct.is_some() {
-                        direct
-                    } else {
-                        let paths = match exact_assembly_operand_paths(ctx, bytes, records, scope) {
-                            Ok(paths) => paths,
-                            Err(error) => return Some(Err(error)),
-                        };
-                        paths.map(|paths| {
-                            paths
-                                .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-                        })
-                    }
+        } else if let Some(frames) = exact_assembly_operand_frames(bytes, scope) {
+            let qualifiers = if legacy_class_383 {
+                exact_legacy_class_383_operand_paths(bytes, records, scope, &frames).map(|paths| {
+                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                })
+            } else if legacy_class_388 {
+                let paths = match exact_legacy_class_388_operand_paths(ctx, bytes, records, scope) {
+                    Ok(paths) => paths,
+                    Err(error) => return Some(Err(error)),
+                };
+                paths.map(|paths| {
+                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                })
+            } else if crate::design::assembly::variable_reference_assembly_generation(
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            ) {
+                let direct =
+                    super::assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
+                        bytes, records, scope, &frames,
+                    );
+                if direct.is_some() {
+                    direct
                 } else {
                     let paths = match exact_assembly_operand_paths(ctx, bytes, records, scope) {
                         Ok(paths) => paths,
@@ -290,14 +275,22 @@ pub(super) fn exact_assembly_alignment(
                     paths.map(|paths| {
                         paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
                     })
-                };
-                Some(match qualifiers {
-                    Some(qualifiers) => DesignAssemblyAlignmentForm::qualified(frames, qualifiers),
-                    None => DesignAssemblyAlignmentForm::Frames { frames },
-                })
+                }
             } else {
-                None
-            }
+                let paths = match exact_assembly_operand_paths(ctx, bytes, records, scope) {
+                    Ok(paths) => paths,
+                    Err(error) => return Some(Err(error)),
+                };
+                paths.map(|paths| {
+                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                })
+            };
+            Some(match qualifiers {
+                Some(qualifiers) => DesignAssemblyAlignmentForm::qualified(frames, qualifiers),
+                None => DesignAssemblyAlignmentForm::Frames { frames },
+            })
+        } else {
+            None
         };
         DesignAssemblyAlignment::try_new(angle, offset, owners, form)
             .ok()

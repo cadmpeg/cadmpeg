@@ -2235,8 +2235,9 @@ mod tests {
             let stream_name = format!("{PREFIX}BulkStream.dat");
             let scope_len = crate::ids::native_scope(&stream_name).len() as u64;
             let suffix_len =
-                format!(":design-body-binding#{}", bindings[0].asm_body_key_offset(),).len() as u64;
-            for (items, operation) in [(30, "f3d body visibility entries")] {
+                format!(":design-body-binding#{}", bindings[0].asm_body_key_offset()).len() as u64;
+            {
+                let (items, operation) = (30, "f3d body visibility entries");
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
                 policy.limits.max_collection_items = items;
@@ -2300,8 +2301,12 @@ mod tests {
                 let mut policy = DecodePolicy::default();
                 policy.limits.max_collection_items = items;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result =
-                    super::decode_design_body_bindings(&ctx, scan, None, &[body_key.clone()]);
+                let result = super::decode_design_body_bindings(
+                    &ctx,
+                    scan,
+                    None,
+                    std::slice::from_ref(&body_key),
+                );
                 assert!(
                     matches!(
                         &result,
@@ -2325,8 +2330,12 @@ mod tests {
                 let mut policy = DecodePolicy::default();
                 policy.limits.max_retained_bytes = retained;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result =
-                    super::decode_design_body_bindings(&ctx, scan, None, &[body_key.clone()]);
+                let result = super::decode_design_body_bindings(
+                    &ctx,
+                    scan,
+                    None,
+                    std::slice::from_ref(&body_key),
+                );
                 assert!(
                     matches!(
                         &result,
@@ -2663,7 +2672,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut bounds = [make_bounds()];
             assert!(matches!(
-                super::bind_body_bounds(&ctx, &mut bounds, &[binding.clone()]),
+                super::bind_body_bounds(&ctx, &mut bounds, std::slice::from_ref(&binding)),
                 Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                     if failure.dimension == dimension && failure.operation == operation
             ));
@@ -2740,7 +2749,7 @@ mod tests {
                 policy.limits.max_collection_items = items;
                 policy.limits.max_retained_bytes = retained;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = super::decode_body_bounds(&ctx, scan, &[entity.clone()]);
+                let result = super::decode_body_bounds(&ctx, scan, std::slice::from_ref(&entity));
                 assert!(
                     matches!(
                         &result,
@@ -2753,7 +2762,7 @@ mod tests {
             let bounds = super::decode_body_bounds(
                 &cadmpeg_test_support::service_decode_context(),
                 scan,
-                &[entity.clone()],
+                std::slice::from_ref(&entity),
             )
             .unwrap();
             assert_eq!(bounds.len(), 1);

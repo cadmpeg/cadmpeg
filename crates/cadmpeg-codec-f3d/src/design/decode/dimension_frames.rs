@@ -403,7 +403,10 @@ fn decode_standard_recipe_references<A: RecipeReferenceAllocation>(
         ) else {
             return Ok(Vec::new());
         };
-        let (operand_references, next) = parsed?;
+        let DecodedRecipeReferenceOperand {
+            references: operand_references,
+            next,
+        } = parsed?;
         for reference in operand_references {
             allocation.push(
                 &mut references,
@@ -449,7 +452,10 @@ fn decode_paired_recipe_references<A: RecipeReferenceAllocation>(
         ) else {
             return Ok(Vec::new());
         };
-        let (packed, next) = parsed?;
+        let DecodedRecipeReferenceOperand {
+            references: packed,
+            next,
+        } = parsed?;
         at = next;
         let Some(parsed) = decode_recipe_reference_operand(
             allocation,
@@ -460,7 +466,10 @@ fn decode_paired_recipe_references<A: RecipeReferenceAllocation>(
         ) else {
             return Ok(Vec::new());
         };
-        let (length_prefixed, next) = parsed?;
+        let DecodedRecipeReferenceOperand {
+            references: length_prefixed,
+            next,
+        } = parsed?;
         allocation.push(
             &mut operands,
             packed,
@@ -549,7 +558,10 @@ fn decode_grouped_recipe_references<A: RecipeReferenceAllocation>(
             ) else {
                 return Ok(Vec::new());
             };
-            let (operand_references, next) = parsed?;
+            let DecodedRecipeReferenceOperand {
+                references: operand_references,
+                next,
+            } = parsed?;
             for reference in operand_references {
                 allocation.push(
                     &mut references,
@@ -739,21 +751,18 @@ fn scan_recipe_reference_operand(
     })
 }
 
+struct DecodedRecipeReferenceOperand {
+    references: Vec<crate::records::dimensions::DesignRecipeReference>,
+    next: usize,
+}
+
 fn decode_recipe_reference_operand<A: RecipeReferenceAllocation>(
     allocation: &A,
     prefix: &[u8],
     prefix_offset: u64,
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-) -> Option<
-    Result<
-        (
-            Vec<crate::records::dimensions::DesignRecipeReference>,
-            usize,
-        ),
-        A::Error,
-    >,
-> {
+) -> Option<Result<DecodedRecipeReferenceOperand, A::Error>> {
     let scanned = scan_recipe_reference_operand(prefix, at, token_frame)?;
     let selector_offset = prefix_offset.checked_add(u64::try_from(at).ok()?)?;
     let token_offset = prefix_offset.checked_add(u64::try_from(scanned.token_at).ok()?)?;
@@ -791,7 +800,10 @@ fn decode_recipe_reference_operand<A: RecipeReferenceAllocation>(
             return Some(Err(error));
         }
     }
-    Some(Ok((references, scanned.next)))
+    Some(Ok(DecodedRecipeReferenceOperand {
+        references,
+        next: scanned.next,
+    }))
 }
 
 fn is_decimal_integer_token(token: &[u8]) -> bool {
@@ -1046,12 +1058,12 @@ fn dimension_recipe_edge_matches(
         .any(|window| window == tail)
 }
 
-pub(super) fn recipe_record_prefix<'a>(
-    bytes: &'a [u8],
+pub(super) fn recipe_record_prefix(
+    bytes: &[u8],
     record_offset: usize,
     family_name_offset: usize,
     family_name_len: usize,
-) -> Option<(usize, &'a [u8])> {
+) -> Option<(usize, &[u8])> {
     let prefix_offset = record_offset.checked_add(11)?;
     let prefix_end = family_name_offset.checked_sub(4)?;
     if View::u32_le_at(bytes, prefix_end)? != u32::try_from(family_name_len).ok()? {
@@ -1099,15 +1111,12 @@ pub(super) fn contiguous_i32_program(
         return None;
     }
     let count = view.remaining() / 4;
-    let count_u64 = match u64::try_from(count) {
-        Ok(count) => count,
-        Err(_) => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d recipe program count",
-                0,
-                1,
-            )))
-        }
+    let Ok(count_u64) = u64::try_from(count) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "f3d recipe program count",
+            0,
+            1,
+        )));
     };
     if let Err(error) = ctx.charge_collection_items(count_u64, "f3d recipe program words") {
         return Some(Err(error));

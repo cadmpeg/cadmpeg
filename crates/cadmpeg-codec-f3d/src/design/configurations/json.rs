@@ -20,7 +20,7 @@ impl<'de> DeserializeSeed<'de> for ConfigurationFieldSeed {
     }
 }
 
-impl<'de> Visitor<'de> for ConfigurationFieldSeed {
+impl Visitor<'_> for ConfigurationFieldSeed {
     type Value = bool;
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("a string")

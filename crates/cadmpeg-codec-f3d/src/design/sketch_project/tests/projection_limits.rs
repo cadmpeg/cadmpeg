@@ -650,7 +650,8 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
                     && failure.operation == operation
         ));
     }
-    for operation in ["f3d spatial constraint distinct member"] {
+    {
+        let operation = "f3d spatial constraint distinct member";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;

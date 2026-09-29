@@ -107,10 +107,14 @@ fn face_slot_id(
     ctx: Option<&DecodeContext<'_>>,
     slot: i64,
 ) -> Result<cadmpeg_ir::ids::FaceId, CodecError> {
+    const PREFIX: &str = "f3d:brep:entity#";
+
+    use std::fmt::Write;
+
     let Some(ctx) = ctx else {
         return Ok(ids::brep_face_id(slot));
     };
-    const PREFIX: &str = "f3d:brep:entity#";
+
     let mut magnitude = slot.unsigned_abs();
     let mut digits = 1usize;
     while magnitude >= 10 {
@@ -127,7 +131,7 @@ fn face_slot_id(
     text.try_reserve(len)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     text.push_str(PREFIX);
-    use std::fmt::Write;
+
     write!(&mut text, "{slot}")
         .map_err(|_| CodecError::malformed("face slot formatting failed"))?;
     cadmpeg_ir::ids::FaceId::try_from(text).map_err(CodecError::malformed)
@@ -138,10 +142,14 @@ fn historical_face_id(
     prefix: &cadmpeg_ir::ids::IdentityKey,
     slot: i64,
 ) -> Result<cadmpeg_ir::ids::HistoricalFaceId, CodecError> {
+    const NAMESPACE: &str = "f3d:history-input:face#";
+
+    use std::fmt::Write;
+
     let Some(ctx) = ctx else {
         return Ok(ids::history_input_face_id(prefix, slot));
     };
-    const NAMESPACE: &str = "f3d:history-input:face#";
+
     let mut magnitude = slot.unsigned_abs();
     let mut digits = 1usize;
     while magnitude >= 10 {
@@ -164,7 +172,7 @@ fn historical_face_id(
     text.push_str(NAMESPACE);
     text.push_str(prefix.as_str());
     text.push(':');
-    use std::fmt::Write;
+
     write!(&mut text, "{slot}")
         .map_err(|_| CodecError::malformed("historical face ID formatting failed"))?;
     cadmpeg_ir::ids::HistoricalFaceId::try_from(text).map_err(CodecError::malformed)
@@ -5012,11 +5020,11 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
-            source_properties: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
             evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
                 FeatureOperation::Extrude {
                     profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.id.clone())),

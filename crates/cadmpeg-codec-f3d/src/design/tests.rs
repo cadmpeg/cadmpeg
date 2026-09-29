@@ -369,9 +369,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         None,
         &placements,
         &[],
-        &points,
-        &[],
-        &[],
+        (&points, &[], &[]),
         &relations,
         &entities,
     )

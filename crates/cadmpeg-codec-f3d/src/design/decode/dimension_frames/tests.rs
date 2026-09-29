@@ -190,11 +190,11 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
 
     assert_eq!(
         indexed_record_containing(&bytes, 5, bytes.len(), recipe_offset),
-        Some((5, "415".into(), 40, next_offset))
+        Some((5, "415", 40, next_offset))
     );
     assert_eq!(
         indexed_record_containing(&bytes, 5, bytes.len(), next_offset + 11),
-        Some((next_offset, "423".into(), 41, bytes.len()))
+        Some((next_offset, "423", 41, bytes.len()))
     );
     assert_eq!(indexed_record_containing(&bytes, 6, bytes.len(), 7), None);
     assert_eq!(

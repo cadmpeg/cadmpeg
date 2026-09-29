@@ -219,8 +219,7 @@ pub(crate) fn decode_edge_operands(
                 bytes,
                 records,
                 scope,
-                ordinal,
-                header,
+                (ordinal, header),
                 recipes,
                 terminal_group_limit,
             ) else {
@@ -1195,17 +1194,24 @@ pub(crate) fn decode_face_source_groups(
             records,
         )?;
         for (carrier_ordinal, carrier) in reference_headers.iter().enumerate() {
-            let Some((carrier_record_index, carrier_byte_offset, carrier_class_tag)) = carrier
+            let Some(FaceSourceReferenceHeader {
+                record_index: carrier_record_index,
+                byte_offset: carrier_byte_offset,
+                class_tag: carrier_class_tag,
+            }) = carrier
             else {
                 continue;
             };
             let Some(layout) = face_source_carrier_layout(carrier_class_tag) else {
                 continue;
             };
-            let Some((paired_record_index, paired_byte_offset, paired_class_tag)) =
-                reference_headers
-                    .get(carrier_ordinal + 1)
-                    .and_then(Option::as_ref)
+            let Some(FaceSourceReferenceHeader {
+                record_index: paired_record_index,
+                byte_offset: paired_byte_offset,
+                class_tag: paired_class_tag,
+            }) = reference_headers
+                .get(carrier_ordinal + 1)
+                .and_then(Option::as_ref)
             else {
                 continue;
             };
@@ -1327,13 +1333,19 @@ fn push_face_source_group(
     Ok(())
 }
 
+struct FaceSourceReferenceHeader<'a> {
+    record_index: u32,
+    byte_offset: usize,
+    class_tag: &'a str,
+}
+
 fn face_source_reference_headers<'a, 'r>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     scope_start: usize,
     references: impl ExactSizeIterator<Item = &'r u32>,
     records: &IndexedRecordOffsets,
-) -> Result<Vec<Option<(u32, usize, &'a str)>>, CodecError> {
+) -> Result<Vec<Option<FaceSourceReferenceHeader<'a>>>, CodecError> {
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(references.len()),
         "f3d face source reference headers",
@@ -1349,8 +1361,13 @@ fn face_source_reference_headers<'a, 'r>(
                 *record_index,
             )
             .and_then(|byte_offset| {
-                lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit)
-                    .map(|(class_tag, _)| (*record_index, byte_offset, class_tag))
+                lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit).map(
+                    |(class_tag, _)| FaceSourceReferenceHeader {
+                        record_index: *record_index,
+                        byte_offset,
+                        class_tag,
+                    },
+                )
             });
         headers.push(header);
     }
@@ -2181,13 +2198,15 @@ fn push_fillet_radius_group(
     law: DesignFilletRadiusLaw,
     tangency_weight_parameter_record_index: Option<u32>,
 ) -> Result<(), CodecError> {
+    const SUFFIX: &str = ":design-fillet-radius-group#";
+
     let edge_operand_record_indices = collect_fillet_items(
         ctx,
         group.members().iter().map(|member| member.value),
         "f3d Fillet edge operand indices",
     )?;
     let mut id = copy_ascii_retained(ctx, stream, "f3d Fillet group stream ID")?;
-    const SUFFIX: &str = ":design-fillet-radius-group#";
+
     let digits = group.record_index.checked_ilog10().unwrap_or(0) + 1;
     let additional = SUFFIX
         .len()
@@ -3405,10 +3424,9 @@ pub(crate) fn bind_lost_edge_groups(
             if edge.next_record_index == wrapper_record_index
                 && edge.next_byte_offset() == wrapper_byte_offset
                 && edge.next_class_tag.as_str() == wrapper_class_tag
+                && terminal.replace(ordinal).is_some()
             {
-                if terminal.replace(ordinal).is_some() {
-                    multiple_terminals = true;
-                }
+                multiple_terminals = true;
             }
         }
         if multiple_terminals {
@@ -3694,15 +3712,12 @@ fn parse_extrude_selection_group(
     if member_count == 0 || member_count > bytes.len().saturating_sub(position) / 11 {
         return None;
     }
-    let charge = match u64::try_from(member_count) {
-        Ok(count) => count,
-        Err(_) => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d extrude selection member count",
-                0,
-                1,
-            )))
-        }
+    let Ok(charge) = u64::try_from(member_count) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "f3d extrude selection member count",
+            0,
+            1,
+        )));
     };
     for operation in [
         "f3d extrude selection members",
@@ -4656,15 +4671,12 @@ fn parse_body_recipe_operand_frame_with_index(
     if reference_count > bytes.len().saturating_sub(cursor) / 12 {
         return None;
     }
-    let count = match u64::try_from(reference_count) {
-        Ok(count) => count,
-        Err(_) => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d body recipe reference count",
-                0,
-                1,
-            )))
-        }
+    let Ok(count) = u64::try_from(reference_count) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "f3d body recipe reference count",
+            0,
+            1,
+        )));
     };
     if let Err(error) = ctx.charge_collection_items(count, "f3d body recipe references") {
         return Some(Err(error));
@@ -4815,7 +4827,7 @@ pub(crate) fn bind_body_recipe_operand_candidates(
         } else {
             operand.id.clone()
         };
-        for mut reference in operand.reference_bindings_mut() {
+        for reference in operand.reference_bindings_mut() {
             reference.candidate_faces.clear();
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
                 continue;
@@ -4829,7 +4841,7 @@ pub(crate) fn bind_body_recipe_operand_candidates(
             }) {
                 if let AttributeTarget::Face(face) = &tag.target {
                     if let Some(ctx) = ctx {
-                        push_operand_face_candidate(ctx, &mut reference.candidate_faces, face)?;
+                        push_operand_face_candidate(ctx, reference.candidate_faces, face)?;
                     } else {
                         reference.candidate_faces.push(face.clone());
                     }
@@ -5354,15 +5366,12 @@ fn parse_sketch_profile_region_selection(
     if cursor.checked_add(minimum_regions_len)? > bytes.len() {
         return None;
     }
-    let region_count_charge = match u64::try_from(region_count) {
-        Ok(count) => count,
-        Err(_) => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d sketch profile region count",
-                0,
-                1,
-            )))
-        }
+    let Ok(region_count_charge) = u64::try_from(region_count) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "f3d sketch profile region count",
+            0,
+            1,
+        )));
     };
     if let Err(error) =
         ctx.charge_collection_items(region_count_charge, "f3d sketch profile regions")
@@ -5407,15 +5416,12 @@ fn parse_sketch_profile_region_selection(
         {
             return None;
         }
-        let member_count_charge = match u64::try_from(member_count) {
-            Ok(count) => count,
-            Err(_) => {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "f3d sketch profile member count",
-                    0,
-                    1,
-                )))
-            }
+        let Ok(member_count_charge) = u64::try_from(member_count) else {
+            return Some(Err(ctx.refuse_codec_limit(
+                "f3d sketch profile member count",
+                0,
+                1,
+            )));
         };
         if let Err(error) =
             ctx.charge_collection_items(member_count_charge, "f3d sketch profile region members")
@@ -5542,8 +5548,10 @@ fn parse_vertex_recipe(
         stream,
         header,
         recipes,
-        ConstructionRecipeKind::Vertex,
-        RecipeOperandTerminator::RecordDelta(5),
+        (
+            ConstructionRecipeKind::Vertex,
+            RecipeOperandTerminator::RecordDelta(5),
+        ),
     )?;
     let parsed = match parsed {
         Ok(parsed) => parsed,
@@ -5581,8 +5589,7 @@ fn parse_recipe_operand(
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
-    recipe_kind: ConstructionRecipeKind,
-    terminator: RecipeOperandTerminator,
+    (recipe_kind, terminator): (ConstructionRecipeKind, RecipeOperandTerminator),
 ) -> Option<Result<ParsedRecipeOperand, CodecError>> {
     let family_name = crate::design::RECIPES
         .iter()
@@ -5713,8 +5720,7 @@ fn parse_edge_operand(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-    scope_reference_ordinal: u32,
-    header: &DesignRecordHeader,
+    (scope_reference_ordinal, header): (u32, &DesignRecordHeader),
     recipes: &[ConstructionRecipe],
     terminal_group_limit: Option<u64>,
 ) -> Option<Result<DesignEdgeOperand, CodecError>> {
@@ -5727,8 +5733,10 @@ fn parse_edge_operand(
         stream,
         header,
         recipes,
-        ConstructionRecipeKind::Edge,
-        RecipeOperandTerminator::RecordDelta(next_record_delta),
+        (
+            ConstructionRecipeKind::Edge,
+            RecipeOperandTerminator::RecordDelta(next_record_delta),
+        ),
     )
     .or_else(|| {
         let limit = terminal_group_limit?;
@@ -5739,8 +5747,10 @@ fn parse_edge_operand(
             stream,
             header,
             recipes,
-            ConstructionRecipeKind::Edge,
-            RecipeOperandTerminator::NextIndexedAfterRecipe { limit },
+            (
+                ConstructionRecipeKind::Edge,
+                RecipeOperandTerminator::NextIndexedAfterRecipe { limit },
+            ),
         )
     })?;
     let parsed = match parsed {
@@ -6024,7 +6034,6 @@ fn surface_patch_recipe_structure_with_context(
 }
 
 #[cfg(test)]
-
 fn edge_recipe_local_topology_references(
     structure: &crate::records::topology::edge_recipe::DesignEdgeRecipeStructure,
     reference_count: usize,
@@ -6066,7 +6075,11 @@ fn edge_recipe_structure_tail(
     };
     remaining = delimited;
     let mut structure = None;
-    for (sides, tail) in edge_recipe_side_sequences(ctx, remaining, side_count)? {
+    for RecipeSideSequence {
+        sides,
+        remaining: tail,
+    } in edge_recipe_side_sequences(ctx, remaining, side_count)?
+    {
         if !matches!(tail, [] | [-1 | 0]) {
             continue;
         }
@@ -6079,11 +6092,16 @@ fn edge_recipe_structure_tail(
     Ok(structure)
 }
 
+struct RecipeSideSequence<'a> {
+    sides: Vec<DesignTopologyRecipeSide>,
+    remaining: &'a [i32],
+}
+
 fn edge_recipe_side_sequences<'w>(
     ctx: Option<&DecodeContext<'_>>,
     words: &'w [i32],
     side_count: usize,
-) -> Result<Vec<(Vec<DesignTopologyRecipeSide>, &'w [i32])>, CodecError> {
+) -> Result<Vec<RecipeSideSequence<'w>>, CodecError> {
     let _depth = match ctx {
         Some(ctx) => Some(ctx.enter_nested("f3d recipe side recursion")?),
         None => None,
@@ -6091,7 +6109,10 @@ fn edge_recipe_side_sequences<'w>(
     if side_count == 0 {
         let mut empty = Vec::new();
         reserve_recipe_items(ctx, &mut empty, 1, "f3d recipe empty side sequence")?;
-        empty.push((Vec::new(), words));
+        empty.push(RecipeSideSequence {
+            sides: Vec::new(),
+            remaining: words,
+        });
         return Ok(empty);
     }
     let mut out = Vec::new();
@@ -6103,12 +6124,19 @@ fn edge_recipe_side_sequences<'w>(
         } else {
             continue;
         };
-        for (mut following, tail) in edge_recipe_side_sequences(ctx, remaining, side_count - 1)? {
+        for RecipeSideSequence {
+            sides: mut following,
+            remaining: tail,
+        } in edge_recipe_side_sequences(ctx, remaining, side_count - 1)?
+        {
             let copied = copy_recipe_side(ctx, &side)?;
             reserve_recipe_items(ctx, &mut following, 1, "f3d recipe following side")?;
             following.insert(0, copied);
             reserve_recipe_items(ctx, &mut out, 1, "f3d recipe side sequence")?;
-            out.push((following, tail));
+            out.push(RecipeSideSequence {
+                sides: following,
+                remaining: tail,
+            });
         }
     }
     Ok(out)
@@ -6278,7 +6306,11 @@ fn face_recipe_structure_with_context(
         return Ok(None);
     };
     let mut structure = None;
-    for (sides, tail) in edge_recipe_side_sequences(ctx, remaining, 2)? {
+    for RecipeSideSequence {
+        sides,
+        remaining: tail,
+    } in edge_recipe_side_sequences(ctx, remaining, 2)?
+    {
         let postlude = match tail {
             [] | [-1 | 0] => None,
             [-1, value, -1, 0, 0, -1] => Some(*value),
@@ -6378,8 +6410,8 @@ fn face_recipe_nodes_with_context(
         recipe_nodes.push(crate::records::topology::face::DesignFaceRecipeNode {
             byte_offset,
             end_byte_offset,
-            recipe_structure,
             program,
+            recipe_structure,
         });
     }
     Ok(Some(recipe_nodes))
@@ -6411,7 +6443,6 @@ fn topology_recipe_references(
 }
 
 #[cfg(test)]
-
 fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> {
     edge_recipe_entries_with_context(None, words).ok().flatten()
 }

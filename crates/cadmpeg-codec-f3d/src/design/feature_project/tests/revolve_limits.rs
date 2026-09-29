@@ -87,8 +87,7 @@ fn revolve_native_profile_id_refuses_retained_limit() {
             std::slice::from_ref(&axis),
             &[],
             &[],
-            &[],
-            &[],
+            (&[], &[]),
         )
     };
     assert!(project(None).unwrap().is_some());

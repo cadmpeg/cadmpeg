@@ -187,15 +187,12 @@ fn exact_assembly_operand_path_envelope(
         }
         let span_count =
             usize::try_from(wrapper_record_index.checked_sub(path_record_index)?).ok()?;
-        let span_count_u64 = match u64::try_from(span_count) {
-            Ok(count) => count,
-            Err(_) => {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "f3d assembly path span count",
-                    0,
-                    1,
-                )))
-            }
+        let Ok(span_count_u64) = u64::try_from(span_count) else {
+            return Some(Err(ctx.refuse_codec_limit(
+                "f3d assembly path span count",
+                0,
+                1,
+            )));
         };
         if let Err(error) = ctx.charge_collection_items(span_count_u64, "f3d assembly path spans") {
             return Some(Err(error));
@@ -379,15 +376,12 @@ fn exact_assembly_operand_path(
                 if !(1..=64).contains(&count) {
                     return None;
                 }
-                let count_u64 = match u64::try_from(count) {
-                    Ok(count) => count,
-                    Err(_) => {
-                        return Some(Err(ctx.refuse_codec_limit(
-                            "f3d assembly path occurrence count",
-                            0,
-                            1,
-                        )))
-                    }
+                let Ok(count_u64) = u64::try_from(count) else {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "f3d assembly path occurrence count",
+                        0,
+                        1,
+                    )));
                 };
                 if let Err(error) =
                     ctx.charge_collection_items(count_u64, "f3d assembly path occurrences")

@@ -1702,7 +1702,7 @@ mod tests {
         ));
     }
     fn assert_connector_identity(
-        expected: String,
+        expected: &str,
         operation: &'static str,
         construct: impl Fn(&DecodeContext<'_>) -> Result<String, CodecError>,
     ) {
@@ -1743,7 +1743,7 @@ mod tests {
         ] {
             identity.external_version = version;
             assert_connector_identity(
-                crate::ids::neutral_assembly_axial_object_id(&identity),
+                &crate::ids::neutral_assembly_axial_object_id(&identity),
                 "f3d assembly axial connector identifier",
                 |ctx| {
                     crate::design::identity::neutral_assembly_axial_object_id(Some(ctx), &identity)
@@ -1776,7 +1776,7 @@ mod tests {
             next_byte_offset: 0,
         };
         assert_connector_identity(
-            crate::ids::neutral_assembly_legacy_object_id(&selection),
+            &crate::ids::neutral_assembly_legacy_object_id(&selection),
             "f3d assembly legacy connector identifier",
             |ctx| crate::design::identity::neutral_assembly_legacy_object_id(Some(ctx), &selection),
         );

@@ -73,8 +73,10 @@ pub(crate) fn decode_parameter_scopes(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
     types: &[crate::records::entity_header::SegmentType],
-    parameters: &[DesignParameter],
-    parameter_owners: &[crate::records::parameters::DesignParameterOwner],
+    (parameters, parameter_owners): (
+        &[DesignParameter],
+        &[crate::records::parameters::DesignParameterOwner],
+    ),
     component_occurrences: &[DesignComponentOccurrence],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
@@ -208,7 +210,7 @@ pub(crate) fn decode_parameter_scopes(
                     &records,
                     &scope,
                     &stream_types,
-                    scope::DesignFeatureKind::Hole,
+                    &scope::DesignFeatureKind::Hole,
                 )?;
                 if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
                     *slot = construction;
@@ -982,13 +984,13 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 continue;
             };
             let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
-            if fixed_tail && parameter_scope_tail_length_is_valid(&kind, tail_length) {
-                if fixed_candidate
+            if fixed_tail
+                && parameter_scope_tail_length_is_valid(&kind, tail_length)
+                && fixed_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::Fixed))
                     .is_some()
-                {
-                    fixed_ambiguous = true;
-                }
+            {
+                fixed_ambiguous = true;
             }
             let named_tail_possible = (78..=590).contains(&tail_length)
                 && tail_length.is_multiple_of(2)
@@ -1008,13 +1010,12 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             } else {
                 false
             };
-            if named_tail {
-                if named_candidate
+            if named_tail
+                && named_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::Named))
                     .is_some()
-                {
-                    named_ambiguous = true;
-                }
+            {
+                named_ambiguous = true;
             }
         }
         let candidate = if named_ambiguous {
@@ -1026,9 +1027,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         } else {
             fixed_candidate
         };
-        let Some((kind_at, kind_end, tail_length, tail_form)) = candidate else {
-            return None;
-        };
+        let (kind_at, kind_end, tail_length, tail_form) = candidate?;
         let (kind_text, confirmed_kind_end) =
             match lp_utf16_bounded_charged(ctx, bytes, kind_at, 1..=256) {
                 Ok(Some(decoded)) => decoded,
@@ -1116,18 +1115,15 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 members.push(View::u32_le_at(bytes, marker + 1)?);
                 offsets.push(u64::try_from(marker + 1).ok()?);
             }
-            if members.len() == count {
-                if reference_table
+            if members.len() == count
+                && reference_table
                     .replace((count_at, members, offsets))
                     .is_some()
-                {
-                    return None;
-                }
+            {
+                return None;
             }
         }
-        let Some(reference_table) = reference_table else {
-            return None;
-        };
+        let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
         let surface_stitch_operation = if kind == scope::DesignFeatureKind::SurfaceStitch {
             exact_surface_stitch_operation(bytes, records, record_index, reference_members)
@@ -1158,7 +1154,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 start,
                 paired_at,
                 class_tag.as_str(),
-                &paired_class_tag,
+                paired_class_tag,
                 reference_members,
             )
         } else {
@@ -1193,7 +1189,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 start,
                 paired_at,
                 class_tag.as_str(),
-                &paired_class_tag,
+                paired_class_tag,
                 *reference_count_at,
                 reference_members,
             )

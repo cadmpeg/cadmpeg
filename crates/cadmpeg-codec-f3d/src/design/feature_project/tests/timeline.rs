@@ -1148,7 +1148,7 @@ fn assert_feature_dependency_index_refusal(operation: &'static str) {
         ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Ok(()) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
     }
@@ -1384,9 +1384,8 @@ fn predecessor_stream_refuses_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = match graph.predecessor(Some(&ctx), &scopes[1], |_| true) {
-        Err(error) => error,
-        Ok(_) => panic!("expected predecessor stream refusal"),
+    let Err(error) = graph.predecessor(Some(&ctx), &scopes[1], |_| true) else {
+        panic!("expected predecessor stream refusal");
     };
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::RetainedBytes
@@ -1403,9 +1402,8 @@ fn predecessor_visited_scope_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = match graph.predecessor(Some(&ctx), &scopes[1], |_| false) {
-        Err(error) => error,
-        Ok(_) => panic!("expected predecessor visited-scope refusal"),
+    let Err(error) = graph.predecessor(Some(&ctx), &scopes[1], |_| false) else {
+        panic!("expected predecessor visited-scope refusal");
     };
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
