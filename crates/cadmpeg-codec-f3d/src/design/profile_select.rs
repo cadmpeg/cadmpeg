@@ -2373,7 +2373,7 @@ fn selection_containing_points(
                 else {
                     continue;
                 };
-                if point_on_sketch_entity(*point, entity, tolerance)? {
+                if point_on_sketch_entity(ctx, *point, entity, tolerance)? {
                     on_boundary = true;
                     break;
                 }
