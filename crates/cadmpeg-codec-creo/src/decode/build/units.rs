@@ -796,35 +796,32 @@ fn scale_radius_spec(ctx: &DecodeContext<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 
-    match radius {
-        RadiusSpec::Constant { radius }
-        | RadiusSpec::Chordal {
-            chord_length: radius,
-        } => scale_positive_length(ctx, radius, scale)?,
-        RadiusSpec::Asymmetric {
-            offset_one,
-            offset_two,
-        } => {
-            scale_positive_length(ctx, offset_one, scale)?;
-            scale_positive_length(ctx, offset_two, scale)?;
+    let owned = std::mem::replace(radius, RadiusSpec::Unresolved { form: None });
+    *radius = match owned {
+        RadiusSpec::Constant { mut radius } => {
+            scale_positive_length(ctx, &mut radius, scale)?;
+            RadiusSpec::Constant { radius }
+        }
+        RadiusSpec::Chordal { mut chord_length } => {
+            scale_positive_length(ctx, &mut chord_length, scale)?;
+            RadiusSpec::Chordal { chord_length }
+        }
+        RadiusSpec::Asymmetric { mut offset_one, mut offset_two } => {
+            scale_positive_length(ctx, &mut offset_one, scale)?;
+            scale_positive_length(ctx, &mut offset_two, scale)?;
+            RadiusSpec::Asymmetric { offset_one, offset_two }
         }
         RadiusSpec::Variable { points } => {
             use cadmpeg_ir::features::edge_treatments::VariableRadiiMapError;
-            *points = points
-                .try_map_radii(|radius| {
-                    radius.scaled(scale).ok_or_else(|| {
-                        malformed_refusal(ctx, "Creo scaled length must be finite")
-                    })
-                })
-                .map_err(|error| match error {
-                    VariableRadiiMapError::Radius(error) => error,
-                    VariableRadiiMapError::Admission(message) => {
-                        malformed_refusal(ctx, message)
-                    }
-                })?;
+            RadiusSpec::Variable { points: points.try_map_radii_owned_admitted(ctx, |radius| {
+                radius.scaled(scale).ok_or_else(|| malformed_refusal(ctx, "Creo scaled length must be finite"))
+            })?.map_err(|error| match error {
+                VariableRadiiMapError::Radius(error) => error,
+                VariableRadiiMapError::Admission(message) => malformed_refusal(ctx, message),
+            })? }
         }
-        RadiusSpec::Unresolved { .. } => {}
-    }
+        unresolved @ RadiusSpec::Unresolved { .. } => unresolved,
+    };
     Ok(())
 }
 
@@ -912,8 +909,13 @@ fn scale_hole_shape(ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::holes::HoleLengthEditError;
 
-    *shape = shape
-        .try_map_lengths(
+    let placeholder = cadmpeg_ir::features::holes::HoleShape::new(
+        cadmpeg_ir::features::holes::HoleConstruction::Form {
+            kind: cadmpeg_ir::features::holes::HoleKind::Simple, specification: None,
+        }, None, None).map_err(|message| malformed_refusal(ctx, message))?;
+    let owned = std::mem::replace(shape, placeholder);
+    *shape = owned
+        .try_map_lengths_owned(
             &mut |value| {
                 let mut value = value;
                 scale_positive_length(ctx, &mut value, scale)?;
@@ -933,14 +935,16 @@ fn scale_hole_shape(ctx: &DecodeContext<'_>,
     Ok(())
 }
 
-fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone>(ctx: &DecodeContext<'_>, 
+fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(ctx: &DecodeContext<'_>, 
     pattern: &mut cadmpeg_ir::features::patterns::PatternKind<C>,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::patterns::{PatternLengthEditError, PatternLengthField};
 
-    *pattern = pattern
-        .try_map_lengths(&mut |field| match field {
+    charge_pattern_scaling_work(ctx, pattern)?;
+    let owned = std::mem::replace(pattern, cadmpeg_ir::features::patterns::PatternKind::UNRESOLVED);
+    *pattern = owned
+        .try_map_lengths_owned(&mut |field| match field {
             PatternLengthField::Length(length) => scale_length(ctx, length, scale),
             PatternLengthField::PositiveLength(length) => scale_positive_length(ctx, length, scale),
             PatternLengthField::Point(point) => scale_finite_point3(ctx, point, scale),
@@ -949,6 +953,24 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone
             PatternLengthEditError::Field(error) => error,
             PatternLengthEditError::Offsets(message) => malformed_refusal(ctx, message),
         })?;
+    Ok(())
+}
+
+fn charge_pattern_scaling_work<C: cadmpeg_ir::features::patterns::CompositeStages>(
+    ctx: &DecodeContext<'_>, pattern: &cadmpeg_ir::features::patterns::PatternKind<C>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    ctx.charge_work(1, "creo pattern scaling work")?;
+    match pattern.definition() {
+        PatternTransform::LinearOffsets { offsets, .. } => {
+            for _offset in offsets { ctx.charge_work(2, "creo pattern offset scaling work")?; }
+        }
+        PatternTransform::Composite { stages } => {
+            let _depth = ctx.enter_nested("creo pattern scaling nesting")?;
+            for stage in stages.stages() { charge_pattern_scaling_work(ctx, &stage.pattern)?; }
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -1170,7 +1192,7 @@ pub(in crate::decode) fn scale_sketch_geometry(ctx: &DecodeContext<'_>,
     use cadmpeg_ir::sketches::scaling::SketchLengthScaleError;
 
     geometry
-        .scaled_lengths_owned(scale)
+        .scaled_lengths_owned_admitted(ctx, scale)?
         .map_err(|error| match error {
             SketchLengthScaleError::LengthOverflow => {
                 malformed_refusal(ctx, "Creo scaled length must be finite")
@@ -2128,6 +2150,85 @@ mod tests {
                 position: Point2::new(f64::MAX, 0.0),
             }).expect("point"), positive(2.0)).map(|_| ()),
             "sketch point position must be finite");
+    }
+
+    #[test]
+    fn owned_pattern_scaling_refuses_offset_work_and_stage_nesting() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let offsets = || PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
+            PatternTransform::LinearOffsets { direction: None, offsets: [0.0, 1.0, 2.0].map(|x| Length::new(x).expect("length")).to_vec() }).expect("pattern");
+        for cap in [2, 4, 6] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            assert!(matches!(scale_pattern_kind(&ctx, &mut offsets(), positive(2.0)),
+                Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo pattern offset scaling work"));
+        }
+        let composite = || PatternKind::new(PatternTransform::Composite {
+            stages: cadmpeg_ir::features::patterns::CompositePattern::new(vec![
+                cadmpeg_ir::features::patterns::PatternStage { pattern: Box::new(
+                    cadmpeg_ir::features::patterns::StagePatternKind::UNRESOLVED) },
+                cadmpeg_ir::features::patterns::PatternStage { pattern: Box::new(
+                    cadmpeg_ir::features::patterns::StagePatternKind::UNRESOLVED) },
+            ]).expect("stages"),
+        }).expect("composite");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(matches!(scale_pattern_kind(&ctx, &mut composite(), positive(2.0)),
+            Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo pattern scaling nesting"));
+        for cap in [1, 2] {
+            policy = DecodePolicy::service(); policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            assert!(matches!(scale_pattern_kind(&ctx, &mut composite(), positive(2.0)),
+                Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo pattern scaling work"));
+        }
+        policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0; policy.limits.max_retained_bytes = 0;
+        for mut value in [offsets(), composite()] {
+            let expected = value.try_map_lengths(&mut |field| -> Result<(), CodecError> {
+                match field {
+                    cadmpeg_ir::features::patterns::PatternLengthField::Length(length) => *length = Length::new(length.get() * 2.0).expect("length"),
+                    _ => {}
+                }
+                Ok(())
+            }).expect("reference");
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            scale_pattern_kind(&ctx, &mut value, positive(2.0)).expect("no copies");
+            assert_eq!(value, expected);
+        }
+    }
+
+    #[test]
+    fn owned_hole_scaling_preserves_specification_storage() {
+        use cadmpeg_ir::features::holes::{HoleShape, HoleConstruction, HoleKind, HoleSpecification, HoleThreadDepth, ThreadHand};
+        let mut shape = HoleShape::new(HoleConstruction::Form {
+            kind: HoleKind::Simple,
+            specification: Some(Box::new(HoleSpecification::Clearance {
+                standard: cadmpeg_core::text::NonBlankString::new("test-standard".to_owned()).expect("standard"),
+                designation: Some("test-size".to_owned()), fit: Some("test-fit".to_owned()),
+                modeled: false, cosmetic: false, hand: ThreadHand::Right,
+                depth: HoleThreadDepth::Blind { depth: positive_length(3.0) },
+                clearance: Some(Length::new(1.0).expect("length")),
+            })),
+        }, None, Some(positive_length(2.0))).expect("hole");
+        let specification_ptr = match shape.construction() {
+            HoleConstruction::Form { specification: Some(specification), .. } => std::ptr::from_ref(specification.as_ref()),
+            _ => panic!("fixture"),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0; policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::scale_hole_shape(&ctx, &mut shape, positive(2.0)).expect("no copies");
+        let HoleConstruction::Form { specification: Some(specification), .. } = shape.construction() else { panic!("fixture"); };
+        assert_eq!(std::ptr::from_ref(specification.as_ref()), specification_ptr);
+        assert_eq!(shape.diameter().expect("bore").get(), 4.0);
+        assert!(matches!(specification.as_ref(), HoleSpecification::Clearance {
+            standard, designation: Some(designation), fit: Some(fit), depth: HoleThreadDepth::Blind { depth }, clearance: Some(clearance), ..
+        } if standard.as_str() == "test-standard" && designation == "test-size" && fit == "test-fit" && depth.get() == 6.0 && clearance.get() == 2.0));
     }
 
 }

@@ -274,6 +274,24 @@ impl VariableRadii {
             .then_some(Self(points))
             .ok_or(VariableRadiiMapError::Admission(INVALID_VARIABLE_RADII))
     }
+    /// Map owned radii in place through the caller's work budget.
+    /// Refused candidates are consumed; no sample collection is copied.
+    pub fn try_map_radii_owned_admitted<E>(mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
+    ) -> Result<Result<Self, VariableRadiiMapError<E>>, cadmpeg_core::CodecError> {
+        let mut positive = false;
+        for point in &mut self.0 {
+            ctx.charge_work(1, "IR variable radii scaling work")?;
+            point.radius = match map(point.radius) {
+                Ok(radius) => radius,
+                Err(error) => return Ok(Err(VariableRadiiMapError::Radius(error))),
+            };
+            positive |= point.radius.get() > 0.0;
+        }
+        Ok(if positive { Ok(self) } else { Err(VariableRadiiMapError::Admission(INVALID_VARIABLE_RADII)) })
+    }
+
 }
 
 impl TryFrom<Vec<VariableRadius>> for VariableRadii {

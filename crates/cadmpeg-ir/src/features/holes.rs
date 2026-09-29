@@ -157,7 +157,15 @@ impl HoleShape {
         map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
         map_length: &mut impl FnMut(Length) -> Result<Length, E>,
     ) -> Result<Self, HoleLengthEditError<E>> {
-        let mut mapped = self.clone();
+        self.clone().try_map_lengths_owned(map_positive, map_length)
+    }
+
+    /// Map lengths of an owned shape without copying retained thread operands.
+    pub fn try_map_lengths_owned<E>(self,
+        map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
+        map_length: &mut impl FnMut(Length) -> Result<Length, E>,
+    ) -> Result<Self, HoleLengthEditError<E>> {
+        let mut mapped = self;
         map_hole_construction_lengths(&mut mapped.construction, map_positive, map_length)?;
         if let Some(kind) = &mut mapped.exit_kind {
             map_hole_kind_lengths(kind, map_positive)?;
