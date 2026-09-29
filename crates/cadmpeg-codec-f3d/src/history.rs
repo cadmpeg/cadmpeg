@@ -19,10 +19,8 @@ use crate::history_records::{
     AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
 };
-use crate::records::{
-    topology::{
-        body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
-    },
+use crate::records::topology::{
+    body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
 };
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -606,30 +604,41 @@ fn admit_complete_table_binding_budget(
     mut table_lengths: impl ExactSizeIterator<Item = usize>,
     limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let state_count = u64::try_from(table_lengths.len())
-        .map_err(|_| ctx.refuse_codec_limit("check F3D complete history topology", 0, u64::MAX))?;
+    let state_count = cadmpeg_core::decode::u64_from_index(table_lengths.len());
     ctx.charge_work(state_count, "check F3D complete history topology")?;
     let entries = table_lengths.try_fold(0_u64, |total, length| {
-        total.checked_add(u64::try_from(length).ok()?)
+        total.checked_add(cadmpeg_core::decode::u64_from_index(length))
     });
-    let bytes =
-        entries.and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY));
-    if bytes.is_none_or(|bytes| bytes > limits.max_materialized_bytes) {
-        let requested = bytes.unwrap_or(u64::MAX);
+    let bytes = entries
+        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "bind F3D complete history topology bytes",
+                limits.max_materialized_bytes,
+                u64::MAX,
+            )
+        })?;
+    if bytes > limits.max_materialized_bytes {
         return Err(ctx.refuse_codec_limit(
             "bind F3D complete history topology bytes",
             limits.max_materialized_bytes,
-            requested,
+            bytes,
         ));
     }
-    let work =
-        entries.and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY));
-    if work.is_none_or(|work| work > limits.max_work_units) {
-        let requested = work.unwrap_or(u64::MAX);
+    let work = entries
+        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "bind F3D complete history topology work",
+                limits.max_work_units,
+                u64::MAX,
+            )
+        })?;
+    if work > limits.max_work_units {
         return Err(ctx.refuse_codec_limit(
             "bind F3D complete history topology work",
             limits.max_work_units,
-            requested,
+            work,
         ));
     }
     Ok(())
@@ -2151,7 +2160,7 @@ fn combine_recipe_family_tool_slots(
     }
     let mut families = BTreeMap::<FamilyKey<'_>, Vec<FamilyMember<'_>>>::new();
     for record_index in tool_record_indices {
-    let mut matching = operands.iter().filter(|operand| {
+        let mut matching = operands.iter().filter(|operand| {
             crate::ids::native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == scope_record_index
                 && matches!(
@@ -7416,13 +7425,15 @@ fn edge_recipe_reference_context(
     let result_edges = face_boundary_edges(decode, &result_faces, result.topology)?;
     let result_shared_edge_slots = history_collect(
         decode,
-        result.boundary_edges
+        result
+            .boundary_edges
             .iter()
             .copied()
             .filter(|edge| result_edges.contains(edge)),
         "collect F3D result shared edges",
     )?;
-    let preceding_faces = selection::faces_in_topology(decode, candidate_faces, preceding.topology)?;
+    let preceding_faces =
+        selection::faces_in_topology(decode, candidate_faces, preceding.topology)?;
     let preceding_face_boundaries =
         face_boundary_contexts(decode, &preceding_faces, preceding.topology)?;
     let preceding_support_face_slots =
@@ -7435,7 +7446,8 @@ fn edge_recipe_reference_context(
     let preceding_edges = face_boundary_edges(decode, &preceding_faces, preceding.topology)?;
     let shared_edge_slots = history_collect(
         decode,
-        preceding.boundary_edges
+        preceding
+            .boundary_edges
             .iter()
             .copied()
             .filter(|edge| preceding_edges.contains(edge)),
@@ -7674,8 +7686,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         let Some(EdgeChanges {
             deleted: chain_deleted_edges,
             updated: chain_updated_edges,
-        }) =
-            edge_changes_across_state_chain(decode, state, previous_state_id, &states)?
+        }) = edge_changes_across_state_chain(decode, state, previous_state_id, &states)?
         else {
             continue;
         };
@@ -7841,8 +7852,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
                     .map(|edge| selection::historical_edge_context(decode, edge, topology)),
                 "collect F3D sweep edge contexts",
             )?;
-            operand.recipe_selectors =
-                selection::recipe_selector_candidates(decode, operand.recipe_structure.as_ref(), &contexts)?;
+            operand.recipe_selectors = selection::recipe_selector_candidates(
+                decode,
+                operand.recipe_structure.as_ref(),
+                &contexts,
+            )?;
             operand.resolved_edge_slot =
                 crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces(
                     &operand.recipe_selectors,
@@ -7876,8 +7890,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
                     .map(|edge| selection::historical_edge_context(decode, edge, topology)),
                 "collect F3D revolve edge contexts",
             )?;
-            operand.recipe_selectors =
-                selection::recipe_selector_candidates(decode, operand.recipe_structure.as_ref(), &contexts)?;
+            operand.recipe_selectors = selection::recipe_selector_candidates(
+                decode,
+                operand.recipe_structure.as_ref(),
+                &contexts,
+            )?;
             operand.resolved_edge_slot =
                 crate::design::edge_resolve::resolved_edge_candidate_intersection(
                     &operand.recipe_selectors,
@@ -8135,8 +8152,11 @@ fn bind_active_edge_operand_candidates(
                 .map(|edge| selection::historical_edge_context(decode, edge, topology)),
             "collect F3D terminal edge contexts",
         )?;
-        let selectors =
-            selection::recipe_selector_candidates(decode, operand.recipe_structure.as_ref(), &contexts)?;
+        let selectors = selection::recipe_selector_candidates(
+            decode,
+            operand.recipe_structure.as_ref(),
+            &contexts,
+        )?;
         let reference_edge_sets = collect_reference_edge_sets(decode, &reference_faces, topology)?;
         let all_reference_edge_sets =
             collect_reference_edge_sets(decode, &all_reference_faces, topology)?;
@@ -8559,7 +8579,6 @@ fn treatment_transition_edge_candidates(
     Ok(treatment_edge_candidates(None, None, inserted_faces, result, preceding, deleted_edges)?.1)
 }
 
-
 fn stable_ref(id: &str) -> Option<i64> {
     id.rsplit_once('#')?
         .1
@@ -8568,7 +8587,6 @@ fn stable_ref(id: &str) -> Option<i64> {
         .parse::<i64>()
         .ok()
 }
-
 
 pub(crate) fn same_axis_line(
     left: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
@@ -8581,7 +8599,6 @@ pub(crate) fn same_axis_line(
     let distance = right.0.vector_from(left.0).cross(left.1).norm();
     distance.is_finite() && distance <= EPS_HISTORY_SAME_AXIS_LINE_E8
 }
-
 
 fn affected_body_refs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,

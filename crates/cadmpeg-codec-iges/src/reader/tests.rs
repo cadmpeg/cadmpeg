@@ -21,6 +21,466 @@ use crate::test_support::test_drawing_and_trimming::test_surface_domains::transf
 use crate::IgesCodec;
 
 #[test]
+fn normalized_inspection_notes_refuse_text_and_slot_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let summary = super::inspect(
+        &parse_ctx,
+        &bytes,
+        crate::representation::Representation::FixedAscii,
+        bytes.len(),
+    )
+    .unwrap();
+    let mut low = summary.clone();
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::annotate_representation(&ctx, &mut low, crate::representation::Representation::Binary, bytes.len()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges normalized source byte note"
+    ));
+
+    let mut low = summary.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::annotate_representation(&ctx, &mut low, crate::representation::Representation::Binary, bytes.len()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges normalized representation notes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut normalized = summary;
+    super::annotate_representation(
+        &ctx,
+        &mut normalized,
+        crate::representation::Representation::Binary,
+        bytes.len(),
+    )
+    .unwrap();
+    assert!(normalized
+        .notes
+        .iter()
+        .any(|note| note == &format!("source_bytes={}", bytes.len())));
+    assert!(normalized
+        .notes
+        .iter()
+        .any(|note| note == "normalized_representation=binary"));
+}
+
+#[test]
+fn quarantined_placement_rejections_refuse_node_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (mut directory, _) = directory_fixture();
+    directory[0].entity_type = 408;
+    directory[0].form = 0;
+    let quarantined = std::collections::BTreeSet::from([directory[0].sequence]);
+    let mut projection = crate::entities::geometry::Projection::default();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::mark_quarantined_placements(&ctx, &mut projection, &directory, &quarantined),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges quarantined placement rejections"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::mark_quarantined_placements(&ctx, &mut projection, &directory, &quarantined).unwrap();
+    assert_eq!(
+        projection.placement_rejections.get(&directory[0].sequence),
+        Some(&crate::entities::structure::PlacementRejection::MissingRecord)
+    );
+}
+
+#[test]
+fn transfer_ledger_refuses_row_and_note_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut ledger = cadmpeg_ir::report::decode::TransferLedger::default();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::record_retained_transfer(&ctx, &mut ledger, "D1".into(), "iges:entity:directory#1".into(), "retained"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges transfer ledger rows"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::record_retained_transfer(&ctx, &mut ledger, "D1".into(), "iges:entity:directory#1".into(), "retained"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges transfer ledger note"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::record_retained_transfer(
+        &ctx,
+        &mut ledger,
+        "D1".into(),
+        "iges:entity:directory#1".into(),
+        "retained",
+    )
+    .unwrap();
+    assert_eq!(ledger.entries.len(), 1);
+    assert_eq!(ledger.entries[0].source, "D1");
+    assert_eq!(ledger.entries[0].target(), Some("iges:entity:directory#1"));
+}
+
+fn directory_fixture() -> (
+    Vec<crate::directory::DirectoryEntry>,
+    crate::global::GlobalTable,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file();
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let table = global.global_table();
+    let (directory, _) = crate::directory::parse(&scan, table, Some(&ctx)).unwrap();
+    (directory, table)
+}
+
+#[test]
+fn reader_occurrence_loss_refuses_slot_and_message_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (directory, _) = directory_fixture();
+    let sequence = directory[0].sequence;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut losses = Vec::new();
+    assert!(matches!(
+        super::push_occurrence_loss(&ctx, &mut losses, IgesLossCode::OccurrenceRootInferenceBlocked,
+            format_args!("loss"), sequence, &directory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges occurrence loss slots"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::push_occurrence_loss(&ctx, &mut losses, IgesLossCode::OccurrenceRootInferenceBlocked,
+            format_args!("loss"), sequence, &directory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges occurrence loss message"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::push_occurrence_loss(
+        &ctx,
+        &mut losses,
+        IgesLossCode::OccurrenceRootInferenceBlocked,
+        format_args!("loss"),
+        sequence,
+        &directory,
+    )
+    .unwrap();
+    assert_eq!(losses[0].message, "loss");
+    assert_eq!(
+        losses[0].provenance.as_ref().unwrap().tag.as_deref(),
+        Some("directory_entry:D1")
+    );
+}
+
+#[test]
+fn reader_generic_loss_refuses_slot_and_message_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (directory, table) = directory_fixture();
+    let projection = crate::entities::geometry::Projection::default();
+    let attributed = std::collections::BTreeSet::new();
+    let mut losses = Vec::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges generic loss slots"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges generic loss message"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::append_generic_losses(
+        &ctx,
+        &mut losses,
+        &directory,
+        &projection,
+        &attributed,
+        table,
+    )
+    .unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        IgesLossCode::EntityRetainedUnprojected.kind()
+    );
+    assert_eq!(
+        losses[0].provenance.as_ref().unwrap().tag.as_deref(),
+        Some("directory_entry:D1")
+    );
+}
+
+#[test]
+fn directory_loss_provenance_refuses_format_and_tag_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (directory, _) = directory_fixture();
+    for (cap, operation) in [
+        (0, "iges loss source format"),
+        (4, "iges loss directory tag"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            directory[0].admitted_loss_provenance(&ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        directory[0].admitted_loss_provenance(&ctx).unwrap(),
+        directory[0].loss_provenance()
+    );
+}
+
+#[test]
+fn source_fidelity_refuses_id_owner_and_record_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    for (cap, operation) in [
+        (0, "iges source fidelity id"),
+        (
+            crate::SOURCE_IMAGE_ID.len() as u64 + 3,
+            "iges source fidelity stream owner",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::source_fidelity(&[], &ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::source_fidelity(&[], &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges source fidelity record node"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let fidelity = super::source_fidelity(b"IGES", &ctx).unwrap();
+    let record = fidelity.retained_record(crate::SOURCE_IMAGE_ID).unwrap();
+    assert_eq!(record.stream(), "iges");
+    assert_eq!(record.data(), Some(b"IGES".as_slice()));
+}
+
+#[test]
+fn admission_loss_slots_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file_with_global(&crate::test_support::global_with_version_flag("1"));
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let mut parse =
+        super::PhysicalParse::run(&bytes, &parse_ctx, super::ParseMode::Inspect).unwrap();
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        parse.admission_losses(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges admission loss slots"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let losses = parse.admission_losses(&ctx).unwrap();
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind()));
+}
+
+#[test]
+fn combined_summary_refuses_collection_limit_before_append() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut notes = Vec::new();
+    let result = super::append_summary_notes(&ctx, &mut notes, vec!["a".into()]);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges combined summary notes"
+    ));
+    assert!(notes.is_empty());
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::append_summary_notes(&ctx, &mut notes, vec!["a".into()]).unwrap();
+    assert_eq!(notes, ["a"]);
+}
+
+#[test]
+fn source_metadata_admits_formatted_values_before_building_attributes() {
+    use crate::{card, dialect, global, representation::Representation};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file();
+    let scan = card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = global::parse(&scan, &parse_ctx).unwrap();
+    let representation = Representation::FixedAscii;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = representation.as_str().len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::source_meta(
+        &ctx,
+        &global,
+        representation,
+        dialect::classify(representation, &global),
+    );
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == representation.as_str().len() as u64
+                && limit.operation == "iges source representation"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let meta = super::source_meta(
+        &ctx,
+        &global,
+        representation,
+        dialect::classify(representation, &global),
+    )
+    .unwrap();
+    assert_eq!(meta.attributes["representation"], representation.as_str());
+}
+
+#[test]
+fn source_attribute_admits_key_and_map_node_before_insertion() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::collections::BTreeMap;
+
+    let key = "native_units";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = key.len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::insert_source_attribute(&ctx, &mut BTreeMap::new(), key, String::new());
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == key.len() as u64
+                && limit.operation == "iges source attribute key"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::insert_source_attribute(&ctx, &mut BTreeMap::new(), key, String::new());
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges source attributes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut attributes = BTreeMap::new();
+    super::insert_source_attribute(&ctx, &mut attributes, key, "MM".into()).unwrap();
+    assert_eq!(attributes[key], "MM");
+}
+
+#[test]
 fn decode_refuses_a_transformation_chain_over_its_projection_limit() {
     let error = IgesCodec
         .decode(
@@ -232,7 +692,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
     assert_refusal(
         |limits| limits.max_retained_bytes = 1,
         ResourceDimension::RetainedBytes,
-        "iges_global_stream",
+        "iges physical card payload",
     );
     assert_refusal(
         |limits| limits.max_entities = 0,
@@ -322,9 +782,104 @@ fn tagged_loss(tag: &str) -> LossNote {
         )
 }
 
+fn attributed_index(losses: &[LossNote]) -> std::collections::BTreeSet<u32> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    crate::reader::attributed_sequences(losses, &ctx).unwrap()
+}
+
+#[test]
+fn attributed_loss_index_refuses_node_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::attributed_sequences(&[tagged_loss("D7:parameter")], &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges attributed loss sequences"
+    ));
+    assert_eq!(attributed_index(&[tagged_loss("D7:parameter")]).len(), 1);
+}
+
+#[test]
+fn projected_directory_refuses_entry_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file();
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (directory, _) =
+        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+    let quarantined = std::collections::BTreeSet::from([99]);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::projection_directory(&directory, &quarantined, &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges projected directory entries"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let projected = super::projection_directory(&directory, &quarantined, &ctx)
+        .unwrap()
+        .unwrap();
+    assert_eq!(projected.len(), directory.len());
+    assert_eq!(projected[0].sequence, directory[0].sequence);
+}
+
+#[test]
+fn quarantined_parameter_sequence_index_refuses_node_limit() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00000000",
+        parameters: "116,1,2,3x4,0;".into(),
+    }]);
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let parse = super::PhysicalParse::run(&bytes, &parse_ctx, super::ParseMode::Decode).unwrap();
+    assert_eq!(parse.quarantined_parameters.len(), 1);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::quarantined_parameter_sequences(&parse.quarantined_parameters, &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges quarantined parameter sequence index"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let sequences =
+        super::quarantined_parameter_sequences(&parse.quarantined_parameters, &ctx).unwrap();
+    assert!(sequences.contains(&1));
+}
+
 #[test]
 fn attribution_indexes_a_parameter_tag_under_its_exact_sequence() {
-    let index = crate::reader::attributed_sequences(&[tagged_loss("D7:parameter")]);
+    let index = attributed_index(&[tagged_loss("D7:parameter")]);
 
     assert!(index.contains(&7));
     assert!(!index.contains(&70));
@@ -333,7 +888,7 @@ fn attribution_indexes_a_parameter_tag_under_its_exact_sequence() {
 
 #[test]
 fn attribution_indexes_directory_entry_and_indexed_parameter_tags() {
-    let index = crate::reader::attributed_sequences(&[
+    let index = attributed_index(&[
         tagged_loss("directory_entry:D12"),
         tagged_loss("D3:parameter[4]"),
         tagged_loss("directory_entry:D12"),
@@ -344,7 +899,7 @@ fn attribution_indexes_directory_entry_and_indexed_parameter_tags() {
 
 #[test]
 fn attribution_ignores_tags_that_do_not_render_a_sequence() {
-    let index = crate::reader::attributed_sequences(&[
+    let index = attributed_index(&[
         tagged_loss("D007:parameter"),
         tagged_loss("directory_entry:D12:extra"),
         tagged_loss("directory_entry:D007"),

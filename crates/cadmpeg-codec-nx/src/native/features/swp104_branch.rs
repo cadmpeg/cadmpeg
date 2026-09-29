@@ -57,18 +57,24 @@ struct Reference {
 
 impl FeatureSwp104LeadingBranch {
     pub(super) fn from_source(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: String,
         operation_label: String,
         source_offset: u64,
         branch: Swp104PayloadLeadingBranch,
         resolve: impl Fn(PayloadIndexToken) -> Option<String>,
-    ) -> Option<Self> {
-        source_offset.checked_add(branch.byte_len() as u64)?;
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if source_offset
+            .checked_add(branch.byte_len() as u64)
+            .is_none()
+        {
+            return Ok(None);
+        }
         let reference = |token| Reference {
             token,
             data_block: resolve(token),
         };
-        Some(Self {
+        Ok(Some(Self {
             id,
             operation_label,
             source_offset,
@@ -77,9 +83,11 @@ impl FeatureSwp104LeadingBranch {
             leading_zero: branch.leading_zero,
             mode: branch.mode,
             state_lane: branch.state_lane,
-            members: branch.members.map_indexed(|_, item| reference(item)),
+            members: branch
+                .members
+                .map_indexed_charged(ctx, |_, item| reference(item))?,
             terminal: reference(branch.terminal),
-        })
+        }))
     }
 
     fn members_offset(&self) -> u64 {
@@ -234,6 +242,26 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::FeatureSwp104LeadingBranch;
 
+    fn from_source_for_test(
+        id: String,
+        operation_label: String,
+        source_offset: u64,
+        branch: crate::om::Swp104PayloadLeadingBranch,
+        resolve: impl Fn(crate::om::reference_index::PayloadIndexToken) -> Option<String>,
+    ) -> Option<FeatureSwp104LeadingBranch> {
+        crate::test_support::with_decode_context(|ctx| {
+            FeatureSwp104LeadingBranch::from_source(
+                ctx,
+                id,
+                operation_label,
+                source_offset,
+                branch,
+                resolve,
+            )
+        })
+        .unwrap()
+    }
+
     #[test]
     fn source_frames_derive_native_positions_for_all_optional_lanes() {
         for leading_zero in [false, true] {
@@ -260,8 +288,12 @@ mod tests {
                     let record =
                         crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104")
                             .unwrap();
-                    let source = crate::om::swp104_payload_leading_branch(record).unwrap();
-                    let branch = FeatureSwp104LeadingBranch::from_source(
+                    let source = crate::test_support::with_decode_context(|ctx| {
+                        crate::om::swp104_payload_leading_branch(ctx, record)
+                    })
+                    .unwrap()
+                    .unwrap();
+                    let branch = from_source_for_test(
                         "branch".to_owned(),
                         "operation".to_owned(),
                         1200,
@@ -285,7 +317,7 @@ mod tests {
                     let mut invalid = wire;
                     invalid["members"][0]["raw_object_index"] = serde_json::json!([1]);
                     assert!(serde_json::from_value::<FeatureSwp104LeadingBranch>(invalid).is_err());
-                    assert!(FeatureSwp104LeadingBranch::from_source(
+                    assert!(from_source_for_test(
                         "branch".to_owned(),
                         "operation".to_owned(),
                         u64::MAX,

@@ -124,14 +124,15 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
     );
 
-    crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+    crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+        ctx,
         &mut result.ir_mut(),
         &pending,
         &validated_lanes,
         &support_budget,
         &geometry_budget,
         false,
-    )
+    ))
     .expect("evaluator allocation succeeds");
 
     let pcurve_present = |procedural_id: &ProceduralCurveId| {
@@ -192,11 +193,15 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         .expect("intersection owner")
         .clone();
 
-    let witnesses = crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
-        result.ir(),
-        &pending,
-        &validated_lanes,
-    );
+    let witnesses = crate::test_support::with_decode_context(|ctx| {
+        crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
+            ctx,
+            result.ir(),
+            &pending,
+            &validated_lanes,
+        )
+    })
+    .expect("validated witnesses fit the service profile");
 
     assert_eq!(
         crate::decode::pcurves::endpoint_witness_for_candidate(
@@ -282,14 +287,15 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
     );
 
     let witnesses =
-        crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+        crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+            ctx,
             &mut result.ir_mut(),
             &pending,
             &BTreeSet::new(),
             &support_budget,
             &geometry_budget,
             false,
-        )
+        ))
         .expect("evaluator allocation succeeds")
         .endpoint_witnesses;
 

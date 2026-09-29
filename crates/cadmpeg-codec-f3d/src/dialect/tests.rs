@@ -101,8 +101,9 @@ fn primary_dialect_clone_refuses_collection_limit() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = classify_layers(&limited, &scan).unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "clone F3D primary dialect layer")
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "dialect declaration copies"),
+        "{error:?}"
     );
 }
 
@@ -123,8 +124,9 @@ fn primary_dialect_clone_refuses_retained_limit() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = classify_layers(&limited, &scan).unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "clone F3D primary dialect layer")
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "dialect declaration key"),
+        "{error:?}"
     );
 }
 

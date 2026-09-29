@@ -627,7 +627,11 @@ fn rescope_record(
         },
         Ok,
     )?;
-    NativeRecord::new(id, fields).map_err(CodecError::from)
+    NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?,
+        fields,
+    )
+    .map_err(CodecError::from)
 }
 
 /// Rewrite typed identity markers before JSON erases their ownership.

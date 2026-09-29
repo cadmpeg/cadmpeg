@@ -44,7 +44,7 @@ fn refused_at(
     let container = one_row_index();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::display_jt_indices(Some(&ctx), &container).unwrap_err();
+    let error = super::display_jt_indices(&ctx, &container).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected resource refusal");
     };
@@ -153,7 +153,7 @@ fn display_jt_index_service_profile_keeps_one_row() {
     let container = one_row_index();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let indices = super::display_jt_indices(Some(&ctx), &container).unwrap();
+    let indices = super::display_jt_indices(&ctx, &container).unwrap();
     assert_eq!(indices.len(), 1);
     assert_eq!(indices[0].declared_count(), 1);
     assert_eq!(indices[0].rows().next().unwrap().header_offset, 24);

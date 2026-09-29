@@ -15,13 +15,13 @@ fn display_jt_base_node_attributes_refuse_before_counted_vector() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::admit_jt_base_body(Some(&ctx), &body, 9, true).unwrap_err();
+    let error = super::admit_jt_base_body(&ctx, &body, 9, true).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "decode DisplayJT base node attributes"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::admit_jt_base_body(Some(&service), &body, 9, true)
+    assert!(super::admit_jt_base_body(&service, &body, 9, true)
         .unwrap()
         .is_some());
 }
@@ -39,13 +39,13 @@ fn display_jt_group_children_refuse_before_counted_vector() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::admit_jt_group_body(Some(&ctx), &body).unwrap_err();
+    let error = super::admit_jt_group_body(&ctx, &body).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "decode DisplayJT group children"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::admit_jt_group_body(Some(&service), &body)
+    assert!(super::admit_jt_group_body(&service, &body)
         .unwrap()
         .is_some());
 }
@@ -60,14 +60,14 @@ fn display_jt_partition_name_refuses_before_utf16_allocation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::admit_jt_partition_name(Some(&ctx), &family).unwrap_err();
+    let error = super::admit_jt_partition_name(&ctx, &family).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "decode DisplayJT partition name"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(matches!(
-        super::admit_jt_partition_name(Some(&service), &family).unwrap(),
+        super::admit_jt_partition_name(&service, &family).unwrap(),
         super::JtOptionalReservation::Admitted(_)
     ));
 }
@@ -86,14 +86,14 @@ fn display_jt_range_vectors_refuse_before_conversion_allocation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::admit_jt_range_vectors(Some(&ctx), &family).unwrap_err();
+    let error = super::admit_jt_range_vectors(&ctx, &family).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "decode DisplayJT range values"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(matches!(
-        super::admit_jt_range_vectors(Some(&service), &family).unwrap(),
+        super::admit_jt_range_vectors(&service, &family).unwrap(),
         super::JtOptionalReservation::Admitted(_)
     ));
 }
@@ -106,7 +106,7 @@ fn display_jt_scene_record_refuses_before_identity_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut records: Vec<String> = Vec::new();
     let error = super::admit_display_jt_pair(
-        Some(&ctx),
+        &ctx,
         &mut records,
         "segment",
         "-base-node-",
@@ -121,8 +121,8 @@ fn display_jt_scene_record_refuses_before_identity_allocation() {
     assert!(records.is_empty());
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::admit_display_jt_pair(
-        Some(&service),
+    super::admit_display_jt_pair(
+        &service,
         &mut records,
         "segment",
         "-base-node-",
@@ -130,5 +130,5 @@ fn display_jt_scene_record_refuses_before_identity_allocation() {
         0,
         "store DisplayJT base node",
     )
-    .unwrap());
+    .unwrap();
 }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-CSYS descriptor identities and bounded source positions.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -54,7 +56,7 @@ pub(crate) struct CsysDescriptor {
 }
 
 impl CsysDescriptor {
-    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
+    fn identity_bounds(bytes: &[u8]) -> Option<(usize, usize)> {
         let mut candidate = None;
         let mut at = 0;
         while at < bytes.len() {
@@ -73,12 +75,37 @@ impl CsysDescriptor {
                 candidate = Some((start, at));
             }
         }
-        let (start, end) = candidate?;
+        candidate
+    }
+
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
+        let (start, end) = Self::identity_bounds(bytes)?;
         Some(Self {
             prefix: bytes[..start].to_vec(),
             identity: CsysIdentity(bytes[start..end].iter().copied().map(char::from).collect()),
             suffix: bytes[end..].to_vec(),
         })
+    }
+
+    pub(super) fn read_charged(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+    ) -> Result<Option<Self>, CodecError> {
+        let Some((start, end)) = Self::identity_bounds(bytes) else {
+            return Ok(None);
+        };
+        let prefix = ctx.copy_retained(&bytes[..start], "NX datum CSYS descriptor prefix")?;
+        let identity_bytes =
+            ctx.copy_retained(&bytes[start..end], "NX datum CSYS descriptor identity")?;
+        let suffix = ctx.copy_retained(&bytes[end..], "NX datum CSYS descriptor suffix")?;
+        let Ok(identity) = String::from_utf8(identity_bytes) else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            prefix,
+            identity: CsysIdentity(identity),
+            suffix,
+        }))
     }
 
     // This conversion consumes the input carrier at the typed construction boundary.

@@ -468,8 +468,9 @@ fn member_layer_collection_refusal(max_items: u64, collision: bool) -> cadmpeg_c
 fn f3z_member_layer_clone_refuses_collection_limit() {
     let error = member_layer_collection_refusal(0, false);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "clone F3Z member dialect layer")
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "dialect declaration copies"),
+        "{error:?}"
     );
 }
 

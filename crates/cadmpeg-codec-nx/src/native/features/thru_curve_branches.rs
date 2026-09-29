@@ -183,20 +183,36 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
 }
 
 pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureThruCurveConstructionBranchGroup> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeatureThruCurveConstructionBranchGroup>, cadmpeg_core::CodecError> {
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut groups = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(group) = thru_curve_payload_branch_group(record.payload_view()) else {
+            if failure.is_some() {
                 return;
+            }
+            let group = match thru_curve_payload_branch_group(ctx, record.payload_view()) {
+                Ok(Some(group)) => group,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
-            let Ok(frame) = group.resolve(entry_offset, |token| {
+            let frame = match group.resolve(ctx, entry_offset, |token| {
                 unique_offset_data_block(&indexed, token.value())
-            }) else {
-                return;
+            }) {
+                Ok(Some(frame)) => frame,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_key = format!("{section_key}-{operation_ordinal:010}");
             groups.push(FeatureThruCurveConstructionBranchGroup {
@@ -207,8 +223,11 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
                 frame,
             });
         },
-    );
-    groups
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(groups)
 }
 
 #[cfg(test)]

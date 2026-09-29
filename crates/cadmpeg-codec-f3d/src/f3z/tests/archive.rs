@@ -925,7 +925,8 @@ fn f3z_primary_dialect_clone_refuses_retained_limit() {
         .err()
         .expect("dialect copy must refuse");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "clone F3Z primary dialect layer")
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "dialect declaration key"),
+        "{error:?}"
     );
 }

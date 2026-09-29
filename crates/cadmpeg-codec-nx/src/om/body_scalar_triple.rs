@@ -3,6 +3,8 @@
 
 use super::operation_record::OperationBodyInput;
 use super::scalar::PayloadScalarAtom;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ScalarTriple {
@@ -51,12 +53,16 @@ pub(crate) struct OperationBodyScalarTriple {
 
 /// Decode complete three-scalar clauses following ordered operation body fields.
 pub(crate) fn operation_body_scalar_triples(
+    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Vec<OperationBodyScalarTriple> {
-    super::operation_body_references(record)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(ordinal, reference)| {
+) -> Result<Vec<OperationBodyScalarTriple>, CodecError> {
+    ctx.charge_work(
+        u64_from_index(record.bytes().len()),
+        "scan NX body scalar triples",
+    )?;
+    let mut triples = Vec::new();
+    for (ordinal, reference) in super::operation_body_reference_candidates(record).enumerate() {
+        let parsed = (|| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
             let branch = *record.bytes().get(end + 1)?;
@@ -74,6 +80,51 @@ pub(crate) fn operation_body_scalar_triples(
                 branch,
                 scalars,
             })
-        })
-        .collect()
+        })();
+        if let Some(triple) = parsed {
+            super::reserve_om_retained_item(ctx, &mut triples, "NX body scalar triples")?;
+            triples.push(triple);
+        }
+    }
+    Ok(triples)
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+        let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        configure(&mut policy);
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
+        super::operation_body_scalar_triples(&ctx, record).unwrap_err()
+    }
+
+    #[test]
+    fn operation_body_scalar_triples_refuse_collection_limit() {
+        let error = refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn operation_body_scalar_triples_refuse_retained_limit() {
+        let error = refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+    }
+
+    #[test]
+    fn operation_body_scalar_triples_refuse_work_limit() {
+        let error = refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+        );
+    }
 }

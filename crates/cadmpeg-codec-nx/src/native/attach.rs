@@ -8,7 +8,7 @@ use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
@@ -162,7 +162,7 @@ fn attach_indexed_om_unknowns(
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let object_sections = scan.container.indexed_om_sections();
+    let object_sections = scan.container.indexed_om_sections(ctx)?;
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         match &section.store {
@@ -223,32 +223,35 @@ pub(super) fn attach(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
-    let has_object_sections = !scan.container.indexed_om_sections().is_empty();
+    let has_object_sections = !scan.container.indexed_om_sections(ctx)?.is_empty();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     if model.is_empty() && !has_object_sections {
         return Ok(());
     }
-    attach_rm_face_colors(ir, model, scan, annotations)?;
-    attach_rm_appearances(ir, model, scan, annotations)?;
-    let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
-        meshes: &model.display_jt.display_jt_polygon_meshes,
-        coordinates: &model.display_jt.display_jt_vertex_coordinates,
-        normals: &model.display_jt.display_jt_vertex_normals,
-        colors: &model.display_jt.display_jt_vertex_colors,
-        texture_coordinates: &model.display_jt.display_jt_vertex_texture_coordinates,
-        vertex_flags: &model.display_jt.display_jt_vertex_flags,
-        vertex_headers: &model.display_jt.display_jt_vertex_records_headers,
-        coordinate_headers: &model.display_jt.display_jt_coordinate_array_headers,
-        shape_elements: model.display_jt.graph.shape_lod_elements(),
-        bindings: &model.display_jt.display_jt_shape_lod_bindings,
-        shape_nodes: &model.display_jt.display_jt_tri_strip_shape_nodes,
-        base_nodes: &model.display_jt.display_jt_base_node_data,
-        group_nodes: &model.display_jt.display_jt_group_node_data,
-        instance_nodes: &model.display_jt.display_jt_instance_nodes,
-        transforms: &model.display_jt.display_jt_geometric_transform_attributes,
-        materials: &model.display_jt.display_jt_material_attributes,
-        compressed_elements: model.display_jt.graph.compressed_elements(),
-    })?;
+    attach_rm_face_colors(ctx, ir, model, scan, annotations)?;
+    attach_rm_appearances(ctx, ir, model, scan, annotations)?;
+    let display_jt_tessellations = display_jt_tessellations(
+        ctx,
+        &DisplayJtTessellationInputs {
+            meshes: &model.display_jt.display_jt_polygon_meshes,
+            coordinates: &model.display_jt.display_jt_vertex_coordinates,
+            normals: &model.display_jt.display_jt_vertex_normals,
+            colors: &model.display_jt.display_jt_vertex_colors,
+            texture_coordinates: &model.display_jt.display_jt_vertex_texture_coordinates,
+            vertex_flags: &model.display_jt.display_jt_vertex_flags,
+            vertex_headers: &model.display_jt.display_jt_vertex_records_headers,
+            coordinate_headers: &model.display_jt.display_jt_coordinate_array_headers,
+            shape_elements: model.display_jt.graph.shape_lod_elements(),
+            bindings: &model.display_jt.display_jt_shape_lod_bindings,
+            shape_nodes: &model.display_jt.display_jt_tri_strip_shape_nodes,
+            base_nodes: &model.display_jt.display_jt_base_node_data,
+            group_nodes: &model.display_jt.display_jt_group_node_data,
+            instance_nodes: &model.display_jt.display_jt_instance_nodes,
+            transforms: &model.display_jt.display_jt_geometric_transform_attributes,
+            materials: &model.display_jt.display_jt_material_attributes,
+            compressed_elements: model.display_jt.graph.compressed_elements(),
+        },
+    )?;
     for (tessellation, source_offset) in display_jt_tessellations {
         annotations
             .note(tessellation.id.as_str(), &annotation_stream, source_offset)
@@ -428,6 +431,7 @@ pub(super) fn attach(
 }
 
 fn attach_rm_face_colors(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
@@ -446,7 +450,7 @@ fn attach_rm_face_colors(
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
         &model.parasolid.parasolid_deltas_records,
-        &super::substrate::paired_delta_streams(scan),
+        &super::substrate::paired_delta_streams(ctx, scan)?,
     )?;
     for (face_id, color) in bindings {
         let Some(index) = face_indices.get(&face_id).copied() else {
@@ -478,6 +482,7 @@ struct RmFaceColorBinding {
 }
 
 fn attach_rm_appearances(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
@@ -495,7 +500,7 @@ fn attach_rm_appearances(
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
         &model.parasolid.parasolid_deltas_records,
-        &super::substrate::paired_delta_streams(scan),
+        &super::substrate::paired_delta_streams(ctx, scan)?,
     );
     if source_bindings.is_empty() && face_bindings.is_empty() {
         return Ok(());
@@ -1926,7 +1931,7 @@ fn attach_feature_operations(
         counterbore_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
     let mut counterbore_dimensions = BTreeMap::new();
     if let Some(projection) =
-        counterbore_body_projection(Some(ctx), ir, &counterbore_operations, &hole_outputs)?
+        counterbore_body_projection(ctx, ir, &counterbore_operations, &hole_outputs)?
     {
         hole_outputs.extend(projection.outputs);
         simple_hole_diameters.extend(projection.diameters);
@@ -1944,15 +1949,14 @@ fn attach_feature_operations(
     let simple_hole_placements =
         hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
     let counterbore_hole_placements = counterbore_axis_placements_for_operations(
-        Some(ctx),
+        ctx,
         ir,
         &counterbore_operations,
         &hole_outputs,
     )?;
     let blind_hole_placements =
         blind_hole_axis_placements_for_operations(ir, &blind_hole_operations, &hole_outputs);
-    let simple_hole_chamfers =
-        simple_hole_chamfers(Some(ctx), ir, simple_hole_templates, &hole_outputs)?;
+    let simple_hole_chamfers = simple_hole_chamfers(ctx, ir, simple_hole_templates, &hole_outputs)?;
     let hole_packages = hole_package_projection(
         ir,
         simple_hole_templates,
@@ -7100,7 +7104,7 @@ fn hole_body_projection(
 }
 
 fn counterbore_body_projection(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -7221,7 +7225,7 @@ fn hole_axis_placements_for_operations(
 }
 
 fn counterbore_axis_placements_for_operations(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -7686,7 +7690,7 @@ fn plane_annulus_witness(
 }
 
 fn counterbore_cylinders(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body_faces: &[&Face],
 ) -> Result<Option<Vec<CounterboreCylinderWitness>>, CodecError> {
@@ -7698,18 +7702,11 @@ fn counterbore_cylinders(
     }
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
-    let mut candidates = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            cylinders.len(),
-            Vec::<(usize, CounterboreCylinderWitness)>::new(),
-            "nx counterbore cylinder candidates",
-        )?,
-        None => alloc_filled(
-            cylinders.len(),
-            Vec::<(usize, CounterboreCylinderWitness)>::new(),
-            "nx counterbore cylinder candidates",
-        )?,
-    };
+    let mut candidates = ctx.alloc_filled(
+        cylinders.len(),
+        Vec::<(usize, CounterboreCylinderWitness)>::new(),
+        "nx counterbore cylinder candidates",
+    )?;
     for (first_index, first) in cylinders.iter().enumerate() {
         for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
             let (small, large) = if first.radius < second.radius {
@@ -7730,30 +7727,31 @@ fn counterbore_cylinders(
             {
                 continue;
             }
-            let mut common = Vec::new();
+            let mut common = None;
+            let mut multiple_common = false;
             for (small_ordinal, small_station) in small.stations.iter().enumerate() {
                 for (large_ordinal, large_station) in large.stations.iter().enumerate() {
-                    if (small_station - large_station).abs() <= linear_tolerance {
-                        common.push((small_ordinal, large_ordinal, *small_station));
+                    if (small_station - large_station).abs() <= linear_tolerance
+                        && common
+                            .replace((small_ordinal, large_ordinal, *small_station))
+                            .is_some()
+                    {
+                        multiple_common = true;
                     }
                 }
             }
-            let [(small_shared, large_shared, shared_station)] = common.as_slice() else {
+            let Some((small_shared, large_shared, shared_station)) = common else {
                 continue;
             };
+            if multiple_common {
+                continue;
+            }
             let small_other = small.stations[1 - small_shared];
             let large_other = large.stations[1 - large_shared];
             let depth = (large_other - shared_station).abs();
             if depth <= linear_tolerance
                 || (small_other - shared_station).abs() <= linear_tolerance
-                || !plane_annulus_witness(
-                    ir,
-                    body_faces,
-                    small,
-                    *small_shared,
-                    large,
-                    *large_shared,
-                )
+                || !plane_annulus_witness(ir, body_faces, small, small_shared, large, large_shared)
             {
                 continue;
             }
@@ -7764,9 +7762,19 @@ fn counterbore_cylinders(
                 counterbore_radius: large.radius,
                 depth,
             };
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(2, "nx counterbore candidate pair")?;
-            }
+            ctx.charge_collection_items(2, "nx counterbore candidate pair")?;
+            reserve_attach_vec(
+                ctx,
+                &mut candidates[first_index],
+                1,
+                "nx counterbore candidate pair",
+            )?;
+            reserve_attach_vec(
+                ctx,
+                &mut candidates[second_index],
+                1,
+                "nx counterbore candidate pair",
+            )?;
             candidates[first_index].push((second_index, witness));
             candidates[second_index].push((first_index, witness));
         }
@@ -7774,25 +7782,22 @@ fn counterbore_cylinders(
     if candidates.iter().any(|candidates| candidates.len() != 1) {
         return Ok(None);
     }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            (cylinders.len() / 2) as u64,
-            "nx counterbore cylinder witnesses",
-        )?;
-    }
-    let mut witnesses = Vec::with_capacity(cylinders.len() / 2);
-    let mut used = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            cylinders.len(),
-            false,
-            "nx counterbore cylinder assignments",
-        )?,
-        None => alloc_filled(
-            cylinders.len(),
-            false,
-            "nx counterbore cylinder assignments",
-        )?,
-    };
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(cylinders.len() / 2),
+        "nx counterbore cylinder witnesses",
+    )?;
+    let mut witnesses = Vec::new();
+    reserve_attach_vec(
+        ctx,
+        &mut witnesses,
+        cylinders.len() / 2,
+        "nx counterbore cylinder witnesses",
+    )?;
+    let mut used = ctx.alloc_filled(
+        cylinders.len(),
+        false,
+        "nx counterbore cylinder assignments",
+    )?;
     for first_index in 0..cylinders.len() {
         if used[first_index] {
             continue;
@@ -7809,6 +7814,18 @@ fn counterbore_cylinders(
         witnesses.push(witness);
     }
     Ok(Some(witnesses))
+}
+
+fn reserve_attach_vec<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(additional);
+    values
+        .try_reserve_exact(additional)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))
 }
 
 /// Identify one blind bore from its unique planar termination. The cylinder
@@ -7980,7 +7997,7 @@ fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point
 /// through-hole bore has exactly two coaxial conical faces and every cone is
 /// bounded by the bore circle and one equal larger circle.
 fn simple_hole_chamfers(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -8060,12 +8077,8 @@ fn simple_hole_chamfers(
         {
             return Ok(BTreeMap::new());
         }
-        let mut cone_counts = match ctx {
-            Some(ctx) => {
-                ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?
-            }
-            None => alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?,
-        };
+        let mut cone_counts =
+            ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?;
         let mut outer_radii = Vec::new();
         let mut included_angles = Vec::new();
         for face in body_faces
@@ -8083,29 +8096,38 @@ fn simple_hole_chamfers(
             if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
                 return Ok(BTreeMap::new());
             }
-            let matching_bores = bores
-                .iter()
-                .enumerate()
-                .filter_map(|(ordinal, (bore_origin, bore_axis, _))| {
-                    let dot = axis.dot(*bore_axis);
-                    if (1.0 - dot.abs()) > angular_tolerance {
-                        return None;
-                    }
-                    let delta = Vector3::new(
-                        origin.x - bore_origin.x,
-                        origin.y - bore_origin.y,
-                        origin.z - bore_origin.z,
-                    );
-                    let cross = delta.cross(*bore_axis);
-                    (cross.norm() <= linear_tolerance).then_some(ordinal)
-                })
-                .collect::<Vec<_>>();
-            let [bore_ordinal] = matching_bores.as_slice() else {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(bores.len()),
+                "nx chamfer bore matching",
+            )?;
+            let mut matching_bore = None;
+            let mut multiple_bores = false;
+            for (ordinal, (bore_origin, bore_axis, _)) in bores.iter().enumerate() {
+                let dot = axis.dot(*bore_axis);
+                if (1.0 - dot.abs()) > angular_tolerance {
+                    continue;
+                }
+                let delta = Vector3::new(
+                    origin.x - bore_origin.x,
+                    origin.y - bore_origin.y,
+                    origin.z - bore_origin.z,
+                );
+                if delta.cross(*bore_axis).norm() <= linear_tolerance
+                    && matching_bore.replace(ordinal).is_some()
+                {
+                    multiple_bores = true;
+                }
+            }
+            let Some(bore_ordinal) = matching_bore else {
                 return Ok(BTreeMap::new());
             };
-            cone_counts[*bore_ordinal] += 1;
+            if multiple_bores {
+                return Ok(BTreeMap::new());
+            }
+            cone_counts[bore_ordinal] += 1;
 
-            let mut radii = face
+            let mut radii = [None, None];
+            for (radius_count, radius) in face
                 .loops
                 .iter()
                 .flat_map(|loop_id| coedges_by_loop.get(loop_id).into_iter().flatten())
@@ -8116,15 +8138,26 @@ fn simple_hole_chamfers(
                     }
                     _ => None,
                 })
-                .collect::<Vec<_>>();
-            radii.sort_by(f64::total_cmp);
-            let [inner, outer] = radii.as_slice() else {
+                .enumerate()
+            {
+                if radius_count == radii.len() {
+                    return Ok(BTreeMap::new());
+                }
+                radii[radius_count] = Some(radius);
+            }
+            let [Some(mut inner), Some(mut outer)] = radii else {
                 return Ok(BTreeMap::new());
             };
+            if inner.total_cmp(&outer).is_gt() {
+                std::mem::swap(&mut inner, &mut outer);
+            }
             if inner.to_bits() != bore_radius.to_bits() || outer <= inner {
                 return Ok(BTreeMap::new());
             }
-            outer_radii.push(*outer);
+            ctx.charge_collection_items(2, "nx chamfer cone geometry")?;
+            reserve_attach_vec(ctx, &mut outer_radii, 1, "nx chamfer outer radii")?;
+            reserve_attach_vec(ctx, &mut included_angles, 1, "nx chamfer included angles")?;
+            outer_radii.push(outer);
             included_angles.push(half_angle * 2.0);
         }
         if cone_counts.iter().any(|count| *count != 2)

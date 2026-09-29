@@ -2473,7 +2473,7 @@ fn try_decode_text_model(
         // Facts for the report and source attributes. The header carries the
         // stream's own unit; the decoded token values are already in the
         // centimetre convention.
-        let mut header = stream.header.as_kernel_header();
+        let mut header = stream.header.as_kernel_header(ctx)?;
         header.scale = Some(stream.header.scale().get());
         ctx.charge_collection_items(1, "collect F3D text B-rep parts")?;
         parts
@@ -3555,9 +3555,7 @@ pub(crate) fn decode_archive_member<'a>(
     decode_scanned_document(
         ctx,
         scan,
-        crate::report::ReportScope::ArchiveMember(
-            dialects.clone_charged(ctx, "clone F3Z member dialect layers")?,
-        ),
+        crate::report::ReportScope::ArchiveMember(dialects.try_clone_for_decode(ctx)?),
     )
 }
 
@@ -4103,13 +4101,17 @@ fn project_mesh_bodies(
         .map_err(|error| {
             CodecError::malformed(format_args!("paramesh body record {}: {error}", body.id))
         })?;
-        let tessellation =
-            cadmpeg_ir::tessellation::Tessellation::from_parts(body.id, mesh, channels)
-                .map_err(|err| CodecError::Malformed(err.to_string()))?
-                .with_feature_edges(body.feature_edges)
-                .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
-                .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
-                .map_err(|err| CodecError::Malformed(err.to_string()))?;
+        let tessellation = cadmpeg_ir::tessellation::Tessellation::from_parts(
+            cadmpeg_ir::tessellation::TessellationId::mint(body.id)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+            mesh,
+            channels,
+        )
+        .map_err(|err| CodecError::Malformed(err.to_string()))?
+        .with_feature_edges(body.feature_edges)
+        .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
+        .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
+        .map_err(|err| CodecError::Malformed(err.to_string()))?;
         push_decode_item(
             ctx,
             &mut ir.model.tessellations,
@@ -4357,7 +4359,7 @@ fn mesh_attribute_channels(
                     ctx.refuse_codec_limit(
                         "collect F3D mesh triangle selectors",
                         0,
-                        u64::try_from(triangles.len()).unwrap_or(u64::MAX),
+                        cadmpeg_core::decode::u64_from_index(triangles.len()),
                     )
                 })?;
                 for index in 0..triangles.len() {
@@ -5217,11 +5219,7 @@ fn extend_related_design_records(
     native.design_component_occurrences =
         crate::design::decode::components::decode_component_occurrences(scan)?;
     native.design_parameter_scopes =
-        crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
-            ctx,
-            scan,
-            native,
-        )?;
+        crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(ctx, scan, native)?;
     native.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
             scan,

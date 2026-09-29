@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Explicit entries of a byte-counted branch lane with one implicit slot.
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -27,7 +29,6 @@ impl<T> BranchItems<T> {
         &self.0
     }
 
-    #[cfg(test)]
     pub(crate) fn into_vec(self) -> Vec<T> {
         self.0
     }
@@ -41,9 +42,52 @@ impl<T> BranchItems<T> {
                 .collect(),
         )
     }
+
+    pub(crate) fn map_indexed_charged<U>(
+        self,
+        ctx: &DecodeContext<'_>,
+        mut f: impl FnMut(usize, T) -> U,
+    ) -> Result<BranchItems<U>, CodecError> {
+        let count = self.0.len();
+        let count_u64 = u64_from_index(count);
+        let bytes = count_u64
+            .checked_mul(u64_from_index(std::mem::size_of::<U>()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX branch item mapping", u64::MAX, u64::MAX))?;
+        ctx.charge_collection_items(count_u64, "NX branch item mapping")?;
+        ctx.charge_retained(bytes, "NX branch item mapping")?;
+        let mut mapped = Vec::new();
+        mapped
+            .try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit("NX branch item mapping", 0, count_u64))?;
+        for (index, item) in self.0.into_iter().enumerate() {
+            mapped.push(f(index, item));
+        }
+        Ok(BranchItems(mapped))
+    }
 }
 
 impl<T> BranchItems<Option<T>> {
+    pub(crate) fn transpose_charged(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<BranchItems<T>>, CodecError> {
+        let mut values = Vec::new();
+        for value in self.0 {
+            let Some(value) = value else { return Ok(None) };
+            ctx.charge_collection_items(1, "NX branch transpose")?;
+            ctx.charge_retained(
+                u64_from_index(std::mem::size_of::<T>()),
+                "NX branch transpose",
+            )?;
+            values
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("NX branch transpose", 0, 1))?;
+            values.push(value);
+        }
+        Ok(Some(BranchItems(values)))
+    }
+
+    #[cfg(test)]
     pub(crate) fn transpose(self) -> Option<BranchItems<T>> {
         Some(BranchItems(self.0.into_iter().collect::<Option<Vec<_>>>()?))
     }

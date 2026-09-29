@@ -55,6 +55,142 @@ fn fixed_ascii_with_global_chunks(chunks: &[&[u8]]) -> Vec<u8> {
 }
 
 #[test]
+fn global_layout_card_refuses_retained_limit_before_allocation() {
+    let bytes = b"1H,,1H;,;";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 71;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let result = crate::global::layout_global_cards(bytes, Some(&ctx));
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == 72
+                && limit.operation == "iges global layout card bytes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        crate::global::layout_global_cards(bytes, Some(&ctx))
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn global_d_exponent_refuses_temporary_limit_before_normalization() {
+    let text = "1D+0";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy).unwrap();
+    let result = crate::global::parse_real_text(text, &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.used == 0
+                && limit.additional == 4
+                && limit.operation == "iges global numeric text"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(text.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        crate::global::parse_real_text(text, &ctx)
+            .unwrap()
+            .unwrap()
+            .get(),
+        1.0
+    );
+}
+
+#[test]
+fn global_supplied_string_refuses_retained_limit_before_copy() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
+    let resolution = crate::global::Resolution {
+        ctx: &ctx,
+        values: vec![crate::global::Value::String(b"abc".to_vec())],
+        losses: Vec::new(),
+    };
+    let result = resolution.supplied_string(0);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == 3
+                && limit.operation == "iges global supplied string"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::service()).unwrap();
+    let resolution = crate::global::Resolution {
+        ctx: &ctx,
+        values: vec![crate::global::Value::String(b"abc".to_vec())],
+        losses: Vec::new(),
+    };
+    assert!(matches!(
+        resolution.supplied_string(0).unwrap(),
+        crate::global::Supplied::Value(value) if value == "abc"
+    ));
+}
+
+#[test]
+fn global_loss_note_refuses_collection_limit_before_push() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut resolution = crate::global::Resolution {
+        ctx: &ctx,
+        values: Vec::new(),
+        losses: Vec::new(),
+    };
+    let result = resolution.charge(
+        IgesLossCode::GlobalMetadataFieldUnusable,
+        2,
+        crate::global::Defect::Malformed,
+        "its value was not transferred",
+    );
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges global loss notes"
+    ));
+    assert!(resolution.losses.is_empty());
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut resolution = crate::global::Resolution {
+        ctx: &ctx,
+        values: Vec::new(),
+        losses: Vec::new(),
+    };
+    resolution
+        .charge(
+            IgesLossCode::GlobalMetadataFieldUnusable,
+            2,
+            crate::global::Defect::Malformed,
+            "its value was not transferred",
+        )
+        .unwrap();
+    assert_eq!(resolution.losses.len(), 1);
+}
+
+#[test]
 fn global_field_source_locations_follow_72_byte_card_boundaries() {
     let first = [b'A'; CARD_DATA_COLUMNS];
     let second = [b'B'; CARD_DATA_COLUMNS];
@@ -128,7 +264,19 @@ fn global_excess_fields_are_counted_without_retaining_values() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 26;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let result = crate::global::parse(&scan, &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 26
+                && limit.additional == 1
+                && limit.operation == "iges global loss notes"
+    ));
 
+    let arena = DecodeArena::new();
+    policy.limits.max_collection_items = 27;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let (_, losses) = crate::global::parse(&scan, &ctx).unwrap();
     assert!(losses
         .iter()
@@ -168,7 +316,7 @@ fn global_hollerith_header_split_across_cards_is_a_field_defect() {
         crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product(), None);
-    assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
+    assert_eq!(parsed.native_file_name(), Some("part.igs"));
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(
         losses[0].code,
@@ -190,7 +338,7 @@ fn global_numeric_field_and_delimiter_must_share_a_card() {
     )
     .unwrap();
 
-    assert_eq!(parsed.sender_product().as_deref(), Some("p"));
+    assert_eq!(parsed.sender_product(), Some("p"));
     assert_eq!(
         losses
             .iter()
@@ -211,8 +359,8 @@ fn global_card_padding_is_ignored_outside_hollerith_values() {
     let (parsed, _) =
         crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
-    assert_eq!(parsed.sender_product().as_deref(), Some("product"));
-    assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
+    assert_eq!(parsed.sender_product(), Some("product"));
+    assert_eq!(parsed.native_file_name(), Some("part.igs"));
 }
 
 #[test]
@@ -224,7 +372,7 @@ fn global_card_padding_does_not_remove_hollerith_payload_spaces() {
     let (parsed, _) =
         crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
-    assert_eq!(parsed.sender_product().as_deref(), Some("ab "));
+    assert_eq!(parsed.sender_product(), Some("ab "));
 }
 
 #[test]
@@ -363,7 +511,7 @@ fn omitted_delimiter_fields_select_the_specification_defaults() {
 
         assert_eq!(parsed.parameter_delimiter, b',');
         assert_eq!(parsed.record_delimiter, b';');
-        assert_eq!(parsed.sender_product().as_deref(), Some("product"));
+        assert_eq!(parsed.sender_product(), Some("product"));
         assert!(losses.is_empty(), "{losses:#?}");
     }
 }

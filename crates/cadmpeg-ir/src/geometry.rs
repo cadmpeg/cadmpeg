@@ -16,10 +16,40 @@ use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
+
+/// Charge a decode copy of `count` values of `T` as collection items and retained bytes.
+pub(super) fn charge_decode_copy<T>(
+    count: usize,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64_from_index(count);
+    let bytes = count
+        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, count))?;
+    ctx.charge_collection_items(count, operation)?;
+    ctx.charge_retained(bytes, operation)
+}
+
+pub(super) fn copy_decode_slice<T: Copy>(
+    values: &[T],
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    charge_decode_copy::<T>(values.len(), ctx, operation)?;
+    let mut copied = Vec::new();
+    copied
+        .try_reserve_exact(values.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(values.len())))?;
+    copied.extend_from_slice(values);
+    Ok(copied)
+}
 
 pub mod analytic;
 pub mod nurbs;
@@ -151,6 +181,34 @@ pub enum SolvedSurfaceGeometry {
 }
 
 impl SolvedSurfaceGeometry {
+    /// Copy a decoded surface through the caller's collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Plane(value) => Self::Plane(*value),
+            Self::Cylinder(value) => Self::Cylinder(*value),
+            Self::Cone(value) => Self::Cone(*value),
+            Self::Sphere(value) => Self::Sphere(*value),
+            Self::Torus(value) => Self::Torus(*value),
+            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
+            Self::Polygonal(value) => Self::Polygonal(value.try_clone_for_decode(ctx, operation)?),
+            Self::Transformed(value) => {
+                charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Transformed(PlacedSurface {
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Unknown { record } => Self::Unknown {
+                record: record.clone(),
+            },
+        })
+    }
+
     /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
     /// [`PlacedSurface`] stores its own depth, so this reads one field and
@@ -364,6 +422,52 @@ pub enum SolvedCurveGeometry {
 }
 
 impl SolvedCurveGeometry {
+    /// Copy a decoded curve through the caller's collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Line(value) => Self::Line(*value),
+            Self::Circle(value) => Self::Circle(*value),
+            Self::Ellipse(value) => Self::Ellipse(*value),
+            Self::Parabola(value) => Self::Parabola(*value),
+            Self::Hyperbola(value) => Self::Hyperbola(*value),
+            Self::Degenerate(value) => Self::Degenerate(*value),
+            Self::Composite {
+                segments,
+                self_intersect,
+            } => {
+                charge_decode_copy::<CompositeCurveSegment>(segments.len(), ctx, operation)?;
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(segments.len()).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, 0, u64_from_index(segments.len()))
+                })?;
+                for segment in segments {
+                    copied.push(segment.clone());
+                }
+                Self::Composite {
+                    segments: CompositeCurveSegments(copied),
+                    self_intersect: *self_intersect,
+                }
+            }
+            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
+            Self::Polyline(value) => Self::Polyline(value.try_clone_for_decode(ctx, operation)?),
+            Self::Transformed(value) => {
+                charge_decode_copy::<Self>(1, ctx, operation)?;
+                Self::Transformed(PlacedCurve {
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Unknown { record } => Self::Unknown {
+                record: record.clone(),
+            },
+        })
+    }
+
     /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
     /// [`PlacedCurve`] stores its own depth, so this reads one field and
@@ -6864,6 +6968,32 @@ impl IntcurveSupportContext {
             std::cmp::Ordering::Equal => return,
         };
         target.pcurve.clone_from(&source.pcurve);
+    }
+
+    /// Copy a support pcurve under a decoder's allocation limits.
+    pub fn try_copy_pcurve_for_decode(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        source: usize,
+        target: usize,
+    ) -> Result<(), CodecError> {
+        if source == target {
+            return Ok(());
+        }
+        let copied = self.sides[source]
+            .pcurve
+            .as_ref()
+            .map(|pcurve| {
+                Ok::<_, CodecError>(SupportPcurve::new(
+                    pcurve
+                        .geometry
+                        .try_clone_for_decode(ctx, "intersection support pcurve copy")?,
+                    pcurve.parameter_range,
+                ))
+            })
+            .transpose()?;
+        self.sides[target].pcurve = copied;
+        Ok(())
     }
 
     /// Return the ordered support sides.
