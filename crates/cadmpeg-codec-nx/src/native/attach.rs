@@ -6524,12 +6524,54 @@ fn block_placement(
         Some(normal)
     }
 
+    fn plane_extent(
+        ctx: &DecodeContext<'_>,
+        band: &mut PlaneBand,
+        linear_tolerance: f64,
+    ) -> Result<Option<PlaneExtent>, CodecError> {
+        let count = band.offsets.len();
+        let passes = usize::try_from(usize::BITS - count.leading_zeros())
+            .map_err(|_| ctx.refuse_codec_limit("NX block plane sort", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+        let work = count.checked_mul(passes)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX block plane sort", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX block plane sort")?;
+        band.offsets.sort_by(f64::total_cmp);
+        let mut first: Option<[f64; 2]> = None;
+        let mut second: Option<[f64; 2]> = None;
+        for &offset in &band.offsets {
+            if !offset.is_finite() {
+                return Ok(None);
+            }
+            if let Some(cluster) = second.as_mut().or(first.as_mut()) {
+                if offset - cluster[0] <= linear_tolerance {
+                    cluster[1] = offset;
+                    continue;
+                }
+            }
+            if first.is_none() {
+                first = Some([offset, offset]);
+            } else if second.is_none() {
+                second = Some([offset, offset]);
+            } else {
+                return Ok(None);
+            }
+        }
+        let (Some(minimum), Some(maximum)) = (first, second) else {
+            return Ok(None);
+        };
+        if maximum[1] - minimum[0] <= linear_tolerance {
+            return Ok(None);
+        }
+        Ok(Some(PlaneExtent {
+            normal: band.normal,
+            minimum: minimum[0],
+            maximum: maximum[1],
+        }))
+    }
+
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
-    if dimensions
-        .iter()
-        .any(|dimension| *dimension <= linear_tolerance)
-    {
+    if dimensions.iter().any(|dimension| *dimension <= linear_tolerance) {
         return Ok(None);
     }
     let body = match outputs {
@@ -6553,32 +6595,39 @@ fn block_placement(
     let Some(faces) = connected_solid_body_faces(ctx, ir, body)? else {
         return Ok(None);
     };
-    Ok((|| {
-    let surface_geometry = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
     let mut bands = Vec::<PlaneBand>::new();
+    let mut band_reservation = ctx.reserve_scoped(0, "NX block plane bands")?;
     for face in faces.iter().copied() {
-        let geometry = surface_geometry.get(&face.surface).copied()?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()), "NX block plane surface lookup")?;
+        let Some(geometry) = ir.model.surfaces.iter().rev()
+            .find(|surface| surface.id == face.surface)
+            .map(|surface| &surface.geometry) else {
+            return Ok(None);
+        };
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = geometry else {
             continue;
         };
         let origin = plane_surface.origin().get();
-        let normal = canonical_normal(*plane_surface.frame().axis(), angular_tolerance)?;
+        let Some(normal) = canonical_normal(*plane_surface.frame().axis(), angular_tolerance) else {
+            return Ok(None);
+        };
         let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
-        let existing = bands
-            .iter_mut()
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(bands.len()), "NX block plane band lookup")?;
+        let existing = bands.iter_mut()
             .find(|band| (1.0 - band.normal.dot(normal)).abs() <= angular_tolerance);
+        ctx.charge_collection_items(1, "NX block plane offsets")?;
+        band_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>()))?;
         if let Some(band) = existing {
+            reserve_attach_vec(ctx, &mut band.offsets, 1, "NX block plane offsets")?;
             band.offsets.push(offset);
         } else {
-            bands.push(PlaneBand {
-                normal,
-                offsets: vec![offset],
-            });
+            ctx.charge_collection_items(1, "NX block plane bands")?;
+            band_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<PlaneBand>()))?;
+            let mut offsets = Vec::new();
+            reserve_attach_vec(ctx, &mut offsets, 1, "NX block plane offsets")?;
+            offsets.push(offset);
+            reserve_attach_vec(ctx, &mut bands, 1, "NX block plane bands")?;
+            bands.push(PlaneBand { normal, offsets });
         }
     }
     if bands.len() != 3
@@ -6588,39 +6637,21 @@ fn block_placement(
             })
         })
     {
-        return None;
+        return Ok(None);
     }
-    let mut bands = bands
-        .into_iter()
-        .map(|mut band| {
-            band.offsets.sort_by(f64::total_cmp);
-            let mut clusters = Vec::<[f64; 2]>::new();
-            for offset in band.offsets {
-                if !offset.is_finite() {
-                    return None;
-                }
-                match clusters.last_mut() {
-                    Some(cluster) if offset - cluster[0] <= linear_tolerance => {
-                        cluster[1] = offset;
-                    }
-                    _ => clusters.push([offset, offset]),
-                }
-            }
-            let [minimum, maximum] = clusters.as_slice() else {
-                return None;
-            };
-            (maximum[1] - minimum[0] > linear_tolerance).then_some(PlaneExtent {
-                normal: band.normal,
-                minimum: minimum[0],
-                maximum: maximum[1],
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    bands.sort_by(|left, right| {
-        right
-            .normal
-            .x
-            .total_cmp(&left.normal.x)
+    let [first, second, third] = bands.as_mut_slice() else {
+        return Ok(None);
+    };
+    let (Some(first), Some(second), Some(third)) = (
+        plane_extent(ctx, first, linear_tolerance)?,
+        plane_extent(ctx, second, linear_tolerance)?,
+        plane_extent(ctx, third, linear_tolerance)?,
+    ) else {
+        return Ok(None);
+    };
+    let mut extents = [first, second, third];
+    extents.sort_by(|left, right| {
+        right.normal.x.total_cmp(&left.normal.x)
             .then_with(|| right.normal.y.total_cmp(&left.normal.y))
             .then_with(|| right.normal.z.total_cmp(&left.normal.z))
     });
@@ -6632,53 +6663,41 @@ fn block_placement(
         [2, 0, 1],
         [2, 1, 0],
     ];
-    let matches = permutations
-        .into_iter()
-        .filter(|permutation| {
-            (0..3).all(|axis| {
-                let band = bands[permutation[axis]];
-                ((band.maximum - band.minimum) - dimensions[axis]).abs() <= linear_tolerance
-            })
-        })
-        .collect::<Vec<_>>();
-    let [permutation] = matches.as_slice() else {
-        return None;
+    let mut matched = None;
+    for permutation in permutations {
+        if (0..3).all(|axis| {
+            let band = extents[permutation[axis]];
+            ((band.maximum - band.minimum) - dimensions[axis]).abs() <= linear_tolerance
+        }) && matched.replace(permutation).is_some() {
+            return Ok(None);
+        }
+    }
+    let Some(permutation) = matched else {
+        return Ok(None);
     };
-    let mut ordered = permutation.map(|index| bands[index]);
-    if ordered[0]
-        .normal
-        .cross(ordered[1].normal)
-        .dot(ordered[2].normal)
-        < 0.0
-    {
+    let mut ordered = permutation.map(|index| extents[index]);
+    if ordered[0].normal.cross(ordered[1].normal).dot(ordered[2].normal) < 0.0 {
         let third = &mut ordered[2];
         third.normal = Vector3::new(-third.normal.x, -third.normal.y, -third.normal.z);
         (third.minimum, third.maximum) = (-third.maximum, -third.minimum);
     }
     let origin = Point3::new(
-        ordered
-            .iter()
-            .map(|band| band.minimum * band.normal.x)
-            .sum(),
-        ordered
-            .iter()
-            .map(|band| band.minimum * band.normal.y)
-            .sum(),
-        ordered
-            .iter()
-            .map(|band| band.minimum * band.normal.z)
-            .sum(),
+        ordered.iter().map(|band| band.minimum * band.normal.x).sum(),
+        ordered.iter().map(|band| band.minimum * band.normal.y).sum(),
+        ordered.iter().map(|band| band.minimum * band.normal.z).sum(),
     );
     let [x_axis, y_axis, z_axis] = ordered.map(|band| band.normal);
-    Some((
-        body.clone(),
-        Transform::affine([
-            [x_axis.x, y_axis.x, z_axis.x, origin.x],
-            [x_axis.y, y_axis.y, z_axis.y, origin.y],
-            [x_axis.z, y_axis.z, z_axis.z, origin.z],
-        ])?,
-    ))
-    })())
+    let Some(placement) = Transform::affine([
+        [x_axis.x, y_axis.x, z_axis.x, origin.x],
+        [x_axis.y, y_axis.y, z_axis.y, origin.y],
+        [x_axis.z, y_axis.z, z_axis.z, origin.z],
+    ]) else {
+        return Ok(None);
+    };
+    let body_bytes = std::mem::size_of::<BodyId>().checked_add(body.as_str().len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX block output body", 0, cadmpeg_core::decode::u64_from_index(body.as_str().len())))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(body_bytes), "NX block output body")?;
+    Ok(Some((body.clone(), placement)))
 }
 
 /// Return the complete primitive witness for an NX `SPHERE` operation.
@@ -6698,7 +6717,7 @@ fn sphere_body_projection(
     cadmpeg_ir::scalar::PositiveLength,
 )>, CodecError> {
     let body = match outputs {
-        [body] => body.clone(),
+        [body] => body,
         [] => {
             let mut unique = None;
             for candidate in &ir.model.bodies {
@@ -6708,6 +6727,7 @@ fn sphere_body_projection(
                 let [face] = &faces[..] else {
                     continue;
                 };
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()), "NX sphere fallback surface scan")?;
                 if !ir.model.surfaces.iter().any(|surface| {
                     surface.id == face.surface
                         && matches!(surface.geometry.solved(), Some(SolvedSurfaceGeometry::Sphere(_)))
@@ -6721,29 +6741,36 @@ fn sphere_body_projection(
             let Some(body) = unique else {
                 return Ok(None);
             };
-            body.clone()
+            body
         }
         _ => return Ok(None),
     };
-    let Some(faces) = connected_solid_body_faces(ctx, ir, &body)? else {
+    let Some(faces) = connected_solid_body_faces(ctx, ir, body)? else {
         return Ok(None);
     };
-    Ok((|| {
     let [face] = &faces[..] else {
-        return None;
+        return Ok(None);
     };
-    let surface = ir
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()), "NX sphere surface lookup")?;
+    let Some(surface) = ir
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == face.surface)?;
+        .find(|surface| surface.id == face.surface) else {
+        return Ok(None);
+    };
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
-        return None;
+        return Ok(None);
     };
     let center = sphere_surface.center();
-    let radius = cadmpeg_ir::scalar::PositiveLength::try_from(sphere_surface.radius()).ok()?;
-    Some((body, center, radius))
-    })())
+    let Ok(radius) = cadmpeg_ir::scalar::PositiveLength::try_from(sphere_surface.radius()) else {
+        return Ok(None);
+    };
+    let body_bytes = std::mem::size_of::<BodyId>()
+        .checked_add(body.as_str().len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sphere output body", 0, cadmpeg_core::decode::u64_from_index(body.as_str().len())))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(body_bytes), "NX sphere output body")?;
+    Ok(Some((body.clone(), center, radius)))
 }
 
 struct NewBodyEvidence<'a> {
