@@ -2599,10 +2599,25 @@ trait ExpressionValue: Clone {
         Ok(self.add(right))
     }
     fn subtract(self, right: Self) -> Option<Self>;
+    fn subtract_checked(
+        self,
+        right: Self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.subtract(right))
+    }
     fn multiply(self, right: Self) -> Option<Self>;
     fn divide(self, right: Self) -> Option<Self>;
     fn power(self, right: Self) -> Option<Self>;
     fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self>;
+    fn compare_checked(
+        self,
+        right: Self,
+        operator: ComparisonOperator,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.compare(right, operator))
+    }
     fn logical_and(self, right: Self) -> Option<Self>;
     fn logical_or(self, right: Self) -> Option<Self>;
     fn logical_not(self) -> Option<Self>;
@@ -2851,6 +2866,39 @@ impl SimultaneousAffineValue {
         Some(self)
     }
 
+    fn combine_admitted(
+        mut self,
+        right: Self,
+        subtract: bool,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if self.dimension != right.dimension {
+            return Ok(None);
+        }
+        let sign = if subtract { -1.0 } else { 1.0 };
+        self.constant += sign * right.constant;
+        for (variable, coefficient) in right.coefficients {
+            ctx.charge_work(1, "creo affine coefficient combination work")?;
+            match self.coefficients.entry(variable) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let value = entry.get_mut();
+                    *value += sign * coefficient;
+                    if *value == 0.0 {
+                        entry.remove();
+                    }
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let value = sign * coefficient;
+                    if value != 0.0 {
+                        ctx.charge_collection_items(1, "creo affine combined coefficient nodes")?;
+                        entry.insert(value);
+                    }
+                }
+            }
+        }
+        Ok(Some(self))
+    }
+
     fn as_curve_value(&self) -> Option<CurveExpressionValue> {
         self.coefficients
             .is_empty()
@@ -2865,6 +2913,38 @@ impl SimultaneousAffineValue {
             .all(|coefficient| *coefficient == 0.0)
             .then_some(difference.constant)
             .filter(|constant| constant.is_finite())
+    }
+
+    fn constant_difference_admitted(
+        &self,
+        right: &Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+        if self.dimension != right.dimension {
+            return Ok(None);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.coefficients.len()),
+            "creo affine coefficient comparison work",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(right.coefficients.len()),
+            "creo affine coefficient comparison work",
+        )?;
+        if self
+            .coefficients
+            .iter()
+            .any(|(name, value)| *value != right.coefficients.get(name).map_or(0.0, |value| *value))
+            || right
+                .coefficients
+                .iter()
+                .any(|(name, value)| *value != self.coefficients.get(name).map_or(0.0, |value| *value))
+        {
+            return Ok(None);
+        }
+        Ok((self.constant - right.constant)
+            .is_finite()
+            .then_some(self.constant - right.constant))
     }
 
     fn constant_truth(&self) -> Option<bool> {
@@ -2903,6 +2983,148 @@ impl ExpressionValue for SimultaneousAffineValue {
         Some(Self::constant(value, dimension))
     }
 
+    fn function_checked(
+        name: CreoMathFunction,
+        scope: Option<&str>,
+        arguments: &[Self],
+        context: RelationEvaluationContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if scope.is_some() {
+            return Ok(None);
+        }
+        match (name, arguments) {
+            (CreoMathFunction::If, [condition, when_true, when_false]) => {
+                if when_true.constant_difference_admitted(when_false, ctx)? == Some(0.0) {
+                    return Ok(Some(when_true.clone_admitted(ctx)?));
+                }
+                let Some(CurveExpressionValue::Number(condition)) = condition.as_curve_value()
+                else {
+                    return Ok(None);
+                };
+                return Ok(Some(if condition == 0.0 {
+                    when_false.clone_admitted(ctx)?
+                } else {
+                    when_true.clone_admitted(ctx)?
+                }));
+            }
+            (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
+                let Some(difference) = left.constant_difference_admitted(right, ctx)? else {
+                    return Ok(None);
+                };
+                let Some(selects_left) = extremum_selects_left(name, difference, 0.0) else {
+                    return Ok(None);
+                };
+                return Ok(Some(if selects_left {
+                    left.clone_admitted(ctx)?
+                } else {
+                    right.clone_admitted(ctx)?
+                }));
+            }
+            (CreoMathFunction::Sign, [value, _])
+                if value.coefficients.is_empty() && value.constant == 0.0 =>
+            {
+                return Ok(Some(value.clone_admitted(ctx)?));
+            }
+            (CreoMathFunction::Bound, [value, lower, upper]) => {
+                let Some(bounds_difference) = lower.constant_difference_admitted(upper, ctx)? else {
+                    return Ok(None);
+                };
+                if bounds_difference >= 0.0 {
+                    return Ok(None);
+                }
+                let Some(lower_difference) = value.constant_difference_admitted(lower, ctx)? else {
+                    return Ok(None);
+                };
+                if lower_difference < 0.0 {
+                    return Ok(Some(lower.clone_admitted(ctx)?));
+                }
+                let Some(upper_difference) = value.constant_difference_admitted(upper, ctx)? else {
+                    return Ok(None);
+                };
+                return Ok(Some(if upper_difference > 0.0 {
+                    upper.clone_admitted(ctx)?
+                } else {
+                    value.clone_admitted(ctx)?
+                }));
+            }
+            (CreoMathFunction::Dead, [value, lower, upper]) => {
+                let Some(bounds_difference) = lower.constant_difference_admitted(upper, ctx)? else {
+                    return Ok(None);
+                };
+                if bounds_difference > 0.0 {
+                    return Ok(None);
+                }
+                let Some(lower_difference) = value.constant_difference_admitted(lower, ctx)? else {
+                    return Ok(None);
+                };
+                if lower_difference < 0.0 {
+                    return value
+                        .clone_admitted(ctx)?
+                        .combine_admitted(lower.clone_admitted(ctx)?, true, ctx);
+                }
+                let Some(upper_difference) = value.constant_difference_admitted(upper, ctx)? else {
+                    return Ok(None);
+                };
+                if upper_difference > 0.0 {
+                    return value
+                        .clone_admitted(ctx)?
+                        .combine_admitted(upper.clone_admitted(ctx)?, true, ctx);
+                }
+                return Ok(Some(Self::constant(0.0, value.dimension)));
+            }
+            (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
+                let Some(difference) = left.constant_difference_admitted(right, ctx)? else {
+                    return Ok(None);
+                };
+                let Some(tolerance_value) = tolerance.as_curve_value() else {
+                    return Ok(None);
+                };
+                let Some((tolerance, tolerance_dimension)) = quantity_parts_ref(&tolerance_value)
+                else {
+                    return Ok(None);
+                };
+                if left.dimension != tolerance_dimension || tolerance < 0.0 {
+                    return Ok(None);
+                }
+                return Ok(Some(Self::number(f64::from(difference.abs() <= tolerance))));
+            }
+            (CreoMathFunction::Pow, [base, exponent]) => {
+                return Ok(base.clone_admitted(ctx)?.power(exponent.clone_admitted(ctx)?));
+            }
+            _ => {}
+        }
+        let mut numeric_arguments = Vec::new();
+        for argument in arguments {
+            let Some(value) = argument.as_curve_value() else {
+                return Ok(None);
+            };
+            ctx.try_reserve_items(
+                &mut numeric_arguments,
+                1,
+                "creo affine function numeric arguments",
+            )?;
+            numeric_arguments.push(value);
+        }
+        if matches!(
+            name,
+            CreoMathFunction::Itos
+                | CreoMathFunction::Rtos
+                | CreoMathFunction::RelModelName
+                | CreoMathFunction::RelModelType
+        ) {
+            return Ok(None);
+        }
+        let Some(result) = CurveExpressionValue::function(name, None, &numeric_arguments, context)
+        else {
+            return Ok(None);
+        };
+        let Some((value, dimension)) = quantity_parts_ref(&result) else {
+            return Ok(None);
+        };
+        Ok(Some(Self::constant(value, dimension)))
+    }
+
     fn with_unit(self, unit: RelationUnit) -> Option<Self> {
         (self.dimension == RelationDimension::default()).then_some(())?;
         let mut value = self.scale(unit.scale);
@@ -2915,8 +3137,24 @@ impl ExpressionValue for SimultaneousAffineValue {
         self.combine(right, false)
     }
 
+    fn add_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        self.combine_admitted(right, false, ctx)
+    }
+
     fn subtract(self, right: Self) -> Option<Self> {
         self.combine(right, true)
+    }
+
+    fn subtract_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        self.combine_admitted(right, true, ctx)
     }
 
     fn multiply(self, right: Self) -> Option<Self> {
@@ -2963,6 +3201,18 @@ impl ExpressionValue for SimultaneousAffineValue {
     fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
         let difference = self.constant_difference(&right)?;
         Some(Self::number(f64::from(operator.evaluate(difference, 0.0))))
+    }
+
+    fn compare_checked(
+        self,
+        right: Self,
+        operator: ComparisonOperator,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Some(difference) = self.constant_difference_admitted(&right, ctx)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self::number(f64::from(operator.evaluate(difference, 0.0)))))
     }
 
     fn logical_and(self, right: Self) -> Option<Self> {
@@ -4759,7 +5009,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             _ => return Some(value),
         };
         self.cursor += width;
-        Self::finite_value(value.compare(self.expression()?, operator)?)
+        let right = self.expression()?;
+        let result = value.compare_checked(right, operator, self.ctx);
+        Self::finite_value(self.admit(result)??)
     }
 
     fn expression(&mut self) -> Option<V> {
@@ -4775,7 +5027,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 }
                 Some(b'-') => {
                     self.cursor += 1;
-                    value = Self::finite_value(value.subtract(self.term()?)?)?;
+                    let right = self.term()?;
+                    let result = value.subtract_checked(right, self.ctx);
+                    value = Self::finite_value(self.admit(result)??)?;
                 }
                 _ => return Some(value),
             }

@@ -261,6 +261,69 @@ fn affine_probe_values() -> BTreeMap<String, SimultaneousAffineValue> {
     )])
 }
 
+fn distinct_affine_probe_values() -> BTreeMap<String, SimultaneousAffineValue> {
+    let mut values = affine_probe_values();
+    values.insert(
+        "other".to_owned(),
+        SimultaneousAffineValue {
+            dimension: RelationDimension::default(),
+            constant: 0.0,
+            coefficients: BTreeMap::from([("y".to_owned(), 1.0)]),
+        },
+    );
+    values
+}
+
+#[test]
+fn relation_affine_sum_refuses_new_coefficient_node() {
+    let error = relation_parse_limit_error("driver+other", &distinct_affine_probe_values(), |policy| {
+        policy.limits.max_collection_items = 2;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo affine combined coefficient nodes"));
+}
+
+#[test]
+fn relation_affine_difference_refuses_new_coefficient_node() {
+    let error = relation_parse_limit_error("driver-other", &distinct_affine_probe_values(), |policy| {
+        policy.limits.max_collection_items = 2;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo affine combined coefficient nodes"));
+}
+
+#[test]
+fn relation_affine_comparison_refuses_coefficient_work() {
+    let error = relation_parse_limit_error("driver==driver", &affine_probe_values(), |policy| {
+        policy.limits.max_work_units = 0;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo affine coefficient comparison work"));
+}
+
+#[test]
+fn relation_affine_function_refuses_selected_value_clone() {
+    let error = relation_parse_limit_error("if(1,driver,other)", &distinct_affine_probe_values(), |policy| {
+        policy.limits.max_collection_items = 5;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo relation affine clone coefficient nodes"));
+}
+
+#[test]
+fn relation_affine_function_refuses_numeric_argument_vector() {
+    let error = relation_parse_limit_error("sin(1)", &BTreeMap::<String, SimultaneousAffineValue>::new(), |policy| {
+        policy.limits.max_collection_items = 1;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo affine function numeric arguments"));
+}
+
 fn dimension_probe_variable(name: &str) -> DimensionProbeValue {
     crate::decode::with_test_decode_ctx(|ctx| DimensionProbeValue::variable(ctx, name))
         .expect("service profile admits dimension variable")
