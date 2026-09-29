@@ -16,6 +16,109 @@ use crate::test_support::test_om::composed_feature_history_payload;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::NxCodec;
 
+fn feature_body_segment_uses(
+    references: &[FeatureBodyReference],
+    data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
+    bindings: &[crate::native::segments::SegmentBodyBinding],
+    object_frames: &[crate::native::features::object_frame::DataBlockObjectFrame],
+) -> Vec<crate::native::features::FeatureBodySegmentUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::feature_body_segment_uses(
+            ctx, references, data_block_uses, inputs, blocks, bindings, object_frames,
+        )
+    }).expect("admitted feature body segment uses")
+}
+
+fn body_segment_use_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    use crate::native::om::{DataBlock, DataBlockRole};
+    let reference = FeatureBodyReference {
+        ordinal: None,
+        id: "nx:feature-history:body-reference#0".to_string(),
+        operation_label: "operation#0".to_string(),
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11])
+            .expect("reference token"),
+        source_offset: 0,
+    };
+    let binding = crate::native::segments::SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: crate::parasolid::StreamKind::Partition,
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 19,
+        source_offset: 0,
+    };
+    let input = FeatureInputBlock {
+        id: "input#0".to_string(),
+        operation_label: "other-operation".to_string(),
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(1, &[1])
+            .expect("input token"),
+        data_block: "block#1".to_string(),
+        source_offset: 0,
+    };
+    let block = DataBlock {
+        id: "block#1".to_string(),
+        section_ordinal: 0,
+        block_ordinal: 1,
+        role: DataBlockRole::Column,
+        section_offset: 0,
+        byte_len: 0,
+        sha256: crate::native::hex::Sha256Hex::digest(&[]),
+        stable_identity: None,
+        source_entry: String::new(),
+        source_offset: 0,
+    };
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::native::features::feature_body_segment_uses(
+            ctx, std::slice::from_ref(&reference), &[], std::slice::from_ref(&input),
+            std::slice::from_ref(&block), std::slice::from_ref(&binding), &[],
+        )
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted body segment uses");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("body segment use resource limit")
+}
+
+#[test]
+fn body_segment_uses_refuse_collection_limit() {
+    let error = body_segment_use_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn body_segment_uses_refuse_retained_limit() {
+    let error = body_segment_use_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn body_segment_uses_refuse_scoped_limit() {
+    let error = body_segment_use_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn body_segment_uses_refuse_work_limit() {
+    let error = body_segment_use_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 fn chronological_label_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
@@ -171,14 +274,15 @@ fn unique_feature_body_references_require_one_field_per_operation() {
         reference("reference#1", "operation#0", 11),
         reference("reference#2", "operation#1", 12),
     ];
-    let unique = unique_feature_body_references(&references);
+    let unique = crate::test_support::with_decode_context(|ctx| {
+        unique_feature_body_references(ctx, &references)
+    }).expect("admitted unique body references");
     assert!(!unique.contains_key("operation#0"));
     assert_eq!(unique["operation#1"].id, "reference#2");
 }
 
 #[test]
 fn feature_body_segment_uses_require_one_alias_pair() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::FeatureBodyReference;
     use crate::native::segments::SegmentBodyBinding;
     let reference = FeatureBodyReference {
@@ -238,7 +342,6 @@ fn feature_body_segment_uses_require_one_alias_pair() {
 
 #[test]
 fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::object_frame::DataBlockObjectFrame;
     use crate::native::features::FeatureBodyDataBlockUse;
     use crate::native::features::FeatureBodyReference;
@@ -449,7 +552,6 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
 
 #[test]
 fn feature_body_segment_uses_reject_primary_index_offset_collision() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::FeatureBodyDataBlockUse;
     use crate::native::features::FeatureBodyReference;
     use crate::native::segments::SegmentBodyBinding;
@@ -484,7 +586,6 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
 
 #[test]
 fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::FeatureBodyReference;
     use crate::native::features::FeatureInputBlock;
     use crate::native::om::{DataBlock, DataBlockRole};
@@ -536,7 +637,6 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
 
 #[test]
 fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::FeatureBodyReference;
     use crate::native::features::FeatureInputBlock;
     use crate::native::om::{DataBlock, DataBlockRole};

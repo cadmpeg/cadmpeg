@@ -4764,25 +4764,34 @@ pub(super) fn feature_body_references(
 
 /// Return the one body-reference field owned by each operation that has
 /// exactly one such field.
-pub(super) fn unique_feature_body_references(
-    references: &[FeatureBodyReference],
-) -> BTreeMap<&str, &FeatureBodyReference> {
-    let mut by_operation = BTreeMap::<&str, Vec<&FeatureBodyReference>>::new();
+pub(super) fn unique_feature_body_references<'a>(
+    ctx: &DecodeContext<'_>,
+    references: &'a [FeatureBodyReference],
+) -> Result<BTreeMap<&'a str, &'a FeatureBodyReference>, CodecError> {
+    let work = references.len().checked_mul(references.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("index NX body references", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "index NX body references")?;
+    let mut unique = BTreeMap::<&str, &FeatureBodyReference>::new();
+    let mut ambiguous = BTreeSet::<&str>::new();
+    let mut ambiguous_reservation = ctx.reserve_scoped(0, "NX ambiguous body references")?;
     for reference in references {
-        by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        let key = reference.operation_label.as_str();
+        if ambiguous.contains(key) { continue; }
+        if unique.remove(key).is_some() {
+            ctx.charge_collection_items(1, "NX ambiguous body references")?;
+            ambiguous_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&str>() * 4,
+            ))?;
+            ambiguous.insert(key);
+            continue;
+        }
+        ctx.charge_collection_items(1, "NX unique body references")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, &FeatureBodyReference)>() * 4,
+        ), "NX unique body references")?;
+        unique.insert(key, reference);
     }
-    by_operation
-        .into_iter()
-        .filter_map(|(operation, references)| {
-            let [reference] = references.as_slice() else {
-                return None;
-            };
-            Some((operation, *reference))
-        })
-        .collect()
+    Ok(unique)
 }
 
 /// Decode every ordered body-reference field from bounded feature operations.
@@ -4852,75 +4861,96 @@ fn unique_offset_store_body_frame<'a>(
 }
 
 pub(super) fn feature_body_segment_uses(
+    ctx: &DecodeContext<'_>,
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
     object_frames: &[DataBlockObjectFrame],
-) -> Vec<FeatureBodySegmentUse> {
-    let unique_references = unique_feature_body_references(references);
-    let offset_store_reference_counts =
-        data_block_uses
-            .iter()
-            .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
-                *counts
-                    .entry(use_.feature_body_reference.as_str())
-                    .or_default() += 1;
-                counts
-            });
-    let offset_store_operations = feature_input_store_operations(inputs, blocks);
-    let single_offset_store_operations = feature_input_store_sections(inputs, blocks)
-        .into_iter()
-        .filter_map(|(operation_label, sections)| (sections.len() == 1).then_some(operation_label))
-        .collect::<BTreeSet<_>>();
-    references
-        .iter()
-        .filter(|reference| {
-            unique_references
-                .get(reference.operation_label.as_str())
-                .is_some_and(|unique| unique.id == reference.id)
-        })
-        .filter_map(|reference| {
-            let offset_store_reference_count = offset_store_reference_counts
-                .get(reference.id.as_str())
-                .copied();
-            let has_offset_store_reference = offset_store_reference_count.is_some();
-            let is_offset_store_operation =
-                offset_store_operations.contains(reference.operation_label.as_str());
-            if is_offset_store_operation && !has_offset_store_reference {
-                return None;
+) -> Result<Vec<FeatureBodySegmentUse>, CodecError> {
+    let unique_references = unique_feature_body_references(ctx, references)?;
+    let mut counts_reservation = ctx.reserve_scoped(0, "NX body offset-store reference counts")?;
+    let mut offset_store_reference_counts = BTreeMap::<&str, usize>::new();
+    for use_ in data_block_uses {
+        ctx.charge_collection_items(1, "NX body offset-store reference counts")?;
+        counts_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, usize)>() * 4,
+        ))?;
+        let count = offset_store_reference_counts
+            .entry(use_.feature_body_reference.as_str()).or_default();
+        *count = count.checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("count NX body offset-store references", 0, 1))?;
+    }
+    let offset_store_operations = feature_input_store_operations(ctx, inputs, blocks)?;
+    let store_sections = feature_input_store_sections(ctx, inputs, blocks)?;
+    let scan_work = references.len().checked_mul(data_block_uses.len())
+        .and_then(|count| count.checked_add(references.len().checked_mul(bindings.len())?))
+        .and_then(|count| count.checked_add(references.len().checked_mul(object_frames.len())?))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX body segment uses", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(scan_work), "join NX body segment uses")?;
+    let mut output = Vec::new();
+    for reference in references {
+        if !unique_references.get(reference.operation_label.as_str())
+            .is_some_and(|unique| unique.id == reference.id) { continue; }
+        let count = offset_store_reference_counts.get(reference.id.as_str()).copied();
+        let has_offset_store_reference = count.is_some();
+        if offset_store_operations.contains(reference.operation_label.as_str())
+            && !has_offset_store_reference { continue; }
+        if has_offset_store_reference && (count != Some(1)
+            || !store_sections.get(reference.operation_label.as_str())
+                .is_some_and(|sections| sections.len() == 1)) { continue; }
+        let binding = if has_offset_store_reference {
+            let Some(data_block_use) = data_block_uses.iter()
+                .find(|use_| use_.feature_body_reference == reference.id) else { continue; };
+            if unique_offset_store_body_frame(reference, data_block_use, object_frames).is_none() {
+                continue;
             }
-            if has_offset_store_reference
-                && (offset_store_reference_count != Some(1)
-                    || !single_offset_store_operations.contains(reference.operation_label.as_str()))
-            {
-                return None;
-            }
-            let binding = if has_offset_store_reference {
-                let data_block_use = data_block_uses
-                    .iter()
-                    .find(|use_| use_.feature_body_reference == reference.id)?;
-                unique_offset_store_body_frame(reference, data_block_use, object_frames)?;
-                crate::native::segments::unique_segment_body_alias_binding(
-                    reference.body.value(),
-                    bindings,
-                )?
-            } else {
-                crate::native::segments::unique_segment_body_binding(
-                    reference.body.value(),
-                    bindings,
-                )?
-            };
-            Some(FeatureBodySegmentUse {
-                id: reference
-                    .id
-                    .replacen("body-reference", "body-segment-use", 1),
-                feature_body_reference: reference.id.clone(),
-                segment_body_binding: binding.id.clone(),
-            })
-        })
-        .collect()
+            let Some(binding) = crate::native::segments::unique_segment_body_alias_binding(
+                reference.body.value(), bindings,
+            ) else { continue; };
+            binding
+        } else {
+            let Some(binding) = crate::native::segments::unique_segment_body_binding(
+                reference.body.value(), bindings,
+            ) else { continue; };
+            binding
+        };
+        let replace = reference.id.split_once("body-reference");
+        let (prefix, suffix, replacement) = replace.map_or(
+            (reference.id.as_str(), "", ""),
+            |(prefix, suffix)| (prefix, suffix, "body-segment-use"),
+        );
+        let id_len = prefix.len().checked_add(suffix.len())
+            .and_then(|count| count.checked_add(replacement.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX body segment use identity", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len),
+            "NX body segment use identity")?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX body segment use identity", 0, 1))?;
+        id.push_str(prefix);
+        id.push_str(replacement);
+        id.push_str(suffix);
+        let copy = |source: &str, operation: &'static str| -> Result<String, CodecError> {
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(source.len()), operation)?;
+            let mut value = String::new();
+            value.try_reserve_exact(source.len())
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            value.push_str(source);
+            Ok(value)
+        };
+        let feature_body_reference = copy(&reference.id, "NX body segment reference identity")?;
+        let segment_body_binding = copy(&binding.id, "NX body segment binding identity")?;
+        ctx.charge_collection_items(1, "NX body segment uses")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureBodySegmentUse>(),
+        ), "NX body segment uses")?;
+        output.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX body segment uses", 0, 1))?;
+        output.push(FeatureBodySegmentUse { id, feature_body_reference, segment_body_binding });
+    }
+    Ok(output)
 }
 
 /// Return operations with at least one resolved input field in an offset store.
@@ -4929,35 +4959,71 @@ pub(super) fn feature_body_segment_uses(
 /// offset-store namespace. The one-store requirement for a segment bridge is
 /// checked separately from this broader namespace classification.
 pub(super) fn feature_input_store_operations(
+    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
-) -> BTreeSet<String> {
-    feature_input_store_sections(inputs, blocks)
-        .into_iter()
-        .filter_map(|(operation_label, sections)| (!sections.is_empty()).then_some(operation_label))
-        .collect()
+) -> Result<BTreeSet<String>, CodecError> {
+    let sections = feature_input_store_sections(ctx, inputs, blocks)?;
+    let mut operations = BTreeSet::new();
+    for (label, sections) in sections {
+        if sections.is_empty() { continue; }
+        ctx.charge_collection_items(1, "NX offset-store operations")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<String>() * 4,
+        ), "NX offset-store operations")?;
+        operations.insert(label);
+    }
+    Ok(operations)
 }
 
 /// Group resolved operation-header inputs by their indexed offset-store section.
 fn feature_input_store_sections(
+    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
-) -> BTreeMap<String, BTreeSet<u32>> {
-    let blocks_by_id = blocks
-        .iter()
-        .map(|block| (block.id.as_str(), block))
-        .collect::<BTreeMap<_, _>>();
+) -> Result<BTreeMap<String, BTreeSet<u32>>, CodecError> {
+    let mut block_reservation = ctx.reserve_scoped(0, "NX input-store block index")?;
+    let mut blocks_by_id = BTreeMap::new();
+    for block in blocks {
+        ctx.charge_collection_items(1, "NX input-store block index")?;
+        block_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, &crate::native::om::DataBlock)>() * 4,
+        ))?;
+        blocks_by_id.insert(block.id.as_str(), block);
+    }
+    let work = inputs.len().checked_mul(blocks.len())
+        .and_then(|count| count.checked_add(inputs.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX input-store sections", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "join NX input-store sections")?;
     let mut sections_by_operation = BTreeMap::<String, BTreeSet<u32>>::new();
     for input in inputs {
         let Some(block) = blocks_by_id.get(input.data_block.as_str()) else {
             continue;
         };
-        sections_by_operation
-            .entry(input.operation_label.clone())
-            .or_default()
-            .insert(block.section_ordinal);
+        ctx.charge_collection_items(1, "NX input-store section identities")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<u32>() * 4,
+        ), "NX input-store section identities")?;
+        if let Some(sections) = sections_by_operation.get_mut(input.operation_label.as_str()) {
+            sections.insert(block.section_ordinal);
+            continue;
+        }
+        let key_len = input.operation_label.len();
+        ctx.charge_collection_items(1, "NX input-store operation groups")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            (std::mem::size_of::<(String, BTreeSet<u32>)>() * 4)
+                .checked_add(key_len)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX input-store operation groups", 0, 1))?,
+        ), "NX input-store operation groups")?;
+        let mut label = String::new();
+        label.try_reserve_exact(key_len)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX input-store operation label", 0, 1))?;
+        label.push_str(&input.operation_label);
+        let mut sections = BTreeSet::new();
+        sections.insert(block.section_ordinal);
+        sections_by_operation.insert(label, sections);
     }
-    sections_by_operation
+    Ok(sections_by_operation)
 }
 
 /// Resolve primary feature body fields in an unambiguous operation input store.

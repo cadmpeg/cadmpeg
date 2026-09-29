@@ -1410,12 +1410,13 @@ fn attach_feature_operations(
         .feature_hole_package_construction_group_uses
         .as_slice();
     let admitted_body_references = native_primary_body_references(
+        ctx,
         body_references,
         body_data_block_uses,
         body_segment_uses,
         input_blocks,
         data_blocks,
-    );
+    )?;
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, &stream);
     let base_ordinal = ir.model.features.len() as u64;
@@ -1444,7 +1445,7 @@ fn attach_feature_operations(
             .push(use_);
     }
     let body_writer_references_by_operation =
-        crate::native::features::unique_feature_body_references(body_references);
+        crate::native::features::unique_feature_body_references(ctx, body_references)?;
     let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
     for body_use in body_data_block_uses {
         let Some(reference) = body_references_by_id.get(body_use.feature_body_reference.as_str())
@@ -4048,32 +4049,48 @@ fn native_result_body_identity(
 /// same field. Missing or ambiguous relations remain offset-store-local. An
 /// operation with zero or multiple body fields has no primary-body selection.
 fn native_primary_body_references<'a>(
+    ctx: &DecodeContext<'_>,
     references: &'a [crate::native::features::FeatureBodyReference],
     data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
     segment_uses: &[crate::native::features::FeatureBodySegmentUse],
     inputs: &[crate::native::features::FeatureInputBlock],
     data_blocks: &[crate::native::om::DataBlock],
-) -> BTreeMap<&'a str, u32> {
-    let unique_references = crate::native::features::unique_feature_body_references(references);
-    let offset_store_references = data_block_uses
-        .iter()
-        .map(|use_| use_.feature_body_reference.as_str())
-        .collect::<BTreeSet<_>>();
+) -> Result<BTreeMap<&'a str, u32>, CodecError> {
+    let unique_references = crate::native::features::unique_feature_body_references(ctx, references)?;
+    let mut offset_reservation = ctx.reserve_scoped(0, "NX primary offset-store references")?;
+    let mut offset_store_references = BTreeSet::new();
+    for use_ in data_block_uses {
+        ctx.charge_collection_items(1, "NX primary offset-store references")?;
+        offset_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4,
+        ))?;
+        offset_store_references.insert(use_.feature_body_reference.as_str());
+    }
     let offset_store_operations =
-        crate::native::features::feature_input_store_operations(inputs, data_blocks);
-    let bridged_segment_references = segment_uses
-        .iter()
-        .map(|use_| use_.feature_body_reference.as_str())
-        .collect::<BTreeSet<_>>();
-    unique_references
-        .into_iter()
-        .filter(|(_, reference)| {
-            bridged_segment_references.contains(reference.id.as_str())
-                || (!offset_store_references.contains(reference.id.as_str())
-                    && !offset_store_operations.contains(reference.operation_label.as_str()))
-        })
-        .map(|(operation, reference)| (operation, reference.body.value()))
-        .collect()
+        crate::native::features::feature_input_store_operations(ctx, inputs, data_blocks)?;
+    let mut bridge_reservation = ctx.reserve_scoped(0, "NX primary bridged references")?;
+    let mut bridged_segment_references = BTreeSet::new();
+    for use_ in segment_uses {
+        ctx.charge_collection_items(1, "NX primary bridged references")?;
+        bridge_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4,
+        ))?;
+        bridged_segment_references.insert(use_.feature_body_reference.as_str());
+    }
+    let mut output = BTreeMap::new();
+    for (operation, reference) in unique_references {
+        if !bridged_segment_references.contains(reference.id.as_str())
+            && (offset_store_references.contains(reference.id.as_str())
+                || offset_store_operations.contains(reference.operation_label.as_str())) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "NX primary body references")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, u32)>() * 4,
+        ), "NX primary body references")?;
+        output.insert(operation, reference.body.value());
+    }
+    Ok(output)
 }
 
 fn attach_sketch_graph(

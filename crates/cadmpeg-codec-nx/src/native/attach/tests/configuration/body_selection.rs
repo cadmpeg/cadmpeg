@@ -248,7 +248,8 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         ),
     ];
 
-    let native = native_primary_body_references(
+    let native = crate::test_support::with_decode_context(|ctx| native_primary_body_references(
+        ctx,
         &references,
         &data_block_uses,
         &[FeatureBodySegmentUse {
@@ -258,7 +259,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         }],
         &inputs,
         &blocks,
-    );
+    )).expect("admitted primary body references");
     assert_eq!(native.get("operation#segment"), Some(&10));
     assert_eq!(native.get("operation#exact"), Some(&99));
     assert!(!native.contains_key("operation#missing"));

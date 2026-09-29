@@ -374,8 +374,8 @@ fn terminal_feature_body_indices(
         offset_store_references.insert(use_.feature_body_reference.as_str());
     }
     let offset_store_operations =
-        crate::native::features::feature_input_store_operations(inputs, data_blocks);
-    let unique_references = crate::native::features::unique_feature_body_references(references);
+        crate::native::features::feature_input_store_operations(ctx, inputs, data_blocks)?;
+    let unique_references = crate::native::features::unique_feature_body_references(ctx, references)?;
     let mut object_reservation = ctx.reserve_scoped(0, "NX terminal body object references")?;
     let mut object_references = Vec::new();
     for (_, reference) in unique_references {
