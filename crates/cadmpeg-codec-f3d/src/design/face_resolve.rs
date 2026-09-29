@@ -1447,9 +1447,10 @@ fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
 /// operand has no alternate or unreferenced lane, and the selected references
 /// agree with the aggregate candidate set.
 pub(crate) fn legacy_face_recipe_reference_candidates(
+    ctx: Option<&DecodeContext<'_>>,
     operand: &DesignFaceOperand,
     recipe_record_index: i32,
-) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
     if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
         || !matches!(
             crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program),
@@ -1459,9 +1460,10 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
         || !operand.unreferenced_candidate_faces.is_empty()
         || !operand.alternate_selector_candidate_faces.is_empty()
     {
-        return None;
+        return Ok(None);
     }
-    let mut candidates = operand
+    let mut candidates = Vec::new();
+    for face in operand
         .recipe_references
         .iter()
         .filter(|reference| reference.design_reference == i64::from(recipe_record_index))
@@ -1471,18 +1473,28 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
             } else {
                 reference.candidate_faces.iter()
             }
-        })
-        .cloned()
-        .collect::<Vec<_>>();
+        }) {
+        let face = copy_face_id(ctx, face, "f3d legacy face candidate id")?;
+        push_face_item(ctx, &mut candidates, face, "f3d legacy face candidate")?;
+    }
     candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     candidates.dedup();
-    if !operand.candidate_faces.is_empty()
-        && operand.candidate_faces.iter().collect::<HashSet<_>>()
-            != candidates.iter().collect::<HashSet<_>>()
-    {
-        return None;
+    if !operand.candidate_faces.is_empty() {
+        let mut active = HashSet::new();
+        for face in &operand.candidate_faces {
+            insert_face_set(ctx, &mut active, face,
+                "f3d legacy active face index")?;
+        }
+        let mut selected = HashSet::new();
+        for face in &candidates {
+            insert_face_set(ctx, &mut selected, face,
+                "f3d legacy selected face index")?;
+        }
+        if active != selected {
+            return Ok(None);
+        }
     }
-    (!candidates.is_empty()).then_some(candidates)
+    Ok((!candidates.is_empty()).then_some(candidates))
 }
 
 pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
@@ -2660,7 +2672,7 @@ mod tests {
         ];
         operand.candidate_faces = vec![face(10), face(20)];
         assert_eq!(
-            legacy_face_recipe_reference_candidates(&operand, 201),
+            legacy_face_recipe_reference_candidates(None, &operand, 201).expect("projection resource budget"),
             Some(vec![face(10), face(20)])
         );
         operand.candidate_faces.clear();
@@ -2672,15 +2684,108 @@ mod tests {
             })
         );
         assert_eq!(
-            legacy_face_recipe_reference_candidates(&operand, 201),
+            legacy_face_recipe_reference_candidates(None, &operand, 201).expect("projection resource budget"),
             Some(vec![face(10), face(20)])
         );
-        assert!(legacy_face_recipe_reference_candidates(&operand, 999).is_none());
+        assert!(legacy_face_recipe_reference_candidates(None, &operand, 999)
+            .expect("projection resource budget").is_none());
         operand.recipe_references.remove(0);
         operand.recipe_references[0]
             .alternate_selector_faces
             .push(face(30));
         assert!(resolved_explicit_bounded_face_group(None, &group, &[operand]).expect("projection resource budget").is_none());
+    }
+
+    fn legacy_face_candidate_limit_fixture() -> DesignFaceOperand {
+        let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "group_record_index": 150,
+            "group_member_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "346",
+            "paired_byte_offset": 325,
+            "paired_class_tag": "262",
+            "recipe_record_index": 203,
+            "recipe_record_byte_offset": 341,
+            "recipe_id": "f3d:test:recipe#201",
+            "recipe_prefix_offset": 352,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [0, -1, 1],
+            "recipe_node_offsets": [0],
+            "recipe_nodes": [{
+                "byte_offset": 0,
+                "end_byte_offset": 12,
+                "program": [0, -1, 1],
+                "recipe_structure": {
+                    "root": 0,
+                    "prelude": [0, 0],
+                    "sides": [
+                        {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []},
+                        {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []}
+                    ],
+                    "postlude": []
+                }
+            }],
+            "candidate_faces": ["f3d:brep:entity#10"],
+            "next_record_index": 202,
+            "next_byte_offset": 469
+        })).unwrap();
+        operand.recipe_references = vec![reference(10, "selected", 201)];
+        operand
+    }
+
+    fn assert_legacy_face_candidate_collection_refusal(operation: &'static str, limit: u64) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let operand = legacy_face_candidate_limit_fixture();
+        assert_eq!(legacy_face_recipe_reference_candidates(None, &operand, 201).unwrap(),
+            Some(vec![face(10)]));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = legacy_face_recipe_reference_candidates(Some(&ctx), &operand, 201);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.operation == operation
+                && failure.dimension == ResourceDimension::CollectionItems),
+            "expected {operation} refusal, got {result:?}");
+    }
+
+    #[test]
+    fn legacy_face_candidate_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let operand = legacy_face_candidate_limit_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(face(10).as_str().len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = legacy_face_recipe_reference_candidates(Some(&ctx), &operand, 201);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.operation == "f3d legacy face candidate id"
+                && failure.dimension == ResourceDimension::RetainedBytes),
+            "expected legacy face ID refusal, got {result:?}");
+    }
+
+    #[test]
+    fn legacy_face_candidate_refuses_collection_limit() {
+        assert_legacy_face_candidate_collection_refusal("f3d legacy face candidate", 0);
+    }
+
+    #[test]
+    fn legacy_active_face_index_refuses_collection_limit() {
+        assert_legacy_face_candidate_collection_refusal("f3d legacy active face index", 1);
+    }
+
+    #[test]
+    fn legacy_selected_face_index_refuses_collection_limit() {
+        assert_legacy_face_candidate_collection_refusal("f3d legacy selected face index", 2);
     }
 
     #[test]
