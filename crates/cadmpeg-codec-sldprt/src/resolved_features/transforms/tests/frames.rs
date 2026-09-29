@@ -721,7 +721,7 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         ..transform
     };
     assert_eq!(
-        marker_transforms_with_frame_fallback(&[other, transform], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(vec![other, transform], &sketch, 1.0e-8),
         vec![other, transform]
     );
     let translated = MarkerTransform {
@@ -729,15 +729,15 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         ..transform
     };
     assert_eq!(
-        marker_transforms_with_frame_fallback(&[other, translated], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(vec![other, translated], &sketch, 1.0e-8),
         vec![other, translated]
     );
     assert_eq!(
-        marker_transforms_with_frame_fallback(&[other], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(vec![other], &sketch, 1.0e-8),
         vec![other]
     );
     assert_eq!(
-        marker_transforms_with_frame_fallback(&[], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(vec![], &sketch, 1.0e-8),
         vec![transform]
     );
 }

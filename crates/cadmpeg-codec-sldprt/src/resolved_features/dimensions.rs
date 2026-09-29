@@ -710,12 +710,13 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         dimensioned_circle_surface_transforms(sketch, surfaces, &circles, QUANTUM)
                     })
             });
-            let candidates = sketches
-                .iter()
-                .find(|sketch| sketch.id == *sketch_id)
-                .map_or(candidates.clone(), |sketch| {
-                    marker_transforms_with_frame_fallback(&candidates, sketch, QUANTUM)
-                });
+            let candidates = if let Some(sketch) =
+                sketches.iter().find(|sketch| sketch.id == *sketch_id)
+            {
+                marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM)
+            } else {
+                candidates
+            };
             dimensioned_circle_transform(&candidates, &circles)
                 .map(|transform| ((*feature).to_string(), transform))
         })

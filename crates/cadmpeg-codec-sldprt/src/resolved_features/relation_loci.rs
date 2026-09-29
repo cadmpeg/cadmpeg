@@ -4160,12 +4160,13 @@ pub(super) fn marker_transform_candidates_by_feature(
             } else {
                 fallback
             };
-            let candidates = sketches
-                .iter()
-                .find(|candidate| candidate.id == **sketch)
-                .map_or(candidates.clone(), |sketch| {
-                    marker_transforms_with_frame_fallback(&candidates, sketch, QUANTUM)
-                });
+            let candidates = if let Some(sketch) =
+                sketches.iter().find(|candidate| candidate.id == **sketch)
+            {
+                marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM)
+            } else {
+                candidates
+            };
             if !candidates.is_empty() {
                 result.insert(feature.to_string(), candidates);
             }
