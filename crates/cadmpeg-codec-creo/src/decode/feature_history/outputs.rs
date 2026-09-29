@@ -292,15 +292,10 @@ pub(in super::super) fn new_sheet_output_surface_id(
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Option<u32> {
-    let owned = tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .collect::<Vec<_>>();
     let unique_table = |class_id| {
-        let mut matches = owned
+        let mut matches = tables
             .iter()
-            .copied()
-            .filter(|table| table.table_class_id == class_id);
+            .filter(|table| table.feature_id == feature_id && table.table_class_id == class_id);
         let table = matches.next()?;
         matches.next().is_none().then_some(table)
     };
