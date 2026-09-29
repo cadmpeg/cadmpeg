@@ -32,6 +32,8 @@ use super::offset_data_block_bytes;
 
 use super::resolved_feature_payload_references;
 use super::format_feature_history_id;
+use super::copy_operation_text;
+use super::replace_operation_text;
 use super::unique_offset_data_store;
 use super::visit_feature_history_operation_records;
 
@@ -777,35 +779,42 @@ pub(in crate::native) fn feature_draft_construction_payloads(
     lanes: &[FeatureDraftConstructionIndexLane],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(lanes
-        .iter()
-        .filter_map(|lane| {
-            let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
-                return None;
-            };
-            let data_blocks = tokens
-                .indices()
-                .map(|row| row.target.clone())
-                .collect::<Vec<_>>();
-            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
-                Ok(Some(content)) => content,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            Some(Ok(FeatureConstructionPayload {
-                id: lane.id.replacen(
-                    "draft-construction-index-lane#",
-                    "draft-construction-payload#",
-                    1,
-                ),
-                operation_label: lane.operation_label.clone(),
-                owner: FeatureConstructionOwner::Draft {
-                    index_lane: lane.id.clone(),
-                },
-                content,
-            }))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
+    let mut output = Vec::new();
+    for lane in lanes {
+        let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
+            continue;
+        };
+        let count = tokens.indices().count();
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX draft construction source blocks")?;
+        let slot_bytes = count.checked_mul(std::mem::size_of::<String>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX draft construction source block slots", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(slot_bytes), "NX draft construction source block slots")?;
+        let mut data_blocks = Vec::new();
+        data_blocks.try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX draft construction source blocks", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+        for row in tokens.indices() {
+            data_blocks.push(copy_operation_text(ctx, &row.target, "NX draft construction source block")?);
+        }
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+            continue;
+        };
+        let id = replace_operation_text(ctx, &lane.id,
+            "draft-construction-index-lane#", "draft-construction-payload#",
+            "NX draft construction payload identity")?;
+        let operation_label = copy_operation_text(ctx, &lane.operation_label, "NX draft construction operation label")?;
+        let index_lane = copy_operation_text(ctx, &lane.id, "NX draft construction index lane")?;
+        ctx.charge_collection_items(1, "NX draft construction payloads")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureConstructionPayload>()), "NX draft construction payload")?;
+        output.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX draft construction payloads", 0, 1))?;
+        output.push(FeatureConstructionPayload {
+            id,
+            operation_label,
+            owner: FeatureConstructionOwner::Draft { index_lane },
+            content,
+        });
+    }
+    Ok(output)
 }
 
 /// Reconstruct ordered logical payloads from complete draft construction graphs.

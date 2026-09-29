@@ -5,6 +5,8 @@ use crate::native::features::feature_surface_construction_references;
 use crate::native::features::feature_surface_construction_payloads;
 use crate::native::features::feature_thru_curve_construction_envelopes;
 use crate::native::features::draft::feature_draft_construction_references;
+use crate::native::features::draft::feature_draft_construction_payloads;
+use crate::native::features::draft::FeatureDraftConstructionIndexLane;
 
 fn reference_container(label: &'static str, payload: Vec<u8>) -> crate::container::Container<'static> {
     let part = crate::test_support::test_om::composed_feature_history_payload(
@@ -201,6 +203,58 @@ fn surface_payload_route_refusal(
         .expect("empty test root");
     feature_surface_construction_payloads(&ctx, &container, &references)
         .err().expect("surface payload resource limit")
+}
+
+fn draft_payload_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let lane: FeatureDraftConstructionIndexLane = serde_json::from_str(
+        r#"{"id":"nx:feature-history:draft-construction-index-lane#0-0000000000","operation_label":"nx:feature-history:operation-label#0-0000000000","declared_count":3,"indices":[1,2],"raw_indices":[[1],[2]],"data_blocks":["nx:om-data-blocks-0:block#1","nx:om-data-blocks-0:block#2"],"source_offsets":[24,25]}"#,
+    ).expect("resolved draft lane");
+    let part = crate::test_support::test_om::composed_feature_history_payload(&[], &[b"A", b"B"]);
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    let container = crate::test_support::with_decode_context(move |ctx| {
+        crate::container::scan_bytes(ctx, file)
+    }).expect("synthetic draft payload container");
+    let payloads = crate::test_support::with_decode_context(|ctx| {
+        feature_draft_construction_payloads(ctx, &container, &[lane.clone()])
+    }).expect("admitted draft payload");
+    assert_eq!(payloads.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_draft_construction_payloads(&ctx, &container, &[lane])
+        .err().expect("draft payload resource limit")
+}
+
+#[test]
+fn draft_payload_route_refuses_collection_limit() {
+    let error = draft_payload_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn draft_payload_route_refuses_retained_limit() {
+    let error = draft_payload_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn draft_payload_route_refuses_scoped_limit() {
+    let error = draft_payload_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn draft_payload_route_refuses_work_limit() {
+    let error = draft_payload_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
