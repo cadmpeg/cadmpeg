@@ -97,10 +97,11 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     .is_none());
     let mut coplanar = surface.clone();
     coplanar
-        .edit_control_points(|point| {
+        .try_map_control_points(|_, point| {
+            let mut point = point.get();
             point.z = 0.0;
-            Ok(())
-        })
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            })
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(nurbs_plane_boundary_curve(
         &coplanar,
@@ -112,14 +113,15 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .is_none());
-    let mut restored = surface.poles().into_iter();
+    let restored = surface.poles();
     coplanar
-        .edit_control_points(|point| {
-            if let Some(value) = restored.next() {
-                *point = value.get();
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if let Some(value) = restored.get(index) {
+                point = value.get();
             }
-            Ok(())
-        })
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            })
         .expect("finite fixture geometry preserves NURBS invariants");
     let mut zero_weights = coplanar.pole_grid().weights().expect("rational fixture");
     zero_weights[0][0] = 0.0;

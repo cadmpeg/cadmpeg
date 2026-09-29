@@ -6850,7 +6850,7 @@ fn apply_rigid_transform(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .map_control_points(|control_point| {
+                .try_map_control_points(|_, control_point| {
                     transform.apply_point(control_point.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "transformed NURBS curve control point has a non-finite coordinate"

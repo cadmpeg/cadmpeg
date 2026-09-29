@@ -1126,16 +1126,15 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         unreachable!()
     };
     let target = nurbs.v_count();
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|pole| {
-            if pole_index == target {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == target {
                 pole.x = 17.5;
                 pole.z = -3.25;
             }
-            pole_index += 1;
-            Ok(())
-        })
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            })
         .unwrap();
     edit::replace(&mut nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -1763,16 +1762,15 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
     else {
         panic!("expected NURBS blend support")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|pole| {
-            if pole_index == 1 {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == 1 {
                 pole.x = 6.0;
                 pole.z = 4.0;
             }
-            pole_index += 1;
-            Ok(())
-        })
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            })
         .unwrap();
     edit::replace(nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();

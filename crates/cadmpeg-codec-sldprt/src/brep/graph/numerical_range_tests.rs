@@ -33,10 +33,11 @@ fn numerical_0922_wide_domain_keeps_distinct_roots() {
 #[test]
 fn numerical_0922_small_domain_keeps_fit_samples() {
     let mut s = bilinear([0., 1.], 1.);
-    s.edit_control_points(|p| {
+    s.try_map_control_points(|_, p| {
+        let mut p = p.get();
         p.z = p.x * p.y;
-        Ok(())
-    })
+        cadmpeg_ir::features::FinitePoint3::new(p).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+        })
     .unwrap();
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let c = NurbsCurve::from_lanes(

@@ -622,9 +622,8 @@ fn transform_nurbs(
     frame: &ProfileFrame,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
-    curve
-        .try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?
-        .try_map_owned_control_points(|point| {
+    let mut curve = curve.try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?;
+    curve.try_map_control_points(|_, point| {
             let transformed = transform_local(
                 point.get(),
                 frame.origin,
@@ -637,7 +636,8 @@ fn transform_nurbs(
             FinitePoint3::new(transformed).ok_or_else(|| {
                 GeometryError::malformed(offset, "control_points contains a non-finite point")
             })
-        })
+        })?;
+    Ok(curve)
 }
 
 fn transform_local(
@@ -1617,15 +1617,14 @@ pub(crate) mod tests {
         else {
             unreachable!()
         };
-        let mut index = 0usize;
         curve
-            .edit_control_points(|point| {
+            .try_map_control_points(|index, point| {
+                let mut point = point.get();
                 if index == 1 {
                     point.z = 1.0;
                 }
-                index += 1;
-                Ok(())
-            })
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+                })
             .expect("valid test curve edit");
         assert!(exact_orientation(&ctx, &off_plane, 0).is_err());
     }

@@ -6587,7 +6587,7 @@ fn transform_curve(
     curve.geometry = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .map_control_points(|pole| {
+                .try_map_control_points(|_, pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "instance control point transform produced a non-finite coordinate"
@@ -6611,7 +6611,7 @@ fn transform_curve(
                     )),
                 })?;
             nurbs
-                .map_control_points(|pole| {
+                .try_map_control_points(|_, pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "instance control point transform produced a non-finite coordinate"
@@ -6683,7 +6683,7 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     surface.geometry = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .map_control_points(|pole| {
+                .try_map_control_points(|_, pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "instance control point transform produced a non-finite coordinate"
