@@ -375,7 +375,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         *slot = Some(operation);
     }
     assert_eq!(
-        project_combine(&scope, "Design1/BulkStream.dat"),
+        project_combine(None, &scope, "Design1/BulkStream.dat").unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(

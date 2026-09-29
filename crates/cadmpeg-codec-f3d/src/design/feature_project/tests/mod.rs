@@ -8,6 +8,7 @@
 
 mod body_selection;
 mod coil;
+mod combine_limits;
 mod dispatcher;
 mod extrude;
 mod form;

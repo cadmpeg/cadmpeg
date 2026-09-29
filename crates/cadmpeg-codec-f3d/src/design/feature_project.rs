@@ -996,7 +996,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     }
                     chamfer.map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
-                Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
+                Some(DesignFeatureFamily::Combine) => project_combine(ctx, scope, native_scope)?
                     .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
                         parameters: BTreeMap::new(),
@@ -2276,35 +2276,43 @@ fn project_work_plane(
 }
 
 pub(super) fn project_combine(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     native_scope: &str,
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
-    let operation = scope.combine_operation()?;
-    let selection = |record_index| format!("{native_scope}:design-record#{record_index}");
-    Some(FeatureDefinition::Operation(FeatureOperation::Combine {
-        operands: cadmpeg_ir::features::CombineOperands::new(
-            BodySelection::Native(selection(operation.target_record_index)),
-            if operation.tools.additional.is_empty() {
-                BodySelection::Native(selection(operation.tools.first.record_index))
-            } else {
-                BodySelection::NativeSet(
-                    operation
-                        .tools
-                        .iter()
-                        .map(|tool| selection(tool.record_index))
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .ok()?,
-                )
-            },
-        )
-        .ok()?,
-
+    let Some(operation) = scope.combine_operation() else { return Ok(None); };
+    let selection = |record_index, operation| copy_feature_record_ref(ctx, native_scope,
+        u64::from(record_index), ":design-record#", operation);
+    let target = BodySelection::Native(selection(operation.target_record_index,
+        "f3d Combine target id")?);
+    let tools = if operation.tools.additional.is_empty() {
+        BodySelection::Native(selection(operation.tools.first.record_index,
+            "f3d Combine single tool id")?)
+    } else {
+        let mut selected = Vec::new();
+        for tool in operation.tools.iter() {
+            push_feature_item(ctx, &mut selected, selection(tool.record_index,
+                "f3d Combine tool set id")?,
+                "f3d Combine tool selection")?;
+        }
+        let members = match ctx {
+            Some(ctx) => cadmpeg_ir::features::NativeSelections::try_from_charged(
+                selected, ctx, "f3d Combine tool uniqueness")?,
+            None => selected.try_into(),
+        };
+        let Ok(members) = members else { return Ok(None); };
+        BodySelection::NativeSet(members)
+    };
+    let Ok(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools) else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands,
         op: operation.operation,
         keep_tools: operation.keep_tools,
-    }))
+    })))
 }
 
 fn scope_properties(

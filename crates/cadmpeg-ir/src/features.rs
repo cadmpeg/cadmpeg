@@ -6565,6 +6565,32 @@ impl TryFrom<Vec<String>> for NativeSelections {
 }
 
 impl NativeSelections {
+    /// Admit decoded native names after charging the temporary uniqueness index.
+    pub fn try_from_charged(
+        value: Vec<String>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
+        if value.is_empty() {
+            return Ok(Err(BodySelectionError::Empty));
+        }
+        if value.iter().any(|name| name.trim().is_empty()) {
+            return Ok(Err(BodySelectionError::BlankNativeMember));
+        }
+        let count = u64::try_from(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut unique = HashSet::new();
+        unique.try_reserve(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        for name in &value {
+            if !unique.insert(name) {
+                return Ok(Err(BodySelectionError::RepeatedNativeMember));
+            }
+        }
+        Ok(Ok(Self(value)))
+    }
+
     /// The native names in source order.
     pub fn as_slice(&self) -> &[String] {
         &self.0
