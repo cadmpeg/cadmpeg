@@ -16,6 +16,60 @@ use crate::test_support::test_om::composed_feature_history_payload;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::NxCodec;
 
+const SYNTHETIC_BOOLEAN_PAYLOAD: &[u8] = b"\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x01\x00\x01\x03\x02\x03\x00";
+
+fn boolean_native_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let part = composed_feature_history_payload(
+        &[(&[0xff; 4], "SUBTRACT", SYNTHETIC_BOOLEAN_PAYLOAD.to_vec())], &[],
+    );
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    let container = crate::test_support::with_decode_context(move |ctx| {
+        crate::container::scan_bytes(ctx, file)
+    }).expect("Boolean native container");
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::feature_boolean_operations(ctx, &container)
+    }).expect("admitted native Boolean operations");
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].tools.len(), 2);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    crate::native::features::feature_boolean_operations(&ctx, &container)
+        .expect_err("native Boolean resource limit")
+}
+
+#[test]
+fn native_boolean_route_refuses_collection_limit() {
+    let error = boolean_native_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn native_boolean_route_refuses_retained_limit() {
+    let error = boolean_native_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn native_boolean_route_refuses_scoped_limit() {
+    let error = boolean_native_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn native_boolean_route_refuses_work_limit() {
+    let error = boolean_native_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 fn feature_body_segment_uses(
     references: &[FeatureBodyReference],
     data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],

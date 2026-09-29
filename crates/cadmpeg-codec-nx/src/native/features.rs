@@ -3957,26 +3957,53 @@ pub(super) fn feature_boolean_operations(
                 crate::om::BooleanOperationKind::Subtract => FeatureBooleanKind::Subtract,
                 crate::om::BooleanOperationKind::Intersect => FeatureBooleanKind::Intersect,
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            operations.push(FeatureBooleanOperation {
-                id: format!("nx:feature-history:boolean#{section_key}-{operation_ordinal:010}"),
-                operation_label,
-                kind,
-                target: crate::om::PayloadObjectReference {
-                    token: operation.target.token,
-                    offset: entry_offset + operation.target.offset as u64,
-                },
-                tools: operation
-                    .tools
-                    .into_iter()
-                    .map(|tool| crate::om::PayloadObjectReference {
+            let item = (|| -> Result<FeatureBooleanOperation, CodecError> {
+                let mut tools = Vec::new();
+                for tool in operation.tools {
+                    ctx.charge_collection_items(1, "NX Boolean tool references")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<crate::om::PayloadObjectReference<
+                            crate::om::reference_index::ReferenceIndexToken, u64,
+                        >>(),
+                    ), "NX Boolean tool references")?;
+                    tools.try_reserve(1)
+                        .map_err(|_| ctx.refuse_codec_limit("allocate NX Boolean tool references", 0, 1))?;
+                    tools.push(crate::om::PayloadObjectReference {
                         token: tool.token,
                         offset: entry_offset + tool.offset as u64,
-                    })
-                    .collect(),
-                source_offset: entry_offset + operation.offset as u64,
-            });
+                    });
+                }
+                Ok(FeatureBooleanOperation {
+                    id: format_feature_history_id(
+                        ctx, "boolean", section_key, operation_ordinal, None,
+                    )?,
+                    operation_label: format_feature_history_id(
+                        ctx, "operation-label", section_key, operation_ordinal, None,
+                    )?,
+                    kind,
+                    target: crate::om::PayloadObjectReference {
+                        token: operation.target.token,
+                        offset: entry_offset + operation.target.offset as u64,
+                    },
+                    tools,
+                    source_offset: entry_offset + operation.offset as u64,
+                })
+            })();
+            let item = match item {
+                Ok(item) => item,
+                Err(error) => { failure = Some(error); return; }
+            };
+            if let Err(error) = ctx.charge_collection_items(1, "NX Boolean operations")
+                .and_then(|()| ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBooleanOperation>()),
+                    "NX Boolean operations",
+                ))
+                .and_then(|()| operations.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX Boolean operations", 0, 1))) {
+                failure = Some(error);
+                return;
+            }
+            operations.push(item);
         },
     )?;
     if let Some(error) = failure {
