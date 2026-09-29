@@ -171,7 +171,8 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
         assignment("assignment-f", None, "color-a", 60),
     ];
     assert_eq!(
-        resolve_rm_source_color_bindings(&assignments),
+        crate::test_support::with_decode_context(|ctx| resolve_rm_source_color_bindings(ctx, &assignments))
+            .expect("admitted RM source colors"),
         vec![
             RmSourceColorBinding {
                 source_id: "source-a".into(),
@@ -185,4 +186,60 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
             },
         ]
     );
+}
+
+fn source_color_binding_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<Vec<RmSourceColorBinding>, cadmpeg_core::CodecError> {
+    let assignment = RmDisplayColorAssignment {
+        id: "nx:test:assignment#0".into(),
+        ordinal: 0,
+        frame: DisplayColorFrame::new(
+            RmDisplayColorAssignmentEncoding::Target(
+                TargetRow::<(), u64>::new(
+                    CompactIndexAtom::read(&[7]).unwrap().into(),
+                    [1, 2, 3].map(|value| CompactIndexAtom::read(&[value]).unwrap().into()),
+                    crate::om::discriminators::IndexRowMode::Form04,
+                    22,
+                ).unwrap(),
+            ),
+            crate::om::color::PaletteIndex::new(201).unwrap(),
+        ).unwrap(),
+        target_object_id: Some("nx:test:object-id#7".into()),
+        color_definition: "nx:test:color#201".into(),
+        source_entry: "/Root/FastLoad/RMFastLoad".into(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    resolve_rm_source_color_bindings(&ctx, &[assignment])
+}
+
+#[test]
+fn rm_source_color_bindings_refuse_collection_limit() {
+    let error = source_color_binding_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn rm_source_color_bindings_refuse_retained_limit() {
+    let error = source_color_binding_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn rm_source_color_bindings_refuse_scoped_limit() {
+    let error = source_color_binding_result(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn rm_source_color_bindings_refuse_work_limit() {
+    let error = source_color_binding_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
