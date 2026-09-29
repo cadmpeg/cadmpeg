@@ -6399,6 +6399,11 @@ impl<T: PartialEq> DistinctMembers<T> {
 }
 
 impl<T> DistinctMembers<T> {
+    /// Reserve capacity before adding members under a caller resource policy.
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), std::collections::TryReserveError> {
+        self.0.try_reserve(additional)
+    }
+
     /// Removes all members.
     pub fn clear(&mut self) {
         self.0.clear();
