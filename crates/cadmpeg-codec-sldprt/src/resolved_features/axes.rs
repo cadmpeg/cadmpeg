@@ -1408,7 +1408,7 @@ fn common_generated_surface_axis(
     const DIRECTION_TOLERANCE: f64 = 1e-9;
     const LINE_TOLERANCE: f64 = 1e-6;
 
-    let axes = surfaces
+    let mut axes = surfaces
         .iter()
         .filter_map(|surface| match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => Some((
@@ -1428,16 +1428,10 @@ fn common_generated_surface_axis(
             SurfaceGeometry::Procedural { .. } => None,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(_)) => None,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
-        })
-        .collect::<Vec<_>>();
-    let [(origin, direction), ..] = axes.as_slice() else {
-        return None;
-    };
-    if axes.len() < 2 {
-        return None;
-    }
-    let mut direction = *direction;
-    for (candidate_origin, candidate_direction) in &axes[1..] {
+        });
+    let (origin, mut direction) = axes.next()?;
+    let second = axes.next()?;
+    for (candidate_origin, candidate_direction) in std::iter::once(second).chain(axes) {
         let origin_delta = Vector3::new(
             candidate_origin.x - origin.x,
             candidate_origin.y - origin.y,
