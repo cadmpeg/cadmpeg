@@ -895,7 +895,9 @@ fn project_all_dimension_constraints(
         }
     }
 
-    let group_constraints = groups.iter().filter_map(|group| {
+    let mut group_constraints = Vec::new();
+    for group in groups {
+        let projected = (|| {
             let scope = native_stream(&group.id)?;
             if radial_extension_annotation_groups.contains(&(scope.to_owned(), group.record_index))
             {
@@ -979,7 +981,12 @@ fn project_all_dimension_constraints(
                 metadata: None,
                 native_ref: Some(native_ref),
             }))
-    }).collect::<Result<Vec<_>, _>>()?;
+        })();
+        if let Some(result) = projected {
+            push_dimension_item(ctx, &mut group_constraints, result?,
+                "f3d group dimension constraint")?;
+        }
+    }
     let mut pair_constraints = Vec::new();
     for pair in pairs {
             let Some(scope) = native_stream(&pair.id) else { continue; };
@@ -1049,7 +1056,7 @@ fn project_all_dimension_constraints(
                     "f3d dimension pair native reference")?),
             }, "f3d pair dimension constraint")?;
     }
-    let mut constraints = pair_constraints.into_iter()
+    let combined = pair_constraints.into_iter()
         .chain(group_constraints)
         .map(Ok)
         .chain(annotation_frames.iter().filter_map(|frame| {
@@ -1269,7 +1276,12 @@ fn project_all_dimension_constraints(
                 Err(error) => Some(Err(error)),
             }
         }))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        ;
+    let mut constraints = Vec::new();
+    for projected in combined {
+        push_dimension_item(ctx, &mut constraints, projected?,
+            "f3d dimension constraint output")?;
+    }
     let mut companions_by_key = HashMap::new();
     for companion in companions {
         if let Some(scope) = native_stream(companion.id()) {
