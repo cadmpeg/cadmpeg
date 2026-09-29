@@ -5778,9 +5778,10 @@ fn validate_edge_identity_operands<'a>(
         &scope_histories,
     )?;
     history::bind_edge_identity_bounded_face_rules(
+        decode,
         &mut expected_edge_identity_operands,
         expected_face_operands,
-    );
+    )?;
     let expected_edge_identity_operands = collect_index(decode, expected_edge_identity_operands
         .iter()
         .map(|operand| (operand.id.as_str(), operand))

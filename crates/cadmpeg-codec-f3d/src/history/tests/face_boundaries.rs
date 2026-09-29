@@ -172,8 +172,7 @@ fn bounded_face_copy_matches_cyclic_boundary_with_split_vertices() {
     assert!(!cyclic_point_subsequence(&source, &split_copy[..3]));
 }
 
-#[test]
-fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
+fn bounded_face_rule_fixture() -> (Vec<crate::records::topology::edge_identity::DesignEdgeIdentityOperand>, crate::records::topology::face::DesignFaceOperand) {
     use crate::records::{
         recipes::ConstructionRecipeKind,
         topology::{
@@ -184,7 +183,7 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         },
     };
 
-    let mut identities = vec![DesignEdgeIdentityOperand::try_new(
+    let identities = vec![DesignEdgeIdentityOperand::try_new(
         crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft {
             id: "f3d:Design/BulkStream.dat:edge-identity#10".into(),
             scope_record_index: 1,
@@ -279,7 +278,26 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         next_byte_offset: 400,
     })
     .unwrap();
-    bind_edge_identity_bounded_face_rules(&mut identities, &[face.clone()]);
+    (identities, face)
+}
+
+#[test]
+fn bounded_face_rules_refuse_collection_limit() {
+    let (mut identities, face) = bounded_face_rule_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = bind_edge_identity_bounded_face_rules(Some(&ctx), &mut identities, &[face.clone()]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D bounded treatment faces"));
+
+}
+
+#[test]
+fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
+    let (mut identities, face) = bounded_face_rule_fixture();
+    bind_edge_identity_bounded_face_rules(None, &mut identities, &[face.clone()]).unwrap();
     assert_eq!(identities[0].resolved_edge_slots, [8, 7]);
     assert_eq!(
         identities[0].resolution_identity_id.as_deref(),
@@ -290,6 +308,6 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     inconsistent.historical_support_contexts[0]
         .changed_preceding_face_slots
         .clear();
-    bind_edge_identity_bounded_face_rules(&mut identities, &[inconsistent]);
+    bind_edge_identity_bounded_face_rules(None, &mut identities, &[inconsistent]).unwrap();
     assert!(identities[0].resolved_edge_slots.is_empty());
 }
