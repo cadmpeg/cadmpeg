@@ -554,9 +554,9 @@ impl FaceLoops {
     }
 
     /// Ordered loop ids: outer first when the face states one.
-    pub fn iter(&self) -> impl Iterator<Item = &LoopId> + '_ {
+    pub fn iter(&self) -> Box<dyn Iterator<Item = &LoopId> + '_> {
         match self {
-            Self::Unspecified { loops } => Box::new(loops.iter()) as Box<dyn Iterator<Item = _>>,
+            Self::Unspecified { loops } => Box::new(loops.iter()),
             Self::Classified { outer, inner } => {
                 Box::new(std::iter::once(outer).chain(inner.iter()))
             }

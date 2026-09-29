@@ -65,7 +65,11 @@ impl TryFrom<i32> for SketchFontWeight {
 
 impl From<SketchFontWeight> for i32 {
     fn from(value: SketchFontWeight) -> Self {
-        value as Self
+        match value {
+            SketchFontWeight::Regular => 400,
+            SketchFontWeight::Medium => 500,
+            SketchFontWeight::Bold => 750,
+        }
     }
 }
 
@@ -2429,7 +2433,7 @@ impl SketchRectangularPattern {
         let column_count = u32::try_from(rows.first()?.len()).ok()?;
         if row_count == 0
             || column_count == 0
-            || rows.iter().any(|row| row.len() != column_count as usize)
+            || rows.iter().any(|row| row.len() != cadmpeg_core::decode::index_from_u32(column_count))
         {
             return None;
         }

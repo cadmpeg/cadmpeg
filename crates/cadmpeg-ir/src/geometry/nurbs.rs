@@ -802,7 +802,7 @@ fn bspline_axis_knots(
     count: usize,
     knots: Vec<f64>,
 ) -> Result<KnotVector, NurbsError> {
-    if count <= degree as usize {
+    if count <= cadmpeg_core::decode::index_from_u32(degree) {
         return Err(NurbsError::Structure(format!(
             "control_points {axis} count must exceed degree {degree}, found {count}"
         )));
@@ -888,7 +888,7 @@ impl From<NurbsError> for cadmpeg_core::CodecError {
 
 fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usize, NurbsError> {
     pole_count
-        .checked_add(degree as usize)
+        .checked_add(cadmpeg_core::decode::index_from_u32(degree))
         .and_then(|count| count.checked_add(1))
         .ok_or_else(|| NurbsError::Structure(format!("{field} knot count overflows usize")))
 }
@@ -983,7 +983,7 @@ pub(super) fn require_curve_cardinality(
     pole_count: usize,
     point_field: &str,
 ) -> Result<(), NurbsError> {
-    if pole_count <= degree as usize {
+    if pole_count <= cadmpeg_core::decode::index_from_u32(degree) {
         return Err(NurbsError::Structure(format!(
             "{point_field} must contain more than degree {degree} poles, found {pole_count}"
         )));
@@ -1052,12 +1052,12 @@ fn require_surface_shape<P, U: KnotValue, V: KnotValue>(
 ) -> Result<(), NurbsError> {
     let u_count = poles.u_count();
     let v_count = poles.v_count();
-    if u_count <= u_degree as usize {
+    if u_count <= cadmpeg_core::decode::index_from_u32(u_degree) {
         return Err(NurbsError::Structure(format!(
             "u_count must exceed u_degree {u_degree}, found {u_count}"
         )));
     }
-    if v_count <= v_degree as usize {
+    if v_count <= cadmpeg_core::decode::index_from_u32(v_degree) {
         return Err(NurbsError::Structure(format!(
             "v_count must exceed v_degree {v_degree}, found {v_count}"
         )));

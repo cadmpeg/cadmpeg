@@ -1936,7 +1936,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
 #[test]
 fn bounded_nurbs_interval_search_keeps_a_fixed_working_set() {
     let boundaries = (0..=10_000)
-        .map(crate::scalar::FiniteReal::from_index)
+        .map(|index| crate::scalar::FiniteReal::from_index(index).expect("test index is exact"))
         .collect::<Vec<_>>();
     let seed = crate::scalar::FiniteReal::new(5_000.5).expect("finite seed");
     let intervals = super::bounded_nearest_intervals(&boundaries, seed).expect("resource allocation did not fail");
@@ -1964,7 +1964,7 @@ fn bounded_nurbs_containment_search_keeps_the_final_valid_spans() {
 
 #[test]
 fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
-    let boundaries = [0, 1, 2].map(crate::scalar::FiniteReal::from_index);
+    let boundaries = [0, 1, 2].map(|index| crate::scalar::FiniteReal::from_index(index).expect("test index is exact"));
     let seed = crate::scalar::FiniteReal::new(1.4).expect("finite seed");
 
     assert_eq!(

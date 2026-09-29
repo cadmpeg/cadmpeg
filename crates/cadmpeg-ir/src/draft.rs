@@ -915,7 +915,7 @@ mod tests {
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
             model.features.push(Feature {
                 id: format!("test:checkpoint:feature#{key}").try_into().unwrap(),
-                ordinal: ordinal as u64,
+                ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                 name: None,
                 suppressed: None,
                 dependencies: crate::features::DistinctMembers::default(),
@@ -948,7 +948,7 @@ mod tests {
             draft
                 .insert(Feature {
                     id: format!("test:draft:feature#{key}").try_into().unwrap(),
-                    ordinal: ordinal as u64,
+                    ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                     name: None,
                     suppressed: None,
                     dependencies: crate::features::DistinctMembers::default(),

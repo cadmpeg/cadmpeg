@@ -425,7 +425,7 @@ fn column_label(mut column: u32) -> String {
     let mut label = Vec::new();
     while column > 0 {
         column -= 1;
-        label.push(b'A' + (column % 26) as u8);
+        label.push(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"[cadmpeg_core::decode::index_from_u32(column % 26)]);
         column /= 26;
     }
     label.reverse();

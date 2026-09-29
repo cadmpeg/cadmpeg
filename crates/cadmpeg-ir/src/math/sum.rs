@@ -46,12 +46,14 @@ const MIN_SIGNIFICAND_EXPONENT: i32 = -1074;
 // terms, and enough high carry bits for any addressable collection of terms.
 const EXACT_PRODUCT_EXPONENT: i32 = 4 * MIN_SIGNIFICAND_EXPONENT - 64;
 const EXACT_SUM_WORDS: usize = 138;
-const SUBNORMAL_UNIT_BIT: usize = (-1074 - EXACT_PRODUCT_EXPONENT) as usize;
+const EXACT_SUM_WORDS_I32: i32 = 138;
+const SUBNORMAL_UNIT_BIT: usize = 3286;
 
 #[derive(Clone, Copy)]
 pub(crate) struct ExactSignedSum {
     positive: [u64; EXACT_SUM_WORDS],
     negative: [u64; EXACT_SUM_WORDS],
+    invalid: bool,
 }
 
 impl Default for ExactSignedSum {
@@ -59,6 +61,7 @@ impl Default for ExactSignedSum {
         Self {
             positive: [0; EXACT_SUM_WORDS],
             negative: [0; EXACT_SUM_WORDS],
+            invalid: false,
         }
     }
 }
@@ -85,7 +88,7 @@ const MIN_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + 1;
 /// `ExactSignedSum::finish` states `EXACT_PRODUCT_EXPONENT + highest_bit + 2`
 /// in its rounding-carry arm, with `highest_bit` at most one below the
 /// accumulator's bit width.
-const MAX_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS as i32 * 64 + 1;
+const MAX_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS_I32 * 64 + 1;
 
 /// The power of two that scales a [`ScaledValue`]'s mantissa back to the value.
 ///
@@ -112,7 +115,7 @@ const _: () = assert!(
 /// accumulator `EXACT_SUM_WORDS` words of 64 bits wide.
 const _: () = assert!(EXACT_PRODUCT_EXPONENT + 1 >= MIN_SCALED_EXPONENT);
 const _: () =
-    assert!(EXACT_PRODUCT_EXPONENT + (EXACT_SUM_WORDS as i32 * 64 - 1) + 2 <= MAX_SCALED_EXPONENT);
+    assert!(EXACT_PRODUCT_EXPONENT + (EXACT_SUM_WORDS_I32 * 64 - 1) + 2 <= MAX_SCALED_EXPONENT);
 
 impl ScaledExponent {
     /// The exponent shift that rescales a value in this frame into `other`'s.
@@ -238,12 +241,13 @@ impl ScaledValue {
         let bits = normal.to_bits();
         // The mask keeps eleven bits, so the field is an `i32` by
         // construction; a normal field is at least one.
-        let field = ((bits >> 52) & 0x7ff) as i32;
+        let field_bits = ((bits >> 52) & 0x7ff).to_le_bytes();
+        let field = i32::from(u16::from_le_bytes([field_bits[0], field_bits[1]]));
         let significand = (1_u64 << 52) | (bits & ((1_u64 << 52) - 1));
         Self {
             sign: if bits >> 63 != 0 { -1.0 } else { 1.0 },
-            // A 53-bit integer converts exactly.
-            mantissa: significand as f64 * 2.0_f64.powi(-MAX_SIGNIFICAND_BITS),
+            // The hidden bit and fraction encode the exact normalized mantissa.
+            mantissa: f64::from_bits((1022_u64 << 52) | (significand & ((1_u64 << 52) - 1))),
             exponent: ScaledExponent(
                 field - 1 + MIN_SIGNIFICAND_EXPONENT + MAX_SIGNIFICAND_BITS - raised,
             ),
@@ -256,9 +260,12 @@ impl ScaledValue {
     /// The accumulator holds the one product on the side its sign names, and
     /// every factor's significand is nonzero, so that side is the product's
     /// magnitude and has a highest set bit. Nothing is checked.
-    pub(crate) fn product_of_nonzero<const N: usize>(factors: [NonZeroReal; N]) -> Self {
+    pub(crate) fn product_of_nonzero<const N: usize>(factors: [NonZeroReal; N]) -> Option<Self> {
         let mut sum = ExactSignedSum::default();
         sum.add_factors(factors.map(NonZeroReal::get));
+        if sum.invalid {
+            return None;
+        }
         let negative = factors
             .iter()
             .fold(false, |negative, factor| negative ^ (factor.get() < 0.0));
@@ -268,13 +275,17 @@ impl ScaledValue {
         let highest_bit = magnitude
             .iter()
             .enumerate()
-            .fold(0_u16, |highest, (word, value)| {
+            .try_fold(0_u16, |highest, (word, value)| {
                 if *value == 0 {
-                    highest
+                    Some(highest)
                 } else {
-                    (word * 64 + 63 - value.leading_zeros() as usize) as u16
+                    u16::try_from(
+                        word * 64 + 63
+                            - cadmpeg_core::decode::index_from_u32(value.leading_zeros()),
+                    )
+                    .ok()
                 }
-            });
+            })?;
         rounded_magnitude(negative, &magnitude, highest_bit)
     }
 }
@@ -291,7 +302,7 @@ fn finite_significand(value: f64) -> Option<(bool, u64, u16)> {
     let bits = value.to_bits();
     let negative = bits >> 63 != 0;
     // The mask keeps eleven bits, so the field is a `u16` by construction.
-    let exponent_field = ((bits >> 52) & 0x7ff) as u16;
+    let exponent_field = u16::try_from((bits >> 52) & 0x7ff).ok()?;
     let fraction = bits & ((1_u64 << 52) - 1);
     if exponent_field == 0 {
         (fraction != 0).then_some((negative, fraction, 0))
@@ -315,7 +326,14 @@ fn add_word(words: &mut [u64; EXACT_SUM_WORDS], index: usize, value: u64) {
 }
 
 fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: usize) {
-    for (limb_index, limb) in [value as u64, (value >> 64) as u64].into_iter().enumerate() {
+    let bytes = value.to_le_bytes();
+    let low = u64::from_le_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ]);
+    let high = u64::from_le_bytes([
+        bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+    ]);
+    for (limb_index, limb) in [low, high].into_iter().enumerate() {
         if limb == 0 {
             continue;
         }
@@ -351,11 +369,17 @@ impl ExactSignedSum {
             let mut carry = 0_u128;
             for word in &mut product {
                 let value = u128::from(*word) * u128::from(significand) + carry;
-                *word = value as u64;
+                let bytes = value.to_le_bytes();
+                *word = u64::from_le_bytes([
+                    bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                ]);
                 carry = value >> 64;
             }
         }
-        let shift = (exponent - EXACT_PRODUCT_EXPONENT) as usize;
+        let Ok(shift) = usize::try_from(exponent - EXACT_PRODUCT_EXPONENT) else {
+            self.invalid = true;
+            return;
+        };
         let target = if negative {
             &mut self.negative
         } else {
@@ -413,25 +437,35 @@ impl ExactSignedSum {
     }
 
     pub(crate) fn finish(self) -> Option<ScaledValue> {
+        if self.invalid {
+            return None;
+        }
         let (negative, magnitude) = signed_difference(&self.positive, &self.negative)?;
         let word = magnitude.iter().rposition(|value| *value != 0)?;
         // `checked_ilog2` answers `None` for a zero word, which `rposition`
         // has already excluded; the `?` states that rather than asserting it.
         // `word` indexes `EXACT_SUM_WORDS` words of 64 bits, so a bit index of
         // the accumulator is a `u16` and converts to `i32` with no range check.
-        let highest_bit = (word * 64 + magnitude[word].checked_ilog2()? as usize) as u16;
-        Some(rounded_magnitude(negative, &magnitude, highest_bit))
+        let highest_bit = u16::try_from(
+            word * 64 + cadmpeg_core::decode::index_from_u32(magnitude[word].checked_ilog2()?),
+        )
+        .ok()?;
+        rounded_magnitude(negative, &magnitude, highest_bit)
     }
 
     /// Round a sum in the subnormal range directly onto the binary64 grid.
     /// Rounding through a 53-bit scaled mantissa first can discard a tail that
     /// breaks a tie at half of the smallest subnormal.
     pub(crate) fn finite_sum(self) -> Option<FiniteReal> {
+        if self.invalid {
+            return None;
+        }
         let Some((negative, magnitude)) = signed_difference(&self.positive, &self.negative) else {
             return Some(FiniteReal::ZERO);
         };
         let word = magnitude.iter().rposition(|value| *value != 0)?;
-        let highest_bit = word * 64 + magnitude[word].checked_ilog2()? as usize;
+        let highest_bit =
+            word * 64 + cadmpeg_core::decode::index_from_u32(magnitude[word].checked_ilog2()?);
         if highest_bit >= SUBNORMAL_UNIT_BIT + 52 {
             return self.finish()?.finite().ok();
         }
@@ -449,7 +483,7 @@ impl ExactSignedSum {
         if units == 0 {
             return Some(FiniteReal::ZERO);
         }
-        Some(FiniteReal::subnormal_units(negative, units))
+        FiniteReal::subnormal_units(negative, units)
     }
 }
 
@@ -496,7 +530,7 @@ fn rounded_magnitude(
     negative: bool,
     magnitude: &[u64; EXACT_SUM_WORDS],
     highest_bit: u16,
-) -> ScaledValue {
+) -> Option<ScaledValue> {
     let keep = (highest_bit + 1).min(53);
     let mut significand = 0_u64;
     for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
@@ -512,19 +546,20 @@ fn rounded_magnitude(
         if guard_bit && (sticky || significand & 1 != 0) {
             significand += 1;
             if significand == 1_u64 << 53 {
-                return ScaledValue {
+                return Some(ScaledValue {
                     sign: if negative { -1.0 } else { 1.0 },
                     mantissa: 0.5,
                     exponent: ScaledExponent(EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 2),
-                };
+                });
             }
         }
     }
-    ScaledValue {
+    Some(ScaledValue {
         sign: if negative { -1.0 } else { 1.0 },
-        mantissa: significand as f64 * 2.0_f64.powi(-i32::from(keep)),
+        mantissa: cadmpeg_core::convert::f64_from_u64(significand)?
+            * 2.0_f64.powi(-i32::from(keep)),
         exponent: ScaledExponent(EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1),
-    }
+    })
 }
 
 /// The scaled form of a finite nonzero value; a zero or non-finite value has
