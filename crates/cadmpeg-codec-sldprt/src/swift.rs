@@ -1181,15 +1181,15 @@ fn implicit_dimension_nominal(
 ) -> Result<Option<FiniteReal>, CodecError> {
     let source = match short_class(&entity.class) {
         "GdtDiameter" => diameter_nominal(ctx, root, entity, feature_index, pattern_hole_nominals)?,
-        "GdtDepth" => depth_nominal(root, entity, feature_index),
+        "GdtDepth" => depth_nominal(ctx, root, entity, feature_index)?,
         "GdtWidth" => {
-            width_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
+            width_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
         }
         "GdtRadius" => {
-            radius_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
+            radius_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
         }
         "GdtLength" => {
-            length_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
+            length_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
         }
         "GdtDistanceBetween" => {
             directional_distance(entity, feature_index).map(ImplicitNominal::Exact)
@@ -1654,47 +1654,49 @@ fn collect_diameter_contributors(
 }
 
 fn depth_from_applied_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     measurement_from_applied_geometry(annotation, |id| {
-        depth_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+        depth_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
 
 fn depth_nominal(
+    ctx: &DecodeContext<'_>,
     root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<ImplicitNominal> {
+) -> Result<Option<ImplicitNominal>, CodecError> {
     if annotation
         .integers
         .get("IsThreadDepth")
         .is_some_and(|value| *value != 0)
     {
-        return thread_depth_from_direct_geometry(annotation, feature_index)
-            .map(ImplicitNominal::Exact);
+        return Ok(thread_depth_from_direct_geometry(annotation, feature_index)
+            .map(ImplicitNominal::Exact));
     }
     if let Some(exact) = direct_cylinder_depth(annotation, feature_index) {
-        return Some(ImplicitNominal::RenderedOrExact {
+        return Ok(Some(ImplicitNominal::RenderedOrExact {
             kind: RenderedDimensionKind::Depth,
             geometry: exact,
             exact,
-        });
+        }));
     }
     if let Some(exact) = counterbore_depth_from_sibling(root, annotation, feature_index) {
-        return Some(ImplicitNominal::RenderedOrExact {
+        return Ok(Some(ImplicitNominal::RenderedOrExact {
             kind: RenderedDimensionKind::Depth,
             geometry: exact,
             exact,
-        });
+        }));
     }
-    depth_from_applied_geometry(annotation, feature_index).map(|geometry| {
+    Ok(depth_from_applied_geometry(ctx, annotation, feature_index)?.map(|geometry| {
         ImplicitNominal::Rendered {
             kind: RenderedDimensionKind::Depth,
             geometry,
         }
-    })
+    }))
 }
 
 fn counterbore_depth_from_sibling(
@@ -1844,29 +1846,32 @@ fn thread_depth_from_direct_geometry(
 }
 
 fn width_from_applied_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     measurement_from_applied_geometry(annotation, |id| {
-        width_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+        width_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
 
 fn radius_from_applied_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     measurement_from_applied_geometry(annotation, |id| {
-        radius_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+        radius_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
 
 fn length_from_applied_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     measurement_from_applied_geometry(annotation, |id| {
-        length_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+        length_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
 
@@ -1900,14 +1905,20 @@ fn countersink_angle_from_direct_geometry(
 
 fn measurement_from_applied_geometry(
     annotation: &Entity,
-    mut measurement: impl FnMut(&str) -> Option<PositiveReal>,
-) -> Option<PositiveReal> {
-    let candidates = annotation
-        .features
-        .references
-        .iter()
-        .filter_map(|reference| measurement(&reference.id));
-    unique_measurement(candidates)
+    mut measurement: impl FnMut(&str) -> Result<Option<PositiveReal>, CodecError>,
+) -> Result<Option<PositiveReal>, CodecError> {
+    let mut first: Option<PositiveReal> = None;
+    for reference in &annotation.features.references {
+        let Some(value) = measurement(&reference.id)? else { continue };
+        if let Some(prior) = first {
+            if !approximately_equal(value.get(), prior.get()) {
+                return Ok(None);
+            }
+        } else {
+            first = Some(value);
+        }
+    }
+    Ok(first)
 }
 
 fn measurement_from_direct_features(
@@ -2091,12 +2102,13 @@ fn rendered_dimension_literals(
 }
 
 fn depth_for_feature(
+    ctx: &DecodeContext<'_>,
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-) -> Option<PositiveReal> {
-    measurement_for_feature(id, feature_index, visited, depth, |feature| {
+) -> Result<Option<PositiveReal>, CodecError> {
+    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
         (short_class(&feature.class) == "GdtCylinder")
             .then(|| nominal_cylinder_depth(feature))
             .flatten()
@@ -2104,12 +2116,14 @@ fn depth_for_feature(
 }
 
 fn width_for_feature(
+    ctx: &DecodeContext<'_>,
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     measurement_for_feature(
+        ctx,
         id,
         feature_index,
         visited,
@@ -2123,12 +2137,14 @@ fn width_for_feature(
 }
 
 fn radius_for_feature(
+    ctx: &DecodeContext<'_>,
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     measurement_for_feature(
+        ctx,
         id,
         feature_index,
         visited,
@@ -2147,12 +2163,14 @@ fn radius_for_feature(
 }
 
 fn length_for_feature(
+    ctx: &DecodeContext<'_>,
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     measurement_for_feature(
+        ctx,
         id,
         feature_index,
         visited,
@@ -2165,32 +2183,49 @@ fn length_for_feature(
 }
 
 fn measurement_for_feature(
+    ctx: &DecodeContext<'_>,
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
     direct_measurement: impl Copy + Fn(&Entity) -> Option<PositiveReal>,
-) -> Option<PositiveReal> {
-    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
-        return None;
+) -> Result<Option<PositiveReal>, CodecError> {
+    let _depth = ctx.enter_nested("measure SWIFT feature geometry")?;
+    ctx.charge_work(1, "measure SWIFT feature geometry")?;
+    if depth >= MAX_DEPTH || visited.contains(id) {
+        return Ok(None);
     }
-    let feature = feature_index.get(id)?;
-    if let Some(measurement) = direct_measurement(feature) {
-        return Some(measurement);
-    }
-    let next_depth = depth.checked_add(1)?;
-    let candidates = child_feature_ids(feature)
-        .into_iter()
-        .filter_map(|child| {
-            measurement_for_feature(
+    ctx.charge_collection_items(1, "track SWIFT measurement path")?;
+    let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT measurement path ID")?;
+    visited.insert(owned_id);
+    let result = (|| {
+        let Some(feature) = feature_index.get(id) else { return Ok(None) };
+        if let Some(measurement) = direct_measurement(feature) {
+            return Ok(Some(measurement));
+        }
+        let Some(next_depth) = depth.checked_add(1) else { return Ok(None) };
+        let mut first: Option<PositiveReal> = None;
+        for child in child_feature_ids(feature) {
+            let Some(value) = measurement_for_feature(
+                ctx,
                 child,
                 feature_index,
-                &mut visited.clone(),
+                visited,
                 next_depth,
                 direct_measurement,
-            )
-        });
-    unique_measurement(candidates)
+            )? else { continue };
+            if let Some(prior) = first {
+                if !approximately_equal(value.get(), prior.get()) {
+                    return Ok(None);
+                }
+            } else {
+                first = Some(value);
+            }
+        }
+        Ok(first)
+    })();
+    visited.remove(id);
+    result
 }
 
 fn child_feature_ids(feature: &Entity) -> impl Iterator<Item = &str> {
