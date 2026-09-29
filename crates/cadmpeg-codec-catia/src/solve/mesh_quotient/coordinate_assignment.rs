@@ -14,17 +14,20 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 #[derive(Clone, Copy)]
 struct PartialCompactAssignmentViableInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5> {
-domain: &'input0 MeshFaceBoundaryDomain,
-local_edge_by_id: &'input1 HashMap<usize, usize>,
-edges: &'input2 [[usize; 2]],
-global_edge_count: usize,
-assigned: &'input3 [Option<usize>],
-candidate: (usize, usize),
-budget: Option<&'input5 WorkBudget<'input4>>
+    domain: &'input0 MeshFaceBoundaryDomain,
+    local_edge_by_id: &'input1 HashMap<usize, usize>,
+    edges: &'input2 [[usize; 2]],
+    global_edge_count: usize,
+    assigned: &'input3 [Option<usize>],
+    candidate: (usize, usize),
+    budget: Option<&'input5 WorkBudget<'input4>>,
 }
 
-fn partial_compact_assignment_viable(ctx : &DecodeContext<'_>, inputs: PartialCompactAssignmentViableInputs<'_, '_, '_, '_, '_, '_>) -> Result<bool, CodecError> {
-fn augment(
+fn partial_compact_assignment_viable(
+    ctx: &DecodeContext<'_>,
+    inputs: PartialCompactAssignmentViableInputs<'_, '_, '_, '_, '_, '_>,
+) -> Result<bool, CodecError> {
+    fn augment(
         ctx: &DecodeContext<'_>,
         component: usize,
         compatible: &[Vec<bool>],
@@ -50,9 +53,15 @@ fn augment(
         Ok(false)
     }
 
-let PartialCompactAssignmentViableInputs { domain, local_edge_by_id, edges, global_edge_count, assigned, candidate, budget } = inputs;
-
-
+    let PartialCompactAssignmentViableInputs {
+        domain,
+        local_edge_by_id,
+        edges,
+        global_edge_count,
+        assigned,
+        candidate,
+        budget,
+    } = inputs;
 
     let relevant = match domain {
         MeshFaceBoundaryDomain::Ordered(_) => return Ok(true),
@@ -212,33 +221,45 @@ let PartialCompactAssignmentViableInputs { domain, local_edge_by_id, edges, glob
     }
 }
 
-pub(super) struct CloseCoordinateRootsWithIncidenceInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7> {
-pub(super) quotient: &'input0 mut MeshQuotient,
-pub(super) point_count: usize,
-pub(super) edge_candidates: &'input1 [Vec<[usize; 2]>],
-pub(super) incidence: Option<(&'input2 [[usize; 2]], &'input3 [MeshFaceBoundaryDomain])>,
-pub(super) budget: Option<&'input5 WorkBudget<'input4>>,
-pub(super) component_search_budget: Option<usize>,
-pub(super) ambiguous: &'input6 Cell<bool>,
-pub(super) exhausted: &'input7 Cell<bool>
+pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
+    'input0,
+    'input1,
+    'input2,
+    'input3,
+    'input4,
+    'input5,
+    'input6,
+    'input7,
+> {
+    pub(super) quotient: &'input0 mut MeshQuotient,
+    pub(super) point_count: usize,
+    pub(super) edge_candidates: &'input1 [Vec<[usize; 2]>],
+    pub(super) incidence: Option<(&'input2 [[usize; 2]], &'input3 [MeshFaceBoundaryDomain])>,
+    pub(super) budget: Option<&'input5 WorkBudget<'input4>>,
+    pub(super) component_search_budget: Option<usize>,
+    pub(super) ambiguous: &'input6 Cell<bool>,
+    pub(super) exhausted: &'input7 Cell<bool>,
 }
 
-pub(super) fn close_coordinate_roots_with_incidence(ctx : &DecodeContext<'_>, inputs: CloseCoordinateRootsWithIncidenceInputs<'_, '_, '_, '_, '_, '_, '_, '_>) -> Result<Option<HashMap<usize, usize>>, CodecError> {
-const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
-struct LocalIncidence<'a> {
+pub(super) fn close_coordinate_roots_with_incidence(
+    ctx: &DecodeContext<'_>,
+    inputs: CloseCoordinateRootsWithIncidenceInputs<'_, '_, '_, '_, '_, '_, '_, '_>,
+) -> Result<Option<HashMap<usize, usize>>, CodecError> {
+    const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
+    struct LocalIncidence<'a> {
         edge_faces: Vec<[usize; 2]>,
         face_edges: Vec<Vec<usize>>,
         closed_faces: Vec<bool>,
         boundary_domains: &'a [MeshFaceBoundaryDomain],
     }
-fn pair_supported(candidates: &[[usize; 2]], left: usize, right: usize) -> bool {
+    fn pair_supported(candidates: &[[usize; 2]], left: usize, right: usize) -> bool {
         candidates.is_empty()
             || candidates
                 .iter()
                 .any(|pair| same_unordered_pair(*pair, [left, right]))
     }
 
-fn partial_ordered_assignment_viable(
+    fn partial_ordered_assignment_viable(
         assignment: &MeshFaceBoundaryAssignment,
         local_edge_by_id: &HashMap<usize, usize>,
         edges: &[[usize; 2]],
@@ -247,8 +268,6 @@ fn partial_ordered_assignment_viable(
         candidate: Option<(usize, usize)>,
         budget: Option<&WorkBudget<'_>>,
     ) -> bool {
-
-
         let directions = |use_: MeshBoundaryEdgeCandidate| match use_.reversed {
             Some(reversed) => [Some(reversed), None],
             None => [Some(false), Some(true)],
@@ -329,7 +348,7 @@ fn partial_ordered_assignment_viable(
                 })
         })
     }
-fn complete_ordered_assignment_viable(
+    fn complete_ordered_assignment_viable(
         assignment: &MeshFaceBoundaryAssignment,
         edge_points: &[Option<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
@@ -382,33 +401,72 @@ fn complete_ordered_assignment_viable(
                 })
         })
     }
-struct CoordinateClosureSearch<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11, 'input12, 'input13, 'input14, 'input15, 'input16> {
-domains: &'input0 [Vec<usize>],
-edges: &'input1 [[usize; 2]],
-edge_ids: &'input2 [usize],
-local_edge_by_id: &'input3 HashMap<usize, usize>,
-root_edges: &'input4 [Vec<usize>],
-edge_candidates: &'input5 [Vec<[usize; 2]>],
-incidence: Option<&'input7 LocalIncidence<'input6>>,
-component_points: &'input8 HashSet<usize>,
-assigned: &'input9 mut [Option<usize>],
-point_uses: &'input10 mut [usize],
-solutions: &'input11 mut Vec<Vec<usize>>,
-states: &'input12 mut usize,
-state_limit: usize,
-exhausted: &'input13 mut bool,
-base_degrees: &'input14 mut HashMap<(usize, usize), usize>,
-budget: Option<&'input16 WorkBudget<'input15>>
-}
-fn walk(ctx : &DecodeContext<'_>, inputs: CoordinateClosureSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), CodecError> {
-enum CoordinateBranch {
+    struct CoordinateClosureSearch<
+        'input0,
+        'input1,
+        'input2,
+        'input3,
+        'input4,
+        'input5,
+        'input6,
+        'input7,
+        'input8,
+        'input9,
+        'input10,
+        'input11,
+        'input12,
+        'input13,
+        'input14,
+        'input15,
+        'input16,
+    > {
+        domains: &'input0 [Vec<usize>],
+        edges: &'input1 [[usize; 2]],
+        edge_ids: &'input2 [usize],
+        local_edge_by_id: &'input3 HashMap<usize, usize>,
+        root_edges: &'input4 [Vec<usize>],
+        edge_candidates: &'input5 [Vec<[usize; 2]>],
+        incidence: Option<&'input7 LocalIncidence<'input6>>,
+        component_points: &'input8 HashSet<usize>,
+        assigned: &'input9 mut [Option<usize>],
+        point_uses: &'input10 mut [usize],
+        solutions: &'input11 mut Vec<Vec<usize>>,
+        states: &'input12 mut usize,
+        state_limit: usize,
+        exhausted: &'input13 mut bool,
+        base_degrees: &'input14 mut HashMap<(usize, usize), usize>,
+        budget: Option<&'input16 WorkBudget<'input15>>,
+    }
+    fn walk(
+        ctx: &DecodeContext<'_>,
+        inputs: CoordinateClosureSearch<
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+        >,
+    ) -> Result<(), CodecError> {
+        enum CoordinateBranch {
             Search { root: usize, values: Vec<usize> },
             Complete(Vec<usize>),
         }
-struct DegreeUndo {
+        struct DegreeUndo {
             entries: Vec<((usize, usize), Option<usize>)>,
         }
-fn adjust_assignment_degrees(
+        fn adjust_assignment_degrees(
             ctx: &DecodeContext<'_>,
             root: usize,
             assigned: &[Option<usize>],
@@ -456,7 +514,7 @@ fn adjust_assignment_degrees(
             }
             Ok(undo)
         }
-fn restore_assignment_degrees(
+        fn restore_assignment_degrees(
             degrees: &mut HashMap<(usize, usize), usize>,
             undo: DegreeUndo,
         ) {
@@ -471,18 +529,39 @@ fn restore_assignment_degrees(
                 }
             }
         }
-struct CoordinateAssignment<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7> {
-root: usize,
-point: usize,
-assigned: &'input0 mut [Option<usize>],
-edges: &'input1 [[usize; 2]],
-root_edges: &'input2 [Vec<usize>],
-incidence: Option<&'input4 LocalIncidence<'input3>>,
-degrees: &'input5 mut HashMap<(usize, usize), usize>,
-budget: Option<&'input7 WorkBudget<'input6>>
-}
-fn assign(ctx : &DecodeContext<'_>, inputs: CoordinateAssignment<'_, '_, '_, '_, '_, '_, '_, '_>) -> Result<Option<DegreeUndo>, CodecError> {
-let CoordinateAssignment { root, point, assigned, edges, root_edges, incidence, degrees, budget } = inputs;
+        struct CoordinateAssignment<
+            'input0,
+            'input1,
+            'input2,
+            'input3,
+            'input4,
+            'input5,
+            'input6,
+            'input7,
+        > {
+            root: usize,
+            point: usize,
+            assigned: &'input0 mut [Option<usize>],
+            edges: &'input1 [[usize; 2]],
+            root_edges: &'input2 [Vec<usize>],
+            incidence: Option<&'input4 LocalIncidence<'input3>>,
+            degrees: &'input5 mut HashMap<(usize, usize), usize>,
+            budget: Option<&'input7 WorkBudget<'input6>>,
+        }
+        fn assign(
+            ctx: &DecodeContext<'_>,
+            inputs: CoordinateAssignment<'_, '_, '_, '_, '_, '_, '_, '_>,
+        ) -> Result<Option<DegreeUndo>, CodecError> {
+            let CoordinateAssignment {
+                root,
+                point,
+                assigned,
+                edges,
+                root_edges,
+                incidence,
+                degrees,
+                budget,
+            } = inputs;
 
             if budget.is_some_and(|budget| !budget.charge_by(root_edges[root].len())) {
                 return Ok(None);
@@ -492,7 +571,7 @@ let CoordinateAssignment { root, point, assigned, edges, root_edges, incidence, 
                 ctx, root, assigned, edges, root_edges, incidence, degrees,
             )?))
         }
-fn unassign(
+        fn unassign(
             root: usize,
             assigned: &mut [Option<usize>],
             degrees: &mut HashMap<(usize, usize), usize>,
@@ -501,7 +580,7 @@ fn unassign(
             restore_assignment_degrees(degrees, undo);
             assigned[root] = None;
         }
-fn rollback(
+        fn rollback(
             assigned: &mut [Option<usize>],
             point_uses: &mut [usize],
             propagated: Vec<(usize, usize, DegreeUndo)>,
@@ -512,7 +591,7 @@ fn rollback(
                 unassign(root, assigned, degrees, undo);
             }
         }
-fn affected_roots(
+        fn affected_roots(
             ctx: &DecodeContext<'_>,
             root: usize,
             root_edges: &[Vec<usize>],
@@ -551,26 +630,24 @@ fn affected_roots(
             Ok(affected)
         }
 
-let CoordinateClosureSearch { domains, edges, edge_ids, local_edge_by_id, root_edges, edge_candidates, incidence, component_points, assigned, point_uses, solutions, states, state_limit, exhausted, base_degrees, budget } = inputs;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        let CoordinateClosureSearch {
+            domains,
+            edges,
+            edge_ids,
+            local_edge_by_id,
+            root_edges,
+            edge_candidates,
+            incidence,
+            component_points,
+            assigned,
+            point_uses,
+            solutions,
+            states,
+            state_limit,
+            exhausted,
+            base_degrees,
+            budget,
+        } = inputs;
 
         let _depth = ctx.enter_nested("catia_coordinate_closure_walk")?;
         if solutions.len() > 1 || *exhausted {
@@ -821,7 +898,19 @@ let CoordinateClosureSearch { domains, edges, edge_ids, local_edge_by_id, root_e
                     )?;
                 }
                 if let [point] = values.as_slice() {
-                    let Some(undo) = assign(ctx, CoordinateAssignment { root, point: *point, assigned, edges, root_edges, incidence, degrees: base_degrees, budget })?
+                    let Some(undo) = assign(
+                        ctx,
+                        CoordinateAssignment {
+                            root,
+                            point: *point,
+                            assigned,
+                            edges,
+                            root_edges,
+                            incidence,
+                            degrees: base_degrees,
+                            budget,
+                        },
+                    )?
                     else {
                         *exhausted = true;
                         break;
@@ -912,7 +1001,19 @@ let CoordinateClosureSearch { domains, edges, edge_ids, local_edge_by_id, root_e
                 {
                     break None;
                 }
-                let Some(undo) = assign(ctx, CoordinateAssignment { root, point, assigned, edges, root_edges, incidence, degrees: base_degrees, budget })?
+                let Some(undo) = assign(
+                    ctx,
+                    CoordinateAssignment {
+                        root,
+                        point,
+                        assigned,
+                        edges,
+                        root_edges,
+                        incidence,
+                        degrees: base_degrees,
+                        budget,
+                    },
+                )?
                 else {
                     *exhausted = true;
                     break None;
@@ -1005,7 +1106,19 @@ let CoordinateClosureSearch { domains, edges, edge_ids, local_edge_by_id, root_e
                     break None;
                 }
                 if let Some((point, root)) = matching_forced {
-                    let Some(undo) = assign(ctx, CoordinateAssignment { root, point, assigned, edges, root_edges, incidence, degrees: base_degrees, budget })?
+                    let Some(undo) = assign(
+                        ctx,
+                        CoordinateAssignment {
+                            root,
+                            point,
+                            assigned,
+                            edges,
+                            root_edges,
+                            incidence,
+                            degrees: base_degrees,
+                            budget,
+                        },
+                    )?
                     else {
                         *exhausted = true;
                         break None;
@@ -1032,7 +1145,19 @@ let CoordinateClosureSearch { domains, edges, edge_ids, local_edge_by_id, root_e
                     viable_domains.iter().find(|(_, values)| values.len() == 1)
                 {
                     let point = values[0];
-                    let Some(undo) = assign(ctx, CoordinateAssignment { root, point, assigned, edges, root_edges, incidence, degrees: base_degrees, budget })?
+                    let Some(undo) = assign(
+                        ctx,
+                        CoordinateAssignment {
+                            root,
+                            point,
+                            assigned,
+                            edges,
+                            root_edges,
+                            incidence,
+                            degrees: base_degrees,
+                            budget,
+                        },
+                    )?
                     else {
                         *exhausted = true;
                         break None;
@@ -1176,13 +1301,45 @@ let CoordinateClosureSearch { domains, edges, edge_ids, local_edge_by_id, root_e
         }
         *states += 1;
         for point in values {
-            let Some(undo) = assign(ctx, CoordinateAssignment { root, point, assigned, edges, root_edges, incidence, degrees: base_degrees, budget })?
+            let Some(undo) = assign(
+                ctx,
+                CoordinateAssignment {
+                    root,
+                    point,
+                    assigned,
+                    edges,
+                    root_edges,
+                    incidence,
+                    degrees: base_degrees,
+                    budget,
+                },
+            )?
             else {
                 *exhausted = true;
                 break;
             };
             point_uses[point] += 1;
-            walk(ctx, CoordinateClosureSearch { domains, edges, edge_ids, local_edge_by_id, root_edges, edge_candidates, incidence, component_points, assigned, point_uses, solutions, states, state_limit, exhausted, base_degrees, budget })?;
+            walk(
+                ctx,
+                CoordinateClosureSearch {
+                    domains,
+                    edges,
+                    edge_ids,
+                    local_edge_by_id,
+                    root_edges,
+                    edge_candidates,
+                    incidence,
+                    component_points,
+                    assigned,
+                    point_uses,
+                    solutions,
+                    states,
+                    state_limit,
+                    exhausted,
+                    base_degrees,
+                    budget,
+                },
+            )?;
             point_uses[point] -= 1;
             unassign(root, assigned, base_degrees, undo);
             if solutions.len() > 1 || *exhausted {
@@ -1193,22 +1350,16 @@ let CoordinateClosureSearch { domains, edges, edge_ids, local_edge_by_id, root_e
         Ok(())
     }
 
-let CloseCoordinateRootsWithIncidenceInputs { quotient, point_count, edge_candidates, incidence, budget, component_search_budget, ambiguous, exhausted } = inputs;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    let CloseCoordinateRootsWithIncidenceInputs {
+        quotient,
+        point_count,
+        edge_candidates,
+        incidence,
+        budget,
+        component_search_budget,
+        ambiguous,
+        exhausted,
+    } = inputs;
 
     let mut roots = Vec::new();
     for node in 0..quotient.union.len() {
@@ -1595,7 +1746,27 @@ let CloseCoordinateRootsWithIncidenceInputs { quotient, point_count, edge_candid
         )?;
         let mut point_degrees =
             ctx.alloc_filled(point_count, 0, "catia coordinate point degrees")?;
-        walk(ctx, CoordinateClosureSearch { domains: &local_domains, edges: &local_edges, edge_ids: &edge_ids, local_edge_by_id: &local_edge_by_id, root_edges: &root_edges, edge_candidates, incidence: local_incidence.as_ref(), component_points: &component_points, assigned: &mut local_assignment, point_uses: &mut point_degrees, solutions: &mut solutions, states: &mut states, state_limit, exhausted: &mut exhausted, base_degrees: &mut base_degrees, budget })?;
+        walk(
+            ctx,
+            CoordinateClosureSearch {
+                domains: &local_domains,
+                edges: &local_edges,
+                edge_ids: &edge_ids,
+                local_edge_by_id: &local_edge_by_id,
+                root_edges: &root_edges,
+                edge_candidates,
+                incidence: local_incidence.as_ref(),
+                component_points: &component_points,
+                assigned: &mut local_assignment,
+                point_uses: &mut point_degrees,
+                solutions: &mut solutions,
+                states: &mut states,
+                state_limit,
+                exhausted: &mut exhausted,
+                base_degrees: &mut base_degrees,
+                budget,
+            },
+        )?;
         if exhausted {
             if component_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                 if let Some(shared_budget) = shared_budget {

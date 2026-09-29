@@ -72,7 +72,9 @@ impl InlineBytes {
     /// Inline length code.
     pub(crate) fn code(&self) -> Result<u8, &'static str> {
         let length = u8::try_from(self.0.len()).map_err(|_| "inline length exceeds byte range")?;
-        0xe7_u8.checked_add(length).ok_or("inline code exceeds byte range")
+        0xe7_u8
+            .checked_add(length)
+            .ok_or("inline code exceeds byte range")
     }
 }
 

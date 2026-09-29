@@ -861,7 +861,8 @@ pub(crate) fn consolidated_record_sources(
             for descriptor in &directory.descriptors {
                 let mut source = Vec::new();
                 for extent in &descriptor.extents {
-                    let Some(start) = directory.inner.checked_add(index_from_u32(extent.phys_off)) else {
+                    let Some(start) = directory.inner.checked_add(index_from_u32(extent.phys_off))
+                    else {
                         continue;
                     };
                     let Some(end) = start.checked_add(index_from_u32(extent.phys_len)) else {
@@ -1207,10 +1208,7 @@ fn parse_extents(
     physical_base: usize,
     file_len: usize,
 ) -> Result<Option<(Vec<Extent>, usize)>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(k),
-        "catia_extent_validation",
-    )?;
+    ctx.charge_work(u64_from_index(k), "catia_extent_validation")?;
     let Some(cum) = validate_extents(dirbuf, o, k, physical_base, file_len) else {
         return Ok(None);
     };

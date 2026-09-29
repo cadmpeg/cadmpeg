@@ -1641,7 +1641,25 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
         let mut limited_ir = ir.clone();
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            emit_standard_topology(ctx, crate::families::standard::decode::EmitStandardTopologyInputs { ir: &mut limited_ir, annotations: &mut AnnotationBuilder::new(), bindings: &bindings, brep: &[], surface_indices: &surface_indices, supports: &supports, edge_vertices: &[[0, 1]], point_assignment: &[0, 1], topology: &topology, native_edge_supports: &[None], limit_curve_bindings: &[None], limit_curves: &[], refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+            emit_standard_topology(
+                ctx,
+                crate::families::standard::decode::EmitStandardTopologyInputs {
+                    ir: &mut limited_ir,
+                    annotations: &mut AnnotationBuilder::new(),
+                    bindings: &bindings,
+                    brep: &[],
+                    surface_indices: &surface_indices,
+                    supports: &supports,
+                    edge_vertices: &[[0, 1]],
+                    point_assignment: &[0, 1],
+                    topology: &topology,
+                    native_edge_supports: &[None],
+                    limit_curve_bindings: &[None],
+                    limit_curves: &[],
+                    refusal: &mut crate::nurbs::LaneRefusals::new(),
+                    admission: &mut admission,
+                },
+            )
         });
         assert!(matches!(
             limited,
@@ -1649,7 +1667,25 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
         ));
         crate::test_support::with_service_context(|ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            emit_standard_topology(ctx, crate::families::standard::decode::EmitStandardTopologyInputs { ir: &mut ir, annotations: &mut annotations, bindings: &bindings, brep: &[], surface_indices: &surface_indices, supports: &supports, edge_vertices: &[[0, 1]], point_assignment: &[0, 1], topology: &topology, native_edge_supports: &[None], limit_curve_bindings: &[None], limit_curves: &[], refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+            emit_standard_topology(
+                ctx,
+                crate::families::standard::decode::EmitStandardTopologyInputs {
+                    ir: &mut ir,
+                    annotations: &mut annotations,
+                    bindings: &bindings,
+                    brep: &[],
+                    surface_indices: &surface_indices,
+                    supports: &supports,
+                    edge_vertices: &[[0, 1]],
+                    point_assignment: &[0, 1],
+                    topology: &topology,
+                    native_edge_supports: &[None],
+                    limit_curve_bindings: &[None],
+                    limit_curves: &[],
+                    refusal: &mut crate::nurbs::LaneRefusals::new(),
+                    admission: &mut admission,
+                },
+            )
         })
         .expect("valid source object identity");
 

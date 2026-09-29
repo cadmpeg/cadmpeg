@@ -3,7 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_test_support::wire;
 

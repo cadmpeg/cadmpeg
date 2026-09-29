@@ -1,7 +1,7 @@
 //! `StandardTopology` container and face-cycle orientation for standard
 //! nested CATIA V5 B-rep streams.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::families::standard::fbb::{
     boundary_cycles, classify_fbb_edge_layouts, cover_cycle, largest_fbb_run,

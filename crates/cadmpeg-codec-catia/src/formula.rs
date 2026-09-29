@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of complete, typed CATIA formula programs to neutral parameters.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i32, truncate_f64_to_i64};
 
@@ -1633,7 +1633,9 @@ fn merge_formula_parameter_candidate(
             if existing.role.is_formula_output() && !candidate.role.is_formula_output() =>
         {
             if let FormulaParameterRole::FormulaOutput { fallback } = &mut existing.role {
-                fallback.get_or_insert_with(|| Box::new((candidate.parameter, candidate.parameter_type)));
+                fallback.get_or_insert_with(|| {
+                    Box::new((candidate.parameter, candidate.parameter_type))
+                });
             }
         }
         Some(_) => {}
@@ -2420,7 +2422,12 @@ impl EvaluatedFormulaValue {
                 Some(value.get()),
             )),
             ParameterValue::Integer(value) => Self::Scalar(match f64_from_i64(*value) {
-                Some(value) => EvaluatedFormulaScalar::from_parts(value, FormulaDimension::SCALAR, Some(true), Some(value)),
+                Some(value) => EvaluatedFormulaScalar::from_parts(
+                    value,
+                    FormulaDimension::SCALAR,
+                    Some(true),
+                    Some(value),
+                ),
                 None => static_integral_result(0.0, FormulaDimension::SCALAR),
             }),
             ParameterValue::Boolean(value) => Self::Boolean(EvaluatedFormulaBoolean::known(*value)),
@@ -3147,7 +3154,8 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             {
                 return None;
             }
-            base.dimension().power(truncate_f64_to_i32(exponent_value)?)?
+            base.dimension()
+                .power(truncate_f64_to_i32(exponent_value)?)?
         };
         let value = base.value().powf(exponent.value());
         let known_value = if self.evaluate {
@@ -3375,7 +3383,8 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             return None;
         }
         if !self.evaluate {
-            return value.known_value()
+            return value
+                .known_value()
                 .and_then(truncate_f64_to_i64)
                 .and_then(|value| usize::try_from(value).ok())
                 .or(Some(0));
@@ -3976,6 +3985,11 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             self.at = name_end;
         }
         let value = self.bindings.get(&self.source[start..name_end])?;
+        if self.evaluate
+            && matches!(value, EvaluatedFormulaValue::Scalar(scalar) if scalar.known_value().is_none())
+        {
+            return None;
+        }
         let copied = value.copy_charged(self.ctx);
         self.admit(copied)
     }
@@ -4177,7 +4191,9 @@ fn typed_parameter_evaluation(
             ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(value)?)
         }
         FormulaParameterType::Integer => {
-            if value.fract() != 0.0 || value < FORMULA_INTEGER_LOWER || value >= FORMULA_INTEGER_UPPER {
+            if value.fract() != 0.0
+                || !(FORMULA_INTEGER_LOWER..FORMULA_INTEGER_UPPER).contains(&value)
+            {
                 return None;
             }
             ParameterValue::Integer(truncate_f64_to_i64(value)?)

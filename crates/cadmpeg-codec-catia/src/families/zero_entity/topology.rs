@@ -1,6 +1,6 @@
 //! Endpoint relations derived from resolved zero-entity support occurrences.
 
-use cadmpeg_core::convert::{truncate_f64_to_i64};
+use cadmpeg_core::convert::truncate_f64_to_i64;
 
 use std::collections::{HashMap, HashSet};
 
@@ -320,7 +320,9 @@ fn endpoint_locus_candidates_inner(
     }
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
-        let Some(cell) = endpoint_cell(*point) else { return Ok(None); };
+        let Some(cell) = endpoint_cell(*point) else {
+            return Ok(None);
+        };
         if let Some(indices) = cells.get_mut(&cell) {
             ctx.push_vec(indices, index, "catia_zero_locus_cell_members")?;
         } else {
@@ -332,7 +334,9 @@ fn endpoint_locus_candidates_inner(
     let mut neighbors =
         ctx.alloc_filled(endpoints.len(), Vec::new(), "catia_zero_locus_neighbors")?;
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
-        let Some(cell) = endpoint_cell(*point) else { return Ok(None); };
+        let Some(cell) = endpoint_cell(*point) else {
+            return Ok(None);
+        };
         for dx in -1..=1 {
             for dy in -1..=1 {
                 for dz in -1..=1 {
@@ -438,7 +442,9 @@ fn endpoint_match_graph(
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
     for (index, occurrence) in occurrences.iter().enumerate() {
         for endpoint in occurrence.model_endpoints {
-            let Some(cell) = endpoint_cell(endpoint) else { return Ok(None); };
+            let Some(cell) = endpoint_cell(endpoint) else {
+                return Ok(None);
+            };
             if let Some(indices) = cells.get_mut(&cell) {
                 ctx.push_vec(indices, index, "catia_zero_match_cell_members")?;
             } else {
@@ -452,7 +458,9 @@ fn endpoint_match_graph(
     for (index, occurrence) in occurrences.iter().enumerate() {
         let mut possible = HashSet::new();
         for endpoint in occurrence.model_endpoints {
-            let Some(cell) = endpoint_cell(endpoint) else { return Ok(None); };
+            let Some(cell) = endpoint_cell(endpoint) else {
+                return Ok(None);
+            };
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     for dz in -1..=1 {
@@ -572,7 +580,10 @@ mod tests {
     fn endpoint_match_graph_refuses_positive_spatial_overflow() {
         let endpoints = [Point3::new(f64::MAX, 0.0, 0.0); 2];
         let occurrences = [occurrence(1, 1, endpoints, endpoints[0])];
-        let result = crate::test_support::with_service_context(|ctx| super::endpoint_match_graph(ctx, &occurrences, None)).expect("service budget");
+        let result = crate::test_support::with_service_context(|ctx| {
+            super::endpoint_match_graph(ctx, &occurrences, None)
+        })
+        .expect("service budget");
         assert!(result.is_none());
     }
 
@@ -580,7 +591,10 @@ mod tests {
     fn endpoint_match_graph_refuses_negative_spatial_overflow() {
         let endpoints = [Point3::new(-f64::MAX, 0.0, 0.0); 2];
         let occurrences = [occurrence(1, 1, endpoints, endpoints[0])];
-        let result = crate::test_support::with_service_context(|ctx| super::endpoint_match_graph(ctx, &occurrences, None)).expect("service budget");
+        let result = crate::test_support::with_service_context(|ctx| {
+            super::endpoint_match_graph(ctx, &occurrences, None)
+        })
+        .expect("service budget");
         assert!(result.is_none());
     }
 
@@ -588,10 +602,15 @@ mod tests {
     fn endpoint_locus_refuses_positive_spatial_overflow() {
         let endpoints = [finite(Point3::new(f64::MAX, 0.0, 0.0)); 2];
         let pairs = [super::ZeroEntityEndpointPairCandidate {
-            face_record_ordinals: [1, 2], support_record_ordinals: [1, 2],
-            model_endpoints: endpoints, model_midpoint: endpoints[0],
+            face_record_ordinals: [1, 2],
+            support_record_ordinals: [1, 2],
+            model_endpoints: endpoints,
+            model_midpoint: endpoints[0],
         }];
-        let result = crate::test_support::with_service_context(|ctx| super::endpoint_locus_candidates_inner(ctx, &pairs, None)).expect("service budget");
+        let result = crate::test_support::with_service_context(|ctx| {
+            super::endpoint_locus_candidates_inner(ctx, &pairs, None)
+        })
+        .expect("service budget");
         assert!(result.is_none());
     }
 
@@ -599,10 +618,15 @@ mod tests {
     fn endpoint_locus_refuses_negative_spatial_overflow() {
         let endpoints = [finite(Point3::new(-f64::MAX, 0.0, 0.0)); 2];
         let pairs = [super::ZeroEntityEndpointPairCandidate {
-            face_record_ordinals: [1, 2], support_record_ordinals: [1, 2],
-            model_endpoints: endpoints, model_midpoint: endpoints[0],
+            face_record_ordinals: [1, 2],
+            support_record_ordinals: [1, 2],
+            model_endpoints: endpoints,
+            model_midpoint: endpoints[0],
         }];
-        let result = crate::test_support::with_service_context(|ctx| super::endpoint_locus_candidates_inner(ctx, &pairs, None)).expect("service budget");
+        let result = crate::test_support::with_service_context(|ctx| {
+            super::endpoint_locus_candidates_inner(ctx, &pairs, None)
+        })
+        .expect("service budget");
         assert!(result.is_none());
     }
 

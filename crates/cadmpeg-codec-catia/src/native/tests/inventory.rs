@@ -3,7 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_test_support::wire;
 
@@ -434,7 +434,8 @@ fn decode_retains_outer_object_graph_order_and_references() {
             && loss.message.contains("1 design object(s)")
             && loss.message.contains("2 object-graph field record(s)")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation
         .findings
         .iter()

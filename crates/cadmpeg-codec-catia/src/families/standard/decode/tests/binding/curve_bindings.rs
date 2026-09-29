@@ -82,7 +82,22 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     };
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut ir, annotations: &mut AnnotationBuilder::new(), bindings: &[(surface_id.clone(), false, 0)], surface_indices: &HashMap::from([(surface_id, 0)]), brep: &[], support: &support, points: [0, 0], native_support: None, limit_curve: None, refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[(surface_id.clone(), false, 0)],
+                surface_indices: &HashMap::from([(surface_id, 0)]),
+                brep: &[],
+                support: &support,
+                points: [0, 0],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     })
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
@@ -467,7 +482,19 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         *direction,
         cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0)
     );
-    let range = circle_parameter_range_from_surface_branch(crate::assemble::CircleParameterRangeFromSurfaceBranchInputs { surface: &surface, center: Point3::new(0.0, 0.0, 0.0), radius: 7.0, axis: Vector3::new(0.0, 0.0, 1.0), ref_direction: Vector3::new(1.0, 0.0, 0.0), start: Point3::new(7.0, 0.0, 0.0), end: Point3::new(0.0, 7.0, 0.0), pcurve_origin: *line_pcurve.origin(), pcurve_direction: (*line_pcurve.direction()).into() })
+    let range = circle_parameter_range_from_surface_branch(
+        crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+            surface: &surface,
+            center: Point3::new(0.0, 0.0, 0.0),
+            radius: 7.0,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            start: Point3::new(7.0, 0.0, 0.0),
+            end: Point3::new(0.0, 7.0, 0.0),
+            pcurve_origin: *line_pcurve.origin(),
+            pcurve_direction: (*line_pcurve.direction()).into(),
+        },
+    )
     .expect("circle evaluation resources")
     .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
@@ -513,7 +540,19 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
     assert_eq!(*origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
     assert_eq!(*direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
 
-    let range = circle_parameter_range_from_surface_branch(crate::assemble::CircleParameterRangeFromSurfaceBranchInputs { surface: &surface, center: Point3::new(5.0, 0.0, 0.0), radius: 2.0, axis: Vector3::new(0.0, -1.0, 0.0), ref_direction: Vector3::new(1.0, 0.0, 0.0), start, end, pcurve_origin: *line_pcurve.origin(), pcurve_direction: (*line_pcurve.direction()).into() })
+    let range = circle_parameter_range_from_surface_branch(
+        crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+            surface: &surface,
+            center: Point3::new(5.0, 0.0, 0.0),
+            radius: 2.0,
+            axis: Vector3::new(0.0, -1.0, 0.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            start,
+            end,
+            pcurve_origin: *line_pcurve.origin(),
+            pcurve_direction: (*line_pcurve.direction()).into(),
+        },
+    )
     .expect("circle evaluation resources")
     .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);

@@ -10,7 +10,7 @@
 //! `families::consolidated::records`; a rename cascades across ~40 call sites
 //! and several `native` field paths, so the names carry naming debt here.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 type NativePcurveLanesOutput = Result<
     (

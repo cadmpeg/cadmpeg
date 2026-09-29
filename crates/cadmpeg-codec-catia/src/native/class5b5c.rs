@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native class-0x5b/0x5c frames and their byte-string wire projection.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRawFrame};
 use serde::{Deserialize, Serialize};

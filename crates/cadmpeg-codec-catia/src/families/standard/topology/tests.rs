@@ -1,4 +1,4 @@
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::{incidence_cycles, solve_boundary_orientation_constraints, StandardTopology};
 use std::collections::HashMap;

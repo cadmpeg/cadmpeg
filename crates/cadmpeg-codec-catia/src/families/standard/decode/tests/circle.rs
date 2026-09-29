@@ -107,13 +107,43 @@ fn standard_edge_circle_axes_refuse_before_vector_growth() {
     let mut service_ir = ir.clone();
     let (curve, _) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut service_ir, annotations: &mut AnnotationBuilder::new(), bindings: &bindings, surface_indices: &indices, brep: &[], support: &support, points: [0, 1], native_support: None, limit_curve: None, refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut service_ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &bindings,
+                surface_indices: &indices,
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     })
     .expect("service edge circle budget");
     assert!(curve.is_some());
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut ir, annotations: &mut AnnotationBuilder::new(), bindings: &bindings, surface_indices: &indices, brep: &[], support: &support, points: [0, 1], native_support: None, limit_curve: None, refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &bindings,
+                surface_indices: &indices,
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -199,7 +229,22 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
 
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut ir, annotations: &mut AnnotationBuilder::new(), bindings: &bindings, surface_indices: &surface_indices, brep: &[], support: &support, points: [0, 1], native_support: None, limit_curve: None, refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &bindings,
+                surface_indices: &surface_indices,
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     })
     .expect("valid source object identity");
     let curve = curve.expect("the serialized circle retains a carrier identity");

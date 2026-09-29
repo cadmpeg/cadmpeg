@@ -2369,19 +2369,22 @@ fn standard_mesh_missing_edge_assignment_domains(
     type DeadState = (usize, usize, u64, Option<u32>, Vec<usize>, bool);
 
     struct EnumerateFaceInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5> {
-face: usize,
-gaps: &'input0 [MeshBoundaryGap],
-cycle_lengths: &'input1 [usize],
-missing: &'input2 [usize],
-rows: &'input3 [EdgeRow],
-fixed_complete_row_spans: bool,
-constraints: PlacementConstraints<'input4>,
-canonicalize_spans: bool,
-remaining_states: &'input5 mut usize
-}
+        face: usize,
+        gaps: &'input0 [MeshBoundaryGap],
+        cycle_lengths: &'input1 [usize],
+        missing: &'input2 [usize],
+        rows: &'input3 [EdgeRow],
+        fixed_complete_row_spans: bool,
+        constraints: PlacementConstraints<'input4>,
+        canonicalize_spans: bool,
+        remaining_states: &'input5 mut usize,
+    }
 
-    fn enumerate_face(ctx : &DecodeContext<'_>, inputs: EnumerateFaceInputs<'_, '_, '_, '_, '_, '_>) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
-struct Search<'a, 'ctx> {
+    fn enumerate_face(
+        ctx: &DecodeContext<'_>,
+        inputs: EnumerateFaceInputs<'_, '_, '_, '_, '_, '_>,
+    ) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
+        struct Search<'a, 'ctx> {
             ctx: &'a DecodeContext<'ctx>,
             face: usize,
             gaps: &'a [MeshBoundaryGap],
@@ -2402,28 +2405,35 @@ struct Search<'a, 'ctx> {
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
-struct GapSearchState<'input0> {
-gap: usize,
-offset: usize,
-used: u64,
-current_port: Option<u32>,
-current_points: Option<Arc<HashSet<usize>>>,
-gap_placed_start: usize,
-placed: &'input0 mut Vec<MeshEdgePlacementCandidate>
-}
-struct GapWalkState<'input0> {
-gap: usize,
-offset: usize,
-used: u64,
-current_port: Option<u32>,
-current_points: Option<Arc<HashSet<usize>>>,
-gap_placed_start: usize,
-placed: &'input0 mut Vec<MeshEdgePlacementCandidate>
-}
-impl Search<'_, '_> {
-
+        struct GapSearchState<'input0> {
+            gap: usize,
+            offset: usize,
+            used: u64,
+            current_port: Option<u32>,
+            current_points: Option<Arc<HashSet<usize>>>,
+            gap_placed_start: usize,
+            placed: &'input0 mut Vec<MeshEdgePlacementCandidate>,
+        }
+        struct GapWalkState<'input0> {
+            gap: usize,
+            offset: usize,
+            used: u64,
+            current_port: Option<u32>,
+            current_points: Option<Arc<HashSet<usize>>>,
+            gap_placed_start: usize,
+            placed: &'input0 mut Vec<MeshEdgePlacementCandidate>,
+        }
+        impl Search<'_, '_> {
             fn walk(&mut self, inputs: GapSearchState<'_>) -> Result<Option<()>, CodecError> {
-let GapSearchState { gap, offset, used, current_port, current_points, gap_placed_start, placed } = inputs;
+                let GapSearchState {
+                    gap,
+                    offset,
+                    used,
+                    current_port,
+                    current_points,
+                    gap_placed_start,
+                    placed,
+                } = inputs;
 
                 let mut points = Vec::new();
                 if let Some(current) = current_points.as_ref() {
@@ -2438,7 +2448,15 @@ let GapSearchState { gap, offset, used, current_port, current_points, gap_placed
                     return Ok(Some(()));
                 }
                 let before = self.assignments;
-                let Some(()) = self.walk_state(GapWalkState { gap, offset, used, current_port, current_points, gap_placed_start, placed })?
+                let Some(()) = self.walk_state(GapWalkState {
+                    gap,
+                    offset,
+                    used,
+                    current_port,
+                    current_points,
+                    gap_placed_start,
+                    placed,
+                })?
                 else {
                     return Ok(None);
                 };
@@ -2466,9 +2484,16 @@ let GapSearchState { gap, offset, used, current_port, current_points, gap_placed
                 Ok(Some(()))
             }
 
-
             fn walk_state(&mut self, inputs: GapWalkState<'_>) -> Result<Option<()>, CodecError> {
-let GapWalkState { gap, offset, used, current_port, current_points, gap_placed_start, placed } = inputs;
+                let GapWalkState {
+                    gap,
+                    offset,
+                    used,
+                    current_port,
+                    current_points,
+                    gap_placed_start,
+                    placed,
+                } = inputs;
 
                 let _depth = self.ctx.enter_nested("catia_gap_assignment_depth")?;
                 self.ctx.charge_work(1, "catia_gap_assignment_work")?;
@@ -2558,7 +2583,15 @@ let GapWalkState { gap, offset, used, current_port, current_points, gap_placed_s
                                 at = next;
                             }
                         }
-                        let Some(()) = self.walk(GapSearchState { gap: gap + 1, offset: 0, used, current_port: next_port, current_points: next_points, gap_placed_start: placed.len(), placed })?
+                        let Some(()) = self.walk(GapSearchState {
+                            gap: gap + 1,
+                            offset: 0,
+                            used,
+                            current_port: next_port,
+                            current_points: next_points,
+                            gap_placed_start: placed.len(),
+                            placed,
+                        })?
                         else {
                             return Ok(None);
                         };
@@ -2648,8 +2681,7 @@ let GapWalkState { gap, offset, used, current_port, current_points, gap_placed_s
                                                 if let Some(points) = transitions[edge].get(point) {
                                                     for &point in points.iter() {
                                                         if !next.contains(&point) {
-                                                            let bytes =
-                                                            u64_from_index(
+                                                            let bytes = u64_from_index(
                                                                 std::mem::size_of::<usize>(),
                                                             );
                                                             self.ctx.charge_retained(
@@ -2666,9 +2698,8 @@ let GapWalkState { gap, offset, used, current_port, current_points, gap_placed_s
                                                 }
                                             }
                                         }
-                                        let bytes = u64_from_index(
-                                            std::mem::size_of::<HashSet<usize>>(),
-                                        );
+                                        let bytes =
+                                            u64_from_index(std::mem::size_of::<HashSet<usize>>());
                                         self.ctx
                                             .charge_retained(bytes, "catia_gap_transition_set")?;
                                         Some(Arc::new(next))
@@ -2690,7 +2721,15 @@ let GapWalkState { gap, offset, used, current_port, current_points, gap_placed_s
                         };
                         self.ctx.push_vec(placed, value, "catia_gap_placed_edges")?;
                         for next_port in next_ports {
-                            let Some(()) = self.walk(GapSearchState { gap, offset: offset + segment_count, used: used | (1 << rank), current_port: next_port, current_points: next_points.clone(), gap_placed_start, placed })?
+                            let Some(()) = self.walk(GapSearchState {
+                                gap,
+                                offset: offset + segment_count,
+                                used: used | (1 << rank),
+                                current_port: next_port,
+                                current_points: next_points.clone(),
+                                gap_placed_start,
+                                placed,
+                            })?
                             else {
                                 return Ok(None);
                             };
@@ -2703,12 +2742,17 @@ let GapWalkState { gap, offset, used, current_port, current_points, gap_placed_s
             }
         }
 
-let EnumerateFaceInputs { face, gaps, cycle_lengths, missing, rows, fixed_complete_row_spans, constraints, canonicalize_spans, remaining_states } = inputs;
-
-
-
-
-
+        let EnumerateFaceInputs {
+            face,
+            gaps,
+            cycle_lengths,
+            missing,
+            rows,
+            fixed_complete_row_spans,
+            constraints,
+            canonicalize_spans,
+            remaining_states,
+        } = inputs;
 
         let (edge_ports, corner_ports, endpoint_constraints, corner_points) = constraints;
         if missing.len() > index_from_u32(u64::BITS) {
@@ -2755,7 +2799,15 @@ let EnumerateFaceInputs { face, gaps, cycle_lengths, missing, rows, fixed_comple
             None
         };
         if search
-            .walk(GapSearchState { gap: 0, offset: 0, used: 0, current_port: first_port, current_points: first_points, gap_placed_start: 0, placed: &mut Vec::new() })?
+            .walk(GapSearchState {
+                gap: 0,
+                offset: 0,
+                used: 0,
+                current_port: first_port,
+                current_points: first_points,
+                gap_placed_start: 0,
+                placed: &mut Vec::new(),
+            })?
             .is_none()
         {
             return Ok(None);
@@ -3297,18 +3349,57 @@ let EnumerateFaceInputs { face, gaps, cycle_lengths, missing, rows, fixed_comple
         };
         let mut assignments = cycle_assignments.or(trail_assignments);
         if assignments.is_none() {
-            assignments = enumerate_face(ctx, EnumerateFaceInputs { face: face.face, gaps: &face.gaps, cycle_lengths, missing: &face.missing_edges, rows: edge_rows, fixed_complete_row_spans: context.analysis.fixed_complete_row_spans, constraints: (
-                    placement_ports,
-                    &corner_ports,
-                    endpoint_constraints,
-                    &corner_points,
-                ), canonicalize_spans, remaining_states: &mut remaining_states })?;
+            assignments = enumerate_face(
+                ctx,
+                EnumerateFaceInputs {
+                    face: face.face,
+                    gaps: &face.gaps,
+                    cycle_lengths,
+                    missing: &face.missing_edges,
+                    rows: edge_rows,
+                    fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
+                    constraints: (
+                        placement_ports,
+                        &corner_ports,
+                        endpoint_constraints,
+                        &corner_points,
+                    ),
+                    canonicalize_spans,
+                    remaining_states: &mut remaining_states,
+                },
+            )?;
         }
         if assignments.is_none() {
-            assignments = enumerate_face(ctx, EnumerateFaceInputs { face: face.face, gaps: &face.gaps, cycle_lengths, missing: &face.missing_edges, rows: edge_rows, fixed_complete_row_spans: context.analysis.fixed_complete_row_spans, constraints: (None, &HashMap::new(), endpoint_constraints, &corner_points), canonicalize_spans, remaining_states: &mut remaining_states })?;
+            assignments = enumerate_face(
+                ctx,
+                EnumerateFaceInputs {
+                    face: face.face,
+                    gaps: &face.gaps,
+                    cycle_lengths,
+                    missing: &face.missing_edges,
+                    rows: edge_rows,
+                    fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
+                    constraints: (None, &HashMap::new(), endpoint_constraints, &corner_points),
+                    canonicalize_spans,
+                    remaining_states: &mut remaining_states,
+                },
+            )?;
         }
         if assignments.is_none() {
-            assignments = enumerate_face(ctx, EnumerateFaceInputs { face: face.face, gaps: &face.gaps, cycle_lengths, missing: &face.missing_edges, rows: edge_rows, fixed_complete_row_spans: context.analysis.fixed_complete_row_spans, constraints: (None, &HashMap::new(), None, &MeshCornerPoints::new()), canonicalize_spans, remaining_states: &mut remaining_states })?;
+            assignments = enumerate_face(
+                ctx,
+                EnumerateFaceInputs {
+                    face: face.face,
+                    gaps: &face.gaps,
+                    cycle_lengths,
+                    missing: &face.missing_edges,
+                    rows: edge_rows,
+                    fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
+                    constraints: (None, &HashMap::new(), None, &MeshCornerPoints::new()),
+                    canonicalize_spans,
+                    remaining_states: &mut remaining_states,
+                },
+            )?;
         }
         let domain = if let Some(assignments) = assignments {
             Some(MeshFaceAssignmentDomain::Ordered(assignments))
@@ -4117,7 +4208,11 @@ fn standard_mesh_assignment_corner_points(
                 break;
             }
         }
-        Some(Ok(MeshAssignmentCorners { assignments, corner_points, cycle_lengths }))
+        Some(Ok(MeshAssignmentCorners {
+            assignments,
+            corner_points,
+            cycle_lengths,
+        }))
     })()
     .transpose()
 }
@@ -4131,8 +4226,11 @@ fn standard_mesh_missing_edge_endpoint_assignments(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
-    let Some(MeshAssignmentCorners { assignments, corner_points, cycle_lengths }) =
-        standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)?
+    let Some(MeshAssignmentCorners {
+        assignments,
+        corner_points,
+        cycle_lengths,
+    }) = standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)?
     else {
         return Ok(None);
     };

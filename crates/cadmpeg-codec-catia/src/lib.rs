@@ -56,7 +56,7 @@ mod ids;
 /// Byte-offset constants generated from `docs/layouts/catia.toml`.
 mod layout;
 mod legacy_entity;
- // Loss catalog is consumed by tests and the writer.
+// Loss catalog is consumed by tests and the writer.
 mod loss;
 mod math;
 mod native;

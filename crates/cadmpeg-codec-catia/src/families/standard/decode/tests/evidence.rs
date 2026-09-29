@@ -1139,7 +1139,22 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
     };
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut ir, annotations: &mut AnnotationBuilder::new(), bindings: &[], surface_indices: &HashMap::new(), brep: &[], support: &support, points: [0, 1], native_support: Some(&native), limit_curve: None, refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[],
+                surface_indices: &HashMap::new(),
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: Some(&native),
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     })
     .expect("valid source object identity");
     let curve = curve.expect("native support identifies the curve");
@@ -1538,7 +1553,22 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     assert!((binding.parameter_range[1] - 0.75).abs() <= 1.0e-6);
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut ir, annotations: &mut AnnotationBuilder::new(), bindings: &bindings, surface_indices: &surface_indices, brep: &[], support: &support, points: [0, 1], native_support: None, limit_curve: Some((&limit_curve, binding.parameter_range)), refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &bindings,
+                surface_indices: &surface_indices,
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: Some((&limit_curve, binding.parameter_range)),
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     })
     .expect("valid source object identity");
     assert_eq!(range, Some(binding.parameter_range));
@@ -1601,7 +1631,22 @@ fn standard_edge_limit_curve_copy_refuses_collection_limit() {
     let mut limited_ir = ir.clone();
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut limited_ir, annotations: &mut AnnotationBuilder::new(), bindings: &[], surface_indices: &HashMap::new(), brep: &[], support: &support, points: [0, 1], native_support: None, limit_curve: Some((&limit_curve, [0.0, 1.0])), refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut limited_ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[],
+                surface_indices: &HashMap::new(),
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: Some((&limit_curve, [0.0, 1.0])),
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1609,7 +1654,22 @@ fn standard_edge_limit_curve_copy_refuses_collection_limit() {
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut ir, annotations: &mut AnnotationBuilder::new(), bindings: &[], surface_indices: &HashMap::new(), brep: &[], support: &support, points: [0, 1], native_support: None, limit_curve: Some((&limit_curve, [0.0, 1.0])), refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[],
+                surface_indices: &HashMap::new(),
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: Some((&limit_curve, [0.0, 1.0])),
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     })
     .expect("service profile admits the edge");
     assert!(admitted.0.is_some());
@@ -1639,7 +1699,22 @@ fn standard_line_edge_uses_distance_parameterization() {
     };
     let (_, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut ir, annotations: &mut AnnotationBuilder::new(), bindings: &[], surface_indices: &HashMap::new(), brep: &[], support: &support, points: [0, 1], native_support: None, limit_curve: None, refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[],
+                surface_indices: &HashMap::new(),
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     })
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, 5.0]));
@@ -1667,7 +1742,22 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
     };
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut ir, annotations: &mut AnnotationBuilder::new(), bindings: &[], surface_indices: &HashMap::new(), brep: &[], support: &support, points: [0, 1], native_support: None, limit_curve: None, refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[],
+                surface_indices: &HashMap::new(),
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     })
     .expect("valid source object identity");
     assert!(curve.is_some());
@@ -1706,7 +1796,23 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let reference = cadmpeg_ir::geometry::derive_reference_direction(axis);
     let range = crate::test_support::with_service_context(|ctx| {
-        standard_circle_param_range(ctx, crate::families::standard::decode::edge_geometry::StandardCircleParamRangeInputs { ir: &ir, bindings: &bindings, surface_indices: &indices, brep: &brep, support: &support, center: Point3::new(0.0, 0.0, 3.0), radius: 2.0, axis, ref_direction: reference, start: Point3::new(2.0, 0.0, 3.0), end: Point3::new(0.0, 2.0, 3.0), refusal: &mut crate::nurbs::LaneRefusals::new() })
+        standard_circle_param_range(
+            ctx,
+            crate::families::standard::decode::edge_geometry::StandardCircleParamRangeInputs {
+                ir: &ir,
+                bindings: &bindings,
+                surface_indices: &indices,
+                brep: &brep,
+                support: &support,
+                center: Point3::new(0.0, 0.0, 3.0),
+                radius: 2.0,
+                axis,
+                ref_direction: reference,
+                start: Point3::new(2.0, 0.0, 3.0),
+                end: Point3::new(0.0, 2.0, 3.0),
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+            },
+        )
     })
     .expect("service budget admits circle range")
     .expect("witnessed circle range");
@@ -1743,7 +1849,15 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     let start = Point3::new(1.0, 0.0, 0.0);
     let end = Point3::new(0.0, -1.0, 0.0);
     assert_eq!(
-        native_support_circle_param_range(&native, Point3::new(0.0, 0.0, 0.0), 1.0, Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0), start, end)
+        native_support_circle_param_range(
+            &native,
+            Point3::new(0.0, 0.0, 0.0),
+            1.0,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            start,
+            end
+        )
         .expect("evaluator allocation succeeds"),
         Some([0.0, 1.5 * std::f64::consts::PI])
     );
@@ -1755,10 +1869,26 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         )
         .expect("valid LinePcurve fixture"),
     );
-    assert!(native_support_circle_param_range(&disagreeing, Point3::new(0.0, 0.0, 0.0), 1.0, Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0), start, end)
+    assert!(native_support_circle_param_range(
+        &disagreeing,
+        Point3::new(0.0, 0.0, 0.0),
+        1.0,
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        start,
+        end
+    )
     .expect("evaluator allocation succeeds")
     .is_none());
-    assert!(native_support_circle_param_range(&native, Point3::new(0.0, 0.0, 0.0), 1.0, Vector3::new(0.0, 0.0, -1.0), Vector3::new(1.0, 0.0, 0.0), start, end)
+    assert!(native_support_circle_param_range(
+        &native,
+        Point3::new(0.0, 0.0, 0.0),
+        1.0,
+        Vector3::new(0.0, 0.0, -1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        start,
+        end
+    )
     .expect("evaluator allocation succeeds")
     .is_none());
 
@@ -1779,7 +1909,22 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     };
     let (_, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir: &mut ir, annotations: &mut AnnotationBuilder::new(), bindings: &[], surface_indices: &HashMap::new(), brep: &[], support: &support, points: [0, 1], native_support: Some(&native), limit_curve: None, refusal: &mut crate::nurbs::LaneRefusals::new(), admission: &mut admission })
+        build_standard_edge_curve(
+            ctx,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[],
+                surface_indices: &HashMap::new(),
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: Some(&native),
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
+        )
     })
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, 1.5 * std::f64::consts::PI]));

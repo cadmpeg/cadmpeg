@@ -1,6 +1,6 @@
 //! Lower complete zero-entity endpoint relations into neutral B-rep topology.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::HashMap;
 

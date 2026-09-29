@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CATIA-native ownership and design records retained outside the neutral model.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -3464,15 +3464,11 @@ impl CatiaObjectRecord {
     }
 
     pub(crate) fn class_name(&self) -> Option<&str> {
-        self.class
-            .as_ref()
-            .and_then(|class| class.name.as_deref())
+        self.class.as_ref().and_then(|class| class.name.as_deref())
     }
 
     pub(crate) fn class_entry(&self) -> Option<&str> {
-        self.class
-            .as_ref()
-            .and_then(|class| class.entry.as_deref())
+        self.class.as_ref().and_then(|class| class.entry.as_deref())
     }
 
     pub(crate) fn storage_ref(&self) -> Option<u32> {
@@ -5195,10 +5191,7 @@ fn relation_type_signature_charged(
     placeholder: Option<&str>,
     source: &str,
 ) -> Result<Option<CatiaRelationTypeSignature>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(source.len()),
-        "catia_native_signature_scan",
-    )?;
+    ctx.charge_work(u64_from_index(source.len()), "catia_native_signature_scan")?;
     let source = source.strip_suffix('\n').unwrap_or(source);
     let Some((input_clause, result_type)) = source.rsplit_once(") : ") else {
         return Ok(None);
@@ -5390,10 +5383,7 @@ fn entity_incidences(
     ),
     CodecError,
 > {
-    ctx.charge_work(
-        u64_from_index(records.len()),
-        "catia_native_incidence_scan",
-    )?;
+    ctx.charge_work(u64_from_index(records.len()), "catia_native_incidence_scan")?;
     let mut incoming_references = Vec::new();
     let mut incoming_storage_references = Vec::new();
     for record in records.iter().filter(|record| record.parent == graph_id) {
@@ -6828,10 +6818,7 @@ pub(crate) fn relation_symbols(
     ctx: &DecodeContext<'_>,
     source: &str,
 ) -> Result<Vec<(u64, String)>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(source.len()),
-        "catia_native_symbol_scan",
-    )?;
+    ctx.charge_work(u64_from_index(source.len()), "catia_native_symbol_scan")?;
     let bytes = source.as_bytes();
     let mut symbols = Vec::new();
     let mut at = 0;
@@ -8138,7 +8125,7 @@ fn legacy_entity_runs(
                                 CatiaLegacyScalarEncoding::Standalone85
                             }
                         },
-                        name_field: value.name_offset.map(|offset| u64_from_index(offset)),
+                        name_field: value.name_offset.map(u64_from_index),
                         name: value.name,
                         evaluation: match value.evaluation {
                             legacy_entity::LegacyScalarEvaluation::Value(bits) => {
@@ -8163,7 +8150,7 @@ fn legacy_entity_runs(
                         )?,
                         byte_offset: u64_from_index(value.offset),
                         entity_id: value.entity_id,
-                        name_field: value.name_offset.map(|offset| u64_from_index(offset)),
+                        name_field: value.name_offset.map(u64_from_index),
                         name: value.name,
                         value: value.value,
                     })
@@ -8189,7 +8176,7 @@ fn legacy_entity_runs(
                                 CatiaLegacyIntegerEncoding::WideI32
                             }
                         },
-                        name_field: value.name_offset.map(|offset| u64_from_index(offset)),
+                        name_field: value.name_offset.map(u64_from_index),
                         name: value.name,
                         value: value.value,
                     })
@@ -9906,7 +9893,12 @@ impl CatiaNative {
                 .iter()
                 .any(|graph| extents_overlap(row_start, 24, graph.byte_offset, graph.byte_len))
                 && !parsed_value_blocks.iter().any(|block| {
-                    extents_overlap(row_start, 24, u64_from_index(block.pos), u64_from_index(block.total_len()))
+                    extents_overlap(
+                        row_start,
+                        24,
+                        u64_from_index(block.pos),
+                        u64_from_index(block.total_len()),
+                    )
                 })
                 && !catalogs.iter().any(|catalog| {
                     extents_overlap(row_start, 24, catalog.byte_offset, catalog.byte_len)
@@ -9948,10 +9940,7 @@ impl CatiaNative {
         }
         let mut value_blocks = Vec::new();
         for block in parsed_value_blocks {
-            let Some(catalog_pos) = block
-                .pos
-                .checked_add(block.total_len())
-                .map(u64_from_index)
+            let Some(catalog_pos) = block.pos.checked_add(block.total_len()).map(u64_from_index)
             else {
                 continue;
             };

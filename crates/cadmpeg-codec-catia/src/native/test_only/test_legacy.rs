@@ -1,4 +1,4 @@
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::entity_table;
 use crate::legacy_entity;

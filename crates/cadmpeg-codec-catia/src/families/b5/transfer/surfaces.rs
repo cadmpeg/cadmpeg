@@ -2,8 +2,8 @@
 //! Surface-layer transfer: neutral surface lowering and the surface/procedural
 //! emit pass.
 
-use cadmpeg_core::decode::{u64_from_index};
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
+use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -384,7 +384,8 @@ pub(super) fn rational_arc(
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let Some(span_count) = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new) else {
+    let Some(span_count) = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
+    else {
         return Ok(None);
     };
     let span_count = span_count.get();
@@ -412,8 +413,20 @@ pub(super) fn rational_arc(
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, knot_count, "catia_b5_revolution_arc_knots")?;
     for span in 0..span_count {
-        let fraction0 = match f64_from_index(span) { Some(value) => value, None => return Ok(None) } / match f64_from_index(span_count) { Some(value) => value, None => return Ok(None) };
-        let fraction1 = match f64_from_index(span + 1) { Some(value) => value, None => return Ok(None) } / match f64_from_index(span_count) { Some(value) => value, None => return Ok(None) };
+        let fraction0 = match f64_from_index(span) {
+            Some(value) => value,
+            None => return Ok(None),
+        } / match f64_from_index(span_count) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
+        let fraction1 = match f64_from_index(span + 1) {
+            Some(value) => value,
+            None => return Ok(None),
+        } / match f64_from_index(span_count) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
         let angle0 = angles[0] + (angles[1] - angles[0]) * fraction0;
         let angle1 = angles[0] + (angles[1] - angles[0]) * fraction1;
         let middle = (angle0 + angle1) * 0.5;

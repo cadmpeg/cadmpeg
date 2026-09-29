@@ -4,7 +4,7 @@
 //! curve-support/edge-incidence table, standard vertex rosters, and the
 //! inline big-endian curved-surface parameter block.
 
-use cadmpeg_core::decode::{index_from_u32};
+use cadmpeg_core::decode::index_from_u32;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
