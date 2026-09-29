@@ -194,3 +194,43 @@ fn combined_edge_group_slot_refuses_collection_limit() {
 fn partial_edge_group_member_refuses_collection_limit() {
     assert_combined_edge_refusal("f3d partial edge group member");
 }
+
+fn assert_complete_identity_refusal(operation: &'static str, retained: bool) {
+    let group = group(2, 10);
+    let mut operand = identity(10, &[]);
+    operand.resolved_edge_slot = Some(17);
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#complete-identity")
+        .unwrap();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match resolved_edge_group(&group, std::slice::from_ref(&group), &[],
+            std::slice::from_ref(&operand), Some(7), &feature_id, Some(&ctx)) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected {operation} refusal: {other:?}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn identity_edge_slot_index_refuses_collection_limit() {
+    assert_complete_identity_refusal("f3d identity edge slot index", false);
+}
+
+#[test]
+fn identity_historical_edge_refuses_collection_limit() {
+    assert_complete_identity_refusal("f3d identity historical edge", false);
+}
+
+#[test]
+fn identity_historical_group_id_refuses_retained_limit() {
+    assert_complete_identity_refusal("f3d identity historical group id", true);
+}
