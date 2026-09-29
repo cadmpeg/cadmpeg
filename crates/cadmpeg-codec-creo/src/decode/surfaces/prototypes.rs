@@ -220,13 +220,16 @@ pub(super) fn surface_prototype_frame_bounds(
         return Ok(Some((section.offset(), section_end)));
     }
     let Some(payload) = crate::container::section_region(&scan.framing.data, section) else {
-        return Err(cadmpeg_core::CodecError::malformed(format!(
-            "creo section `{}` declares the region {}..{}, past the scanned file length {}",
-            section.name(),
-            section.offset(),
-            section.end(),
-            scan.framing.data.len(),
-        )));
+        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!(
+                "creo section `{}` declares the region {}..{}, past the scanned file length {}",
+                section.name(),
+                section.offset(),
+                section.end(),
+                scan.framing.data.len(),
+            ),
+            "creo surface prototype frame bounds error",
+        )?));
     };
     let Some(relative_prototype_offset) = prototype_offset.checked_sub(section.offset()) else {
         return Ok(None);
@@ -244,24 +247,26 @@ pub(super) fn surface_prototype_frame_bounds(
         return Ok(None);
     }
     Ok(Some((
-        frame_bound(section, start)?,
-        frame_bound(section, end)?,
+        frame_bound(ctx, section, start)?,
+        frame_bound(ctx, section, end)?,
     )))
 }
 
 /// Absolute address of an offset inside one section payload.
 fn frame_bound(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     section: &crate::container::Section,
     relative: usize,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    section.offset().checked_add(relative).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format!(
+    let Some(bound) = section.offset().checked_add(relative) else {
+        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(format_args!(
             "section {} states offset {} and a surface array bound at {relative}, which do not \
              form an address",
             section.name(),
             section.offset()
-        ))
-    })
+        ), "creo surface prototype frame address error")?));
+    };
+    Ok(bound)
 }
 
 #[derive(Clone, Copy)]
