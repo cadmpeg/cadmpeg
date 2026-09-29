@@ -240,10 +240,7 @@ pub(crate) struct ClassId([u8; 16]);
 
 impl std::fmt::Display for ClassId {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for byte in self.0 {
-            formatter.write_fmt(format_args!("{byte:02x}"))?;
-        }
-        Ok(())
+        cadmpeg_ir::hash::LowerHex(&self.0).fmt(formatter)
     }
 }
 

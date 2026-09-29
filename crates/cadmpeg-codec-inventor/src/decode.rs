@@ -2461,9 +2461,9 @@ fn admit_assembly_placement(
         || !wire
             .suffix_sha256
             .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
     {
-        Some("suffix_sha256: SHA-256 digest must contain 64 hexadecimal characters")
+        Some("suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters")
     } else {
         None
     };
