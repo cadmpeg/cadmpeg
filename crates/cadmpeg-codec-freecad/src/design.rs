@@ -478,10 +478,11 @@ pub(crate) fn transfer(
             }
             dependencies
         };
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(dependencies.len()),
-            "fcstd distinct feature dependencies",
+        let mut dependency_members = DistinctMembers::default();
+        dependency_members.reserve_for_decode(
+            ctx, dependencies.len(), "fcstd distinct feature dependencies",
         )?;
+        dependency_members.extend(dependencies);
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(outputs.len()),
             "fcstd distinct feature outputs",
@@ -492,7 +493,7 @@ pub(crate) fn transfer(
             ordinal: feature_ordinals[object.id.as_str()],
             name: Some(ctx.copy_retained_text(&object.name, "fcstd feature name")?),
             suppressed: bool_property(&owned, "Suppressed"),
-            dependencies: (dependencies).into_iter().collect(),
+            dependencies: dependency_members,
             source_properties: feature_state(ctx, &object.id, &owned)?,
             source_tag: Some(
                 ctx.copy_retained_text(&object.type_name, "fcstd feature source type")?,
