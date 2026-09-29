@@ -497,7 +497,7 @@ pub(super) fn relation_instances(
     }
     bind_detached_relation_drivers(ctx, &mut instances, lane)?;
     bind_circle_dimension_centers(ctx, &mut instances, lane)?;
-    bind_relation_geometry_operands(&mut instances, lane);
+    bind_relation_geometry_operands(ctx, &mut instances, lane)?;
     Ok(instances)
 }
 
@@ -2183,16 +2183,18 @@ fn relation_target_value(
 }
 
 fn feature_entities<'a>(
+    ctx: &DecodeContext<'_>,
     lane: &'a FeatureInputLane,
     feature: &str,
-) -> Vec<&'a crate::records::SketchInputEntity> {
-    let mut entities = lane
+) -> Result<Vec<&'a crate::records::SketchInputEntity>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(lane.sketch_entities.len()), "scan SLDPRT relation feature entities")?;
+    let mut entities = collect_relation_vec(ctx, lane
         .sketch_entities
         .iter()
         .filter(|entity| entity.feature_ref.as_deref() == Some(feature))
-        .collect::<Vec<_>>();
+        )?;
     entities.sort_unstable_by_key(|entity| (entity.offset(), entity.ordinal()));
-    entities
+    Ok(entities)
 }
 
 fn is_finite_point(entity: &crate::records::SketchInputEntity) -> bool {
@@ -2205,76 +2207,56 @@ fn is_finite_point(entity: &crate::records::SketchInputEntity) -> bool {
 }
 
 fn push_point_candidate<'a>(
+    ctx: &DecodeContext<'_>,
     candidates: &mut Vec<&'a crate::records::SketchInputEntity>,
-    seen: &mut HashSet<String>,
+    seen: &mut HashSet<&'a str>,
     candidate: Option<&'a crate::records::SketchInputEntity>,
-) {
-    let Some(candidate) = candidate.filter(|candidate| is_finite_point(candidate)) else {
-        return;
-    };
-    if seen.insert(candidate.id().to_string()) {
+) -> Result<(), CodecError> {
+    let Some(candidate) = candidate.filter(|candidate| is_finite_point(candidate)) else { return Ok(()); };
+    if !seen.contains(candidate.id()) {
+        reserve_relation_set(ctx, seen)?;
+        seen.insert(candidate.id());
+        ctx.reserve_collection_vec(candidates, 1, "collect SLDPRT dynamic point candidates")?;
         candidates.push(candidate);
     }
+    Ok(())
 }
 
 fn dynamic_point_candidates<'a>(
+    ctx: &DecodeContext<'_>,
     entities: &[&'a crate::records::SketchInputEntity],
     operand: &FeatureInputOperand,
-) -> Vec<&'a crate::records::SketchInputEntity> {
+    use_explicit: bool,
+) -> Result<Vec<&'a crate::records::SketchInputEntity>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(entities.len()), "scan SLDPRT dynamic point candidates")?;
     let address = usize::from(operand.entity_index);
-    if let Some(entity_ref) = operand.entity_ref.as_deref() {
-        return entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.id() == entity_ref && is_finite_point(entity))
-            .collect();
+    if let Some(entity_ref) = operand.entity_ref.as_deref().filter(|_| use_explicit) {
+        return collect_relation_vec(ctx, entities.iter().copied().filter(|entity| entity.id() == entity_ref && is_finite_point(entity)));
     }
-    let coordinate_points = entities
-        .iter()
-        .copied()
-        .filter(|entity| is_finite_point(entity))
-        .collect::<Vec<_>>();
     let mut candidates = Vec::new();
     let mut seen = HashSet::new();
-    push_point_candidate(&mut candidates, &mut seen, entities.get(address).copied());
-    push_point_candidate(
-        &mut candidates,
-        &mut seen,
-        coordinate_points.get(address).copied(),
-    );
+    push_point_candidate(ctx, &mut candidates, &mut seen, entities.get(address).copied())?;
+    let coordinate_point = entities.iter().copied().filter(|entity| is_finite_point(entity)).nth(address);
+    push_point_candidate(ctx, &mut candidates, &mut seen, coordinate_point)?;
     for entity in entities.iter().copied().filter(|entity| {
         entity.object_index() == Some(u32::from(operand.entity_index))
             || entity.local_id() == Some(u32::from(operand.entity_index))
     }) {
-        push_point_candidate(&mut candidates, &mut seen, Some(entity));
+        push_point_candidate(ctx, &mut candidates, &mut seen, Some(entity))?;
     }
     candidates.sort_unstable_by(|left, right| left.id().cmp(right.id()));
-    candidates
-}
-
-fn dynamic_point_candidates_without_explicit<'a>(
-    entities: &[&'a crate::records::SketchInputEntity],
-    operand: &FeatureInputOperand,
-) -> Vec<&'a crate::records::SketchInputEntity> {
-    let mut unreferenced = operand.clone();
-    unreferenced.entity_ref = None;
-    dynamic_point_candidates(entities, &unreferenced)
+    Ok(candidates)
 }
 
 fn dynamic_solver_line<'a>(
     entities: &[&'a crate::records::SketchInputEntity],
     index: u16,
 ) -> Option<[&'a crate::records::SketchInputEntity; 2]> {
-    let points = entities
-        .iter()
-        .copied()
-        .filter(|entity| is_finite_point(entity))
-        .collect::<Vec<_>>();
     let start = usize::from(index).checked_mul(2)?;
-    let [first, second] = points.get(start..start + 2)? else {
-        return None;
-    };
-    (first.coordinates_m?.get() != second.coordinates_m?.get()).then_some([*first, *second])
+    let mut points = entities.iter().copied().filter(|entity| is_finite_point(entity));
+    let first = points.nth(start)?;
+    let second = points.next()?;
+    (first.coordinates_m?.get() != second.coordinates_m?.get()).then_some([first, second])
 }
 
 fn point_distance(first: [f64; 2], second: [f64; 2]) -> f64 {
@@ -2359,22 +2341,16 @@ fn dynamic_curve_reference_is_valid(
     })
 }
 
-fn bind_dynamic_point_relation(
-    relation: &mut FeatureInputRelationInstance,
-    entities: &[&crate::records::SketchInputEntity],
+fn dynamic_point_matches<'a>(
+    ctx: &DecodeContext<'_>,
+    first_candidates: &[&'a crate::records::SketchInputEntity],
+    second_candidates: &[&'a crate::records::SketchInputEntity],
     target: f64,
     horizontal: Option<bool>,
-) {
-    let [first, second] = relation.operands.as_slice() else {
-        clear_relation_operands(relation);
-        return;
-    };
-    let first_candidates = dynamic_point_candidates(entities, first);
-    let second_candidates = dynamic_point_candidates(entities, second);
-    let matches_for =
-        |first_candidates: &[&crate::records::SketchInputEntity],
-         second_candidates: &[&crate::records::SketchInputEntity]| {
-            let mut matches = Vec::<(String, String)>::new();
+) -> Result<Vec<(&'a str, &'a str)>, CodecError> {
+            let mut matches = Vec::<(&str, &str)>::new();
+            let steps = first_candidates.len().checked_mul(second_candidates.len()).ok_or_else(|| ctx.refuse_codec_limit("match SLDPRT dynamic relation points", u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(steps), "match SLDPRT dynamic relation points")?;
             for first in first_candidates {
                 let Some(first_coordinates) = first
                     .coordinates_m
@@ -2399,18 +2375,33 @@ fn bind_dynamic_point_relation(
                         },
                     );
                     if same_relation_dimension(measured, target) {
-                        matches.push((first.id().to_string(), second.id().to_string()));
+                        ctx.reserve_collection_vec(&mut matches, 1, "collect SLDPRT dynamic point matches")?;
+                        matches.push((first.id(), second.id()));
                     }
                 }
             }
-            matches
-        };
-    let coordinate_points = entities
+            Ok(matches)
+}
+
+fn bind_dynamic_point_relation(
+    ctx: &DecodeContext<'_>,
+    relation: &mut FeatureInputRelationInstance,
+    entities: &[&crate::records::SketchInputEntity],
+    target: f64,
+    horizontal: Option<bool>,
+) -> Result<(), CodecError> {
+    let [first, second] = relation.operands.as_slice() else {
+        clear_relation_operands(relation);
+        return Ok(());
+    };
+    let first_candidates = dynamic_point_candidates(ctx, entities, first, true)?;
+    let second_candidates = dynamic_point_candidates(ctx, entities, second, true)?;
+    let coordinate_points = collect_relation_vec(ctx, entities
         .iter()
         .copied()
         .filter(|entity| is_finite_point(entity))
-        .collect::<Vec<_>>();
-    let mut matches = matches_for(&first_candidates, &second_candidates);
+        )?;
+    let mut matches = dynamic_point_matches(ctx, &first_candidates, &second_candidates, target, horizontal)?;
     if matches.is_empty() {
         let first_fallback = if first.entity_ref.is_none() {
             &coordinate_points
@@ -2422,20 +2413,20 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches = matches_for(first_fallback, second_fallback);
+        matches = dynamic_point_matches(ctx, first_fallback, second_fallback, target, horizontal)?;
     }
     if matches.is_empty() {
         let first_relaxed = if first.entity_ref.is_some() {
-            dynamic_point_candidates_without_explicit(entities, first)
+            Some(dynamic_point_candidates(ctx, entities, first, false)?)
         } else {
-            first_candidates.clone()
+            None
         };
         let second_relaxed = if second.entity_ref.is_some() {
-            dynamic_point_candidates_without_explicit(entities, second)
+            Some(dynamic_point_candidates(ctx, entities, second, false)?)
         } else {
-            second_candidates.clone()
+            None
         };
-        matches = matches_for(&first_relaxed, &second_relaxed);
+        matches = dynamic_point_matches(ctx, first_relaxed.as_deref().unwrap_or(&first_candidates), second_relaxed.as_deref().unwrap_or(&second_candidates), target, horizontal)?;
     }
     if matches.is_empty() {
         let first_relaxed = if first.entity_ref.is_some() {
@@ -2448,50 +2439,52 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches = matches_for(first_relaxed, second_relaxed);
+        matches = dynamic_point_matches(ctx, first_relaxed, second_relaxed, target, horizontal)?;
     }
     matches.sort_unstable();
     matches.dedup();
     if let [(first, second)] = matches.as_slice() {
-        relation.operands[0].entity_ref = Some(first.clone());
-        relation.operands[1].entity_ref = Some(second.clone());
+        relation.operands[0].entity_ref = Some(copy_relation_text(ctx, first)?);
+        relation.operands[1].entity_ref = Some(copy_relation_text(ctx, second)?);
     } else {
         clear_relation_operands(relation);
     }
+    Ok(())
 }
 
 fn bind_dynamic_point_line_relation(
+    ctx: &DecodeContext<'_>,
     relation: &mut FeatureInputRelationInstance,
     entities: &[&crate::records::SketchInputEntity],
     target: f64,
-) {
+) -> Result<(), CodecError> {
     let Ok([point_operand, line_operand]) =
         <&mut [FeatureInputOperand; 2]>::try_from(relation.operands.as_mut_slice())
     else {
         clear_relation_operands(relation);
-        return;
+        return Ok(());
     };
     if dynamic_curve_reference_is_valid(entities, line_operand.entity_ref.as_deref()) {
-        return;
+        return Ok(());
     }
     line_operand.entity_ref = None;
     let line_index = line_operand.entity_index;
-    let point_candidates = dynamic_point_candidates(entities, point_operand);
+    let point_candidates = dynamic_point_candidates(ctx, entities, point_operand, true)?;
     let Some(line_markers) = dynamic_solver_line(entities, line_index) else {
         clear_relation_operands(relation);
-        return;
+        return Ok(());
     };
     let [Some(first), Some(second)] = line_markers.map(|marker| marker.coordinates_m) else {
         clear_relation_operands(relation);
-        return;
+        return Ok(());
     };
     let direction = [second[0] - first[0], second[1] - first[1]];
     let length = direction[0].hypot(direction[1]);
     if length <= SKETCH_POINT_TOLERANCE {
         clear_relation_operands(relation);
-        return;
+        return Ok(());
     }
-    let mut matches = point_candidates
+    let mut matches = collect_relation_vec(ctx, point_candidates
         .iter()
         .filter_map(|point| {
             let coordinates = point.coordinates_m?.get();
@@ -2501,15 +2494,16 @@ fn bind_dynamic_point_line_relation(
                 / length;
             same_relation_dimension(measured, target).then(|| point.id())
         })
-        .collect::<Vec<_>>();
+        )?;
     matches.sort_unstable();
     matches.dedup();
     if let [point] = matches.as_slice() {
-        relation.operands[0].entity_ref = Some((*point).to_string());
+        relation.operands[0].entity_ref = Some(copy_relation_text(ctx, point)?);
         relation.operands[1].entity_ref = None;
     } else {
         clear_relation_operands(relation);
     }
+    Ok(())
 }
 
 fn bind_dynamic_line_relation(
@@ -2586,9 +2580,10 @@ fn bind_dynamic_line_relation(
 }
 
 fn bind_relation_geometry_operands(
+    ctx: &DecodeContext<'_>,
     relations: &mut [FeatureInputRelationInstance],
     lane: &FeatureInputLane,
-) {
+) -> Result<(), CodecError> {
     for relation in relations.iter_mut().filter(|relation| {
         relation_uses_dynamic_operands(relation)
             || (matches!(
@@ -2601,34 +2596,9 @@ fn bind_relation_geometry_operands(
                 .iter()
                 .all(|operand| operand.entity_ref.is_none()))
     }) {
-        let bind: fn(
-            &mut FeatureInputRelationInstance,
-            &[&crate::records::SketchInputEntity],
-            f64,
-        ) = match relation.family {
-            FeatureInputRelationFamily::PointPointDistance => |relation, entities, target| {
-                bind_dynamic_point_relation(relation, entities, target, None);
-            },
-            FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                |relation, entities, target| {
-                    bind_dynamic_point_relation(relation, entities, target, Some(true));
-                }
-            }
-            FeatureInputRelationFamily::PointPointVerticalDistance => {
-                |relation, entities, target| {
-                    bind_dynamic_point_relation(relation, entities, target, Some(false));
-                }
-            }
-            FeatureInputRelationFamily::PointLineDistance => bind_dynamic_point_line_relation,
-            FeatureInputRelationFamily::LineLineDistance => |relation, entities, target| {
-                bind_dynamic_line_relation(relation, entities, target, false);
-            },
-            FeatureInputRelationFamily::Angle => |relation, entities, target| {
-                bind_dynamic_line_relation(relation, entities, target, true);
-            },
-            FeatureInputRelationFamily::CircleDiameter => continue,
-        };
+        if relation.family == FeatureInputRelationFamily::CircleDiameter { continue; }
         let dynamic = relation_uses_dynamic_operands(relation);
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(lane.scalars.len()), "find SLDPRT relation target value")?;
         let Some(target) = relation_target_value(relation, lane) else {
             if dynamic {
                 clear_relation_operands(relation);
@@ -2644,9 +2614,19 @@ fn bind_relation_geometry_operands(
             }
             continue;
         }
-        let entities = feature_entities(lane, relation.feature_ref.as_str());
-        bind(relation, &entities, target.get());
+        let entities = feature_entities(ctx, lane, relation.feature_ref.as_str())?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(entities.len()), "bind SLDPRT dynamic relation geometry")?;
+        match relation.family {
+            FeatureInputRelationFamily::PointPointDistance => bind_dynamic_point_relation(ctx, relation, &entities, target.get(), None)?,
+            FeatureInputRelationFamily::PointPointHorizontalDistance => bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(true))?,
+            FeatureInputRelationFamily::PointPointVerticalDistance => bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(false))?,
+            FeatureInputRelationFamily::PointLineDistance => bind_dynamic_point_line_relation(ctx, relation, &entities, target.get())?,
+            FeatureInputRelationFamily::LineLineDistance => bind_dynamic_line_relation(relation, &entities, target.get(), false),
+            FeatureInputRelationFamily::Angle => bind_dynamic_line_relation(relation, &entities, target.get(), true),
+            FeatureInputRelationFamily::CircleDiameter => {}
+        }
     }
+    Ok(())
 }
 
 pub(super) fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInputScalarRole {
@@ -2782,7 +2762,7 @@ mod binary_relation_operand_tests {
             vec![operand(0), operand(1), operand(2)],
         ] {
             let mut point_line = relation(operands.clone());
-            bind_dynamic_point_line_relation(&mut point_line, &[], 1.0);
+            bind_dynamic_point_line_relation(&cadmpeg_test_support::service_decode_context(), &mut point_line, &[], 1.0).unwrap();
             assert!(point_line
                 .operands
                 .iter()
