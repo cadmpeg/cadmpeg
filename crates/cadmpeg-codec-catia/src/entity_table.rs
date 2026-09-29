@@ -325,7 +325,9 @@ impl ReferenceSignature {
 
     /// Instruction and token counts without materializing the program.
     pub(crate) fn instruction_and_token_counts(&self) -> (usize, usize) {
-        let qualifier_count = self.tokens.iter()
+        let qualifier_count = self
+            .tokens
+            .iter()
             .filter(|token| matches!(token, ReferenceSignatureToken::Qualifier(_)))
             .count();
         (self.tokens.len(), self.tokens.len() + qualifier_count)
@@ -380,16 +382,23 @@ impl ReferenceSignatureWire {
                 ReferenceSignatureToken::Qualifier(_) => 2,
                 _ => 1,
             };
-            byte_len = byte_len.checked_add(token_len).ok_or_else(||
-                ctx.refuse_codec_limit("catia_reference_signature_wire_text", u64::MAX, u64::MAX))?;
+            byte_len = byte_len.checked_add(token_len).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_reference_signature_wire_text", u64::MAX, u64::MAX)
+            })?;
         }
-        let bytes = u64::try_from(byte_len).map_err(|_|
-            ctx.refuse_codec_limit("catia_reference_signature_wire_text", u64::MAX, u64::MAX))?;
+        let bytes = u64::try_from(byte_len).map_err(|_| {
+            ctx.refuse_codec_limit("catia_reference_signature_wire_text", u64::MAX, u64::MAX)
+        })?;
         ctx.charge_retained(bytes, "catia_reference_signature_wire_text")?;
         let mut signature = String::new();
-        signature.try_reserve(byte_len).map_err(|_|
-            crate::resource::allocation_failed(0, signature.capacity(), byte_len,
-                "catia_reference_signature_wire_text"))?;
+        signature.try_reserve(byte_len).map_err(|_| {
+            crate::resource::allocation_failed(
+                0,
+                signature.capacity(),
+                byte_len,
+                "catia_reference_signature_wire_text",
+            )
+        })?;
         for token in &value.tokens {
             match token {
                 ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::E) => signature.push('E'),
@@ -401,8 +410,9 @@ impl ReferenceSignatureWire {
                 ReferenceSignatureToken::CloseCall => signature.push(')'),
                 ReferenceSignatureToken::Qualifier(selector) => {
                     signature.push('#');
-                    let digit = char::from_digit(u32::from(*selector), 16).ok_or_else(||
-                        CodecError::malformed("reference signature qualifier exceeds one digit"))?;
+                    let digit = char::from_digit(u32::from(*selector), 16).ok_or_else(|| {
+                        CodecError::malformed("reference signature qualifier exceeds one digit")
+                    })?;
                     signature.push(digit.to_ascii_uppercase());
                 }
                 ReferenceSignatureToken::Difference => signature.push('-'),
@@ -417,25 +427,45 @@ impl ReferenceSignatureWire {
                 _ => 1,
             };
             let instruction = match token {
-                ReferenceSignatureToken::Symbol(symbol) =>
-                    ReferenceSignatureInstruction::Symbol { symbol, offset },
-                ReferenceSignatureToken::Decimal(digits) =>
-                    ReferenceSignatureInstruction::Decimal { digits, offset },
-                ReferenceSignatureToken::OpenCall => ReferenceSignatureInstruction::OpenCall { offset },
+                ReferenceSignatureToken::Symbol(symbol) => {
+                    ReferenceSignatureInstruction::Symbol { symbol, offset }
+                }
+                ReferenceSignatureToken::Decimal(digits) => {
+                    ReferenceSignatureInstruction::Decimal { digits, offset }
+                }
+                ReferenceSignatureToken::OpenCall => {
+                    ReferenceSignatureInstruction::OpenCall { offset }
+                }
                 ReferenceSignatureToken::Comma => ReferenceSignatureInstruction::Comma { offset },
-                ReferenceSignatureToken::CloseCall => ReferenceSignatureInstruction::CloseCall { offset },
-                ReferenceSignatureToken::Qualifier(selector) =>
+                ReferenceSignatureToken::CloseCall => {
+                    ReferenceSignatureInstruction::CloseCall { offset }
+                }
+                ReferenceSignatureToken::Qualifier(selector) => {
                     ReferenceSignatureInstruction::Qualifier {
-                        selector, hash_offset: offset,
-                        selector_offset: offset.checked_add(1).ok_or_else(||
-                            ctx.refuse_codec_limit("catia_reference_signature_wire_offset", u64::MAX, u64::MAX))?,
-                    },
-                ReferenceSignatureToken::Difference => ReferenceSignatureInstruction::Difference { offset },
+                        selector,
+                        hash_offset: offset,
+                        selector_offset: offset.checked_add(1).ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "catia_reference_signature_wire_offset",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        })?,
+                    }
+                }
+                ReferenceSignatureToken::Difference => {
+                    ReferenceSignatureInstruction::Difference { offset }
+                }
             };
-            crate::resource::push(ctx, &mut signature_program, instruction,
-                "catia_reference_signature_wire_instructions")?;
-            offset = offset.checked_add(token_len).ok_or_else(||
-                ctx.refuse_codec_limit("catia_reference_signature_wire_offset", u64::MAX, u64::MAX))?;
+            crate::resource::push(
+                ctx,
+                &mut signature_program,
+                instruction,
+                "catia_reference_signature_wire_instructions",
+            )?;
+            offset = offset.checked_add(token_len).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_reference_signature_wire_offset", u64::MAX, u64::MAX)
+            })?;
         }
         Ok(Self {
             first_reference: value.references.first(),
@@ -506,19 +536,27 @@ fn reference_signature_program_charged(
     reference_signature_program_with(
         signature,
         signature_offset,
-        |program, instruction| crate::resource::push(
-            ctx, program, instruction, "catia_reference_signature_instructions",
-        ),
-        |digits| crate::resource::copy_retained_str(
-            ctx, digits, "catia_reference_signature_digits",
-        ),
+        |program, instruction| {
+            crate::resource::push(
+                ctx,
+                program,
+                instruction,
+                "catia_reference_signature_instructions",
+            )
+        },
+        |digits| {
+            crate::resource::copy_retained_str(ctx, digits, "catia_reference_signature_digits")
+        },
     )
 }
 
 fn reference_signature_program_with<E>(
     signature: &str,
     signature_offset: usize,
-    mut push: impl FnMut(&mut Vec<ReferenceSignatureInstruction>, ReferenceSignatureInstruction) -> Result<(), E>,
+    mut push: impl FnMut(
+        &mut Vec<ReferenceSignatureInstruction>,
+        ReferenceSignatureInstruction,
+    ) -> Result<(), E>,
     mut copy_digits: impl FnMut(&str) -> Result<String, E>,
 ) -> Result<Option<Vec<ReferenceSignatureInstruction>>, E> {
     let bytes = signature.as_bytes();
@@ -540,60 +578,84 @@ fn reference_signature_program_with<E>(
                 while bytes.get(at).is_some_and(u8::is_ascii_digit) {
                     at += 1;
                 }
-                push(&mut program, ReferenceSignatureInstruction::Decimal {
-                    digits: copy_digits(&signature[start..at])?,
-                    offset: signature_offset + start,
-                })?;
+                push(
+                    &mut program,
+                    ReferenceSignatureInstruction::Decimal {
+                        digits: copy_digits(&signature[start..at])?,
+                        offset: signature_offset + start,
+                    },
+                )?;
                 expects_operand = false;
                 continue;
             }
             b'(' if !expects_operand => {
-                push(&mut program, ReferenceSignatureInstruction::OpenCall {
-                    offset: signature_offset + start,
-                })?;
-                let Some(next_depth) = call_depth.checked_add(1) else { return Ok(None) };
+                push(
+                    &mut program,
+                    ReferenceSignatureInstruction::OpenCall {
+                        offset: signature_offset + start,
+                    },
+                )?;
+                let Some(next_depth) = call_depth.checked_add(1) else {
+                    return Ok(None);
+                };
                 call_depth = next_depth;
                 expects_operand = true;
                 at += 1;
                 continue;
             }
             b',' if call_depth != 0 && !expects_operand => {
-                push(&mut program, ReferenceSignatureInstruction::Comma {
-                    offset: signature_offset + start,
-                })?;
+                push(
+                    &mut program,
+                    ReferenceSignatureInstruction::Comma {
+                        offset: signature_offset + start,
+                    },
+                )?;
                 expects_operand = true;
                 at += 1;
                 continue;
             }
             b')' if call_depth != 0 && !expects_operand => {
-                push(&mut program, ReferenceSignatureInstruction::CloseCall {
-                    offset: signature_offset + start,
-                })?;
+                push(
+                    &mut program,
+                    ReferenceSignatureInstruction::CloseCall {
+                        offset: signature_offset + start,
+                    },
+                )?;
                 call_depth -= 1;
                 expects_operand = false;
                 at += 1;
                 continue;
             }
             b'#' if !expects_operand => {
-                let Some(selector_offset) = start.checked_add(1) else { return Ok(None) };
-                let Some(&selector_byte) = bytes.get(selector_offset) else { return Ok(None) };
+                let Some(selector_offset) = start.checked_add(1) else {
+                    return Ok(None);
+                };
+                let Some(&selector_byte) = bytes.get(selector_offset) else {
+                    return Ok(None);
+                };
                 let selector = match selector_byte {
                     byte @ b'0'..=b'9' => byte - b'0',
                     byte @ b'A'..=b'F' => byte - b'A' + 10,
                     _ => return Ok(None),
                 };
-                push(&mut program, ReferenceSignatureInstruction::Qualifier {
-                    selector,
-                    hash_offset: signature_offset + start,
-                    selector_offset: signature_offset + selector_offset,
-                })?;
+                push(
+                    &mut program,
+                    ReferenceSignatureInstruction::Qualifier {
+                        selector,
+                        hash_offset: signature_offset + start,
+                        selector_offset: signature_offset + selector_offset,
+                    },
+                )?;
                 at += 2;
                 continue;
             }
             b'-' if !expects_operand => {
-                push(&mut program, ReferenceSignatureInstruction::Difference {
-                    offset: signature_offset + start,
-                })?;
+                push(
+                    &mut program,
+                    ReferenceSignatureInstruction::Difference {
+                        offset: signature_offset + start,
+                    },
+                )?;
                 expects_operand = true;
                 at += 1;
                 continue;
@@ -603,10 +665,13 @@ fn reference_signature_program_with<E>(
         if !expects_operand {
             return Ok(None);
         }
-        push(&mut program, ReferenceSignatureInstruction::Symbol {
-            symbol,
-            offset: signature_offset + start,
-        })?;
+        push(
+            &mut program,
+            ReferenceSignatureInstruction::Symbol {
+                symbol,
+                offset: signature_offset + start,
+            },
+        )?;
         expects_operand = false;
         at += 1;
     }
@@ -697,14 +762,25 @@ pub(crate) enum EntityValuePacket {
 impl EntityValuePacket {
     pub(crate) fn copy_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         match self {
-            Self::Numeric { offset, prefix_atoms, type_selector, layout_atom, value_atom,
-                items, terminator_count } => Ok(Self::Numeric {
+            Self::Numeric {
+                offset,
+                prefix_atoms,
+                type_selector,
+                layout_atom,
+                value_atom,
+                items,
+                terminator_count,
+            } => Ok(Self::Numeric {
                 offset: *offset,
                 prefix_atoms: *prefix_atoms,
                 type_selector: *type_selector,
                 layout_atom: *layout_atom,
                 value_atom: *value_atom,
-                items: crate::resource::copy_retained_slice(ctx, items, "catia_native_numeric_packet_items")?,
+                items: crate::resource::copy_retained_slice(
+                    ctx,
+                    items,
+                    "catia_native_numeric_packet_items",
+                )?,
                 terminator_count: *terminator_count,
             }),
             other => Ok(other.clone()),
@@ -737,10 +813,18 @@ impl EntityValuePacket {
 trait PacketGrowth {
     type Error;
 
-    fn push<T>(&self, values: &mut Vec<T>, value: T,
-        operation: &'static str) -> Result<(), Self::Error>;
-    fn insert<T: Eq + Hash>(&self, values: &mut HashSet<T>, value: T,
-        operation: &'static str) -> Result<(), Self::Error>;
+    fn push<T>(
+        &self,
+        values: &mut Vec<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), Self::Error>;
+    fn insert<T: Eq + Hash>(
+        &self,
+        values: &mut HashSet<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), Self::Error>;
     fn work(&self, units: usize, operation: &'static str) -> Result<(), Self::Error>;
 }
 
@@ -749,14 +833,22 @@ struct UnchargedPacketGrowth;
 impl PacketGrowth for UnchargedPacketGrowth {
     type Error = Infallible;
 
-    fn push<T>(&self, values: &mut Vec<T>, value: T,
-        _operation: &'static str) -> Result<(), Self::Error> {
+    fn push<T>(
+        &self,
+        values: &mut Vec<T>,
+        value: T,
+        _operation: &'static str,
+    ) -> Result<(), Self::Error> {
         values.push(value);
         Ok(())
     }
 
-    fn insert<T: Eq + Hash>(&self, values: &mut HashSet<T>, value: T,
-        _operation: &'static str) -> Result<(), Self::Error> {
+    fn insert<T: Eq + Hash>(
+        &self,
+        values: &mut HashSet<T>,
+        value: T,
+        _operation: &'static str,
+    ) -> Result<(), Self::Error> {
         values.insert(value);
         Ok(())
     }
@@ -771,13 +863,21 @@ struct ChargedPacketGrowth<'a, 'ctx>(&'a DecodeContext<'ctx>);
 impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
     type Error = CodecError;
 
-    fn push<T>(&self, values: &mut Vec<T>, value: T,
-        operation: &'static str) -> Result<(), Self::Error> {
+    fn push<T>(
+        &self,
+        values: &mut Vec<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), Self::Error> {
         crate::resource::push(self.0, values, value, operation)
     }
 
-    fn insert<T: Eq + Hash>(&self, values: &mut HashSet<T>, value: T,
-        operation: &'static str) -> Result<(), Self::Error> {
+    fn insert<T: Eq + Hash>(
+        &self,
+        values: &mut HashSet<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), Self::Error> {
         crate::resource::insert_set(self.0, values, value, operation).map(|_| ())
     }
 
@@ -823,7 +923,11 @@ fn value_packets_with<G: PacketGrowth>(
             value_block::ValueField::Opcode { code, offset } => {
                 growth.insert(&mut opcode_offsets, *offset, "catia_value_packet_opcodes")?;
                 if *code == 0xe8 {
-                    growth.insert(&mut e8_opcode_offsets, *offset, "catia_value_packet_e8_opcodes")?;
+                    growth.insert(
+                        &mut e8_opcode_offsets,
+                        *offset,
+                        "catia_value_packet_e8_opcodes",
+                    )?;
                 }
             }
             value_block::ValueField::Marker { code: 0xe8, offset } => {
@@ -835,39 +939,45 @@ fn value_packets_with<G: PacketGrowth>(
             _ => {}
         }
     }
-    let mut packets = numeric_value_packets(growth, payload, &e8_opcode_offsets,
-        &marker_offsets, &atom_offsets)?;
+    let mut packets = numeric_value_packets(
+        growth,
+        payload,
+        &e8_opcode_offsets,
+        &marker_offsets,
+        &atom_offsets,
+    )?;
     for packet in e9_scalar_packets(payload, &opcode_offsets, &atom_offsets) {
         growth.push(&mut packets, packet, "catia_value_packets")?;
     }
     for packet in (0..payload.len())
-            .filter(|index| opcode_offsets.contains(index))
-            .filter_map(|index| {
-                if let Some([0xe9, _, _, layout, 0x37, 0xfe, 0xfe]) = payload.get(index..index + 7)
-                {
-                    return Some(EntityValuePacket::Layout {
-                        offset: index,
-                        type_selector: View::u16_le_at(payload, index + 1)?,
-                        layout: *layout,
-                        layout_offset: index + 3,
-                    });
-                }
-                match payload.get(index..index + 6) {
-                    Some([0xe8, _, _, 0x37, 0xfe, 0xfe]) => Some(EntityValuePacket::Compact {
-                        offset: index,
-                        value_selector: View::u16_le_at(payload, index + 1)?,
-                    }),
-                    _ => None,
-                }
-            }) {
+        .filter(|index| opcode_offsets.contains(index))
+        .filter_map(|index| {
+            if let Some([0xe9, _, _, layout, 0x37, 0xfe, 0xfe]) = payload.get(index..index + 7) {
+                return Some(EntityValuePacket::Layout {
+                    offset: index,
+                    type_selector: View::u16_le_at(payload, index + 1)?,
+                    layout: *layout,
+                    layout_offset: index + 3,
+                });
+            }
+            match payload.get(index..index + 6) {
+                Some([0xe8, _, _, 0x37, 0xfe, 0xfe]) => Some(EntityValuePacket::Compact {
+                    offset: index,
+                    value_selector: View::u16_le_at(payload, index + 1)?,
+                }),
+                _ => None,
+            }
+        })
+    {
         growth.push(&mut packets, packet, "catia_value_packets")?;
     }
     growth.work(packets.len(), "catia_value_packet_sort")?;
     packets.sort_unstable_by_key(|packet| match packet {
         EntityValuePacket::Numeric { offset, .. } => (*offset, 0u8),
         EntityValuePacket::E9Scalar { offset, .. } => (*offset, 1u8),
-        EntityValuePacket::Compact { offset, .. }
-        | EntityValuePacket::Layout { offset, .. } => (*offset, 2u8),
+        EntityValuePacket::Compact { offset, .. } | EntityValuePacket::Layout { offset, .. } => {
+            (*offset, 2u8)
+        }
     });
     Ok(packets)
 }
@@ -913,32 +1023,38 @@ fn numeric_value_packets<G: PacketGrowth>(
     atom_offsets: &HashSet<usize>,
 ) -> Result<Vec<EntityValuePacket>, G::Error> {
     let mut candidates = Vec::new();
-    for offset in (0..payload.len())
-        .filter(|offset| {
-            if !atom_offsets.contains(offset) {
-                return false;
-            }
-            let Some((_, prefix1_offset)) = compact_atom(payload, *offset) else {
-                return false;
-            };
-            if marker_offsets.contains(&prefix1_offset) {
-                return true;
-            }
-            atom_offsets.contains(&prefix1_offset)
-                && compact_atom(payload, prefix1_offset)
-                    .is_some_and(|(_, opcode_offset)| opcode_offsets.contains(&opcode_offset))
-        }) {
+    for offset in (0..payload.len()).filter(|offset| {
+        if !atom_offsets.contains(offset) {
+            return false;
+        }
+        let Some((_, prefix1_offset)) = compact_atom(payload, *offset) else {
+            return false;
+        };
+        if marker_offsets.contains(&prefix1_offset) {
+            return true;
+        }
+        atom_offsets.contains(&prefix1_offset)
+            && compact_atom(payload, prefix1_offset)
+                .is_some_and(|(_, opcode_offset)| opcode_offsets.contains(&opcode_offset))
+    }) {
         if let Some((packet, range)) = parse_numeric_value_packet(growth, payload, offset)? {
-            growth.push(&mut candidates, (Some(packet), range), "catia_numeric_packet_candidates")?;
+            growth.push(
+                &mut candidates,
+                (Some(packet), range),
+                "catia_numeric_packet_candidates",
+            )?;
         }
     }
     let mut packets = Vec::new();
     for index in 0..candidates.len() {
         growth.work(candidates.len(), "catia_numeric_packet_overlap")?;
         let range = &candidates[index].1;
-        let overlaps = candidates.iter().enumerate().any(|(other_index, (_, other))| {
-            index != other_index && range.start < other.end && other.start < range.end
-        });
+        let overlaps = candidates
+            .iter()
+            .enumerate()
+            .any(|(other_index, (_, other))| {
+                index != other_index && range.start < other.end && other.start < range.end
+            });
         if !overlaps {
             if let Some(packet) = candidates[index].0.take() {
                 growth.push(&mut packets, packet, "catia_numeric_value_packets")?;
@@ -962,30 +1078,46 @@ fn parse_numeric_value_packet<G: PacketGrowth>(
         let (layout_atom, at) = one_byte_atom(payload, at + 4)?;
         let (value_atom, at) = one_byte_atom(payload, at)?;
         Some((prefix0, prefix1, selector, layout_atom, value_atom, at))
-    })() else { return Ok(None) };
+    })() else {
+        return Ok(None);
+    };
     let mut items = Vec::new();
     let mut binary64_count = 0usize;
     loop {
-        let Some(&code) = payload.get(at) else { return Ok(None) };
+        let Some(&code) = payload.get(at) else {
+            return Ok(None);
+        };
         match code {
             0xe6 => {
-                let Some(end) = at.checked_add(9) else { return Ok(None) };
-                let Some(bits) = View::u64_le_at(payload, at + 1) else { return Ok(None) };
-                growth.push(&mut items, NumericPacketItem::Binary64 { bits, offset: at },
-                    "catia_numeric_packet_items")?;
+                let Some(end) = at.checked_add(9) else {
+                    return Ok(None);
+                };
+                let Some(bits) = View::u64_le_at(payload, at + 1) else {
+                    return Ok(None);
+                };
+                growth.push(
+                    &mut items,
+                    NumericPacketItem::Binary64 { bits, offset: at },
+                    "catia_numeric_packet_items",
+                )?;
                 binary64_count += 1;
                 at = end;
             }
             code @ 0xe7..=0xe9 => {
-                growth.push(&mut items, NumericPacketItem::Control { code, offset: at },
-                    "catia_numeric_packet_items")?;
+                growth.push(
+                    &mut items,
+                    NumericPacketItem::Control { code, offset: at },
+                    "catia_numeric_packet_items",
+                )?;
                 at += 1;
             }
             0xfe => break,
             _ => return Ok(None),
         }
     }
-    if binary64_count == 0 { return Ok(None) }
+    if binary64_count == 0 {
+        return Ok(None);
+    }
     let terminator_start = at;
     while payload.get(at) == Some(&0xfe) {
         at += 1;
@@ -1003,7 +1135,9 @@ fn parse_numeric_value_packet<G: PacketGrowth>(
         items,
         terminator_count,
     };
-    let Some(range) = packet.byte_range() else { return Ok(None) };
+    let Some(range) = packet.byte_range() else {
+        return Ok(None);
+    };
     Ok((range.end == at).then_some((packet, range)))
 }
 
@@ -1053,13 +1187,14 @@ impl EntityRecord {
     }
 
     /// Complete reference-signature view when the entire value payload has that production.
-    #[must_use]
     pub(crate) fn reference_signature(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<ReferenceSignature>, CodecError> {
         match &self.body {
-            EntityBody::Nested { value_payload, .. } => parse_reference_signature(ctx, value_payload),
+            EntityBody::Nested { value_payload, .. } => {
+                parse_reference_signature(ctx, value_payload)
+            }
             EntityBody::Inline(_) => Ok(None),
         }
     }
@@ -1080,8 +1215,12 @@ pub(crate) fn parse_runs(
         let mut complete = true;
         for (candidate, identity) in candidates.iter().zip(identities) {
             ctx.charge_entities(1, "admit CATIA 7C05 native entity")?;
-            crate::resource::reserve_vec(ctx, &mut records, 1,
-                "collect CATIA 7C05 materialized records")?;
+            crate::resource::reserve_vec(
+                ctx,
+                &mut records,
+                1,
+                "collect CATIA 7C05 materialized records",
+            )?;
             let Some(record) = materialize_record(ctx, data, candidate, identity)? else {
                 complete = false;
                 break;
@@ -1089,8 +1228,12 @@ pub(crate) fn parse_runs(
             records.push(record);
         }
         if complete {
-            crate::resource::push(ctx, &mut runs, records,
-                "collect CATIA 7C05 materialized runs")?;
+            crate::resource::push(
+                ctx,
+                &mut runs,
+                records,
+                "collect CATIA 7C05 materialized runs",
+            )?;
         }
     }
     Ok(runs)
@@ -1113,8 +1256,13 @@ pub(crate) fn paired_object_graph_roots(
             continue;
         };
         if data.get(end) == Some(&0xde) {
-            crate::resource::insert_map(ctx, &mut roots, end + 1, candidates.len(),
-                "collect CATIA paired object roots")?;
+            crate::resource::insert_map(
+                ctx,
+                &mut roots,
+                end + 1,
+                candidates.len(),
+                "collect CATIA paired object roots",
+            )?;
         }
     }
     Ok(roots)
@@ -1148,8 +1296,12 @@ fn parse_candidate_runs(
         }
         if let Some(candidate) = parse_candidate_variants(ctx, data, pos)? {
             enclosing_end = enclosing_end.max(end);
-            crate::resource::push(ctx, &mut roots, candidate,
-                "collect CATIA 7C05 candidate roots")?;
+            crate::resource::push(
+                ctx,
+                &mut roots,
+                candidate,
+                "collect CATIA 7C05 candidate roots",
+            )?;
         }
     }
     let mut candidate_runs = Vec::<Vec<EntityRecordCandidates>>::new();
@@ -1158,14 +1310,16 @@ fn parse_candidate_runs(
             run.last()
                 .is_some_and(|last| last.pos.checked_add(last.total_len) == Some(candidate.pos))
         }) {
-            crate::resource::push(ctx, run, candidate,
-                "collect CATIA 7C05 run candidates")?;
+            crate::resource::push(ctx, run, candidate, "collect CATIA 7C05 run candidates")?;
         } else {
             let mut run = Vec::new();
-            crate::resource::push(ctx, &mut run, candidate,
-                "collect CATIA 7C05 run candidates")?;
-            crate::resource::push(ctx, &mut candidate_runs, run,
-                "collect CATIA 7C05 runs")?;
+            crate::resource::push(
+                ctx,
+                &mut run,
+                candidate,
+                "collect CATIA 7C05 run candidates",
+            )?;
+            crate::resource::push(ctx, &mut candidate_runs, run, "collect CATIA 7C05 runs")?;
         }
     }
     Ok(candidate_runs)
@@ -1237,20 +1391,26 @@ fn unique_monotone_run(
         "collect CATIA 7C05 path states",
     )?;
     let mut previous = Vec::new();
-    crate::resource::reserve_admitted_vec(&mut previous, first.len(),
-        "collect CATIA 7C05 path states")?;
+    crate::resource::reserve_admitted_vec(
+        &mut previous,
+        first.len(),
+        "collect CATIA 7C05 path states",
+    )?;
     previous.extend(first.iter().copied().map(|identity| MonotonePathState {
-            identity,
-            path_count: PathCount::One,
-            predecessor: None,
-        }));
+        identity,
+        path_count: PathCount::One,
+        predecessor: None,
+    }));
     let mut layers = Vec::new();
     for record in &records[1..] {
         let previous_count = collection_count(ctx, previous.len())?;
         ctx.charge_collection_items(previous_count, "collect CATIA 7C05 ordered predecessors")?;
         let mut ordered_predecessors = Vec::new();
-        crate::resource::reserve_admitted_vec(&mut ordered_predecessors, previous.len(),
-            "collect CATIA 7C05 ordered predecessors")?;
+        crate::resource::reserve_admitted_vec(
+            &mut ordered_predecessors,
+            previous.len(),
+            "collect CATIA 7C05 ordered predecessors",
+        )?;
         ordered_predecessors.extend(previous.iter().enumerate());
         let sort_units = previous_count
             .checked_mul(u64::from(previous_count.ilog2()) + 1)
@@ -1264,8 +1424,11 @@ fn unique_monotone_run(
             "collect CATIA 7C05 cumulative paths",
         )?;
         let mut cumulative = Vec::new();
-        crate::resource::reserve_admitted_vec(&mut cumulative, ordered_predecessors.len(),
-            "collect CATIA 7C05 cumulative paths")?;
+        crate::resource::reserve_admitted_vec(
+            &mut cumulative,
+            ordered_predecessors.len(),
+            "collect CATIA 7C05 cumulative paths",
+        )?;
         let mut cumulative_count = PathCount::None;
         for (index, state) in &ordered_predecessors {
             cumulative_count = cumulative_count.join(state.path_count);
@@ -1289,8 +1452,11 @@ fn unique_monotone_run(
                 .map_or((PathCount::None, None), |index| cumulative[index]);
             if path_count != PathCount::None {
                 ctx.charge_collection_items(1, "collect CATIA 7C05 path states")?;
-                crate::resource::reserve_admitted_vec(&mut layer, 1,
-                    "collect CATIA 7C05 path states")?;
+                crate::resource::reserve_admitted_vec(
+                    &mut layer,
+                    1,
+                    "collect CATIA 7C05 path states",
+                )?;
                 layer.push(MonotonePathState {
                     identity: *identity,
                     path_count,
@@ -1302,8 +1468,7 @@ fn unique_monotone_run(
             return Ok(None);
         }
         ctx.charge_collection_items(1, "collect CATIA 7C05 path layers")?;
-        crate::resource::reserve_admitted_vec(&mut layers, 1,
-            "collect CATIA 7C05 path layers")?;
+        crate::resource::reserve_admitted_vec(&mut layers, 1, "collect CATIA 7C05 path layers")?;
         layers.push(std::mem::replace(&mut previous, layer));
     }
     let final_layer = &previous;
@@ -1325,8 +1490,11 @@ fn unique_monotone_run(
         "collect CATIA 7C05 resolved identities",
     )?;
     let mut result = Vec::new();
-    crate::resource::reserve_admitted_vec(&mut result, records.len(),
-        "collect CATIA 7C05 resolved identities")?;
+    crate::resource::reserve_admitted_vec(
+        &mut result,
+        records.len(),
+        "collect CATIA 7C05 resolved identities",
+    )?;
     for layer in std::iter::once(final_layer).chain(layers.iter().rev()) {
         let state = &layer[state_index];
         result.push(state.identity);
@@ -1448,10 +1616,15 @@ fn identity_candidates(
                         break;
                     };
                     if entity_id != 0 {
-                        crate::resource::push(ctx, &mut identities, EntityIdentityCandidate {
-                            delimiter: at,
-                            entity_id,
-                        }, "admit CATIA 7C05 identity candidate")?;
+                        crate::resource::push(
+                            ctx,
+                            &mut identities,
+                            EntityIdentityCandidate {
+                                delimiter: at,
+                                entity_id,
+                            },
+                            "admit CATIA 7C05 identity candidate",
+                        )?;
                     }
                 }
                 at += 1;
@@ -1543,8 +1716,12 @@ pub(crate) fn parse_definition_schema_selectors(
             _ => None,
         };
         if let Some(value) = selector {
-            crate::resource::push(ctx, &mut selectors, DefinitionSchemaSelector { value, offset: at },
-                "catia_definition_schema_selectors")?;
+            crate::resource::push(
+                ctx,
+                &mut selectors,
+                DefinitionSchemaSelector { value, offset: at },
+                "catia_definition_schema_selectors",
+            )?;
             at += 5;
         } else {
             at += 1;
@@ -1616,111 +1793,116 @@ pub(crate) fn parse_reference_signature(
                 }
             };
         }
-    if payload.first() != Some(&0x32) {
-        return None;
-    }
-    let first_reference = View::u32_le_at(payload, 1)?;
-    let (prefix_atom, mut at) = one_byte_atom(payload, 5)?;
-    let prefix = match prefix_atom {
-        2 => ReferenceSignaturePrefix::Atom2,
-        35 => ReferenceSignaturePrefix::Atom35,
-        _ => return None,
-    };
-    if payload.get(at) != Some(&0xe8) {
-        return None;
-    }
-    at += 1;
-    let (type_atom, next) = compact_atom(payload, at)?;
-    if type_atom != 3851 {
-        return None;
-    }
-    at = next;
-    if payload.get(at) != Some(&0x37) {
-        return None;
-    }
-    let (layout_atom, next) = one_byte_atom(payload, at + 1)?;
-    at = next;
-    if payload.get(at) != Some(&0x81) {
-        return None;
-    }
-    at += 1;
-    let signature_end = payload.get(at..)?.iter().position(|byte| *byte == 0xfe)? + at;
-    let signature_offset = at;
-    let signature_bytes = payload.get(signature_offset..signature_end)?;
-    if signature_bytes.is_empty()
-        || !signature_bytes
+        if payload.first() != Some(&0x32) {
+            return None;
+        }
+        let first_reference = View::u32_le_at(payload, 1)?;
+        let (prefix_atom, mut at) = one_byte_atom(payload, 5)?;
+        let prefix = match prefix_atom {
+            2 => ReferenceSignaturePrefix::Atom2,
+            35 => ReferenceSignaturePrefix::Atom35,
+            _ => return None,
+        };
+        if payload.get(at) != Some(&0xe8) {
+            return None;
+        }
+        at += 1;
+        let (type_atom, next) = compact_atom(payload, at)?;
+        if type_atom != 3851 {
+            return None;
+        }
+        at = next;
+        if payload.get(at) != Some(&0x37) {
+            return None;
+        }
+        let (layout_atom, next) = one_byte_atom(payload, at + 1)?;
+        at = next;
+        if payload.get(at) != Some(&0x81) {
+            return None;
+        }
+        at += 1;
+        let signature_end = payload.get(at..)?.iter().position(|byte| *byte == 0xfe)? + at;
+        let signature_offset = at;
+        let signature_bytes = payload.get(signature_offset..signature_end)?;
+        if signature_bytes.is_empty()
+            || !signature_bytes
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        {
+            return None;
+        }
+        let signature = admitted!(crate::resource::copy_retained_str(
+            ctx,
+            std::str::from_utf8(signature_bytes).ok()?,
+            "catia_reference_signature_text",
+        ));
+        let signature_program = admitted!(reference_signature_program_charged(
+            ctx,
+            &signature,
+            signature_offset,
+        ))?;
+        if !reference_signature_has_one_outer_call(&signature_program)
+            || usize::try_from(layout_atom).ok() != signature_bytes.len().checked_add(1)
+        {
+            return None;
+        }
+        at = signature_end + 1;
+        let second_reference_offset = at;
+        if payload.get(at) != Some(&0x32) {
+            return None;
+        }
+        let second_reference = View::u32_le_at(payload, at + 1)?;
+        let references = ConsecutiveReferences::new(first_reference)?;
+        if references.second() != second_reference {
+            return None;
+        }
+        let (closing_atom, next) = one_byte_atom(payload, at + 5)?;
+        let entity_instruction_count = signature_program
             .iter()
-            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-    {
-        return None;
-    }
-    let signature = admitted!(crate::resource::copy_retained_str(
-        ctx,
-        std::str::from_utf8(signature_bytes).ok()?,
-        "catia_reference_signature_text",
-    ));
-    let signature_program = admitted!(reference_signature_program_charged(
-        ctx, &signature, signature_offset,
-    ))?;
-    if !reference_signature_has_one_outer_call(&signature_program)
-        || usize::try_from(layout_atom).ok() != signature_bytes.len().checked_add(1)
-    {
-        return None;
-    }
-    at = signature_end + 1;
-    let second_reference_offset = at;
-    if payload.get(at) != Some(&0x32) {
-        return None;
-    }
-    let second_reference = View::u32_le_at(payload, at + 1)?;
-    let references = ConsecutiveReferences::new(first_reference)?;
-    if references.second() != second_reference {
-        return None;
-    }
-    let (closing_atom, next) = one_byte_atom(payload, at + 5)?;
-    let entity_instruction_count = signature_program
-        .iter()
-        .filter(|instruction| {
-            matches!(
-                instruction,
-                ReferenceSignatureInstruction::Symbol {
-                    symbol: ReferenceSignatureSymbol::E,
-                    ..
-                }
-            )
-        })
-        .count();
-    if usize::try_from(closing_atom).ok() != entity_instruction_count.checked_add(1) {
-        return None;
-    }
-    at = next;
-    if payload.get(at) != Some(&0xe9) {
-        return None;
-    }
-    let (closing_type_atom, next) = compact_atom(payload, at + 1)?;
-    if closing_type_atom != 3864 {
-        return None;
-    }
-    at = next;
-    if payload.get(at..at + 5) != Some(&[0x08, 0x37, 0xfe, 0xfe, 0xfe]) {
-        return None;
-    }
-    if at + 5 != payload.len() {
-        return None;
-    }
-    let tokens = admitted!(crate::resource::collect_vec(
-        ctx,
-        signature_program.into_iter().map(ReferenceSignatureToken::from),
-        "catia_reference_signature_tokens",
-    ));
-    Some(Ok(ReferenceSignature {
-        references,
-        prefix,
-        tokens,
-        signature_offset,
-        second_reference_offset,
-    }))
-    })().transpose()
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    ReferenceSignatureInstruction::Symbol {
+                        symbol: ReferenceSignatureSymbol::E,
+                        ..
+                    }
+                )
+            })
+            .count();
+        if usize::try_from(closing_atom).ok() != entity_instruction_count.checked_add(1) {
+            return None;
+        }
+        at = next;
+        if payload.get(at) != Some(&0xe9) {
+            return None;
+        }
+        let (closing_type_atom, next) = compact_atom(payload, at + 1)?;
+        if closing_type_atom != 3864 {
+            return None;
+        }
+        at = next;
+        if payload.get(at..at + 5) != Some(&[0x08, 0x37, 0xfe, 0xfe, 0xfe]) {
+            return None;
+        }
+        if at + 5 != payload.len() {
+            return None;
+        }
+        let tokens = admitted!(crate::resource::collect_vec(
+            ctx,
+            signature_program
+                .into_iter()
+                .map(ReferenceSignatureToken::from),
+            "catia_reference_signature_tokens",
+        ));
+        Some(Ok(ReferenceSignature {
+            references,
+            prefix,
+            tokens,
+            signature_offset,
+            second_reference_offset,
+        }))
+    })()
+    .transpose()
 }
 
 fn one_byte_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
@@ -1803,20 +1985,20 @@ pub(crate) fn parse_range_interval(
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_definition_schema_selectors, parse_numeric_pair, parse_range_interval,
-        value_packets, DefinitionSchemaSelector, EntityBody,
-        EntityIdentityCandidate, EntityRecord, EntityRecordCandidates, EntityRecordLayout,
-        EntityValuePacket, NumericPacketItem, NumericPair, NumericPairSlot, PathCount,
-        RangeInterval, RangeIntervalPrefix, RangeIntervalSlot, ReferenceSignature,
-        ReferenceSignatureInstruction, ReferenceSignaturePrefix, ReferenceSignatureSymbol,
-        ReferenceSignatureWire,
+        parse_definition_schema_selectors, parse_numeric_pair, parse_range_interval, value_packets,
+        DefinitionSchemaSelector, EntityBody, EntityIdentityCandidate, EntityRecord,
+        EntityRecordCandidates, EntityRecordLayout, EntityValuePacket, NumericPacketItem,
+        NumericPair, NumericPairSlot, PathCount, RangeInterval, RangeIntervalPrefix,
+        RangeIntervalSlot, ReferenceSignature, ReferenceSignatureInstruction,
+        ReferenceSignaturePrefix, ReferenceSignatureSymbol, ReferenceSignatureWire,
     };
     use crate::value_block;
 
     fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSignature> {
         crate::test_support::with_service_context(|ctx| {
             super::parse_reference_signature(ctx, payload)
-        }).expect("service reference signature budget")
+        })
+        .expect("service reference signature budget")
     }
 
     fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
@@ -1860,13 +2042,14 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 2;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[0], &arena, &policy,
-        ).expect("synthetic fixture fits the input limit");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("synthetic fixture fits the input limit");
         let error = super::unique_monotone_run(&ctx, &records)
             .expect_err("the third path collection item exceeds the limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "collect CATIA 7C05 cumulative paths"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect CATIA 7C05 cumulative paths")
+        );
         assert!(unique_monotone_run(&records).is_some());
     }
 
@@ -2019,8 +2202,10 @@ mod tests {
             } => (
                 prefix.len() + suffix.len() + 11,
                 prefix.as_slice(),
-                crate::test_support::with_service_context(|ctx| parse_definition_schema_selectors(ctx, prefix))
-                    .expect("test definition selectors fit service limits"),
+                crate::test_support::with_service_context(|ctx| {
+                    parse_definition_schema_selectors(ctx, prefix)
+                })
+                .expect("test definition selectors fit service limits"),
                 suffix.as_slice(),
                 value_payload.len() + 6,
                 value_payload.as_slice(),
@@ -2179,9 +2364,11 @@ mod tests {
 
     #[test]
     fn truncated_definition_selector_is_not_assigned() {
-        assert!(crate::test_support::with_service_context(|ctx|
-            parse_definition_schema_selectors(ctx, &[0x32, 1, 2, 3]))
-            .expect("short prefix fits service limits").is_empty());
+        assert!(crate::test_support::with_service_context(
+            |ctx| parse_definition_schema_selectors(ctx, &[0x32, 1, 2, 3])
+        )
+        .expect("short prefix fits service limits")
+        .is_empty());
     }
 
     #[test]
@@ -2399,13 +2586,17 @@ mod tests {
         let limited = crate::test_support::with_retained_limit(0, |ctx| {
             super::parse_reference_signature(ctx, &nonconsecutive)
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_reference_signature_text"));
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_reference_signature_text")
+        );
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
             super::parse_reference_signature(ctx, &nonconsecutive)
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_reference_signature_instructions"));
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_reference_signature_instructions")
+        );
 
         for (offset, replacement) in [
             (5, 0x83),
@@ -2509,14 +2700,27 @@ mod tests {
         let signature = super::ReferenceSignature {
             references: super::ConsecutiveReferences::new(207).expect("consecutive"),
             prefix: super::ReferenceSignaturePrefix::Atom2,
-            tokens: program.iter().cloned().map(super::ReferenceSignatureToken::from).collect(),
+            tokens: program
+                .iter()
+                .cloned()
+                .map(super::ReferenceSignatureToken::from)
+                .collect(),
             signature_offset: 12,
             second_reference_offset: 0,
         };
-        let qualifier_count = program.iter().filter(|instruction| matches!(instruction,
-            super::ReferenceSignatureInstruction::Qualifier { .. })).count();
-        assert_eq!(signature.instruction_and_token_counts(),
-            (program.len(), program.len() + qualifier_count));
+        let qualifier_count = program
+            .iter()
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    super::ReferenceSignatureInstruction::Qualifier { .. }
+                )
+            })
+            .count();
+        assert_eq!(
+            signature.instruction_and_token_counts(),
+            (program.len(), program.len() + qualifier_count)
+        );
     }
 
     #[test]
@@ -2696,8 +2900,10 @@ mod tests {
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
             super::parse_numeric_value_packet(&super::ChargedPacketGrowth(ctx), &payload, 1)
         });
-        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_numeric_packet_items"));
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_numeric_packet_items")
+        );
         let parsed = crate::test_support::with_service_context(|ctx| {
             super::parse_numeric_value_packet(&super::ChargedPacketGrowth(ctx), &payload, 1)
         })
@@ -2713,12 +2919,17 @@ mod tests {
             type_selector: 4,
             layout_atom: 5,
             value_atom: 6,
-            items: vec![NumericPacketItem::Binary64 { bits: 1.0_f64.to_bits(), offset: 9 }],
+            items: vec![NumericPacketItem::Binary64 {
+                bits: 1.0_f64.to_bits(),
+                offset: 9,
+            }],
             terminator_count: 1,
         };
         let refused = crate::test_support::with_retained_limit(0, |ctx| packet.copy_charged(ctx));
-        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_numeric_packet_items"));
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_native_numeric_packet_items")
+        );
         let admitted = crate::test_support::with_service_context(|ctx| packet.copy_charged(ctx))
             .expect("service profile admits numeric packet copy");
         assert_eq!(admitted, packet);
@@ -2730,13 +2941,21 @@ mod tests {
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
             super::parse_definition_schema_selectors(ctx, &prefix)
         });
-        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_definition_schema_selectors"));
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_definition_schema_selectors")
+        );
         let admitted = crate::test_support::with_service_context(|ctx| {
             super::parse_definition_schema_selectors(ctx, &prefix)
         })
         .expect("service profile admits definition selector");
-        assert_eq!(admitted, [super::DefinitionSchemaSelector { value: 4, offset: 0 }]);
+        assert_eq!(
+            admitted,
+            [super::DefinitionSchemaSelector {
+                value: 4,
+                offset: 0
+            }]
+        );
     }
 
     #[test]
@@ -2746,8 +2965,10 @@ mod tests {
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
             super::value_packets_charged(ctx, &payload, &fields)
         });
-        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_value_packet_opcodes"));
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_value_packet_opcodes")
+        );
         let admitted = crate::test_support::with_service_context(|ctx| {
             super::value_packets_charged(ctx, &payload, &fields)
         })

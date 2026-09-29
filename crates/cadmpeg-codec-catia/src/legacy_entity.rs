@@ -149,18 +149,29 @@ impl LegacyRelationSignature {
     pub(crate) fn into_parts(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<(Vec<LegacyRelationParameter>, Option<LegacyRelationParameter>, String),
-        cadmpeg_core::CodecError> {
+    ) -> Result<
+        (
+            Vec<LegacyRelationParameter>,
+            Option<LegacyRelationParameter>,
+            String,
+        ),
+        cadmpeg_core::CodecError,
+    > {
         let (output, result_type) = match self.result {
             LegacyRelationResult::Void { output } => (
                 Some(output),
-                crate::resource::copy_retained_str(ctx, "VoidType", "catia_legacy_void_result_type")?,
+                crate::resource::copy_retained_str(
+                    ctx,
+                    "VoidType",
+                    "catia_legacy_void_result_type",
+                )?,
             ),
             LegacyRelationResult::Typed(result_type) => (None, result_type),
         };
         Ok((self.inputs, output, result_type))
     }
 
+    #[cfg(test)]
     pub(crate) fn output(&self) -> Option<&LegacyRelationParameter> {
         match &self.result {
             LegacyRelationResult::Void { output } => Some(output),
@@ -168,6 +179,7 @@ impl LegacyRelationSignature {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn result_type(&self) -> &str {
         match &self.result {
             LegacyRelationResult::Void { .. } => "VoidType",
@@ -443,8 +455,8 @@ fn charge_scan(
     length: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let work = u64::try_from(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let work =
+        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_work(work, operation)
 }
 
@@ -470,33 +482,39 @@ fn parse_run_before(
     directory_offset: Option<usize>,
 ) -> Result<Option<LegacyEntityRun>, CodecError> {
     charge_scan(ctx, catalog_offset, "catia_legacy_identity_scan")?;
-    let mut identities = crate::resource::collect_vec(ctx, data[..catalog_offset]
-        .windows(6)
-        .enumerate()
-        .filter_map(|(offset, bytes)| {
-            if bytes[0] != 0xea {
-                return None;
-            }
-            let entity_id = View::u32_le_at(bytes, 1)?;
-            let lead = match bytes[5] {
-                0x81 => CatiaLegacyIdentityLead::Lead81,
-                0x82 => CatiaLegacyIdentityLead::Lead82,
-                0xe5 => CatiaLegacyIdentityLead::LeadE5,
-                0xfd => CatiaLegacyIdentityLead::LeadFd,
-                _ => return None,
-            };
-            (entity_id != 0).then_some(LegacyEntityIdentity {
-                offset,
-                entity_id,
-                lead,
-            })
-        }), "catia_legacy_candidate_identities")?;
+    let mut identities = crate::resource::collect_vec(
+        ctx,
+        data[..catalog_offset]
+            .windows(6)
+            .enumerate()
+            .filter_map(|(offset, bytes)| {
+                if bytes[0] != 0xea {
+                    return None;
+                }
+                let entity_id = View::u32_le_at(bytes, 1)?;
+                let lead = match bytes[5] {
+                    0x81 => CatiaLegacyIdentityLead::Lead81,
+                    0x82 => CatiaLegacyIdentityLead::Lead82,
+                    0xe5 => CatiaLegacyIdentityLead::LeadE5,
+                    0xfd => CatiaLegacyIdentityLead::LeadFd,
+                    _ => return None,
+                };
+                (entity_id != 0).then_some(LegacyEntityIdentity {
+                    offset,
+                    entity_id,
+                    lead,
+                })
+            }),
+        "catia_legacy_candidate_identities",
+    )?;
     let suffix_start = identities
         .windows(2)
         .rposition(|pair| pair[0].entity_id >= pair[1].entity_id)
         .map_or(0, |index| index + 1);
     identities.drain(..suffix_start);
-    let Some(&first_identity) = identities.first() else { return Ok(None) };
+    let Some(&first_identity) = identities.first() else {
+        return Ok(None);
+    };
     if first_identity.entity_id != 1 {
         return Ok(None);
     }
@@ -508,19 +526,21 @@ fn parse_run_before(
             .get(index + 1)
             .map_or(catalog_offset, |next| next.offset);
         let mut interval_roles = parse_role_selectors(ctx, data, start, end, identity.entity_id)?;
-        let mut interval_fields = parse_text_fields(
+        let mut interval_fields =
+            parse_text_fields(ctx, data, start, end, identity.entity_id, &interval_roles)?;
+        crate::resource::reserve_vec(
             ctx,
-            data,
-            start,
-            end,
-            identity.entity_id,
-            &interval_roles,
+            &mut text_fields,
+            interval_fields.len(),
+            "catia_legacy_run_text_fields",
         )?;
-        crate::resource::reserve_vec(ctx, &mut text_fields, interval_fields.len(),
-            "catia_legacy_run_text_fields")?;
         text_fields.append(&mut interval_fields);
-        crate::resource::reserve_vec(ctx, &mut role_selectors, interval_roles.len(),
-            "catia_legacy_run_roles")?;
+        crate::resource::reserve_vec(
+            ctx,
+            &mut role_selectors,
+            interval_roles.len(),
+            "catia_legacy_run_roles",
+        )?;
         role_selectors.append(&mut interval_roles);
     }
     let relations = parse_relations(ctx, &text_fields, &identities)?;
@@ -532,37 +552,63 @@ fn parse_run_before(
     let mut string_values = Vec::new();
     let mut integer_values = Vec::new();
     for (index, identity) in identities.iter().enumerate() {
-            let start = identity.offset + 6;
-            let end = identities
-                .get(index + 1)
-                .map_or(catalog_offset, |next| next.offset);
-            let mut interval_types = parse_type_descriptors(ctx, data, start, end, identity.entity_id)?;
-            crate::resource::reserve_vec(ctx, &mut type_descriptors, interval_types.len(),
-                "catia_legacy_run_types")?;
-            type_descriptors.append(&mut interval_types);
-            let mut interval_scalars = parse_scalar_values(ctx, data, start, end, identity.entity_id)?;
-            crate::resource::reserve_vec(ctx, &mut scalar_values, interval_scalars.len(),
-                "catia_legacy_run_scalars")?;
-            scalar_values.append(&mut interval_scalars);
-            let mut interval_strings = parse_string_values(ctx, data, start, end, identity.entity_id)?;
-            crate::resource::reserve_vec(ctx, &mut string_values, interval_strings.len(),
-                "catia_legacy_run_strings")?;
-            string_values.append(&mut interval_strings);
-            let mut interval_integers = parse_integer_values(ctx, data, start, end, identity.entity_id)?;
-            crate::resource::reserve_vec(ctx, &mut integer_values, interval_integers.len(),
-                "catia_legacy_run_integers")?;
-            integer_values.append(&mut interval_integers);
+        let start = identity.offset + 6;
+        let end = identities
+            .get(index + 1)
+            .map_or(catalog_offset, |next| next.offset);
+        let mut interval_types = parse_type_descriptors(ctx, data, start, end, identity.entity_id)?;
+        crate::resource::reserve_vec(
+            ctx,
+            &mut type_descriptors,
+            interval_types.len(),
+            "catia_legacy_run_types",
+        )?;
+        type_descriptors.append(&mut interval_types);
+        let mut interval_scalars = parse_scalar_values(ctx, data, start, end, identity.entity_id)?;
+        crate::resource::reserve_vec(
+            ctx,
+            &mut scalar_values,
+            interval_scalars.len(),
+            "catia_legacy_run_scalars",
+        )?;
+        scalar_values.append(&mut interval_scalars);
+        let mut interval_strings = parse_string_values(ctx, data, start, end, identity.entity_id)?;
+        crate::resource::reserve_vec(
+            ctx,
+            &mut string_values,
+            interval_strings.len(),
+            "catia_legacy_run_strings",
+        )?;
+        string_values.append(&mut interval_strings);
+        let mut interval_integers =
+            parse_integer_values(ctx, data, start, end, identity.entity_id)?;
+        crate::resource::reserve_vec(
+            ctx,
+            &mut integer_values,
+            interval_integers.len(),
+            "catia_legacy_run_integers",
+        )?;
+        integer_values.append(&mut interval_integers);
     }
     bind_value_names(ctx, data, &role_selectors, &text_fields, &mut scalar_values)?;
     bind_value_names(ctx, data, &role_selectors, &text_fields, &mut string_values)?;
-    bind_value_names(ctx, data, &role_selectors, &text_fields, &mut integer_values)?;
+    bind_value_names(
+        ctx,
+        data,
+        &role_selectors,
+        &text_fields,
+        &mut integer_values,
+    )?;
     let schema_program = parse_schema_program(ctx, data, catalog_offset, directory_offset)?;
     Ok(Some(LegacyEntityRun {
         catalog_offset,
         schema_program,
         first_identity,
-        following_identities: crate::resource::collect_vec(ctx,
-            identities.into_iter().skip(1), "catia_legacy_following_identities")?,
+        following_identities: crate::resource::collect_vec(
+            ctx,
+            identities.into_iter().skip(1),
+            "catia_legacy_following_identities",
+        )?,
         role_selectors,
         text_fields,
         schema_fields,
@@ -581,8 +627,10 @@ fn parse_schema_program(
     catalog_offset: usize,
     directory_offset: Option<usize>,
 ) -> Result<Option<LegacySchemaProgram>, CodecError> {
-    let scan_len = data.len().checked_sub(catalog_offset).ok_or_else(||
-        ctx.refuse_codec_limit("catia_legacy_schema_scan", u64::MAX, u64::MAX))?;
+    let scan_len = data
+        .len()
+        .checked_sub(catalog_offset)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_legacy_schema_scan", u64::MAX, u64::MAX))?;
     charge_scan(ctx, scan_len, "catia_legacy_schema_scan")?;
     let Some((offset, boundary_offset, boundary, source)) = (|| {
         let prefix_offset = catalog_offset.checked_add(CATALOG_OPEN.len())?;
@@ -593,12 +641,14 @@ fn parse_schema_program(
         let search_end = memchr::memmem::find(&data[offset..], CATALOG_OPEN)
             .and_then(|relative| offset.checked_add(relative))
             .unwrap_or(data.len());
-        let footer_offset = memchr::memmem::find_iter(&data[offset..search_end], SCHEMA_PROGRAM_FOOTER)
-            .find_map(|relative| {
-                let footer_offset = offset.checked_add(relative)?;
-                (footer_offset > offset && data.get(footer_offset - 1) == Some(&0xfe))
-                    .then_some(footer_offset)
-            });
+        let footer_offset =
+            memchr::memmem::find_iter(&data[offset..search_end], SCHEMA_PROGRAM_FOOTER).find_map(
+                |relative| {
+                    let footer_offset = offset.checked_add(relative)?;
+                    (footer_offset > offset && data.get(footer_offset - 1) == Some(&0xfe))
+                        .then_some(footer_offset)
+                },
+            );
         let (boundary_offset, boundary) = if let Some(footer_offset) = footer_offset {
             (footer_offset, LegacySchemaProgramBoundary::VendorFooter)
         } else {
@@ -609,11 +659,22 @@ fn parse_schema_program(
             {
                 return None;
             }
-            (directory_offset, LegacySchemaProgramBoundary::StreamDirectory)
+            (
+                directory_offset,
+                LegacySchemaProgramBoundary::StreamDirectory,
+            )
         };
-        Some((offset, boundary_offset, boundary, data.get(offset..boundary_offset)?))
-    })() else { return Ok(None) };
-    let bytes = crate::resource::copy_retained_slice(ctx, source, "catia_legacy_schema_program_bytes")?;
+        Some((
+            offset,
+            boundary_offset,
+            boundary,
+            data.get(offset..boundary_offset)?,
+        ))
+    })() else {
+        return Ok(None);
+    };
+    let bytes =
+        crate::resource::copy_retained_slice(ctx, source, "catia_legacy_schema_program_bytes")?;
     Ok(Some(LegacySchemaProgram {
         offset,
         boundary_offset,
@@ -644,14 +705,23 @@ pub(crate) fn parse_schema_identifiers(
                 return None;
             }
             Some((program_offset.checked_add(relative)?, value))
-        })() else { continue };
+        })() else {
+            continue;
+        };
         let identifier = LegacySchemaIdentifier {
             offset,
-            value: crate::resource::copy_retained_str(ctx, value,
-                "catia_legacy_schema_identifier_value")?,
+            value: crate::resource::copy_retained_str(
+                ctx,
+                value,
+                "catia_legacy_schema_identifier_value",
+            )?,
         };
-        crate::resource::push(ctx, &mut identifiers, identifier,
-            "catia_legacy_schema_identifiers")?;
+        crate::resource::push(
+            ctx,
+            &mut identifiers,
+            identifier,
+            "catia_legacy_schema_identifiers",
+        )?;
     }
     Ok(identifiers)
 }
@@ -663,9 +733,9 @@ fn parse_synchronous_states(
     identities: &[LegacyEntityIdentity],
     catalog_offset: usize,
 ) -> Result<Vec<LegacyRelationSynchronousState>, CodecError> {
-    crate::resource::collect_vec(ctx, roles
-        .iter()
-        .filter_map(|role| {
+    crate::resource::collect_vec(
+        ctx,
+        roles.iter().filter_map(|role| {
             let at = role.end_offset()?;
             let interval_end = identities
                 .iter()
@@ -708,7 +778,9 @@ fn parse_synchronous_states(
                 selector: role.selector,
                 synchronous,
             })
-        }), "catia_legacy_synchronous_states")
+        }),
+        "catia_legacy_synchronous_states",
+    )
 }
 
 fn parse_type_descriptors(
@@ -740,15 +812,27 @@ fn parse_type_descriptors(
             } else {
                 None
             }
-        })() else { continue };
+        })() else {
+            continue;
+        };
         let value = match name {
-            Some(name) => LegacyTypeValue::Name(crate::resource::copy_retained_str(ctx, name,
-                "catia_legacy_type_name")?),
+            Some(name) => LegacyTypeValue::Name(crate::resource::copy_retained_str(
+                ctx,
+                name,
+                "catia_legacy_type_name",
+            )?),
             None => LegacyTypeValue::Selector(selector),
         };
-        crate::resource::push(ctx, &mut descriptors, LegacyTypeDescriptor {
-            offset, entity_id, value,
-        }, "catia_legacy_type_descriptors")?;
+        crate::resource::push(
+            ctx,
+            &mut descriptors,
+            LegacyTypeDescriptor {
+                offset,
+                entity_id,
+                value,
+            },
+            "catia_legacy_type_descriptors",
+        )?;
     }
     Ok(descriptors)
 }
@@ -760,49 +844,59 @@ fn parse_scalar_values(
     end: usize,
     entity_id: u32,
 ) -> Result<Vec<LegacyScalarValue>, CodecError> {
-    charge_scan(ctx, (end - start).checked_mul(2).ok_or_else(||
-        ctx.refuse_codec_limit("catia_legacy_scalar_scan", u64::MAX, u64::MAX))?,
-        "catia_legacy_scalar_scan")?;
-    let mut values = crate::resource::collect_vec(ctx, [
-        (NAMED_SCALAR_OPEN, LegacyScalarEncoding::Named84),
-        (SCALAR_OPEN, LegacyScalarEncoding::Standalone85),
-    ]
-    .into_iter()
-    .flat_map(|(opener, encoding)| {
-        memchr::memmem::find_iter(&data[start..end], opener).filter_map(move |relative| {
-            let offset = start + relative;
-            if offset.checked_add(6)? > end {
-                return None;
-            }
-            let opcode = *data.get(offset + opener.len())?;
-            let evaluation = match opcode {
-                0xe6 => {
-                    if offset.checked_add(14)? > end {
-                        return None;
-                    }
-                    let bits = View::u64_le_at(data, offset + 6)?;
-                    f64::from_bits(bits)
-                        .is_finite()
-                        .then_some(LegacyScalarEvaluation::Value(bits))?
+    charge_scan(
+        ctx,
+        (end - start).checked_mul(2).ok_or_else(|| {
+            ctx.refuse_codec_limit("catia_legacy_scalar_scan", u64::MAX, u64::MAX)
+        })?,
+        "catia_legacy_scalar_scan",
+    )?;
+    let mut values = crate::resource::collect_vec(
+        ctx,
+        [
+            (NAMED_SCALAR_OPEN, LegacyScalarEncoding::Named84),
+            (SCALAR_OPEN, LegacyScalarEncoding::Standalone85),
+        ]
+        .into_iter()
+        .flat_map(|(opener, encoding)| {
+            memchr::memmem::find_iter(&data[start..end], opener).filter_map(move |relative| {
+                let offset = start + relative;
+                if offset.checked_add(6)? > end {
+                    return None;
                 }
-                0xe7 => LegacyScalarEvaluation::Unset,
-                _ => return None,
-            };
-            Some(LegacyScalarValue {
-                offset,
-                entity_id,
-                encoding,
-                name_offset: None,
-                name: None,
-                evaluation,
+                let opcode = *data.get(offset + opener.len())?;
+                let evaluation = match opcode {
+                    0xe6 => {
+                        if offset.checked_add(14)? > end {
+                            return None;
+                        }
+                        let bits = View::u64_le_at(data, offset + 6)?;
+                        f64::from_bits(bits)
+                            .is_finite()
+                            .then_some(LegacyScalarEvaluation::Value(bits))?
+                    }
+                    0xe7 => LegacyScalarEvaluation::Unset,
+                    _ => return None,
+                };
+                Some(LegacyScalarValue {
+                    offset,
+                    entity_id,
+                    encoding,
+                    name_offset: None,
+                    name: None,
+                    evaluation,
+                })
             })
-        })
-    })
-    , "catia_legacy_scalar_values")?;
+        }),
+        "catia_legacy_scalar_values",
+    )?;
     for index in 1..values.len() {
-        ctx.charge_work(u64::try_from(index).map_err(|_| ctx.refuse_codec_limit(
-            "catia_legacy_scalar_sort", u64::MAX, u64::MAX))?,
-            "catia_legacy_scalar_sort")?;
+        ctx.charge_work(
+            u64::try_from(index).map_err(|_| {
+                ctx.refuse_codec_limit("catia_legacy_scalar_sort", u64::MAX, u64::MAX)
+            })?,
+            "catia_legacy_scalar_sort",
+        )?;
         let mut at = index;
         while at > 0 && values[at - 1].offset > values[at].offset {
             values.swap(at - 1, at);
@@ -879,11 +973,17 @@ fn bind_value_names<Value: LegacyNamedValue>(
     let mut counts = std::collections::HashMap::<u32, usize>::new();
     for value in values.iter() {
         if let Some(count) = counts.get_mut(&value.entity_id()) {
-            *count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(
-                "catia_legacy_name_counts", u64::MAX, u64::MAX))?;
+            *count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_legacy_name_counts", u64::MAX, u64::MAX)
+            })?;
         } else {
-            crate::resource::insert_map(ctx, &mut counts, value.entity_id(), 1usize,
-                "catia_legacy_name_counts")?;
+            crate::resource::insert_map(
+                ctx,
+                &mut counts,
+                value.entity_id(),
+                1usize,
+                "catia_legacy_name_counts",
+            )?;
         }
     }
     for value in values {
@@ -893,8 +993,10 @@ fn bind_value_names<Value: LegacyNamedValue>(
         if let Some(name) =
             unique_value_name(data, roles, fields, value.entity_id(), value.offset())
         {
-            value.bind_name(name.offset, crate::resource::copy_retained_str(ctx, &name.value,
-                "catia_legacy_bound_name")?);
+            value.bind_name(
+                name.offset,
+                crate::resource::copy_retained_str(ctx, &name.value, "catia_legacy_bound_name")?,
+            );
         }
     }
     Ok(())
@@ -923,15 +1025,21 @@ fn parse_string_values(
             }
             let value = text_value_allow_empty(data.get(payload + 1..value_end)?)?;
             Some((offset, value))
-        })() else { continue };
-        crate::resource::push(ctx, &mut values, LegacyStringValue {
-            offset,
-            entity_id,
-            name_offset: None,
-            name: None,
-            value: crate::resource::copy_retained_str(ctx, value,
-                "catia_legacy_string_value")?,
-        }, "catia_legacy_string_values")?;
+        })() else {
+            continue;
+        };
+        crate::resource::push(
+            ctx,
+            &mut values,
+            LegacyStringValue {
+                offset,
+                entity_id,
+                name_offset: None,
+                name: None,
+                value: crate::resource::copy_retained_str(ctx, value, "catia_legacy_string_value")?,
+            },
+            "catia_legacy_string_values",
+        )?;
     }
     Ok(values)
 }
@@ -944,8 +1052,9 @@ fn parse_integer_values(
     entity_id: u32,
 ) -> Result<Vec<LegacyIntegerValue>, CodecError> {
     charge_scan(ctx, end - start, "catia_legacy_integer_scan")?;
-    crate::resource::collect_vec(ctx, memchr::memmem::find_iter(&data[start..end], INTEGER_OPEN)
-        .filter_map(|relative| {
+    crate::resource::collect_vec(
+        ctx,
+        memchr::memmem::find_iter(&data[start..end], INTEGER_OPEN).filter_map(|relative| {
             let offset = start + relative;
             let payload = offset.checked_add(INTEGER_OPEN.len())?;
             let lead = *data.get(payload)?;
@@ -974,7 +1083,9 @@ fn parse_integer_values(
                 name: None,
                 value,
             })
-        }), "catia_legacy_integer_values")
+        }),
+        "catia_legacy_integer_values",
+    )
 }
 
 fn unique_value_name<'a>(
@@ -1122,15 +1233,20 @@ fn parse_relations(
                         identities,
                     ),
                     expression_offset: expression.offset,
-                    expression: crate::resource::copy_retained_str(ctx, &expression.value,
-                        "catia_legacy_relation_expression")?,
+                    expression: crate::resource::copy_retained_str(
+                        ctx,
+                        &expression.value,
+                        "catia_legacy_relation_expression",
+                    )?,
                     signature_offset: type_signature.offset,
-                    type_signature: crate::resource::copy_retained_str(ctx, &type_signature.value,
-                        "catia_legacy_relation_signature")?,
+                    type_signature: crate::resource::copy_retained_str(
+                        ctx,
+                        &type_signature.value,
+                        "catia_legacy_relation_signature",
+                    )?,
                     signature,
                 };
-                crate::resource::push(ctx, &mut relations, relation,
-                    "catia_legacy_relations")?;
+                crate::resource::push(ctx, &mut relations, relation, "catia_legacy_relations")?;
             }
         }
         start = end;
@@ -1166,8 +1282,12 @@ pub(crate) fn parse_relation_signature(
     source: &str,
 ) -> Result<Option<LegacyRelationSignature>, CodecError> {
     let source = source.strip_suffix('\n').unwrap_or(source);
-    let Some((clauses, result_type)) = source.rsplit_once(") : ") else { return Ok(None) };
-    let Some(clauses) = clauses.strip_prefix('(') else { return Ok(None) };
+    let Some((clauses, result_type)) = source.rsplit_once(") : ") else {
+        return Ok(None);
+    };
+    let Some(clauses) = clauses.strip_prefix('(') else {
+        return Ok(None);
+    };
     let result_type = result_type.trim();
     if result_type.is_empty() {
         return Ok(None);
@@ -1177,43 +1297,56 @@ pub(crate) fn parse_relation_signature(
     let mut names = std::collections::HashSet::new();
     if !clauses.trim().is_empty() {
         for clause in clauses.split(',') {
-            let Some((parameter, role_type)) = clause.split_once(':') else { return Ok(None) };
+            let Some((parameter, role_type)) = clause.split_once(':') else {
+                return Ok(None);
+            };
             let parameter = parameter.trim();
             let role_type = role_type.trim();
             let (output_role, value_type) = if let Some(value_type) = role_type.strip_prefix("#In")
             {
                 (false, value_type.trim())
             } else {
-                let Some(value_type) = role_type.strip_prefix("#Out") else { return Ok(None) };
+                let Some(value_type) = role_type.strip_prefix("#Out") else {
+                    return Ok(None);
+                };
                 (true, value_type.trim())
             };
             if parameter.is_empty() || value_type.is_empty() || names.contains(parameter) {
                 return Ok(None);
             }
-            crate::resource::insert_set(ctx, &mut names, parameter,
-                "catia_legacy_relation_names")?;
+            crate::resource::insert_set(ctx, &mut names, parameter, "catia_legacy_relation_names")?;
             let parameter = LegacyRelationParameter {
-                parameter: crate::resource::copy_retained_str(ctx, parameter,
-                    "catia_legacy_relation_parameter")?,
-                value_type: crate::resource::copy_retained_str(ctx, value_type,
-                    "catia_legacy_relation_value_type")?,
+                parameter: crate::resource::copy_retained_str(
+                    ctx,
+                    parameter,
+                    "catia_legacy_relation_parameter",
+                )?,
+                value_type: crate::resource::copy_retained_str(
+                    ctx,
+                    value_type,
+                    "catia_legacy_relation_value_type",
+                )?,
             };
             if output_role {
                 if output.replace(parameter).is_some() {
                     return Ok(None);
                 }
             } else {
-                crate::resource::push(ctx, &mut inputs, parameter,
-                    "catia_legacy_relation_inputs")?;
+                crate::resource::push(ctx, &mut inputs, parameter, "catia_legacy_relation_inputs")?;
             }
         }
     }
     let result = if result_type == "VoidType" {
-        let Some(output) = output else { return Ok(None) };
+        let Some(output) = output else {
+            return Ok(None);
+        };
         LegacyRelationResult::Void { output }
     } else if output.is_none() {
-        LegacyRelationResult::Typed(crate::resource::copy_retained_str(ctx, result_type,
-            "catia_legacy_relation_result_type")?)
+        LegacyRelationResult::Typed(crate::resource::copy_retained_str(
+            ctx,
+            result_type,
+            "catia_legacy_relation_result_type",
+        )?)
     } else {
         return Ok(None);
     };
@@ -1236,17 +1369,20 @@ fn parse_text_fields(
             let payload = offset.checked_add(TEXT_OPEN.len())?;
             let (encoding, value) = parse_text_field(data, payload, end)?;
             Some((offset, encoding, value))
-        })() else { continue };
-        let role = role_selectors.iter()
+        })() else {
+            continue;
+        };
+        let role = role_selectors
+            .iter()
             .find(|role| role.end_offset() == Some(offset))
-            .map(|role| role.copy_charged(ctx)).transpose()?;
+            .map(|role| role.copy_charged(ctx))
+            .transpose()?;
         let field = LegacyTextField {
             offset,
             entity_id,
             encoding,
             role,
-            value: crate::resource::copy_retained_str(ctx, value,
-                "catia_legacy_text_value")?,
+            value: crate::resource::copy_retained_str(ctx, value, "catia_legacy_text_value")?,
         };
         crate::resource::push(ctx, &mut fields, field, "catia_legacy_text_fields")?;
     }
@@ -1257,7 +1393,8 @@ impl LegacyRoleSelector {
     fn copy_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let name = match &self.name {
             LegacyRoleName::Literal(name) => LegacyRoleName::Literal(
-                crate::resource::copy_retained_str(ctx, name, "catia_legacy_copied_role_name")?),
+                crate::resource::copy_retained_str(ctx, name, "catia_legacy_copied_role_name")?,
+            ),
             LegacyRoleName::Selector(selector) => LegacyRoleName::Selector(*selector),
         };
         Ok(Self {
@@ -1320,20 +1457,29 @@ fn parse_schema_fields(
             if !boundary_binds_field && !boundary_closes_text {
                 return None;
             }
-            Some((offset, role, boundary, View::u16_le_at(data, offset + 1)?,
-                data.get(payload_offset..boundary.offset)?))
-        })() else { continue };
+            Some((
+                offset,
+                role,
+                boundary,
+                View::u16_le_at(data, offset + 1)?,
+                data.get(payload_offset..boundary.offset)?,
+            ))
+        })() else {
+            continue;
+        };
         let field = LegacySchemaField {
             offset,
             entity_id: role.entity_id,
             role_offset: role.offset,
             boundary_role_offset: boundary.offset,
             field_code,
-            payload: crate::resource::copy_retained_slice(ctx, payload,
-                "catia_legacy_schema_field_payload")?,
+            payload: crate::resource::copy_retained_slice(
+                ctx,
+                payload,
+                "catia_legacy_schema_field_payload",
+            )?,
         };
-        crate::resource::push(ctx, &mut fields, field,
-            "catia_legacy_schema_fields")?;
+        crate::resource::push(ctx, &mut fields, field, "catia_legacy_schema_fields")?;
     }
     Ok(fields)
 }
@@ -1345,9 +1491,13 @@ fn parse_role_selectors(
     end: usize,
     entity_id: u32,
 ) -> Result<Vec<LegacyRoleSelector>, CodecError> {
-    charge_scan(ctx, (end - start).checked_mul(3).ok_or_else(||
-        ctx.refuse_codec_limit("catia_legacy_role_scan", u64::MAX, u64::MAX))?,
-        "catia_legacy_role_scan")?;
+    charge_scan(
+        ctx,
+        (end - start)
+            .checked_mul(3)
+            .ok_or_else(|| ctx.refuse_codec_limit("catia_legacy_role_scan", u64::MAX, u64::MAX))?,
+        "catia_legacy_role_scan",
+    )?;
     let mut roles = Vec::new();
     for offset in start..end {
         let Some((name, encoding, selector)) = (|| {
@@ -1360,7 +1510,7 @@ fn parse_role_selectors(
                 return None;
             }
             let name = text_value(data.get(offset + 1..selector_offset)?)?;
-            if !valid_identifier(&name) {
+            if !valid_identifier(name) {
                 return None;
             }
             let first = *data.get(selector_offset)?;
@@ -1388,12 +1538,17 @@ fn parse_role_selectors(
                 return None;
             };
             (selector != 0).then_some((name, encoding, selector))
-        })() else { continue };
+        })() else {
+            continue;
+        };
         let role = LegacyRoleSelector {
             offset,
             entity_id,
-            name: LegacyRoleName::Literal(crate::resource::copy_retained_str(ctx, name,
-                "catia_legacy_role_name")?),
+            name: LegacyRoleName::Literal(crate::resource::copy_retained_str(
+                ctx,
+                name,
+                "catia_legacy_role_name",
+            )?),
             encoding,
             selector,
             field_code: None,
@@ -1434,11 +1589,14 @@ fn parse_role_selectors(
                     .checked_add(1)?,
                 field_code: None,
             })
-        })() else { continue };
+        })() else {
+            continue;
+        };
         crate::resource::push(ctx, &mut roles, role, "catia_legacy_roles")?;
     }
-    let field_bound_roles = crate::resource::collect_vec(ctx, memchr::memchr_iter(0xe8, &data[start..end])
-        .filter_map(|relative| {
+    let field_bound_roles = crate::resource::collect_vec(
+        ctx,
+        memchr::memchr_iter(0xe8, &data[start..end]).filter_map(|relative| {
             let field_offset = start.checked_add(relative)?;
             let field_header_end = field_offset.checked_add(4)?;
             if field_header_end > end || data.get(field_offset + 3) != Some(&0x01) {
@@ -1496,14 +1654,23 @@ fn parse_role_selectors(
                 (Some(role), None) | (None, Some(role)) => Some(role),
                 (None, None) => None,
             }
-        }), "catia_legacy_bound_roles")?;
-    crate::resource::reserve_vec(ctx, &mut roles, field_bound_roles.len(),
-        "catia_legacy_roles")?;
+        }),
+        "catia_legacy_bound_roles",
+    )?;
+    crate::resource::reserve_vec(
+        ctx,
+        &mut roles,
+        field_bound_roles.len(),
+        "catia_legacy_roles",
+    )?;
     roles.extend(field_bound_roles);
     for index in 1..roles.len() {
-        ctx.charge_work(u64::try_from(index).map_err(|_| ctx.refuse_codec_limit(
-            "catia_legacy_role_sort", u64::MAX, u64::MAX))?,
-            "catia_legacy_role_sort")?;
+        ctx.charge_work(
+            u64::try_from(index).map_err(|_| {
+                ctx.refuse_codec_limit("catia_legacy_role_sort", u64::MAX, u64::MAX)
+            })?,
+            "catia_legacy_role_sort",
+        )?;
         let mut at = index;
         while at > 0 && roles[at - 1].offset > roles[at].offset {
             roles.swap(at - 1, at);
@@ -1530,11 +1697,7 @@ pub(crate) fn valid_identifier(name: &str) -> bool {
         && characters.all(|character| character == '_' || character.is_alphanumeric())
 }
 
-fn parse_text_field<'a>(
-    data: &'a [u8],
-    payload: usize,
-    end: usize,
-) -> Option<(LegacyTextEncoding, &'a str)> {
+fn parse_text_field(data: &[u8], payload: usize, end: usize) -> Option<(LegacyTextEncoding, &str)> {
     let first = *data.get(payload)?;
     if first == 0 {
         if let Some(length) =
@@ -1574,8 +1737,7 @@ fn role_tailed_text(data: &[u8], start: usize, length: usize, end: usize) -> Opt
     let tail_end = separator.checked_add(2)?;
     if tail_end > end
         || data.get(separator) != Some(&0xe3)
-        || !text_value(data.get(value_end + 1..separator)?)
-            .is_some_and(|role| valid_identifier(&role))
+        || !text_value(data.get(value_end + 1..separator)?).is_some_and(valid_identifier)
     {
         return None;
     }

@@ -1723,19 +1723,20 @@ fn zero_entity_support_pcurve(
         ) {
             return Some(Err(error));
         }
-        let nurbs = match crate::nurbs::note_refusal(ctx,
-                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_checked_lanes(
-                    control_points,
-                    weights,
-                )
-                .and_then(|poles| PcurveNurbs::new(degree, knots, poles, false)),
-                refusal,
-                format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
-            ) {
-                Ok(Some(nurbs)) => nurbs,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let nurbs = match crate::nurbs::note_refusal(
+            ctx,
+            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_checked_lanes(
+                control_points,
+                weights,
+            )
+            .and_then(|poles| PcurveNurbs::new(degree, knots, poles, false)),
+            refusal,
+            format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
+        ) {
+            Ok(Some(nurbs)) => nurbs,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         Some(Ok(PcurveGeometry::Nurbs { nurbs }))
     })()
     .transpose()
@@ -1830,7 +1831,8 @@ pub(super) fn zero_entity_neutral_pcurve(
         ctx.charge_collection_items(count, "catia_zero_neutral_weighted_poles")?;
     }
     ctx.charge_collection_items(count, "catia_zero_neutral_checked_poles")?;
-    crate::nurbs::note_refusal(ctx,
+    crate::nurbs::note_refusal(
+        ctx,
         PcurveNurbs::from_checked_lanes(
             nurbs.degree(),
             knots,
@@ -2164,7 +2166,8 @@ fn zero_entity_lift_pcurve(
         })?,
         "catia_zero_lifted_checked_poles",
     )?;
-    crate::nurbs::note_refusal(ctx,
+    crate::nurbs::note_refusal(
+        ctx,
         NurbsCurve::from_checked_lanes(nurbs.degree(), knots, points, weights, nurbs.periodic()),
         refusal,
         format_args!("zero-entity planar edge curve lifted from its pcurve: {record}"),
@@ -2733,7 +2736,8 @@ fn zero_entity_nurbs_surface(
         })?,
         "catia_zero_nurbs_checked_poles",
     )?;
-    crate::nurbs::note_refusal(ctx,
+    crate::nurbs::note_refusal(
+        ctx,
         NurbsSurface::from_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.v_degree, v_knots, false),
@@ -2743,8 +2747,9 @@ fn zero_entity_nurbs_surface(
         refusal,
         format_args!("zero-entity NURBS surface record at byte {record}"),
     )
-    .map(|surface| surface.map(|surface|
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))))
+    .map(|surface| {
+        surface.map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
+    })
 }
 
 fn zero_entity_expand_knots(

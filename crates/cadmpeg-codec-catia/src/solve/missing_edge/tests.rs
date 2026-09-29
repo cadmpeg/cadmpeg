@@ -162,7 +162,10 @@ fn ordered_port_seed_refuses_before_binding_point_map() {
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         super::propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
     };
-    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(vec![Some([0, 1])]));
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service budget"),
+        Some(vec![Some([0, 1])])
+    );
     let mut operations = HashSet::new();
     for limit in 0..=128 {
         match crate::test_support::with_collection_limit(limit, run) {
@@ -183,7 +186,10 @@ fn partial_port_projection_refuses_before_known_rows() {
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         super::propagate_partial_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &[])
     };
-    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(pairs.to_vec()));
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service budget"),
+        Some(pairs.to_vec())
+    );
     let mut operations = HashSet::new();
     for limit in 0..=128 {
         match crate::test_support::with_collection_limit(limit, run) {
@@ -349,17 +355,22 @@ fn compressed_visualization_points_require_initial_xyz_and_exact_scalar_count() 
     let mut missing_scalar = bytes.clone();
     missing_scalar[scalar_count_at..scalar_count_at + 4].copy_from_slice(&5u32.to_le_bytes());
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &missing_scalar, &rows, &points).expect("service budget"),
+        visualization_endpoint_pairs(&ctx, &missing_scalar, &rows, &points)
+            .expect("service budget"),
         None
     );
 
     bytes[19] |= 1;
-    assert_eq!(visualization_endpoint_pairs(&ctx, &bytes, &rows, &points).expect("service budget"), None);
+    assert_eq!(
+        visualization_endpoint_pairs(&ctx, &bytes, &rows, &points).expect("service budget"),
+        None
+    );
 
     let mut missing_delimiter = bytes;
     missing_delimiter[20] = 0;
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &missing_delimiter, &rows, &points).expect("service budget"),
+        visualization_endpoint_pairs(&ctx, &missing_delimiter, &rows, &points)
+            .expect("service budget"),
         None
     );
 }
@@ -371,22 +382,26 @@ fn visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
     let rows = [row(&[0, 1])];
 
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &raw_visualization_table(2, &points), &rows, &points,).expect("service budget"),
+        visualization_endpoint_pairs(&ctx, &raw_visualization_table(2, &points), &rows, &points,)
+            .expect("service budget"),
         None
     );
     assert_eq!(
-        visualization_endpoint_pairs(&ctx,
+        visualization_endpoint_pairs(
+            &ctx,
             &raw_visualization_table(1, &[points[0], points[0]]),
             &rows,
             &points,
-        ).expect("service budget"),
+        )
+        .expect("service budget"),
         None
     );
 
     let mut missing_secondary_lead = raw_visualization_table(1, &points);
     missing_secondary_lead[10] = 0;
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &missing_secondary_lead, &rows, &points).expect("service budget"),
+        visualization_endpoint_pairs(&ctx, &missing_secondary_lead, &rows, &points)
+            .expect("service budget"),
         None
     );
 }
@@ -415,11 +430,16 @@ fn visualization_endpoint_bindings_refuse_before_each_collection() {
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             visualization_endpoint_pairs(ctx, bytes, &rows, &points)
         };
-        assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(vec![[0, 1]]));
+        assert_eq!(
+            crate::test_support::with_service_context(run).expect("service budget"),
+            Some(vec![[0, 1]])
+        );
         let mut operations = HashSet::new();
         for limit in 0..=32 {
             match crate::test_support::with_collection_limit(limit, run) {
-                Err(CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+                Err(CodecError::ResourceLimit(error)) => {
+                    operations.insert(error.operation);
+                }
                 Ok(Some(pairs)) if pairs == [[0, 1]] => break,
                 outcome => panic!("unexpected visualization result: {outcome:?}"),
             }
@@ -554,7 +574,10 @@ fn repeated_face_refinement_refuses_before_intersection_and_copy() {
             let mut allowed = [allowed_face.clone()];
             refine_repeated_edge_face_candidates(ctx, &[[0, 0]], &mut allowed, &[vec![2]])
         };
-        assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(()));
+        assert_eq!(
+            crate::test_support::with_service_context(run).expect("service budget"),
+            Some(())
+        );
         assert!(matches!(
             crate::test_support::with_collection_limit(0, run),
             Err(CodecError::ResourceLimit(limit)) if limit.operation == expected_operation
@@ -666,11 +689,16 @@ fn endpoint_degree_closure_refuses_closed_face_copy() {
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         repeated_face_endpoint_closures(ctx, &faces, &allowed, &pairs, 1)
     };
-    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(vec![faces.to_vec()]));
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service budget"),
+        Some(vec![faces.to_vec()])
+    );
     let mut operations = HashSet::new();
     for limit in 0..=32 {
         match crate::test_support::with_collection_limit(limit, run) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
             Ok(Some(_)) => break,
             outcome => panic!("unexpected closed-face result: {outcome:?}"),
         }
@@ -763,7 +791,8 @@ fn face_options_hold_the_retained_face_in_ascending_order() {
         (5, vec![1, 9]),
         (0, vec![0usize; 0]),
     ] {
-        let options = FaceOptions::from_admitted(&ctx, retained, others.clone()).expect("service budget");
+        let options =
+            FaceOptions::from_admitted(&ctx, retained, others.clone()).expect("service budget");
         let mut expected = others;
         expected.push(retained);
         expected.sort_unstable();
@@ -778,7 +807,8 @@ fn face_options_order_and_deduplicate_the_admitted_faces_they_are_given() {
     catia_test_context!(ctx);
     // Unsorted, with a repeat, and holding `retained` itself. The type does
     // the filter, the sort and the dedup, so the caller states none of them.
-    let options = FaceOptions::from_admitted(&ctx, 5, [9usize, 1, 5, 9, 1, 3]).expect("service budget");
+    let options =
+        FaceOptions::from_admitted(&ctx, 5, [9usize, 1, 5, 9, 1, 3]).expect("service budget");
 
     assert_eq!(options.iter().collect::<Vec<_>>(), vec![1, 3, 5, 9]);
     assert_eq!(options.count(), 4);
@@ -820,12 +850,16 @@ fn a_repeated_slot_with_two_admitted_faces_resolves_to_the_one_valid_assignment(
 fn duplicate_face_assignment_refuses_before_unresolved_slot_storage() {
     let serialized = [[0usize, 0]];
     let allowed = [vec![0usize, 1]];
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2, |faces| {
-            Ok(faces[0][1] == 1)
-        })
-    };
-    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(vec![[0, 1]]));
+    let run =
+        |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2, |faces| {
+                Ok(faces[0][1] == 1)
+            })
+        };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service budget"),
+        Some(vec![[0, 1]])
+    );
     assert!(matches!(
         crate::test_support::with_collection_limit(0, run),
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -837,10 +871,15 @@ fn duplicate_face_assignment_refuses_before_unresolved_slot_storage() {
 fn mesh_edge_run_materialization_refuses_before_occurrence_copy() {
     use cadmpeg_core::decode::ResourceDimension;
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        super::standard_mesh_edge_runs(ctx, &bytes)
-    };
-    assert_eq!(crate::test_support::with_service_context(run).expect("service budget").expect("runs").len(), 4);
+    let run =
+        |ctx: &cadmpeg_core::decode::DecodeContext<'_>| super::standard_mesh_edge_runs(ctx, &bytes);
+    assert_eq!(
+        crate::test_support::with_service_context(run)
+            .expect("service budget")
+            .expect("runs")
+            .len(),
+        4
+    );
     let mut limit = 0;
     let mut refused = HashSet::new();
     for _ in 0..256 {

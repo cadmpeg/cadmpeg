@@ -9,9 +9,10 @@ fn curve_on_parameter_range(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<CurveGeometry> {
-    crate::test_support::with_service_context(|ctx|
-        super::super::curve_on_parameter_range(ctx, curve, source, target, record, refusal))
-        .expect("service resource budget")
+    crate::test_support::with_service_context(|ctx| {
+        super::super::curve_on_parameter_range(ctx, curve, source, target, record, refusal)
+    })
+    .expect("service resource budget")
 }
 #[test]
 fn numerical_audit_disjoint_small_range_recharts_curve() {

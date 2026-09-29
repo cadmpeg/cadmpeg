@@ -96,15 +96,18 @@ mod tests {
             crate::families::consolidated::records::consolidated_edge_definition_data_charged(
                 ctx, 0x25, &payload,
             )
-        }).expect("service profile admits scalar lane");
+        })
+        .expect("service profile admits scalar lane");
         assert!(service.is_some());
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
             crate::families::consolidated::records::consolidated_edge_definition_data_charged(
                 ctx, 0x25, &payload,
             )
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_edge_definition_scalars"));
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_native_edge_definition_scalars")
+        );
     }
 
     #[test]
@@ -118,7 +121,11 @@ mod tests {
                 payload: vec![0x81, 0x05, 0x0f, 0x87],
             },
             class: ConsolidatedEdgeDefinitionClass::Class24,
-            data: Some(crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 { operand: 1 }),
+            data: Some(
+                crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 {
+                    operand: 1,
+                },
+            ),
         };
         let mut wire = serde_json::to_value(&value).expect("serialize definition");
         assert_eq!(wire["class"], serde_json::json!(0x24));

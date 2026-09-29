@@ -5,7 +5,8 @@ use crate::document::{ArenaName, EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point3, Vector3};
@@ -40,9 +41,11 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("input admitted");
     let (mut model, owner, procedural) = build();
-    let refused = model.add_procedural_curve_charged(&ctx, owner, procedural);
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "ir_procedural_curve_construction_id"));
+    let refused = model.add_procedural_curve_charged(&ctx, &owner, procedural);
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "ir_procedural_curve_construction_id")
+    );
     assert!(matches!(model.curves[0].geometry, CurveGeometry::Solved(_)));
     assert!(model.procedural_curves.is_empty());
 
@@ -51,10 +54,17 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("input admitted");
     let (mut model, owner, procedural) = build();
-    assert!(model.add_procedural_curve_charged(&ctx, owner, procedural)
-        .expect("service budget admits construction copy").is_ok());
-    assert!(matches!(model.curves[0].geometry,
-        CurveGeometry::Procedural { cache: Some(SolvedCurveGeometry::Unknown { record: None }), .. }));
+    assert!(model
+        .add_procedural_curve_charged(&ctx, &owner, procedural)
+        .expect("service budget admits construction copy")
+        .is_ok());
+    assert!(matches!(
+        model.curves[0].geometry,
+        CurveGeometry::Procedural {
+            cache: Some(SolvedCurveGeometry::Unknown { record: None }),
+            ..
+        }
+    ));
     assert_eq!(model.procedural_curves.len(), 1);
 }
 

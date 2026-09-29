@@ -36,7 +36,8 @@ fn loop_record(indices: &[usize]) -> E5Loop {
 fn loop_admission_retains_the_oriented_source_occurrences() {
     let source = loop_record(&[1, 0]);
     let plan = crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &source))
-        .expect("service resource budget").expect("complete permutation");
+        .expect("service resource budget")
+        .expect("complete permutation");
     assert!(std::ptr::eq(plan.source, &raw const source));
     assert_eq!(plan.members.len(), 2);
     for (planned, index) in plan.members.iter().zip([1, 0]) {
@@ -63,29 +64,42 @@ fn loop_admission_refuses_incomplete_duplicate_and_out_of_range_orders() {
         let record = loop_record(&indices);
         assert!(
             crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &record))
-                .expect("service resource budget").is_none(),
+                .expect("service resource budget")
+                .is_none(),
             "{indices:?}"
         );
     }
     let mut unresolved = loop_record(&[0, 1]);
     unresolved.oriented_members = None;
-    assert!(crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &unresolved))
-        .expect("service resource budget").is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &unresolved))
+            .expect("service resource budget")
+            .is_none()
+    );
     let mut empty = loop_record(&[]);
     empty.members.clear();
-    assert!(crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &empty))
-        .expect("service resource budget").is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &empty))
+            .expect("service resource budget")
+            .is_none()
+    );
 }
 
 #[test]
 fn loop_admission_refuses_before_seen_set_and_member_plan_growth() {
     let source = loop_record(&[1, 0]);
-    for (cap, operation) in [(0, "catia_e5_loop_plan_seen"), (1, "catia_e5_loop_plan_members")] {
+    for (cap, operation) in [
+        (0, "catia_e5_loop_plan_seen"),
+        (1, "catia_e5_loop_plan_members"),
+    ] {
         assert!(matches!(
             crate::test_support::with_collection_limit(cap, |ctx| E5LoopPlan::admit(ctx, &source)),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
         ));
     }
-    assert!(crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &source))
-        .expect("service resource budget").is_some());
+    assert!(
+        crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &source))
+            .expect("service resource budget")
+            .is_some()
+    );
 }

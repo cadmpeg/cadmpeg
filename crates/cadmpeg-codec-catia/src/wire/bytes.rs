@@ -6,8 +6,8 @@
 //! allocation reference tokens; and fixed-size finite `f64` array reads.
 
 use super::cursor::Cursor;
-use cadmpeg_core::decode::View;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};

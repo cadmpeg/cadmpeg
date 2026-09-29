@@ -22,9 +22,9 @@ use crate::test_support::test_a5a8::{
 use crate::test_support::test_b2::{
     b2_circle_stream, b2_cylinder_stream, b2_edge_block_stream, b2_edge_parameter_stream_for,
     b2_embedded_cylinder_stream_with_object_id, b2_fixed_owner_boundary_cycle_stream,
-    b2_fixed_owner_boundary_face_node_cycle_stream,
-    b2_line_profile_stream, b2_plane_carrier_stream, b2_resolved_revolution_stream,
-    b2_topology_edge_run_stream, b3_cylinder_stream,
+    b2_fixed_owner_boundary_face_node_cycle_stream, b2_line_profile_stream,
+    b2_plane_carrier_stream, b2_resolved_revolution_stream, b2_topology_edge_run_stream,
+    b3_cylinder_stream,
 };
 use crate::test_support::test_b5::append_b5_record;
 use crate::test_support::test_bytes::{be32, le_f32};
@@ -65,14 +65,17 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
     }
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx|
+        crate::test_support::with_service_context(|ctx| {
             crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
-        ).expect("service decode"),
+        })
+        .expect("service decode"),
         [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
     );
-    assert!(crate::test_support::with_service_context(|ctx|
+    assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::consolidated::records::object_stream_vertices(ctx, &bytes[5..])
-    ).expect("service decode").is_empty());
+    })
+    .expect("service decode")
+    .is_empty());
 
     let mut b5 = Vec::new();
     let mut payload = vec![0x05, 0x08, 0x01];
@@ -86,9 +89,10 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
         b5.extend_from_slice(&le_f32(value));
     }
     assert_eq!(
-        crate::test_support::with_service_context(|ctx|
+        crate::test_support::with_service_context(|ctx| {
             crate::families::consolidated::records::object_stream_vertices(ctx, &b5)
-        ).expect("service decode"),
+        })
+        .expect("service decode"),
         [cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)]
     );
 }
@@ -108,14 +112,21 @@ fn object_stream_vertex_ranges_rows_and_points_refuse_limits() {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
             super::object_stream_vertices_from_records(ctx, &bytes, &records)
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation), "limit {limit}");
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation),
+            "limit {limit}"
+        );
     }
     let vertices = crate::test_support::with_service_context(|ctx| {
         crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
-    }).expect("service decode");
+    })
+    .expect("service decode");
     assert_eq!(vertices.len(), 1);
-    assert_eq!(vertices[0].get(), cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
+    assert_eq!(
+        vertices[0].get(),
+        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+    );
 }
 
 #[test]
@@ -137,7 +148,10 @@ fn consolidated_edge_resolution_propagates_a5_surface_limit() {
     let records = crate::wire::records::consolidated_records(&bytes);
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     });
     assert!(matches!(limited,
@@ -186,18 +200,21 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
                         block.block.pcurves[0].pos,
                         block.block.pcurves[1].pos,
                         block.block.parameters.pos,
-                        block.supports.clone(),
+                        block.supports,
                     )
                 })
                 .collect::<Vec<_>>()
         };
     let one_shot = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
-    let indexed =
-        crate::test_support::with_service_context(|ctx| crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(ctx,
+    let indexed = crate::test_support::with_service_context(|ctx| {
+        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+            ctx,
             &bytes,
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
-        ).expect("service decode"));
+        )
+        .expect("service decode")
+    });
     assert_eq!(signature(&indexed), signature(&one_shot));
 }
 
@@ -775,7 +792,8 @@ fn consolidated_successor_definition_refuses_collection_limit() {
             super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
         });
         if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_edge_use_succeeding_definition_payload") {
+            if error.operation == "catia_edge_use_succeeding_definition_payload")
+        {
             found = true;
             break;
         }
@@ -831,7 +849,10 @@ fn consolidated_owned_edge_nodes_refuse_each_collection_boundary() {
         "catia_owned_edge_nodes",
         "catia_owned_edge_results",
     ] {
-        assert!(refusals.contains(operation), "missing charge for {operation}");
+        assert!(
+            refusals.contains(operation),
+            "missing charge for {operation}"
+        );
     }
 }
 
@@ -851,10 +872,7 @@ fn compact_endpoint_walk_resolves_children_and_backward_edge_links() {
     bytes.extend_from_slice(&vertex);
     bytes.extend_from_slice(&second_edge);
     let records = crate::wire::records::consolidated_records(&bytes);
-    let endpoints =
-        parsed_compact_edge_endpoints(
-            &bytes, &records,
-        );
+    let endpoints = parsed_compact_edge_endpoints(&bytes, &records);
 
     assert_eq!(endpoints.len(), 2);
     assert_eq!(
@@ -892,10 +910,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
         .collect::<Vec<_>>();
     assert_eq!(nodes.len(), 1);
     assert_eq!([nodes[0].start_vertex_ref, nodes[0].end_vertex_ref], [2, 3]);
-    let endpoints =
-        parsed_compact_edge_endpoints(
-            &bytes, &records,
-        );
+    let endpoints = parsed_compact_edge_endpoints(&bytes, &records);
 
     let [resolved] = endpoints.as_slice() else {
         panic!("one edge with two forward endpoint records")
@@ -907,11 +922,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
         [0..edge.len(), edge.len()..bytes.len()],
     );
     assert!(
-        parsed_compact_edge_endpoints(
-            &bytes,
-            &split_sources,
-        )
-        .is_empty(),
+        parsed_compact_edge_endpoints(&bytes, &split_sources,).is_empty(),
         "a forward endpoint walk cannot cross bounded record sources"
     );
 
@@ -931,10 +942,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
             second_endpoint_pos..reordered.len(),
         ]],
     );
-    let endpoints =
-        parsed_compact_edge_endpoints(
-            &reordered, &records,
-        );
+    let endpoints = parsed_compact_edge_endpoints(&reordered, &records);
     let [resolved] = endpoints.as_slice() else {
         panic!("one edge can walk across physical extents in logical source order")
     };
@@ -955,10 +963,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
         [[0..split, split..spanning.len()]],
     );
     assert!(records[1].range().is_none());
-    let endpoints =
-        parsed_compact_edge_endpoints(
-            &spanning, &records,
-        );
+    let endpoints = parsed_compact_edge_endpoints(&spanning, &records);
     let [resolved] = endpoints.as_slice() else {
         panic!("a spanning frame remains in forward-distance ordinal accounting")
     };
@@ -970,26 +975,14 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
     let mut wrong_class = bytes;
     wrong_class[first_endpoint + 2] = 0x19;
     let records = crate::wire::records::consolidated_records(&wrong_class);
-    assert!(
-        parsed_compact_edge_endpoints(
-            &wrong_class,
-            &records,
-        )
-        .is_empty()
-    );
+    assert!(parsed_compact_edge_endpoints(&wrong_class, &records,).is_empty());
 }
 
 #[test]
 fn fixed_owner_boundary_cycle_rejects_cross_source_endpoint_network() {
     let (bytes, _, _, endpoint_records) = b2_fixed_owner_boundary_cycle_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert_eq!(
-        parsed_owner_boundary_cycles(
-            &bytes, &records,
-        )
-        .len(),
-        1
-    );
+    assert_eq!(parsed_owner_boundary_cycles(&bytes, &records,).len(), 1);
 
     let split = endpoint_records[1][1];
     let split_records = crate::wire::records::consolidated_records_in_ranges(
@@ -997,11 +990,7 @@ fn fixed_owner_boundary_cycle_rejects_cross_source_endpoint_network() {
         [0..split, split..bytes.len()],
     );
     assert!(
-        parsed_owner_boundary_cycles(
-            &bytes,
-            &split_records,
-        )
-        .is_empty(),
+        parsed_owner_boundary_cycles(&bytes, &split_records,).is_empty(),
         "a fixed-owner cycle cannot join endpoint records across bounded sources"
     );
 }

@@ -32,7 +32,10 @@ fn incidence_component_preflight_refuses_new_nested_support_allocations() {
         )
     };
     crate::test_support::with_service_context(|ctx| {
-        assert_eq!(run(ctx).expect("service budget").expect("solutions").len(), 4);
+        assert_eq!(
+            run(ctx).expect("service budget").expect("solutions").len(),
+            4
+        );
     });
     let mut refusals = BTreeSet::new();
     let mut completed = false;

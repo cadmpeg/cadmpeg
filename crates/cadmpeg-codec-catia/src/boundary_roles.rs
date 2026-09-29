@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-backed boundary-role derivation shared by closed topology routes.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::LoopId;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::FaceLoops;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
@@ -152,13 +152,23 @@ pub(crate) fn classify_planar_boundaries(
     let unspecified = || -> Result<FaceLoops, CodecError> {
         let mut ids = Vec::new();
         for (id, _) in rows {
-            let id = crate::resource::copy_id(ctx, id.as_str(), LoopId::mint, "catia_boundary_unspecified_id_copy")?;
+            let id = crate::resource::copy_id(
+                ctx,
+                id.as_str(),
+                LoopId::mint,
+                "catia_boundary_unspecified_id_copy",
+            )?;
             crate::resource::push(ctx, &mut ids, id, "catia_boundary_unspecified_ids")?;
         }
         Ok(FaceLoops::unspecified(ids))
     };
     if let [(single, _)] = rows {
-        let id = crate::resource::copy_id(ctx, single.as_str(), LoopId::mint, "catia_boundary_single_id_copy")?;
+        let id = crate::resource::copy_id(
+            ctx,
+            single.as_str(),
+            LoopId::mint,
+            "catia_boundary_single_id_copy",
+        )?;
         return Ok(FaceLoops::classified(id, Vec::new()));
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
@@ -173,7 +183,12 @@ pub(crate) fn classify_planar_boundaries(
             return unspecified();
         }
         let mut polygon = Vec::new();
-        crate::resource::reserve_vec(ctx, &mut polygon, boundary.len(), "catia_boundary_polygon_points")?;
+        crate::resource::reserve_vec(
+            ctx,
+            &mut polygon,
+            boundary.len(),
+            "catia_boundary_polygon_points",
+        )?;
         for point in boundary {
             let offset = point.vector_from(origin);
             polygon.push(Point2::new(offset.dot(u_axis), offset.dot(v_axis)));
@@ -253,11 +268,21 @@ pub(crate) fn classify_planar_boundaries(
     let mut inner = Vec::new();
     for (index, (id, _)) in rows.iter().enumerate() {
         if index != outer {
-            let id = crate::resource::copy_id(ctx, id.as_str(), LoopId::mint, "catia_boundary_inner_id_copy")?;
+            let id = crate::resource::copy_id(
+                ctx,
+                id.as_str(),
+                LoopId::mint,
+                "catia_boundary_inner_id_copy",
+            )?;
             crate::resource::push(ctx, &mut inner, id, "catia_boundary_inner_ids")?;
         }
     }
-    let outer_id = crate::resource::copy_id(ctx, outer_id.as_str(), LoopId::mint, "catia_boundary_outer_id_copy")?;
+    let outer_id = crate::resource::copy_id(
+        ctx,
+        outer_id.as_str(),
+        LoopId::mint,
+        "catia_boundary_outer_id_copy",
+    )?;
     Ok(FaceLoops::classified(outer_id, inner))
 }
 
@@ -319,7 +344,10 @@ mod tests {
         let limited = crate::test_support::with_collection_limit(3, |ctx| {
             super::classify_planar_boundaries(ctx, &plane(), &boundaries)
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
         assert_eq!(
             classify_planar_boundaries(&plane(), &boundaries),
             FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])

@@ -45,11 +45,12 @@ impl CatiaOwnerChartAliasBinding {
     }
 
     /// Returns the exact outer alias row.
+    #[cfg(test)]
     pub(super) fn row(&self) -> &str {
         self.row.as_str()
     }
 
-    /// Returns the canonical persistent surface tag selected through the row.
+    #[cfg(test)]
     pub(super) fn canonical_tag(&self) -> Option<u32> {
         self.canonical_tag
     }

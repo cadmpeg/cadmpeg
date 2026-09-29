@@ -3,7 +3,9 @@
 use crate::families::e5::decode::{
     fit_e5_plane_axes, fit_rank_one_e5_plane_axes, EPS_E5_DECODE_EXACT_GEOMETRY,
 };
-use crate::families::e5::graph::{E5BoundEntry, E5Bounds, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology};
+use crate::families::e5::graph::{
+    E5BoundEntry, E5Bounds, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
+};
 use crate::families::e5::records::E5Surface;
 use crate::families::e5::tests::e5_loop_members;
 use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point};
@@ -142,14 +144,16 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
         point([7.5, 0.0, 0.0]),
         point([-7.5, 0.0, 0.0]),
     ];
-    let (normal, u_axis, uv_scale) = crate::test_support::with_service_context(|ctx| super::super::solve_e5_plane_frame(
-        ctx,
-        100,
-        point([0.0, 0.0, 0.0]),
-        &topology,
-        &points,
-        Some(Vector3::new(0.0, 1.0, 0.0)),
-    ))
+    let (normal, u_axis, uv_scale) = crate::test_support::with_service_context(|ctx| {
+        super::super::solve_e5_plane_frame(
+            ctx,
+            100,
+            point([0.0, 0.0, 0.0]),
+            &topology,
+            &points,
+            Some(Vector3::new(0.0, 1.0, 0.0)),
+        )
+    })
     .expect("service resource budget")
     .expect("rank-one plane frame");
     assert!(normal.as_raw().dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
@@ -212,14 +216,16 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
     };
     for scale in [1.0, 2.0] {
         let points = sites.map(|[u, v]| point([u * scale, v * scale, 0.0]));
-        let result = crate::test_support::with_service_context(|ctx| super::super::solve_e5_plane_frame(
-            ctx,
-            100,
-            point([0.0; 3]),
-            &topology,
-            &points,
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ))
+        let result = crate::test_support::with_service_context(|ctx| {
+            super::super::solve_e5_plane_frame(
+                ctx,
+                100,
+                point([0.0; 3]),
+                &topology,
+                &points,
+                Some(Vector3::new(0.0, 0.0, 1.0)),
+            )
+        })
         .expect("service resource budget");
         if scale == 1.0 {
             let (normal, u_axis, uv_scale) = result.expect("unit plane chart");
@@ -261,13 +267,19 @@ fn e5_native_uv_endpoints_hand_back_admitted_pairs() {
         range: finite_pair([0.0, 2.0]),
     };
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| super::super::e5_native_uv_endpoints(ctx, &line([3.0, -1.0])))
-            .expect("service resource budget"),
+        crate::test_support::with_service_context(|ctx| super::super::e5_native_uv_endpoints(
+            ctx,
+            &line([3.0, -1.0])
+        ))
+        .expect("service resource budget"),
         Some([uv([1.0, 2.0]), uv([7.0, 0.0])])
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| super::super::e5_native_uv_endpoints(ctx, &line([f64::MAX, 0.0])))
-            .expect("service resource budget"),
+        crate::test_support::with_service_context(|ctx| super::super::e5_native_uv_endpoints(
+            ctx,
+            &line([f64::MAX, 0.0])
+        ))
+        .expect("service resource budget"),
         None
     );
 }
@@ -287,8 +299,13 @@ fn e5_nurbs_uv_endpoints_refuse_before_scalar_lane_copies() {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
         ));
     }
-    assert!(crate::test_support::with_service_context(|ctx| super::super::e5_native_uv_endpoints(ctx, &pcurve))
-        .expect("service resource budget").is_some());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::super::e5_native_uv_endpoints(
+            ctx, &pcurve
+        ))
+        .expect("service resource budget")
+        .is_some()
+    );
 }
 
 #[test]
@@ -309,22 +326,66 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
             }],
         }],
         edges: BTreeMap::from([
-            (10, E5Edge { support: 0, start_vertex: 1, end_vertex: 2, parameter_start: 0, parameter_end: 0, tail: Vec::new() }),
-            (11, E5Edge { support: 0, start_vertex: 1, end_vertex: 3, parameter_start: 0, parameter_end: 0, tail: Vec::new() }),
+            (
+                10,
+                E5Edge {
+                    support: 0,
+                    start_vertex: 1,
+                    end_vertex: 2,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                    tail: Vec::new(),
+                },
+            ),
+            (
+                11,
+                E5Edge {
+                    support: 0,
+                    start_vertex: 1,
+                    end_vertex: 3,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                    tail: Vec::new(),
+                },
+            ),
         ]),
         pcurves: BTreeMap::from([
-            (20, E5Pcurve::Line { surface: 100, origin: finite_pair([0.0, 0.0]), direction: finite_pair([1.0, 0.0]), range: finite_pair([0.0, 1.0]) }),
-            (21, E5Pcurve::Line { surface: 100, origin: finite_pair([0.0, 0.0]), direction: finite_pair([0.0, 1.0]), range: finite_pair([0.0, 1.0]) }),
+            (
+                20,
+                E5Pcurve::Line {
+                    surface: 100,
+                    origin: finite_pair([0.0, 0.0]),
+                    direction: finite_pair([1.0, 0.0]),
+                    range: finite_pair([0.0, 1.0]),
+                },
+            ),
+            (
+                21,
+                E5Pcurve::Line {
+                    surface: 100,
+                    origin: finite_pair([0.0, 0.0]),
+                    direction: finite_pair([0.0, 1.0]),
+                    range: finite_pair([0.0, 1.0]),
+                },
+            ),
         ]),
         bounds: BTreeMap::new(),
         curve_supports: BTreeMap::new(),
         vertex_refs: vec![1, 2, 3],
     };
-    let points = vec![point([0.0, 0.0, 0.0]), point([1.0, 0.0, 0.0]), point([0.0, 1.0, 0.0])];
+    let points = vec![
+        point([0.0, 0.0, 0.0]),
+        point([1.0, 0.0, 0.0]),
+        point([0.0, 1.0, 0.0]),
+    ];
     let mut refused = std::collections::HashSet::new();
     for cap in 0..128 {
-        match crate::test_support::with_collection_limit(cap, |ctx| super::super::solve_e5_plane_frame(ctx, 100, point([0.0; 3]), &topology, &points, None)) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+        match crate::test_support::with_collection_limit(cap, |ctx| {
+            super::super::solve_e5_plane_frame(ctx, 100, point([0.0; 3]), &topology, &points, None)
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
             Ok(Some(_)) => break,
             Ok(None) => panic!("full-rank plane fixture must solve"),
             Err(error) => panic!("unexpected plane refusal: {error}"),
@@ -342,8 +403,18 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
-    assert!(crate::test_support::with_service_context(|ctx| super::super::solve_e5_plane_frame(ctx, 100, point([0.0; 3]), &topology, &points, None))
-        .expect("service resource budget").is_some());
+    assert!(
+        crate::test_support::with_service_context(|ctx| super::super::solve_e5_plane_frame(
+            ctx,
+            100,
+            point([0.0; 3]),
+            &topology,
+            &points,
+            None
+        ))
+        .expect("service resource budget")
+        .is_some()
+    );
 }
 
 #[test]
@@ -363,23 +434,47 @@ fn e5_derived_vertices_refuse_before_candidate_collections() {
                 orientation_hint: None,
             }],
         }],
-        edges: BTreeMap::from([(10, E5Edge {
-            support: 0,
-            start_vertex: 1,
-            end_vertex: 2,
-            parameter_start: 30,
-            parameter_end: 31,
-            tail: Vec::new(),
-        })]),
-        pcurves: BTreeMap::from([(20, E5Pcurve::Line {
-            surface: 100,
-            origin: finite_pair([0.0, 0.0]),
-            direction: finite_pair([1.0, 0.0]),
-            range: finite_pair([0.0, 1.0]),
-        })]),
+        edges: BTreeMap::from([(
+            10,
+            E5Edge {
+                support: 0,
+                start_vertex: 1,
+                end_vertex: 2,
+                parameter_start: 30,
+                parameter_end: 31,
+                tail: Vec::new(),
+            },
+        )]),
+        pcurves: BTreeMap::from([(
+            20,
+            E5Pcurve::Line {
+                surface: 100,
+                origin: finite_pair([0.0, 0.0]),
+                direction: finite_pair([1.0, 0.0]),
+                range: finite_pair([0.0, 1.0]),
+            },
+        )]),
         bounds: BTreeMap::from([
-            (30, E5Bounds { entries: vec![E5BoundEntry { representation: 20, parameter: finite(0.0), code: 0 }] }),
-            (31, E5Bounds { entries: vec![E5BoundEntry { representation: 20, parameter: finite(1.0), code: 0 }] }),
+            (
+                30,
+                E5Bounds {
+                    entries: vec![E5BoundEntry {
+                        representation: 20,
+                        parameter: finite(0.0),
+                        code: 0,
+                    }],
+                },
+            ),
+            (
+                31,
+                E5Bounds {
+                    entries: vec![E5BoundEntry {
+                        representation: 20,
+                        parameter: finite(1.0),
+                        code: 0,
+                    }],
+                },
+            ),
         ]),
         curve_supports: BTreeMap::new(),
         vertex_refs: vec![1, 2],
@@ -392,16 +487,24 @@ fn e5_derived_vertices_refuse_before_candidate_collections() {
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
-            ).expect("valid plane fixture"),
+            )
+            .expect("valid plane fixture"),
         )),
         uv_scale: finite_pair([1.0, 1.0]),
     };
     let mut refused = std::collections::HashSet::new();
     for cap in 0..32 {
         match crate::test_support::with_collection_limit(cap, |ctx| {
-            super::super::derive_e5_vertices(ctx, &topology, std::slice::from_ref(&surface), &mut crate::nurbs::LaneRefusals::new())
+            super::super::derive_e5_vertices(
+                ctx,
+                &topology,
+                std::slice::from_ref(&surface),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
         }) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
             Ok(Some(_)) => break,
             Ok(None) => panic!("closed line fixture must derive endpoints"),
             Err(error) => panic!("unexpected vertex refusal: {error}"),

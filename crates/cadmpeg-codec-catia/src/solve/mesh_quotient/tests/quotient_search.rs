@@ -1244,10 +1244,12 @@ fn quotient_point_assignment_preserves_endpoint_pair_relations() {
 #[test]
 fn point_assignment_refuses_before_matching_collections_grow() {
     let mut refused = HashSet::new();
-    let make_quotient = || MeshQuotient::new(vec![
-        Arc::new(HashSet::from([0])),
-        Arc::new(HashSet::from([1])),
-    ]);
+    let make_quotient = || {
+        MeshQuotient::new(vec![
+            Arc::new(HashSet::from([0])),
+            Arc::new(HashSet::from([1])),
+        ])
+    };
     for cap in 0..128 {
         match crate::test_support::with_collection_limit(cap, |ctx| {
             make_quotient().point_assignment(ctx, 2, &[vec![[0, 1]]], None)
@@ -1996,7 +1998,8 @@ fn completed_mesh_search_refuses_edge_and_point_collection_limits() {
         SearchOutcome::Solved(_)
     ));
     let mut refused = HashSet::new();
-    for limit in 0..128 {
+    let mut limit = 0;
+    for _ in 0..512 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
@@ -2006,6 +2009,10 @@ fn completed_mesh_search_refuses_edge_and_point_collection_limits() {
             Err(CodecError::ResourceLimit(error)) => {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                 refused.insert(error.operation.to_owned());
+                limit = error
+                    .used
+                    .checked_add(error.additional)
+                    .expect("bounded fixture");
             }
             Ok(SearchOutcome::Solved(_)) => break,
             Ok(_) => panic!("completed selection must be solved"),

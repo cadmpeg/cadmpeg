@@ -13,21 +13,26 @@ fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
 
 #[test]
 fn copied_value_fields_refuse_nested_retained_and_outer_collection_limits() {
-    let fields = [ValueField::Inline { bytes: InlineBytes(vec![1, 2]), offset: 0 }];
-    let retained = crate::test_support::with_retained_limit(1, |ctx| {
-        super::copy_fields_charged(ctx, &fields)
-    });
-    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_value_inline_bytes"));
+    let fields = [ValueField::Inline {
+        bytes: InlineBytes(vec![1, 2]),
+        offset: 0,
+    }];
+    let retained =
+        crate::test_support::with_retained_limit(1, |ctx| super::copy_fields_charged(ctx, &fields));
+    assert!(
+        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_value_inline_bytes")
+    );
     let collection = crate::test_support::with_collection_limit(2, |ctx| {
         super::copy_fields_charged(ctx, &fields)
     });
-    assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_value_fields"));
-    let copied = crate::test_support::with_service_context(|ctx| {
-        super::copy_fields_charged(ctx, &fields)
-    })
-    .expect("service profile admits nested value field");
+    assert!(
+        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_value_fields")
+    );
+    let copied =
+        crate::test_support::with_service_context(|ctx| super::copy_fields_charged(ctx, &fields))
+            .expect("service profile admits nested value field");
     assert_eq!(copied, fields);
 }
 
@@ -38,7 +43,10 @@ fn value_block_payload_refuses_retained_and_collection_limits() {
 
     let mut bytes = value_block_stream(&[0x81]);
     bytes.extend_from_slice(&[0x7c, 0x02]);
-    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems] {
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::CollectionItems,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         if dimension == ResourceDimension::RetainedBytes {
@@ -63,8 +71,16 @@ fn value_tokenizer_refuses_field_and_retained_byte_limits() {
 
     let inline = [0x8e, 0xe8, 0x84, b'A'];
     let cases = [
-        (&[0x81][..], ResourceDimension::CollectionItems, "catia_value_fields"),
-        (&inline[..], ResourceDimension::RetainedBytes, "catia_value_field_bytes"),
+        (
+            &[0x81][..],
+            ResourceDimension::CollectionItems,
+            "catia_value_fields",
+        ),
+        (
+            &inline[..],
+            ResourceDimension::RetainedBytes,
+            "catia_value_field_bytes",
+        ),
     ];
     for (payload, dimension, operation) in cases {
         let arena = DecodeArena::new();
@@ -80,9 +96,9 @@ fn value_tokenizer_refuses_field_and_retained_byte_limits() {
             .expect_err("one token exceeds the selected limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == dimension && limit.operation == operation));
-        let charged = crate::test_support::with_service_context(|ctx| {
-            super::tokenize_charged(ctx, payload)
-        }).expect("service budget admits the token");
+        let charged =
+            crate::test_support::with_service_context(|ctx| super::tokenize_charged(ctx, payload))
+                .expect("service budget admits the token");
         assert_eq!(charged, tokenize(payload));
     }
 }

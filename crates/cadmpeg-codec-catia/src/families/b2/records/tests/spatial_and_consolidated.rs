@@ -105,10 +105,14 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
 
 #[test]
 fn offset_support_binds_by_native_domain_knot_limits() {
-    let mut carriers = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_surfaces(ctx,
-        &a5_surface_stream(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    ).expect("service decode"));
+    let mut carriers = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces(
+            ctx,
+            &a5_surface_stream(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    });
     let mut decoy = carriers[0].clone();
     edit::replace(&mut decoy.geometry, |previous| {
         let mut knots = previous.v_knots().to_vec();
@@ -154,9 +158,10 @@ fn offset_support_binds_by_native_domain_knot_limits() {
     };
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx|
+        crate::test_support::with_service_context(|ctx| {
             crate::families::b2::records::offset_support_carriers(ctx, &[offset], &carriers)
-                .expect("service decode")),
+                .expect("service decode")
+        }),
         [Some(0)]
     );
 }
@@ -164,10 +169,14 @@ fn offset_support_binds_by_native_domain_knot_limits() {
 #[test]
 fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     let tiny = 1e-200_f64;
-    let mut carriers = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_surfaces(ctx,
-        &a5_surface_stream(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    ).expect("service decode"));
+    let mut carriers = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces(
+            ctx,
+            &a5_surface_stream(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    });
     let surface = &mut carriers[0].geometry;
     edit::replace(surface, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -235,27 +244,33 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
         v_range: interval([0.0, tiny]),
     };
     assert_eq!(
-        crate::test_support::with_service_context(|ctx|
+        crate::test_support::with_service_context(|ctx| {
             crate::families::b2::records::offset_support_carriers(
-                ctx, std::slice::from_ref(&exact), &carriers)
-                .expect("service decode")),
+                ctx,
+                std::slice::from_ref(&exact),
+                &carriers,
+            )
+            .expect("service decode")
+        }),
         [Some(0)]
     );
 
     let mut outside_u = exact.clone();
     outside_u.u_range = interval([0.0, 2.0 * tiny]);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx|
+        crate::test_support::with_service_context(|ctx| {
             crate::families::b2::records::offset_support_carriers(ctx, &[outside_u], &carriers)
-                .expect("service decode")),
+                .expect("service decode")
+        }),
         [None]
     );
     let mut outside_v = exact;
     outside_v.v_range = interval([0.0, 2.0 * tiny]);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx|
+        crate::test_support::with_service_context(|ctx| {
             crate::families::b2::records::offset_support_carriers(ctx, &[outside_v], &carriers)
-                .expect("service decode")),
+                .expect("service decode")
+        }),
         [None]
     );
 }

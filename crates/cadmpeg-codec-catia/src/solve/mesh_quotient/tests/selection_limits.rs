@@ -182,7 +182,10 @@ fn mesh_selection_completion_refuses_existing_nested_direction_copies() {
 
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 0, start: 0, end: 1, reversed: Some(false),
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: Some(false),
         }]],
     }]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -228,7 +231,10 @@ fn mesh_selection_selected_edges_refuse_before_set_growth() {
 
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 7, start: 0, end: 1, reversed: None,
+            edge: 7,
+            start: 0,
+            end: 1,
+            reversed: None,
         }]],
     }]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {

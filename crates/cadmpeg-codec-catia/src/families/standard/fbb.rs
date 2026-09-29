@@ -1,6 +1,9 @@
 //! Byte-level parsing for standard nested CATIA V5 B-rep (`FBB`) streams:
 //! edge/vertex tables, trim records, packet triangles, and face parsers.
 
+type FbbEdgeTableOutput = Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError>;
+type ScopedEdgeTableOutput = Result<Option<(Vec<EdgeRow>, Vec<usize>, usize)>, CodecError>;
+
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -283,13 +286,26 @@ pub(super) fn parse_standard_motif(
     };
     let mut edge_points = Vec::new();
     for row in &edge_rows {
-        let Some(first) = row.handles.first().and_then(|handle| port_points.get(handle)) else {
+        let Some(first) = row
+            .handles
+            .first()
+            .and_then(|handle| port_points.get(handle))
+        else {
             return Ok(None);
         };
-        let Some(last) = row.handles.last().and_then(|handle| port_points.get(handle)) else {
+        let Some(last) = row
+            .handles
+            .last()
+            .and_then(|handle| port_points.get(handle))
+        else {
             return Ok(None);
         };
-        crate::resource::push(ctx, &mut edge_points, [*first, *last], "catia_motif_edge_points")?;
+        crate::resource::push(
+            ctx,
+            &mut edge_points,
+            [*first, *last],
+            "catia_motif_edge_points",
+        )?;
     }
     let anchors_match = edge_points
         .iter()
@@ -659,7 +675,7 @@ pub(crate) fn parse_fbb_edge_tables(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
-) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError> {
+) -> FbbEdgeTableOutput {
     // FBB-only tables select one width by the complete table-and-vertex walk;
     // accepting the first delimiter match would assign a wrong handle grammar.
     let mut solutions = Vec::new();
@@ -695,7 +711,7 @@ pub(super) fn parse_fbb_edge_tables_width(
     bytes: &[u8],
     mut position: usize,
     handle_width: usize,
-) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError> {
+) -> FbbEdgeTableOutput {
     (|| -> Option<Result<_, CodecError>> {
         let mut rows = Vec::new();
         let mut scopes = Vec::new();
@@ -721,7 +737,7 @@ pub(super) fn parse_fbb_edge_tables_width(
                 if arity < 2 {
                     return None;
                 }
-                if arity > bytes.get(position..).map_or(0, |rest| rest.len()) / handle_width {
+                if arity > bytes.get(position..).map_or(0, <[u8]>::len) / handle_width {
                     return None;
                 }
                 let mut handles = Vec::new();
@@ -1485,7 +1501,7 @@ pub(crate) fn parse_standard_edge_tables_scoped(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
-) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError> {
+) -> FbbEdgeTableOutput {
     // The full standard spine uses u16be rows and may contain one or more
     // counted tables. Keep that grammar first so a malformed standard walk
     // cannot silently enter the compact form below.
@@ -1532,7 +1548,7 @@ pub(super) fn parse_edge_tables_scoped_at(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
-) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize)>, CodecError> {
+) -> ScopedEdgeTableOutput {
     Ok(
         parse_edge_tables_scoped_at_with_width(ctx, bytes, position)?
             .map(|(rows, scopes, vertex_header, _)| (rows, scopes, vertex_header)),
@@ -1543,7 +1559,7 @@ fn parse_edge_tables_scoped_at_with_width(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
-) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError> {
+) -> FbbEdgeTableOutput {
     let mut solutions = Vec::new();
     for handle_width in [1, 2, 3] {
         let Some(parsed) = parse_edge_tables_scoped_width(ctx, bytes, position, handle_width)?
@@ -1569,7 +1585,7 @@ fn parse_edge_tables_scoped_width(
     bytes: &[u8],
     mut position: usize,
     handle_width: usize,
-) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize)>, CodecError> {
+) -> ScopedEdgeTableOutput {
     (|| -> Option<Result<_, CodecError>> {
         let mut rows = Vec::new();
         let mut scopes = Vec::new();
@@ -1593,7 +1609,7 @@ fn parse_edge_tables_scoped_width(
                 if arity < 2 {
                     return None;
                 }
-                if arity > bytes.get(position..).map_or(0, |rest| rest.len()) / handle_width {
+                if arity > bytes.get(position..).map_or(0, <[u8]>::len) / handle_width {
                     return None;
                 }
                 let mut handles = Vec::new();
@@ -1691,7 +1707,7 @@ fn parse_vertex_points(
     let Some(count) = parse_count(bytes, &mut position) else {
         return Ok(None);
     };
-    if count > bytes.get(position..).map_or(0, |rest| rest.len()) / VERTEX_RECORD_BYTES {
+    if count > bytes.get(position..).map_or(0, <[u8]>::len) / VERTEX_RECORD_BYTES {
         return Ok(None);
     }
     let mut points = Vec::new();
@@ -1987,7 +2003,7 @@ fn parse_trim_record_layout_with_length_encoding(
             kind == 0x42 && b == 2 && bytes.get(b_start).is_some_and(|encoded| *encoded == 2);
         let primitive_count = b.checked_add(c)?;
         if !packed_two_strip_lengths
-            && primitive_count > bytes.get(position..).map_or(0, |rest| rest.len())
+            && primitive_count > bytes.get(position..).map_or(0, <[u8]>::len)
         {
             return None;
         }
@@ -2268,10 +2284,8 @@ fn cover_cycle_by_rows(
                 if row_match.replace((start, false)).is_some() {
                     return Ok(None);
                 }
-            } else if reversed {
-                if row_match.replace((start, true)).is_some() {
-                    return Ok(None);
-                }
+            } else if reversed && row_match.replace((start, true)).is_some() {
+                return Ok(None);
             }
         }
         if let Some((start, reversed)) = row_match {

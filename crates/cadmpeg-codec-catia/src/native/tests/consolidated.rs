@@ -907,8 +907,10 @@ fn native_fixed_owner_packets_refuse_collection_limit() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::super::consolidated_owner_packets(ctx, &bytes, &records)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_fixed_owner_packets"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_fixed_owner_packets")
+    );
     let packets = crate::test_support::with_service_context(|ctx| {
         super::super::consolidated_owner_packets(ctx, &bytes, &records)
     })
@@ -1755,13 +1757,18 @@ fn native_edge_node_storage_refuses_collection_and_retained_limits() {
         "catia_native_edge_frames",
         "catia_native_consolidated_edge_nodes",
     ] {
-        assert!(operations.contains(operation), "missing charge for {operation}");
+        assert!(
+            operations.contains(operation),
+            "missing charge for {operation}"
+        );
     }
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::consolidated_edge_nodes(ctx, &bytes, &records, &[])
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-        if refusal.operation == "catia_native_edge_node_id"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+        if refusal.operation == "catia_native_edge_node_id")
+    );
     let nodes = crate::test_support::with_service_context(|ctx| {
         super::super::consolidated_edge_nodes(ctx, &bytes, &records, &[])
     })
@@ -2004,8 +2011,7 @@ fn cone_face_followed_by_spanning_parameter_point_terminates() {
         [[0..split, split..bytes.len()]],
     );
     let faces = crate::test_support::with_service_context(|ctx| {
-        crate::native::consolidated_cone_faces(ctx, &bytes, &records, &[])
-            .expect("service decode")
+        crate::native::consolidated_cone_faces(ctx, &bytes, &records, &[]).expect("service decode")
     });
     assert_eq!(faces.len(), 1);
     assert!(faces[0].parameter_points.is_empty());

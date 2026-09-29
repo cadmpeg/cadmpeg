@@ -44,12 +44,15 @@ fn decode_payload(data: &[u8]) -> Option<super::ObjectPayload> {
 
 #[test]
 fn native_payload_copy_refuses_nested_retained_and_collection_limits() {
-    use cadmpeg_core::CodecError;
     use super::{ObjectPayload, PayloadField};
+    use cadmpeg_core::CodecError;
 
     let payload = ObjectPayload {
         size: 2,
-        fields: vec![PayloadField::Blob { bytes: vec![0xa5, 0x5a], offset: 0 }],
+        fields: vec![PayloadField::Blob {
+            bytes: vec![0xa5, 0x5a],
+            offset: 0,
+        }],
     };
     let retained = crate::test_support::with_retained_limit(1, |ctx| payload.copy_charged(ctx));
     assert!(matches!(retained, Err(CodecError::ResourceLimit(limit))
@@ -73,8 +76,8 @@ fn object_graph_head_tokens_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("object graph fixture fits the input limit");
-    let error = super::parse(&ctx, &bytes)
-        .expect_err("a decoded head token exceeds zero collection items");
+    let error =
+        super::parse(&ctx, &bytes).expect_err("a decoded head token exceeds zero collection items");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_object_head_tokens"));
@@ -96,8 +99,8 @@ fn grouped_alias_storage_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("alias fixture fits the input limit");
-    let error = super::surface_aliases(&ctx, &bytes)
-        .expect_err("group storage requires a retained copy");
+    let error =
+        super::surface_aliases(&ctx, &bytes).expect_err("group storage requires a retained copy");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "catia_alias_group_storage"));
@@ -145,7 +148,9 @@ fn object_bulk_rows_refuse_declared_count_limit() {
             && limit.operation == "catia_object_bulk_table_rows"));
     let parsed = crate::test_support::with_service_context(|ctx| {
         super::parse_bulk_table_rows(ctx, &bytes, 0, 1)
-    }).expect("service budget").expect("one row");
+    })
+    .expect("service budget")
+    .expect("one row");
     assert_eq!(parsed.0.len(), 1);
 }
 
@@ -190,8 +195,7 @@ fn outer_object_graph_uses_the_unique_length_closing_child_frame() {
         ),
         object_graph_record(&[0x04, 0x01, 0x82, 0x84], &[0xfe]),
     ];
-    let graph = parse(&object_graph_from_records(&records))
-        .expect("length-closing object payload");
+    let graph = parse(&object_graph_from_records(&records)).expect("length-closing object payload");
     assert_eq!(graph.records.len(), 2);
     assert_eq!(owner_ref(&graph.records[0]), None);
     assert_eq!(graph.records[0].roles().class_ref, None);
@@ -370,8 +374,8 @@ fn outer_object_graph_preserves_inline_records() {
     let inline = inline_object_graph_record(&[
         0x10, 0xfe, 0xd3, 0x77, 0x82, 0xf2, 0xf0, 0x82, 0xd3, 0x5f, 0x81, 0x06,
     ]);
-    let graph = parse(&object_graph_from_records(&[nested, inline]))
-        .expect("inline control record");
+    let graph =
+        parse(&object_graph_from_records(&[nested, inline])).expect("inline control record");
 
     assert_eq!(graph.records.len(), 2);
     assert_eq!(graph.records[1].lead, 0x10);
@@ -403,11 +407,10 @@ fn outer_object_graph_accepts_each_inline_layout() {
     ];
 
     for body in bodies {
-        let graph =
-            parse(&object_graph_from_records(&[inline_object_graph_record(
-                &body,
-            )]))
-            .expect("assigned inline control layout");
+        let graph = parse(&object_graph_from_records(&[inline_object_graph_record(
+            &body,
+        )]))
+        .expect("assigned inline control layout");
         assert_eq!(graph.records[0].inline_body(), Some(body.as_slice()));
     }
 }
@@ -420,10 +423,12 @@ fn outer_object_graph_rejects_unassigned_childless_records() {
     for index in [0, 1, 4, 10, 11] {
         let mut body = valid;
         body[index] ^= 1;
-        assert!(parse(&object_graph_from_records(&[
-            inline_object_graph_record(&body)
-        ]))
-        .is_none());
+        assert!(
+            parse(&object_graph_from_records(&[inline_object_graph_record(
+                &body
+            )]))
+            .is_none()
+        );
     }
     assert!(
         parse(&object_graph_from_records(&[inline_object_graph_record(
@@ -446,11 +451,9 @@ fn paired_entity_table_admits_an_opaque_childless_object_record() {
     assert_eq!(graph.records[0].inline_body(), Some(body.as_slice()));
     assert!(graph.records[0].head().is_empty());
 
-    assert!(parse_all_with_paired_roots(
-        &bytes,
-        &std::collections::HashMap::from([(0, 2)]),
-    )
-    .is_empty());
+    assert!(
+        parse_all_with_paired_roots(&bytes, &std::collections::HashMap::from([(0, 2)]),).is_empty()
+    );
 }
 
 #[test]

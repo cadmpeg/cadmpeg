@@ -64,7 +64,9 @@ pub fn geometry_a5_surfaces(data: &[u8]) {
         return;
     };
     let _probe = crate::families::a5a8::records::a5_surfaces(
-        &ctx, data, &mut crate::nurbs::LaneRefusals::new(),
+        &ctx,
+        data,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
 }
 
@@ -77,7 +79,9 @@ pub fn geometry_a8_surfaces(data: &[u8]) {
         return;
     };
     let _probe = crate::families::a5a8::records::a8_surfaces(
-        &ctx, data, &mut crate::nurbs::LaneRefusals::new(),
+        &ctx,
+        data,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
 }
 

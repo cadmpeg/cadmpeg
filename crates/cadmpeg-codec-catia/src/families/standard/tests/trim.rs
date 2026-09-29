@@ -61,7 +61,9 @@ fn trim_chain_requires_exact_packet_count_and_boundary_landing() {
 fn endpoint_trail_ordering_stops_when_its_result_limit_is_exceeded() {
     let trails = (0..10).map(|edge| vec![edge]).collect::<Vec<_>>();
     crate::test_support::with_service_context(|ctx| {
-        assert!(bounded_oriented_trail_orders(ctx, &trails, 16).expect("service budget").is_none());
+        assert!(bounded_oriented_trail_orders(ctx, &trails, 16)
+            .expect("service budget")
+            .is_none());
         assert_eq!(
             bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2).expect("service budget"),
             Some(vec![vec![0, 1], vec![1, 0]])
@@ -84,7 +86,11 @@ fn endpoint_cycle_ordering_quotients_rotation_and_reversal() {
 fn endpoint_cycle_ordering_stops_at_its_result_limit() {
     let candidates = vec![vec![[0, 0]]; 8];
     crate::test_support::with_service_context(|ctx| {
-        assert!(bounded_endpoint_cycle_orders(ctx, &(0..8).collect::<Vec<_>>(), &candidates, 16).expect("service budget").is_none());
+        assert!(
+            bounded_endpoint_cycle_orders(ctx, &(0..8).collect::<Vec<_>>(), &candidates, 16)
+                .expect("service budget")
+                .is_none()
+        );
     });
 }
 
@@ -99,11 +105,23 @@ fn endpoint_order_helpers_refuse_before_counted_storage() {
     let cycle_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4)
     };
-    assert_eq!(crate::test_support::with_service_context(trail_run).expect("service budget"), Some(vec![vec![0, 1], vec![1, 0]]));
-    assert_eq!(crate::test_support::with_service_context(cycle_run).expect("service budget"), Some(vec![vec![0, 1, 2]]));
+    assert_eq!(
+        crate::test_support::with_service_context(trail_run).expect("service budget"),
+        Some(vec![vec![0, 1], vec![1, 0]])
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(cycle_run).expect("service budget"),
+        Some(vec![vec![0, 1, 2]])
+    );
     for (result, operation) in [
-        (crate::test_support::with_collection_limit(0, trail_run), "catia_oriented_trail_scratch"),
-        (crate::test_support::with_collection_limit(0, cycle_run), "catia_endpoint_cycle_missing_edges"),
+        (
+            crate::test_support::with_collection_limit(0, trail_run),
+            "catia_oriented_trail_scratch",
+        ),
+        (
+            crate::test_support::with_collection_limit(0, cycle_run),
+            "catia_endpoint_cycle_missing_edges",
+        ),
     ] {
         assert!(matches!(
             result,

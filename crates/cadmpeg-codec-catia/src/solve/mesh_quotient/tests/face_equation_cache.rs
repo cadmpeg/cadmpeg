@@ -1,6 +1,6 @@
 use crate::solve::mesh_quotient::{
-    possible_face_choices, possible_face_choices_with_limit, possible_face_equations, MeshQuotient, MeshSelectionSearch,
-    SearchOutcome, MAX_FACE_EQUATION_CACHE_ENTRIES,
+    possible_face_choices, possible_face_choices_with_limit, possible_face_equations, MeshQuotient,
+    MeshSelectionSearch, SearchOutcome, MAX_FACE_EQUATION_CACHE_ENTRIES,
 };
 use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
 use std::cell::RefCell;
@@ -15,15 +15,31 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
 
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
-            MeshBoundaryEdgeCandidate { edge: 0, start: 0, end: 1, reversed: None },
-            MeshBoundaryEdgeCandidate { edge: 1, start: 1, end: 0, reversed: None },
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 0,
+                reversed: None,
+            },
         ]],
     }]];
     let candidates = vec![vec![]; 3];
     let run = |ctx: &DecodeContext<'_>| {
         let equations = possible_face_equations(ctx, &assignments)?;
         let mut choices = Vec::new();
-        if !possible_face_choices_with_limit(ctx, &assignments, &equations, usize::MAX, &mut choices)? {
+        if !possible_face_choices_with_limit(
+            ctx,
+            &assignments,
+            &equations,
+            usize::MAX,
+            &mut choices,
+        )? {
             return Ok(false);
         }
         let search = MeshSelectionSearch {
@@ -45,9 +61,8 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
             outcome: SearchOutcome::Open,
             face_equation_cache: RefCell::default(),
         };
-        let mut quotient = MeshQuotient::new(
-            (0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect(),
-        );
+        let mut quotient =
+            MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
         search.propagate_forced_face_equations(&mut quotient)
     };
     crate::test_support::with_service_context(|ctx| assert!(run(ctx).expect("service budget")));
@@ -78,13 +93,31 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
     ] {
         assert!(refusals.contains(operation), "no refusal at {operation}");
     }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits input budget");
-    assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_forced_equation_cache_key"));
+    let mut cap = 0;
+    let mut reached = false;
+    for _ in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input budget");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_forced_equation_cache_key" =>
+            {
+                reached = true;
+                break;
+            }
+            Err(CodecError::ResourceLimit(limit)) => {
+                cap = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("bounded fixture");
+            }
+            other => panic!("equation cache key limit not reached: {other:?}"),
+        }
+    }
+    assert!(reached, "equation cache key limit was not reached");
 }
 
 #[test]

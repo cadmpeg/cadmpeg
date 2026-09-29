@@ -25,11 +25,11 @@ cadmpeg-ir.workspace = true
 memchr.workspace = true
 serde.workspace = true
 serde-value.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
-serde_json.workspace = true
 
 [lints]
 workspace = true

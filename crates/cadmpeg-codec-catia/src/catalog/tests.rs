@@ -22,8 +22,8 @@ fn catalog_entries_refuse_count_limit_before_reservation() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("catalog fixture fits the input limit");
-    let error = super::parse(&ctx, &bytes)
-        .expect_err("four catalog entries exceed zero collection items");
+    let error =
+        super::parse(&ctx, &bytes).expect_err("four catalog entries exceed zero collection items");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_catalog_entries"));
@@ -41,8 +41,8 @@ fn catalog_value_refuses_retained_limit_before_copy() {
     policy.limits.max_retained_bytes = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("catalog fixture fits the input limit");
-    let error = super::parse(&ctx, &bytes)
-        .expect_err("the catalog prefix exceeds one retained byte");
+    let error =
+        super::parse(&ctx, &bytes).expect_err("the catalog prefix exceeds one retained byte");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "catia_catalog_entry_value"));

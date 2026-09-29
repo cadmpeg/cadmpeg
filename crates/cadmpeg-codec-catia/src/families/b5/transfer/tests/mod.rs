@@ -25,8 +25,8 @@ fn b5_annotation_admits_retained_strings_and_map_entries() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("fixture fits the input limit");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits the input limit");
     let error = super::annotate(
         &ctx,
         &mut cadmpeg_ir::AnnotationBuilder::new(),
@@ -130,9 +130,13 @@ fn b5_loop_orientation_charges_constraint_arrays() {
     let reversed = graph
         .loops
         .iter()
-        .map(|(id, loop_)| (*id, crate::test_support::with_service_context(|ctx| {
-            loop_.edge_senses(ctx)
-        }).expect("service budget")))
+        .map(|(id, loop_)| {
+            (
+                *id,
+                crate::test_support::with_service_context(|ctx| loop_.edge_senses(ctx))
+                    .expect("service budget"),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let operations = b5_collection_refusals(|ctx| {
         assert!(super::faces::orient_loop_members(ctx, &graph, reversed.clone())?.is_some());
@@ -147,13 +151,17 @@ fn b5_plan_charges_loop_senses_and_index() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
-    }).expect("service budget").expect("closed graph");
-    let payload = cadmpeg_ir::ids::UnknownId::mint(
-        "catia:test:unknown#b5-plan-senses".to_string(),
-    ).expect("valid test identity");
+    })
+    .expect("service budget")
+    .expect("closed graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:test:unknown#b5-plan-senses".to_string())
+        .expect("valid test identity");
     let operations = b5_collection_refusals(|ctx| {
         let _plan = super::build_plan(
-            ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            &graph,
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
         )?;
         Ok(())
     });
@@ -206,23 +214,55 @@ fn b5_emit_points_refuses_collection_limit_before_model_arena_growth() {
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
     let plan = crate::test_support::with_service_context(|ctx| {
-        super::build_plan(ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+        super::build_plan(
+            ctx,
+            &graph,
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("service resource budget")
     .expect("complete B5 plan");
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        super::vertices::emit_vertices(&mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &graph, &plan, &mut admission)
-    });
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_emit_points"));
+    let mut cap = 0;
+    let mut reached = false;
+    for _ in 0..128 {
+        match crate::test_support::with_collection_limit(cap, |ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            super::vertices::emit_vertices(
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &graph,
+                &plan,
+                &mut admission,
+            )
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == "catia_b5_emit_points" =>
+            {
+                reached = true;
+                break;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                cap = error
+                    .used
+                    .checked_add(error.additional)
+                    .expect("bounded fixture");
+            }
+            other => panic!("point arena limit not reached: {other:?}"),
+        }
+    }
+    assert!(reached, "point arena limit was not reached");
     let admitted = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let mut ir = cadmpeg_ir::CadIr::empty();
-        super::vertices::emit_vertices(&mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &graph, &plan, &mut admission)?;
+        super::vertices::emit_vertices(
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &plan,
+            &mut admission,
+        )?;
         Ok::<_, cadmpeg_core::CodecError>(ir.model.points.len())
     })
     .expect("service resource budget");
@@ -240,21 +280,32 @@ fn b5_pcurve_occurrence_groups_refuse_collection_limit_before_growth() {
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
     let plan = crate::test_support::with_service_context(|ctx| {
-        super::build_plan(ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+        super::build_plan(
+            ctx,
+            &graph,
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("service resource budget")
     .expect("complete B5 plan");
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let mut ir = cadmpeg_ir::CadIr::empty();
-        super::pcurves::emit_pcurves(&mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &graph, &plan, &mut admission)
+        super::pcurves::emit_pcurves(
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &plan,
+            &mut admission,
+        )
     };
     let refused = crate::test_support::with_collection_limit(0, run);
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_pcurve_occurrence_objects"));
-    let admitted = crate::test_support::with_service_context(run)
-        .expect("service resource budget");
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_pcurve_occurrence_objects")
+    );
+    let admitted = crate::test_support::with_service_context(run).expect("service resource budget");
     assert!(!admitted.is_empty());
 }
 
@@ -268,26 +319,43 @@ fn b5_surface_id_map_refuses_collection_limit_before_growth() {
     .expect("closed B5 triangle graph");
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
-    let make_plan = || crate::test_support::with_service_context(|ctx| {
-        super::build_plan(ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new())
-    })
-    .expect("service resource budget")
-    .expect("complete B5 plan");
+    let make_plan = || {
+        crate::test_support::with_service_context(|ctx| {
+            super::build_plan(
+                ctx,
+                &graph,
+                &payload,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service resource budget")
+        .expect("complete B5 plan")
+    };
     let mut limited_plan = make_plan();
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::surfaces::emit_surfaces(&mut cadmpeg_ir::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(), &graph, &mut limited_plan,
-            &mut admission)
+        super::surfaces::emit_surfaces(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &mut limited_plan,
+            &mut admission,
+        )
     });
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_emitted_surface_ids"));
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_emitted_surface_ids")
+    );
     let mut service_plan = make_plan();
     let admitted = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::surfaces::emit_surfaces(&mut cadmpeg_ir::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(), &graph, &mut service_plan,
-            &mut admission)
+        super::surfaces::emit_surfaces(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &mut service_plan,
+            &mut admission,
+        )
     })
     .expect("service resource budget");
     assert!(!admitted.is_empty());
@@ -305,7 +373,12 @@ fn b5_edge_id_map_refuses_collection_limit_before_growth() {
         .expect("identity grammar");
     let make_plan = || {
         let mut plan = crate::test_support::with_service_context(|ctx| {
-            super::build_plan(ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+            super::build_plan(
+                ctx,
+                &graph,
+                &payload,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
         })
         .expect("service resource budget")
         .expect("complete B5 plan");
@@ -315,21 +388,50 @@ fn b5_edge_id_map_refuses_collection_limit_before_growth() {
         plan
     };
     let surfaces = std::collections::HashMap::new();
-    let mut limited_plan = make_plan();
-    let refused = crate::test_support::with_collection_limit(1, |ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::edges::emit_edges(&mut cadmpeg_ir::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(), &graph, &payload,
-            &mut limited_plan, &surfaces, &mut admission)
-    });
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_emitted_edge_ids"));
+    let mut cap = 1;
+    let mut reached = false;
+    for _ in 0..128 {
+        let mut limited_plan = make_plan();
+        match crate::test_support::with_collection_limit(cap, |ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            super::edges::emit_edges(
+                &mut cadmpeg_ir::CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &graph,
+                &payload,
+                &mut limited_plan,
+                &surfaces,
+                &mut admission,
+            )
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == "catia_b5_emitted_edge_ids" =>
+            {
+                reached = true;
+                break;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                cap = error
+                    .used
+                    .checked_add(error.additional)
+                    .expect("bounded fixture");
+            }
+            other => panic!("edge identity map limit not reached: {other:?}"),
+        }
+    }
+    assert!(reached, "edge identity map limit was not reached");
     let mut service_plan = make_plan();
     let emitted = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::edges::emit_edges(&mut cadmpeg_ir::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(), &graph, &payload,
-            &mut service_plan, &surfaces, &mut admission)
+        super::edges::emit_edges(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &payload,
+            &mut service_plan,
+            &surfaces,
+            &mut admission,
+        )
     })
     .expect("service resource budget");
     assert!(!emitted.is_empty());
@@ -346,7 +448,12 @@ fn b5_region_id_map_refuses_collection_limit_before_growth() {
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
     let plan = crate::test_support::with_service_context(|ctx| {
-        super::build_plan(ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+        super::build_plan(
+            ctx,
+            &graph,
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("service resource budget")
     .expect("complete B5 plan");
@@ -360,17 +467,29 @@ fn b5_region_id_map_refuses_collection_limit_before_growth() {
     };
     let refused = crate::test_support::with_collection_limit(2, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::faces::emit_faces(&mut cadmpeg_ir::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(), &graph, &plan, &emitted,
-            &mut admission)
+        super::faces::emit_faces(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &plan,
+            &emitted,
+            &mut admission,
+        )
     });
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_region_ids"));
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_region_ids")
+    );
     let admitted = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::transfer(&mut cadmpeg_ir::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(), graph.clone(), &payload,
-            &mut crate::nurbs::LaneRefusals::new(), &mut admission)
+        super::transfer(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            graph.clone(),
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
     })
     .expect("service resource budget");
     assert!(admitted);
@@ -389,18 +508,42 @@ fn b5_face_loop_and_coedge_emission_refuse_each_collection_limit() {
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
     let plan = crate::test_support::with_service_context(|ctx| {
-        super::build_plan(ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+        super::build_plan(
+            ctx,
+            &graph,
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("service resource budget")
     .expect("complete B5 plan");
-    let surfaces = graph.surfaces.keys().map(|&object_id| {
-        (object_id, SurfaceId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "b5", "surface"), object_id))
-    }).collect::<std::collections::HashMap<_, _>>();
-    let edges = graph.vertices.edges().keys().map(|&object_id| {
-        (object_id, EdgeId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "b5", "edge"), object_id))
-    }).collect::<std::collections::HashMap<_, _>>();
+    let surfaces = graph
+        .surfaces
+        .keys()
+        .map(|&object_id| {
+            (
+                object_id,
+                SurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "b5", "surface"),
+                    object_id,
+                ),
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let edges = graph
+        .vertices
+        .edges()
+        .keys()
+        .map(|&object_id| {
+            (
+                object_id,
+                EdgeId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "b5", "edge"),
+                    object_id,
+                ),
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
     let pcurves = std::collections::HashMap::new();
     let emitted = super::faces::EmittedFaceInputs {
         surface_ids: &surfaces,
@@ -409,9 +552,14 @@ fn b5_face_loop_and_coedge_emission_refuse_each_collection_limit() {
     };
     let operations = b5_collection_refusals(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        let emitted = super::faces::emit_faces(&mut cadmpeg_ir::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(), &graph, &plan, &emitted,
-            &mut admission)?;
+        let emitted = super::faces::emit_faces(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph,
+            &plan,
+            &emitted,
+            &mut admission,
+        )?;
         assert!(emitted);
         Ok(())
     });
@@ -422,7 +570,10 @@ fn b5_face_loop_and_coedge_emission_refuse_each_collection_limit() {
         "catia_b5_coedge_radial_occurrences",
         "catia_b5_emit_coedges",
     ] {
-        assert!(operations.contains(operation), "missing collection charge: {operation}");
+        assert!(
+            operations.contains(operation),
+            "missing collection charge: {operation}"
+        );
     }
 }
 
@@ -471,9 +622,13 @@ fn b5_loop_orientation_refuses_loop_id_collection_limit() {
     let reversed = graph
         .loops
         .iter()
-        .map(|(id, loop_)| (*id, crate::test_support::with_service_context(|ctx| {
-            loop_.edge_senses(ctx)
-        }).expect("service budget")))
+        .map(|(id, loop_)| {
+            (
+                *id,
+                crate::test_support::with_service_context(|ctx| loop_.edge_senses(ctx))
+                    .expect("service budget"),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     crate::test_support::with_service_context(|ctx| {
         assert!(

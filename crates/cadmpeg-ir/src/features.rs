@@ -6400,7 +6400,10 @@ impl<T: PartialEq> DistinctMembers<T> {
 
 impl<T> DistinctMembers<T> {
     /// Reserve storage before inserting already admitted members.
-    pub fn try_reserve(&mut self, additional: usize) -> Result<(), std::collections::TryReserveError> {
+    pub fn try_reserve(
+        &mut self,
+        additional: usize,
+    ) -> Result<(), std::collections::TryReserveError> {
         self.0.try_reserve(additional)
     }
 

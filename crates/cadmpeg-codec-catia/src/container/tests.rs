@@ -48,19 +48,28 @@ fn last_save_version_service(data: &[u8]) -> Option<super::LastSaveVersion> {
 }
 
 fn parse_extents_service(
-    dirbuf: &[u8], o: usize, k: usize, physical_base: usize, file_len: usize,
+    dirbuf: &[u8],
+    o: usize,
+    k: usize,
+    physical_base: usize,
+    file_len: usize,
 ) -> Option<(Vec<super::Extent>, usize)> {
     crate::test_support::with_service_context(|ctx| {
         parse_extents(ctx, dirbuf, o, k, physical_base, file_len)
-    }).expect("service budget admits extents")
+    })
+    .expect("service budget admits extents")
 }
 
 fn parse_directory_region_service(
-    data: &[u8], physical_base: usize, dir_offset: usize, dir_length: usize,
+    data: &[u8],
+    physical_base: usize,
+    dir_offset: usize,
+    dir_length: usize,
 ) -> Option<super::InnerDir> {
     crate::test_support::with_service_context(|ctx| {
         parse_directory_region(ctx, data, physical_base, dir_offset, dir_length)
-    }).expect("service budget admits directory")
+    })
+    .expect("service budget admits directory")
 }
 
 fn descriptor_name_service(dirbuf: &[u8], ds: usize) -> String {
@@ -71,7 +80,8 @@ fn descriptor_name_service(dirbuf: &[u8], ds: usize) -> String {
 fn reconstruct_service(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
     crate::test_support::with_service_context(|ctx| {
         reconstruct_logical_stream(ctx, data, descriptor, inner)
-    }).expect("service budget admits logical stream")
+    })
+    .expect("service budget admits logical stream")
 }
 
 fn brep_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
@@ -85,14 +95,16 @@ fn main_data_stream_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
 }
 
 fn outer_declarations_service(
-    data: &[u8], dir: &InnerDir,
+    data: &[u8],
+    dir: &InnerDir,
 ) -> Vec<super::OuterContainerDeclaration> {
-    crate::test_support::with_service_context(|ctx| {
-        outer_container_declarations(ctx, data, dir)
-    }).expect("service budget admits container declarations")
+    crate::test_support::with_service_context(|ctx| outer_container_declarations(ctx, data, dir))
+        .expect("service budget admits container declarations")
 }
 
-fn record_sources_service(scan: &ContainerScan<'_>) -> Vec<Vec<crate::wire::records::SourceExtent>> {
+fn record_sources_service(
+    scan: &ContainerScan<'_>,
+) -> Vec<Vec<crate::wire::records::SourceExtent>> {
     crate::test_support::with_service_context(|ctx| super::consolidated_record_sources(ctx, scan))
         .expect("service budget admits record sources")
 }
@@ -108,8 +120,10 @@ fn logical_stream_bytes_refuse_retained_limit() {
     let limited = crate::test_support::with_retained_limit(2, |ctx| {
         reconstruct_logical_stream(ctx, b"01234", &descriptor, 0)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_logical_stream_bytes"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_logical_stream_bytes")
+    );
     assert_eq!(reconstruct_service(b"01234", &descriptor, 0), b"123");
 }
 
@@ -118,16 +132,17 @@ fn logical_stream_roster_refuses_collection_limit() {
     let bytes = outer_directory_catpart();
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
         .expect("service budget admits outer directory");
-    let first_len = scan.outer.as_ref().expect("outer directory").descriptors[0]
-        .logical_length();
+    let first_len = scan.outer.as_ref().expect("outer directory").descriptors[0].logical_length();
     let limited = crate::test_support::with_collection_limit(first_len, |ctx| {
         super::logical_record_streams(ctx, &scan)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_logical_record_streams"));
-    let streams = crate::test_support::with_service_context(|ctx| {
-        super::logical_record_streams(ctx, &scan)
-    }).expect("service budget admits logical streams");
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_logical_record_streams")
+    );
+    let streams =
+        crate::test_support::with_service_context(|ctx| super::logical_record_streams(ctx, &scan))
+            .expect("service budget admits logical streams");
     assert_eq!(streams.len(), 1);
 }
 
@@ -139,21 +154,25 @@ fn record_source_inner_extents_refuse_collection_limit() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::consolidated_record_sources(ctx, &scan)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_record_source_extents"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_record_source_extents")
+    );
     assert_eq!(record_sources_service(&scan).len(), 1);
 }
 
 #[test]
 fn fbb_run_roster_refuses_collection_limit() {
     let bytes = [0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0];
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::fbb_run_ranges(ctx, &bytes)
-    });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_fbb_run_ranges"));
-    let ranges = crate::test_support::with_service_context(|ctx| super::fbb_run_ranges(ctx, &bytes))
-        .expect("service budget admits FBB runs");
+    let limited =
+        crate::test_support::with_collection_limit(0, |ctx| super::fbb_run_ranges(ctx, &bytes));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_fbb_run_ranges")
+    );
+    let ranges =
+        crate::test_support::with_service_context(|ctx| super::fbb_run_ranges(ctx, &bytes))
+            .expect("service budget admits FBB runs");
     assert_eq!(ranges, vec![0..8]);
 }
 
@@ -163,14 +182,19 @@ fn outer_container_stream_identity_refuses_retained_limit() {
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
         .expect("service budget admits outer container");
     let outer = scan.outer.as_ref().expect("outer directory");
-    let data_descriptor = outer.descriptors.iter().find(|descriptor| descriptor.name == "Data")
+    let data_descriptor = outer
+        .descriptors
+        .iter()
+        .find(|descriptor| descriptor.name == "Data")
         .expect("Data descriptor");
     let logical = reconstruct_service(&scan.data, data_descriptor, outer.inner);
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_outer_container_declarations(ctx, &logical, &outer.descriptors)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_container_stream_name"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_container_stream_name")
+    );
     assert_eq!(outer_declarations_service(&scan.data, outer).len(), 1);
 }
 
@@ -178,11 +202,12 @@ fn outer_container_stream_identity_refuses_retained_limit() {
 fn finjpl_markers_refuse_collection_limit() {
     let bytes = summary_preview_segment();
     let body = super::BodyExtent::whole(&bytes);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::finjpl_segments(ctx, &body)
-    });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_finjpl_positions"));
+    let limited =
+        crate::test_support::with_collection_limit(0, |ctx| super::finjpl_segments(ctx, &body));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_finjpl_positions")
+    );
     assert_eq!(finjpl_service(&body).len(), 1);
 }
 
@@ -192,10 +217,16 @@ fn finjpl_primary_name_refuses_retained_limit() {
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
         super::finjpl_primary_name(ctx, &bytes, 0, bytes.len())
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_finjpl_name"));
-    assert_eq!(finjpl_service(&super::BodyExtent::whole(&bytes))[0].name.as_deref(),
-        Some("CATSummaryInformation"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_finjpl_name")
+    );
+    assert_eq!(
+        finjpl_service(&super::BodyExtent::whole(&bytes))[0]
+            .name
+            .as_deref(),
+        Some("CATSummaryInformation")
+    );
 }
 
 #[test]
@@ -205,8 +236,10 @@ fn preview_rows_refuse_collection_limit() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::preview_images_in_segments(ctx, &bytes, &segments)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_preview_images"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_preview_images")
+    );
     assert_eq!(preview_service(&bytes).len(), 1);
 }
 
@@ -217,8 +250,10 @@ fn external_reference_target_refuses_retained_limit() {
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
         super::external_references_in_segments(ctx, &bytes, &segments)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_external_reference_target"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_external_reference_target")
+    );
     assert_eq!(external_refs_service(&bytes)[0].target, "linked.CATPart");
 }
 
@@ -228,9 +263,14 @@ fn last_save_build_date_refuses_retained_limit() {
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_last_save_version(ctx, &bytes)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_last_save_build_date"));
-    assert_eq!(last_save_version_service(&bytes).expect("version").version, 5);
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_last_save_build_date")
+    );
+    assert_eq!(
+        last_save_version_service(&bytes).expect("version").version,
+        5
+    );
 }
 
 #[test]
@@ -238,8 +278,10 @@ fn summary_attribute_refuses_collection_limit() {
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
         .expect("service resource budget");
     let limited = crate::test_support::with_collection_limit(0, |ctx| summarize(ctx, &scan));
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_summary_attribute"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_summary_attribute")
+    );
     assert!(!summarize_service(&scan).entries.is_empty());
 }
 
@@ -248,8 +290,10 @@ fn container_note_refuses_retained_limit() {
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
         .expect("service resource budget");
     let limited = crate::test_support::with_retained_limit(0, |ctx| super::notes(ctx, &scan));
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_container_note"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_container_note")
+    );
     let notes = crate::test_support::with_service_context(|ctx| super::notes(ctx, &scan))
         .expect("service budget admits container notes");
     assert!(!notes.is_empty());
@@ -260,8 +304,10 @@ fn container_notes_refuse_collection_limit() {
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
         .expect("service resource budget");
     let limited = crate::test_support::with_collection_limit(0, |ctx| super::notes(ctx, &scan));
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_container_notes"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_container_notes")
+    );
     let notes = crate::test_support::with_service_context(|ctx| super::notes(ctx, &scan))
         .expect("service budget admits container notes");
     assert!(!notes.is_empty());
@@ -653,10 +699,17 @@ fn extent_roster_refuses_collection_limit() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         parse_extents(ctx, &directory, 0, 1, 0, 64)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_directory_extents"));
-    assert_eq!(parse_extents_service(&directory, 0, 1, 0, 64)
-        .expect("valid extent").0.len(), 1);
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_directory_extents")
+    );
+    assert_eq!(
+        parse_extents_service(&directory, 0, 1, 0, 64)
+            .expect("valid extent")
+            .0
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -665,11 +718,15 @@ fn directory_descriptor_refuses_collection_limit() {
     let limited = crate::test_support::with_collection_limit(1, |ctx| {
         super::parse_outer_stream_directory(ctx, &bytes)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_directory_descriptors"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_directory_descriptors")
+    );
     let parsed = crate::test_support::with_service_context(|ctx| {
         super::parse_outer_stream_directory(ctx, &bytes)
-    }).expect("service budget admits directory").expect("valid directory");
+    })
+    .expect("service budget admits directory")
+    .expect("valid directory");
     assert_eq!(parsed.descriptors.len(), 1);
 }
 
@@ -700,8 +757,10 @@ fn descriptor_name_refuses_retained_limit() {
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
         super::descriptor_name(ctx, &directory, ds)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_descriptor_name"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_descriptor_name")
+    );
     assert_eq!(descriptor_name_service(&directory, ds), "MainDataStream");
 }
 
@@ -759,8 +818,8 @@ fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
         directory[extent + 12..extent + 16].copy_from_slice(&(index as u32).to_be_bytes());
     }
 
-    let parsed =
-        parse_directory_region_service(&directory, 0, 0, directory.len()).expect("bounded extent roster");
+    let parsed = parse_directory_region_service(&directory, 0, 0, directory.len())
+        .expect("bounded extent roster");
     let descriptor = parsed
         .descriptors
         .iter()
@@ -788,10 +847,7 @@ fn logical_stream_reconstruction_is_atomic_over_its_extent_roster() {
             },
         ],
     };
-    assert_eq!(
-        reconstruct_service(b"0123456789", &descriptor, 0),
-        b"1278"
-    );
+    assert_eq!(reconstruct_service(b"0123456789", &descriptor, 0), b"1278");
 
     let mut outside = descriptor.clone();
     outside.extents[1].phys_off = 9;
@@ -1316,10 +1372,7 @@ fn consolidated_record_sources_follow_physical_stream_extents() {
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    assert_eq!(
-        record_ranges_service(&scan),
-        expected
-    );
+    assert_eq!(record_ranges_service(&scan), expected);
     assert_eq!(
         record_sources_service(&scan)
             .into_iter()
@@ -1355,7 +1408,8 @@ fn fbb_census_separates_groups_from_face_rows() {
 
     let ranges = crate::test_support::with_service_context(|ctx| {
         crate::container::fbb_run_ranges(ctx, &body)
-    }).expect("service budget admits FBB runs");
+    })
+    .expect("service budget admits FBB runs");
     assert_eq!(ranges, vec![0..16, 24..32]);
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, standard_catpart())

@@ -531,16 +531,25 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         let result = crate::test_support::with_collection_limit(cap, |ctx| {
             let mut candidate = CadIr::empty();
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            ensure_native_edge_support_surface(&mut candidate, &mut AnnotationBuilder::new(),
-                21, &native.carriers[1], &mut admission)
+            ensure_native_edge_support_surface(
+                &mut candidate,
+                &mut AnnotationBuilder::new(),
+                21,
+                &native.carriers[1],
+                &mut admission,
+            )
         });
         if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_b5_rolling_ball_jet_stations") {
+            if limit.operation == "catia_b5_rolling_ball_jet_stations")
+        {
             saw_copy_refusal = true;
             break;
         }
     }
-    assert!(saw_copy_refusal, "rolling-ball station copy must refuse at its own admission");
+    assert!(
+        saw_copy_refusal,
+        "rolling-ball station copy must refuse at its own admission"
+    );
     let (curve, _) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
@@ -796,16 +805,16 @@ fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
     ] {
         let result = crate::test_support::with_service_context(|ctx| {
             crate::families::standard::decode::standard_pcurve_geometry(
-            ctx,
-            &surface,
-            &support,
-            start,
-            end,
-            None,
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
+                ctx,
+                &surface,
+                &support,
+                (start, end),
+                None,
+                None,
+                &mut crate::nurbs::LaneRefusals::new(),
             )
-        }).expect("service budget admits standard pcurve");
+        })
+        .expect("service budget admits standard pcurve");
         assert_eq!(result.is_some(), accepted);
     }
 }

@@ -27,17 +27,28 @@ fn face_configuration_mask_refuses_before_word_and_key_growth() {
     }
     let mut masks = HashMap::<usize, Vec<u64>>::new();
     crate::test_support::with_service_context(|ctx| {
-        super::super::set_mask_bit(ctx, &mut masks, 3, 0, 1, 1, "catia_face_configuration_mask_words")
-    }).expect("service resource budget");
+        super::super::set_mask_bit(
+            ctx,
+            &mut masks,
+            3,
+            0,
+            1,
+            1,
+            "catia_face_configuration_mask_words",
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(masks.get(&3), Some(&vec![1]));
 }
 
 #[test]
 fn face_configuration_support_refuses_collection_growth() {
-    let fixture = || vec![
-        vec![vec![(0, [0, 1])], vec![(0, [0, 1])]],
-        vec![vec![(0, [0, 1])]],
-    ];
+    let fixture = || {
+        vec![
+            vec![vec![(0, [0, 1])], vec![(0, [0, 1])]],
+            vec![vec![(0, [0, 1])]],
+        ]
+    };
     let run = |ctx: &DecodeContext<'_>| {
         let mut domains = fixture();
         super::super::prune_face_configuration_support(ctx, &mut domains, &WorkBudget::new(1_000))
@@ -46,7 +57,9 @@ fn face_configuration_support_refuses_collection_growth() {
     let mut refused = HashSet::new();
     for cap in 0..128 {
         match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
             Ok(true) => break,
             other => panic!("unexpected face support result: {other:?}"),
         }
@@ -62,19 +75,27 @@ fn face_configuration_support_refuses_collection_growth() {
 
 #[test]
 fn face_configuration_singleton_refuses_trial_copies() {
-    let fixture = || vec![
-        vec![vec![(0, [0, 1])], vec![(0, [0, 1])]],
-        vec![vec![(0, [0, 1])]],
-    ];
+    let fixture = || {
+        vec![
+            vec![vec![(0, [0, 1])], vec![(0, [0, 1])]],
+            vec![vec![(0, [0, 1])]],
+        ]
+    };
     let run = |ctx: &DecodeContext<'_>| {
         let mut domains = fixture();
-        super::super::prune_face_configuration_singleton_support(ctx, &mut domains, &WorkBudget::new(1_000))
+        super::super::prune_face_configuration_singleton_support(
+            ctx,
+            &mut domains,
+            &WorkBudget::new(1_000),
+        )
     };
     assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
     let mut refused = HashSet::new();
     for cap in 0..256 {
         match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
             Ok(true) => break,
             other => panic!("unexpected singleton support result: {other:?}"),
         }
@@ -106,7 +127,8 @@ fn incidence_degree_adjustment_refuses_before_undo_and_point_growth() {
     let mut degrees = vec![BTreeMap::new(), BTreeMap::new()];
     let undo = crate::test_support::with_service_context(|ctx| {
         super::super::adjust_incidence_degrees(ctx, &mut degrees, &[[0, 1]], 0, [2, 3])
-    }).expect("service resource budget");
+    })
+    .expect("service resource budget");
     assert_eq!(undo.entries.len(), 4);
     assert_eq!(degrees[0].len(), 2);
     assert_eq!(degrees[1].len(), 2);
@@ -133,7 +155,9 @@ fn deferred_cycle_assignment_refuses_each_inner_collection_limit() {
     let mut refused = HashSet::new();
     for cap in 0..32 {
         match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
             Ok(true) => break,
             other => panic!("unexpected deferred cycle result: {other:?}"),
         }
@@ -155,14 +179,20 @@ fn partial_orientability_refuses_nested_point_and_trail_growth() {
     let partial = [Some([0, 1]), Some([1, 2]), None];
     let run = |ctx: &DecodeContext<'_>| {
         super::super::partial_face_orientability_viable(
-            ctx, &partial, &edge_faces, &face_edges, &WorkBudget::new(10_000),
+            ctx,
+            &partial,
+            &edge_faces,
+            &face_edges,
+            &WorkBudget::new(10_000),
         )
     };
     assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
     let mut refused = HashSet::new();
     for cap in 0..256 {
         match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
             Ok(true) => break,
             other => panic!("unexpected orientability result: {other:?}"),
         }

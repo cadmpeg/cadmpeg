@@ -443,11 +443,19 @@ impl Provenance<AnnotationLocation> {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let tag = self.tag.as_deref().map(|tag| {
-            String::from_utf8(ctx.copy_retained(tag.as_bytes(), operation)?)
-                .map_err(cadmpeg_core::CodecError::malformed)
-        }).transpose()?;
-        Ok(Self::annotation(Arc::clone(&self.location.stream), self.offset, tag))
+        let tag = self
+            .tag
+            .as_deref()
+            .map(|tag| {
+                String::from_utf8(ctx.copy_retained(tag.as_bytes(), operation)?)
+                    .map_err(cadmpeg_core::CodecError::malformed)
+            })
+            .transpose()?;
+        Ok(Self::annotation(
+            Arc::clone(&self.location.stream),
+            self.offset,
+            tag,
+        ))
     }
 
     pub(crate) fn annotation(stream: Arc<StreamName>, offset: u64, tag: Option<String>) -> Self {
