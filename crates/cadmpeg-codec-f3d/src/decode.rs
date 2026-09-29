@@ -2502,7 +2502,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &geometry.mesh_projection,
             )?;
         }
-        crate::design::feature_project::bind_form_cages(
+        crate::design::feature_project::form_cages::bind_form_cages(
             ctx,
             scan,
             &self.native.design_parameter_scopes,

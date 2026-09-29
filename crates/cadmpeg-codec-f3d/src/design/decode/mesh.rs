@@ -2003,8 +2003,9 @@ pub(crate) fn decode_mesh_bodies(
 
 #[cfg(test)]
 mod tests {
+    mod placement;
     use super::{
-        mesh_body_transform, parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
+        parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
         parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record,
         resolve_mesh_body, MeshBody, COMMON_DATA_MODULE, DATA_MODEL_MODULE, FUSION_MODULE,
         MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID, MESH_BODY_OWNER_BASE_TYPE_GUID,
@@ -2205,14 +2206,6 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         bytes
-    }
-
-    fn mesh_body_payload(cells: [f64; 16]) -> Vec<u8> {
-        let mut payload = vec![0; mesh_body::FIRST_TRANSFORM];
-        payload.extend_from_slice(&matrix(cells));
-        payload.push(0);
-        payload.extend_from_slice(&matrix(cells));
-        payload
     }
 
     fn push_indexed_header(bytes: &mut Vec<u8>, class_tag: u32, record_index: u32) {
@@ -3894,142 +3887,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn mesh_body_transform_applies_nonuniform_scale_and_translation() {
-        let cells = [
-            0.175, 0.0, 0.0, 0.4, 0.0, 0.06, 0.0, 0.7, 0.0, 0.0, 0.125, 0.3, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
-        assert_eq!(
-            transform
-                .transform_point(
-                    FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 5.0, 8.0)).unwrap(),
-                )
-                .expect("transformed point")
-                .get(),
-            cadmpeg_ir::math::Point3::new(7.5, 10.0, 13.0)
-        );
-    }
-
-    #[test]
-    fn reflected_mesh_placement_preserves_triangle_and_corner_order() {
-        let cells = [
-            -0.5, 0.0, 0.0, 1.0, 0.0, 0.25, 0.0, -2.0, 0.0, 0.0, 2.0, 0.5, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("reflected map");
-        let container = MeshContainer {
-            fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
-            mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
-                "11111111-2222-4333-8444-555555555555".to_owned(),
-            )
-            .unwrap(),
-            vertices: vec![
-                FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 8.0, 3.0)).unwrap(),
-                FinitePoint3::ZERO,
-                FinitePoint3::new(cadmpeg_ir::math::Point3::new(4.0, 4.0, -1.0)).unwrap(),
-            ],
-            triangles: vec![[2, 0, 1]],
-            feature_edges: vec![[0, 2]],
-            corner_normals: None,
-            triangle_groups: Vec::new(),
-            texture_ids: None,
-            attributes: vec![crate::paramesh::MeshAttribute {
-                role: 4,
-                resource_guid: None,
-                authored_name: None,
-                groups: Vec::new(),
-                elements: crate::paramesh::MeshElements::Float {
-                    width: crate::paramesh::FloatWidth::Quad,
-                    values: (0..80).collect(),
-                },
-                addressing: crate::paramesh::MeshAttributeAddressing::Corner(vec![0, 2]),
-            }],
-        };
-        let body = crate::design::test_support::with_test_decode_context(|ctx| {
-            MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container)
-        })
-        .expect("projected mesh");
-
-        assert_eq!(
-            body.vertices
-                .iter()
-                .map(|point| point.get())
-                .collect::<Vec<_>>(),
-            [
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 65.0),
-                cadmpeg_ir::math::Point3::new(10.0, -20.0, 5.0),
-                cadmpeg_ir::math::Point3::new(-10.0, -10.0, -15.0),
-            ]
-        );
-        assert_eq!(body.triangles, [[2, 0, 1]]);
-        assert_eq!(body.feature_edges, [[0, 2]]);
-        assert!(matches!(
-            &body.attributes[0].addressing,
-            crate::paramesh::MeshAttributeAddressing::Corner(positions) if positions == &[0, 2]
-        ));
-    }
-
-    #[test]
-    fn mesh_placement_transforms_corner_normals_with_oriented_cofactors() {
-        let cells = [
-            -2.0, 0.5, 0.2, 1.0, 0.1, 3.0, 0.25, -2.0, 0.3, -0.2, 4.0, 0.5, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
-        let container = MeshContainer {
-            fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
-            mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
-                "11111111-2222-4333-8444-555555555555".to_owned(),
-            )
-            .unwrap(),
-            vertices: vec![
-                FinitePoint3::ZERO,
-                FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)).unwrap(),
-                FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)).unwrap(),
-            ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: vec![[0, 1]],
-            corner_normals: Some(vec![UnitVector3::Z_AXIS; 3]),
-            triangle_groups: Vec::new(),
-            texture_ids: None,
-            attributes: Vec::new(),
-        };
-        let body = crate::design::test_support::with_test_decode_context(|ctx| {
-            MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container)
-        })
-        .expect("projected mesh");
-        let geometric_normal = body.vertices[1]
-            .get()
-            .vector_from(body.vertices[0].get())
-            .cross(body.vertices[2].get().vector_from(body.vertices[0].get()))
-            .unit()
-            .expect("triangle normal");
-        let corner_normals = body
-            .corner_normals
-            .expect("a stated corner-normal channel reaches the body");
-        assert_eq!(corner_normals.len(), 3);
-        for normal in corner_normals {
-            assert!((normal.as_raw().dot(geometric_normal) - 1.0).abs() < 1.0e-12);
-        }
-    }
-
-    #[test]
-    fn mesh_body_transform_refuses_mismatched_projective_and_singular_pairs() {
-        let identity = [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let mut mismatched = mesh_body_payload(identity);
-        mismatched[mesh_body::SECOND_TRANSFORM..mesh_body::SECOND_TRANSFORM + 8]
-            .copy_from_slice(&2.0f64.to_le_bytes());
-        assert!(mesh_body_transform(&mismatched).is_none());
-
-        let mut projective = identity;
-        projective[12] = 1.0;
-        assert!(mesh_body_transform(&mesh_body_payload(projective)).is_none());
-
-        let mut singular = identity;
-        singular[0] = 0.0;
-        assert!(mesh_body_transform(&mesh_body_payload(singular)).is_none());
-    }
     #[test]
     fn mesh_frame_diagnostic_refuses_retained_limit() {
         let expected = "F3D Design mesh-wrapper entity 108 has an invalid primary frame";

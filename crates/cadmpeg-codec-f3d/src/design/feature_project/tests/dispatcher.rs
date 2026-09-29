@@ -1104,7 +1104,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::feature_project::bind_form_cages(
+            crate::design::feature_project::form_cages::bind_form_cages(
                 ctx,
                 scan,
                 std::slice::from_ref(&scope),
@@ -1384,7 +1384,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::feature_project::bind_form_cages(
+            crate::design::feature_project::form_cages::bind_form_cages(
                 ctx,
                 scan,
                 std::slice::from_ref(&scope),
