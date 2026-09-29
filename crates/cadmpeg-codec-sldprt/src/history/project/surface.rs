@@ -2,6 +2,9 @@
 //! Surface-feature projection.
 
 use crate::records::Feature;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use super::copy_projected_feature_text;
 use cadmpeg_ir::features::{
     EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, PathRef, RuledSurfaceMode,
     SurfaceExtension, TrimRegion,
@@ -12,32 +15,32 @@ use crate::history::literals::{
     parse_bool, parse_length_mm, parse_positive_length_mm, parse_valid_direction,
 };
 
-pub(super) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+pub(super) fn project_offset_surface(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<FeatureDefinition, CodecError> {
+    Ok(FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
         faces: feature
             .properties
             .get("Faces")
-            .cloned()
+            .map(|value| copy_projected_feature_text(ctx, value)).transpose()?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         distance: feature
             .parameters
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_length_mm(value)),
-    })
+    }))
 }
 
-pub(super) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_knit_surface(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<FeatureDefinition, CodecError> {
     let gap_tolerance = match feature.parameters.get("GapTolerance") {
         Some(value) => parse_length_mm(value)
             .and_then(|value| cadmpeg_ir::scalar::NonNegativeLength::try_from(value).ok()),
         None => None,
     };
-    FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+    Ok(FeatureDefinition::Operation(FeatureOperation::KnitSurface {
         faces: feature
             .properties
             .get("Faces")
-            .cloned()
+            .map(|value| copy_projected_feature_text(ctx, value)).transpose()?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         merge_entities: feature
             .properties
@@ -48,26 +51,26 @@ pub(super) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
             .get("CreateSolid")
             .and_then(|value| parse_bool(value)),
         gap_tolerance,
-    })
+    }))
 }
 
-pub(super) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_filled_surface(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<FeatureDefinition, CodecError> {
     let continuity = feature
         .properties
         .get("Continuity")
         .and_then(|value| crate::feature_schema::parse_surface_continuity(value));
-    FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+    Ok(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(
             feature
                 .properties
                 .get("Boundary")
-                .cloned()
+                .map(|value| copy_projected_feature_text(ctx, value)).transpose()?
                 .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
         ),
         support_faces: feature
             .properties
             .get("SupportFaces")
-            .cloned()
+            .map(|value| copy_projected_feature_text(ctx, value)).transpose()?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         continuity: continuity.map_or_else(
             cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved,
@@ -77,28 +80,27 @@ pub(super) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("MergeResult")
             .and_then(|value| parse_bool(value)),
-    })
+    }))
 }
 
 pub(super) fn project_trim_surface(
+    ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
-) -> FeatureDefinition {
-    let tool = feature.properties.get("Tool").map_or_else(
-        || PathRef::Unresolved(format!("{}:tool", feature.id)),
-        |tool| {
-            PathRef::Native(
-                native_by_source
-                    .get(tool.as_str())
-                    .map_or_else(|| tool.clone(), |id| (*id).to_string()),
-            )
-        },
-    );
-    FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+) -> Result<FeatureDefinition, CodecError> {
+    let tool = match feature.properties.get("Tool") {
+        None => PathRef::Unresolved(ctx.format_retained(
+            format_args!("{}:tool", feature.id), "retain SLDPRT trim surface tool",
+        )?),
+        Some(tool) => PathRef::Native(copy_projected_feature_text(
+            ctx, native_by_source.get(tool.as_str()).copied().unwrap_or(tool.as_str()),
+        )?),
+    };
+    Ok(FeatureDefinition::Operation(FeatureOperation::TrimSurface {
         faces: feature
             .properties
             .get("Faces")
-            .cloned()
+            .map(|value| copy_projected_feature_text(ctx, value)).transpose()?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         tool,
         keep: feature
@@ -106,15 +108,15 @@ pub(super) fn project_trim_surface(
             .get("Keep")
             .and_then(|value| crate::feature_schema::parse_trim_region(value))
             .unwrap_or(TrimRegion::Unresolved),
-    })
+    }))
 }
 
-pub(super) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+pub(super) fn project_extend_surface(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<FeatureDefinition, CodecError> {
+    Ok(FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
         faces: feature
             .properties
             .get("Faces")
-            .cloned()
+            .map(|value| copy_projected_feature_text(ctx, value)).transpose()?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         distance: feature
             .parameters
@@ -126,10 +128,11 @@ pub(super) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
             .get("Method")
             .and_then(|value| crate::feature_schema::parse_surface_extension(value))
             .unwrap_or(SurfaceExtension::Unresolved),
-    })
+    }))
 }
 
-pub(super) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_ruled_surface(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(mode) = (|| {
     let distance = parse_positive_length_mm(
         feature
             .parameters
@@ -149,14 +152,17 @@ pub(super) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefiniti
     } else {
         return None;
     };
-    Some(FeatureDefinition::Operation(
+        Some(mode)
+    })() else { return Ok(None); };
+    let (Some(edges), Some(support_faces)) = (feature.properties.get("Edges"), feature.properties.get("SupportFaces")) else { return Ok(None); };
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::RuledSurface {
-            edges: EdgeSelection::Native(feature.properties.get("Edges")?.clone()),
-            support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
+            edges: EdgeSelection::Native(copy_projected_feature_text(ctx, edges)?),
+            support_faces: FaceSelection::Native(copy_projected_feature_text(ctx, support_faces)?),
             mode,
             angle: None,
             alternate_face: None,
             corner: None,
         },
-    ))
+    )))
 }

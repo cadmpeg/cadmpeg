@@ -1071,3 +1071,64 @@ fn metadata_edit_projection_refuses_work_limit() {
     assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
     assert_eq!(refusal.additional, 1);
 }
+
+fn native_definition_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Custom" Type="Custom" id="10"><Dimension Name="Length">1mm</Dimension></Feature></Keywords>"#,
+    ));
+    source
+}
+
+#[test]
+fn metadata_native_definition_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &native_definition_source(), options, "collect SLDPRT native definition parameters",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_native_definition_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(
+        &native_definition_source(), &mut options, "retain SLDPRT native definition kind",
+    );
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT native definition kind"
+    ));
+}
+
+#[test]
+fn metadata_native_definition_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(
+        &native_definition_source(), options, "collect SLDPRT native definition parameters",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_surface_projection_refuses_retained_limit() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43, "Contents/Keywords",
+        br#"<Keywords><TrimSurface Name="Trim" id="10"/></Keywords>"#,
+    ));
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT trim surface tool");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT trim surface tool"
+    ));
+}
