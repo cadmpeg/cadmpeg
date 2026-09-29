@@ -439,10 +439,11 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     .unwrap();
 
     bind_surface_trim_cell_selections(
+        None,
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&operation),
-    );
+    ).unwrap();
 
     assert!(matches!(
         feature.evaluation.definition(),
@@ -451,4 +452,100 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
             ..
         }) if wire::field::<Vec<u64>>(&selection, "removed") == [1, 4] && wire::field::<u64>(&selection, "total") == 5
     ));
+}
+
+#[test]
+fn surface_trim_selected_cells_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#1200",
+        crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
+        1200,
+    );
+    let feature = cadmpeg_ir::features::Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                faces: FaceSelection::Unresolved,
+                tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
+                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            }),
+        ),
+        native_ref: Some(scope.id.clone()),
+    };
+    let operation = DesignSurfaceTrimOperation::try_from(
+        crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
+            id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
+            scope_record_index: 1200,
+            selection_record_index: 1,
+            selection_byte_offset: 0,
+            selection_next_record_index: 2,
+            selection_next_byte_offset: 0,
+            chain_records: [
+                crate::records::feature::surface_ops::DesignSurfaceTrimChainRecord {
+                    record_index: 2,
+                    byte_offset: 0,
+                    class_tag: "288".to_owned().try_into().unwrap(),
+                    frame_length: 11,
+                },
+                crate::records::feature::surface_ops::DesignSurfaceTrimChainRecord {
+                    record_index: 6,
+                    byte_offset: 11,
+                    class_tag: "271".to_owned().try_into().unwrap(),
+                    frame_length: 11,
+                },
+            ],
+            cell_table_record_index: 3,
+            cell_table_byte_offset: 0,
+            cell_table_class_tag: "325".to_owned().try_into().unwrap(),
+            cell_table_frame_length: 0,
+            cell_table_paired_class_tag: "257".to_owned().try_into().unwrap(),
+            cell_table_paired_byte_offset: 0,
+            cell_count_offset: 0,
+            cell_entries: vec![
+                DesignSurfaceTrimCellEntry {
+                    record_index: 4,
+                    record_reference_offset: 0,
+                    ordinal: 1,
+                    ordinal_offset: 0,
+                },
+                DesignSurfaceTrimCellEntry {
+                    record_index: 5,
+                    record_reference_offset: 0,
+                    ordinal: 4,
+                    ordinal_offset: 0,
+                },
+            ],
+            trailing_value: 5,
+            trailing_value_offset: 0,
+            trailing_zero_offset: 0,
+        },
+    ).unwrap();
+    let mut unchanged = [feature.clone()];
+    bind_surface_trim_cell_selections(None, &mut unchanged,
+        std::slice::from_ref(&scope), std::slice::from_ref(&operation)).unwrap();
+    assert!(matches!(unchanged[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            keep: cadmpeg_ir::features::TrimRegion::Cells(_), ..
+        })));
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut refused = [feature];
+    assert!(matches!(bind_surface_trim_cell_selections(Some(&ctx), &mut refused,
+        std::slice::from_ref(&scope), std::slice::from_ref(&operation)),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d SurfaceTrim selected cell"));
 }
