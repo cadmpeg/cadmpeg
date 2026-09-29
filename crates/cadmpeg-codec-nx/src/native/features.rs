@@ -7595,34 +7595,40 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
 
 /// Join the two exact encodings of a solved sketch point.
 pub(super) fn feature_sketch_point_uses(
+    ctx: &DecodeContext<'_>,
     point_groups: &[FeatureSketchPointGroup],
     named_points: &[OffsetStoreNamedPoint],
     block_uses: &[FeatureSketchNamedPointBlockUse],
-) -> Vec<FeatureSketchPointUse> {
-    let named_points = named_points
-        .iter()
-        .map(|point| (point.id.as_str(), point))
-        .collect::<BTreeMap<_, _>>();
+) -> Result<Vec<FeatureSketchPointUse>, CodecError> {
     let mut uses = Vec::new();
-    let mut joined = BTreeSet::new();
-    for block_use in block_uses {
-        let key = (
-            block_use.operation_label.as_str(),
-            block_use.named_point.as_str(),
-        );
-        if !joined.insert(key) {
+    for (block_use_index, block_use) in block_uses.iter().enumerate() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(block_use_index),
+            "deduplicate NX sketch point uses")?;
+        if block_uses[..block_use_index].iter().any(|earlier|
+            earlier.operation_label == block_use.operation_label
+                && earlier.named_point == block_use.named_point) {
             continue;
         }
-        let Some(named_point) = named_points.get(block_use.named_point.as_str()) else {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(named_points.len()),
+            "resolve NX sketch named point")?;
+        let Some(named_point) = named_points.iter().rev()
+            .find(|point| point.id == block_use.named_point) else {
             continue;
         };
-        let mut point_block_uses = block_uses
-            .iter()
-            .filter(|candidate| {
-                candidate.operation_label == block_use.operation_label
-                    && candidate.named_point == block_use.named_point
-            })
-            .collect::<Vec<_>>();
+        let mut point_block_uses = Vec::new();
+        let mut order_reservation = ctx.reserve_scoped(0, "sort NX sketch point block uses")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(block_uses.len()),
+            "collect NX sketch point block uses")?;
+        for candidate in block_uses.iter().filter(|candidate|
+            candidate.operation_label == block_use.operation_label
+                && candidate.named_point == block_use.named_point) {
+            order_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&FeatureSketchNamedPointBlockUse>()))?;
+            ctx.charge_collection_items(1, "NX sketch point block use order")?;
+            point_block_uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch point block use order", 0, 1))?;
+            point_block_uses.push(candidate);
+        }
         point_block_uses.sort_by_key(|block_use| {
             (
                 block_use.reference_ordinal,
@@ -7630,13 +7636,17 @@ pub(super) fn feature_sketch_point_uses(
                 block_use.id.as_str(),
             )
         });
-        let candidates = point_groups
-            .iter()
-            .filter(|group| {
-                group.operation_label == block_use.operation_label && group.name == named_point.name
-            })
-            .collect::<Vec<_>>();
-        let [point_group] = candidates.as_slice() else {
+        let mut point_group = None;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(point_groups.len()),
+            "resolve NX sketch point group")?;
+        for group in point_groups.iter().filter(|group|
+            group.operation_label == block_use.operation_label && group.name == named_point.name) {
+            if point_group.replace(group).is_some() {
+                point_group = None;
+                break;
+            }
+        }
+        let Some(point_group) = point_group else {
             continue;
         };
         if point_group
@@ -7647,26 +7657,45 @@ pub(super) fn feature_sketch_point_uses(
         {
             continue;
         }
+        let Some(first) = point_block_uses.first() else { continue; };
+        let id = replace_operation_text(ctx, &first.id,
+            "sketch-named-point-block-use", "sketch-point-use",
+            "NX sketch point use identity")?;
+        let operation_label = copy_operation_text(ctx, &block_use.operation_label,
+            "NX sketch point use operation label")?;
+        let mut references = Vec::new();
+        for block_use in &point_block_uses {
+            let sketch_reference = copy_operation_text(ctx, &block_use.sketch_reference,
+                "NX sketch point use reference")?;
+            let block_use_id = copy_operation_text(ctx, &block_use.id,
+                "NX sketch point use block identity")?;
+            ctx.charge_collection_items(1, "NX sketch point use references")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureSketchPointUseReference>()),
+                "NX sketch point use references")?;
+            references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch point use references", 0, 1))?;
+            references.push(FeatureSketchPointUseReference {
+                sketch_reference, block_use: block_use_id,
+                source_offset: block_use.source_offset,
+            });
+        }
+        drop(point_block_uses);
+        drop(order_reservation);
+        let sketch_point_group = copy_operation_text(ctx, &point_group.id,
+            "NX sketch point use group identity")?;
+        let named_point = copy_operation_text(ctx, &named_point.id,
+            "NX sketch point use named point")?;
+        ctx.charge_collection_items(1, "NX sketch point uses")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureSketchPointUse>()), "NX sketch point uses")?;
+        uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX sketch point uses", 0, 1))?;
         uses.push(FeatureSketchPointUse {
-            id: point_block_uses[0].id.replacen(
-                "sketch-named-point-block-use",
-                "sketch-point-use",
-                1,
-            ),
-            operation_label: block_use.operation_label.clone(),
-            references: point_block_uses
-                .into_iter()
-                .map(|block_use| FeatureSketchPointUseReference {
-                    sketch_reference: block_use.sketch_reference.clone(),
-                    block_use: block_use.id.clone(),
-                    source_offset: block_use.source_offset,
-                })
-                .collect(),
-            sketch_point_group: point_group.id.clone(),
-            named_point: named_point.id.clone(),
+            id, operation_label, references, sketch_point_group, named_point,
         });
     }
-    uses
+    Ok(uses)
 }
 
 /// Join one uniquely sketch-owned named-point block to a later datum-CSYS construction.
