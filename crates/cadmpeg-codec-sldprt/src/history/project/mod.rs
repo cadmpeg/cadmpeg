@@ -169,45 +169,61 @@ impl FeatureProjection {
     /// silently, and the projection recomputes no condition the model owns.
     pub(crate) fn install(
         self,
+        ctx: &DecodeContext<'_>,
         model: &mut cadmpeg_ir::document::Model,
         losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) {
+    ) -> Result<(), CodecError> {
         model.features = self.features;
         for (child, parent) in self.regeneration_parents {
+            let error = match model.set_feature_regeneration_parent_charged(ctx, &child, &parent) {
+                Ok(()) => continue,
+                Err(CodecError::Malformed(error)) => error,
+                Err(error) => return Err(error),
+            };
+            ctx.charge_work(model.features.len() as u64, "scan SLDPRT regeneration child ordinal")?;
+            ctx.charge_work(model.features.len() as u64, "scan SLDPRT regeneration parent ordinal")?;
             let ordinal = |id: &FeatureId| {
-                model
-                    .features
-                    .iter()
-                    .find(|feature| feature.id == *id)
-                    .map_or_else(
-                        || "missing".to_owned(),
-                        |feature| feature.ordinal.to_string(),
-                    )
+                model.features.iter().find(|feature| feature.id == *id)
+                    .map(|feature| feature.ordinal)
             };
             let child_ordinal = ordinal(&child);
             let parent_ordinal = ordinal(&parent);
-            if let Err(error) = model.set_feature_regeneration_parent(child.clone(), parent.clone())
-            {
-                losses.push(
-                    crate::loss::SldprtLossCode::FeatureIncoherentEdges.note(format!(
-                    "regeneration edge from child `{child}` (ordinal {child_ordinal}) to parent \
-                     `{parent}` (ordinal {parent_ordinal}) was not installed: {error}"
-                )),
-                );
-            }
+            let message = ctx.format_retained(
+                format_args!(
+                    "regeneration edge from child `{child}` (ordinal {}) to parent \
+                     `{parent}` (ordinal {}) was not installed: {error}",
+                    FeatureOrdinal(child_ordinal), FeatureOrdinal(parent_ordinal),
+                ),
+                "retain SLDPRT regeneration edge loss",
+            )?;
+            ctx.reserve_collection_vec(losses, 1, "collect SLDPRT regeneration edge losses")?;
+            losses.push(crate::loss::SldprtLossCode::FeatureIncoherentEdges.note(message));
         }
+        Ok(())
     }
 
     pub(super) fn into_model(
         self,
-    ) -> (
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(
         cadmpeg_ir::document::Model,
         Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) {
+    ), CodecError> {
         let mut model = cadmpeg_ir::document::Model::default();
         let mut losses = Vec::new();
-        self.install(&mut model, &mut losses);
-        (model, losses)
+        self.install(ctx, &mut model, &mut losses)?;
+        Ok((model, losses))
+    }
+}
+
+struct FeatureOrdinal(Option<u64>);
+
+impl fmt::Display for FeatureOrdinal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(value) => value.fmt(formatter),
+            None => formatter.write_str("missing"),
+        }
     }
 }
 

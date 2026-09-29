@@ -140,7 +140,7 @@ fn a_regeneration_edge_the_model_refuses_is_reported_as_one_loss() {
         features: vec![child, feature("sldprt:history:feature#0:1", None, 1)],
     };
     let projection = project_feature_model(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
-    let (model, losses) = projection.into_model();
+    let (model, losses) = projection.into_model(&cadmpeg_test_support::service_decode_context()).unwrap();
     let child_id = model.features[0].id.clone();
     assert!(model.feature_regeneration_parent(&child_id).is_none());
     assert_eq!(losses.len(), 1);

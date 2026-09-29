@@ -939,3 +939,47 @@ fn configuration_source_index_allocation_rejects_exhaustion() {
     let error = crate::writer::reserve_configuration_index(&mut used, &mut next).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
+
+fn regeneration_parent_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Outer" Type="Custom" id="1"><Feature Name="Nested" Type="Custom" id="2"/></Feature></Keywords>"#,
+    ));
+    source
+}
+
+#[test]
+fn metadata_regeneration_parent_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &regeneration_parent_source(), options, "install decoded feature regeneration parent",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_regeneration_parent_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(
+        &regeneration_parent_source(), &mut options, "install decoded feature regeneration parent",
+    );
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "install decoded feature regeneration parent"
+    ));
+}
+
+#[test]
+fn metadata_regeneration_parent_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(
+        &regeneration_parent_source(), options, "install decoded feature regeneration parent",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 3);
+}
