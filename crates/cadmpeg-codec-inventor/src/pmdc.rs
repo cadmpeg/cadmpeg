@@ -446,7 +446,7 @@ pub(crate) fn reference_list(
 ) -> Result<PmDcReferenceList, CodecError> {
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
-    let mut references = Vec::with_capacity(count);
+    let mut references = DecodeContext::admitted_vec(count, "admit Inventor PmDc references")?;
     for _ in 0..count {
         references.push(cursor.reference("reference-list entry")?);
     }
@@ -494,7 +494,7 @@ pub(crate) fn u32_list(
 ) -> Result<PmDcU32List, CodecError> {
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = DecodeContext::admitted_vec(count, "admit Inventor PmDc integers")?;
     for _ in 0..count {
         values.push(cursor.u32("integer-list value")?);
     }

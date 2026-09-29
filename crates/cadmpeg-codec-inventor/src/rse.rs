@@ -460,7 +460,7 @@ impl<'a> RseInventory<'a> {
         }
         databases.sort_by_key(|(band, _)| *band);
         ctx.charge_collection_items(databases.len() as u64, "admit RSe database descriptors")?;
-        let mut database_descriptors = Vec::with_capacity(databases.len());
+        let mut database_descriptors = DecodeContext::admitted_vec(databases.len(), "admit RSe database descriptors")?;
         for (band, stream_id) in databases {
             let state = match snapshot.stream_by_id(stream_id) {
                 Some(stream) => match snapshot

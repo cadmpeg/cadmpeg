@@ -182,14 +182,14 @@ impl DecodeContext<'_> {
     }
 
     /// Collects fallible iterator values with a charged slot for each success.
-    pub fn try_collect_vec<T, E: Into<CodecError>>(
+    pub fn try_collect_vec<T, E: From<CodecError>>(
         &self,
         values: impl IntoIterator<Item = Result<T, E>>,
         operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
+    ) -> Result<Vec<T>, E> {
         let mut out = Vec::new();
         for value in values {
-            self.push_vec(&mut out, value.map_err(Into::into)?, operation)?;
+            self.push_vec(&mut out, value?, operation).map_err(E::from)?;
         }
         Ok(out)
     }
