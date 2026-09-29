@@ -162,6 +162,15 @@ fn copy_feature_id(
         .map_err(CodecError::malformed)
 }
 
+fn copy_parameter_id(
+    ctx: Option<&DecodeContext<'_>>,
+    id: &cadmpeg_ir::features::ParameterId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::features::ParameterId, CodecError> {
+    cadmpeg_ir::features::ParameterId::try_from(copy_feature_text(ctx, id.as_str(), operation)?)
+        .map_err(CodecError::malformed)
+}
+
 fn insert_feature_dependency(
     ctx: Option<&DecodeContext<'_>>,
     dependencies: &mut cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
@@ -1672,15 +1681,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 "f3d projected parameter output")?;
             Ok::<_, CodecError>(projected)
         })?;
-    let parameter_scopes = native
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                neutral_parameter_id(parameter),
-                native_stream(&parameter.id)?,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut parameter_scopes = HashMap::new();
+    for (source, parameter) in native.iter().zip(&parameters) {
+        if let Some(stream) = native_stream(&source.id) {
+            let id = copy_parameter_id(ctx, &parameter.id,
+                "f3d parameter scope index id")?;
+            // discarded-value: duplicate parameter IDs keep the last source stream.
+            let _ = insert_feature_map(ctx, &mut parameter_scopes, id, stream,
+                "f3d parameter scope index")?;
+        }
+    }
     let mut document_aliases = HashMap::<(&str, String), Option<ParameterId>>::new();
     let mut feature_aliases =
         HashMap::<(&str, cadmpeg_ir::features::FeatureId, String), Option<ParameterId>>::new();
@@ -1688,29 +1698,65 @@ pub(crate) fn project_parameter_design_with_edge_identities(
     for parameter in &parameters {
         let scope = parameter_scopes[&parameter.id];
         if let Some(owner) = &parameter.owner {
-            feature_aliases
-                .entry((scope, owner.clone(), parameter.name.clone()))
-                .and_modify(|candidate| *candidate = None)
-                .or_insert_with(|| Some(parameter.id.clone()));
-            owned_aliases
-                .entry((scope, parameter.name.clone()))
-                .or_default()
-                .push(parameter.id.clone());
+            let key = (
+                scope,
+                copy_feature_id(ctx, owner, "f3d feature alias owner id")?,
+                copy_feature_text(ctx, &parameter.name, "f3d feature alias name")?,
+            );
+            if let Some(candidate) = feature_aliases.get_mut(&key) {
+                *candidate = None;
+            } else {
+                let value = copy_parameter_id(ctx, &parameter.id,
+                    "f3d feature alias parameter id")?;
+                // discarded-value: the vacant-key check admits this alias.
+                let _ = insert_feature_map(ctx, &mut feature_aliases, key, Some(value),
+                    "f3d feature alias index")?;
+            }
+            let key = (scope,
+                copy_feature_text(ctx, &parameter.name, "f3d owned alias name")?);
+            if !owned_aliases.contains_key(&key) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "f3d owned alias index")?;
+                    owned_aliases.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "f3d owned alias index", 0, 1))?;
+                }
+            }
+            let id = copy_parameter_id(ctx, &parameter.id,
+                "f3d owned alias parameter id")?;
+            push_feature_item(ctx, owned_aliases.entry(key).or_default(), id,
+                "f3d owned alias member")?;
         } else {
-            document_aliases
-                .entry((scope, parameter.name.clone()))
-                .and_modify(|candidate| *candidate = None)
-                .or_insert_with(|| Some(parameter.id.clone()));
+            let key = (scope,
+                copy_feature_text(ctx, &parameter.name, "f3d document alias name")?);
+            if let Some(candidate) = document_aliases.get_mut(&key) {
+                *candidate = None;
+            } else {
+                let value = copy_parameter_id(ctx, &parameter.id,
+                    "f3d document alias parameter id")?;
+                // discarded-value: the vacant-key check admits this alias.
+                let _ = insert_feature_map(ctx, &mut document_aliases, key, Some(value),
+                    "f3d document alias index")?;
+            }
         }
     }
-    let parameter_owners = parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect::<HashMap<_, _>>();
-    let feature_order = features
-        .iter()
-        .map(|feature| (feature.id.clone(), feature.ordinal))
-        .collect::<HashMap<_, _>>();
+    let mut parameter_owners = HashMap::new();
+    for parameter in &parameters {
+        let key = copy_parameter_id(ctx, &parameter.id,
+            "f3d parameter owner index id")?;
+        let owner = parameter.owner.as_ref().map(|id| copy_feature_id(ctx, id,
+            "f3d parameter owner index owner id")).transpose()?;
+        // discarded-value: duplicate parameter IDs keep the last owner.
+        let _ = insert_feature_map(ctx, &mut parameter_owners, key, owner,
+            "f3d parameter owner index")?;
+    }
+    let mut feature_order = HashMap::new();
+    for feature in &features {
+        let id = copy_feature_id(ctx, &feature.id,
+            "f3d feature order index id")?;
+        // discarded-value: duplicate feature IDs keep the last authored ordinal.
+        let _ = insert_feature_map(ctx, &mut feature_order, id, feature.ordinal,
+            "f3d feature order index")?;
+    }
     for parameter in &mut parameters {
         let scope = parameter_scopes[&parameter.id];
         let consumer_owner = parameter.owner.clone();
