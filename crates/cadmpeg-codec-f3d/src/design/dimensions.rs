@@ -2432,20 +2432,20 @@ pub(crate) fn constraint_parameters(
 /// Attach single-locus offset dimensions to uniquely matching typed offset
 /// relations and remove their redundant native annotation constraints.
 pub(crate) fn bind_offset_dimension_parameters(
+    ctx: &DecodeContext<'_>,
     constraints: &mut Vec<cadmpeg_ir::sketches::SketchConstraint>,
     parameters: &[DesignParameter],
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
-    let parameter_values = parameters
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                neutral_parameter_id(parameter),
-                design_length(parameter)?.get(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut parameter_values = HashMap::new();
+    for parameter in parameters {
+        if let Some(value) = design_length(parameter) {
+            insert_dimension_index(Some(ctx), &mut parameter_values,
+                neutral_parameter_id(parameter), value.get(),
+                "f3d offset parameter value index")?;
+        }
+    }
     let mut bindings = Vec::new();
     for (dimension_index, dimension) in constraints.iter().enumerate() {
         let Definition::Native {
@@ -2471,12 +2471,11 @@ pub(crate) fn bind_offset_dimension_parameters(
         let Some(parameter_value) = parameter_values.get(parameter).copied() else {
             continue;
         };
-        let candidates = constraints
-            .iter()
-            .enumerate()
-            .filter_map(|(offset_index, constraint)| {
+        let mut candidate = None;
+        let mut ambiguous = false;
+        for (offset_index, constraint) in constraints.iter().enumerate() {
                 if constraint.sketch != dimension.sketch {
-                    return None;
+                    continue;
                 }
                 let Definition::Offset {
                     pairs,
@@ -2484,56 +2483,67 @@ pub(crate) fn bind_offset_dimension_parameters(
                     parameter: None,
                 } = constraint.definition.kind()
                 else {
-                    return None;
+                    continue;
                 };
-                (pairs.iter().any(|pair| &pair.source == entity)
-                    && scalar_close(distance.get(), parameter_value.abs()))
-                .then_some(offset_index)
-            })
-            .collect::<Vec<_>>();
-        if let [offset_index] = candidates.as_slice() {
-            bindings.push((
+                if pairs.iter().any(|pair| &pair.source == entity)
+                    && scalar_close(distance.get(), parameter_value.abs()) {
+                    if candidate.replace(offset_index).is_some() {
+                        ambiguous = true;
+                        break;
+                    }
+                }
+        }
+        if let Some(offset_index) = candidate.filter(|_| !ambiguous) {
+            let parameter = cadmpeg_ir::features::ParameterId::try_from(
+                String::from_utf8(ctx.copy_retained(parameter.as_str().as_bytes(),
+                    "f3d offset binding parameter id")?).map_err(|_| {
+                    CodecError::malformed("validated offset parameter ID is not UTF-8")
+                })?,
+            ).map_err(CodecError::malformed)?;
+            push_dimension_item(Some(ctx), &mut bindings, (
                 dimension_index,
-                *offset_index,
-                parameter.clone(),
+                offset_index,
+                parameter,
                 parameter_value,
-            ));
+            ), "f3d offset dimension binding")?;
         }
     }
-    let offset_counts = bindings.iter().fold(HashMap::new(), |mut counts, binding| {
-        *counts.entry(binding.1).or_insert(0usize) += 1;
-        counts
-    });
+    let mut offset_counts = HashMap::new();
+    for binding in &bindings {
+        if let Some(count) = offset_counts.get_mut(&binding.1) {
+            *count += 1;
+        } else {
+            insert_dimension_index(Some(ctx), &mut offset_counts, binding.1, 1usize,
+                "f3d offset binding count")?;
+        }
+    }
     bindings.retain(|binding| offset_counts.get(&binding.1) == Some(&1));
-    bindings.retain(|(_, offset_index, parameter, parameter_value)| {
-        constraints[*offset_index]
-            .definition
-            .edit(|kind| {
-                let Definition::Offset {
-                    parameter: driving_parameter,
-                    ..
-                } = kind
-                else {
-                    return false;
-                };
-                *driving_parameter = Some(cadmpeg_ir::sketches::OffsetParameter {
-                    id: parameter.clone(),
-                    negated: parameter_value.is_sign_negative(),
-                });
-                true
-            })
-            .unwrap_or(false)
-    });
-    let removed = bindings
-        .into_iter()
-        .map(|(dimension, _, _, _)| dimension)
-        .collect::<HashSet<_>>();
+    let mut removed = HashSet::new();
+    for (dimension_index, offset_index, parameter, parameter_value) in bindings {
+        let parameter = cadmpeg_ir::features::ParameterId::try_from(
+            String::from_utf8(ctx.copy_retained(parameter.as_str().as_bytes(),
+                "f3d offset driving parameter id")?).map_err(|_| {
+                CodecError::malformed("validated offset parameter ID is not UTF-8")
+            })?,
+        ).map_err(CodecError::malformed)?;
+        let applied = constraints[offset_index].definition.set_offset_parameter(
+            cadmpeg_ir::sketches::OffsetParameter {
+                id: parameter,
+                negated: parameter_value.is_sign_negative(),
+            },
+        );
+        if applied {
+            insert_dimension_set(Some(ctx), &mut removed, dimension_index,
+                "f3d offset removed dimension")?;
+        }
+    }
     let mut index = 0usize;
     constraints.retain(|_| {
         let keep = !removed.contains(&index);
         index += 1;
         keep
     });
+    Ok(())
 }
 
 /// Project dimensions owned by model-space sketches without assigning them

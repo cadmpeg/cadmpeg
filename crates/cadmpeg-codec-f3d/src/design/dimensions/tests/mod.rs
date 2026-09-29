@@ -10,6 +10,7 @@ mod linear;
 mod frame_relations;
 mod limits;
 mod offset;
+mod offset_binding;
 mod owner_scoped;
 mod recipe;
 mod relations;
