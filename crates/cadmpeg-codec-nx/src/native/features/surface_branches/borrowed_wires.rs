@@ -28,7 +28,7 @@ impl Serialize for MembersView<'_> {
             .enumerate()
         {
             sequence.serialize_element(&ReferenceView {
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).map_err(serde::ser::Error::custom)?,
                 token,
                 data_block: data_block.as_deref(),
                 source_offset,
@@ -55,7 +55,7 @@ impl Serialize for FeatureSurfaceConstructionBranch {
         wire.serialize_entry(
             "terminal",
             &ReferenceView {
-                ordinal: branch.members().len() as u32,
+                ordinal: u32::from(branch.members().declared_count() - 1),
                 token: &terminal.0,
                 data_block: terminal.1.as_deref(),
                 source_offset: branch.terminal_offset(),

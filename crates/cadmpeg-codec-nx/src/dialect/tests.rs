@@ -29,8 +29,9 @@ fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std
 /// Classification reads exactly these two fields, so an empty directory is a
 /// complete input for it.
 fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
+    let empty: &[u8] = &[];
     Container {
-        data: (&[] as &[u8]).into(),
+        data: empty.into(),
         physical_size: 0,
         layout: if legacy_cfb {
             crate::container::ContainerLayout::LegacyCfb { version }

@@ -632,7 +632,10 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
     assert_eq!(blocks[0].role, super::DataBlockRole::Control);
     assert_eq!(blocks[1].role, super::DataBlockRole::Column);
     for (ordinal, block) in blocks.iter().enumerate() {
-        assert_eq!(block.block_ordinal as usize, ordinal);
+        assert_eq!(
+            usize::try_from(block.block_ordinal).expect("fixture value fits usize"),
+            ordinal
+        );
         assert_eq!(block.id, format!("nx:om-data-blocks-0:block#{ordinal}"));
     }
     assert!(blocks[0].byte_len > 0);
@@ -975,7 +978,11 @@ fn offset_store_class_identities_span_ordered_registries() {
 fn om_numeric_expression_retains_formula_without_literal_value() {
     let text = b"(Number [mm]) p9: p2 * 2 + p7_radius; ";
     let mut bytes = b"hostglobalvariables".to_vec();
-    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
 
@@ -1075,7 +1082,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(om_records.len(), 2);
     assert!(om_records.iter().all(|record| {
         record.data().is_some_and(|data| {
-            data.len() as u64 == record.byte_len()
+            cadmpeg_core::decode::u64_from_index(data.len()) == record.byte_len()
                 && cadmpeg_ir::hash::sha256_hex(data) == record.sha256()
         })
     }));

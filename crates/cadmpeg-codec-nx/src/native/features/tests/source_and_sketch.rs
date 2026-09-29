@@ -305,8 +305,11 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         id: format!("nx:feature-history:input-block#0-7-{slot}"),
         operation_label: label.id.clone(),
         input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
-        object: crate::om::reference_index::FeatureReferenceToken::from_wire(index, &[index as u8])
-            .unwrap(),
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(
+            index,
+            &[u8::try_from(index).expect("fixture value fits u8")],
+        )
+        .unwrap(),
         data_block: format!("nx:om-data-blocks-2:block#{index}"),
         source_offset: 710 + u64::from(slot),
     };
@@ -321,7 +324,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         .unwrap(),
         token: crate::om::reference_index::ReferenceIndexToken::from_wire(
             index,
-            &[0xf0, index as u8],
+            &[0xf0, u8::try_from(index).expect("fixture value fits u8")],
         )
         .unwrap(),
         data_block: Some(format!("nx:om-data-blocks-2:block#{index}")),
@@ -474,7 +477,7 @@ fn feature_history_links_follow_unique_physical_section_order() {
         schema_role,
         location: crate::native::segments::om_location::OmLocation::new(
             source_offset,
-            (section_offset - source_offset) as u32,
+            u32::try_from(section_offset - source_offset).expect("fixture value fits u32"),
         )
         .unwrap(),
     };
@@ -1006,8 +1009,11 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
             std::array::from_fn(|index| {
                 (
                     crate::om::reference_index::PayloadIndexToken::from_wire(
-                        index as u32 + 40,
-                        &[0xf0, index as u8 + 40],
+                        u32::try_from(index).expect("fixture value fits u32") + 40,
+                        &[
+                            0xf0,
+                            u8::try_from(index).expect("fixture value fits u8") + 40,
+                        ],
                     )
                     .unwrap(),
                     format!("block#{}", index + 40),
@@ -1061,7 +1067,10 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         witness_source_offset: Some(u64::from(ordinal + 20)),
         token: crate::om::reference_index::PayloadIndexToken::from_wire(
             ordinal + 90,
-            &[0xf0, (ordinal + 90) as u8],
+            &[
+                0xf0,
+                u8::try_from(ordinal + 90).expect("fixture value fits u8"),
+            ],
         )
         .unwrap(),
         data_block: Some(format!("block-{ordinal}")),
@@ -1143,7 +1152,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         member: crate::om::compact::LocatedCompactIndex {
             atom: crate::om::compact::CompactIndexAtom::from_wire(
                 member_index,
-                &[member_index as u8],
+                &[u8::try_from(member_index).expect("fixture value fits u8")],
             )
             .unwrap(),
             offset: u64::from(ordinal),
@@ -1558,7 +1567,10 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
                 .unwrap(),
                 token: crate::om::reference_index::PayloadIndexToken::from_wire(
                     ordinal + 100,
-                    &[0xf0, (ordinal + 100) as u8],
+                    &[
+                        0xf0,
+                        u8::try_from(ordinal + 100).expect("fixture value fits u8"),
+                    ],
                 )
                 .unwrap(),
                 data_block: Some(format!("block#{ordinal}")),

@@ -19,7 +19,10 @@ pub(crate) enum SurfaceFamily {
 
 impl From<SurfaceFamily> for u8 {
     fn from(value: SurfaceFamily) -> Self {
-        value as Self
+        match value {
+            SurfaceFamily::Form14 => 0x14,
+            SurfaceFamily::Form50 => 0x50,
+        }
     }
 }
 
@@ -91,9 +94,9 @@ impl<B> SurfaceBranch<B> {
             .offset
             .checked_add(
                 branch.terminal_relative_offset()
-                    + branch.terminal.0.raw().len() as u64
+                    + cadmpeg_core::decode::u64_from_index(branch.terminal.0.raw().len())
                     + 1
-                    + branch.suffix.0.len() as u64,
+                    + cadmpeg_core::decode::u64_from_index(branch.suffix.0.len()),
             )
             .ok_or("source_offset: surface branch frame overflows")?;
         Ok(branch)
@@ -122,7 +125,7 @@ impl<B> SurfaceBranch<B> {
         let mut at = self.offset + 3;
         self.members.as_slice().iter().map(move |(token, _)| {
             let offset = at;
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             offset
         })
     }
@@ -132,7 +135,7 @@ impl<B> SurfaceBranch<B> {
             .members
             .as_slice()
             .iter()
-            .map(|(token, _)| token.raw().len() as u64)
+            .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum::<u64>();
         let state_bytes = if self.witnessed {
             u64::from(self.members.declared_count()) + 5

@@ -223,14 +223,14 @@ mod tests {
             .expect("test cache is empty");
         Container {
             data: Cow::Borrowed(UUID_FRAME),
-            physical_size: UUID_FRAME.len() as u64,
+            physical_size: cadmpeg_core::decode::u64_from_index(UUID_FRAME.len()),
             layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/UG_PART".to_owned(),
                 region: Region::Header,
                 body: DirEntryBody::File {
                     offset: 0,
-                    len: UUID_FRAME.len() as u64,
+                    len: cadmpeg_core::decode::u64_from_index(UUID_FRAME.len()),
                 },
             }],
             fastload_table: None,

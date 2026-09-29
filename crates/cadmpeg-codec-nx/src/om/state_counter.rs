@@ -82,7 +82,7 @@ impl StateCounter {
         modified: u8,
     ) -> Result<Self, &'static str> {
         offset
-            .checked_add(5 + object.raw().len() as u64)
+            .checked_add(5 + cadmpeg_core::decode::u64_from_index(object.raw().len()))
             .ok_or("source_offset: counter row extent overflows")?;
         Ok(Self {
             offset,

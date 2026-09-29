@@ -882,7 +882,12 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
             bytes.extend_from_slice(&coordinate.to_be_bytes());
         }
         for ordinal in 0..value_count {
-            bytes.extend_from_slice(&(ordinal as f64 + 0.25).to_be_bytes());
+            bytes.extend_from_slice(
+                &(cadmpeg_core::convert::f64_from_index(ordinal)
+                    .expect("fixture integer is exactly representable")
+                    + 0.25)
+                    .to_be_bytes(),
+            );
         }
         bytes
     }
@@ -1245,7 +1250,10 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
                 &record.canonical_bytes
             ))
             .unwrap()
-            .get(NodeKind::try_from(kind as u8).unwrap(), 12)
+            .get(
+                NodeKind::try_from(u8::try_from(kind).expect("fixture value fits u8")).unwrap(),
+                12
+            )
             .is_some()
         );
     }

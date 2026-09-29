@@ -1907,3 +1907,5 @@ fn nx_shell_completeness_requires_each_construction_field() {
     assert!(!shell_definition_is_incomplete(&complete));
     assert_eq!(complete.body_output_family(), Some("shell"));
 }
+
+mod numeric;

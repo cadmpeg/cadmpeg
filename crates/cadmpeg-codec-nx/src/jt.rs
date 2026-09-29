@@ -144,8 +144,8 @@ fn lossless_coordinate_component(
         let mut values =
             propagate_resource!(ctx.retained_vec(exponents.len(), "nx JT decoded vector"));
         for (&exponent, &mantissa) in exponents.iter().zip(mantissae) {
-            let exponent = exponent as u32 & 0x1ff;
-            let mantissa = mantissa as u32 & 0x7f_ffff;
+            let exponent = exponent.cast_unsigned() & 0x1ff;
+            let mantissa = mantissa.cast_unsigned() & 0x7f_ffff;
             let value = f32::from_bits((exponent << 23) | mantissa);
             values.push(FiniteBinary32::new(value)?);
         }
@@ -178,15 +178,17 @@ impl Sextant {
         }
     }
 
-    fn from_hue_sixth(hue: f32) -> Self {
-        match hue as u8 {
-            0 => Self::Zero,
-            1 => Self::One,
-            2 => Self::Two,
-            3 => Self::Three,
-            4 => Self::Four,
-            _ => Self::Five,
-        }
+    fn from_hue_sixth(hue: f32) -> Option<Self> {
+        Some(
+            match cadmpeg_core::convert::truncate_f64_to_u8(f64::from(hue))? {
+                0 => Self::Zero,
+                1 => Self::One,
+                2 => Self::Two,
+                3 => Self::Three,
+                4 => Self::Four,
+                _ => Self::Five,
+            },
+        )
     }
 
     fn is_odd(self) -> bool {
@@ -254,9 +256,9 @@ fn deering_normal(
         .tan()
         .asin();
     let psi_angle = maximum_psi * f64::from(psi_index) / table_size;
-    let x = (psi_angle.cos() * theta_angle.cos()) as f32;
-    let y = psi_angle.sin() as f32;
-    let z = (psi_angle.cos() * theta_angle.sin()) as f32;
+    let x = cadmpeg_core::convert::f32_from_f64(psi_angle.cos() * theta_angle.cos())?;
+    let y = cadmpeg_core::convert::f32_from_f64(psi_angle.sin())?;
+    let z = cadmpeg_core::convert::f32_from_f64(psi_angle.cos() * theta_angle.sin())?;
     let mut result = match sextant {
         Sextant::Zero => [x, y, z],
         Sextant::One => [z, y, x],
@@ -638,7 +640,7 @@ fn hsv_to_rgb(
     let chroma = value.get() * saturation.get();
     let intermediate = chroma * (1.0 - (hue.rem_euclid(2.0) - 1.0).abs());
     let minimum = value.get() - chroma;
-    let [red, green, blue] = match Sextant::from_hue_sixth(hue) {
+    let [red, green, blue] = match Sextant::from_hue_sixth(hue)? {
         Sextant::Zero => [chroma, intermediate, 0.0],
         Sextant::One => [intermediate, chroma, 0.0],
         Sextant::Two => [0.0, chroma, intermediate],
@@ -700,7 +702,8 @@ fn dequantize_uniform(code: u32, range: QuantizedRange, bits: u8) -> Option<Fini
         return None;
     }
     let step = (f64::from(range[1]) - f64::from(range[0])) / f64::from(maximum_code);
-    let value = (f64::from(range[0]) + (f64::from(code) - 0.5) * step) as f32;
+    let value =
+        cadmpeg_core::convert::f32_from_f64(f64::from(range[0]) + (f64::from(code) - 0.5) * step)?;
     FiniteBinary32::new(value)
 }
 
@@ -896,7 +899,7 @@ fn parse_probability_context<'a>(
         let symbol_bits = u8::try_from(bits.read(6)?).ok()?;
         let occurrence_bits = u8::try_from(bits.read(6)?).ok()?;
         let value_bits = u8::try_from(bits.read(6)?).ok()?;
-        let minimum = bits.read(32)? as i32;
+        let minimum = bits.read(32)?.cast_signed();
         if symbol_bits > 32 || occurrence_bits > 32 || value_bits > 32 {
             return None;
         }
@@ -919,9 +922,9 @@ fn parse_probability_context<'a>(
         let (mut entries, reservation) =
             propagate_resource!(ctx.temporary_vec(entry_count, "nx JT decoded vector"));
         for _ in 0..entry_count {
-            let symbol = bits.read(symbol_bits)? as i32 - 2;
+            let symbol = bits.read(symbol_bits)?.cast_signed() - 2;
             let occurrence_count = bits.read(occurrence_bits)?;
-            let value = (bits.read(value_bits)? as i32).wrapping_add(minimum);
+            let value = (bits.read(value_bits)?.cast_signed()).wrapping_add(minimum);
             entries.push(ProbabilityEntry {
                 symbol,
                 occurrence_count,
@@ -957,8 +960,8 @@ impl CodeBits<'_> {
         let raw = self.read(count)?;
         Some(match count {
             0 => 0,
-            32 => raw as i32,
-            _ => ((raw << (32 - count)) as i32) >> (32 - count),
+            32 => raw.cast_signed(),
+            _ => (raw << (32 - count)).cast_signed() >> (32 - count),
         })
     }
 
@@ -971,7 +974,7 @@ impl CodeBits<'_> {
         let offset = word_index * 4;
         let word = View::u32_le_at(self.words, offset)?;
         self.bit += 1;
-        Some(((word >> (31 - bit_index)) & 1) as u16)
+        u16::try_from((word >> (31 - bit_index)) & 1).ok()
     }
 }
 
@@ -1049,8 +1052,8 @@ fn decode_arithmetic<'a>(
                 contains
             })?;
             let entry_high = cumulative + entry.occurrence_count;
-            high = low.wrapping_add(((range * entry_high) / total - 1) as u16);
-            low = low.wrapping_add(((range * cumulative) / total) as u16);
+            high = low.wrapping_add(u16::try_from((range * entry_high) / total - 1).ok()?);
+            low = low.wrapping_add(u16::try_from((range * cumulative) / total).ok()?);
             loop {
                 if ((high ^ low) & 0x8000) == 0 {
                 } else if low & 0x4000 != 0 && high & 0x4000 == 0 {
@@ -1090,8 +1093,11 @@ fn decode_bitlength(
             bit_len: code_bit_len,
             bit: 0,
         };
-        let value_count =
-            cadmpeg_core::decode::bounded_len(value_count as u64, 1, MAX_ARITHMETIC_VALUES)?;
+        let value_count = cadmpeg_core::decode::bounded_len(
+            cadmpeg_core::decode::u64_from_index(value_count),
+            1,
+            MAX_ARITHMETIC_VALUES,
+        )?;
         propagate_resource!(ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(value_count),
             "decode JT bitlength symbols",
@@ -1112,7 +1118,7 @@ fn decode_bitlength(
             let width = if span == 0 {
                 0
             } else {
-                (u32::BITS - span.leading_zeros()) as u8
+                u8::try_from(u32::BITS - span.leading_zeros()).ok()?
             };
             for _ in 0..value_count {
                 let code = bits.read(width)?;
@@ -1148,7 +1154,7 @@ fn decode_bitlength(
                     return None;
                 }
                 for _ in 0..run {
-                    values.push(mean.wrapping_add(bits.read_signed(width as u8)?));
+                    values.push(mean.wrapping_add(bits.read_signed(u8::try_from(width).ok()?)?));
                 }
             }
         }
@@ -1191,7 +1197,7 @@ fn decode_int32_cdp2_inner(
                     propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(6..)?, depth + 1))?;
                 return (values.len() == value_count).then_some(Ok((values, 6 + nested_len)));
             }
-            let bias = read_u32(bytes, 6)? as i32;
+            let bias = read_u32(bytes, 6)?.cast_signed();
             let &span_bits = bytes.get(10)?;
             if chop_bits > span_bits || span_bits > 32 {
                 return None;
@@ -1212,10 +1218,11 @@ fn decode_int32_cdp2_inner(
             } else {
                 (1_u32 << shift) - 1
             };
-            if lsb
-                .iter()
-                .any(|value| *value < 0 || (*value as u32) > low_mask)
-            {
+            if lsb.iter().any(|value| {
+                u32::try_from(*value)
+                    .ok()
+                    .is_none_or(|value| value > low_mask)
+            }) {
                 return None;
             }
             let mut values =

@@ -77,7 +77,7 @@ impl From<FeatureSurfaceConstructionBranch> for SurfaceBranchWire {
             .enumerate()
             .map(
                 |(ordinal, ((token, data_block), source_offset))| SurfaceReferenceWire {
-                    ordinal: ordinal as u32,
+                    ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                     token: *token,
                     data_block: data_block.clone(),
                     source_offset,
@@ -95,7 +95,7 @@ impl From<FeatureSurfaceConstructionBranch> for SurfaceBranchWire {
             witnessed: branch.witnessed(),
             members,
             terminal: SurfaceReferenceWire {
-                ordinal: branch.members().len() as u32,
+                ordinal: u32::from(branch.members().declared_count() - 1),
                 token: branch.terminal().0,
                 data_block: branch.terminal().1.clone(),
                 source_offset: branch.terminal_offset(),
@@ -140,14 +140,16 @@ impl TryFrom<SurfaceBranchWire> for FeatureSurfaceConstructionBranch {
             .into_iter()
             .zip(references.member_offsets().enumerate())
         {
-            if ordinal != expected_ordinal as u32 {
+            if ordinal
+                != u32::try_from(expected_ordinal).map_err(|_| "members: count exceeds u32")?
+            {
                 return Err("members.ordinal must follow serialized order".to_owned());
             }
             if source_offset != expected_offset {
                 return Err("members.source_offset must follow the branch frame".to_owned());
             }
         }
-        if terminal_position.0 != references.members().len() as u32 {
+        if terminal_position.0 != u32::from(references.members().declared_count() - 1) {
             return Err("terminal.ordinal must equal members length".to_owned());
         }
         if terminal_position.1 != references.terminal_offset() {

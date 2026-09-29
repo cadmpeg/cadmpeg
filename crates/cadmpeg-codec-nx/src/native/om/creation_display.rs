@@ -171,7 +171,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
         };
         let entry_index = entry.index();
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let source_base = entry_offset + record_area_offset as u64;
+        let source_base = entry_offset + cadmpeg_core::decode::u64_from_index(record_area_offset);
         for row in crate::om::column_row::scan::index_rows(ctx, record_area)? {
             if row.indices()[3].atom.value() != class_ordinal {
                 continue;

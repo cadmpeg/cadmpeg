@@ -181,7 +181,10 @@ fn decode_retains_strict_tiff_material_texture_assets() {
     );
     assert_eq!(serde_json::to_value(&assets[0]).unwrap()["version"], 42);
     assert_eq!(assets[0].first_ifd_offset(), 8);
-    assert_eq!(assets[0].byte_len(), texture.len() as u64);
+    assert_eq!(
+        assets[0].byte_len(),
+        cadmpeg_core::decode::u64_from_index(texture.len())
+    );
     assert_eq!(
         assets[0].sha256,
         cadmpeg_ir::hash::digest::Sha256Digest::digest(&texture)
@@ -1383,7 +1386,7 @@ fn native_retains_rmfastload_table_and_member_words() {
     assert_eq!(table.registry_source_offset, entry_offset);
     assert_eq!(
         table.source_offset,
-        entry_offset + b"UGS::Solid::Topol".len() as u64
+        entry_offset + cadmpeg_core::decode::u64_from_index(b"UGS::Solid::Topol".len())
     );
     assert_eq!(object_ids[0].table, table.id);
     assert_eq!(object_ids[0].value, 1);
@@ -1452,7 +1455,8 @@ fn fastload_identity_map_refuses_collection_limit_before_reserve() {
 fn fastload_identity_map_refuses_materialized_limit_before_reserve() {
     let mut policy = DecodePolicy::default();
     let map_entry_bytes = std::mem::size_of::<(u32, usize)>() + 4 * std::mem::size_of::<usize>();
-    policy.limits.max_materialized_bytes = (50 * map_entry_bytes - 1) as u64;
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index(50 * map_entry_bytes - 1);
     let error = native_fastload_result(policy).expect_err("identity map needs one more byte");
     assert_fastload_limit(
         &error,
@@ -1520,7 +1524,7 @@ fn fastload_native_copies_refuse_retained_limit_before_creation() {
         + "/Root/FastLoad/RMFastLoad".len()
         + stable_bytes;
     policy.limits.max_retained_bytes =
-        (directory_bytes + parsed_id_bytes + native_bytes - 1) as u64;
+        cadmpeg_core::decode::u64_from_index(directory_bytes + parsed_id_bytes + native_bytes - 1);
     let error = native_fastload_result(policy).expect_err("native copies need one more byte");
     assert_fastload_limit(
         &error,
@@ -1600,8 +1604,11 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
             crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(),
             crate::om::discriminators::LinkedIndexDiscriminator::Form16,
             CompactIndexTarget {
-                atom: crate::om::compact::CompactIndexAtom::from_wire(target, &[target as u8])
-                    .unwrap(),
+                atom: crate::om::compact::CompactIndexAtom::from_wire(
+                    target,
+                    &[u8::try_from(target).expect("fixture value fits u8")],
+                )
+                .unwrap(),
                 target: format!("block#{target}"),
             },
             [5, 6, 7].map(|value| CompactIndexTarget {
@@ -1623,8 +1630,11 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         ordinal: 0,
         frame: TargetRow::<String, u64>::new(
             CompactIndexTarget {
-                atom: crate::om::compact::CompactIndexAtom::from_wire(index, &[index as u8])
-                    .unwrap(),
+                atom: crate::om::compact::CompactIndexAtom::from_wire(
+                    index,
+                    &[u8::try_from(index).expect("fixture value fits u8")],
+                )
+                .unwrap(),
                 target: format!("block#{index}"),
             },
             [5, 6, 7].map(|value| CompactIndexTarget {
@@ -1729,7 +1739,13 @@ fn column_index_table_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> 
     use crate::om::compact::{CompactIndexAtom, CompactIndexTarget};
     use crate::om::discriminators::{IndexRowMode, LinkedIndexDiscriminator, LinkedIndexFlag};
 
-    let atom = |value: u32| CompactIndexAtom::from_wire(value, &[value as u8]).unwrap();
+    let atom = |value: u32| {
+        CompactIndexAtom::from_wire(
+            value,
+            &[u8::try_from(value).expect("fixture value fits u8")],
+        )
+        .unwrap()
+    };
     let target = |value| CompactIndexTarget {
         atom: atom(value),
         target: format!("block#{value}"),

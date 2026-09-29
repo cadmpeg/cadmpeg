@@ -884,7 +884,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         feature("synthetic:test:id#unrelated", Vec::new(), Vec::new(), None),
     ];
     for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
-        feature.ordinal = ordinal as u64;
+        feature.ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
     }
     ir.model.configurations = vec![configuration(true, Some((vec![body]).try_into().unwrap()))];
     let mut annotations = AnnotationBuilder::new();
@@ -1255,7 +1255,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
                 raw[0] -= 0x10;
                 crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap()
             },
-            payload_offset: ordinal as u64,
+            payload_offset: u64::from(ordinal),
             source_offset,
         }
     };

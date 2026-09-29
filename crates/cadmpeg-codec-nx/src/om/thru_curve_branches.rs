@@ -24,7 +24,7 @@ impl<B> ThruCurveBranch<B> {
         let mut at = 3;
         self.members.as_slice().iter().map(move |(token, _)| {
             let offset = at;
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             offset
         })
     }
@@ -34,15 +34,17 @@ impl<B> ThruCurveBranch<B> {
             .members
             .as_slice()
             .iter()
-            .map(|(token, _)| token.raw().len() as u64)
+            .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum::<u64>()
             + 2
-            + self.members.state_lane_len() as u64
+            + cadmpeg_core::decode::u64_from_index(self.members.state_lane_len())
             + 3
     }
 
     fn byte_len(&self) -> u64 {
-        self.terminal_position() + self.terminal.0.raw().len() as u64 + 3
+        self.terminal_position()
+            + cadmpeg_core::decode::u64_from_index(self.terminal.0.raw().len())
+            + 3
     }
 }
 
@@ -65,7 +67,7 @@ impl<B> ThruCurveGroup<B> {
                 .iter()
                 .map(ThruCurveBranch::byte_len)
                 .sum::<u64>()
-            + terminator.bytes().len() as u64;
+            + cadmpeg_core::decode::u64_from_index(terminator.bytes().len());
         offset
             .checked_add(byte_len)
             .ok_or("source_offset: THRU_CURVE group frame overflows")?;

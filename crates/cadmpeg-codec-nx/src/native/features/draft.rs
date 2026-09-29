@@ -1068,7 +1068,7 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             .into_iter()
             .enumerate()
         {
-            let payload_offset = value.offset as u64;
+            let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
