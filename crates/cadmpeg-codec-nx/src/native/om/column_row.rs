@@ -363,11 +363,12 @@ mod tests {
 
     #[test]
     fn native_column_row_routes_keep_resolved_frames() {
-        for (row, route) in [
-            (INDEX_ROW, index_count as Route),
+        let routes: [(_, Route); 3] = [
+            (INDEX_ROW, index_count),
             (LINKED_ROW, linked_count),
             (TARGET_ROW, target_count),
-        ] {
+        ];
+        for (row, route) in routes {
             let container = column_container(row);
             assert_eq!(
                 crate::test_support::with_decode_context(|ctx| route(ctx, &container))
