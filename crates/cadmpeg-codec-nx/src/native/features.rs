@@ -9971,58 +9971,83 @@ pub(super) fn feature_block_payload_named_records(
 
 /// Type exact two-scalar `Point<positive decimal>` `BLOCK` payload intervals.
 pub(super) fn feature_block_payload_points(
+    ctx: &DecodeContext<'_>,
     records: &[FeatureBlockPayloadNamedRecord],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
-) -> Vec<FeatureBlockPayloadPoint> {
-    let names = names
-        .iter()
-        .map(|name| (name.id.as_str(), name))
-        .collect::<BTreeMap<_, _>>();
-    let scalars = scalars
-        .iter()
-        .map(|scalar| (scalar.id.as_str(), scalar))
-        .collect::<BTreeMap<_, _>>();
-    records
-        .iter()
-        .filter_map(|record| {
-            let name = names.get(record.name_field.as_str())?;
-            parse_sketch_point_name(name.frame.value())?;
-            let [first_id, second_id] = record.scalar_fields.as_slice() else {
-                return None;
+) -> Result<Vec<FeatureBlockPayloadPoint>, CodecError> {
+    let mut points = Vec::new();
+    let scan_work = scalars.len().checked_mul(2)
+        .and_then(|scalar_scans| names.len().checked_add(scalar_scans))
+        .and_then(|per_record| per_record.checked_mul(records.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX block payload points", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(scan_work),
+        "scan NX block payload points")?;
+    for record in records {
+            let Some(name) = names.iter().rev().find(|name| name.id == record.name_field) else {
+                continue;
             };
-            let first = scalars.get(first_id.as_str())?;
-            let second = scalars.get(second_id.as_str())?;
-            Some(FeatureBlockPayloadPoint {
-                id: format!("{}-point", record.id),
-                operation_label: record.operation_label.clone(),
-                named_record: record.id.clone(),
-                name: name.frame.value().to_owned(),
-                scalar_fields: [first.id.clone(), second.id.clone()],
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(name.frame.value().len()),
+                "parse NX block payload point name")?;
+            if parse_sketch_point_name(name.frame.value()).is_none() {
+                continue;
+            }
+            let [first_id, second_id] = record.scalar_fields.as_slice() else {
+                continue;
+            };
+            let Some(first) = scalars.iter().rev().find(|scalar| scalar.id == *first_id) else {
+                continue;
+            };
+            let Some(second) = scalars.iter().rev().find(|scalar| scalar.id == *second_id) else {
+                continue;
+            };
+            let id = format_charged_text(ctx, format_args!("{}-point", record.id),
+                "NX block payload point identity")?;
+            let operation_label = copy_operation_text(ctx, &record.operation_label,
+                "NX block payload point operation")?;
+            let named_record = copy_operation_text(ctx, &record.id,
+                "NX block payload point named record")?;
+            let name = copy_operation_text(ctx, name.frame.value(),
+                "NX block payload point name")?;
+            let first_id = copy_operation_text(ctx, &first.id,
+                "NX block payload point first scalar")?;
+            let second_id = copy_operation_text(ctx, &second.id,
+                "NX block payload point second scalar")?;
+            ctx.charge_collection_items(1, "NX block payload points")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureBlockPayloadPoint>()),
+                "NX block payload points")?;
+            points.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX block payload points", 0, 1))?;
+            points.push(FeatureBlockPayloadPoint {
+                id, operation_label, named_record, name,
+                scalar_fields: [first_id, second_id],
                 coordinates: [first.scalar.value(), second.scalar.value()].into(),
-            })
-        })
-        .collect()
+            });
+    }
+    Ok(points)
 }
 
 /// Group every bit-identical same-name `BLOCK` construction-point witness.
 pub(super) fn feature_block_payload_point_groups(
+    ctx: &DecodeContext<'_>,
     points: &[FeatureBlockPayloadPoint],
-) -> Vec<FeatureBlockPayloadPointGroup> {
-    let mut grouped = BTreeSet::new();
+) -> Result<Vec<FeatureBlockPayloadPointGroup>, CodecError> {
     let mut groups = Vec::new();
-    for point in points {
-        let key = (point.operation_label.as_str(), point.name.as_str());
-        if !grouped.insert(key) {
+    let scan_work = points.len().checked_mul(points.len())
+        .and_then(|comparisons| comparisons.checked_mul(3))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX block payload point groups", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(scan_work),
+        "scan NX block payload point groups")?;
+    for (ordinal, point) in points.iter().enumerate() {
+        if points[..ordinal].iter().any(|candidate| {
+            candidate.operation_label == point.operation_label && candidate.name == point.name
+        }) {
             continue;
         }
-        let witnesses = points
-            .iter()
-            .filter(|candidate| {
-                candidate.operation_label == point.operation_label && candidate.name == point.name
-            })
-            .collect::<Vec<_>>();
-        if witnesses.iter().any(|candidate| {
+        if points.iter().filter(|candidate| {
+            candidate.operation_label == point.operation_label && candidate.name == point.name
+        }).any(|candidate| {
             candidate
                 .coordinates
                 .iter()
@@ -10031,18 +10056,37 @@ pub(super) fn feature_block_payload_point_groups(
         }) {
             continue;
         }
+        let mut witnesses = Vec::new();
+        for witness in points.iter().filter(|candidate| {
+            candidate.operation_label == point.operation_label && candidate.name == point.name
+        }) {
+            let id = copy_operation_text(ctx, &witness.id,
+                "NX block payload point group witness")?;
+            ctx.charge_collection_items(1, "NX block payload point group witnesses")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<String>()), "NX block payload point group witnesses")?;
+            witnesses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX block payload point group witnesses", 0, 1))?;
+            witnesses.push(id);
+        }
+        let id = format_charged_text(ctx, format_args!("{}-group", point.id),
+            "NX block payload point group identity")?;
+        let operation_label = copy_operation_text(ctx, &point.operation_label,
+            "NX block payload point group operation")?;
+        let name = copy_operation_text(ctx, &point.name,
+            "NX block payload point group name")?;
+        ctx.charge_collection_items(1, "NX block payload point groups")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureBlockPayloadPointGroup>()),
+            "NX block payload point groups")?;
+        groups.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX block payload point groups", 0, 1))?;
         groups.push(FeatureBlockPayloadPointGroup {
-            id: format!("{}-group", point.id),
-            operation_label: point.operation_label.clone(),
-            name: point.name.clone(),
-            points: witnesses
-                .into_iter()
-                .map(|point| point.id.clone())
-                .collect(),
+            id, operation_label, name, points: witnesses,
             coordinates: point.coordinates,
         });
     }
-    groups
+    Ok(groups)
 }
 
 /// Resolve the consecutive three-parameter dimension run of `BLOCK` features.

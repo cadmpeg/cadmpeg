@@ -997,18 +997,18 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         payload_end_offset: 50,
     };
 
-    let points = feature_block_payload_points(
-        std::slice::from_ref(&record),
-        std::slice::from_ref(&name),
-        &scalars,
-    );
+    let points = crate::test_support::with_decode_context(|ctx| feature_block_payload_points(
+        ctx, std::slice::from_ref(&record), std::slice::from_ref(&name), &scalars,
+    )).expect("admitted block points");
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].name, "Point7");
     assert_eq!(points[0].coordinates, [1.25, -2.5]);
 
     let mut duplicate = points[0].clone();
     duplicate.id = "point-2".to_string();
-    let groups = feature_block_payload_point_groups(&[points[0].clone(), duplicate]);
+    let groups = crate::test_support::with_decode_context(|ctx| {
+        feature_block_payload_point_groups(ctx, &[points[0].clone(), duplicate])
+    }).expect("admitted block point group");
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].points.len(), 2);
     assert_eq!(groups[0].coordinates, [1.25, -2.5]);
@@ -1020,13 +1020,16 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         f64::from_bits((-2.5_f64).to_bits() + 1),
     ])
     .expect("finite coordinates");
-    assert!(feature_block_payload_point_groups(&[points[0].clone(), conflicting]).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        feature_block_payload_point_groups(ctx, &[points[0].clone(), conflicting])
+    }).expect("conflicting block point group").is_empty());
 
     let mut incomplete = record.clone();
     incomplete.scalar_fields.pop();
     assert!(
-        feature_block_payload_points(&[incomplete], std::slice::from_ref(&name), &scalars,)
-            .is_empty()
+        crate::test_support::with_decode_context(|ctx| feature_block_payload_points(
+            ctx, &[incomplete], std::slice::from_ref(&name), &scalars,
+        )).expect("incomplete block point").is_empty()
     );
     let mut malformed = name;
     malformed.frame = crate::om::name_field::NameField::new(
@@ -1038,7 +1041,9 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         }),
     )
     .unwrap();
-    assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| feature_block_payload_points(
+        ctx, &[record], &[malformed], &scalars,
+    )).expect("malformed block point").is_empty());
 }
 
 #[test]
