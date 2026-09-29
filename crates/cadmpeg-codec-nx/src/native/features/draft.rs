@@ -32,6 +32,7 @@ use super::offset_data_block_bytes;
 
 use super::resolved_feature_payload_references;
 use super::format_feature_history_id;
+use super::format_feature_child_id;
 use super::copy_operation_text;
 use super::replace_operation_text;
 use super::unique_offset_data_store;
@@ -937,11 +938,20 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
+            let id = format_feature_child_id(ctx, &payload.id, "-fixed-lane-", ordinal)?;
+            let operation_label = copy_operation_text(ctx, &payload.operation_label, "NX draft fixed lane operation")?;
+            let graph_payload = copy_operation_text(ctx, &payload.id, "NX draft fixed lane graph")?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX draft fixed lane ordinal", 0, 1))?;
+            ctx.charge_collection_items(1, "NX draft construction fixed lanes")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDraftConstructionFixedLane>()), "NX draft construction fixed lane")?;
+            lanes.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX draft construction fixed lanes", 0, 1))?;
             lanes.push(FeatureDraftConstructionFixedLane {
-                id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                graph_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
+                id,
+                operation_label,
+                graph_payload,
+                ordinal,
                 lane,
                 source_offset,
             });

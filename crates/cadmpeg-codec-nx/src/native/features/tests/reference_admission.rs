@@ -7,6 +7,8 @@ use crate::native::features::feature_thru_curve_construction_envelopes;
 use crate::native::features::draft::feature_draft_construction_references;
 use crate::native::features::draft::feature_draft_construction_payloads;
 use crate::native::features::draft::feature_draft_construction_graph_payloads;
+use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
 use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::draft::FeatureDraftConstructionIndexLane;
 
@@ -269,7 +271,7 @@ fn draft_payload_route_refuses_work_limit() {
 
 fn draft_graph_references() -> Vec<FeatureDraftConstructionReference> {
     (0..4).map(|ordinal| {
-        let index = if ordinal % 2 == 0 { 1 } else { 2 };
+        let index = if ordinal == 0 { 1 } else { 2 };
         serde_json::from_value(serde_json::json!({
             "id": format!("nx:feature-history:draft-construction-reference#0-0000000000-{ordinal:010}"),
             "operation_label": "nx:feature-history:operation-label#0-0000000000",
@@ -280,6 +282,81 @@ fn draft_graph_references() -> Vec<FeatureDraftConstructionReference> {
             "source_offset": 100 + ordinal,
         })).expect("resolved draft graph reference")
     }).collect()
+}
+
+fn draft_graph_fixture_with_content(
+    bytes: &[u8],
+) -> (crate::container::Container<'static>, FeatureDraftConstructionGraphPayload) {
+    let part = crate::test_support::test_om::composed_feature_history_payload(&[], &[bytes, b""]);
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    let container = crate::test_support::with_decode_context(move |ctx| {
+        crate::container::scan_bytes(ctx, file)
+    }).expect("synthetic draft graph content container");
+    let lane = draft_resolved_lane();
+    let references = draft_graph_references();
+    let mut payloads = crate::test_support::with_decode_context(|ctx| {
+        feature_draft_construction_graph_payloads(ctx, &container, &[lane], &references)
+    }).expect("admitted draft graph content");
+    assert_eq!(payloads.len(), 1);
+    (container, payloads.remove(0))
+}
+
+fn draft_fixed_bytes() -> Vec<u8> {
+    let discriminator = [
+        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x00,
+    ];
+    let mut bytes = vec![0xff];
+    bytes.extend_from_slice(&discriminator);
+    bytes.extend_from_slice(&[0x30, 0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0xb0, 0xc0, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0);
+    bytes
+}
+
+fn draft_fixed_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (container, payload) = draft_graph_fixture_with_content(&draft_fixed_bytes());
+    let lanes = crate::test_support::with_decode_context(|ctx| {
+        feature_draft_construction_fixed_lanes(ctx, &container, &[payload.clone()])
+    }).expect("admitted draft fixed lane");
+    assert_eq!(lanes.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_draft_construction_fixed_lanes(&ctx, &container, &[payload])
+        .err().expect("draft fixed lane resource limit")
+}
+
+#[test]
+fn draft_fixed_route_refuses_collection_limit() {
+    let error = draft_fixed_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn draft_fixed_route_refuses_retained_limit() {
+    let error = draft_fixed_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn draft_fixed_route_refuses_scoped_limit() {
+    let error = draft_fixed_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn draft_fixed_route_refuses_work_limit() {
+    let error = draft_fixed_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn draft_graph_payload_route_refusal(
