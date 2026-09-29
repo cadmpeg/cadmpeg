@@ -2,6 +2,7 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use std::collections::BTreeMap;
 
 const ONE_COMMENT: &[u8] = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
     \xe0\x0aexpression\0\xf8\x01/*x*/\0";
@@ -376,6 +377,121 @@ fn parsed_expression_assignment_slots_refuse_before_allocation() {
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo parsed expression assignment slots"));
 }
+
+fn evaluation_limit_reaches(
+    source: &[&str],
+    external_symbols: &super::super::ExternalRelationSymbols,
+    dimension: ResourceDimension,
+    operation: &'static str,
+) {
+    let lines = expression_lines(source);
+    with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols)
+    })
+    .expect("service profile evaluates expression");
+
+    for limit in 0..256 {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
+            _ => panic!("unsupported test limit"),
+        }
+        let result = with_expression_policy(policy, |ctx| {
+            super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols)
+        });
+        if matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == dimension && refusal.operation == operation)
+        {
+            return;
+        }
+    }
+    panic!("no limit reaches {operation}");
+}
+
+fn external_symbol(value: Option<super::super::CurveExpressionValue>) -> super::super::ExternalRelationSymbols {
+    named_external_symbol("external", value)
+}
+
+fn named_external_symbol(name: &str, value: Option<super::super::CurveExpressionValue>) -> super::super::ExternalRelationSymbols {
+    super::super::ExternalRelationSymbols {
+        values: BTreeMap::from([(name.to_owned(), value)]),
+    }
+}
+
+macro_rules! evaluation_collection_test {
+    ($name:ident, $source:expr, $external:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            evaluation_limit_reaches(
+                $source,
+                &$external,
+                ResourceDimension::CollectionItems,
+                $operation,
+            );
+        }
+    };
+}
+
+macro_rules! evaluation_retained_test {
+    ($name:ident, $source:expr, $external:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            evaluation_limit_reaches(
+                $source,
+                &$external,
+                ResourceDimension::RetainedBytes,
+                $operation,
+            );
+        }
+    };
+}
+
+evaluation_collection_test!(existing_external_symbol_nodes_refuse, &[], external_symbol(None), "creo existing external symbol nodes");
+evaluation_retained_test!(existing_external_symbol_names_refuse, &[], external_symbol(None), "creo existing external symbol names");
+evaluation_collection_test!(existing_assignment_symbol_nodes_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo existing assignment symbol nodes");
+evaluation_retained_test!(existing_assignment_symbol_names_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo existing assignment symbol names");
+evaluation_collection_test!(defined_external_symbol_nodes_refuse, &[], external_symbol(None), "creo defined external symbol nodes");
+evaluation_retained_test!(defined_external_symbol_names_refuse, &[], external_symbol(None), "creo defined external symbol names");
+evaluation_collection_test!(external_value_nodes_refuse, &[], external_symbol(Some(super::super::CurveExpressionValue::String("text".into()))), "creo external value nodes");
+evaluation_retained_test!(external_value_names_refuse, &[], external_symbol(Some(super::super::CurveExpressionValue::Number(1.0))), "creo external value names");
+evaluation_retained_test!(external_string_values_refuse, &[], external_symbol(Some(super::super::CurveExpressionValue::String("text".into()))), "creo external string values");
+evaluation_collection_test!(defined_assignment_symbol_nodes_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo defined assignment symbol nodes");
+evaluation_retained_test!(defined_assignment_symbol_names_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo defined assignment symbol names");
+evaluation_collection_test!(evaluated_value_nodes_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo evaluated value nodes");
+evaluation_retained_test!(evaluated_symbol_names_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo evaluated symbol names");
+evaluation_collection_test!(evaluated_assignments_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo evaluated assignments");
+evaluation_collection_test!(solve_dimension_snapshots_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve dimension snapshots");
+evaluation_collection_test!(solve_initial_value_snapshots_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve initial value snapshots");
+evaluation_collection_test!(solve_dimension_snapshot_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve dimension snapshot nodes");
+evaluation_collection_test!(solve_initial_snapshot_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve initial snapshot nodes");
+evaluation_collection_test!(solve_solution_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve solution nodes");
+evaluation_collection_test!(existing_solve_symbol_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo existing solve symbol nodes");
+evaluation_retained_test!(existing_solve_symbol_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo existing solve symbol names");
+evaluation_collection_test!(defined_solve_symbol_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo defined solve symbol nodes");
+evaluation_retained_test!(defined_solve_symbol_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo defined solve symbol names");
+evaluation_collection_test!(solved_value_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solved value nodes");
+evaluation_retained_test!(solved_value_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solved value names");
+evaluation_collection_test!(evaluated_function_assignments_refuse, &["foo(x)=1"], super::super::ExternalRelationSymbols::default(), "creo evaluated assignments");
+evaluation_retained_test!(evaluated_string_values_refuse, &["a=\"text\""], super::super::ExternalRelationSymbols::default(), "creo evaluated string values");
+evaluation_retained_test!(solve_initial_string_values_refuse, &["SOLVE", "x=1", "FOR x"], named_external_symbol("x", Some(super::super::CurveExpressionValue::String("text".into()))), "creo solve initial string values");
+
+macro_rules! evaluation_materialized_test {
+    ($name:ident, $source:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            evaluation_limit_reaches(
+                $source,
+                &super::super::ExternalRelationSymbols::default(),
+                ResourceDimension::MaterializedBytes,
+                $operation,
+            );
+        }
+    };
+}
+
+evaluation_materialized_test!(solve_snapshot_lookup_refuses_temporary_bytes, &["SOLVE", "x=1", "FOR x"], "creo solve snapshot lookup");
 
 #[test]
 fn solve_unknowns_refuse_before_vector_growth() {

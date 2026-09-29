@@ -1957,6 +1957,19 @@ struct CurveExpressionEvaluation {
     solve_solutions: BTreeMap<usize, Vec<CurveExpressionValue>>,
 }
 
+fn copy_expression_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &CurveExpressionValue,
+    operation: &'static str,
+) -> Result<CurveExpressionValue, cadmpeg_core::CodecError> {
+    match value {
+        CurveExpressionValue::String(text) => Ok(CurveExpressionValue::String(
+            ctx.copy_retained_text(text, operation)?,
+        )),
+        value => Ok(value.clone()),
+    }
+}
+
 fn evaluate_expression_program_details(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     lines: &[CurveExpressionLine],
@@ -1992,37 +2005,46 @@ fn evaluate_expression_program_details(
         });
     }
 
-    let mut existing_symbols = external_symbols
-        .values
-        .keys()
-        .cloned()
-        .collect::<BTreeSet<_>>();
+    let mut existing_symbols = BTreeSet::new();
+    for name in external_symbols.values.keys() {
+        ctx.charge_collection_items(1, "creo existing external symbol nodes")?;
+        existing_symbols.insert(ctx.copy_retained_text(name, "creo existing external symbol names")?);
+    }
     for assignment in parsed_assignments.iter().flatten() {
         if let Some((name, _)) = assignment.scalar_target() {
-            existing_symbols.insert(expression_identifier_key(name));
+            let mut key = ctx.copy_retained_text(name, "creo existing assignment symbol names")?;
+            key.make_ascii_lowercase();
+            if !existing_symbols.contains(&key) {
+                ctx.charge_collection_items(1, "creo existing assignment symbol nodes")?;
+                existing_symbols.insert(key);
+            }
         }
     }
-    existing_symbols.extend(
-        solve_program
-            .blocks
-            .iter()
-            .flat_map(|block| &block.unknowns)
-            .map(|unknown| expression_identifier_key(&unknown.name)),
-    );
+    for unknown in solve_program.blocks.iter().flat_map(|block| &block.unknowns) {
+        let mut key = ctx.copy_retained_text(&unknown.name, "creo existing solve symbol names")?;
+        key.make_ascii_lowercase();
+        if !existing_symbols.contains(&key) {
+            ctx.charge_collection_items(1, "creo existing solve symbol nodes")?;
+            existing_symbols.insert(key);
+        }
+    }
     let context = RelationEvaluationContext {
         model_name,
         existing_symbols: Some(&existing_symbols),
     };
-    let mut values = external_symbols
-        .values
-        .iter()
-        .filter_map(|(name, value)| value.clone().map(|value| (name.clone(), value)))
-        .collect::<BTreeMap<_, _>>();
-    let mut defined_symbols = external_symbols
-        .values
-        .keys()
-        .cloned()
-        .collect::<BTreeSet<_>>();
+    let mut values = BTreeMap::new();
+    let mut defined_symbols = BTreeSet::new();
+    for (name, value) in &external_symbols.values {
+        ctx.charge_collection_items(1, "creo defined external symbol nodes")?;
+        defined_symbols.insert(ctx.copy_retained_text(name, "creo defined external symbol names")?);
+        if let Some(value) = value {
+            ctx.charge_collection_items(1, "creo external value nodes")?;
+            values.insert(
+                ctx.copy_retained_text(name, "creo external value names")?,
+                copy_expression_value(ctx, value, "creo external string values")?,
+            );
+        }
+    }
     let mut stack = ConditionalStack::default();
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::<CurveExpressionAssignment>::new();
@@ -2035,40 +2057,49 @@ fn evaluate_expression_program_details(
             .iter()
             .find(|block| block.offset == line.offset)
         {
-            let dimensions = block
-                .unknowns
-                .iter()
-                .map(|unknown| &unknown.name)
-                .map(|variable| {
-                    values
-                        .get(&expression_identifier_key(variable))
-                        .and_then(quantity_parts_ref)
-                        .map(|(_, dimension)| dimension)
-                })
-                .collect::<Vec<_>>();
-            solve_block_dimensions.insert(block.offset, dimensions);
-            solve_block_initial_values.insert(
-                block.offset,
-                block
-                    .unknowns
-                    .iter()
-                    .map(|unknown| &unknown.name)
-                    .map(|variable| values.get(&expression_identifier_key(variable)).cloned())
-                    .collect::<Vec<_>>(),
-            );
-            for unknown in &block.unknowns {
-                let key = expression_identifier_key(&unknown.name);
+            let mut dimensions = ctx.alloc_filled(
+                block.unknowns.len(),
+                None,
+                "creo solve dimension snapshots",
+            )?;
+            let mut initial_values = ctx.alloc_filled(
+                block.unknowns.len(),
+                None,
+                "creo solve initial value snapshots",
+            )?;
+            for ((dimension, initial), unknown) in dimensions
+                .iter_mut()
+                .zip(&mut initial_values)
+                .zip(&block.unknowns)
+            {
+                let (mut key, _key_guard) = ctx.copy_scoped_text(
+                    &unknown.name,
+                    "creo solve snapshot lookup",
+                )?;
+                key.make_ascii_lowercase();
+                let value = values.get(&key);
+                *dimension = value.and_then(quantity_parts_ref).map(|(_, dimension)| dimension);
+                *initial = value.map(|value| {
+                    copy_expression_value(ctx, value, "creo solve initial string values")
+                }).transpose()?;
                 values.remove(&key);
-                defined_symbols.insert(key.clone());
+                if !defined_symbols.contains(&key) {
+                    ctx.charge_collection_items(1, "creo defined solve symbol nodes")?;
+                    defined_symbols.insert(ctx.copy_retained_text(&key, "creo defined solve symbol names")?);
+                }
                 for assignment in &mut assignments {
                     if assignment
                         .scalar_target()
-                        .is_some_and(|(name, _)| expression_identifier_key(name) == key)
+                        .is_some_and(|(name, _)| name.eq_ignore_ascii_case(&key))
                     {
                         assignment.value = None;
                     }
                 }
             }
+            ctx.charge_collection_items(1, "creo solve dimension snapshot nodes")?;
+            solve_block_dimensions.insert(block.offset, dimensions);
+            ctx.charge_collection_items(1, "creo solve initial snapshot nodes")?;
+            solve_block_initial_values.insert(block.offset, initial_values);
         }
         if let Some(block) = solve_program
             .blocks
@@ -2108,17 +2139,22 @@ fn evaluate_expression_program_details(
                     .map(|unknown| &unknown.name)
                     .zip(&solution)
                 {
-                    let key = expression_identifier_key(variable);
-                    values.insert(key.clone(), value.clone());
+                    let mut key = ctx.copy_retained_text(variable, "creo solved value names")?;
+                    key.make_ascii_lowercase();
+                    if !values.contains_key(&key) {
+                        ctx.charge_collection_items(1, "creo solved value nodes")?;
+                    }
                     for assignment in &mut assignments {
                         if assignment
                             .scalar_target()
-                            .is_some_and(|(name, _)| expression_identifier_key(name) == key)
+                            .is_some_and(|(name, _)| name.eq_ignore_ascii_case(&key))
                         {
-                            assignment.value = Some(value.clone());
+                            assignment.value = Some(copy_expression_value(ctx, value, "creo assigned solve string values")?);
                         }
                     }
+                    values.insert(key, copy_expression_value(ctx, value, "creo solved string values")?);
                 }
+                ctx.charge_collection_items(1, "creo solve solution nodes")?;
                 solve_solutions.insert(block.offset, solution);
             }
         }
@@ -2154,16 +2190,19 @@ fn evaluate_expression_program_details(
             continue;
         };
         assignment.activation = activity;
-        let Some((name, declared_unit)) = assignment
-            .scalar_target()
-            .map(|(name, unit)| (name.to_owned(), unit.map(str::to_owned)))
+        let Some((name, declared_unit)) = assignment.scalar_target()
         else {
+            ctx.try_reserve_items(&mut assignments, 1, "creo evaluated assignments")?;
             assignments.push(assignment);
             continue;
         };
-        let key = expression_identifier_key(&name);
+        let mut key = ctx.copy_retained_text(name, "creo evaluated symbol names")?;
+        key.make_ascii_lowercase();
         let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
-        defined_symbols.insert(key.clone());
+        if !defined_symbols.contains(&key) {
+            ctx.charge_collection_items(1, "creo defined assignment symbol nodes")?;
+            defined_symbols.insert(ctx.copy_retained_text(&key, "creo defined assignment symbol names")?);
+        }
         match activity {
             CurveExpressionActivation::Active => {
                 assignment.value = declaration_is_valid
@@ -2176,9 +2215,13 @@ fn evaluate_expression_program_details(
                     })
                     .flatten()
                     .and_then(|value| {
-                        apply_declared_relation_unit(value, declared_unit.as_deref())
+                        apply_declared_relation_unit(value, declared_unit)
                     });
-                if let Some(value) = assignment.value.clone() {
+                if let Some(value) = assignment.value.as_ref() {
+                    if !values.contains_key(&key) {
+                        ctx.charge_collection_items(1, "creo evaluated value nodes")?;
+                    }
+                    let value = copy_expression_value(ctx, value, "creo evaluated string values")?;
                     values.insert(key, value);
                 } else {
                     values.remove(&key);
@@ -2189,6 +2232,7 @@ fn evaluate_expression_program_details(
                 values.remove(&key);
             }
         }
+        ctx.try_reserve_items(&mut assignments, 1, "creo evaluated assignments")?;
         assignments.push(assignment);
     }
     Ok(CurveExpressionEvaluation {
