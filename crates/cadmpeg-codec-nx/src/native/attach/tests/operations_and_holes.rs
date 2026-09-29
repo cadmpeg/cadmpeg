@@ -860,8 +860,11 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
 
 #[test]
 fn nx_text_payload_projects_semantic_text_and_font_family() {
-    let annotation = text_semantic_annotation("nx:test:text#1", 7, &["plate label", "Arial"])
-        .expect("valid text annotation");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let annotation = text_semantic_annotation(&ctx, "nx:test:text#1", 7, &["plate label", "Arial"])
+        .expect("annotation admission").expect("valid text annotation");
     assert_eq!(annotation.object, "nx:test:text#1");
     assert_eq!(
         annotation.kind,
@@ -872,14 +875,54 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
     assert_eq!(annotation.native_ref, "nx:test:text#1");
     assert_eq!(annotation.order, 7);
 
-    let empty = text_semantic_annotation("nx:test:text#empty", 8, &["", ""])
-        .expect("empty text fields remain a valid annotation");
+    let empty = text_semantic_annotation(&ctx, "nx:test:text#empty", 8, &["", ""])
+        .expect("annotation admission").expect("empty text fields remain a valid annotation");
     assert_eq!(empty.text, [""]);
     assert_eq!(empty.parameters["font_family"], "");
 
     assert!(
-        text_semantic_annotation("nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],).is_none()
+        text_semantic_annotation(&ctx, "nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],).unwrap().is_none()
     );
+}
+
+fn text_annotation_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let annotation = text_semantic_annotation(&ctx, "nx:test:text#1", 7, &["plate label", "Arial"])?;
+    assert!(annotation.is_some());
+    Ok(())
+}
+
+#[test]
+fn text_annotation_refuses_collection_limit() {
+    let error = text_annotation_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn text_annotation_refuses_retained_limit() {
+    let error = text_annotation_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn text_annotation_refuses_scoped_limit() {
+    let error = text_annotation_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn text_annotation_refuses_work_limit() {
+    let error = text_annotation_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
