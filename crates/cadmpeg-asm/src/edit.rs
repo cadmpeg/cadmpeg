@@ -162,7 +162,7 @@ impl AsmEditSet {
         let limit =
             asm_header::solved_record_limit_with_header(bytes, &header).unwrap_or(bytes.len());
         let ref_width = header.width;
-        let records = sab::frame_for_edit(bytes, start, limit, ref_width).map_err(|failure| {
+        let records = sab::frame(&ctx, bytes, start, limit, ref_width).map_err(|failure| {
             failure.into_codec_error(&ctx, |error| {
                 CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
             })
@@ -1955,6 +1955,37 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn edit_framing_uses_default_subtype_depth_limit() {
+        fn stream(depth: usize) -> Vec<u8> {
+            let mut bytes = b"ASM BinaryFile4".to_vec();
+            bytes.resize(crate::layout::asmheader_binaryfile4::LEN, 0);
+            bytes.extend_from_slice(&[7, 0, 7, 0, 7, 0]);
+            for _ in 0..3 {
+                bytes.push(6);
+                bytes.extend_from_slice(&1.0_f64.to_le_bytes());
+            }
+            bytes.extend_from_slice(&[0x0d, 1, b'x']);
+            bytes.extend(std::iter::repeat_n(0x0f, depth));
+            bytes.extend(std::iter::repeat_n(0x10, depth));
+            bytes.push(0x11);
+            bytes
+        }
+
+        assert_eq!(
+            AsmEditSet::frame(&stream(1))
+                .expect("one subtype fits the default policy")
+                .records()
+                .len(),
+            1
+        );
+        assert!(matches!(
+            AsmEditSet::frame(&stream(257)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        ));
+    }
 
     #[test]
     fn double_field_retains_current_payload_bits_and_checks_its_actual_tag() {
