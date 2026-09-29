@@ -1,7 +1,8 @@
 //! Compact selection projection and resource-limit tests.
 
 use super::super::{
-    compact_surface_selection_set_value, cut_with_surface_selection_pair, full_round_fillet_selection_triple,
+    compact_surface_selection_set_value, cut_with_surface_selection_pair, draft_face_selection,
+    full_round_fillet_selection_triple,
     project_compact_body_selections, project_compact_edge_selections,
     project_compact_surface_selections,
 };
@@ -403,4 +404,60 @@ fn surface_selection_set_refuses_retained_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "format SLDPRT surface selection set"));
+}
+
+#[test]
+fn draft_face_selection_preserves_native_path_order_and_deduplicates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::collections::HashMap;
+
+    let path = |local_id| vec![FeatureInputComponentPathEntry {
+        instance: None,
+        type_signature: [0; 12],
+        local_id: Some(local_id),
+    }];
+    let paths = [path(7), path(7), path(9)];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
+    let selection = draft_face_selection(
+        &ctx,
+        &paths,
+        "consumer",
+        &[],
+        &HashMap::new(),
+        &mut cadmpeg_ir::features::DistinctMembers::default(),
+    )
+    .expect("draft native path selection");
+    assert_eq!(selection, cadmpeg_ir::features::FaceSelection::Native(
+        "sldprt:feature-input:draft-surface-vectors:sldprt:feature-input:surface-component-ids:7;sldprt:feature-input:surface-component-ids:9".into()
+    ));
+}
+
+#[test]
+fn draft_face_selection_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::HashMap;
+
+    let paths = [vec![FeatureInputComponentPathEntry {
+        instance: None,
+        type_signature: [0; 12],
+        local_id: Some(7),
+    }]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = draft_face_selection(
+        &ctx,
+        &paths,
+        "consumer",
+        &[],
+        &HashMap::new(),
+        &mut cadmpeg_ir::features::DistinctMembers::default(),
+    )
+    .expect_err("draft native text exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "format SLDPRT draft surface selection set"));
 }
