@@ -207,7 +207,7 @@ fn append_oriented_wire_curve(
     Ok(())
 }
 
-fn copy_zero_curve(
+pub(super) fn copy_zero_curve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
 ) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
