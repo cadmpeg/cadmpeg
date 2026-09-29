@@ -1538,15 +1538,18 @@ fn decode_local_system_slot_prefix(
             saw_zero_slot_prefix: false,
         });
     }
-    let mut values = Vec::with_capacity(12);
+    let mut values = [0.0; 12];
+    let mut count = 0;
     let mut cursor = 0;
     let mut saw_zero_slot_prefix = false;
-    while cursor < body.len() && values.len() < 12 {
+    while cursor < body.len() && count < values.len() {
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-            if matches!(variant, LocalSystemVariant::Feature) && values.len() == 4 {
-                values.extend([0.0, 0.0, 1.0, 0.0, 0.0]);
+            if matches!(variant, LocalSystemVariant::Feature) && count == 4 {
+                values.get_mut(count..count + 5)?.copy_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0]);
+                count += 5;
             } else {
-                values.extend([0.0, 1.0, 0.0]);
+                values.get_mut(count..count + 3)?.copy_from_slice(&[0.0, 1.0, 0.0]);
+                count += 3;
             }
             cursor += 2;
             continue;
@@ -1557,38 +1560,42 @@ fn decode_local_system_slot_prefix(
                 .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
         {
             saw_zero_slot_prefix = true;
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
         if matches!(variant, LocalSystemVariant::PlaneSupport)
             && body.get(cursor) == Some(&0x18)
-            && values.len() < 11
-            && decode_plane_support_coordinate(body, cursor + 1, values.len() + 1, cache).is_some()
+            && count < 11
+            && decode_plane_support_coordinate(body, cursor + 1, count + 1, cache).is_some()
         {
             saw_zero_slot_prefix = true;
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
         if matches!(variant, LocalSystemVariant::PositionalCylinder)
             && body.get(cursor) == Some(&0x18)
-            && values.len() < 11
+            && count < 11
             && decode_positional_cylinder_support_coordinate(
                 body,
                 cursor + 1,
-                values.len() + 1,
+                count + 1,
                 cache,
             )
             .is_some()
         {
             saw_zero_slot_prefix = true;
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
         if body.get(cursor) == Some(&0x10) {
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
@@ -1597,14 +1604,15 @@ fn decode_local_system_slot_prefix(
             && cursor + 1 == body.len()
         {
             saw_zero_slot_prefix = true;
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
         let row = decode_in_row_lane(body, cursor, cache);
-        let (value, next) = match (variant, values.len()) {
+        let (value, next) = match (variant, count) {
             (LocalSystemVariant::PlaneSupport, 0..=8) => {
-                decode_plane_support_coordinate(body, cursor, values.len(), cache)?
+                decode_plane_support_coordinate(body, cursor, count, cache)?
             }
             (LocalSystemVariant::PlaneSupport, 9..=11) if body.get(cursor) == Some(&0x0e) => {
                 (0.5, cursor + 1)
@@ -1616,7 +1624,7 @@ fn decode_local_system_slot_prefix(
                 row.or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))?
             }
             (LocalSystemVariant::PositionalCylinder, 0..=8) => {
-                decode_positional_cylinder_support_coordinate(body, cursor, values.len(), cache)?
+                decode_positional_cylinder_support_coordinate(body, cursor, count, cache)?
             }
             (LocalSystemVariant::PositionalCylinder, 9..=11) => {
                 decode_tabulated_cylinder_first_coordinate(body, cursor, cache).or(row)?
@@ -1632,22 +1640,15 @@ fn decode_local_system_slot_prefix(
             }
             _ => row?,
         };
-        values.push(value);
+        values[count] = value;
+        count += 1;
         cursor = next;
     }
-    if values.len() != 12 {
+    if count != values.len() {
         return None;
     }
-    let [value_0, value_1, value_2, value_3, value_4, value_5, value_6, value_7, value_8, value_9, value_10, value_11] =
-        values.as_slice()
-    else {
-        return None;
-    };
     Some(LocalSystemSlotPrefix {
-        values: [
-            *value_0, *value_1, *value_2, *value_3, *value_4, *value_5, *value_6, *value_7,
-            *value_8, *value_9, *value_10, *value_11,
-        ],
+        values,
         cursor,
         saw_zero_slot_prefix,
     })
