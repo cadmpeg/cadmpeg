@@ -7907,19 +7907,15 @@ impl SweepShape {
     /// Generated cross-sections, mutable, the primary cross-section first.
     ///
     /// Only a solid result generates geometry.
-    pub fn generated_sections_mut(&mut self) -> Vec<&mut GeneratedSweepSection> {
-        match self {
-            Self::Unresolved { .. } | Self::Surface { .. } => Vec::new(),
-            Self::Solid {
-                section, sections, ..
-            } => std::iter::once(section)
-                .chain(sections)
-                .filter_map(|section| match section {
-                    SweepSection::Generated(generated) => Some(generated),
-                    SweepSection::Unresolved(_) | SweepSection::Profile(_) => None,
-                })
-                .collect(),
-        }
+    pub fn generated_sections_mut(&mut self) -> impl Iterator<Item = &mut GeneratedSweepSection> {
+        let (section, sections) = match self {
+            Self::Unresolved { .. } | Self::Surface { .. } => (None, &mut [][..]),
+            Self::Solid { section, sections, .. } => (Some(section), sections.as_mut_slice()),
+        };
+        section.into_iter().chain(sections.iter_mut()).filter_map(|section| match section {
+            SweepSection::Generated(generated) => Some(generated),
+            SweepSection::Unresolved(_) | SweepSection::Profile(_) => None,
+        })
     }
 
     /// The generated region of the primary cross-section, when the sweep owns it.

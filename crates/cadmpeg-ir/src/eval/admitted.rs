@@ -202,14 +202,18 @@ pub fn pcurve_uv(ctx: &DecodeContext<'_>, geometry: &PcurveGeometry, parameter: 
 /// The basis is admitted once; evaluations mutate that storage and borrow poles.
 pub struct NurbsPointEvaluator<'curve> {
     curve: &'curve NurbsCurve,
-    basis: Vec<f64>,
+    basis: SupportValues<f64>,
 }
 
 impl<'curve> NurbsPointEvaluator<'curve> {
     /// Admit the basis storage before allocating it.
     pub fn new(ctx: &DecodeContext<'_>, curve: &'curve NurbsCurve) -> Result<Self, CodecError> {
         let support = curve.knots().len() - curve.pole_count();
-        let basis = ctx.alloc_filled(support, 0.0, "IR B-spline basis")?;
+        let basis = if support <= 2 {
+            SupportValues::Inline { values: [0.0; 2], len: support }
+        } else {
+            SupportValues::Heap(ctx.alloc_filled(support, 0.0, "IR B-spline basis")?)
+        };
         Ok(Self { curve, basis })
     }
 
@@ -217,11 +221,14 @@ impl<'curve> NurbsPointEvaluator<'curve> {
     pub fn point(&mut self, ctx: &DecodeContext<'_>, parameter: f64)
         -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, CodecError>
     {
-        let _depth = ctx.enter_nested("geometry evaluation nesting")?;
+        let _depth = if matches!(&self.basis, SupportValues::Heap(_)) {
+            let depth = ctx.enter_nested("geometry evaluation nesting")?;
+            for _ in 0..self.basis.len() {
+                ctx.charge_work(u64_from_index(self.basis.len()), "IR B-spline basis work")?;
+            }
+            Some(depth)
+        } else { None };
         let degree = self.basis.len() - 1;
-        for _ in 0..self.basis.len() {
-            ctx.charge_work(u64_from_index(self.basis.len()), "IR B-spline basis work")?;
-        }
         let result = (|| {
             let parameter = FiniteReal::new(parameter).ok_or(EvaluationFailure::NoValue)?;
             let span = super::bspline_span(self.curve.knots(), degree, self.curve.pole_count(), parameter.get())

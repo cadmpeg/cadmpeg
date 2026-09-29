@@ -153,6 +153,31 @@ fn reusable_nurbs_evaluator_refuses_work_and_depth() {
     }
 }
 
+#[test]
+fn reusable_nurbs_evaluator_keeps_constant_and_linear_spans_inline() {
+    for degree in [0, 1] {
+        for rational in [false, true] {
+            let count = usize::try_from(degree).expect("constant or linear degree") + 1;
+            let knots = (0..count).map(|_| 0.0).chain((0..count).map(|_| 1.0)).collect();
+            let points = (0..count).map(|index| Point3::new(f64::from(u32::try_from(index).expect("two poles")), 0.0, 0.0)).collect();
+            let curve = NurbsCurve::from_lanes(degree, knots, points, rational.then(|| vec![1.0; count]), false).expect("fixed span");
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_work_units = 0;
+            policy.limits.max_recursion_depth = 0;
+            with_policy(policy, |ctx| {
+                let mut evaluator = super::NurbsPointEvaluator::new(ctx, &curve).expect("inline basis");
+                for index in 0..10_000 {
+                    let parameter = f64::from(index % 101) / 100.0;
+                    assert_eq!(evaluator.point(ctx, parameter).expect("fixed arithmetic"),
+                        super::nurbs_curve_point_at(ctx, &curve, parameter).expect("inline prior path"));
+                }
+            });
+        }
+    }
+}
+
 fn with_policy<T>(policy: DecodePolicy, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
