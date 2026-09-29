@@ -364,7 +364,7 @@ pub(super) fn attach(
         &model.features.feature_parameter_uses,
         annotations,
     )?;
-    attach_active_configuration_parameter_values(ir, annotations)?;
+    attach_active_configuration_parameter_values(ctx, ir, annotations)?;
     attach_feature_operations(ctx, ir, model, annotations, losses)?;
     attach_block_dimension_parameter_consumers(
         ir,
@@ -1144,6 +1144,7 @@ fn attach_material_texture_assets(
 }
 
 fn attach_active_configuration_parameter_values(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1158,36 +1159,48 @@ fn attach_active_configuration_parameter_values(
     {
         return Ok(());
     }
-    let parameters_by_id = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter))
-        .collect::<BTreeMap<_, _>>();
-    if parameters_by_id.len() != ir.model.parameters.len()
-        || ir.model.parameters.iter().any(|parameter| {
-            parameter.dependencies.iter().any(|dependency| {
-                parameters_by_id.get(dependency).is_none_or(|dependency| {
-                    dependency.owner != parameter.owner || dependency.ordinal >= parameter.ordinal
-                })
-            })
-        })
-    {
-        return Ok(());
+    for (index, parameter) in ir.model.parameters.iter().enumerate() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(index), "NX configuration parameter identity uniqueness")?;
+        if ir.model.parameters[..index].iter().any(|previous| previous.id == parameter.id) {
+            return Ok(());
+        }
+    }
+    for parameter in &ir.model.parameters {
+        for dependency in &parameter.dependencies {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.parameters.len()), "NX configuration parameter dependencies")?;
+            let Some(preceding) = ir.model.parameters.iter().find(|candidate| candidate.id == *dependency) else {
+                return Ok(());
+            };
+            if preceding.owner != parameter.owner || preceding.ordinal >= parameter.ordinal {
+                return Ok(());
+            }
+        }
     }
     // A parameter with no evaluated value leaves the configuration untouched,
     // which is what the dependency guard above does for its own case.
-    let Some(values) = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| Some((parameter.id.clone(), parameter.value.clone()?)))
-        .collect::<Option<Vec<_>>>()
-    else {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.parameters.len()), "NX configuration parameter values")?;
+    if ir.model.parameters.iter().any(|parameter| parameter.value.is_none()) {
         return Ok(());
-    };
+    }
+    let mut values = BTreeMap::new();
+    for parameter in &ir.model.parameters {
+        let Some(value) = parameter.value.as_ref() else {
+            return Ok(());
+        };
+        ctx.charge_collection_items(1, "NX active configuration parameter values")?;
+        let value_text_bytes = match value {
+            ParameterValue::String(text) => text.len(),
+            _ => 0,
+        };
+        let bytes = std::mem::size_of::<(ParameterId, ParameterValue)>()
+            .checked_add(parameter.id.as_str().len())
+            .and_then(|bytes| bytes.checked_add(value_text_bytes))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX active configuration parameter value", 0, cadmpeg_core::decode::u64_from_index(value_text_bytes)))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX active configuration parameter values")?;
+        values.insert(parameter.id.clone(), value.clone());
+    }
     let configuration = &mut ir.model.configurations[configuration_index];
-    configuration.parameter_values = values.into_iter().collect();
+    configuration.parameter_values = values;
     annotations
         .derived(configuration.id.as_str(), "parameter_values")
         .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1275,15 +1288,12 @@ fn attach_active_configuration_feature_states(
 }
 
 fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> Option<usize> {
-    let active = configurations
+    let mut active = configurations
         .iter()
         .enumerate()
-        .filter_map(|(index, configuration)| configuration.active.then_some(index))
-        .collect::<Vec<_>>();
-    let [index] = active.as_slice() else {
-        return None;
-    };
-    Some(*index)
+        .filter_map(|(index, configuration)| configuration.active.then_some(index));
+    let index = active.next()?;
+    active.next().is_none().then_some(index)
 }
 
 /// Materialize the exact body set present when retained feature replay begins.
