@@ -4028,9 +4028,9 @@ fn project_edge_flange(
         entity_selection_operands,
         ..
     } = inputs;
-    let Some((operation, stream, height, angle, width, height_datum, bend_position)) = (|| {
-        let operation = scope.edge_flange_operation()?;
-        let stream = native_stream(&scope.id)?;
+    let Some((operation, stream, height, angle, width, height_datum, bend_position)) = (|| -> Result<Option<_>, CodecError> {
+        let operation = or_none!(scope.edge_flange_operation());
+        let stream = or_none!(native_stream(&scope.id));
         let parameter = |owner_record_index, source_kind: &str| {
             let mut matching = owners.iter().filter(|owner| {
                 native_stream(owner.id()) == Some(stream)
@@ -4050,10 +4050,10 @@ fn project_edge_flange(
 
         let height = match &operation.selection.shape().height() {
             DesignEdgeFlangeHeightExtent::Distance => {
-                SheetMetalFlangeHeight::Distance(design_positive_length(parameter(
+                SheetMetalFlangeHeight::Distance(or_none!(design_positive_length(or_none!(parameter(
                     operation.height_owner_record_index,
                     "FlangeHeight",
-                )?)?)
+                )))))
             }
             DesignEdgeFlangeHeightExtent::ToObject {
                 target_group_record_index,
@@ -4061,7 +4061,7 @@ fn project_edge_flange(
                 offset_owner_record_index,
                 ..
             } => {
-                let target_group = groups
+                let mut target_groups = groups
                     .iter()
                     .filter(|group| {
                         native_stream(&group.id) == Some(stream)
@@ -4073,12 +4073,12 @@ fn project_edge_flange(
                                 .iter()
                                 .map(|member| member.value)
                                 .eq([*target_operand_record_index])
-                    })
-                    .collect::<Vec<_>>();
-                let [target_group] = target_group.as_slice() else {
-                    return None;
+                    });
+                let target_group = or_none!(target_groups.next());
+                if target_groups.next().is_some() {
+                    return Ok(None);
                 };
-                let target_selections = entity_selection_operands
+                let mut target_selections = entity_selection_operands
                     .iter()
                     .filter(|operand| {
                         native_stream(&operand.id) == Some(stream)
@@ -4086,15 +4086,15 @@ fn project_edge_flange(
                             && operand.group_record_index == target_group.record_index
                             && operand.group_member_ordinal == 0
                             && operand.record_index() == *target_operand_record_index
-                    })
-                    .collect::<Vec<_>>();
-                let [target_selection] = target_selections.as_slice() else {
-                    return None;
+                    });
+                let target_selection = or_none!(target_selections.next());
+                if target_selections.next().is_some() {
+                    return Ok(None);
                 };
-                let target_record_index = u32::try_from(target_selection.primary_identity)
-                    .ok()?
-                    .checked_add(1)?;
-                let target_scopes = scopes
+                let target_record_index = or_none!(u32::try_from(target_selection.primary_identity)
+                    .ok()
+                    .and_then(|index| index.checked_add(1)));
+                let mut target_scopes = scopes
                     .iter()
                     .filter(|candidate| {
                         native_stream(&candidate.id) == Some(stream)
@@ -4104,24 +4104,24 @@ fn project_edge_flange(
                                 crate::records::feature::scope::DesignFeatureKind::WorkPlane
                                     | crate::records::feature::scope::DesignFeatureKind::WorkPoint
                             )
-                    })
-                    .collect::<Vec<_>>();
-                let target = match target_scopes.as_slice() {
-                    [target_scope] => {
+                    });
+                let target = match target_scopes.next() {
+                    Some(target_scope) if target_scopes.next().is_none() => {
                         SheetMetalFlangeHeightTarget::Feature(neutral_feature_id(target_scope))
                     }
-                    [] => SheetMetalFlangeHeightTarget::Native(target_selection.id.clone()),
-                    _ => return None,
+                    None => SheetMetalFlangeHeightTarget::Native(copy_feature_text(ctx,
+                        &target_selection.id, "f3d EdgeFlange native height target id")?),
+                    Some(_) => return Ok(None),
                 };
-                let offset =
-                    design_length(parameter(*offset_owner_record_index, "ToObjectOffset")?)?;
+                let offset = or_none!(design_length(or_none!(parameter(
+                    *offset_owner_record_index, "ToObjectOffset"))));
                 SheetMetalFlangeHeight::ToObject { target, offset }
             }
         };
-        let angle = design_angle(parameter(
+        let angle = or_none!(design_angle(or_none!(parameter(
             operation.angle_owner_record_index,
             "FlangeAngle",
-        )?)?;
+        ))));
 
         let width = match &operation.selection.shape() {
             crate::records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge { .. } => {
@@ -4131,22 +4131,20 @@ fn project_edge_flange(
                 owner,
                 ..
             } => SheetMetalFlangeWidth::Symmetric {
-                width: design_positive_length(parameter(*owner, "EdgeWidth")?)?,
+                width: or_none!(design_positive_length(or_none!(parameter(*owner, "EdgeWidth")))),
             },
             crate::records::feature::sheet_metal::DesignEdgeFlangeShape::SymmetricPerEdge(
                 edges,
             ) => {
-                let widths = edges
+                let mut widths = edges
                     .iter()
-                    .map(|row| design_positive_length(parameter(row.owners, "EdgeWidth")?))
-                    .collect::<Option<Vec<_>>>()?;
-                let [first, rest @ ..] = widths.as_slice() else {
-                    return None;
-                };
-                if rest.iter().any(|width| width != first) {
-                    return None;
+                    .map(|row| parameter(row.owners, "EdgeWidth")
+                        .and_then(design_positive_length));
+                let first = or_none!(or_none!(widths.next()));
+                if widths.any(|width| width != Some(first)) {
+                    return Ok(None);
                 }
-                SheetMetalFlangeWidth::Symmetric { width: *first }
+                SheetMetalFlangeWidth::Symmetric { width: first }
             }
             crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
                 edges,
@@ -4167,41 +4165,41 @@ fn project_edge_flange(
                         DesignEdgeFlangeWidthParameterSource::EdgeOffset => length.get().abs(),
                     })
                 };
-                let widths = edges
-                    .iter()
-                    .map(|row| {
-                        Some(SheetMetalFlangeTwoSidedWidth {
-                            first: width_length(row.owners[0], first_kind)?,
-                            second: width_length(row.owners[1], second_kind)?,
-                        })
-                    })
-                    .collect::<Option<Vec<_>>>()?;
+                let mut widths = Vec::new();
+                for row in edges {
+                    let width = SheetMetalFlangeTwoSidedWidth {
+                        first: or_none!(width_length(row.owners[0], first_kind)),
+                        second: or_none!(width_length(row.owners[1], second_kind)),
+                    };
+                    push_feature_item(ctx, &mut widths, width,
+                        "f3d EdgeFlange two-sided edge width")?;
+                }
                 SheetMetalFlangeWidth::TwoSidesPerEdge {
-                    widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(widths).ok()?,
+                    widths: or_none!(cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(widths).ok()),
                 }
             }
             crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSides {
                 owners: [first, second],
                 ..
             } => SheetMetalFlangeWidth::TwoSides {
-                first: design_positive_length(parameter(*first, "EdgeWidth_1")?)?,
-                second: design_positive_length(parameter(*second, "EdgeWidth_2")?)?,
+                first: or_none!(design_positive_length(or_none!(parameter(*first, "EdgeWidth_1")))),
+                second: or_none!(design_positive_length(or_none!(parameter(*second, "EdgeWidth_2")))),
             },
         };
 
         let height_datum = match operation.height_datum {
             DesignSheetMetalHeightDatum::InnerFaces => SheetMetalHeightDatum::InnerFaces,
             DesignSheetMetalHeightDatum::OuterFaces => SheetMetalHeightDatum::OuterFaces,
-            DesignSheetMetalHeightDatum::Unknown(_) => return None,
+            DesignSheetMetalHeightDatum::Unknown(_) => return Ok(None),
         };
         let bend_position = match operation.bend_position {
             DesignBendPosition::Outside => SheetMetalBendPosition::Outside,
             DesignBendPosition::Inside => SheetMetalBendPosition::Inside,
             DesignBendPosition::Adjacent => SheetMetalBendPosition::Adjacent,
             DesignBendPosition::TangentToSide => SheetMetalBendPosition::TangentToSide,
-            DesignBendPosition::Unknown(_) => return None,
+            DesignBendPosition::Unknown(_) => return Ok(None),
         };
-        Some((
+        Ok(Some((
             operation,
             stream,
             height,
@@ -4209,8 +4207,8 @@ fn project_edge_flange(
             width,
             height_datum,
             bend_position,
-        ))
-    })() else {
+        )))
+    })()? else {
         return Ok(None);
     };
 
