@@ -385,7 +385,7 @@ fn terminal_feature_body_indices(
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
-    let Some(aliases) = body_alias_roots(bindings) else { return Ok(None) };
+    let aliases = body_alias_roots(ctx, bindings)?;
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
     let segment_boolean_operations = segment_boolean_operation_labels(ctx, booleans, data_blocks)?;
     let operation_kinds = chronological_labels
@@ -643,42 +643,74 @@ fn segment_boolean_operation_labels(
 }
 
 /// Map each segment body identity to the smallest identity in its transitive alias component.
-pub(super) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> Option<BTreeMap<u32, u32>> {
+pub(super) fn body_alias_roots(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bindings: &[SegmentBodyBinding],
+) -> Result<BTreeMap<u32, u32>, cadmpeg_core::CodecError> {
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
+    let mut adjacency_reservation = ctx.reserve_scoped(0, "NX segment alias adjacency")?;
     for binding in bindings {
+        ctx.charge_collection_items(2, "NX segment alias identities")?;
+        adjacency_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(u32, BTreeSet<u32>)>() * 8,
+        ))?;
         adjacency
             .entry(binding.body_object_index)
             .or_default()
             .insert(binding.body_alias_object_index);
+        ctx.charge_collection_items(2, "NX segment alias links")?;
+        adjacency_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<u32>() * 8,
+        ))?;
         adjacency
             .entry(binding.body_alias_object_index)
             .or_default()
             .insert(binding.body_object_index);
     }
+    let work = bindings.len().checked_mul(8)
+        .ok_or_else(|| ctx.refuse_codec_limit("walk NX segment aliases", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "walk NX segment aliases")?;
     let mut roots = BTreeMap::new();
     for identity in adjacency.keys().copied() {
         if roots.contains_key(&identity) {
             continue;
         }
         let mut component = BTreeSet::new();
-        let mut pending = vec![identity];
+        let mut component_reservation = ctx.reserve_scoped(0, "NX segment alias component")?;
+        let mut pending_reservation = ctx.reserve_scoped(0, "NX segment alias traversal")?;
+        let mut pending = Vec::new();
+        ctx.charge_collection_items(1, "NX segment alias traversal")?;
+        pending_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+        pending.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX segment alias traversal", 0, 1))?;
+        pending.push(identity);
         while let Some(member) = pending.pop() {
+            ctx.charge_collection_items(1, "NX segment alias component")?;
+            component_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<u32>() * 4,
+            ))?;
             if !component.insert(member) {
                 continue;
             }
-            pending.extend(
-                adjacency
-                    .get(&member)
-                    .into_iter()
-                    .flatten()
-                    .filter(|neighbor| !component.contains(neighbor))
-                    .copied(),
-            );
+            for neighbor in adjacency.get(&member).into_iter().flatten() {
+                if component.contains(neighbor) { continue; }
+                ctx.charge_collection_items(1, "NX segment alias traversal")?;
+                pending_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+                pending.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX segment alias traversal", 0, 1))?;
+                pending.push(*neighbor);
+            }
         }
-        let root = *component.first()?;
-        roots.extend(component.into_iter().map(|member| (member, root)));
+        let root = component.iter().copied().fold(identity, u32::min);
+        for member in component {
+            ctx.charge_collection_items(1, "NX segment alias roots")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(u32, u32)>() * 4,
+            ), "NX segment alias roots")?;
+            roots.insert(member, root);
+        }
     }
-    Some(roots)
+    Ok(roots)
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.
@@ -976,6 +1008,63 @@ pub(super) fn segment_body_bindings(
 #[cfg(test)]
 mod tests {
     mod om_links;
+    fn segment_alias_lineage_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let bindings = [super::SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: crate::parasolid::StreamKind::Partition,
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+        let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::segment_body_lineage_statuses(
+                ctx, &[], &[], &[], &[], &[], &[], &bindings, &[],
+            )
+        };
+        let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+            .expect("admitted segment alias lineage")
+            .expect("complete segment alias lineage");
+        assert_eq!(admitted.len(), 1);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        route(&ctx).expect_err("segment alias resource limit")
+    }
+
+    #[test]
+    fn segment_alias_lineage_refuses_collection_limit() {
+        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn segment_alias_lineage_refuses_retained_limit() {
+        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn segment_alias_lineage_refuses_scoped_limit() {
+        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn segment_alias_lineage_refuses_work_limit() {
+        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
     macro_rules! terminal_feature_body_indices {
         ($($argument:expr),* $(,)?) => {{
             crate::test_support::with_decode_context(|ctx| {

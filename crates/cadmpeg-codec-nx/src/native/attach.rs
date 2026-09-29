@@ -1472,8 +1472,7 @@ fn attach_feature_operations(
     {
         body_writer_history.record_writer(None, None, feature.evaluation.outputs(), &feature.id);
     }
-    let body_alias_roots =
-        crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
+    let body_alias_roots = crate::native::segments::body_alias_roots(ctx, body_bindings)?;
     let canonical_body =
         |identity: u32| body_alias_roots.get(&identity).copied().unwrap_or(identity);
     let mut input_blocks_by_operation =
