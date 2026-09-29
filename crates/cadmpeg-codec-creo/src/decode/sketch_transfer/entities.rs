@@ -7,15 +7,18 @@ use super::super::feature_history::link::{
 use super::super::native::annotate;
 use super::super::sketch::geometry::{saved_profile_chains, saved_section_entity_geometry};
 use super::super::sketch_ids::{
-    sketch_entity_id, sketch_identity_scope, sketch_native_ref, sketch_point_ref,
-    typed_sketch_section_curve_id,
+    sketch_entity_id, sketch_entity_id_admitted, sketch_identity_scope, sketch_native_ref,
+    sketch_native_ref_admitted, sketch_point_ref, sketch_point_ref_admitted,
+    typed_sketch_section_curve_id_admitted,
 };
 use super::super::sweep::nurbs::saved_spline_sketch_geometry;
 use super::super::sweep::surfaces::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::{
-    opaque_section_segment_identity_suffix, saved_section_external_id,
-    section_segment_identity_suffix, semantic_saved_section_entities,
+    opaque_section_segment_identity_suffix_admitted,
+    saved_section_external_id,
+    section_segment_identity_suffix, section_segment_identity_suffix_admitted,
+    semantic_saved_section_entities,
     unresolved_saved_section_entity,
 };
 use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
@@ -31,6 +34,20 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
+
+fn admitted_endpoint_refs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    sketch: &SketchId,
+    points: impl IntoIterator<Item = u32>,
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+    let mut references = Vec::new();
+    for point in points {
+        let reference = sketch_point_ref_admitted(ctx, sketch, point)?;
+        ctx.try_reserve_items(&mut references, 1, "creo section endpoint references")?;
+        references.push(reference);
+    }
+    Ok(references)
+}
 
 #[allow(clippy::too_many_arguments)] // mechanical extract from transfer_sketches
 pub(super) fn transfer_section_entities(
@@ -59,100 +76,76 @@ pub(super) fn transfer_section_entities(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
-    let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| {
-        if section_degenerate_axis_line(definition, segment) {
-            return segment_geometries
-                .get(&segment.offset)
-                .cloned()
-                .flatten()
-                .or_else(|| {
-                    Some(SketchGeometry::native(
-                        cadmpeg_core::text::NonBlankString::new("line")?,
-                    ))
-                });
+    let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+        if let Some(geometry) = segment_geometries.get(&segment.offset).and_then(Option::as_ref) {
+            return geometry.copy_admitted(ctx, "creo section entity geometry copy").map(Some);
         }
-        segment_geometries.get(&segment.offset).cloned().flatten()
+        if section_degenerate_axis_line(definition, segment) {
+            let kind = ctx.copy_retained_text("line", "creo section entity native kind")?;
+            return Ok(Some(SketchGeometry::native(
+                cadmpeg_core::text::NonBlankString::new(kind).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                })?,
+            )));
+        }
+        Ok(None)
     };
-    let mut entities = segments
-        .iter()
-        .filter_map(|segment| {
-            let geometry = segment_geometry(segment)?;
-            let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-            let id = sketch_entity_id(sketch_id, &suffix)?;
-            if let Err(error) = ctx.charge_entities(1, "admit Creo model sketch_entities") {
-                return Some(Err(error));
-            }
-            annotate(
-                annotations,
-                id.as_str(),
-                "FeatDefs",
-                segment.offset as u64,
-                match (geometry.definition(), segment.kind) {
-                    (SketchGeometryDefinition::Native { native_kind }, _)
-                        if native_kind == "line" =>
-                    {
-                        "section_degenerate_axis_line"
-                    }
-                    (SketchGeometryDefinition::ReferenceLine { .. }, _) => {
-                        "solved_section_axis_reference_line"
-                    }
-                    (_, crate::feature::definitions::FeatureSegmentKind::Line(_)) => {
-                        "solved_section_line"
-                    }
-                    (_, crate::feature::definitions::FeatureSegmentKind::Arc(_)) => {
-                        "solved_section_arc"
-                    }
-                    (_, crate::feature::definitions::FeatureSegmentKind::Point(_)) => {
-                        "solved_section_point"
-                    }
-                },
-                if matches!(
-                    geometry.definition(),
-                    SketchGeometryDefinition::Native { .. }
-                ) {
-                    Exactness::ByteExact
-                } else {
-                    Exactness::Derived
-                },
-            );
-            let construction = matches!(
-                geometry.definition(),
-                SketchGeometryDefinition::ReferenceLine { .. }
-            ) || !unique_segment_ids.contains(&segment.external_id)
-                || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
-            let endpoint_refs = match (geometry.definition(), segment.kind) {
-                (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => {
-                    vec![segment.point_ids()[0]]
-                }
-                (SketchGeometryDefinition::ReferenceLine { .. }, _)
-                    if section_degenerate_axis_line(definition, segment) =>
-                {
-                    vec![segment.point_ids()[0]]
-                }
-                (_, crate::feature::definitions::FeatureSegmentKind::Arc(_)) => {
-                    vec![segment.point_ids()[1], segment.point_ids()[0]]
-                }
-                (_, crate::feature::definitions::FeatureSegmentKind::Line(_)) => {
-                    segment.point_ids().to_vec()
-                }
-                (_, crate::feature::definitions::FeatureSegmentKind::Point(_)) => {
-                    vec![segment.point_ids()[0]]
-                }
-            }
-            .into_iter()
-            .map(|point| sketch_point_ref(sketch_id, point))
-            .collect();
-            let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
-            Some(Ok(SketchEntity::new(id, sketch_id.clone(), geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(sketch_native_ref(sketch_id)))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs)))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
+    let mut entities = Vec::new();
+    for segment in segments {
+        let Some(geometry) = segment_geometry(segment)? else { continue; };
+        let suffix = section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)?;
+        let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else { continue; };
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        annotate(
+            annotations,
+            id.as_str(),
+            "FeatDefs",
+            segment.offset as u64,
+            match (geometry.definition(), segment.kind) {
+                (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => "section_degenerate_axis_line",
+                (SketchGeometryDefinition::ReferenceLine { .. }, _) => "solved_section_axis_reference_line",
+                (_, crate::feature::definitions::FeatureSegmentKind::Line(_)) => "solved_section_line",
+                (_, crate::feature::definitions::FeatureSegmentKind::Arc(_)) => "solved_section_arc",
+                (_, crate::feature::definitions::FeatureSegmentKind::Point(_)) => "solved_section_point",
+            },
+            if matches!(geometry.definition(), SketchGeometryDefinition::Native { .. }) {
+                Exactness::ByteExact
+            } else {
+                Exactness::Derived
+            },
+        );
+        let construction = matches!(geometry.definition(), SketchGeometryDefinition::ReferenceLine { .. })
+            || !unique_segment_ids.contains(&segment.external_id)
+            || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
+        let point_ids = segment.point_ids();
+        let reverse = [point_ids[1], point_ids[0]];
+        let endpoints = match (geometry.definition(), segment.kind) {
+            (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => &point_ids[..1],
+            (SketchGeometryDefinition::ReferenceLine { .. }, _) if section_degenerate_axis_line(definition, segment) => &point_ids[..1],
+            (_, crate::feature::definitions::FeatureSegmentKind::Arc(_)) => &reverse[..],
+            (_, crate::feature::definitions::FeatureSegmentKind::Line(_)) => &point_ids[..],
+            (_, crate::feature::definitions::FeatureSegmentKind::Point(_)) => &point_ids[..1],
+        };
+        let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, endpoints.iter().copied())?;
+        let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
+        let sketch_copy = sketch_id.copy_admitted(ctx, "creo section entity sketch identity")?;
+        let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
+        ctx.try_reserve_items(&mut entities, 1, "creo section entities")?;
+        entities.push(SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs));
+    }
     for segment in segments
         .iter()
-        .filter(|segment| segment_geometry(segment).is_none())
+        .filter(|segment| {
+            !section_degenerate_axis_line(definition, segment)
+                && segment_geometries
+                    .get(&segment.offset)
+                    .and_then(Option::as_ref)
+                    .is_none()
+        })
     {
         let Some(id) = sketch_entity_id(
             sketch_id,
@@ -259,7 +252,7 @@ pub(super) fn transfer_section_entities(
             },
         );
         let construction = !unique_external_id || !profile_entities.contains(&id);
-        let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
+        let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(id, sketch_id.clone(), geometry)
@@ -376,7 +369,7 @@ pub(super) fn transfer_section_entities(
                 Exactness::ByteExact
             },
         );
-        let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
+        let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
         let endpoint_refs = [0, 1]
             .into_iter()
             .map(|point| sketch_point_ref(sketch_id, point))
@@ -443,7 +436,7 @@ pub(super) fn transfer_section_entities(
                 Exactness::ByteExact
             },
         );
-        let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
+        let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
         let endpoint_refs = segment
             .point_ids
             .into_iter()
@@ -562,7 +555,7 @@ pub(super) fn transfer_section_entities(
         {
             continue;
         }
-        let suffix = opaque_section_segment_identity_suffix(unique_segment_ids, segment);
+        let suffix = opaque_section_segment_identity_suffix_admitted(ctx, unique_segment_ids, segment)?;
         let Some(id) = sketch_entity_id(sketch_id, suffix) else {
             continue;
         };
@@ -600,6 +593,7 @@ pub(super) fn transfer_section_entities(
             Exactness::ByteExact,
         );
         let geometry_ref = placed_sketch_curve_ref(
+            ctx,
             transform,
             sketch_id,
             if unique_external_id {
@@ -608,7 +602,7 @@ pub(super) fn transfer_section_entities(
                 format!("opaque:offset:{}", segment.offset)
             },
             &geometry,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(id, sketch_id.clone(), geometry)
@@ -661,7 +655,7 @@ pub(super) fn transfer_section_entities(
                 )
             })
         });
-        let Some(curve_id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
+        let Some(curve_id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
         annotate(
@@ -684,8 +678,8 @@ pub(super) fn transfer_section_entities(
                     sketch_native_ref(sketch_id)
                 )))
                 .with_geometry_ref(placed_sketch_curve_ref(
-                    transform, sketch_id, &suffix, &geometry,
-                )),
+                    ctx, transform, sketch_id, &suffix, &geometry,
+                )?),
         );
         saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
     }
@@ -837,7 +831,7 @@ pub(super) fn transfer_section_entities(
                 continue;
             };
             let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-            let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
+            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
                 continue;
             };
             if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -894,7 +888,7 @@ pub(super) fn transfer_section_entities(
             } else {
                 format!("circle:offset:{}", segment.offset)
             };
-            let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
+            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
                 continue;
             };
             if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -952,7 +946,7 @@ pub(super) fn transfer_section_entities(
             } else {
                 format!("centered_line:offset:{}", segment.offset)
             };
-            let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
+            let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
                 continue;
             };
             if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -1044,4 +1038,35 @@ pub(super) fn transfer_section_entities(
         }
     }
     Ok((entities, profiles))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::admitted_endpoint_refs;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::sketches::SketchId;
+
+    #[test]
+    fn endpoint_references_refuse_nested_text_and_vector_slot() {
+        let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
+        let expected = "creo:featdefs:sketch#5:point#7";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert!(matches!(admitted_endpoint_refs(&ctx, &sketch, [7]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "creo sketch point reference"));
+        policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert!(matches!(admitted_endpoint_refs(&ctx, &sketch, [7]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "creo section endpoint references"));
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        assert_eq!(admitted_endpoint_refs(&ctx, &sketch, [7]).expect("service endpoint"), [expected]);
+    }
 }

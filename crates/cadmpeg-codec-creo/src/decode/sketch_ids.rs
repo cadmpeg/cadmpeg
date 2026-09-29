@@ -349,33 +349,56 @@ pub(super) fn sketch_native_ref_admitted(
     )
 }
 
-pub(super) fn sketch_section_curve_id(sketch: &SketchId, suffix: impl std::fmt::Display) -> String {
-    format!(
-        "creo:featdefs:section_curve#{}:{suffix}",
-        sketch_identity_scope(sketch)
+pub(super) fn sketch_section_curve_id_admitted(
+    ctx: &DecodeContext<'_>,
+    sketch: &SketchId,
+    suffix: impl std::fmt::Display,
+) -> Result<String, CodecError> {
+    let namespace = &crate::identity::FEATDEFS_SECTION_CURVE;
+    ctx.format_retained(
+        format_args!("{}:{}:{}#{}:{suffix}", namespace.format(), namespace.scope(), namespace.kind(), sketch_identity_scope(sketch)),
+        "creo section curve reference",
     )
 }
 
-pub(super) fn typed_sketch_section_curve_id(
+pub(super) fn typed_sketch_section_curve_id_admitted(
+    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
-) -> Option<CurveId> {
-    let suffix = IdentityKey::try_new(suffix.to_string()).ok()?;
-    Some(CurveId::compose(
-        &crate::identity::FEATDEFS_SECTION_CURVE,
-        sketch_identity_key(sketch)?.colon(suffix),
-    ))
+) -> Result<Option<CurveId>, CodecError> {
+    let namespace = &crate::identity::FEATDEFS_SECTION_CURVE;
+    let text = ctx.format_retained(
+        format_args!("{}:{}:{}#{}:{suffix}", namespace.format(), namespace.scope(), namespace.kind(), sketch_identity_scope(sketch)),
+        "creo section curve identity",
+    )?;
+    Ok(CurveId::try_from(text).ok())
 }
 
 pub(super) fn sketch_point_ref(sketch: &SketchId, point: u32) -> String {
     format!("{}:point#{point}", sketch_native_ref(sketch))
 }
 
-pub(super) fn sketch_feature_id(sketch: &SketchId) -> Option<IrFeatureId> {
-    Some(IrFeatureId::compose(
-        &crate::identity::MODEL_SKETCH_FEATURE,
-        sketch_identity_key(sketch)?,
-    ))
+pub(super) fn sketch_point_ref_admitted(
+    ctx: &DecodeContext<'_>,
+    sketch: &SketchId,
+    point: u32,
+) -> Result<String, CodecError> {
+    ctx.format_retained(
+        format_args!("creo:featdefs:sketch#{}:point#{point}", sketch_identity_scope(sketch)),
+        "creo sketch point reference",
+    )
+}
+
+pub(super) fn sketch_feature_id_admitted(
+    ctx: &DecodeContext<'_>,
+    sketch: &SketchId,
+) -> Result<Option<IrFeatureId>, CodecError> {
+    let namespace = &crate::identity::MODEL_SKETCH_FEATURE;
+    let text = ctx.format_retained(
+        format_args!("{}:{}:{}#{}", namespace.format(), namespace.scope(), namespace.kind(), sketch_identity_scope(sketch)),
+        "creo sketch feature identity",
+    )?;
+    Ok(IrFeatureId::try_from(text).ok())
 }
 
 pub(super) fn section_owner_feature_id(
