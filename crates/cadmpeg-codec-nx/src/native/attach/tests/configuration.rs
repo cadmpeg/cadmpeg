@@ -1697,7 +1697,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             })
             .collect::<Vec<_>>()
     );
-    attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_block_dimension_parameter_consumers(ctx, &mut ir, &[dimensions], &mut annotations))
         .expect("valid exactness fields");
     assert_eq!(ir.model.parameters.len(), 3);
     for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
