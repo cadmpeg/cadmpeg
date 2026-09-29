@@ -928,17 +928,7 @@ fn reversed_pole_rows<T: Copy>(
     ctx: &DecodeContext<'_>,
     rows: &[T],
 ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(rows.len());
-    let bytes = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<T>(),
-        ))
-        .ok_or_else(|| ctx.refuse_codec_limit("nx reversed pcurve poles", u64::MAX, count))?;
-    ctx.charge_collection_items(count, "nx reversed pcurve poles")?;
-    ctx.charge_retained(bytes, "nx reversed pcurve poles")?;
-    let mut reversed = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut reversed, rows.len(), "nx reversed pcurve poles")?;
-    reversed.extend_from_slice(rows);
+    let mut reversed = ctx.copy_retained_slice(rows, "nx reversed pcurve poles")?;
     reversed.reverse();
     Ok(reversed)
 }
@@ -949,16 +939,7 @@ fn reflected_pcurve_knots(
     lower: FiniteReal,
     upper: FiniteReal,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(knots.len());
-    let bytes = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<f64>(),
-        ))
-        .ok_or_else(|| ctx.refuse_codec_limit("nx reversed pcurve knots", u64::MAX, count))?;
-    ctx.charge_collection_items(count, "nx reversed pcurve knots")?;
-    ctx.charge_retained(bytes, "nx reversed pcurve knots")?;
-    let mut reversed = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut reversed, knots.len(), "nx reversed pcurve knots")?;
+    let mut reversed = ctx.retained_vec(knots.len(), "nx reversed pcurve knots")?;
     for knot in knots.finite_knots().rev() {
         let Some(reflected) = cadmpeg_ir::math::reflect_parameter(knot, lower, upper) else {
             return Ok(None);

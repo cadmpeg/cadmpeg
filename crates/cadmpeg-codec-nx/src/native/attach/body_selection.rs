@@ -524,28 +524,3 @@ pub(super) fn boolean_target_output(definition: Option<&FeatureDefinition>) -> O
     bodies.first()
 }
 
-pub(super) fn copy_feature_output_bodies(
-    ctx: &DecodeContext<'_>,
-    bodies: &[BodyId],
-) -> Result<Vec<BodyId>, CodecError> {
-    let mut outputs = Vec::new();
-    for body in bodies {
-        let bytes = std::mem::size_of::<BodyId>()
-            .checked_add(body.as_str().len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX feature output body",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-                )
-            })?;
-        ctx.charge_collection_items(1, "NX feature output bodies")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX feature output body",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut outputs, 1, "allocate NX feature output bodies")?;
-        outputs.push(body.clone());
-    }
-    Ok(outputs)
-}

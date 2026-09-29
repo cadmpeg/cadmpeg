@@ -181,12 +181,6 @@ impl TryFrom<&[u8]> for SketchBinary64PairForm {
     }
 }
 
-fn push_pair<T>(ctx: &DecodeContext<'_>, pairs: &mut Vec<T>, pair: T) -> Result<(), CodecError> {
-    ctx.reserve_retained_vec(pairs, 1, "NX binary64 pairs")?;
-    pairs.push(pair);
-    Ok(())
-}
-
 pub(crate) fn datum_plane_pairs(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -195,7 +189,7 @@ pub(crate) fn datum_plane_pairs(
     let mut pairs = Vec::new();
     for offset in 0..bytes.len() {
         if let Some(pair) = Binary64Pair::read(bytes, offset, DatumPlanePairForm) {
-            push_pair(ctx, &mut pairs, pair)?;
+            ctx.push_retained_vec(&mut pairs, pair, "NX binary64 pairs")?;
         }
     }
     Ok(pairs)
@@ -213,7 +207,7 @@ pub(crate) fn object_pairs(
     for form in ObjectPairForm::ALL {
         for offset in 0..bytes.len() {
             if let Some(pair) = Binary64Pair::read(bytes, offset, form) {
-                push_pair(ctx, &mut pairs, pair)?;
+                ctx.push_retained_vec(&mut pairs, pair, "NX binary64 pairs")?;
             }
         }
     }
@@ -228,15 +222,11 @@ pub(crate) fn sketch_pairs(
 ) -> Result<Vec<Binary64Pair<SketchBinary64PairForm>>, CodecError> {
     let mut pairs = Vec::new();
     for pair in object_pairs(ctx, bytes)? {
-        push_pair(
-            ctx,
-            &mut pairs,
-            Binary64Pair {
+        ctx.push_retained_vec(&mut pairs, Binary64Pair {
                 form: SketchBinary64PairForm::Object(pair.form),
                 offset: pair.offset,
                 values: pair.values,
-            },
-        )?;
+            }, "NX binary64 pairs")?;
     }
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX sketch pairs")?;
     for (offset, window) in bytes.windows(3).enumerate() {
@@ -252,7 +242,7 @@ pub(crate) fn sketch_pairs(
         if let Some(pair) =
             Binary64Pair::read(bytes, offset, SketchBinary64PairForm::Repeated(code))
         {
-            push_pair(ctx, &mut pairs, pair)?;
+            ctx.push_retained_vec(&mut pairs, pair, "NX binary64 pairs")?;
         }
     }
     ctx.charge_work(u64_from_index(pairs.len()), "sort NX sketch pairs")?;

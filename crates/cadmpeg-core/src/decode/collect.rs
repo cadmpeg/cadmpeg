@@ -64,6 +64,13 @@ impl DecodeContext<'_> {
         self.reserve_vec(values, count, operation)
     }
 
+    /// Appends a value after admitting its slot and retained element storage.
+    pub fn push_retained_vec<T>(&self, values: &mut Vec<T>, value: T, operation: &'static str) -> Result<(), CodecError> {
+        self.reserve_retained_vec(values, 1, operation)?;
+        values.push(value);
+        Ok(())
+    }
+
     /// Creates a vector with charged slots and retained element storage.
     pub fn retained_vec<T>(&self, count: usize, operation: &'static str) -> Result<Vec<T>, CodecError> {
         let mut values = Vec::new();
@@ -1902,6 +1909,26 @@ mod tests {
         let result = ctx.charge_retained(2, "test admitted text slots").and_then(|()| DecodeContext::reserve_admitted_string(&mut text, 2, "test admitted text slots"));
         assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
         assert_eq!(text.capacity(), 0);
+    }
+
+    #[test]
+    fn push_retained_vec_refuses_one_below_storage_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 1);
+        let mut values = Vec::<u16>::new();
+        let error = ctx.push_retained_vec(&mut values, 7, "test retained push").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert_eq!(values.capacity(), 0);
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn push_retained_vec_keeps_value_under_service_profile() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        let mut values = Vec::<u16>::new();
+        ctx.push_retained_vec(&mut values, 7, "test retained push").unwrap();
+        assert_eq!(values, [7]);
     }
 
 }

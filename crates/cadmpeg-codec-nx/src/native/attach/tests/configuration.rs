@@ -5,7 +5,6 @@ use crate::native::attach::attach_active_configuration_parameter_values;
 use crate::native::attach::attach_current_feature_states;
 use crate::native::attach::attach_sketch_graph;
 use crate::native::attach::body_selection::boolean_target_output;
-use crate::native::attach::body_selection::copy_feature_output_bodies;
 use crate::native::attach::extrude_boolean_op;
 use crate::native::attach::extrude_feature_definition;
 use crate::native::attach::feature_projection::blind_hole_operations;
@@ -1670,7 +1669,7 @@ fn feature_output_copy_with_limit(
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let body = BodyId::mint("nx:s0:body#0").unwrap();
-    let outputs = copy_feature_output_bodies(&ctx, std::slice::from_ref(&body))?;
+    let outputs = { let bodies = std::slice::from_ref(&body); let mut outputs = ctx.retained_vec(bodies.len(), "NX feature output bodies")?; for body in bodies { outputs.push(body.try_clone_for_decode(&ctx, "NX feature output body")?); } outputs };
     assert_eq!(outputs, [body]);
     Ok(())
 }

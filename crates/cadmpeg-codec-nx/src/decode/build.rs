@@ -155,25 +155,6 @@ type GeometryDecode = (
     Vec<UnknownRecord>,
 );
 
-fn push_unknown_link(
-    ctx: &DecodeContext<'_>,
-    unknown: &mut UnknownRecord,
-    id: &str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "nx unknown entity links")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(id.len()),
-        "nx unknown entity link text",
-    )?;
-    let links = unknown.links_mut();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(links, 1, "nx unknown entity links")?;
-    let mut link = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut link, id.len(), "nx unknown entity link text")?;
-    link.push_str(id);
-    links.push(link);
-    Ok(())
-}
-
 pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -1180,20 +1161,10 @@ pub(super) fn try_decode_geometry(
                         };
                         if !normalized {
                             pcurves_by_xmt.remove(&surface_curve.state.pcurve());
-                            insert_retained_id(
-                                ctx,
-                                &mut invalid_pcurves,
-                                pcurve.as_str(),
-                                "nx invalid pcurves",
-                            )?;
+                            ctx.insert_btree_set(&mut invalid_pcurves, pcurve.try_clone_for_decode(ctx, "nx invalid pcurves")?, "nx invalid pcurves")?;
                             continue;
                         }
-                        insert_retained_id(
-                            ctx,
-                            &mut normalized_pcurves,
-                            pcurve.as_str(),
-                            "nx normalized pcurves",
-                        )?;
+                        ctx.insert_btree_set(&mut normalized_pcurves, pcurve.try_clone_for_decode(ctx, "nx normalized pcurves")?, "nx normalized pcurves")?;
                     }
                     if let Some(carrier) = pcurve_indices
                         .get(&pcurve)
@@ -1379,10 +1350,10 @@ pub(super) fn try_decode_geometry(
         { ctx.reserve_vec(&mut unknowns, 1, "nx geometry unknown streams")?; ctx.reserve_vec(&mut stream_unknowns, 1, "nx geometry unknown indices") }?;
         let mut unknown = unknown_stream_metadata(ctx, si, stream)?;
         for surface in &ir.model.surfaces[first_surface..] {
-            push_unknown_link(ctx, &mut unknown, surface.id.as_str())?;
+            ctx.push_vec(unknown.links_mut(), ctx.copy_retained_text(surface.id.as_str(), "nx unknown entity link text")?, "nx unknown entity links")?;
         }
         for curve in &ir.model.curves[first_curve..] {
-            push_unknown_link(ctx, &mut unknown, curve.id.as_str())?;
+            ctx.push_vec(unknown.links_mut(), ctx.copy_retained_text(curve.id.as_str(), "nx unknown entity link text")?, "nx unknown entity links")?;
         }
         super::annotations::note(
             ctx,
@@ -1484,12 +1455,7 @@ pub(super) fn try_decode_geometry(
     let mut referenced_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
     for coedge in &ir.model.coedges {
         for pcurve in &coedge.pcurves {
-            insert_retained_id(
-                ctx,
-                &mut referenced_pcurves,
-                pcurve.pcurve.as_str(),
-                "nx referenced pcurves",
-            )?;
+            ctx.insert_btree_set(&mut referenced_pcurves, pcurve.pcurve.try_clone_for_decode(ctx, "nx referenced pcurves")?, "nx referenced pcurves")?;
         }
     }
     ir.model
@@ -1540,21 +1506,6 @@ pub(super) fn try_decode_geometry(
         crate::native::TypedNative::Available,
     )?;
     Ok(Some((ir, report, annotations, unknowns)))
-}
-
-fn insert_retained_id<T>(
-    ctx: &DecodeContext<'_>,
-    ids: &mut BTreeSet<T>,
-    identity: &str,
-    operation: &'static str,
-) -> Result<(), CodecError>
-where
-    T: TryFrom<String> + Ord,
-    T::Error: std::fmt::Display,
-{
-    ctx.charge_collection_items(1, operation)?;
-    ids.insert(T::try_from(ctx.copy_retained_text(identity, operation)?).map_err(CodecError::malformed)?);
-    Ok(())
 }
 
 fn extend_endpoint_witnesses(
@@ -1611,17 +1562,12 @@ fn prune_unreferenced_unknown_carriers(
 ) -> Result<(), CodecError> {
     let mut used_surfaces: BTreeSet<SurfaceId> = BTreeSet::new();
     for face in &ir.model.faces {
-        insert_retained_id(
-            ctx,
-            &mut used_surfaces,
-            face.surface.as_str(),
-            "nx used surfaces",
-        )?;
+        ctx.insert_btree_set(&mut used_surfaces, face.surface.try_clone_for_decode(ctx, "nx used surfaces")?, "nx used surfaces")?;
     }
     let mut used_curves: BTreeSet<CurveId> = BTreeSet::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
-            insert_retained_id(ctx, &mut used_curves, curve.as_str(), "nx used curves")?;
+            ctx.insert_btree_set(&mut used_curves, curve.try_clone_for_decode(ctx, "nx used curves")?, "nx used curves")?;
         }
     }
     loop {
@@ -1636,32 +1582,17 @@ fn prune_unreferenced_unknown_carriers(
             match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
                     let support = definition_payload.support();
-                    insert_retained_id(
-                        ctx,
-                        &mut used_surfaces,
-                        support.as_str(),
-                        "nx used surfaces",
-                    )?;
+                    ctx.insert_btree_set(&mut used_surfaces, support.try_clone_for_decode(ctx, "nx used surfaces")?, "nx used surfaces")?;
                 }
                 ProceduralSurfaceDefinition::Blend(definition_payload) => {
                     let supports = definition_payload.supports();
                     let spine = definition_payload.spine();
 
                     for support in supports.iter().flatten() {
-                        insert_retained_id(
-                            ctx,
-                            &mut used_surfaces,
-                            support.surface.as_str(),
-                            "nx used surfaces",
-                        )?;
+                        ctx.insert_btree_set(&mut used_surfaces, support.surface.try_clone_for_decode(ctx, "nx used surfaces")?, "nx used surfaces")?;
                     }
                     if let Some(spine) = spine {
-                        insert_retained_id(
-                            ctx,
-                            &mut used_curves,
-                            spine.as_str(),
-                            "nx used curves",
-                        )?;
+                        ctx.insert_btree_set(&mut used_curves, spine.try_clone_for_decode(ctx, "nx used curves")?, "nx used curves")?;
                     }
                 }
                 _ => {}
@@ -1678,24 +1609,14 @@ fn prune_unreferenced_unknown_carriers(
                 ProceduralCurveDefinition::Intersection { context, .. } => {
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
-                            insert_retained_id(
-                                ctx,
-                                &mut used_surfaces,
-                                surface.as_str(),
-                                "nx used surfaces",
-                            )?;
+                            ctx.insert_btree_set(&mut used_surfaces, surface.try_clone_for_decode(ctx, "nx used surfaces")?, "nx used surfaces")?;
                         }
                     }
                 }
                 ProceduralCurveDefinition::SurfaceCurve { family } => {
                     for side in family.context().sides() {
                         if let Some(surface) = &side.surface {
-                            insert_retained_id(
-                                ctx,
-                                &mut used_surfaces,
-                                surface.as_str(),
-                                "nx used surfaces",
-                            )?;
+                            ctx.insert_btree_set(&mut used_surfaces, surface.try_clone_for_decode(ctx, "nx used surfaces")?, "nx used surfaces")?;
                         }
                     }
                 }
@@ -1731,7 +1652,7 @@ fn retain_live_annotations(
     macro_rules! add_ids {
         ($($arena:expr),+ $(,)?) => {
             $(for entity in &$arena {
-                insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+                ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
             })+
         };
     }
@@ -1753,24 +1674,12 @@ fn retain_live_annotations(
         ir.model.features,
     );
     for unknown in unknowns {
-        insert_live_identity(ctx, &mut ids, unknown.id().as_str())?;
+        ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(unknown.id().as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
     }
     annotations.provenance.retain(|id, _| ids.contains(id));
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(|id| ids.contains(id));
     *annotations = builder.build();
-    Ok(())
-}
-
-fn insert_live_identity(
-    ctx: &DecodeContext<'_>,
-    ids: &mut BTreeSet<String>,
-    identity: &str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "nx live annotation identities")?;
-    let mut copy = ctx.retained_string(identity.len(), "nx live annotation identity text")?;
-    copy.push_str(identity);
-    ids.insert(copy);
     Ok(())
 }
 
@@ -1782,19 +1691,19 @@ fn retain_live_unknown_links(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
     for entity in &ir.model.surfaces {
-        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+        ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
     }
     for entity in &ir.model.curves {
-        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+        ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
     }
     for entity in &ir.model.pcurves {
-        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+        ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
     }
     for entity in &ir.model.procedural_surfaces {
-        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+        ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
     }
     for entity in &ir.model.procedural_curves {
-        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+        ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
     }
     for unknown in unknowns.iter_mut() {
         unknown.links_mut().retain(|link| ids.contains(link));
@@ -1994,12 +1903,7 @@ fn apply_preselected_active_body_selection(
     }
     let mut emitted = BTreeSet::new();
     for body in &ir.model.bodies {
-        insert_retained_id(
-            ctx,
-            &mut emitted,
-            body.id.as_str(),
-            "nx emitted body selection",
-        )?;
+        ctx.insert_btree_set(&mut emitted, body.id.try_clone_for_decode(ctx, "nx emitted body selection")?, "nx emitted body selection")?;
     }
     if !selected.is_subset(&emitted) {
         return Ok(false);
@@ -2120,51 +2024,46 @@ fn prune_inactive_topology(
         .retain(|region| selected.contains(&region.body));
     let mut regions: BTreeSet<RegionId> = BTreeSet::new();
     for region in &ir.model.regions {
-        insert_retained_id(ctx, &mut regions, region.id.as_str(), "nx active regions")?;
+        ctx.insert_btree_set(&mut regions, region.id.try_clone_for_decode(ctx, "nx active regions")?, "nx active regions")?;
     }
     ir.model
         .shells
         .retain(|shell| regions.contains(&shell.region));
     let mut shells: BTreeSet<ShellId> = BTreeSet::new();
     for shell in &ir.model.shells {
-        insert_retained_id(ctx, &mut shells, shell.id.as_str(), "nx active shells")?;
+        ctx.insert_btree_set(&mut shells, shell.id.try_clone_for_decode(ctx, "nx active shells")?, "nx active shells")?;
     }
     ir.model.faces.retain(|face| shells.contains(&face.shell));
     let mut faces: BTreeSet<FaceId> = BTreeSet::new();
     for face in &ir.model.faces {
-        insert_retained_id(ctx, &mut faces, face.id.as_str(), "nx active faces")?;
+        ctx.insert_btree_set(&mut faces, face.id.try_clone_for_decode(ctx, "nx active faces")?, "nx active faces")?;
     }
     ir.model.loops.retain(|loop_| faces.contains(&loop_.face));
     let mut loops: BTreeSet<LoopId> = BTreeSet::new();
     for loop_ in &ir.model.loops {
-        insert_retained_id(ctx, &mut loops, loop_.id.as_str(), "nx active loops")?;
+        ctx.insert_btree_set(&mut loops, loop_.id.try_clone_for_decode(ctx, "nx active loops")?, "nx active loops")?;
     }
     ir.model
         .coedges
         .retain(|coedge| loops.contains(&coedge.owner_loop));
     let mut edges: BTreeSet<EdgeId> = BTreeSet::new();
     for coedge in &ir.model.coedges {
-        insert_retained_id(ctx, &mut edges, coedge.edge.as_str(), "nx active edges")?;
+        ctx.insert_btree_set(&mut edges, coedge.edge.try_clone_for_decode(ctx, "nx active edges")?, "nx active edges")?;
     }
     for shell in &ir.model.shells {
         for edge in shell.wire_edges() {
-            insert_retained_id(ctx, &mut edges, edge.as_str(), "nx active edges")?;
+            ctx.insert_btree_set(&mut edges, edge.try_clone_for_decode(ctx, "nx active edges")?, "nx active edges")?;
         }
     }
     ir.model.edges.retain(|edge| edges.contains(&edge.id));
     let mut vertices: BTreeSet<VertexId> = BTreeSet::new();
     for edge in &ir.model.edges {
-        insert_retained_id(
-            ctx,
-            &mut vertices,
-            edge.start.as_str(),
-            "nx active vertices",
-        )?;
-        insert_retained_id(ctx, &mut vertices, edge.end.as_str(), "nx active vertices")?;
+        ctx.insert_btree_set(&mut vertices, edge.start.try_clone_for_decode(ctx, "nx active vertices")?, "nx active vertices")?;
+        ctx.insert_btree_set(&mut vertices, edge.end.try_clone_for_decode(ctx, "nx active vertices")?, "nx active vertices")?;
     }
     for shell in &ir.model.shells {
         for vertex in shell.free_vertices() {
-            insert_retained_id(ctx, &mut vertices, vertex.as_str(), "nx active vertices")?;
+            ctx.insert_btree_set(&mut vertices, vertex.try_clone_for_decode(ctx, "nx active vertices")?, "nx active vertices")?;
         }
     }
     ir.model
@@ -2172,7 +2071,7 @@ fn prune_inactive_topology(
         .retain(|vertex| vertices.contains(&vertex.id));
     let mut points: BTreeSet<PointId> = BTreeSet::new();
     for vertex in &ir.model.vertices {
-        insert_retained_id(ctx, &mut points, vertex.point.as_str(), "nx active points")?;
+        ctx.insert_btree_set(&mut points, vertex.point.try_clone_for_decode(ctx, "nx active points")?, "nx active points")?;
     }
     ir.model.points.retain(|point| points.contains(&point.id));
     prune_inactive_geometry(ctx, ir)?;
@@ -2182,28 +2081,18 @@ fn prune_inactive_topology(
 fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     let mut surfaces: BTreeSet<SurfaceId> = BTreeSet::new();
     for face in &ir.model.faces {
-        insert_retained_id(
-            ctx,
-            &mut surfaces,
-            face.surface.as_str(),
-            "nx active surfaces",
-        )?;
+        ctx.insert_btree_set(&mut surfaces, face.surface.try_clone_for_decode(ctx, "nx active surfaces")?, "nx active surfaces")?;
     }
     let mut curves: BTreeSet<CurveId> = BTreeSet::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
-            insert_retained_id(ctx, &mut curves, curve.as_str(), "nx active curves")?;
+            ctx.insert_btree_set(&mut curves, curve.try_clone_for_decode(ctx, "nx active curves")?, "nx active curves")?;
         }
     }
     let mut pcurves: BTreeSet<PcurveId> = BTreeSet::new();
     for coedge in &ir.model.coedges {
         for pcurve in &coedge.pcurves {
-            insert_retained_id(
-                ctx,
-                &mut pcurves,
-                pcurve.pcurve.as_str(),
-                "nx active pcurves",
-            )?;
+            ctx.insert_btree_set(&mut pcurves, pcurve.pcurve.try_clone_for_decode(ctx, "nx active pcurves")?, "nx active pcurves")?;
         }
     }
 
@@ -2220,22 +2109,17 @@ fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<()
             match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
                     let support = definition_payload.support();
-                    insert_retained_id(ctx, &mut surfaces, support.as_str(), "nx active surfaces")?;
+                    ctx.insert_btree_set(&mut surfaces, support.try_clone_for_decode(ctx, "nx active surfaces")?, "nx active surfaces")?;
                 }
                 ProceduralSurfaceDefinition::Blend(definition_payload) => {
                     let supports = definition_payload.supports();
                     let spine = definition_payload.spine();
 
                     for support in supports.iter().flatten() {
-                        insert_retained_id(
-                            ctx,
-                            &mut surfaces,
-                            support.surface.as_str(),
-                            "nx active surfaces",
-                        )?;
+                        ctx.insert_btree_set(&mut surfaces, support.surface.try_clone_for_decode(ctx, "nx active surfaces")?, "nx active surfaces")?;
                     }
                     if let Some(spine) = spine {
-                        insert_retained_id(ctx, &mut curves, spine.as_str(), "nx active curves")?;
+                        ctx.insert_btree_set(&mut curves, spine.try_clone_for_decode(ctx, "nx active curves")?, "nx active curves")?;
                     }
                 }
                 _ => {}
@@ -2252,24 +2136,14 @@ fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<()
                 ProceduralCurveDefinition::Intersection { context, .. } => {
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
-                            insert_retained_id(
-                                ctx,
-                                &mut surfaces,
-                                surface.as_str(),
-                                "nx active surfaces",
-                            )?;
+                            ctx.insert_btree_set(&mut surfaces, surface.try_clone_for_decode(ctx, "nx active surfaces")?, "nx active surfaces")?;
                         }
                     }
                 }
                 ProceduralCurveDefinition::SurfaceCurve { family } => {
                     for side in family.context().sides() {
                         if let Some(surface) = &side.surface {
-                            insert_retained_id(
-                                ctx,
-                                &mut surfaces,
-                                surface.as_str(),
-                                "nx active surfaces",
-                            )?;
+                            ctx.insert_btree_set(&mut surfaces, surface.try_clone_for_decode(ctx, "nx active surfaces")?, "nx active surfaces")?;
                         }
                     }
                 }
@@ -2285,12 +2159,7 @@ fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<()
     for surface in &ir.model.surfaces {
         if surfaces.contains(&surface.id) {
             if let Some(construction) = surface.geometry.procedural_construction() {
-                insert_retained_id(
-                    ctx,
-                    &mut surface_constructions,
-                    construction.as_str(),
-                    "nx active surface constructions",
-                )?;
+                ctx.insert_btree_set(&mut surface_constructions, construction.try_clone_for_decode(ctx, "nx active surface constructions")?, "nx active surface constructions")?;
             }
         }
     }
@@ -2298,12 +2167,7 @@ fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<()
     for curve in &ir.model.curves {
         if curves.contains(&curve.id) {
             if let Some(construction) = curve.geometry.procedural_construction() {
-                insert_retained_id(
-                    ctx,
-                    &mut curve_constructions,
-                    construction.as_str(),
-                    "nx active curve constructions",
-                )?;
+                ctx.insert_btree_set(&mut curve_constructions, construction.try_clone_for_decode(ctx, "nx active curve constructions")?, "nx active curve constructions")?;
             }
         }
     }
@@ -2423,51 +2287,33 @@ fn finalize_point_topology(
     Ok(())
 }
 
-fn insert_body_relation<K>(
-    ctx: &DecodeContext<'_>,
-    map: &mut BTreeMap<K, BodyId>,
-    key: &str,
-    body: &BodyId,
-) -> Result<(), CodecError>
-where
-    K: Ord + TryFrom<String>,
-    K::Error: std::fmt::Display,
-{
-    ctx.charge_collection_items(1, "nx body classification relations")?;
-    map.insert(
-        K::try_from(ctx.copy_retained_text(key, "nx body classification relation identity")?).map_err(CodecError::malformed)?,
-        body.try_clone_for_decode(ctx, "nx body classification owner identity")?,
-    );
-    Ok(())
-}
-
 fn classify_body_kinds(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     let mut region_bodies: BTreeMap<RegionId, BodyId> = BTreeMap::new();
     for region in &ir.model.regions {
-        insert_body_relation(ctx, &mut region_bodies, region.id.as_str(), &region.body)?;
+        ctx.insert_btree_map(&mut region_bodies, region.id.try_clone_for_decode(ctx, "nx body classification relation identity")?, region.body.try_clone_for_decode(ctx, "nx body classification owner identity")?, "nx body classification relations")?;
     }
     let mut shell_bodies: BTreeMap<ShellId, BodyId> = BTreeMap::new();
     for shell in &ir.model.shells {
         if let Some(body) = region_bodies.get(&shell.region) {
-            insert_body_relation(ctx, &mut shell_bodies, shell.id.as_str(), body)?;
+            ctx.insert_btree_map(&mut shell_bodies, shell.id.try_clone_for_decode(ctx, "nx body classification relation identity")?, body.try_clone_for_decode(ctx, "nx body classification owner identity")?, "nx body classification relations")?;
         }
     }
     let mut face_bodies: BTreeMap<FaceId, BodyId> = BTreeMap::new();
     for face in &ir.model.faces {
         if let Some(body) = shell_bodies.get(&face.shell) {
-            insert_body_relation(ctx, &mut face_bodies, face.id.as_str(), body)?;
+            ctx.insert_btree_map(&mut face_bodies, face.id.try_clone_for_decode(ctx, "nx body classification relation identity")?, body.try_clone_for_decode(ctx, "nx body classification owner identity")?, "nx body classification relations")?;
         }
     }
     let mut loop_bodies: BTreeMap<LoopId, BodyId> = BTreeMap::new();
     for loop_ in &ir.model.loops {
         if let Some(body) = face_bodies.get(&loop_.face) {
-            insert_body_relation(ctx, &mut loop_bodies, loop_.id.as_str(), body)?;
+            ctx.insert_btree_map(&mut loop_bodies, loop_.id.try_clone_for_decode(ctx, "nx body classification relation identity")?, body.try_clone_for_decode(ctx, "nx body classification owner identity")?, "nx body classification relations")?;
         }
     }
     let mut coedge_bodies: BTreeMap<CoedgeId, BodyId> = BTreeMap::new();
     for coedge in &ir.model.coedges {
         if let Some(body) = loop_bodies.get(&coedge.owner_loop) {
-            insert_body_relation(ctx, &mut coedge_bodies, coedge.id.as_str(), body)?;
+            ctx.insert_btree_map(&mut coedge_bodies, coedge.id.try_clone_for_decode(ctx, "nx body classification relation identity")?, body.try_clone_for_decode(ctx, "nx body classification owner identity")?, "nx body classification relations")?;
         }
     }
     let mut edge_uses = BTreeMap::<BodyId, BTreeMap<EdgeId, usize>>::new();

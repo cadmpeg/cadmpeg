@@ -43,7 +43,7 @@ pub(super) mod feature_projection;
 
 use body_selection::{
     atomic_disjoint_body_selections, boolean_participant_writer, boolean_target_output,
-    boolean_target_writer, copy_feature_output_bodies, feature_body_selection,
+    boolean_target_writer, feature_body_selection,
     feature_body_selection_with_offset_blocks, feature_body_set_selection, local_body_selection,
     FeatureBodySelection,
 };
@@ -3615,12 +3615,14 @@ fn attach_feature_operations(
                 .get(label.id.as_str())
                 .or_else(|| hole_packages.outputs.get(label.id.as_str()))
             {
-                outputs = copy_feature_output_bodies(ctx, bodies)?;
+                outputs = ctx.retained_vec(bodies.len(), "NX feature output bodies")?;
+                for body in bodies { outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?); }
             }
         }
         if outputs.is_empty() {
             if let Some(body) = boolean_target_output(boolean_definition.as_ref()) {
-                outputs = copy_feature_output_bodies(ctx, std::slice::from_ref(body))?;
+                outputs = ctx.retained_vec(1, "NX feature output bodies")?;
+                outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?);
             }
         }
         let native_primary_body = body_references
