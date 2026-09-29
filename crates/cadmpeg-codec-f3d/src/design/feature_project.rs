@@ -7144,7 +7144,7 @@ fn resolved_loft_path(
         &neutral_feature_id(scope),
         ctx,
     )?;
-    Ok(loft_path_from_edge_selection(&group.id, selection))
+    loft_path_from_edge_selection(ctx, &group.id, selection)
 }
 
 #[derive(Clone, Copy)]
@@ -7164,9 +7164,8 @@ fn resolved_surface_patch_path(
 ) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
     use cadmpeg_ir::features::PathRef;
 
-    let paths = groups
-        .iter()
-        .map(|group| -> Result<_, CodecError> {
+    let mut paths = Vec::new();
+    for group in groups {
             let selection = if matches!(recipe, SurfacePatchRecipe::Grouped) {
                 resolved_surface_patch_edge_group(
                     group,
@@ -7188,79 +7187,103 @@ fn resolved_surface_patch_path(
                     ctx,
                 )
             }?;
-            Ok(loft_path_from_edge_selection(&group.id, selection))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+            let path = loft_path_from_edge_selection(ctx, &group.id, selection)?;
+            push_feature_item(ctx, &mut paths, path, "f3d surface patch path")?;
+    }
     if matches!(recipe, SurfacePatchRecipe::Grouped) {
-        if let [path] = paths.as_slice() {
-            return Ok(path.clone());
+        if paths.len() == 1 {
+            if let Some(path) = paths.pop() {
+                return Ok(path);
+            }
         }
     }
     if paths.is_empty() {
-        return Ok(PathRef::Native(scope.id.clone()));
+        return Ok(PathRef::Native(copy_feature_text(ctx, &scope.id,
+            "f3d surface patch native path")?));
     }
     if let Some(state) = paths.iter().find_map(|path| {
         let PathRef::HistoricalEdges { state, .. } = path else {
             return None;
         };
-        Some(state.clone())
+        Some(state)
     }) {
-        let historical = paths
-            .iter()
-            .map(|path| match path {
-                PathRef::HistoricalEdges {
-                    state: candidate,
+        if paths.iter().all(|path| matches!(path,
+            PathRef::HistoricalEdges { state: candidate, .. } if candidate == state)) {
+            let state = copy_feature_identity(ctx, state.as_str(),
+                "f3d surface patch historical state")?;
+            let mut edges = Vec::new();
+            for path in &paths {
+                if let PathRef::HistoricalEdges { edges: group_edges, .. } = path {
+                    for edge in group_edges.iter() {
+                        let edge = copy_feature_identity(ctx, edge.as_str(),
+                            "f3d surface patch historical edge id")?;
+                        push_feature_item(ctx, &mut edges, edge,
+                            "f3d surface patch historical edge")?;
+                    }
+                }
+            }
+            let members = match ctx {
+                Some(ctx) => cadmpeg_ir::features::SelectionMembers::try_from_charged(
+                    edges, ctx, "f3d surface patch historical uniqueness")?,
+                None => edges.try_into(),
+            };
+            let native = copy_feature_text(ctx, &scope.id,
+                "f3d surface patch historical native path")?;
+            return Ok(match members {
+                Ok(edges) => PathRef::HistoricalEdges {
+                    state,
                     edges,
-                    ..
-                } if *candidate == state => Some(edges),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>();
-        if let Some(groups) = historical {
-            let edges = groups.into_iter().flatten().cloned().collect();
-            return Ok(PathRef::historical_edges(state, edges, scope.id.clone())
-                .unwrap_or_else(|_| PathRef::Native(scope.id.clone())));
+                    native: cadmpeg_core::text::NonBlankString::new(native)
+                        .ok_or_else(|| CodecError::malformed("surface patch path is blank"))?,
+                },
+                Err(_) => PathRef::Native(native),
+            });
         }
     }
-    let direct = paths
-        .iter()
-        .map(|path| match path {
-            PathRef::Edges(edges) => Some(edges),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(groups) = direct {
-        return Ok(PathRef::Edges(
-            groups.into_iter().flatten().cloned().collect(),
-        ));
+    if paths.iter().all(|path| matches!(path, PathRef::Edges(_))) {
+        let mut edges = Vec::new();
+        for path in &paths {
+            if let PathRef::Edges(group_edges) = path {
+                for edge in group_edges {
+                    let edge = copy_feature_identity(ctx, edge.as_str(),
+                        "f3d surface patch direct edge id")?;
+                    push_feature_item(ctx, &mut edges, edge,
+                        "f3d surface patch direct edge")?;
+                }
+            }
+        }
+        return Ok(PathRef::Edges(edges));
     }
-    Ok(PathRef::Native(scope.id.clone()))
+    Ok(PathRef::Native(copy_feature_text(ctx, &scope.id,
+        "f3d surface patch native path")?))
 }
 
 fn loft_path_from_edge_selection(
+    ctx: Option<&DecodeContext<'_>>,
     native: &str,
     selection: cadmpeg_ir::features::EdgeSelection,
-) -> cadmpeg_ir::features::PathRef {
+) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
     use cadmpeg_ir::features::{EdgeSelection, PathRef};
 
     match selection {
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => {
-            PathRef::Edges(edges)
+            Ok(PathRef::Edges(edges))
         }
         EdgeSelection::Historical {
             state,
             edges,
             native,
-        } => PathRef::HistoricalEdges {
+        } => Ok(PathRef::HistoricalEdges {
             state,
             edges,
             native,
-        },
+        }),
         EdgeSelection::All
         | EdgeSelection::Unresolved
         | EdgeSelection::Native(_)
         | EdgeSelection::Generated { .. }
-        | EdgeSelection::HistoricalPartial { .. } => PathRef::Native(native.to_owned()),
+        | EdgeSelection::HistoricalPartial { .. } => Ok(PathRef::Native(
+            copy_feature_text(ctx, native, "f3d loft native path")?)),
     }
 }
 
