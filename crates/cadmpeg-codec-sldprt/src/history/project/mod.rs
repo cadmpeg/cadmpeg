@@ -1498,13 +1498,13 @@ fn project_definition(
         project_extrude(feature, native_by_source, features_by_source)
             .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Fillet) {
-        project_fillet(feature)
+        project_fillet(ctx, feature)?
     } else if class == Some(FeatureClass::Chamfer) {
-        project_chamfer(feature)
+        project_chamfer(ctx, feature)?
     } else if class == Some(FeatureClass::Shell) {
-        project_shell(feature)
+        project_shell(ctx, feature)?
     } else if class == Some(FeatureClass::Thicken) {
-        project_thicken(feature)
+        project_thicken(ctx, feature)?
     } else if class == Some(FeatureClass::OffsetSurface) {
         project_offset_surface(feature)
     } else if class == Some(FeatureClass::KnitSurface) {
@@ -1518,29 +1518,29 @@ fn project_definition(
     } else if class == Some(FeatureClass::RuledSurface) {
         project_ruled_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Draft) {
-        project_draft(feature)
+        project_draft(ctx, feature)?
     } else if class == Some(FeatureClass::SplitFace) {
         project_split_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Combine) {
-        project_combine(feature).unwrap_or_else(|| native_definition(feature))
+        project_combine(ctx, feature)?.unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::CutWithSurface) {
-        project_cut_with_surface(feature)
+        project_cut_with_surface(ctx, feature)?
     } else if class == Some(FeatureClass::DeleteBody) {
-        project_delete_body(feature).unwrap_or_else(|| native_definition(feature))
+        project_delete_body(ctx, feature)?.unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::DeleteFace) {
-        project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
+        project_delete_face(ctx, feature)?.unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::ReplaceFace) {
-        project_replace_face(feature).unwrap_or_else(|| native_definition(feature))
+        project_replace_face(ctx, feature)?.unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::MoveFace) {
-        project_move_face(feature).unwrap_or_else(|| native_definition(feature))
+        project_move_face(ctx, feature)?.unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::MoveBody) {
-        project_move_body(feature).unwrap_or_else(|| native_definition(feature))
+        project_move_body(ctx, feature)?.unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Dome) {
-        project_dome(feature)
+        project_dome(ctx, feature)?
     } else if class == Some(FeatureClass::Flex) {
         project_flex(feature)
     } else if class == Some(FeatureClass::Scale) {
-        project_scale(feature)
+        project_scale(ctx, feature)?
     } else if class == Some(FeatureClass::Hole) {
         project_hole(feature, features_by_source, history_features)
             .unwrap_or_else(|| native_definition(feature))

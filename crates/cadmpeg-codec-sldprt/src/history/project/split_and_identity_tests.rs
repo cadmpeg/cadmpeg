@@ -479,7 +479,7 @@ fn variable_fillet_does_not_use_d1_as_a_constant_radius() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "R1".into());
     assert!(matches!(
-        project_fillet(&feature),
+        project_fillet(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));
@@ -498,7 +498,7 @@ fn variable_fillet_d_dimensions_require_native_vertex_associations() {
     ]);
 
     assert!(matches!(
-        project_fillet(&feature),
+        project_fillet(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));
