@@ -8942,16 +8942,13 @@ fn project_delete_face(
         return Ok(None);
     }
     let stream = or_none!(native_stream(&scope.id));
-    let mut matching = Vec::new();
-    for group in construction_groups
+    let matching = construction_groups
         .iter()
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
-        }) {
-        push_feature_item(ctx, &mut matching, group, "f3d DeleteFace group")?;
-    }
-    let [group] = matching.as_slice() else {
+        });
+    let Some(group) = unique_feature_match(matching) else {
         return Ok(None);
     };
     if group.scope_reference_ordinal != 0
@@ -8971,8 +8968,12 @@ fn project_delete_face(
         group,
         face_operands,
     )
-    .map_or_else(|| resolved_face_group(ctx, group, face_operands), |face| Ok(Some(face)))?
-    .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
+    .map_or_else(|| resolved_face_group(ctx, group, face_operands), |face| Ok(Some(face)))?;
+    let faces = match faces {
+        Some(faces) => faces,
+        None => FaceSelection::Native(copy_feature_text(
+            ctx, &group.id, "f3d DeleteFace fallback group id")?),
+    };
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::DeleteFace {
         faces,
         heal,
