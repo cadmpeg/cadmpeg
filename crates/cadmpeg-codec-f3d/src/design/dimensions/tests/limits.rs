@@ -275,6 +275,18 @@ fn dimension_recipe_group_member_refuses_collection_limit() {
     assert_recipe_group_refusal("f3d dimension recipe group member");
 }
 
+#[test]
+fn projected_dimension_parameter_id_refuses_retained_limit() {
+    assert_native_fallback_refusal(false, "f3d projected dimension parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn projected_dimension_parameter_refuses_collection_limit() {
+    assert_native_fallback_refusal(false, "f3d projected dimension parameter",
+        ResourceDimension::CollectionItems);
+}
+
 fn assert_native_auxiliary_refusal(
     annotation: bool,
     operation: &'static str,
