@@ -27,7 +27,9 @@ impl OperationTerminalDiscriminator {
         type_indices
             .iter()
             .chain(&trailing_indices)
-            .try_fold(start, |at, token| at.checked_add(token.raw().len() as u64))
+            .try_fold(start, |at, token| {
+                at.checked_add(cadmpeg_core::decode::u64_from_index(token.raw().len()))
+            })
             .ok_or("source_offset: terminal discriminator end overflows")?;
         Ok(Self {
             origin,
@@ -46,7 +48,7 @@ impl OperationTerminalDiscriminator {
         let mut at = self.origin + 3;
         self.type_indices.map(|token| {
             let offset = at;
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             (token, offset)
         })
     }
@@ -58,11 +60,11 @@ impl OperationTerminalDiscriminator {
             + self
                 .type_indices
                 .iter()
-                .map(|token| token.raw().len() as u64)
+                .map(|token| cadmpeg_core::decode::u64_from_index(token.raw().len()))
                 .sum::<u64>();
         self.trailing_indices.iter().map(move |token| {
             let offset = at;
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             (*token, offset)
         })
     }

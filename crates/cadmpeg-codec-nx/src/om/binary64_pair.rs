@@ -95,11 +95,15 @@ pub(crate) struct Binary64Pair<F, O = usize> {
     form: F,
     offset: O,
     values: [ShiftedBinary64; 2],
+    discriminator_byte_len: u16,
+    separator_width: u16,
 }
 
 impl<F: Binary64PairForm> Binary64Pair<F> {
     fn read(bytes: &[u8], offset: usize, form: F) -> Option<Self> {
         let discriminator = form.discriminator();
+        let discriminator_byte_len = u16::try_from(discriminator.len()).ok()?;
+        let separator_width = u16::try_from(form.separator_width()).ok()?;
         let first = offset.checked_add(discriminator.len())?;
         (bytes.get(offset..first)? == discriminator.as_ref()).then_some(())?;
         let separator = first.checked_add(8)?;
@@ -116,6 +120,8 @@ impl<F: Binary64PairForm> Binary64Pair<F> {
             form,
             offset,
             values,
+            discriminator_byte_len,
+            separator_width,
         })
     }
 
@@ -135,22 +141,26 @@ impl<F: Binary64PairForm, O: Copy + Add<Output = O> + From<u16>> Binary64Pair<F,
         self.values
     }
     pub(crate) fn value_offsets(&self) -> [O; 2] {
-        let first = self.offset + O::from(self.form.discriminator().len() as u16);
-        [
-            first,
-            first + O::from(8 + self.form.separator_width() as u16),
-        ]
+        let first = self.offset + O::from(self.discriminator_byte_len);
+        [first, first + O::from(8 + self.separator_width)]
     }
 }
 
 impl<F: Binary64PairForm> Binary64Pair<F, u64> {
     pub(crate) fn new(form: F, offset: u64, values: [ShiftedBinary64; 2]) -> Option<Self> {
-        offset
-            .checked_add(form.discriminator().len() as u64 + 16 + form.separator_width() as u64)?;
+        let discriminator_byte_len = u16::try_from(form.discriminator().len()).ok()?;
+        let separator_width = u16::try_from(form.separator_width()).ok()?;
+        offset.checked_add(
+            cadmpeg_core::decode::u64_from_index(form.discriminator().len())
+                + 16
+                + cadmpeg_core::decode::u64_from_index(form.separator_width()),
+        )?;
         Some(Self {
             form,
             offset,
             values,
+            discriminator_byte_len,
+            separator_width,
         })
     }
 }
@@ -228,6 +238,8 @@ pub(crate) fn sketch_pairs(
                 form: SketchBinary64PairForm::Object(pair.form),
                 offset: pair.offset,
                 values: pair.values,
+                discriminator_byte_len: pair.discriminator_byte_len,
+                separator_width: pair.separator_width,
             },
             "NX binary64 pairs",
         )?;

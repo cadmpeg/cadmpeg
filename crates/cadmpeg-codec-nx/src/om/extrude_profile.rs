@@ -26,7 +26,7 @@ impl ExtrudeProfileReferenceField {
             .references
             .as_slice()
             .iter()
-            .map(|token| token.raw().len() as u64)
+            .map(|token| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum();
         self.primary_offset = base.checked_add(self.primary_offset)?;
         self.primary_offset.checked_add(width)?.checked_add(3)?;
@@ -44,7 +44,7 @@ impl ExtrudeProfileReferenceField {
         let mut relative = 0;
         self.references.as_slice().iter().map(move |token| {
             let position = relative;
-            relative += token.raw().len() as u64;
+            relative += cadmpeg_core::decode::u64_from_index(token.raw().len());
             (
                 *token,
                 self.primary_offset + position,
@@ -178,7 +178,7 @@ mod tests {
         let rows: Vec<_> = relocated.references().collect();
         assert_eq!((rows[0].1, rows[0].2), (1105, Some(1115)));
         assert_eq!((rows[1].1, rows[1].2), (1107, Some(1117)));
-        let maximum_base = u64::MAX - 100 - bytes.len() as u64;
+        let maximum_base = u64::MAX - 100 - cadmpeg_core::decode::u64_from_index(bytes.len());
         assert!(field.clone().relocate(maximum_base).is_some());
         assert!(field.relocate(maximum_base + 1).is_none());
         let no_witness = extrude_profile_references_test(

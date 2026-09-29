@@ -247,13 +247,17 @@ enum SourceEncoding {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SourceChartData {
     encoding: SourceEncoding,
+    count: u32,
 }
 impl SourceChartData {
     fn checked_points_charged(
         ctx: &DecodeContext<'_>,
         points: Vec<Point3>,
-    ) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
-        if u32::try_from(points.len()).is_err() || points.len() < 2 {
+    ) -> Result<Option<(Vec<FinitePoint3>, u32)>, CodecError> {
+        let Ok(count) = u32::try_from(points.len()) else {
+            return Ok(None);
+        };
+        if points.len() < 2 {
             return Ok(None);
         }
         let mut checked = ctx.retained_vec(points.len(), "NX finite chart points")?;
@@ -263,7 +267,7 @@ impl SourceChartData {
             };
             checked.push(point);
         }
-        Ok(Some(checked))
+        Ok(Some((checked, count)))
     }
 
     pub(crate) fn xyz3_charged(
@@ -273,10 +277,11 @@ impl SourceChartData {
         if !points.windows(2).any(|pair| pair[0] != pair[1]) {
             return Ok(None);
         }
-        let Some(points) = Self::checked_points_charged(ctx, points)? else {
+        let Some((points, count)) = Self::checked_points_charged(ctx, points)? else {
             return Ok(None);
         };
         Ok(Some(Self {
+            count,
             encoding: SourceEncoding::Xyz3 { points },
         }))
     }
@@ -330,7 +335,7 @@ impl SourceChartData {
             }
             None => None,
         };
-        let Some(points) = Self::checked_points_charged(ctx, points)? else {
+        let Some((points, count)) = Self::checked_points_charged(ctx, points)? else {
             return Ok(None);
         };
         let Some(samples) = ChartSamples::from_source_charged(ctx, points, checked_parameters)?
@@ -338,29 +343,32 @@ impl SourceChartData {
             return Ok(None);
         };
         Ok(Some(Self {
+            count,
             encoding: SourceEncoding::Ext11 {
                 samples,
                 support_uv: [first, second],
             },
         }))
     }
-    fn checked_points(points: Vec<Point3>) -> Result<Vec<FinitePoint3>, &'static str> {
-        u32::try_from(points.len()).map_err(|_| "points: count exceeds u32")?;
+    fn checked_points(points: Vec<Point3>) -> Result<(Vec<FinitePoint3>, u32), &'static str> {
+        let count = u32::try_from(points.len()).map_err(|_| "points: count exceeds u32")?;
         if points.len() < 2 {
             return Err("points: at least two points required");
         }
-        points
+        let points = points
             .into_iter()
             .map(|point| FinitePoint3::new(point).ok_or("points: coordinates must be finite"))
-            .collect()
+            .collect::<Result<_, _>>()?;
+        Ok((points, count))
     }
 
     pub(crate) fn xyz3(points: Vec<Point3>) -> Result<Self, &'static str> {
         if !points.windows(2).any(|pair| pair[0] != pair[1]) {
             return Err("points: xyz3 requires distinct points");
         }
-        let points = Self::checked_points(points)?;
+        let (points, count) = Self::checked_points(points)?;
         Ok(Self {
+            count,
             encoding: SourceEncoding::Xyz3 { points },
         })
     }
@@ -396,12 +404,13 @@ impl SourceChartData {
         });
         let [first, second] = support_uv;
         let support_uv = [first?, second?];
-        let points = Self::checked_points(points)?;
+        let (points, count) = Self::checked_points(points)?;
         let samples = ChartSamples::new(
             points,
             parameters.into_iter().map(ChartParameter::Source).collect(),
         )?;
         Ok(Self {
+            count,
             encoding: SourceEncoding::Ext11 {
                 samples,
                 support_uv,
@@ -441,10 +450,7 @@ impl SourceChartData {
         }
     }
     pub(crate) fn count(&self) -> u32 {
-        match &self.encoding {
-            SourceEncoding::Xyz3 { points } => points.len() as u32,
-            SourceEncoding::Ext11 { samples, .. } => samples.samples.len() as u32,
-        }
+        self.count
     }
     pub(crate) fn point_layout(&self) -> super::ChartPointLayout {
         match self.encoding {

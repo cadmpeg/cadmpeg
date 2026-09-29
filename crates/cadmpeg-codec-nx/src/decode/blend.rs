@@ -173,7 +173,8 @@ mod tests {
             cache
                 .remember(
                     &surface,
-                    index as f64,
+                    cadmpeg_core::convert::f64_from_index(index)
+                        .expect("bounded cache fixture index is exact"),
                     false,
                     frame,
                     &GeometryWorkBudget::from_context(
@@ -222,7 +223,8 @@ mod tests {
             cache
                 .remember_boundary_point(
                     &surface,
-                    index as f64,
+                    cadmpeg_core::convert::f64_from_index(index)
+                        .expect("bounded cache fixture index is exact"),
                     index % 2,
                     point,
                     &GeometryWorkBudget::from_context(
@@ -353,7 +355,8 @@ mod tests {
             SurfaceId::mint("test:model:entity#synthetic:seed-offset").expect("identity grammar");
         let mut cache = BlendContactSeedCache::default();
         for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
-            let parameter = parameter as f64;
+            let parameter = cadmpeg_core::convert::f64_from_index(parameter)
+                .expect("fixture integer is exactly representable");
             cache
                 .remember(
                     BlendContactSeed {
@@ -1016,7 +1019,12 @@ fn blend_surface_parameters_inner(
             [None, Some(parameter)] => Some((parameter, 1usize)),
             _ => None,
         } {
-            return Ok(Some(Point2::new(parameter, boundary as f64)));
+            return Ok(Some(Point2::new(parameter, {
+                let Some(value) = cadmpeg_core::convert::f64_from_index(boundary) else {
+                    return Ok(None);
+                };
+                value
+            })));
         }
     }
     Ok(None)
@@ -2559,7 +2567,19 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
         let Some(parameter) = cadmpeg_ir::math::interpolate(
             domain[0],
             domain[1],
-            index as f64 / COARSE_CONTACT_PCURVE_SEARCH_INTERVALS as f64,
+            {
+                let Some(value) = cadmpeg_core::convert::f64_from_index(index) else {
+                    return Ok(None);
+                };
+                value
+            } / {
+                let Some(value) =
+                    cadmpeg_core::convert::f64_from_index(COARSE_CONTACT_PCURVE_SEARCH_INTERVALS)
+                else {
+                    return Ok(None);
+                };
+                value
+            },
         ) else {
             continue;
         };
@@ -2699,8 +2719,15 @@ fn blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
         return Ok(None);
     };
     Ok(
-        (Point3::distance(candidate, target.point) <= target.tolerance)
-            .then_some(Point2::new(parameter, boundary as f64)),
+        (Point3::distance(candidate, target.point) <= target.tolerance).then_some(Point2::new(
+            parameter,
+            {
+                let Some(value) = cadmpeg_core::convert::f64_from_index(boundary) else {
+                    return Ok(None);
+                };
+                value
+            },
+        )),
     )
 }
 
@@ -2732,7 +2759,19 @@ fn closest_pcurve_parameter_from_coarse_grid(
         let Some(parameter) = cadmpeg_ir::math::interpolate(
             domain[0],
             domain[1],
-            index as f64 / COARSE_PCURVE_SEARCH_INTERVALS as f64,
+            {
+                let Some(value) = cadmpeg_core::convert::f64_from_index(index) else {
+                    return Ok(None);
+                };
+                value
+            } / {
+                let Some(value) =
+                    cadmpeg_core::convert::f64_from_index(COARSE_PCURVE_SEARCH_INTERVALS)
+                else {
+                    return Ok(None);
+                };
+                value
+            },
         ) else {
             return Ok(None);
         };
@@ -3200,10 +3239,20 @@ fn bernstein_product(
     Ok(Some(product))
 }
 
+#[cfg(test)]
+mod binomial_numeric_tests {
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn binomial_coefficient_refuses_inexact_factor() {
+        assert_eq!(super::binomial_coefficient(9_007_199_254_740_993, 1), None);
+    }
+}
+
 fn binomial_coefficient(n: usize, k: usize) -> Option<f64> {
     let k = k.min(n.checked_sub(k)?);
     (1..=k).try_fold(1.0, |value, index| {
-        let next = value * (n - k + index) as f64 / index as f64;
+        let next = value * cadmpeg_core::convert::f64_from_index(n - k + index)?
+            / cadmpeg_core::convert::f64_from_index(index)?;
         next.is_finite().then_some(next)
     })
 }
@@ -4683,8 +4732,10 @@ fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
         .iter()
         .enumerate()
         .skip(1)
-        .map(|(degree, coefficient)| *coefficient * degree as f64)
-        .collect::<Vec<_>>();
+        .map(|(degree, coefficient)| {
+            Some(*coefficient * cadmpeg_core::convert::f64_from_index(degree)?)
+        })
+        .collect::<Option<Vec<_>>>()?;
     let mut critical = polynomial_roots_in_unit_interval(&derivative)?;
     critical.sort_by(f64::total_cmp);
     critical.dedup_by(|first, second| {

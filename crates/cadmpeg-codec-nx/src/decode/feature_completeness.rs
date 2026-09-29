@@ -351,7 +351,7 @@ pub(crate) fn incomplete_expression_parameters(
                     Some(value.get())
                 }
                 (None, Some(cadmpeg_ir::features::ParameterValue::Integer(value))) => {
-                    Some(*value as f64)
+                    cadmpeg_core::convert::f64_from_i64(*value)
                 }
                 _ => None,
             };

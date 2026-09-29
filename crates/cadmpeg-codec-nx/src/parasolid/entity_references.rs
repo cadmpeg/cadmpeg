@@ -29,7 +29,7 @@ impl TryFrom<u32> for FieldPosition {
     type Error = &'static str;
 
     fn try_from(reference_ordinal: u32) -> Result<Self, Self::Error> {
-        let end = LEADING_REFERENCE_COUNT + MAX_TRAILING_REFERENCE_COUNT as u32;
+        let end = LEADING_REFERENCE_COUNT + 32;
         if !(LEADING_REFERENCE_COUNT..end).contains(&reference_ordinal) {
             return Err("reference_ordinal must address a trailing field in slots 5 through 36");
         }
@@ -38,32 +38,38 @@ impl TryFrom<u32> for FieldPosition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EntityReferences(Vec<u32>);
+pub(crate) struct EntityReferences {
+    values: Vec<u32>,
+    count: u32,
+}
 
 impl EntityReferences {
     pub(crate) fn new(values: Vec<u32>) -> Result<Self, &'static str> {
         if !(1..=MAX_TRAILING_REFERENCE_COUNT).contains(&values.len()) {
             return Err("trailing_references: must contain 1 through 32 references");
         }
-        Ok(Self(values))
+        let count = u32::try_from(values.len())
+            .map_err(|_| "trailing_references: must contain 1 through 32 references")?;
+        Ok(Self { values, count })
     }
     pub(crate) fn fields(&self) -> impl Iterator<Item = (FieldPosition, &u32)> {
-        self.0.iter().enumerate().map(|(ordinal, value)| {
-            (
-                FieldPosition(ordinal as u32 + LEADING_REFERENCE_COUNT),
-                value,
-            )
-        })
+        self.values
+            .iter()
+            .zip(LEADING_REFERENCE_COUNT..37)
+            .map(|(value, ordinal)| (FieldPosition(ordinal), value))
+    }
+    pub(crate) fn count(&self) -> u32 {
+        self.count
     }
     pub(crate) fn values(&self) -> &[u32] {
-        &self.0
+        &self.values
     }
     #[cfg(test)]
     pub(crate) fn values_mut(&mut self) -> &mut [u32] {
-        &mut self.0
+        &mut self.values
     }
     pub(crate) fn into_values(self) -> Vec<u32> {
-        self.0
+        self.values
     }
 }
 

@@ -1286,7 +1286,7 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
                 (0..4)
-                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], f64::from(v), z[u])))
                     .collect::<Vec<_>>()
                     .chunks(2_usize)
                     .map(<[_]>::to_vec)
@@ -1327,7 +1327,7 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
                 (0..5)
-                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], f64::from(v), z[u])))
                     .collect::<Vec<_>>()
                     .chunks(2_usize)
                     .map(<[_]>::to_vec)
@@ -1448,7 +1448,7 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
                 (0..4)
-                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], f64::from(v), z[u])))
                     .collect::<Vec<_>>()
                     .chunks(2_usize)
                     .map(<[_]>::to_vec)

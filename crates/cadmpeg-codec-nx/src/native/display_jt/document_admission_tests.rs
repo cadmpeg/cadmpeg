@@ -28,7 +28,7 @@ pub(super) fn one_document() -> Container<'static> {
     data.extend_from_slice(&24u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_be_bytes());
     data.extend_from_slice(&[0; 24]);
-    let data_len = data.len() as u64;
+    let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     Container {
         data: data.into(),
         physical_size: data_len,
@@ -91,8 +91,9 @@ fn display_jt_toc_count_refuses_before_vector_reservation() {
 #[test]
 fn display_jt_toc_storage_refuses_before_vector_reservation() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        80 + std::mem::size_of::<super::DisplayJtTocEntry>() as u64 - 1;
+    policy.limits.max_retained_bytes = 80
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+        - 1;
     assert_eq!(
         refused_at(policy),
         (
@@ -119,8 +120,8 @@ fn display_jt_toc_entity_refuses_before_identity_allocation() {
 fn display_jt_toc_identity_refuses_before_format_allocation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 80
-        + std::mem::size_of::<super::DisplayJtTocEntry>() as u64
-        + "nx:display-jt:toc-entry#0-0".len() as u64
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+        + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-0".len())
         - 1;
     assert_eq!(
         refused_at(policy),
@@ -148,9 +149,9 @@ fn display_jt_document_entity_refuses_before_identity_allocation() {
 fn display_jt_document_identity_refuses_before_format_allocation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 80
-        + std::mem::size_of::<super::DisplayJtTocEntry>() as u64
-        + "nx:display-jt:toc-entry#0-0".len() as u64
-        + "nx:display-jt:document#0".len() as u64
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+        + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-0".len())
+        + cadmpeg_core::decode::u64_from_index("nx:display-jt:document#0".len())
         - 1;
     assert_eq!(
         refused_at(policy),
@@ -165,10 +166,10 @@ fn display_jt_document_identity_refuses_before_format_allocation() {
 fn display_jt_document_index_reference_refuses_before_clone() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 80
-        + std::mem::size_of::<super::DisplayJtTocEntry>() as u64
-        + "nx:display-jt:toc-entry#0-0".len() as u64
-        + "nx:display-jt:document#0".len() as u64
-        + "nx:display-jt:index#0-row-0".len() as u64
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+        + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-0".len())
+        + cadmpeg_core::decode::u64_from_index("nx:display-jt:document#0".len())
+        + cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0-row-0".len())
         - 1;
     assert_eq!(
         refused_at(policy),
@@ -183,11 +184,11 @@ fn display_jt_document_index_reference_refuses_before_clone() {
 fn display_jt_document_storage_refuses_before_vector_reservation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 80
-        + std::mem::size_of::<super::DisplayJtTocEntry>() as u64
-        + "nx:display-jt:toc-entry#0-0".len() as u64
-        + "nx:display-jt:document#0".len() as u64
-        + "nx:display-jt:index#0-row-0".len() as u64
-        + std::mem::size_of::<super::DisplayJtDocument>() as u64
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+        + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-0".len())
+        + cadmpeg_core::decode::u64_from_index("nx:display-jt:document#0".len())
+        + cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0-row-0".len())
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtDocument>())
         - 1;
     assert_eq!(
         refused_at(policy),

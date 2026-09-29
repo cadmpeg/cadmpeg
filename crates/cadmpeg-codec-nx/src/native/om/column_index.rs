@@ -10,6 +10,7 @@ pub(in crate::native) struct ColumnIndexRows {
     target_rows: Vec<String>,
     linked_rows: Vec<String>,
     first_target_index: u32,
+    last_target_index: u32,
 }
 
 #[derive(Serialize)]
@@ -53,6 +54,7 @@ impl ColumnIndexRows {
             target_rows,
             linked_rows,
             first_target_index,
+            last_target_index: first_target_index - count,
         })
     }
 
@@ -65,7 +67,7 @@ impl ColumnIndexRows {
     }
 
     pub(super) fn last_target_index(&self) -> u32 {
-        self.first_target_index - (self.target_rows.len() + self.linked_rows.len()) as u32
+        self.last_target_index
     }
 }
 

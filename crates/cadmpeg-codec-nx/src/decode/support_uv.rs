@@ -2684,7 +2684,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         let source_offset = source
             .graph
             .get(NodeKind::Fin, fin_xmt)
-            .map_or(0, |node| node.pos as u64);
+            .map_or(0, |node| cadmpeg_core::decode::u64_from_index(node.pos));
         ctx.charge_collection_items(1, "nx completed pcurve provenance")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(pcurve_id.as_str().len()),

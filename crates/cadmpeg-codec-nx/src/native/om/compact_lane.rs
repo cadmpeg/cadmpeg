@@ -247,7 +247,8 @@ mod tests {
 
     #[test]
     fn native_compact_lane_routes_keep_resolved_frames() {
-        for (lane, route) in [(COUNTED, counted_count as Route), (ABR, abr_count)] {
+        let routes: [(_, Route); 2] = [(COUNTED, counted_count), (ABR, abr_count)];
+        for (lane, route) in routes {
             let container = lane_container(lane);
             assert_eq!(
                 crate::test_support::with_decode_context(|ctx| route(ctx, &container))
@@ -309,16 +310,18 @@ mod tests {
         let mut store = offset_only_indexed_om_section();
         let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
         let end_at = index_start + 3 * 4;
-        let end = u32::from_le_bytes(
+        let end = cadmpeg_core::decode::index_from_u32(u32::from_le_bytes(
             store[end_at..end_at + 4]
                 .try_into()
                 .expect("required invariant"),
-        ) as usize;
+        ));
         let mut lane = vec![0x11, 0x02];
         lane.extend_from_slice(&[0xff; 15]);
         lane.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
         store.splice(end..end, lane.iter().copied());
-        store[end_at..end_at + 4].copy_from_slice(&((end + lane.len()) as u32).to_le_bytes());
+        store[end_at..end_at + 4].copy_from_slice(
+            &(u32::try_from(end + lane.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
         let container =
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))

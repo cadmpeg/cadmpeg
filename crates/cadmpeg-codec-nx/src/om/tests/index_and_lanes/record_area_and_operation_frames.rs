@@ -12,21 +12,23 @@ fn legacy_feature_om_section_with_record_area() -> Vec<u8> {
     bytes[12..14].copy_from_slice(b"OM");
     bytes.extend_from_slice(&[0, 1, 2]);
     let class_name = b"UGS::FEATURE_RECORD";
-    bytes.push((class_name.len() + 1) as u8);
+    bytes.push(u8::try_from(class_name.len() + 1).expect("fixture value fits u8"));
     bytes.extend_from_slice(class_name);
     bytes.push(0xa0);
     bytes.extend_from_slice(&[0x81, 0x21, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0x06]);
     let pointer_offset = bytes.len();
     let record_area_offset = pointer_offset + 20;
     bytes.push(0x01);
-    bytes.extend_from_slice(&((record_area_offset - 1) as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area_offset - 1).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area_offset, 0);
     bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     bytes.extend_from_slice(b"\x01\x0eNX 1980.1700\0");
     bytes.extend_from_slice(
         b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0",
     );
-    let payload_len = (bytes.len() - 16) as u32;
+    let payload_len = u32::try_from(bytes.len() - 16).expect("fixture value fits u32");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
 }
@@ -68,7 +70,7 @@ fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
     let mut bytes = size_framed_om_section();
     bytes.extend(std::iter::repeat_n(0xa5, 4097));
     bytes.extend_from_slice(&[
-        (b"m_lateField".len() + 1) as u8,
+        u8::try_from(b"m_lateField".len() + 1).expect("fixture value fits u8"),
         b'm',
         b'_',
         b'l',
@@ -84,7 +86,9 @@ fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
     ]);
     let pointer_offset = bytes.len();
     let record_area_offset = pointer_offset + 20;
-    bytes.extend_from_slice(&(record_area_offset as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area_offset).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area_offset, 0);
     bytes.extend_from_slice(&[13, 0, 0, 0, 14, 0, 0, 0, 44, 0, 0, 0]);
     bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");

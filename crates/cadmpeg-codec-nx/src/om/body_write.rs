@@ -87,7 +87,7 @@ impl<O> BodyWriteFrame<O> {
         self.body_image
     }
     pub(crate) fn byte_len(&self) -> u8 {
-        9 + self.group_node.raw().len() as u8 + self.body_image.raw().len() as u8
+        9 + self.group_node.0.byte_len() + self.body_image.0.byte_len()
     }
 }
 
@@ -99,7 +99,7 @@ impl<O: Copy + Add<Output = O> + From<u8>> BodyWriteFrame<O> {
         self.offset + O::from(3)
     }
     pub(crate) fn body_image_offset(&self) -> O {
-        self.offset + O::from(8 + self.group_node.raw().len() as u8)
+        self.offset + O::from(8 + self.group_node.0.byte_len())
     }
     pub(super) fn end_offset(&self) -> O {
         self.offset + O::from(self.byte_len())

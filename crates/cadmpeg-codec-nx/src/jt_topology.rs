@@ -46,12 +46,12 @@ impl AttributeMaskContext {
     /// 30 bits, and the upper four bits.
     const COMBINED: Self = Self(7);
 
-    fn of(degree: NonZeroUsize) -> Self {
-        Self(match degree.get() {
+    fn of(degree: NonZeroUsize) -> Option<Self> {
+        Some(Self(match degree.get() {
             1 | 2 => 0,
-            3..=9 => degree.get() as u8 - 2,
+            3..=9 => u8::try_from(degree.get()).ok()? - 2,
             _ => Self::COMBINED.0,
-        })
+        }))
     }
 
     fn lane(self) -> usize {
@@ -119,7 +119,9 @@ impl Symbols<'_> {
         ctx: &DecodeContext<'_>,
         degree: NonZeroUsize,
     ) -> Result<Option<Vec<bool>>, CodecError> {
-        let context = AttributeMaskContext::of(degree);
+        let Some(context) = AttributeMaskContext::of(degree) else {
+            return Ok(None);
+        };
         let lane = context.lane();
         let degree = degree.get();
         if degree <= 64 {
@@ -172,14 +174,14 @@ impl Symbols<'_> {
             let Some(last) = words.last() else {
                 return Ok(None);
             };
-            let last = *last as u32;
+            let last = last.cast_unsigned();
             if last >> used != 0 {
                 return Ok(None);
             }
         }
         let mut mask = ctx.alloc_filled(degree, false, "nx JT high-degree face attribute mask")?;
         for (bit, target) in mask.iter_mut().enumerate() {
-            let word = words[bit / 32] as u32;
+            let word = words[bit / 32].cast_unsigned();
             *target = word & (1_u32 << (bit % 32)) != 0;
         }
         Ok(Some(mask))

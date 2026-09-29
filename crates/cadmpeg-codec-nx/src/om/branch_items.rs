@@ -7,18 +7,20 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub(crate) struct BranchItems<T>(Vec<T>);
+pub(crate) struct BranchItems<T>(Vec<T>, #[serde(skip)] u8);
 
 impl<T> BranchItems<T> {
     pub(crate) fn new(items: Vec<T>) -> Result<Self, &'static str> {
         if !(1..=254).contains(&items.len()) {
             return Err("branch items must contain 1 through 254 entries");
         }
-        Ok(Self(items))
+        let count = u8::try_from(items.len() + 1)
+            .map_err(|_| "branch items must contain 1 through 254 entries")?;
+        Ok(Self(items, count))
     }
 
     pub(crate) fn declared_count(&self) -> u8 {
-        (self.0.len() + 1) as u8
+        self.1
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -40,6 +42,7 @@ impl<T> BranchItems<T> {
                 .enumerate()
                 .map(|(i, item)| f(i, item))
                 .collect(),
+            self.1,
         )
     }
 
@@ -53,7 +56,7 @@ impl<T> BranchItems<T> {
         for (index, item) in self.0.into_iter().enumerate() {
             mapped.push(f(index, item));
         }
-        Ok(BranchItems(mapped))
+        Ok(BranchItems(mapped, self.1))
     }
 
     pub(crate) fn try_map_indexed_charged<U>(
@@ -66,14 +69,17 @@ impl<T> BranchItems<T> {
         for (index, item) in self.0.into_iter().enumerate() {
             mapped.push(f(index, item)?);
         }
-        Ok(BranchItems(mapped))
+        Ok(BranchItems(mapped, self.1))
     }
 }
 
 impl<T> BranchItems<Option<T>> {
     #[cfg(test)]
     pub(crate) fn transpose(self) -> Option<BranchItems<T>> {
-        Some(BranchItems(self.0.into_iter().collect::<Option<Vec<_>>>()?))
+        Some(BranchItems(
+            self.0.into_iter().collect::<Option<Vec<_>>>()?,
+            self.1,
+        ))
     }
 }
 
