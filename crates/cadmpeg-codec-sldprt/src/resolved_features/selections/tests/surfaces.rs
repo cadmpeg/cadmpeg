@@ -490,14 +490,23 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
         sketch_entities: Vec::new(),
     };
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
     assert_eq!(
         cosmetic_thread_cylinder_marker_reference(
+            &ctx,
             &feature,
             &lane,
             0,
             lane.native_payload.len(),
             &HashSet::from([0x802f]),
-        ),
+        )
+        .expect("charged cylinder marker scan"),
         vec![(marker, None)]
     );
 }
