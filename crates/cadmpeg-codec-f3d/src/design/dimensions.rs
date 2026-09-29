@@ -112,6 +112,16 @@ fn copy_dimension_parameter_id(
     cadmpeg_ir::features::ParameterId::try_from(text).map_err(CodecError::malformed)
 }
 
+fn copy_dimension_text(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let Some(ctx) = ctx else { return Ok(value.to_owned()); };
+    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+        .map_err(|_| CodecError::malformed("validated dimension text is not UTF-8"))
+}
+
 fn copy_dimension_locus(
     ctx: Option<&DecodeContext<'_>>,
     locus: &cadmpeg_ir::sketches::SketchLocus,
@@ -2938,49 +2948,57 @@ pub(crate) fn project_spatial_dimension_constraints(
                 "f3d spatial companion record index")?;
         }
     }
-    let mut missing = source_parameters
-        .difference(&retained_parameters)
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut missing = Vec::new();
+    for parameter_id in source_parameters.difference(&retained_parameters) {
+        push_dimension_item(ctx, &mut missing, parameter_id,
+            "f3d missing spatial parameter")?;
+    }
     missing.sort_by(|first, second| first.as_str().cmp(second.as_str()));
-    projected.extend(missing.into_iter().filter_map(|parameter_id| {
-        let parameter = parameters_by_id.get(&parameter_id)?;
-        let scope = native_stream(&parameter.id)?;
-        let owner = owners_by_record.get(&(scope, parameter.owner_record_index()?))?;
-        let companion = companions_by_record.get(&(scope, owner.companion_record_index()))?;
-        let sketch = spatial_by_scope
-            .get(&(scope, owner.scope_record_index()))?
-            .clone();
-        Some(SpatialSketchConstraint {
-            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+    for parameter_id in missing {
+        let Some(parameter) = parameters_by_id.get(parameter_id) else { continue; };
+        let Some(scope) = native_stream(&parameter.id) else { continue; };
+        let Some(owner_record_index) = parameter.owner_record_index() else { continue; };
+        let Some(owner) = owners_by_record.get(&(scope, owner_record_index)) else { continue; };
+        let Some(companion) = companions_by_record.get(&(scope, owner.companion_record_index())) else { continue; };
+        let Some(sketch) = spatial_by_scope.get(&(scope, owner.scope_record_index())) else { continue; };
+        let sketch = copy_spatial_sketch_id(ctx, sketch,
+            "f3d missing spatial sketch id")?;
+        let native_ref = copy_dimension_text(ctx, companion.id(),
+            "f3d missing spatial operand native id")?;
+        let constraint_native_ref = copy_dimension_text(ctx, companion.id(),
+            "f3d missing spatial constraint native id")?;
+        let definition = cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+            SpatialSketchConstraintDefinitionInput::Native {
+                native_kind: parameter.source_kind_name(),
+                native_state: None,
+                parameter: Some(copy_dimension_parameter_id(ctx, parameter_id,
+                    "f3d missing spatial output parameter id")?),
+                operands: vec![SketchNativeOperand {
+                    native_kind: cadmpeg_core::nonblank_literal!("dimension_companion"),
+                    field: Some(NativeOperandField {
+                        name: if companion
+                            .payload()
+                            .is_none_or(|payload| payload.byte_length() == 0)
+                        {
+                            cadmpeg_core::nonblank_literal!("companion")
+                        } else {
+                            cadmpeg_core::nonblank_literal!("companion_payload")
+                        },
+                        role: None,
+                    }),
+                    object_index: Some(companion.record_index()),
+                    native_ref: Some(native_ref),
+                }],
+            },
+        ).ok();
+        let Some(definition) = definition else { continue; };
+        push_dimension_item(ctx, &mut projected, SpatialSketchConstraint {
+            id: neutral_dimension_constraint_id(parameter_id, "companion-payload"),
             sketch,
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
-                SpatialSketchConstraintDefinitionInput::Native {
-                    native_kind: parameter.source_kind_name(),
-                    native_state: None,
-                    parameter: Some(parameter_id),
-                    operands: vec![SketchNativeOperand {
-                        native_kind: cadmpeg_core::nonblank_literal!("dimension_companion"),
-                        field: Some(NativeOperandField {
-                            name: if companion
-                                .payload()
-                                .is_none_or(|payload| payload.byte_length() == 0)
-                            {
-                                cadmpeg_core::nonblank_literal!("companion")
-                            } else {
-                                cadmpeg_core::nonblank_literal!("companion_payload")
-                            },
-                            role: None,
-                        }),
-                        object_index: Some(companion.record_index()),
-                        native_ref: Some(companion.id().to_owned()),
-                    }],
-                },
-            )
-            .ok()?,
-            native_ref: Some(companion.id().to_owned()),
-        })
-    }));
+            definition,
+            native_ref: Some(constraint_native_ref),
+        }, "f3d missing spatial constraint output")?;
+    }
     Ok(projected)
 }
 
