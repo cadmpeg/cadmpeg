@@ -705,15 +705,11 @@ pub(super) fn blend_surface_parameters_for_fit_with_grid_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_for_fit_with_section_domain_and_budget(
-        index,
-        surface,
-        point,
-        seed,
-        fit_tolerance,
-        grid,
-        BlendSectionDomain::Canonical,
-        geometry_budget,
-    )
+index,
+surface,
+crate::decode::blend::BlendSectionFit { point: point, seed: seed, fit_tolerance: fit_tolerance, grid: grid, section_domain: BlendSectionDomain::Canonical },
+geometry_budget,
+)
 }
 
 pub(super) fn blend_surface_parameters_for_fit_with_source_continuation_and_budget(
@@ -726,30 +722,32 @@ pub(super) fn blend_surface_parameters_for_fit_with_source_continuation_and_budg
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_for_fit_with_section_domain_and_budget(
-        index,
-        surface,
-        point,
-        seed,
-        fit_tolerance,
-        grid,
-        BlendSectionDomain::SourceContinuation,
-        geometry_budget,
-    )
+index,
+surface,
+crate::decode::blend::BlendSectionFit { point: point, seed: seed, fit_tolerance: fit_tolerance, grid: grid, section_domain: BlendSectionDomain::SourceContinuation },
+geometry_budget,
+)
 }
 
 // The explicit search inputs keep canonical and source-continuation policies
 // visible at every recursive boundary instead of hiding them in mutable state.
-#[allow(clippy::too_many_arguments)]
-fn blend_surface_parameters_for_fit_with_section_domain_and_budget(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
+
+struct BlendSectionFit<'inputs> {
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: f64,
-    grid: BlendParameterGrid<'_>,
+    grid: BlendParameterGrid<'inputs>,
     section_domain: BlendSectionDomain,
-    geometry_budget: &GeometryWorkBudget<'_>,
+}
+
+fn blend_surface_parameters_for_fit_with_section_domain_and_budget(
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+surface: &SurfaceId,
+inputs: BlendSectionFit<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let BlendSectionFit { point, seed, fit_tolerance, grid, section_domain } = inputs;
+
     blend_surface_parameters_inner(
         index,
         surface,
