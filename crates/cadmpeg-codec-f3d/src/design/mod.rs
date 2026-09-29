@@ -18,6 +18,7 @@ pub(crate) mod feature_project;
 pub(crate) mod geometry;
 mod identity;
 mod text;
+mod sort;
 mod relation_kinds;
 pub(crate) mod presentation;
 pub(crate) mod profile_select;

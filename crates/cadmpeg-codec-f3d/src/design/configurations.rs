@@ -413,7 +413,7 @@ pub(crate) fn project_configurations(
         }
         configuration.properties.insert(key, condition);
     }
-    projected.sort_by(|left, right| left.id.cmp(&right.id));
+    super::sort::sort_by(ctx, &mut projected, |left, right| left.id.cmp(&right.id))?;
     Ok(projected)
 }
 
@@ -1170,4 +1170,23 @@ mod tests {
                 .unwrap_err().to_string(),
         );
     }
+    #[test]
+    fn configuration_ordering_refuses_sort_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let names: Vec<_> = (0..21).map(|index| format!("v{index:02}")).collect();
+        let variants = names.iter().map(|name| (name.clone(), serde_json::json!({}))).collect();
+        let payload = serde_json::Map::from_iter([("configurations".into(), serde_json::Value::Object(variants))]);
+        let table = DesignConfiguration::try_new("table.dsgcfg".into(), DesignConfigurationKind::Table,
+            names, payload).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        // The 21 projected variants precede the 21 sorting permutation entries.
+        policy.limits.max_collection_items = 41;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(project_configurations(Some(&ctx), std::slice::from_ref(&table)),
+            Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d stable sort permutation"));
+    }
+
 }
