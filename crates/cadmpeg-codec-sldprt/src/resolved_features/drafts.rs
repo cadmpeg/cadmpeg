@@ -325,13 +325,12 @@ fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Fe
                     .then(|| direction_at(extended_dir::PULL_DIRECTION))
                     .flatten()
             })
-        })
-        .collect::<Vec<_>>();
-    candidates.dedup();
-    let [direction] = candidates.as_slice() else {
+        });
+    let direction = candidates.next()?;
+    if candidates.any(|candidate| candidate != direction) {
         return None;
-    };
-    Some(*direction)
+    }
+    Some(direction)
 }
 
 pub(super) fn draft_operand_candidates(
