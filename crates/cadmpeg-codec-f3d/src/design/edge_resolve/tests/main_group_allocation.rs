@@ -139,3 +139,35 @@ fn group_identity_transition_slot_refuses_collection_limit() {
 fn compared_identity_transition_slot_refuses_collection_limit() {
     assert_identity_transition_refusal("f3d compared identity transition slot");
 }
+
+fn assert_combined_edge_refusal(operation: &'static str) {
+    let group = group(2, 10);
+    let recipe = recipe_edge_operand(10, &[], &[]);
+    let identity = identity(10, &[]);
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combined-edge")
+        .unwrap();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match resolved_edge_group(&group, std::slice::from_ref(&group),
+            std::slice::from_ref(&recipe), std::slice::from_ref(&identity),
+            Some(7), &feature_id, Some(&ctx)) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected {operation} refusal: {other:?}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn combined_edge_group_slot_refuses_collection_limit() {
+    assert_combined_edge_refusal("f3d combined edge group slot");
+}
+
+#[test]
+fn partial_edge_group_member_refuses_collection_limit() {
+    assert_combined_edge_refusal("f3d partial edge group member");
+}

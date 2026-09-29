@@ -1090,23 +1090,21 @@ fn resolved_edge_group_with_transition_chain(
         if has_standard_recipe_operands {
             return Ok(EdgeSelection::Native(group.id.clone()));
         }
-        let combined_edges = matched_operands
-            .iter()
-            .enumerate()
-            .map(|(index, operand)| {
-                let recipe = resolved_edge_operand(operand);
-                let identity = identity_matches
-                    .as_ref()
-                    .and_then(|identities| identities[index].resolved_edge_slot);
-                match (recipe, identity) {
-                    (Some(recipe), Some(identity)) if recipe != identity => None,
-                    (recipe, identity) => Some(recipe.or(identity)),
+        let mut combined_edges = Vec::new();
+        for (index, operand) in matched_operands.iter().enumerate() {
+            let recipe = resolved_edge_operand(operand);
+            let identity = identity_matches
+                .as_ref()
+                .and_then(|identities| identities[index].resolved_edge_slot);
+            let combined = match (recipe, identity) {
+                (Some(recipe), Some(identity)) if recipe != identity => {
+                    return unmatched_selection(Some(previous_state_id));
                 }
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(combined_edges) = combined_edges else {
-            return unmatched_selection(Some(previous_state_id));
-        };
+                (recipe, identity) => recipe.or(identity),
+            };
+            push_edge_item(ctx, &mut combined_edges, combined,
+                "f3d combined edge group slot")?;
+        }
         if combined_edges.iter().all(Option::is_some) {
             let mut edges = Vec::new();
             for edge_slot in combined_edges.into_iter().flatten() {
@@ -1121,17 +1119,16 @@ fn resolved_edge_group_with_transition_chain(
             return Ok(EdgeSelection::historical(state, edges, group.id.clone())
                 .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
         }
-        let partial_members = matched_operands
-            .iter()
-            .zip(combined_edges)
-            .filter_map(|(operand, resolved)| {
+        let mut partial_members = Vec::new();
+        for (operand, resolved) in matched_operands.iter().zip(combined_edges) {
                 let carries_transition_evidence = identity_matches.is_some()
                     || transition_state_id.is_none()
                     || !operand.changed_boundary_edge_slots.is_empty();
-                (resolved.is_some() || carries_transition_evidence)
-                    .then_some((operand.id.as_str(), resolved))
-            })
-            .collect::<Vec<_>>();
+                if resolved.is_some() || carries_transition_evidence {
+                    push_edge_item(ctx, &mut partial_members,
+                        (operand.id.as_str(), resolved), "f3d partial edge group member")?;
+                }
+        }
         return match partial_historical_edge_selection(
             partial_members,
             previous_state_id,
