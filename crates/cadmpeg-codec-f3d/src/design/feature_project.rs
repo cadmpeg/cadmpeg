@@ -4665,6 +4665,25 @@ pub(crate) fn direct_face_selection(
     Some(faces)
 }
 
+fn distinct_form_cage_ids<T: Eq + Hash>(
+    ctx: &DecodeContext<'_>,
+    ids: &[T],
+) -> Result<bool, CodecError> {
+    let mut distinct = HashSet::new();
+    for id in ids {
+        if distinct.contains(id) {
+            return Ok(false);
+        }
+        ctx.charge_collection_items(1, "f3d form cage uniqueness index")?;
+        distinct.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d form cage uniqueness index", 0, 1)
+        })?;
+        // discarded-value: the duplicate case returned above.
+        let _ = distinct.insert(id);
+    }
+    Ok(true)
+}
+
 /// Replace a resolved Form scope's native definition with its committed cages.
 ///
 /// The Form's cage-list record owns ordered cage-object references. Each object
@@ -4742,7 +4761,7 @@ pub(crate) fn bind_form_cages(
                 }
                 if valid
                     && !resolved.is_empty()
-                    && resolved.iter().collect::<HashSet<_>>().len() == resolved.len()
+                    && distinct_form_cage_ids(ctx, &resolved)?
                 {
                     let feature_id = neutral_feature_id(scope);
                     if let Some(feature) =
@@ -4803,7 +4822,7 @@ pub(crate) fn bind_form_cages(
             if valid
                 && !resolved.is_empty()
                 && resolved.len() == cages.len()
-                && resolved.iter().collect::<HashSet<_>>().len() == resolved.len()
+                && distinct_form_cage_ids(ctx, &resolved)?
             {
                 let feature_id = neutral_feature_id(scope);
                 if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id)
@@ -4881,7 +4900,7 @@ pub(crate) fn bind_form_cages(
         let Some(resolved) = resolved else {
             continue;
         };
-        if resolved.iter().collect::<HashSet<_>>().len() != resolved.len() {
+        if !distinct_form_cage_ids(ctx, &resolved)? {
             continue;
         }
         let feature_id = neutral_feature_id(scope);
