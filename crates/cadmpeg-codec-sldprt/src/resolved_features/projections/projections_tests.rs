@@ -28,6 +28,17 @@ use std::collections::BTreeMap;
 
 mod limits;
 
+fn with_variable_fillet_context<R>(test: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("variable fillet test context");
+    test(&ctx)
+}
+
 #[test]
 fn draft_feature_identity_index_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -1468,12 +1479,14 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
-    let groups = variable_fillet_radius_groups(
+    let groups = with_variable_fillet_context(|ctx| variable_fillet_radius_groups(
+        ctx,
         "variable",
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
         &[&selection],
-    )
+    ))
+    .expect("fillet resource limits")
     .expect("vertex join");
     assert!(matches!(
         groups.as_slice(),
@@ -1663,7 +1676,8 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let groups = variable_fillet_radius_groups("variable", &[history], &[lane], &[&selection])
+    let groups = with_variable_fillet_context(|ctx| variable_fillet_radius_groups(ctx, "variable", &[history], &[lane], &[&selection]))
+        .expect("fillet resource limits")
         .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
@@ -1728,12 +1742,14 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         terminal_feature_ref: None,
     };
 
-    let groups = variable_fillet_radius_groups(
+    let groups = with_variable_fillet_context(|ctx| variable_fillet_radius_groups(
+        ctx,
         "variable",
         std::slice::from_ref(&history),
         &[],
         &[&selection],
-    )
+    ))
+    .expect("fillet resource limits")
     .expect("endpoint-less two-control roster");
     assert!(matches!(
         groups.as_slice(),
@@ -1746,7 +1762,9 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
-    assert!(variable_fillet_radius_groups("variable", &[history], &[], &[&collision]).is_none());
+    assert!(with_variable_fillet_context(|ctx| variable_fillet_radius_groups(ctx, "variable", &[history], &[], &[&collision]))
+        .expect("fillet resource limits")
+        .is_none());
 }
 
 #[test]
