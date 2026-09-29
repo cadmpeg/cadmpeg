@@ -624,14 +624,7 @@ pub(super) fn segment_body_lineage_statuses(
                 ctx.refuse_codec_limit("allocate NX segment lineage binding identity", 0, 1)
             })?;
         segment_body_binding.push_str(&binding.id);
-        ctx.charge_collection_items(1, "NX segment lineage statuses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentBodyLineageStatus>()),
-            "NX segment lineage statuses",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX segment lineage statuses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX segment lineage statuses")?;
         output.push(SegmentBodyLineageStatus {
             id,
             segment_body_binding,
@@ -927,14 +920,7 @@ pub(super) fn segment_om_links(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX segment OM links")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentOmLink>()),
-                "retain NX segment OM links",
-            )?;
-            links
-                .try_reserve_exact(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX segment OM links", 0, 1))?;
+            ctx.reserve_retained_vec(&mut links, 1, "NX segment OM links")?;
             let id = segment_link_identity(ctx, "nx:segment-om-links:link#", links.len())?;
             let row = segment_link_identity(ctx, "nx:segment-index:row#", row_ordinal)?;
             links.push(SegmentOmLink {

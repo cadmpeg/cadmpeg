@@ -212,16 +212,7 @@ pub(in crate::native) fn feature_surface_construction_branches(
                         None,
                     )?;
                     ctx.charge_entities(1, "NX surface construction branch")?;
-                    ctx.charge_collection_items(1, "NX surface construction branches")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureSurfaceConstructionBranch,
-                        >()),
-                        "retain NX surface construction branch",
-                    )?;
-                    branches.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX surface construction branches", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut branches, 1, "NX surface construction branches")?;
                     branches.push(FeatureSurfaceConstructionBranch {
                         id,
                         operation_label,

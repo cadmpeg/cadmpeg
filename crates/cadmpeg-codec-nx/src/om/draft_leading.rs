@@ -138,17 +138,8 @@ pub(crate) fn scan(
     if record.payload().get(scan_at..scan_at + 2) != Some(&[0x01, 0x02]) {
         return Ok(None);
     }
-    let count = u64_from_index(member_count);
     let operation = "NX draft leading index members";
-    ctx.charge_collection_items(count, operation)?;
-    let bytes = count
-        .checked_mul(u64_from_index(std::mem::size_of::<CompactIndexTarget<()>>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut indices = Vec::new();
-    indices
-        .try_reserve_exact(member_count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    let mut indices = ctx.retained_vec(member_count, operation)?;
     for _ in 1..declared_count {
         let Some(token) = LocatedCompactIndex::read(record.payload(), at) else {
             return Ok(None);

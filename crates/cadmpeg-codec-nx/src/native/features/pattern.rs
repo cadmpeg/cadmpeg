@@ -1166,14 +1166,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             let Some(block) = reference.data_block.as_deref() else {
                 continue 'operations;
             };
-            ctx.charge_collection_items(1, "NX pattern construction block IDs")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX pattern construction block ID slots",
-            )?;
-            data_blocks.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX pattern construction block IDs", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut data_blocks, 1, "NX pattern construction block IDs")?;
             data_blocks.push(ctx.copy_retained_text(block, "NX pattern construction block ID")?);
         }
         let Some(store) = data_blocks
@@ -1214,14 +1207,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         id.push_str(operation_key);
         let mut construction_references = Vec::new();
         for reference in &graph {
-            ctx.charge_collection_items(1, "NX pattern construction reference IDs")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX pattern construction reference ID slots",
-            )?;
-            construction_references.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX pattern construction reference IDs", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut construction_references, 1, "NX pattern construction reference IDs")?;
             construction_references.push(ctx.copy_retained_text(&reference.id, "NX pattern construction reference ID")?);
         }
         let record = FeatureConstructionPayload {

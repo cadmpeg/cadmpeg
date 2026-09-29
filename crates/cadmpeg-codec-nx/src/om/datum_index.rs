@@ -111,17 +111,8 @@ pub(crate) fn scan(
             continue;
         }
         let member_count = usize::from(declared_count - 1);
-        let count_u64 = u64_from_index(member_count);
         let operation = "NX datum index members";
-        ctx.charge_collection_items(count_u64, operation)?;
-        let member_bytes = count_u64
-            .checked_mul(u64_from_index(std::mem::size_of::<CompactIndexAtom>()))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        ctx.charge_retained(member_bytes, operation)?;
-        let mut indices = Vec::new();
-        indices
-            .try_reserve_exact(member_count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let mut indices = ctx.retained_vec(member_count, operation)?;
         let mut at = start + 2;
         for _ in 0..member_count {
             let Some(token) = LocatedCompactIndex::read(&bytes[..scan_at], at) else {
@@ -140,14 +131,7 @@ pub(crate) fn scan(
             continue;
         };
         if let Some(lane) = DatumIndexLane::<usize>::new(indices, trailer, start) {
-            ctx.charge_collection_items(1, "NX datum index lanes")?;
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<DatumIndexLane>()),
-                "NX datum index lanes",
-            )?;
-            lanes
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum index lanes", 0, 1))?;
+            ctx.reserve_retained_vec(&mut lanes, 1, "NX datum index lanes")?;
             lanes.push(lane);
         }
     }

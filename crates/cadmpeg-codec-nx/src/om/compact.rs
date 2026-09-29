@@ -203,19 +203,8 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         mut map: impl FnMut(T) -> Result<U, cadmpeg_core::CodecError>,
     ) -> Result<CountedIndexMembers<U, RESERVED>, cadmpeg_core::CodecError> {
         let count = self.0.len();
-        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
         let operation = "NX mapped counted index members";
-        ctx.charge_collection_items(count_u64, operation)?;
-        let bytes = count_u64
-            .checked_mul(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<U>(),
-            ))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        ctx.charge_retained(bytes, operation)?;
-        let mut mapped = Vec::new();
-        mapped
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let mut mapped = ctx.retained_vec(count, operation)?;
         for member in self.0 {
             mapped.push(map(member)?);
         }
@@ -227,19 +216,8 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         mut map: impl FnMut(T) -> Result<Option<U>, cadmpeg_core::CodecError>,
     ) -> Result<Option<CountedIndexMembers<U, RESERVED>>, cadmpeg_core::CodecError> {
         let count = self.0.len();
-        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
         let operation = "NX resolved counted index members";
-        ctx.charge_collection_items(count_u64, operation)?;
-        let bytes = count_u64
-            .checked_mul(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<U>(),
-            ))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        ctx.charge_retained(bytes, operation)?;
-        let mut mapped = Vec::new();
-        mapped
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let mut mapped = ctx.retained_vec(count, operation)?;
         for member in self.0 {
             let Some(value) = map(member)? else {
                 return Ok(None);

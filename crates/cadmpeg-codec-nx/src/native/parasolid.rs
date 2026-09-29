@@ -288,14 +288,7 @@ fn push_group_record(
     groups: &mut Vec<ParasolidGroupRecord>,
     record: ParasolidGroupRecord,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX GROUP records")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidGroupRecord>()),
-        "NX GROUP record",
-    )?;
-    groups
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP records", 0, 1))?;
+    ctx.reserve_retained_vec(groups, 1, "NX GROUP records")?;
     groups.push(record);
     Ok(())
 }
@@ -433,14 +426,7 @@ fn group_members_from_records(
             let Ok(ordinal_u32) = u32::try_from(ordinal) else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX GROUP members")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidGroupMember>()),
-                "NX GROUP member",
-            )?;
-            members
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP members", 0, 1))?;
+            ctx.reserve_retained_vec(members, 1, "NX GROUP members")?;
             members.push(ParasolidGroupMember {
                 id: group_member_id(
                     ctx,
@@ -1337,14 +1323,7 @@ fn push_deltas_event<T>(
     output: &mut Vec<T>,
     event: T,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX deltas events")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
-        "NX deltas event",
-    )?;
-    output
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX deltas events", 0, 1))?;
+    ctx.reserve_retained_vec(output, 1, "NX deltas events")?;
     output.push(event);
     Ok(())
 }
@@ -1893,14 +1872,7 @@ fn per_parasolid_stream<P: ParasolidStreamRecords>(
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX Parasolid stream ordinal", 0, 1))?;
         for row in P::rows(stream.view_for_records()) {
-            ctx.charge_collection_items(1, "NX Parasolid cached records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<P::Record>()),
-                "retain NX Parasolid cached records",
-            )?;
-            records.try_reserve_exact(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX Parasolid cached records", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut records, 1, "NX Parasolid cached records")?;
             let id = parasolid_record_id(ctx, stream_ordinal, P::ID_STEM, P::xmt(row))?;
             records.push(P::record(id, ordinal, row));
         }
@@ -1959,14 +1931,7 @@ fn per_parasolid_scan<P: ParasolidScanRecords>(
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX Parasolid scan ordinal", 0, 1))?;
         for row in P::scan(ctx, &stream.inflated)? {
-            ctx.charge_collection_items(1, "NX Parasolid scanned records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<P::Record>()),
-                "retain NX Parasolid scanned records",
-            )?;
-            records.try_reserve_exact(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX Parasolid scanned records", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut records, 1, "NX Parasolid scanned records")?;
             let id = parasolid_record_id(ctx, stream_ordinal, P::ID_STEM, P::xmt(&row))?;
             records.push(P::record(id, ordinal, row));
         }
@@ -2431,14 +2396,7 @@ pub(super) fn parasolid_chart_records(
         let point_layout = subtype.chart_point_layout();
         for chart in crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)?
         {
-            ctx.charge_collection_items(1, "NX Parasolid chart records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidChartRecord>()),
-                "NX Parasolid chart record",
-            )?;
-            records
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid chart records", 0, 1))?;
+            ctx.reserve_retained_vec(&mut records, 1, "NX Parasolid chart records")?;
             records.push(ParasolidChartRecord {
                 id: parasolid_offset_record_id(
                     ctx,
@@ -3425,16 +3383,7 @@ pub(super) fn parasolid_attribute_definitions(
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX attribute definition stream ordinal", 0, 1))?;
         for definition in crate::parasolid::attribute_definitions(&stream.inflated) {
-            ctx.charge_collection_items(1, "NX attribute definitions")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    ParasolidAttributeDefinition,
-                >()),
-                "retain NX attribute definitions",
-            )?;
-            records
-                .try_reserve_exact(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute definitions", 0, 1))?;
+            ctx.reserve_retained_vec(&mut records, 1, "NX attribute definitions")?;
             let name_len = definition.name.as_str().len();
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(name_len),
@@ -3488,16 +3437,7 @@ pub(super) fn parasolid_field_names_records(
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX field names stream ordinal", 0, 1))?;
         for record in crate::parasolid::field_names_records(&stream.inflated) {
-            ctx.charge_collection_items(1, "NX field names records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<ParasolidFieldNamesRecord>(),
-                ),
-                "retain NX field names records",
-            )?;
-            records
-                .try_reserve_exact(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX field names records", 0, 1))?;
+            ctx.reserve_retained_vec(&mut records, 1, "NX field names records")?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,
@@ -3605,29 +3545,13 @@ pub(super) fn parasolid_attribute_field_names(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX attribute field names")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NamedField>()),
-                "NX attribute field name",
-            )?;
-            resolved
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field names", 0, 1))?;
+            ctx.reserve_retained_vec(&mut resolved, 1, "NX attribute field names")?;
             resolved.push(NamedField {
                 value_record: entity_51_use_text(ctx, value_record)?,
                 name: entity_51_use_text(ctx, name)?,
             });
         }
-        ctx.charge_collection_items(1, "NX attribute field name relations")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<ParasolidAttributeFieldNames>(),
-            ),
-            "NX attribute field name relation",
-        )?;
-        relations.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX attribute field name relations", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut relations, 1, "NX attribute field name relations")?;
         let ordinal = usize::try_from(definition.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX attribute field name stream ordinal", 0, 1))?;
         relations.push(ParasolidAttributeFieldNames {
@@ -3746,16 +3670,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
                 let ordinal = u32::try_from(stream_ordinal).map_err(|_| {
                     ctx.refuse_codec_limit("NX topology attribute stream ordinal", 0, 1)
                 })?;
-                ctx.charge_collection_items(1, "NX topology attribute list references")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        ParasolidTopologyAttributeListReference,
-                    >()),
-                    "NX topology attribute list reference",
-                )?;
-                references.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX topology attribute list references", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut references, 1, "NX topology attribute list references")?;
                 let digits =
                     |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
                 let length = "nx:s"
@@ -3831,14 +3746,7 @@ pub(super) fn parasolid_entity_51_records(
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX entity 51 stream ordinal", 0, 1))?;
         for record in crate::parasolid::entity_51_records(&stream.inflated) {
-            ctx.charge_collection_items(1, "NX entity 51 records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidEntity51Record>()),
-                "retain NX entity 51 records",
-            )?;
-            records
-                .try_reserve_exact(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX entity 51 records", 0, 1))?;
+            ctx.reserve_retained_vec(&mut records, 1, "NX entity 51 records")?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,
@@ -4238,13 +4146,7 @@ fn push_entity_51_use<T>(
     uses: &mut Vec<T>,
     value: T,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX entity 51 value uses")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
-        "NX entity 51 value use",
-    )?;
-    uses.try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX entity 51 value uses", 0, 1))?;
+    ctx.reserve_retained_vec(uses, 1, "NX entity 51 value uses")?;
     uses.push(value);
     Ok(())
 }
@@ -4630,16 +4532,7 @@ pub(super) fn parasolid_topology_attribute_class_uses(
                     ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1)
                 })?;
             }
-            ctx.charge_collection_items(1, "NX topology attribute class uses")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    ParasolidTopologyAttributeClassUse,
-                >()),
-                "NX topology attribute class use",
-            )?;
-            uses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX topology attribute class uses", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut uses, 1, "NX topology attribute class uses")?;
             uses.push(ParasolidTopologyAttributeClassUse {
                 stream_ordinal: reference.stream_ordinal,
                 inflated_offset: member.inflated_offset,
@@ -4693,13 +4586,7 @@ pub(super) fn parasolid_attribute_class_uses(
         else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX attribute class uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeClassUse>()),
-            "NX attribute class use",
-        )?;
-        uses.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute class uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut uses, 1, "NX attribute class uses")?;
         let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
         let length = "nx:s"
             .len()
@@ -4955,13 +4842,7 @@ pub(super) fn parasolid_attribute_field_uses(
             "nx:s{stream_ordinal}:attribute-field-use#{class_key}-{field_ordinal}"
         )
         .map_err(|_| ctx.refuse_codec_limit("write NX attribute field use identity", 0, 1))?;
-        ctx.charge_collection_items(1, "NX attribute field uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeFieldUse>()),
-            "NX attribute field use",
-        )?;
-        uses.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut uses, 1, "NX attribute field uses")?;
         uses.push(ParasolidAttributeFieldUse {
             id,
             stream_ordinal,

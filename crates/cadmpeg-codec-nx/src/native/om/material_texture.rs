@@ -231,14 +231,7 @@ pub(in crate::native) fn material_texture_assets(
         let Some((offset, size, payload, byte_order, first_ifd_offset)) = parsed else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX material texture assets")?;
-        ctx.charge_retained(
-            u64_from_index(std::mem::size_of::<MaterialTextureAsset>()),
-            "retain NX material texture assets",
-        )?;
-        assets
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX material texture assets", 0, 1))?;
+        ctx.reserve_retained_vec(&mut assets, 1, "NX material texture assets")?;
         let ordinal = assets.len();
         let mut digits = 1;
         let mut value = ordinal;

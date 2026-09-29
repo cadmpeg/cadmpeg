@@ -26,7 +26,7 @@ use cadmpeg_ir::topology::{BodyKind, Color};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
     features::{
-        holes::HolePlacement, BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp,
+        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp,
         ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter,
         DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature, FeatureContent, FeatureDefinition,
         FeatureId, FeatureOperation, FeatureResultTopology, FeatureSourceContent,
@@ -71,14 +71,7 @@ fn push_native_unknown(
     record: UnknownRecord,
 ) -> Result<(), CodecError> {
     ctx.charge_entities(1, "NX native unknown record")?;
-    ctx.charge_collection_items(1, "NX native unknown records")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<UnknownRecord>()),
-        "retain NX native unknown record",
-    )?;
-    unknowns
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX native unknown records", 0, 1))?;
+    ctx.reserve_retained_vec(unknowns, 1, "NX native unknown records")?;
     unknowns.push(record);
     Ok(())
 }
@@ -3210,14 +3203,7 @@ fn attach_feature_operations(
                         cadmpeg_core::decode::u64_from_index(label.id.len()),
                     )
                 })?;
-            ctx.charge_collection_items(1, "NX TEXT annotation losses")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<LossNote>() + message_len),
-                "NX TEXT annotation order loss",
-            )?;
-            losses
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX TEXT annotation losses", 0, 1))?;
+            ctx.reserve_retained_vec(losses, 1, "NX TEXT annotation losses")?;
             let mut message = String::new();
             message.try_reserve(message_len).map_err(|_| {
                 ctx.refuse_codec_limit(
@@ -4941,16 +4927,7 @@ fn attach_feature_operations(
         };
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
-                ctx.charge_collection_items(1, "NX block output bodies")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<BodyId>() + body.as_str().len(),
-                    ),
-                    "NX block output body",
-                )?;
-                outputs
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("allocate NX block output bodies", 0, 1))?;
+                ctx.reserve_retained_vec(&mut outputs, 1, "NX block output bodies")?;
                 outputs.push(body.clone());
             }
         }
@@ -5007,16 +4984,7 @@ fn attach_feature_operations(
             });
         if sphere_op == BooleanOp::NewBody && outputs.is_empty() {
             if let Some((body, _, _)) = &sphere_projection {
-                ctx.charge_collection_items(1, "NX sphere output bodies")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<BodyId>() + body.as_str().len(),
-                    ),
-                    "NX sphere output body",
-                )?;
-                outputs.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX sphere output bodies", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut outputs, 1, "NX sphere output bodies")?;
                 outputs.push(body.clone());
             }
         }
@@ -5330,16 +5298,7 @@ fn attach_feature_operations(
                         .map_or([].as_slice(), Vec::as_slice),
                 ] {
                     for placement in source {
-                        ctx.charge_collection_items(1, "NX feature hole placements")?;
-                        ctx.charge_retained(
-                            cadmpeg_core::decode::u64_from_index(
-                                std::mem::size_of::<HolePlacement>(),
-                            ),
-                            "NX feature hole placement",
-                        )?;
-                        placements.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("allocate NX feature hole placements", 0, 1)
-                        })?;
+                        ctx.reserve_retained_vec(&mut placements, 1, "NX feature hole placements")?;
                         placements.push(placement.clone());
                     }
                 }
@@ -5592,17 +5551,7 @@ fn attach_feature_operations(
                     .id
                     .strip_prefix("nx:feature-history:operation-label#")
                     .unwrap_or(label.id.as_str());
-                ctx.charge_collection_items(1, "NX feature result bodies")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        cadmpeg_core::text::NonBlankString,
-                    >()),
-                    "NX feature result body slot",
-                )?;
-                let mut bodies = Vec::new();
-                bodies.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX feature result bodies", 0, 1)
-                })?;
+                let mut bodies = ctx.retained_vec(1, "NX feature result bodies")?;
                 bodies.push(local_id);
                 append_feature_result_topology(
                     ctx,

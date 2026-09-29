@@ -182,14 +182,7 @@ impl TryFrom<&[u8]> for SketchBinary64PairForm {
 }
 
 fn push_pair<T>(ctx: &DecodeContext<'_>, pairs: &mut Vec<T>, pair: T) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX binary64 pairs")?;
-    ctx.charge_retained(
-        u64_from_index(std::mem::size_of::<T>()),
-        "NX binary64 pairs",
-    )?;
-    pairs
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("NX binary64 pairs", 0, 1))?;
+    ctx.reserve_retained_vec(pairs, 1, "NX binary64 pairs")?;
     pairs.push(pair);
     Ok(())
 }

@@ -87,14 +87,7 @@ fn push_assignment(
     color_definition: &str,
     source_entry: &str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX display color assignments")?;
-    ctx.charge_retained(
-        u64_from_index(std::mem::size_of::<RmDisplayColorAssignment>()),
-        "retain NX display color assignments",
-    )?;
-    assignments
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX display color assignments", 0, 1))?;
+    ctx.reserve_retained_vec(assignments, 1, "NX display color assignments")?;
     assignments.push(RmDisplayColorAssignment {
         id: String::new(),
         ordinal: 0,

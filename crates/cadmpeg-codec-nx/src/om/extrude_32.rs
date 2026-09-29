@@ -240,17 +240,8 @@ fn counted_lane<T>(
     }
     *at += 2;
     let len = usize::from(count - 1);
-    let count_u64 = u64_from_index(len);
     let operation = "NX extrude 32 counted lane";
-    ctx.charge_collection_items(count_u64, operation)?;
-    let retained_bytes = count_u64
-        .checked_mul(u64_from_index(std::mem::size_of::<(T, ())>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-    ctx.charge_retained(retained_bytes, operation)?;
-    let mut values = Vec::new();
-    values
-        .try_reserve_exact(len)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    let mut values = ctx.retained_vec(len, operation)?;
     for _ in 1..count {
         let Some((token, width)) = bytes.get(*at..).and_then(&mut read) else {
             return Ok(None);

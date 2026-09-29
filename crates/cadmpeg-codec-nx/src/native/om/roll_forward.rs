@@ -285,14 +285,7 @@ impl OmRollForwardStateTable {
                     crate::loss::NxLossCode::RollForwardTableRejected.code()
                 ))
             })?;
-            ctx.charge_collection_items(1, "NX roll-forward state groups")?;
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<OmRollForwardStateGroup>()),
-                "retain NX roll-forward state groups",
-            )?;
-            groups.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX roll-forward state groups", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut groups, 1, "NX roll-forward state groups")?;
             groups.push(OmRollForwardStateGroup {
                 id: group_id(ctx, section_ordinal, ordinal)?,
                 frame,

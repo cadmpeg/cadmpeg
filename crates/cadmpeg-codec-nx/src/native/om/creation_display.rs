@@ -97,14 +97,7 @@ fn push_relation(
     definition_offset: usize,
     source_entry: &str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX creation display relations")?;
-    ctx.charge_retained(
-        u64_from_index(std::mem::size_of::<RmCreationDisplayDataRelation>()),
-        "retain NX creation display relations",
-    )?;
-    relations
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display relations", 0, 1))?;
+    ctx.reserve_retained_vec(relations, 1, "NX creation display relations")?;
     let class_len = "nx:om-entry-:class#"
         .len()
         .checked_add(decimal_len(entry_index))

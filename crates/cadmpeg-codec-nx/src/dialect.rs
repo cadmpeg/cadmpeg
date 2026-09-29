@@ -110,39 +110,13 @@ pub(crate) fn classify_layers(
         .iter()
         .filter(|stream| stream.schema_token().is_some())
         .count();
-    ctx.charge_collection_items(u64_from_index(schema_count), "nx schema streams")?;
-    let index_bytes = schema_count
-        .checked_mul(std::mem::size_of::<(
-            &crate::parasolid::Stream,
-            &cadmpeg_parasolid::OwnedSchemaToken,
-        )>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("nx schema streams", 0, u64_from_index(schema_count))
-        })?;
-    ctx.charge_retained(u64_from_index(index_bytes), "retain NX schema stream index")?;
-    let mut streams = Vec::new();
-    streams.try_reserve_exact(schema_count).map_err(|_| {
-        ctx.refuse_codec_limit("nx schema streams", 0, u64_from_index(schema_count))
-    })?;
+    let mut streams = ctx.retained_vec(schema_count, "nx schema streams")?;
     for stream in &scan.streams {
         if let Some(schema) = stream.schema_token() {
             streams.push((stream, schema));
         }
     }
-    ctx.charge_collection_items(u64_from_index(schema_count), "nx schema carriers")?;
-    let carrier_slots = schema_count
-        .checked_mul(std::mem::size_of::<(
-            cadmpeg_parasolid::OwnedSchemaToken,
-            cadmpeg_parasolid::Carrier,
-        )>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("nx schema carriers", 0, u64_from_index(schema_count))
-        })?;
-    ctx.charge_retained(u64_from_index(carrier_slots), "retain NX schema carriers")?;
-    let mut carriers = Vec::new();
-    carriers.try_reserve_exact(schema_count).map_err(|_| {
-        ctx.refuse_codec_limit("nx schema carriers", 0, u64_from_index(schema_count))
-    })?;
+    let mut carriers = ctx.retained_vec(schema_count, "nx schema carriers")?;
     for (stream, schema) in streams {
         let mut digits = 1usize;
         let mut value = stream.file_offset;

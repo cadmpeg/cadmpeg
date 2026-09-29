@@ -42,19 +42,8 @@ pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 impl SupportUvLane {
     pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let count = self.0.len();
-        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
         let operation = "NX solved support-UV lane copy";
-        ctx.charge_collection_items(count_u64, operation)?;
-        let bytes = count_u64
-            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FiniteVector<2>,
-            >()))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        ctx.charge_retained(bytes, operation)?;
-        let mut values = Vec::new();
-        values
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let mut values = ctx.retained_vec(count, operation)?;
         values.extend_from_slice(&self.0);
         Ok(Self(values))
     }
@@ -63,19 +52,8 @@ impl SupportUvLane {
         values: Vec<[f64; 2]>,
     ) -> Result<Option<Self>, CodecError> {
         let count = values.len();
-        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
         let operation = "NX chart support-UV lane";
-        ctx.charge_collection_items(count_u64, operation)?;
-        let bytes = count_u64
-            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FiniteVector<2>,
-            >()))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        ctx.charge_retained(bytes, operation)?;
-        let mut checked = Vec::new();
-        checked
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let mut checked = ctx.retained_vec(count, operation)?;
         for pair in values {
             let Some(value) = FiniteVector::new(pair) else {
                 return Ok(None);
@@ -533,17 +511,7 @@ fn append_intersection_data_curves(
     constructions: &mut Vec<CompositeCurve>,
 ) -> Result<(), CodecError> {
     let twins = topology::intersection_data_curves(ctx, stream)?;
-    let count = cadmpeg_core::decode::u64_from_index(twins.len());
-    ctx.charge_collection_items(count, "NX intersection constructions")?;
-    let bytes = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            CompositeCurve,
-        >()))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX intersection constructions", 0, count))?;
-    ctx.charge_retained(bytes, "NX intersection constructions")?;
-    constructions
-        .try_reserve(twins.len())
-        .map_err(|_| ctx.refuse_codec_limit("NX intersection constructions", 0, count))?;
+    ctx.reserve_retained_vec(constructions, twins.len(), "NX intersection constructions")?;
     constructions.extend(twins);
     Ok(())
 }
@@ -769,14 +737,7 @@ fn push_scan_record<T>(
     record: T,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
-        operation,
-    )?;
-    records
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.reserve_retained_vec(records, 1, operation)?;
     records.push(record);
     Ok(())
 }
@@ -995,17 +956,7 @@ fn unique_values_charged<T>(
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
     let count = records.len();
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count_u64, operation)?;
-    let bytes = count_u64
-        .checked_mul(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<T>(),
-        ))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut out = Vec::new();
-    out.try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    let mut out = ctx.retained_vec(count, operation)?;
     out.extend(records.into_values());
     Ok(out)
 }
@@ -1187,13 +1138,7 @@ pub(crate) fn chart_source_records(
     while tag.saturating_add(2) <= stream.len() {
         if stream.get(tag..tag + 2) == Some(&[0, 40]) {
             if let Some((record, end)) = chart_source_record_at(ctx, stream, tag, point_layout)? {
-                ctx.charge_collection_items(1, "NX chart source records")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ChartSourceRecord>()),
-                    "NX chart source records",
-                )?;
-                out.try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("NX chart source records", 0, 1))?;
+                ctx.reserve_retained_vec(&mut out, 1, "NX chart source records")?;
                 out.push(record);
                 // A complete chart owns its counted point lane. Do not rescan
                 // bytes inside that lane as nested chart candidates.

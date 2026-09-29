@@ -387,14 +387,7 @@ pub(crate) fn color_tables<'a>(
             continue;
         };
         if let Some(table) = color_table_at(bytes, start) {
-            ctx.charge_collection_items(1, "nx part color tables")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ColorTable<'_>>()),
-                "retain NX part color table",
-            )?;
-            tables
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx part color tables", 0, 1))?;
+            ctx.reserve_retained_vec(&mut tables, 1, "nx part color tables")?;
             tables.push(table);
         }
         start = end;
@@ -435,16 +428,7 @@ pub(crate) fn construction_payload_scalar_fields(
         else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX construction scalar fields")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<ConstructionPayloadScalarField>(),
-            ),
-            "NX construction scalar fields",
-        )?;
-        fields
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("NX construction scalar fields", 0, 1))?;
+        ctx.reserve_retained_vec(&mut fields, 1, "NX construction scalar fields")?;
         fields.push(ConstructionPayloadScalarField {
             offset: start,
             field_code: bytes[start + 3],
@@ -2134,19 +2118,8 @@ pub(crate) fn identical_instance_output_payload_lane(
         return Ok(None);
     };
     let selector_count = usize::from(declared_count - 1);
-    let count = cadmpeg_core::decode::u64_from_index(selector_count);
     let operation = "NX identical-instance selectors";
-    ctx.charge_collection_items(count, operation)?;
-    let bytes = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            LocatedCompactIndex,
-        >()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut selectors = Vec::new();
-    selectors
-        .try_reserve_exact(selector_count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    let mut selectors = ctx.retained_vec(selector_count, operation)?;
     let mut at = start + 4;
     for _ in 2..=declared_count {
         at += 5;
@@ -2273,19 +2246,8 @@ pub(crate) fn swp104_payload_leading_branch(
         return Ok(None);
     };
     let len = usize::from(declared_count) - 1;
-    let count = cadmpeg_core::decode::u64_from_index(len);
     let operation = "NX SWP104 members";
-    ctx.charge_collection_items(count, operation)?;
-    let retained = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            reference_index::PayloadIndexToken,
-        >()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
-    ctx.charge_retained(retained, operation)?;
-    let mut members = Vec::new();
-    members
-        .try_reserve_exact(len)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    let mut members = ctx.retained_vec(len, operation)?;
     for _ in 1..declared_count {
         let Some(object_index) = record
             .payload()
@@ -2999,16 +2961,7 @@ pub(crate) fn draft_construction_identity_frames(
     let mut frames = Vec::new();
     for offset in 0..bytes.len() {
         if let Some(frame) = draft_identity::DraftIdentityFrame::read(ctx, bytes, offset)? {
-            ctx.charge_collection_items(1, "NX draft identity frames")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    draft_identity::DraftIdentityFrame,
-                >()),
-                "NX draft identity frames",
-            )?;
-            frames
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX draft identity frames", 0, 1))?;
+            ctx.reserve_retained_vec(&mut frames, 1, "NX draft identity frames")?;
             frames.push(frame);
         }
     }
@@ -4066,14 +4019,7 @@ pub(crate) fn uuid_string_values<'a>(
         let Some(absolute_offset) = base_offset.checked_add(offset) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx UUID strings")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<UuidStringValue<'_>>()),
-            "retain NX UUID string frame",
-        )?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx UUID strings", 0, 1))?;
+        ctx.reserve_retained_vec(&mut values, 1, "nx UUID strings")?;
         values.push(UuidStringValue {
             offset: absolute_offset,
             value,
@@ -4222,14 +4168,7 @@ pub(crate) fn surface_payload_strings<'a>(
             continue;
         }
         let value = SurfacePayloadString { offset, value };
-        ctx.charge_collection_items(1, "nx surface payload strings")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SurfacePayloadString<'_>>()),
-            "retain NX surface payload string frame",
-        )?;
-        strings
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx surface payload strings", 0, 1))?;
+        ctx.reserve_retained_vec(&mut strings, 1, "nx surface payload strings")?;
         strings.push(value);
     }
     Ok(strings)
@@ -4268,14 +4207,7 @@ pub(crate) fn numeric_expressions<'a>(
         ) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx numeric expressions")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NumericExpression<'_>>()),
-            "retain NX numeric expression",
-        )?;
-        expressions
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx numeric expressions", 0, 1))?;
+        ctx.reserve_retained_vec(&mut expressions, 1, "nx numeric expressions")?;
         expressions.push(expression);
     }
     Ok(expressions)
