@@ -1595,16 +1595,28 @@ fn expression_system_symbol_family(name: &str) -> Option<CurveExpressionSystemSy
         .bytes()
         .all(|byte| byte.is_ascii_digit())
         .then_some(())?;
-    match name.get(..digit_start)?.to_ascii_lowercase().as_str() {
-        "d" => Some(CurveExpressionSystemSymbolFamily::Dimension),
-        "sd" => Some(CurveExpressionSystemSymbolFamily::SectionDimension),
-        "rd" => Some(CurveExpressionSystemSymbolFamily::ReferenceDimension),
-        "rsd" => Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension),
-        "kd" => Some(CurveExpressionSystemSymbolFamily::KnownDimension),
-        "ad" => Some(CurveExpressionSystemSymbolFamily::DrivenDimension),
-        "p" => Some(CurveExpressionSystemSymbolFamily::PatternCount),
-        "tpm" | "tp" | "tm" => Some(CurveExpressionSystemSymbolFamily::Tolerance),
-        _ => None,
+    let prefix = name.get(..digit_start)?;
+    if prefix.eq_ignore_ascii_case("d") {
+        Some(CurveExpressionSystemSymbolFamily::Dimension)
+    } else if prefix.eq_ignore_ascii_case("sd") {
+        Some(CurveExpressionSystemSymbolFamily::SectionDimension)
+    } else if prefix.eq_ignore_ascii_case("rd") {
+        Some(CurveExpressionSystemSymbolFamily::ReferenceDimension)
+    } else if prefix.eq_ignore_ascii_case("rsd") {
+        Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension)
+    } else if prefix.eq_ignore_ascii_case("kd") {
+        Some(CurveExpressionSystemSymbolFamily::KnownDimension)
+    } else if prefix.eq_ignore_ascii_case("ad") {
+        Some(CurveExpressionSystemSymbolFamily::DrivenDimension)
+    } else if prefix.eq_ignore_ascii_case("p") {
+        Some(CurveExpressionSystemSymbolFamily::PatternCount)
+    } else if ["tpm", "tp", "tm"]
+        .into_iter()
+        .any(|family| prefix.eq_ignore_ascii_case(family))
+    {
+        Some(CurveExpressionSystemSymbolFamily::Tolerance)
+    } else {
+        None
     }
 }
 
