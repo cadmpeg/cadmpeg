@@ -1040,7 +1040,9 @@ mod tests {
                 &item
             ));
             assert!(
-                super::super::loci::section_skamp_curve_entity(&definition, &sketch, &item)
+                super::super::loci::with_test_locus(|ctx, refusal| {
+                    super::super::loci::section_skamp_curve_entity(ctx, refusal, &definition, &sketch, &item)
+                })
                     .is_some()
             );
         }

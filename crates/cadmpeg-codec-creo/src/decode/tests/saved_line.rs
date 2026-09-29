@@ -810,18 +810,20 @@ fn saved_line_joins_through_order_table() {
         .expect("relations")
         .skamps()[0]
         .items[1];
-    assert!(section_skamp_point_locus(
+    assert!(crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_point_locus(
+        ctx, refusal,
         &solver_families,
         &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         point_item
-    )
+    ))
     .is_some());
-    assert!(section_skamp_incidence_locus(
+    assert!(crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_incidence_locus(
+        ctx, refusal,
         &solver_families,
         &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         line_item,
         Some(&solver_geometry)
-    )
+    ))
     .is_some());
     assert!(
         matches!(

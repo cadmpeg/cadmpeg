@@ -2471,18 +2471,20 @@ offset: 30,
     );
     assert!(section_skamp_is_point(&opaque_point, &opaque_point_item));
     assert!(matches!(
-        section_skamp_locus(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
+            ctx, refusal,
             &opaque_point,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             &crate::feature::definitions::FeatureSkampItem {
                 sense: 4,
                 ..opaque_point_item.clone()
             },
-        ),
+        )),
         Some(SketchLocus::Entity(entity)) if entity.as_str().ends_with(":99")
     ));
     assert!(matches!(
-        section_skamp_midpoint(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_midpoint(
+            ctx, refusal,
             &opaque_point,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             &crate::feature::definitions::FeatureSkampItem {
@@ -2491,12 +2493,13 @@ offset: 30,
             },
             &opaque_point_item,
             None,
-        ),
+        )),
         Some((SketchLocus::Entity(entity), target))
             if entity.as_str().ends_with(":99") && target.as_str().ends_with(":12")
     ));
     assert_eq!(
-        section_skamp_midpoint(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_midpoint(
+            ctx, refusal,
             &opaque_point,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             &opaque_point_item,
@@ -2510,7 +2513,7 @@ offset: 30,
                     native_kind: cadmpeg_core::text::NonBlankString::new("point").expect("nonempty source identity"),
                 }).expect("valid test fixture"),
             )])),
-        ),
+        )),
         None
     );
     let centered_line = crate::feature::definitions::FeatureCenteredLineSegment {
@@ -2694,14 +2697,15 @@ offset: 30,
     };
     assert!(section_skamp_is_line(&opaque_line, &opaque_line_item));
     assert!(matches!(
-        section_skamp_locus(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
+            ctx, refusal,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             &crate::feature::definitions::FeatureSkampItem {
                 sense: 2,
                 ..opaque_line_item
             },
-        ),
+        )),
         Some(SketchLocus::Start(entity)) if entity.as_str().ends_with(":100")
     ));
     let mut solver_only_point_midpoint = opaque_line.clone();
@@ -5375,14 +5379,15 @@ offset: 30,
         offset: 82,
     });
     assert_eq!(
-        section_skamp_endpoint(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_endpoint(
+            ctx, refusal,
             &saved_definition,
             &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
             &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 14,
                 sense: 3,
             },
-        ),
+        )),
         Some(SketchLocus::End(SketchEntityId::mint(
             "creo:featdefs:sketch_entity#917:14".to_string()
         ).expect("valid test fixture")))
