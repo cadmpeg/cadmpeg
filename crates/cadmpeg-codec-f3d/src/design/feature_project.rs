@@ -8956,7 +8956,7 @@ fn project_extrude(
         }) {
         push_feature_item(ctx, &mut scope_groups, group, "f3d Extrude scope group")?;
     }
-    let profile_groups = or_none!(extrude_profile_group_roots(scope, construction_groups));
+    let profile_groups = or_none!(extrude_profile_group_roots(ctx, scope, construction_groups)?);
     let prologue = or_none!(scope.extrude_prologue());
     let profile_ref = match scope.extrude_profile() {
         Some(profile) => {

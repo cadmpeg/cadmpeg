@@ -400,13 +400,14 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
 
     let mut operands = vec![operand.clone()];
     bind_face_operand_history_candidates(
+        None,
         &mut operands,
         std::slice::from_ref(&scope),
         std::slice::from_ref(&group),
         &[],
         std::slice::from_ref(&history),
         &HashMap::new(),
-    );
+    ).unwrap();
     assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
     assert_eq!(operands[0].changed_candidate_faces, [face(7)]);
     assert_eq!(operands[0].resolved_face_slots, [7]);
@@ -467,13 +468,14 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     ];
     let mut cylinder_operands = vec![cylinder_operand];
     bind_face_operand_history_candidates(
+        None,
         &mut cylinder_operands,
         std::slice::from_ref(&cylinder_scope),
         std::slice::from_ref(&group),
         &[],
         std::slice::from_ref(&cylinder_history),
         &HashMap::new(),
-    );
+    ).unwrap();
     assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
 
     let mut stale_active_operand = cylinder_operands[0].clone();
@@ -482,13 +484,14 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .push(FaceId::mint("f3d:brep/input/brep:entity#998").expect("identity grammar"));
     let mut stale_active_operands = vec![stale_active_operand];
     bind_face_operand_history_candidates(
+        None,
         &mut stale_active_operands,
         std::slice::from_ref(&cylinder_scope),
         std::slice::from_ref(&group),
         &[],
         std::slice::from_ref(&cylinder_history),
         &HashMap::new(),
-    );
+    ).unwrap();
     assert_eq!(stale_active_operands[0].resolved_face_slots, [7]);
 
     let mut ambiguous_geometry_history = cylinder_history;
@@ -507,13 +510,14 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .radius = 1.6;
     let mut ambiguous_geometry_operands = vec![cylinder_operands.remove(0)];
     bind_face_operand_history_candidates(
+        None,
         &mut ambiguous_geometry_operands,
         &[cylinder_scope],
         std::slice::from_ref(&group),
         &[],
         &[ambiguous_geometry_history],
         &HashMap::new(),
-    );
+    ).unwrap();
     assert!(ambiguous_geometry_operands[0]
         .resolved_face_slots
         .is_empty());
@@ -525,13 +529,14 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         );
     let mut rejected = vec![operand];
     bind_face_operand_history_candidates(
+        None,
         &mut rejected,
         &[scope],
         &[unrelated_group],
         &[],
         &[history],
         &HashMap::new(),
-    );
+    ).unwrap();
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());
     assert!(rejected[0].resolved_face_slots.is_empty());
