@@ -2668,16 +2668,14 @@ fn data_block_hex(
     prefix: &'static str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let length = prefix
-        .len()
-        .checked_add(64)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    let mut text = ctx.retained_string(length, operation)?;
-    text.push_str(prefix);
-    for byte in digest {
-        write!(&mut text, "{byte:02x}").map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    }
-    Ok(text)
+    ctx.format_retained(
+        format_args!("{prefix}{}", cadmpeg_ir::hash::LowerHex(digest)),
+        operation,
+    )
+    .map_err(|error| match error {
+        CodecError::Malformed(_) => ctx.refuse_codec_limit(operation, 0, 1),
+        error => error,
+    })
 }
 
 /// Self-framed printable string carried by one NX OM record.
