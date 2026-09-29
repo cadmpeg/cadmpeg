@@ -215,9 +215,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     fn charge_stage(&mut self, operation: &'static str) -> Result<(), CodecError> {
         self.charge_pending_ir_entities(operation)?;
         let output_work = u64_from_index(self.ir.model.entity_count());
-        let units = self.semantic_input_work.checked_add(output_work).ok_or_else(|| {
-            self.ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)
-        })?;
+        let units = self
+            .semantic_input_work
+            .checked_add(output_work)
+            .ok_or_else(|| self.ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         self.ctx.charge_work(units, operation)
     }
 
@@ -585,11 +586,13 @@ fn decode_exchange_mode(
             }
             count_unknown_kind(&mut counts, record, session.ctx)?;
             let mut links = BTreeSet::new();
-            let reference_work = work_sum(record
-                .partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-                .map(reference_work_units))?;
+            let reference_work = work_sum(
+                record
+                    .partials
+                    .iter()
+                    .flat_map(|partial| partial.parameters.iter())
+                    .map(reference_work_units),
+            )?;
             for partial in &record.partials {
                 for value in &partial.parameters {
                     collect_references(value, &mut links, session.ctx)?;
@@ -792,7 +795,10 @@ fn semantic_input_work(exchange: &Exchange) -> Result<u64, CodecError> {
         .map(|anchor| add_work(1, value_work_units(&anchor.value)?));
     let data = exchange.data().iter().map(|section| {
         let parameters = work_sum(section.parameters.iter().map(value_work_units))?;
-        add_work(add_work(1, parameters)?, u64_from_index(section.records.len()))
+        add_work(
+            add_work(1, parameters)?,
+            u64_from_index(section.records.len()),
+        )
     });
     let references = u64_from_index(exchange.references().len());
     records

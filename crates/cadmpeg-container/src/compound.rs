@@ -868,7 +868,9 @@ impl CompoundState {
                     .name
                     .len()
                     .checked_add(std::mem::size_of::<CompoundEntry>())
-                    .ok_or_else(|| CodecError::Malformed("CFB entry storage size overflow".into()))?;
+                    .ok_or_else(|| {
+                        CodecError::Malformed("CFB entry storage size overflow".into())
+                    })?;
                 ctx.charge_retained(bytes as u64, "retain CFB entry")?;
                 entry.name.clone()
             } else {
@@ -1008,10 +1010,10 @@ impl CompoundState {
                     remaining -= payload;
                     if allocation == CompoundAllocation::Mini
                         && (sector as usize >= mini_capacity
-                            || !u64::from(sector)
+                            || u64::from(sector)
                                 .checked_mul(MINI_SECTOR_SIZE as u64)
                                 .and_then(|offset| offset.checked_add(payload))
-                                .is_some_and(|end| end <= root_size))
+                                .is_none_or(|end| end > root_size))
                     {
                         return malformed("CFB mini stream escapes the root mini stream");
                     }

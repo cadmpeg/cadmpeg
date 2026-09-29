@@ -1617,7 +1617,10 @@ fn tabular_data_primary_end(record: &ParameterRecord) -> usize {
     else {
         return record.tokens.len();
     };
-    let Some(count) = end.checked_sub(2).and_then(|count| i64::try_from(count).ok()) else {
+    let Some(count) = end
+        .checked_sub(2)
+        .and_then(|count| i64::try_from(count).ok())
+    else {
         return record.tokens.len();
     };
     if record.integer(1) != Some(count) {
@@ -1724,7 +1727,10 @@ fn level_to_lep_layer_map_primary_end(record: &ParameterRecord) -> usize {
     else {
         return record.tokens.len();
     };
-    let Some(count) = end.checked_sub(2).and_then(|count| i64::try_from(count).ok()) else {
+    let Some(count) = end
+        .checked_sub(2)
+        .and_then(|count| i64::try_from(count).ok())
+    else {
         return record.tokens.len();
     };
     if record.integer(1) != Some(count) {
@@ -1747,7 +1753,10 @@ fn lep_artwork_stackup_primary_end(record: &ParameterRecord) -> usize {
     else {
         return record.tokens.len();
     };
-    let Some(count) = end.checked_sub(2).and_then(|count| i64::try_from(count).ok()) else {
+    let Some(count) = end
+        .checked_sub(2)
+        .and_then(|count| i64::try_from(count).ok())
+    else {
         return record.tokens.len();
     };
     if record.integer(1) != Some(count) {
@@ -3872,9 +3881,9 @@ fn resolve_ownership<'a>(
     {
         Some((first, last)) => {
             first
-                ..last.checked_add(1).ok_or_else(|| {
-                    CodecError::malformed("IGES parameter card sequence overflow")
-                })?
+                ..last
+                    .checked_add(1)
+                    .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?
         }
         None => 0..0,
     };

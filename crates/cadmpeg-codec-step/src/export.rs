@@ -4419,23 +4419,23 @@ impl<'a> Builder<'a> {
         }
         if let Some(unwritten_pmi) = self.ir.model.pmi.len().checked_sub(self.written_pmi) {
             if unwritten_pmi > 0 {
-            // Naming the target that would carry these is only honest when the
-            // schema gate is why they were dropped. A target that supports
-            // semantic PMI and still left annotations unwritten dropped them for
-            // some other reason, and pointing at another target would misdirect.
-            if !self.schema.supports_semantic_pmi() {
-                return self.loss(
+                // Naming the target that would carry these is only honest when the
+                // schema gate is why they were dropped. A target that supports
+                // semantic PMI and still left annotations unwritten dropped them for
+                // some other reason, and pointing at another target would misdirect.
+                if !self.schema.supports_semantic_pmi() {
+                    return self.loss(
                     StepLossCode::PmiAnnotationNotWritten,
                     format!(
                         "{unwritten_pmi} PMI annotation(s) were not written to STEP; {} does not carry semantic PMI, which requires an AP242 edition target",
                         self.schema.file_schema()
                     ),
                 );
-            }
-            self.loss(
-                StepLossCode::PmiAnnotationNotWritten,
-                format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
-            );
+                }
+                self.loss(
+                    StepLossCode::PmiAnnotationNotWritten,
+                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
+                );
             }
         }
         // STEP-native source associations identify records already represented

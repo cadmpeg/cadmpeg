@@ -3430,18 +3430,15 @@ fn try_decode_standard_population(
     }
     let annotations = annotations.build();
 
-    let Some(face_local_freeform) = unresolved_freeform_record_count
-        .checked_sub(bound_revolution_face_surface_count)
-        .and_then(|count| count.checked_sub(consolidated_curve_bindings.standard_face_surfaces))
-    else {
+    let (Some(face_local_freeform), Some(unbound_revolution), Some(withheld_face_rows)) = (
+        unresolved_freeform_record_count
+            .checked_sub(bound_revolution_face_surface_count)
+            .and_then(|count| count.checked_sub(consolidated_curve_bindings.standard_face_surfaces)),
+        revolution_record_count.checked_sub(resolved_revolution_count),
+        scan.census.fbb_face_rows.checked_sub(face_count),
+    ) else {
         return Some(Err(cadmpeg_core::CodecError::malformed(
-            "CATIA face-local freeform count is inconsistent",
-        )));
-    };
-    let Some(unbound_revolution) = revolution_record_count.checked_sub(resolved_revolution_count)
-    else {
-        return Some(Err(cadmpeg_core::CodecError::malformed(
-            "CATIA revolution count is inconsistent",
+            "CATIA geometry report counts are inconsistent",
         )));
     };
 
@@ -3484,11 +3481,6 @@ topology_failure.map(StandardTopologyFailure::message)) {
         crate::coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT,
         face_count,
     );
-    let Some(withheld_face_rows) = scan.census.fbb_face_rows.checked_sub(face_count) else {
-        return Some(Err(cadmpeg_core::CodecError::malformed(
-            "CATIA admitted face rows exceed the candidate count",
-        )));
-    };
     report.coverage.record(
         crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
         withheld_face_rows,

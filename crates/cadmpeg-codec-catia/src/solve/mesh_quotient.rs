@@ -447,10 +447,11 @@ fn enforce_sparse_endpoint_membership(
             continue;
         }
         let [left, right] = edges[edge];
-        let Some(domain_work) = domains[left]
-            .len()
-            .checked_add(if right != left { domains[right].len() } else { 0 })
-        else {
+        let Some(domain_work) = domains[left].len().checked_add(if right == left {
+            0
+        } else {
+            domains[right].len()
+        }) else {
             continue;
         };
         let Some(support_work) = candidates.len().checked_mul(2) else {
@@ -1622,7 +1623,10 @@ impl MeshQuotient {
             )?;
         }
         let explicit_pair_supports = edge_candidates.iter().map(Vec::len).sum::<usize>();
-        let matching_phase_bound = root_count.checked_add(point_count)?.isqrt().checked_add(1)?;
+        let matching_phase_bound = root_count
+            .checked_add(point_count)?
+            .isqrt()
+            .checked_add(1)?;
         let traversal_bound = matching_phase_bound.checked_add(8)?;
         Some(
             root_supports
@@ -4938,7 +4942,9 @@ fn advance_boundary_component_states(
     let mut signatures = HashSet::new();
     let domain_edges = mesh_boundary_domain_edges(ctx, domain)?;
     for (state, oriented_edges) in states {
-        let Some(remaining) = limit.checked_add(1).and_then(|end| end.checked_sub(next.len()))
+        let Some(remaining) = limit
+            .checked_add(1)
+            .and_then(|end| end.checked_sub(next.len()))
         else {
             return Ok(None);
         };
@@ -7418,8 +7424,7 @@ fn build_endpoint_relation_constraints(
             }
             supports
         } else {
-            let Some(comparisons) = domains[face].len().checked_mul(domains[neighbor].len())
-            else {
+            let Some(comparisons) = domains[face].len().checked_mul(domains[neighbor].len()) else {
                 return Ok(None);
             };
             let comparison_work = work_units(comparisons);

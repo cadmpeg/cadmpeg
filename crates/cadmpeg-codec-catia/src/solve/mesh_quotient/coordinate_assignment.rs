@@ -829,7 +829,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     scan_deferred = true;
                     continue;
                 };
-                if work_budget.as_ref().is_some_and(|budget| !budget.charge_by(scan_work)) {
+                if work_budget
+                    .as_ref()
+                    .is_some_and(|budget| !budget.charge_by(scan_work))
+                {
                     scan_deferred = true;
                     continue;
                 }

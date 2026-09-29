@@ -1083,9 +1083,7 @@ pub(crate) fn project(
         .features
         .len()
         .checked_add(inventory.pattern_features.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("Inventor feature count", u64::MAX, u64::MAX)
-        })?;
+        .ok_or_else(|| ctx.refuse_codec_limit("Inventor feature count", u64::MAX, u64::MAX))?;
     let mut feature_tokens = HashSet::new();
     for token in inventory
         .features
@@ -1277,9 +1275,9 @@ pub(crate) fn project(
     )?;
     let (features, result_topologies): (Vec<_>, Vec<_>) = projected.into_iter().unzip();
     Ok(FeatureProjection {
-        unresolved_features: total
-            .checked_sub(features.len())
-            .ok_or_else(|| CodecError::malformed("Inventor feature projection exceeds inventory"))?,
+        unresolved_features: total.checked_sub(features.len()).ok_or_else(|| {
+            CodecError::malformed("Inventor feature projection exceeds inventory")
+        })?,
         unresolved_states: features.len(),
         features,
         result_topologies,

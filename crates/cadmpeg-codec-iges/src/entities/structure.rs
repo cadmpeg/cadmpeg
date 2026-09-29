@@ -2920,9 +2920,10 @@ pub(super) fn project(
         let row_count = declared_row_count
             .zip(values_per_row)
             .and_then(|(rows, width)| {
-                record.parameter_end().checked_sub(value_start).and_then(|available| {
-                    (width == 0 || rows <= available / width).then_some(rows)
-                })
+                record
+                    .parameter_end()
+                    .checked_sub(value_start)
+                    .and_then(|available| (width == 0 || rows <= available / width).then_some(rows))
             });
         let mut cursor = value_start;
         let mut values_valid = shape.is_some() && row_count.is_some();
