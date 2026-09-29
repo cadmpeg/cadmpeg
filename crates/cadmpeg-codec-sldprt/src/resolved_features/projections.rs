@@ -2525,7 +2525,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             ) {
                 break 'feature_edit;
             }
-            let references = lanes
+            let mut references = lanes
                 .iter()
                 .flat_map(|lane| {
                     let lane_key = lane
@@ -2582,18 +2582,48 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     .unwrap_or_default()
                 }))
                 .collect::<Vec<_>>();
-            let mut native_references = references
-                .iter()
-                .map(|(reference, _, _)| reference.clone())
-                .collect::<Vec<_>>();
-            native_references.sort();
-            native_references.dedup();
-            let native = (!native_references.is_empty()).then(|| {
-                format!(
-                    "sldprt:feature-input:cylinder-reference:{}",
-                    native_references.join(",")
-                )
-            });
+            const NATIVE_OPERATION: &str = "format SLDPRT cosmetic thread cylinder references";
+            let count = u64::try_from(references.len())
+                .map_err(|_| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
+            let levels = if references.len() > 1 { references.len().ilog2() + 1 } else { 1 };
+            let sort_work = count.checked_mul(u64::from(levels))
+                .ok_or_else(|| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(sort_work, NATIVE_OPERATION)?;
+            references.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+            let native = if references.is_empty() {
+                None
+            } else {
+                const PREFIX: &str = "sldprt:feature-input:cylinder-reference:";
+                let mut bytes = PREFIX.len();
+                let mut last = None;
+                let mut distinct = 0usize;
+                for (reference, _, _) in &references {
+                    ctx.charge_work(1, NATIVE_OPERATION)?;
+                    if last == Some(reference.as_str()) {
+                        continue;
+                    }
+                    bytes = bytes.checked_add(reference.len())
+                        .and_then(|size| size.checked_add(usize::from(distinct != 0)))
+                        .ok_or_else(|| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
+                    distinct += 1;
+                    last = Some(reference.as_str());
+                }
+                let mut native = String::new();
+                ctx.reserve_retained_string(&mut native, bytes, NATIVE_OPERATION)?;
+                native.push_str(PREFIX);
+                last = None;
+                for (reference, _, _) in &references {
+                    if last == Some(reference.as_str()) {
+                        continue;
+                    }
+                    if last.is_some() {
+                        native.push(',');
+                    }
+                    native.push_str(reference);
+                    last = Some(reference.as_str());
+                }
+                Some(native)
+            };
             let generated = references
                 .iter()
                 .map(|(_, components, explicit_producer)| {
