@@ -4351,7 +4351,7 @@ fn project_design_history(
         crate::history::configuration::HistoryEnrichment::Read,
     )?;
     ir.model.semantic_annotations =
-        crate::history::project::project_semantic_notes(&semantic_projection);
+        crate::history::project::project_semantic_notes(ctx, &semantic_projection)?;
     crate::history::project::project_feature_model(&semantic_projection)?
         .install(&mut ir.model, losses);
     crate::resolved_features::bindings::bind_pattern_inputs(

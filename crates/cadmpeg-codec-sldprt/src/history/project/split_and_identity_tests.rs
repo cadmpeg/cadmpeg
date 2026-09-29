@@ -128,8 +128,15 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
         features: vec![note.clone()],
     };
 
-    let annotations = project_semantic_notes(std::slice::from_ref(&history));
+    let annotations = with_test_ctx(|ctx| {
+        project_semantic_notes(ctx, std::slice::from_ref(&history))
+            .expect("semantic note projection")
+    });
     assert!(project_features(&[history]).unwrap().is_empty());
+    assert_eq!(
+        annotations[0].id.as_str(),
+        "sldprt:semantic-annotation:note#7:3"
+    );
     assert!(matches!(
         annotations.as_slice(),
         [cadmpeg_ir::semantic_annotations::SemanticAnnotation {

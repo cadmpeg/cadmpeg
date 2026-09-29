@@ -143,6 +143,16 @@ fn custom_property_source() -> Vec<u8> {
     source
 }
 
+fn semantic_note_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords Name="Part"><Note Name="Inspection" Type="Note">REMOVE ALL BURRS</Note></Keywords>"#,
+    ));
+    source
+}
+
 #[test]
 fn decode_body_stream_selection_refuses_collection_limit() {
     let source = sldprt_with_body(&triangle_body());
@@ -412,6 +422,53 @@ fn metadata_custom_property_projection_refuses_work_limit() {
         ..DecodeOptions::default()
     };
     let limit = work_refusal_with_options(&source, options, "project SLDPRT custom properties");
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert!(limit.additional > 0);
+}
+
+#[test]
+fn metadata_semantic_note_projection_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = semantic_note_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = collection_refusal_with_options(&source, options, "project SLDPRT semantic notes");
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_semantic_note_projection_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = semantic_note_source();
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "project SLDPRT semantic notes");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "project SLDPRT semantic notes"
+    ));
+}
+
+#[test]
+fn metadata_semantic_note_projection_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = semantic_note_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = work_refusal_with_options(&source, options, "project SLDPRT semantic notes");
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert!(limit.additional > 0);
 }
