@@ -14,6 +14,42 @@ use crate::CreoCodec;
 const EPS_PROTOTYPE_RADIUS_MM: f64 = 1.0e-8;
 
 #[test]
+fn prototype_loss_refuses_text_and_row_below_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let records = ["first".to_owned(), "second".to_owned()];
+    for (bytes, items, dimension, operation) in [
+        (0, u64::MAX, ResourceDimension::RetainedBytes, "creo prototype loss text"),
+        (u64::MAX, 0, ResourceDimension::CollectionItems, "creo prototype losses"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = bytes;
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = super::push_prototype_loss(
+            &ctx,
+            &mut Vec::new(),
+            crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
+            format_args!("Prototype rejected: {}", super::JoinedLaneRecords(&records)),
+        ).expect_err("below-need loss cap");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == dimension && resource.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    super::push_prototype_loss(
+        &ctx,
+        &mut losses,
+        crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
+        format_args!("Prototype rejected: {}", super::JoinedLaneRecords(&records)),
+    ).expect("service loss");
+    assert_eq!(losses[0].message, "Prototype rejected: first; second");
+}
+
+#[test]
 fn legacy_carrier_count_node_refuses_before_first_insert() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

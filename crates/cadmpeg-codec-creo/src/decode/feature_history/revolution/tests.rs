@@ -8,6 +8,34 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::AnnotationBuilder;
 
 #[test]
+fn revolved_saved_spline_loss_refuses_text_and_row_below_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for (bytes, items, dimension, operation) in [
+        (0, u64::MAX, ResourceDimension::RetainedBytes, "creo revolved saved spline loss text"),
+        (u64::MAX, 0, ResourceDimension::CollectionItems, "creo revolved saved spline losses"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = bytes;
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = super::push_revolution_surface_loss(
+            &ctx, &mut Vec::new(), "saved spline refused",
+        ).expect_err("below-need loss cap");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == dimension && resource.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    super::push_revolution_surface_loss(&ctx, &mut losses, "saved spline refused")
+        .expect("service loss");
+    assert_eq!(losses[0].message, "saved spline refused");
+}
+
+#[test]
 fn revolution_generating_ids_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
