@@ -5,7 +5,7 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::ids::neutral_configuration_id;
+use crate::design::identity::neutral_configuration_id;
 use crate::records::configuration::{
     ConfigurationScalar, DesignConfiguration, DesignConfigurationKind,
 };
@@ -377,7 +377,7 @@ pub(crate) fn project_configurations(
                 })?;
             }
             projected.push(NeutralConfiguration {
-                id: neutral_configuration_id(table.entry_name(), &name),
+                id: neutral_configuration_id(ctx, table.entry_name(), &name)?,
                 ordinal,
                 active: active == Some(name.as_str()),
                 source_index: None,
