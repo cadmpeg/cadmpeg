@@ -29,6 +29,7 @@ mod transition_recipe_allocation;
 mod partial_historical_allocation;
 mod context_only_allocation;
 mod boundary_candidate_allocation;
+mod contextual_deleted_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
