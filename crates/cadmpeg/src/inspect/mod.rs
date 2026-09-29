@@ -559,7 +559,8 @@ fn hex(args: &HexArgs) -> Result<()> {
 
 fn read(args: &ReadArgs) -> Result<()> {
     let endian = args.endian;
-    let width = args.ty.width() as u64;
+    let width_usize = args.ty.width();
+    let width = cadmpeg_core::decode::u64_from_index(width_usize);
     let stride = args.stride.map_or(width, NonZeroU64::get);
     if args.count == 0 {
         return Ok(());
@@ -585,7 +586,7 @@ fn read(args: &ReadArgs) -> Result<()> {
         }
         file.seek(SeekFrom::Start(offset))?;
         let mut buffer = [0u8; ScalarType::MAX_WIDTH];
-        file.read_exact(&mut buffer[..width as usize])?;
+        file.read_exact(&mut buffer[..width_usize])?;
         let value = args.ty.window_of(&buffer).read(endian);
         println!(
             "0x{offset:08x}  {name:<6}  {:<24}  {}",
@@ -640,7 +641,7 @@ fn find(args: &FindArgs) -> Result<()> {
             let len = args
                 .context
                 .saturating_mul(2)
-                .saturating_add(pattern.len() as u64);
+                .saturating_add(cadmpeg_core::decode::u64_from_index(pattern.len()));
             print!("{}", window(&bytes, start, len));
         }
     }
@@ -673,7 +674,7 @@ fn structure(args: &StructArgs) -> Result<()> {
     }
     let file_path = args.file.path();
     let size = file_len(file_path)?;
-    let record_size = layout.size().get() as u64;
+    let record_size = cadmpeg_core::decode::u64_from_index(layout.size().get());
     let span = record_size
         .checked_mul(args.count)
         .and_then(|total| args.offset.checked_add(total))
@@ -692,10 +693,10 @@ fn structure(args: &StructArgs) -> Result<()> {
     // prints no field line. Zero is the identity of a maximum over lengths.
     let name_width = layout.names().map(str::len).fold(0, usize::max);
     for (index, record) in layout.split(&bytes).enumerate() {
-        let base = args.offset + index as u64 * record_size;
+        let base = args.offset + cadmpeg_core::decode::u64_from_index(index) * record_size;
         println!("record {index} @ 0x{base:08x} ({record_size} bytes)");
         for field in record.fields() {
-            let at = base + field.offset() as u64;
+            let at = base + cadmpeg_core::decode::u64_from_index(field.offset());
             let decimal = match field.value() {
                 layout::DecodedValue::Scalar { value, .. } => value.decimal(),
                 layout::DecodedValue::Bytes(_) => String::new(),
@@ -824,7 +825,7 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
         Some(Ok(end)) if end < bytes.len() => end,
         _ => bytes.len(),
     };
-    hexdump::render_default_width(begin as u64, &bytes[begin..end])
+    hexdump::render_default_width(cadmpeg_core::decode::u64_from_index(begin), &bytes[begin..end])
 }
 
 #[cfg(test)]

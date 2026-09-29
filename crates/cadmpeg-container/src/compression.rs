@@ -120,7 +120,7 @@ fn inflate_deflate_writer<'ctx, 'a>(
         }
         writer.write(&chunk[..read])?;
     }
-    if decoder.total_in() != source.window().len() as u64 {
+    if decoder.total_in() != cadmpeg_core::decode::u64_from_index(source.window().len()) {
         return Err(CodecError::Malformed(
             "raw-DEFLATE member does not exhaust its declared input".into(),
         ));
