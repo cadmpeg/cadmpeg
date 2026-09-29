@@ -12,7 +12,7 @@ fn scene_node_path_limit_error(
         object_base_type: 0,
         object_id: 7,
         body_byte_len: 0,
-        body_sha256: crate::native::display_jt::Sha256Hex::digest(&[]),
+        body_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
         inflated_offset: 0,
         source_offset: 0,
     };

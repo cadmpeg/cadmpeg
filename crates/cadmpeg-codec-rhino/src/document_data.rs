@@ -585,15 +585,11 @@ fn retained_sha256(
     bytes: &[u8],
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    use std::fmt::Write;
-
     let digest = cadmpeg_ir::hash::sha256(bytes);
-    let mut text = ctx.retained_string(64, operation)?;
-    for byte in digest {
-        write!(&mut text, "{byte:02x}")
-            .map_err(|_| CodecError::malformed("Rhino setting SHA-256 formatting failed"))?;
-    }
-    Ok(text)
+    ctx.format_retained(
+        format_args!("{}", cadmpeg_ir::hash::LowerHex(&digest)),
+        operation,
+    )
 }
 
 /// Installs complete typed document-level metadata and named setting records.

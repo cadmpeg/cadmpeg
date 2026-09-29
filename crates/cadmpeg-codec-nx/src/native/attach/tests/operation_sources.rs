@@ -29,8 +29,8 @@ fn operation_source_properties_require_unique_owned_structures() {
         id: "record".into(),
         operation_label: "operation".into(),
         ordinal: 3,
-        sha256: crate::native::hex::Sha256Hex::digest(b"record-hash"),
-        payload_sha256: crate::native::hex::Sha256Hex::digest(b"payload-hash"),
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"record-hash"),
+        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"payload-hash"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(100, 110, 10)
             .unwrap(),

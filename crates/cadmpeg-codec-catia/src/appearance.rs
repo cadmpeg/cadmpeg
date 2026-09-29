@@ -9,8 +9,8 @@ use cadmpeg_ir::CadIr;
 
 use crate::families::standard::fbb::standard_face_colors;
 use crate::native::CatiaNative;
-use crate::resource::HexBytes;
 use crate::value_block::ValueField;
+use cadmpeg_ir::hash::LowerHex;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct TransferResult {
@@ -249,7 +249,7 @@ fn insert_appearance(
     rgba: [u8; 4],
 ) -> Result<AppearanceId, cadmpeg_core::CodecError> {
     let id = ctx.format_retained(
-        format_args!("catia:appearance:rgba#{}", HexBytes(&rgba)),
+        format_args!("catia:appearance:rgba#{}", LowerHex(&rgba)),
         "catia_appearance_id",
     )?;
     let id = AppearanceId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
@@ -316,7 +316,7 @@ fn insert_source_binding(
     let id = ctx.format_retained(
         format_args!(
             "catia:appearance:source-binding#source-{}:{key}",
-            HexBytes(packet.source_id.as_bytes())
+            LowerHex(packet.source_id.as_bytes())
         ),
         "catia_appearance_source_binding_id",
     )?;

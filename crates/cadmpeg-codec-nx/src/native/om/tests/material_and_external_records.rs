@@ -187,7 +187,7 @@ fn decode_retains_strict_tiff_material_texture_assets() {
     );
     assert_eq!(
         assets[0].sha256,
-        crate::native::hex::Sha256Hex::digest(&texture)
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&texture)
     );
     assert_eq!(
         assets[0].source_entry(),

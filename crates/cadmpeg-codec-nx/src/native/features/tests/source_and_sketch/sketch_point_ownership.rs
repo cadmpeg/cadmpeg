@@ -92,7 +92,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
                     source_offset: 1000,
                 },
             ],
-            crate::native::hex::Sha256Hex::digest(b"00"),
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"00"),
         )
         .unwrap(),
     };

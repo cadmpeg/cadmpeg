@@ -127,7 +127,7 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
     assert_eq!(events.body_revisions[0].lengths.total(), 36);
     assert_eq!(
         events.body_revisions[0].state_tail_sha256,
-        crate::native::hex::Sha256Hex::digest(&revision_state_tail)
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&revision_state_tail)
     );
     assert_eq!(
         events.body_revisions[0].inflated_offset + events.body_revisions[0].lengths.prefix(),
@@ -157,7 +157,7 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
     assert_eq!(events.residual_spans[0].byte_len, 3);
     assert_eq!(
         events.residual_spans[0].sha256,
-        crate::native::hex::Sha256Hex::digest(&[0xaa, 0xbb, 0xcc])
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&[0xaa, 0xbb, 0xcc])
     );
     assert_eq!(
         events.residual_spans[1].inflated_offset,
@@ -250,7 +250,7 @@ fn deltas_events_subtract_tagged_reference_lanes_from_residuals() {
     );
     assert_eq!(
         lane.sha256,
-        crate::native::hex::Sha256Hex::digest(&bytes[lane_offset..lane_end])
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[lane_offset..lane_end])
     );
     assert_eq!(events.residual_spans.len(), 2);
     assert_eq!(events.residual_spans[0].inflated_offset, 0);
@@ -307,7 +307,7 @@ fn deltas_events_subtract_transmit_headers_from_residuals() {
     );
     assert_eq!(
         header.sha256,
-        crate::native::hex::Sha256Hex::digest(&bytes[..header_end])
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[..header_end])
     );
     assert_eq!(events.residual_spans.len(), 1);
     assert_eq!(
@@ -344,7 +344,9 @@ fn deltas_events_retain_terminal_null_references() {
     );
     assert_eq!(
         serde_json::to_value(trailer).unwrap()["sha256"],
-        serde_json::json!(crate::native::hex::Sha256Hex::digest(&bytes[trailer_offset..]).as_str())
+        serde_json::json!(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[trailer_offset..]).as_str()
+        )
     );
     assert_eq!(events.residual_spans.len(), 1);
     assert_eq!(events.residual_spans[0].inflated_offset, 0);
@@ -392,7 +394,7 @@ fn deltas_events_subtract_reference_type_maps_from_residuals() {
     );
     assert_eq!(
         map.sha256,
-        crate::native::hex::Sha256Hex::digest(&bytes[map_offset..map_end])
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[map_offset..map_end])
     );
     assert_eq!(events.residual_spans.len(), 2);
     assert_eq!(events.residual_spans[0].byte_len, 2);
@@ -451,7 +453,7 @@ fn deltas_events_subtract_reference_state_packets_from_residuals() {
     );
     assert_eq!(
         packet.sha256,
-        crate::native::hex::Sha256Hex::digest(&bytes[packet_offset..packet_end])
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[packet_offset..packet_end])
     );
     assert_eq!(events.residual_spans.len(), 2);
     assert_eq!(events.residual_spans[0].byte_len, 2);
@@ -523,7 +525,7 @@ fn deltas_events_retain_schema_reference_preambles() {
     );
     assert_eq!(
         preamble.sha256,
-        crate::native::hex::Sha256Hex::digest(&bytes[preamble_offset..preamble_end])
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[preamble_offset..preamble_end])
     );
 }
 
@@ -560,7 +562,7 @@ fn deltas_events_subtract_reference_marker_packets_from_residuals() {
     );
     assert_eq!(
         packet.sha256,
-        crate::native::hex::Sha256Hex::digest(&bytes[packet_offset..packet_end])
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[packet_offset..packet_end])
     );
     assert_eq!(events.residual_spans.len(), 2);
     assert_eq!(events.residual_spans[0].byte_len, 2);
@@ -620,7 +622,7 @@ fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
     );
     assert_eq!(
         declaration.sha256,
-        crate::native::hex::Sha256Hex::digest(&bytes[declaration_offset..declaration_end])
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[declaration_offset..declaration_end])
     );
     assert_eq!(events.residual_spans.len(), 2);
     assert_eq!(events.residual_spans[0].byte_len, 2);
@@ -677,7 +679,7 @@ fn deltas_events_subtract_type_150_state_packets_from_residuals() {
     );
     assert_eq!(
         packet.sha256,
-        crate::native::hex::Sha256Hex::digest(&bytes[packet_offset..packet_end])
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[packet_offset..packet_end])
     );
     assert_eq!(events.residual_spans.len(), 2);
     assert_eq!(events.residual_spans[0].byte_len, 2);
