@@ -248,6 +248,31 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    /// Collects scoped groups in input order within each key.
+    pub fn collect_scoped_btree_groups<'ctx, K: Ord, V>(&'ctx self, values: impl IntoIterator<Item = (K, V)>, operation: &'static str) -> Result<(BTreeMap<K, Vec<V>>, ScopedReservation<'ctx>), CodecError> {
+        let mut groups = BTreeMap::new();
+        let mut reservation = self.reserve_scoped(0, operation)?;
+        for (key, value) in values {
+            self.push_scoped_btree_group(&mut reservation, &mut groups, key, || value, 0, operation)?;
+        }
+        Ok((groups, reservation))
+    }
+
+    /// Collects scoped entries, keeping the last value for each key.
+    pub fn collect_scoped_btree_map<'ctx, K: Ord, V>(&'ctx self, values: impl IntoIterator<Item = (K, V)>, operation: &'static str) -> Result<(BTreeMap<K, V>, ScopedReservation<'ctx>), CodecError> {
+        let mut entries = BTreeMap::new();
+        let mut reservation = self.reserve_scoped(0, operation)?;
+        for (key, value) in values {
+            self.charge_work(1, operation)?;
+            if !entries.contains_key(&key) {
+                self.charge_collection_items(1, operation)?;
+                reservation.grow(u64_from_index(std::mem::size_of::<(K, V)>()))?;
+            }
+            entries.insert(key, value);
+        }
+        Ok((entries, reservation))
+    }
+
     /// Grows a scoped string after admitting its additional byte storage.
     pub fn reserve_scoped_string(&self, reservation: &mut ScopedReservation<'_>, text: &mut String, additional: usize, operation: &'static str) -> Result<(), CodecError> {
         reservation.grow(u64_from_index(additional))?;
@@ -2175,6 +2200,46 @@ fn jt_tessellation_channel_bytes_refuse_collection_limit() {
         let mut values = Vec::<u8>::new();
         ctx.reserve_retained_vec(&mut values, 1, "test retained slots").expect("vector slot is not an entity");
         assert!(values.is_empty());
+    }
+
+    #[test]
+    fn collect_scoped_btree_groups_refuses_before_allocating_first_group() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = crate::decode::u64_from_index(std::mem::size_of::<(u8, Vec<u8>)>() + std::mem::size_of::<u8>()) - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut yielded = 0;
+        let values = [(1u8, 2u8), (1, 3)].into_iter().inspect(|_| yielded += 1);
+        assert!(matches!(ctx.collect_scoped_btree_groups(values, "test scoped groups"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert_eq!(yielded, 1);
+    }
+
+    #[test]
+    fn collect_scoped_btree_groups_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (groups, _reservation) = ctx.collect_scoped_btree_groups([(1u8, 2u8), (1, 3)], "test scoped groups").unwrap();
+        assert_eq!(groups[&1], [2, 3]);
+    }
+
+    #[test]
+    fn collect_scoped_btree_map_refuses_before_allocating_first_entry() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = crate::decode::u64_from_index(std::mem::size_of::<(u8, u8)>()) - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut yielded = 0;
+        let values = [(1u8, 2u8), (1, 3)].into_iter().inspect(|_| yielded += 1);
+        assert!(matches!(ctx.collect_scoped_btree_map(values, "test scoped map"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert_eq!(yielded, 1);
+    }
+
+    #[test]
+    fn collect_scoped_btree_map_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (entries, _reservation) = ctx.collect_scoped_btree_map([(1u8, 2u8), (1, 3)], "test scoped map").unwrap();
+        assert_eq!(entries[&1], 3);
     }
 
 }
