@@ -85,12 +85,12 @@ fn counted_offset_return_run_pairs_sources_and_results() {
     );
 
     let entities = HashMap::from([(1, &bottom), (2, &top), (3, &inset_top), (4, &inset_bottom)]);
-    let definition = exact_counted_offset(
+    let definition = exact_counted_offset(None,
         &offset_loci(&[(1, 3, 1), (2, 2, 4), (3, 0, 2), (4, 0, 3)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
-    )
+    ).transpose().unwrap()
     .expect("counted offset graph");
     let crate::design::dimensions::CountedOffset { pairs, distance } = definition;
     assert_eq!(&pairs[0].source, bottom.id());
@@ -120,12 +120,12 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
     let secondary_ids = HashMap::from([(1, 0), (2, 42)]);
 
     assert!(matches!(
-        exact_counted_offset(
+        exact_counted_offset(None,
             &offset_loci(&[(1, 4, 1), (2, 1, 2)]),
             &entities,
             &secondary_ids,
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -136,12 +136,12 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
     ));
 
     let ambiguous_ids = HashMap::from([(1, 0), (2, 0)]);
-    assert!(exact_counted_offset(
+    assert!(exact_counted_offset(None,
         &offset_loci(&[(1, 4, 1), (2, 1, 2)]),
         &entities,
         &ambiguous_ids,
         1.0e-6,
-    )
+    ).transpose().unwrap()
     .is_none());
 }
 
@@ -188,12 +188,12 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     );
     let entities = HashMap::from([(1, &source), (2, &result)]);
     assert!(matches!(
-        exact_counted_offset(
+        exact_counted_offset(None,
             &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
             &entities,
             &HashMap::new(),
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -229,12 +229,12 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
-    assert!(exact_counted_offset(
+    assert!(exact_counted_offset(None,
         &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
-    )
+    ).transpose().unwrap()
     .is_none());
 }
 
@@ -264,12 +264,12 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
-    let definition = exact_counted_offset(
+    let definition = exact_counted_offset(None,
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
-    )
+    ).transpose().unwrap()
     .expect("concentric arc offset");
     assert!(matches!(
         definition,
@@ -292,12 +292,12 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
-    assert!(exact_counted_offset(
+    assert!(exact_counted_offset(None,
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
-    )
+    ).transpose().unwrap()
     .is_none());
 }
 
@@ -319,12 +319,12 @@ fn counted_offset_accepts_concentric_full_circles() {
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
     assert!(matches!(
-        exact_counted_offset(
+        exact_counted_offset(None,
             &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
             &entities,
             &HashMap::new(),
             TEST_LINEAR_TOLERANCE,
-        ),
+        ).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -337,12 +337,12 @@ fn counted_offset_accepts_concentric_full_circles() {
 
     let reversed_entities = HashMap::from([(1, &result), (2, &source)]);
     assert!(matches!(
-        exact_counted_offset(
+        exact_counted_offset(None,
             &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
             &reversed_entities,
             &HashMap::new(),
             TEST_LINEAR_TOLERANCE,
-        ),
+        ).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -360,12 +360,12 @@ fn counted_offset_accepts_concentric_full_circles() {
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &displaced)]);
-    assert!(exact_counted_offset(
+    assert!(exact_counted_offset(None,
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         TEST_LINEAR_TOLERANCE,
-    )
+    ).transpose().unwrap()
     .is_none());
 }
 

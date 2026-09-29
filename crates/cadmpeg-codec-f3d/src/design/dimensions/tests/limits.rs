@@ -1685,3 +1685,76 @@ fn parameterized_offset_companion_refuses_collection_limit() {
     }
     panic!("no offset companion refusal");
 }
+
+fn assert_counted_offset_refusal(operation: &'static str, dimension: ResourceDimension, limit: u64) {
+    let fixture = fixture();
+    let circle = |name, radius| SketchEntity::new(
+        SketchEntityId::mint(name).unwrap(),
+        fixture.entity.sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: cadmpeg_ir::scalar::Length::new(radius).unwrap(),
+        }).unwrap(),
+    );
+    let source = circle("synthetic:test:id#offset-source", 1.0);
+    let result = circle("synthetic:test:id#offset-result", 2.0);
+    let entities = std::collections::HashMap::from([(30, &source), (31, &result)]);
+    let mut loci = native_fallback_group().loci;
+    loci[0].returned.value = 30;
+    let mut result_locus = loci[0].clone();
+    result_locus.geometry_record_index = 31;
+    result_locus.returned.value = 31;
+    result_locus.role = 0;
+    loci.push(result_locus);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+        _ => panic!("unsupported counted offset limit"),
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::dimensions::exact_counted_offset(Some(&ctx), &loci, &entities,
+            &std::collections::HashMap::new(), EPS_NATIVE_FALLBACK_LINEAR).transpose(),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == operation && failure.dimension == dimension
+    ));
+}
+
+#[test]
+fn counted_offset_source_record_refuses_collection_limit() {
+    assert_counted_offset_refusal("f3d counted offset source record", ResourceDimension::CollectionItems, 0);
+}
+
+#[test]
+fn counted_offset_result_record_refuses_collection_limit() {
+    assert_counted_offset_refusal("f3d counted offset result record", ResourceDimension::CollectionItems, 1);
+}
+
+#[test]
+fn counted_offset_used_source_refuses_collection_limit() {
+    assert_counted_offset_refusal("f3d counted offset used source", ResourceDimension::CollectionItems, 2);
+}
+
+#[test]
+fn counted_offset_used_result_refuses_collection_limit() {
+    assert_counted_offset_refusal("f3d counted offset used result", ResourceDimension::CollectionItems, 3);
+}
+
+#[test]
+fn counted_offset_pair_refuses_collection_limit() {
+    assert_counted_offset_refusal("f3d counted offset pair", ResourceDimension::CollectionItems, 4);
+}
+
+#[test]
+fn counted_offset_source_id_refuses_retained_limit() {
+    assert_counted_offset_refusal("f3d counted offset source id", ResourceDimension::RetainedBytes,
+        "synthetic:test:id#offset-source".len() as u64 - 1);
+}
+
+#[test]
+fn counted_offset_result_id_refuses_retained_limit() {
+    assert_counted_offset_refusal("f3d counted offset result id", ResourceDimension::RetainedBytes,
+        ("synthetic:test:id#offset-source".len() + "synthetic:test:id#offset-result".len()) as u64 - 1);
+}
