@@ -1517,7 +1517,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
     unresolved_lane.frame = crate::test_support::with_decode_context(|ctx| {
         unresolved_lane.frame.map_bindings(
             ctx,
-            |index, binding| if index == 2 { None } else { binding },
+            |index, binding| Ok(if index == 2 { None } else { binding }),
         )
     })
     .unwrap();

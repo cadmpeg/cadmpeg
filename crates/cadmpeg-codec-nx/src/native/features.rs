@@ -9432,7 +9432,7 @@ pub(super) fn feature_extrude_payload_32_branches(
                 return;
             };
             let frame = match frame
-                .map_bindings(ctx, |index, ()| unique_offset_data_block(&indexed, index))
+                .map_bindings(ctx, |index, ()| charged_unique_offset_data_block(ctx, &indexed, index))
             {
                 Ok(frame) => frame,
                 Err(error) => {
@@ -9440,11 +9440,23 @@ pub(super) fn feature_extrude_payload_32_branches(
                     return;
                 }
             };
-            branches.push(FeatureExtrudePayload32Branch {
-                id: format!("nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal:010}"),
-                operation_label: format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"),
-                frame,
-            });
+            let projected = (|| -> Result<(), CodecError> {
+                let id = format_feature_history_id(ctx, "extrude-payload-32-branch",
+                    section_key, operation_ordinal, None)?;
+                let operation_label = format_feature_history_id(ctx, "operation-label",
+                    section_key, operation_ordinal, None)?;
+                ctx.charge_collection_items(1, "NX extrude payload 32 branches")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureExtrudePayload32Branch>()),
+                    "NX extrude payload 32 branches")?;
+                branches.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX extrude payload 32 branches", 0, 1))?;
+                branches.push(FeatureExtrudePayload32Branch { id, operation_label, frame });
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
     if let Some(error) = failure {

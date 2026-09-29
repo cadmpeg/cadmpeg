@@ -118,21 +118,21 @@ impl<B> Extrude32Frame<B> {
     pub(crate) fn map_bindings<C>(
         self,
         ctx: &DecodeContext<'_>,
-        mut map: impl FnMut(u32, B) -> C,
+        mut map: impl FnMut(u32, B) -> Result<C, CodecError>,
     ) -> Result<Extrude32Frame<C>, CodecError> {
         Ok(Extrude32Frame {
             origin: self.origin,
             scalar: self.scalar,
-            atoms: self.atoms.map_indexed_charged(ctx, |_, (token, binding)| {
-                (token, map(token.value(), binding))
+            atoms: self.atoms.try_map_indexed_charged(ctx, |_, (token, binding)| {
+                Ok((token, map(token.value(), binding)?))
             })?,
-            first: self.first.map_indexed_charged(ctx, |_, (token, binding)| {
-                (token, map(token.value(), binding))
+            first: self.first.try_map_indexed_charged(ctx, |_, (token, binding)| {
+                Ok((token, map(token.value(), binding)?))
             })?,
             second: self
                 .second
-                .map_indexed_charged(ctx, |_, (token, binding)| {
-                    (token, map(token.value(), binding))
+                .try_map_indexed_charged(ctx, |_, (token, binding)| {
+                    Ok((token, map(token.value(), binding)?))
                 })?,
             terminal: self.terminal,
         })
@@ -349,7 +349,7 @@ mod tests {
             frame
                 .relocate(1000)
                 .unwrap()
-                .map_bindings(ctx, |index, ()| (index != 4096).then_some(index))
+                .map_bindings(ctx, |index, ()| Ok((index != 4096).then_some(index)))
         })
         .unwrap();
         assert_eq!(mapped.terminal_offset(), 1128);
