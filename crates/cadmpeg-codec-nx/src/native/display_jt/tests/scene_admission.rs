@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-
 fn scene_node_path_limit_error(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
@@ -144,4 +143,3 @@ fn jt_node_path_refuses_nesting_without_erasing_resource_error() {
                 && limit.operation == "resolve JT node path"
     ));
 }
-

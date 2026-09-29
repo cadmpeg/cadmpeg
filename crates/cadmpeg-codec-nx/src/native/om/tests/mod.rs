@@ -233,8 +233,8 @@ fn part_color_container() -> crate::container::Container<'static> {
         table.push(0);
     }
     table.extend_from_slice(&[
-        0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13,
-        0x0a, 0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8, 0x01, 0x01, 0x01,
+        0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a,
+        0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8, 0x01, 0x01, 0x01,
     ]);
     for color_index in 1u16..=216 {
         table.push(0x05);
@@ -275,10 +275,9 @@ fn part_color_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = part_color_container();
-    let (tables, definitions) = crate::test_support::with_decode_context(|ctx| {
-        super::part_color_tables(ctx, &container)
-    })
-    .expect("part color projection");
+    let (tables, definitions) =
+        crate::test_support::with_decode_context(|ctx| super::part_color_tables(ctx, &container))
+            .expect("part color projection");
     assert_eq!(tables.len(), 1);
     assert_eq!(definitions.len(), 216);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -331,8 +330,7 @@ fn part_color_route_refuses_work_limit() {
 
 #[test]
 fn data_block_reference_route_refuses_collection_limit() {
-    let error =
-        data_block_reference_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    let error = data_block_reference_route_refusal(|policy| policy.limits.max_collection_items = 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems),
@@ -342,8 +340,7 @@ fn data_block_reference_route_refuses_collection_limit() {
 
 #[test]
 fn data_block_reference_route_refuses_retained_limit() {
-    let error =
-        data_block_reference_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    let error = data_block_reference_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes),
@@ -485,8 +482,7 @@ fn control_reference_route_refusal(
 
 #[test]
 fn data_block_control_reference_route_refuses_collection_limit() {
-    let error =
-        control_reference_route_refusal(|policy| policy.limits.max_collection_items = 3);
+    let error = control_reference_route_refusal(|policy| policy.limits.max_collection_items = 3);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -519,8 +515,7 @@ fn data_block_control_reference_route_refuses_retained_limit() {
 
 #[test]
 fn data_block_control_reference_route_refuses_scoped_limit() {
-    let error =
-        control_reference_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    let error = control_reference_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -665,9 +660,8 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
     assert_eq!(control_values[0].ordinal, 0);
     assert_eq!(control_values[0].value.value(), 0);
     assert_eq!(control_values[1].value.value(), 1);
-    let classes =
-        with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
-            .expect("test OM class ordinals");
+    let classes = with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
+        .expect("test OM class ordinals");
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].data_block, blocks[0].id);
     assert_eq!(classes[0].ordinal, 0);
@@ -689,11 +683,9 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
             .is_empty()
     );
     assert!(
-        crate::test_support::with_decode_context(|ctx| super::object_references(
-            ctx, &container
-        ))
-        .unwrap()
-        .is_empty()
+        crate::test_support::with_decode_context(|ctx| super::object_references(ctx, &container))
+            .unwrap()
+            .is_empty()
     );
     let expressions = with_test_ctx(|ctx| {
         let declarations = super::expression_declarations(ctx, &container).unwrap();
@@ -826,8 +818,7 @@ fn control_index_value_route_refusal(
 
 #[test]
 fn data_block_control_index_value_route_refuses_collection_limit() {
-    let error =
-        control_index_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
+    let error = control_index_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -838,8 +829,7 @@ fn data_block_control_index_value_route_refuses_collection_limit() {
 
 #[test]
 fn data_block_control_index_value_route_refuses_retained_limit() {
-    let error =
-        control_index_value_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    let error = control_index_value_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes),
@@ -970,9 +960,8 @@ fn offset_store_class_identities_span_ordered_registries() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let classes =
-        with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
-            .expect("test OM class ordinals");
+    let classes = with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
+        .expect("test OM class ordinals");
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].class_ordinal, 1);
     assert_eq!(
@@ -995,8 +984,7 @@ fn om_numeric_expression_retains_formula_without_literal_value() {
     assert_eq!(expressions[0].name.as_str(), "p9");
     assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| expressions[0].constant_value(ctx))
-            .unwrap(),
+        crate::test_support::with_decode_context(|ctx| expressions[0].constant_value(ctx)).unwrap(),
         None
     );
     assert_eq!(

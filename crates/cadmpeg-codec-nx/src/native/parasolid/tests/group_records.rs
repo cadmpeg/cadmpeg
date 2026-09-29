@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::test_support::test_prt::prt_with_partition;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
-use crate::test_support::test_prt::prt_with_partition;
 
 use super::stream;
 
@@ -36,13 +36,11 @@ fn group_record_limit_error(
         .expect_err("GROUP record limit refusal")
 }
 
-
 fn group_member_route_limit_error(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> CodecError {
-    let bytes = prt_with_partition(
-        &crate::test_support::test_streams::parasolid_group_partition_stream(),
-    );
+    let bytes =
+        prt_with_partition(&crate::test_support::test_streams::parasolid_group_partition_stream());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, root) =
@@ -58,8 +56,13 @@ fn group_member_route_limit_error(
         &limited_policy,
     )
     .unwrap();
-    crate::native::parasolid::parasolid_group_members(&limited_ctx, &scan.streams, &BTreeMap::new(), &parsed)
-        .expect_err("GROUP member route limit refusal")
+    crate::native::parasolid::parasolid_group_members(
+        &limited_ctx,
+        &scan.streams,
+        &BTreeMap::new(),
+        &parsed,
+    )
+    .expect_err("GROUP member route limit refusal")
 }
 
 #[test]
@@ -78,8 +81,7 @@ fn group_member_route_refuses_retained_limit() {
 
 #[test]
 fn group_member_route_refuses_scoped_limit() {
-    let error =
-        group_member_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    let error = group_member_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
 }
@@ -118,4 +120,3 @@ fn group_record_route_refuses_work_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
-

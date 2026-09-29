@@ -68,9 +68,8 @@ fn jt_tessellation_channel_bytes_refuse_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let mut bytes = Vec::new();
-    let error =
-        super::reserve_jt_retained_bytes(&ctx, &mut bytes, 3, "nx JT tessellation colors")
-            .expect_err("three color bytes exceed two collection items");
+    let error = super::reserve_jt_retained_bytes(&ctx, &mut bytes, 3, "nx JT tessellation colors")
+        .expect_err("three color bytes exceed two collection items");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -258,12 +257,10 @@ fn jt_compressed_element_borrowed_wire_and_native_limit() {
         "body_sha256": cadmpeg_ir::hash::sha256_hex(b"body"),
         "inflated_offset": 0, "source_offset": 10
     });
-    let value: super::DisplayJtCompressedElement =
-        serde_json::from_value(wire.clone()).unwrap();
+    let value: super::DisplayJtCompressedElement = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(
         serde_json::to_vec(&value).unwrap(),
-        serde_json::to_vec(&super::DisplayJtCompressedElementWire::from(value.clone()))
-            .unwrap()
+        serde_json::to_vec(&super::DisplayJtCompressedElementWire::from(value.clone())).unwrap()
     );
     super::JT_COMPRESSED_ELEMENT_INTO_WIRE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(&value, wire);
@@ -392,8 +389,7 @@ fn jt_string_property_native_limit_refuses_before_code_unit_allocation() {
         "object_id": 1, "code_units": [78, 88, 55357, 56960],
         "value": "NX🚀", "source_offset": 0
     });
-    let record: super::DisplayJtStringPropertyAtom =
-        serde_json::from_value(wire.clone()).unwrap();
+    let record: super::DisplayJtStringPropertyAtom = serde_json::from_value(wire.clone()).unwrap();
     super::JT_STRING_PROPERTY_INTO_WIRE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
     super::JT_STRING_PROPERTY_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
@@ -405,9 +401,7 @@ use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
 use super::super::hex::Sha256Hex;
-use super::{
-    DisplayJtMaterialAttribute, DisplayJtPartitionBounds, FiniteBinary32, UnitBinary32,
-};
+use super::{DisplayJtMaterialAttribute, DisplayJtPartitionBounds, FiniteBinary32, UnitBinary32};
 use cadmpeg_ir::topology::Color;
 
 const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
@@ -693,8 +687,8 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
     late_body.extend_from_slice(&1_u32.to_le_bytes());
     inflated.extend_from_slice(&57_u32.to_le_bytes());
     inflated.extend_from_slice(&[
-        0xe5, 0x5b, 0xb0, 0xe0, 0xbd, 0xfb, 0xd1, 0x11, 0xa3, 0xa7, 0x00, 0xaa, 0x00, 0xd1,
-        0x09, 0x54,
+        0xe5, 0x5b, 0xb0, 0xe0, 0xbd, 0xfb, 0xd1, 0x11, 0xa3, 0xa7, 0x00, 0xaa, 0x00, 0xd1, 0x09,
+        0x54,
     ]);
     inflated.push(8);
     inflated.extend_from_slice(&3_u32.to_le_bytes());
@@ -708,8 +702,8 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
     }
     inflated.extend_from_slice(&(21_u32 + string_body.len() as u32).to_le_bytes());
     inflated.extend_from_slice(&[
-        0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb,
-        0x59, 0x97,
+        0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
     ]);
     inflated.push(5);
     inflated.extend_from_slice(&4_u32.to_le_bytes());
@@ -924,11 +918,10 @@ fn polygon_mesh_wire_preserves_corner_pairs_and_rejects_unequal_rings() {
 #[test]
 fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     use super::{
-        DisplayJtBaseNodeData, DisplayJtCompressedElement,
-        DisplayJtCompressedVertexRecordsHeader, DisplayJtGeometricTransformAttribute,
-        DisplayJtGroupNodeData, DisplayJtInstanceNode, DisplayJtPolygonMesh,
-        DisplayJtShapeLodBinding, DisplayJtShapeLodElement, DisplayJtTriStripShapeNode,
-        DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
+        DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtCompressedVertexRecordsHeader,
+        DisplayJtGeometricTransformAttribute, DisplayJtGroupNodeData, DisplayJtInstanceNode,
+        DisplayJtPolygonMesh, DisplayJtShapeLodBinding, DisplayJtShapeLodElement,
+        DisplayJtTriStripShapeNode, DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
         DisplayJtVertexCoordinates, DisplayJtVertexFlags, DisplayJtVertexNormals,
         DisplayJtVertexTextureCoordinates,
     };
@@ -1697,10 +1690,7 @@ fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
         node_path: Vec::new(),
         instance_path: Vec::new(),
     };
-    super::accumulate_display_jt_material(
-        &mut path,
-        &material([0.1, 0.2, 0.3, 0.4], 0x01, 1 << 8),
-    );
+    super::accumulate_display_jt_material(&mut path, &material([0.1, 0.2, 0.3, 0.4], 0x01, 1 << 8));
     assert_eq!(
         path.diffuse.map(|value| value.map(UnitBinary32::get)),
         [Some(0.1), Some(0.2), Some(0.3), None]
@@ -1713,10 +1703,7 @@ fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
         [Some(0.1), Some(0.2), Some(0.3), None]
     );
 
-    super::accumulate_display_jt_material(
-        &mut path,
-        &material([0.5, 0.6, 0.7, 0.8], 0x02, 1 << 7),
-    );
+    super::accumulate_display_jt_material(&mut path, &material([0.5, 0.6, 0.7, 0.8], 0x02, 1 << 7));
     assert_eq!(
         path.diffuse.map(|value| value.map(UnitBinary32::get)),
         [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]
@@ -1884,8 +1871,7 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
     }];
 
     let sequences = with_jt_context(|ctx| {
-        display_jt_topology_packet_sequences(ctx, &container, &elements)
-            .expect("service JT budget")
+        display_jt_topology_packet_sequences(ctx, &container, &elements).expect("service JT budget")
     })
     .sequences;
     assert_eq!(sequences.len(), 1);

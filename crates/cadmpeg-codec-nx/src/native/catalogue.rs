@@ -4227,7 +4227,12 @@ mod tests {
             None,
         )
         .unwrap();
-        let count = model.om.operation_state_groups.iter().map(|table| table.groups().len()).sum::<usize>();
+        let count = model
+            .om
+            .operation_state_groups
+            .iter()
+            .map(|table| table.groups().len())
+            .sum::<usize>();
         assert!(count > 0);
         let row = super::CATALOGUE
             .iter()
@@ -4235,7 +4240,8 @@ mod tests {
             .expect("roll-forward group family");
         let refusal_arena = DecodeArena::new();
         let mut refusal_policy = DecodePolicy::service();
-        refusal_policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(count - 1);
+        refusal_policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(count - 1);
         let (refusal_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &refusal_arena, &refusal_policy).unwrap();
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
