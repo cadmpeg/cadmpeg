@@ -2191,17 +2191,7 @@ impl MeshQuotient {
     ) -> Result<CoordinateRootClosure, CodecError> {
         let ambiguous = Cell::new(false);
         let exhausted = Cell::new(false);
-        let result = coordinate_assignment::close_coordinate_roots_with_incidence(
-            ctx,
-            self,
-            point_count,
-            edge_candidates,
-            incidence,
-            budget,
-            component_search_budget,
-            &ambiguous,
-            &exhausted,
-        )?;
+        let result = coordinate_assignment::close_coordinate_roots_with_incidence(ctx, crate::solve::mesh_quotient::coordinate_assignment::CloseCoordinateRootsWithIncidenceInputs { quotient: self, point_count, edge_candidates, incidence, budget, component_search_budget, ambiguous: &ambiguous, exhausted: &exhausted })?;
         Ok(match result {
             Some(assignment) => MeshSolve::Solved(assignment),
             None if exhausted.get() || budget.is_some_and(WorkBudget::exhausted) => {
@@ -2519,23 +2509,25 @@ impl MeshQuotient {
             Ok(copy)
         }
 
-        #[allow(clippy::too_many_arguments)]
-        fn walk(
-            ctx: &DecodeContext<'_>,
-            boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
-            boundary_index: usize,
-            at: usize,
-            boundary_directions: &mut Vec<bool>,
-            directions: &mut Vec<Vec<bool>>,
-            mut quotient: MeshQuotient,
-            edge_candidates: &[Vec<[usize; 2]>],
-            output: &mut Vec<(Vec<Vec<bool>>, MeshQuotient)>,
-            seen: &mut HashMap<u64, Vec<usize>>,
-            oriented: &mut HashSet<usize>,
-            gaugeable_edges: &HashSet<usize>,
-            limit: usize,
-            budget: Option<&WorkBudget<'_>>,
-        ) -> Result<(), CodecError> {
+        struct BoundaryOrientationSearch<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9> {
+boundaries: &'input0 [Vec<MeshBoundaryEdgeCandidate>],
+boundary_index: usize,
+at: usize,
+boundary_directions: &'input1 mut Vec<bool>,
+directions: &'input2 mut Vec<Vec<bool>>,
+quotient: MeshQuotient,
+edge_candidates: &'input3 [Vec<[usize; 2]>],
+output: &'input4 mut Vec<(Vec<Vec<bool>>, MeshQuotient)>,
+seen: &'input5 mut HashMap<u64, Vec<usize>>,
+oriented: &'input6 mut HashSet<usize>,
+gaugeable_edges: &'input7 HashSet<usize>,
+limit: usize,
+budget: Option<&'input9 WorkBudget<'input8>>
+}
+
+        fn walk(ctx : &DecodeContext<'_>, inputs: BoundaryOrientationSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), CodecError> {
+let BoundaryOrientationSearch { boundaries, boundary_index, at, boundary_directions, directions, mut quotient, edge_candidates, output, seen, oriented, gaugeable_edges, limit, budget } = inputs;
+
             let _depth = ctx.enter_nested("catia orientation search")?;
             ctx.charge_work(1, "catia orientation search")?;
             if output.len() >= limit {
@@ -2576,22 +2568,7 @@ impl MeshQuotient {
                     std::mem::take(boundary_directions),
                     "catia_orientation_direction_rows",
                 )?;
-                walk(
-                    ctx,
-                    boundaries,
-                    boundary_index + 1,
-                    0,
-                    boundary_directions,
-                    directions,
-                    quotient,
-                    edge_candidates,
-                    output,
-                    seen,
-                    oriented,
-                    gaugeable_edges,
-                    limit,
-                    budget,
-                )?;
+                walk(ctx, BoundaryOrientationSearch { boundaries, boundary_index: boundary_index + 1, at: 0, boundary_directions, directions, quotient, edge_candidates, output, seen, oriented, gaugeable_edges, limit, budget })?;
                 *boundary_directions = directions.pop().unwrap_or_default();
                 return Ok(());
             }
@@ -2627,22 +2604,7 @@ impl MeshQuotient {
                     reversed,
                     "catia_orientation_boundary_directions",
                 )?;
-                walk(
-                    ctx,
-                    boundaries,
-                    boundary_index,
-                    at + 1,
-                    boundary_directions,
-                    directions,
-                    quotient,
-                    edge_candidates,
-                    output,
-                    seen,
-                    oriented,
-                    gaugeable_edges,
-                    limit,
-                    budget,
-                )?;
+                walk(ctx, BoundaryOrientationSearch { boundaries, boundary_index, at: at + 1, boundary_directions, directions, quotient, edge_candidates, output, seen, oriented, gaugeable_edges, limit, budget })?;
                 boundary_directions.pop();
                 Ok(())
             };
@@ -2841,22 +2803,7 @@ impl MeshQuotient {
             "catia_orientation_seen_edges",
         )?;
         oriented.extend(oriented_edges.iter().copied());
-        walk(
-            ctx,
-            &assignment.boundaries,
-            0,
-            0,
-            &mut Vec::new(),
-            &mut Vec::new(),
-            self.clone_charged(ctx)?,
-            edge_candidates,
-            &mut output,
-            &mut seen,
-            &mut oriented,
-            &gaugeable_edges,
-            limit,
-            budget,
-        )?;
+        walk(ctx, BoundaryOrientationSearch { boundaries: &assignment.boundaries, boundary_index: 0, at: 0, boundary_directions: &mut Vec::new(), directions: &mut Vec::new(), quotient: self.clone_charged(ctx)?, edge_candidates, output: &mut output, seen: &mut seen, oriented: &mut oriented, gaugeable_edges: &gaugeable_edges, limit, budget })?;
         Ok(output)
     }
 
@@ -3087,19 +3034,22 @@ impl MeshQuotient {
                 point_count,
             )
         }
+#[derive(Clone, Copy)]
+        struct CoordinateValueSupport<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6> {
+root: usize,
+point: usize,
+domains: &'input0 [Arc<HashSet<usize>>],
+edge_roots: &'input1 [[usize; 2]],
+root_edges: &'input2 [Vec<usize>],
+edge_candidates: &'input3 [Vec<[usize; 2]>],
+edge_neighbors: &'input4 [PointNeighbors],
+assigned: &'input5 [Option<usize>],
+used: &'input6 HashSet<usize>
+}
 
-        #[allow(clippy::too_many_arguments)]
-        fn value_viable(
-            root: usize,
-            point: usize,
-            domains: &[Arc<HashSet<usize>>],
-            edge_roots: &[[usize; 2]],
-            root_edges: &[Vec<usize>],
-            edge_candidates: &[Vec<[usize; 2]>],
-            edge_neighbors: &[PointNeighbors],
-            assigned: &[Option<usize>],
-            used: &HashSet<usize>,
-        ) -> bool {
+        fn value_viable(inputs: CoordinateValueSupport<'_, '_, '_, '_, '_, '_, '_>) -> bool {
+let CoordinateValueSupport { root, point, domains, edge_roots, root_edges, edge_candidates, edge_neighbors, assigned, used } = inputs;
+
             root_edges[root].iter().all(|&edge_index| {
                 let edge = edge_roots[edge_index];
                 let candidates = &edge_candidates[edge_index];
@@ -3140,21 +3090,21 @@ impl MeshQuotient {
             })
         }
 
-        #[allow(clippy::too_many_arguments)]
-        fn walk(
-            ctx: &DecodeContext<'_>,
-            domains: &[Arc<HashSet<usize>>],
-            edge_roots: &[[usize; 2]],
-            root_edges: &[Vec<usize>],
-            edge_candidates: &[Vec<[usize; 2]>],
-            edge_neighbors: &[PointNeighbors],
-            assigned: &mut [Option<usize>],
-            used: &mut HashSet<usize>,
-            solutions: &mut Vec<Vec<usize>>,
-            solution_limit: usize,
-            budget: Option<&WorkBudget<'_>>,
-        ) -> Result<(), CodecError> {
-            fn rollback(
+        struct CoordinateAssignmentSearch<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9> {
+domains: &'input0 [Arc<HashSet<usize>>],
+edge_roots: &'input1 [[usize; 2]],
+root_edges: &'input2 [Vec<usize>],
+edge_candidates: &'input3 [Vec<[usize; 2]>],
+edge_neighbors: &'input4 [PointNeighbors],
+assigned: &'input5 mut [Option<usize>],
+used: &'input6 mut HashSet<usize>,
+solutions: &'input7 mut Vec<Vec<usize>>,
+solution_limit: usize,
+budget: Option<&'input9 WorkBudget<'input8>>
+}
+
+        fn walk(ctx : &DecodeContext<'_>, inputs: CoordinateAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), CodecError> {
+fn rollback(
                 assigned: &mut [Option<usize>],
                 used: &mut HashSet<usize>,
                 propagated: Vec<(usize, usize)>,
@@ -3164,6 +3114,10 @@ impl MeshQuotient {
                     used.remove(&point);
                 }
             }
+
+let CoordinateAssignmentSearch { domains, edge_roots, root_edges, edge_candidates, edge_neighbors, assigned, used, solutions, solution_limit, budget } = inputs;
+
+
 
             let _depth = ctx.enter_nested("catia_point_assignment_walk")?;
 
@@ -3183,17 +3137,7 @@ impl MeshQuotient {
                     .copied()
                     .filter(|point| !used.contains(point))
                 {
-                    if value_viable(
-                        root,
-                        point,
-                        domains,
-                        edge_roots,
-                        root_edges,
-                        edge_candidates,
-                        edge_neighbors,
-                        assigned,
-                        used,
-                    ) {
+                    if value_viable(CoordinateValueSupport { root, point, domains, edge_roots, root_edges, edge_candidates, edge_neighbors, assigned, used }) {
                         ctx.push_vec(&mut values, point, "catia_point_assignment_values")?;
                     }
                 }
@@ -3282,19 +3226,7 @@ impl MeshQuotient {
             for point in values {
                 assigned[root] = Some(point);
                 ctx.insert_hash_set(used, point, "catia_point_assignment_used")?;
-                walk(
-                    ctx,
-                    domains,
-                    edge_roots,
-                    root_edges,
-                    edge_candidates,
-                    edge_neighbors,
-                    assigned,
-                    used,
-                    solutions,
-                    solution_limit,
-                    budget,
-                )?;
+                walk(ctx, CoordinateAssignmentSearch { domains, edge_roots, root_edges, edge_candidates, edge_neighbors, assigned, used, solutions, solution_limit, budget })?;
                 used.remove(&point);
                 assigned[root] = None;
                 if solutions.len() >= solution_limit {
@@ -3386,19 +3318,7 @@ impl MeshQuotient {
         let mut solutions = Vec::new();
         let mut assigned = ctx.alloc_filled(domains.len(), None, "catia point assignment slots")?;
         let mut used = HashSet::new();
-        walk(
-            ctx,
-            &domains,
-            &edge_roots,
-            &root_edges,
-            edge_candidates,
-            &edge_neighbors,
-            &mut assigned,
-            &mut used,
-            &mut solutions,
-            solution_limit,
-            budget,
-        )?;
+        walk(ctx, CoordinateAssignmentSearch { domains: &domains, edge_roots: &edge_roots, root_edges: &root_edges, edge_candidates, edge_neighbors: &edge_neighbors, assigned: &mut assigned, used: &mut used, solutions: &mut solutions, solution_limit, budget })?;
         if budget.is_some_and(WorkBudget::exhausted) {
             Ok(PointAssignmentOutcome::Exhausted)
         } else {
@@ -3506,25 +3426,27 @@ fn deferred_face_quotient_options_limited(
         capacity: usize,
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn fill_gap(
-        ctx: &DecodeContext<'_>,
-        gaps: &[Gap],
-        gap: usize,
-        at: usize,
-        target: usize,
-        used: u64,
-        previous_end: usize,
-        missing_edges: &[usize],
-        missing_nodes: &[[usize; 2]],
-        edge_candidates: &[Vec<[usize; 2]>],
-        quotient: MeshQuotient,
-        base_quotient: &MeshQuotient,
-        base_nodes: &[usize],
-        output: &mut Vec<MeshQuotient>,
-        limit: usize,
-        budget: &WorkBudget<'_>,
-    ) -> Result<(), CodecError> {
+    struct DeferredGapFill<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8> {
+gaps: &'input0 [Gap],
+gap: usize,
+at: usize,
+target: usize,
+used: u64,
+previous_end: usize,
+missing_edges: &'input1 [usize],
+missing_nodes: &'input2 [[usize; 2]],
+edge_candidates: &'input3 [Vec<[usize; 2]>],
+quotient: MeshQuotient,
+base_quotient: &'input4 MeshQuotient,
+base_nodes: &'input5 [usize],
+output: &'input6 mut Vec<MeshQuotient>,
+limit: usize,
+budget: &'input8 WorkBudget<'input7>
+}
+
+    fn fill_gap(ctx : &DecodeContext<'_>, inputs: DeferredGapFill<'_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), CodecError> {
+let DeferredGapFill { gaps, gap, at, target, used, previous_end, missing_edges, missing_nodes, edge_candidates, quotient, base_quotient, base_nodes, output, limit, budget } = inputs;
+
         let _depth = ctx.enter_nested("catia deferred gap search")?;
         ctx.charge_work(1, "catia deferred gap search")?;
         if output.len() >= limit || budget.exhausted() {
@@ -3538,21 +3460,7 @@ fn deferred_face_quotient_options_limited(
             {
                 return Ok(());
             }
-            walk_gaps(
-                ctx,
-                gaps,
-                gap + 1,
-                used,
-                missing_edges,
-                missing_nodes,
-                edge_candidates,
-                &quotient,
-                base_quotient,
-                base_nodes,
-                output,
-                limit,
-                budget,
-            )?;
+            walk_gaps(ctx, DeferredGapWalk { gaps, gap: gap + 1, used, missing_edges, missing_nodes, edge_candidates, quotient: &quotient, base_quotient, base_nodes, output, limit, budget })?;
             return Ok(());
         }
         let Some(options) = (missing_edges.len() - used.count_ones() as usize).checked_mul(2)
@@ -3582,24 +3490,7 @@ fn deferred_face_quotient_options_limited(
                 )? {
                     continue;
                 }
-                fill_gap(
-                    ctx,
-                    gaps,
-                    gap,
-                    at + 1,
-                    target,
-                    used | (1 << rank),
-                    end,
-                    missing_edges,
-                    missing_nodes,
-                    edge_candidates,
-                    next,
-                    base_quotient,
-                    base_nodes,
-                    output,
-                    limit,
-                    budget,
-                )?;
+                fill_gap(ctx, DeferredGapFill { gaps, gap, at: at + 1, target, used: used | (1 << rank), previous_end: end, missing_edges, missing_nodes, edge_candidates, quotient: next, base_quotient, base_nodes, output, limit, budget })?;
                 if output.len() >= limit || budget.exhausted() {
                     return Ok(());
                 }
@@ -3608,22 +3499,24 @@ fn deferred_face_quotient_options_limited(
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn walk_gaps(
-        ctx: &DecodeContext<'_>,
-        gaps: &[Gap],
-        gap: usize,
-        used: u64,
-        missing_edges: &[usize],
-        missing_nodes: &[[usize; 2]],
-        edge_candidates: &[Vec<[usize; 2]>],
-        quotient: &MeshQuotient,
-        base_quotient: &MeshQuotient,
-        base_nodes: &[usize],
-        output: &mut Vec<MeshQuotient>,
-        limit: usize,
-        budget: &WorkBudget<'_>,
-    ) -> Result<(), CodecError> {
+    struct DeferredGapWalk<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9> {
+gaps: &'input0 [Gap],
+gap: usize,
+used: u64,
+missing_edges: &'input1 [usize],
+missing_nodes: &'input2 [[usize; 2]],
+edge_candidates: &'input3 [Vec<[usize; 2]>],
+quotient: &'input4 MeshQuotient,
+base_quotient: &'input5 MeshQuotient,
+base_nodes: &'input6 [usize],
+output: &'input7 mut Vec<MeshQuotient>,
+limit: usize,
+budget: &'input9 WorkBudget<'input8>
+}
+
+    fn walk_gaps(ctx : &DecodeContext<'_>, inputs: DeferredGapWalk<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), CodecError> {
+let DeferredGapWalk { gaps, gap, used, missing_edges, missing_nodes, edge_candidates, quotient, base_quotient, base_nodes, output, limit, budget } = inputs;
+
         let _depth = ctx.enter_nested("catia deferred gap walk")?;
         ctx.charge_work(1, "catia deferred gap walk")?;
         if output.len() >= limit || budget.exhausted() {
@@ -3676,24 +3569,7 @@ fn deferred_face_quotient_options_limited(
             return Ok(());
         }
         for target in minimum..=maximum {
-            fill_gap(
-                ctx,
-                gaps,
-                gap,
-                0,
-                target,
-                used,
-                gaps[gap].left_end,
-                missing_edges,
-                missing_nodes,
-                edge_candidates,
-                quotient.clone_charged(ctx)?,
-                base_quotient,
-                base_nodes,
-                output,
-                limit,
-                budget,
-            )?;
+            fill_gap(ctx, DeferredGapFill { gaps, gap, at: 0, target, used, previous_end: gaps[gap].left_end, missing_edges, missing_nodes, edge_candidates, quotient: quotient.clone_charged(ctx)?, base_quotient, base_nodes, output, limit, budget })?;
             if output.len() >= limit || budget.exhausted() {
                 return Ok(());
             }
@@ -3847,21 +3723,7 @@ fn deferred_face_quotient_options_limited(
         ctx.push_vec(&mut gaps, gap, "catia_deferred_sorted_gaps")?;
     }
     let mut output = Vec::new();
-    walk_gaps(
-        ctx,
-        &gaps,
-        0,
-        0,
-        &domain.missing_edges,
-        &missing_nodes,
-        edge_candidates,
-        &local_quotient,
-        quotient,
-        &base_nodes,
-        &mut output,
-        limit,
-        budget,
-    )?;
+    walk_gaps(ctx, DeferredGapWalk { gaps: &gaps, gap: 0, used: 0, missing_edges: &domain.missing_edges, missing_nodes: &missing_nodes, edge_candidates, quotient: &local_quotient, base_quotient: quotient, base_nodes: &base_nodes, output: &mut output, limit, budget })?;
     Ok(
         (!budget.exhausted()).then_some(DeferredFaceQuotientOptions {
             alternatives: output,
@@ -7172,26 +7034,29 @@ fn copy_endpoint_relation_domains(
 
 // The recursive walk keeps branch-owned domains and shared memo state explicit;
 // a context object would hide which values are cloned for each branch.
-#[allow(clippy::too_many_arguments)]
-fn walk_endpoint_relation_domains<F>(
-    ctx: &DecodeContext<'_>,
-    domains: Vec<Vec<MeshEndpointRelationChoice>>,
-    face_assignments: &[Vec<MeshFaceBoundaryAssignment>],
-    assigned: Vec<Option<[usize; 2]>>,
-    constraints: &MeshEndpointRelationConstraints,
-    point_count: usize,
-    budget: &WorkBudget<'_>,
-    state_memo: &mut HashSet<MeshEndpointRelationStateSignature>,
-    candidate_gauge: Option<MeshCandidateGauge<'_>>,
-    priority_edges: Option<&[bool]>,
-    partial_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
-    coordinate_domains: Option<&MeshCoordinateRootDomains>,
-    coordinate_budget: Option<&WorkBudget<'_>>,
-    evaluate: &mut F,
-) -> Result<bool, CodecError>
+struct WalkEndpointRelationDomainsInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11, 'input12, F> where
+    F: FnMut(MeshEndpointRelationSelections, Vec<[usize; 2]>) -> Result<bool, CodecError>, {
+domains: Vec<Vec<MeshEndpointRelationChoice>>,
+face_assignments: &'input0 [Vec<MeshFaceBoundaryAssignment>],
+assigned: Vec<Option<[usize; 2]>>,
+constraints: &'input1 MeshEndpointRelationConstraints,
+point_count: usize,
+budget: &'input3 WorkBudget<'input2>,
+state_memo: &'input4 mut HashSet<MeshEndpointRelationStateSignature>,
+candidate_gauge: Option<MeshCandidateGauge<'input5>>,
+priority_edges: Option<&'input6 [bool]>,
+partial_solution_valid: Option<&'input8 MeshEndpointSolutionPredicate<'input7>>,
+coordinate_domains: Option<&'input9 MeshCoordinateRootDomains>,
+coordinate_budget: Option<&'input11 WorkBudget<'input10>>,
+evaluate: &'input12 mut F
+}
+
+fn walk_endpoint_relation_domains<F>(ctx : &DecodeContext<'_>, inputs: WalkEndpointRelationDomainsInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, F>) -> Result<bool, CodecError>
 where
     F: FnMut(MeshEndpointRelationSelections, Vec<[usize; 2]>) -> Result<bool, CodecError>,
 {
+let WalkEndpointRelationDomainsInputs { domains, face_assignments, assigned, constraints, point_count, budget, state_memo, candidate_gauge, priority_edges, partial_solution_valid, coordinate_domains, coordinate_budget, evaluate } = inputs;
+
     let _depth = ctx.enter_nested("catia_endpoint_relation_walk_depth")?;
     if budget.exhausted() || !budget.charge() {
         return Ok(true);
@@ -7485,22 +7350,7 @@ where
             },
             "catia_endpoint_relation_branch_choice",
         )?;
-        if walk_endpoint_relation_domains(
-            ctx,
-            branch,
-            face_assignments,
-            ctx.copy_slice(&assigned, "catia_endpoint_relation_branch_assigned")?,
-            constraints,
-            point_count,
-            budget,
-            state_memo,
-            candidate_gauge,
-            priority_edges,
-            partial_solution_valid,
-            coordinate_domains,
-            coordinate_budget,
-            evaluate,
-        )? {
+        if walk_endpoint_relation_domains(ctx, crate::solve::mesh_quotient::WalkEndpointRelationDomainsInputs { domains: branch, face_assignments, assigned: ctx.copy_slice(&assigned, "catia_endpoint_relation_branch_assigned")?, constraints, point_count, budget, state_memo, candidate_gauge, priority_edges, partial_solution_valid, coordinate_domains, coordinate_budget, evaluate })? {
             return Ok(true);
         }
     }
@@ -7602,22 +7452,25 @@ fn collect_endpoint_relation_face_choices(
 /// row-port order is selected later by the quotient search.
 // These independent inputs describe one bounded relation phase; keeping them
 // separate preserves the ownership of parsed evidence and branch state.
-#[allow(clippy::too_many_arguments)]
-fn resolve_endpoint_configuration_relation_streaming(
-    ctx: &DecodeContext<'_>,
-    assignments: &[Vec<MeshFaceBoundaryAssignment>],
-    endpoint_configurations: &[Vec<Option<MeshFaceEndpointConfigurations>>],
-    edge_candidates: &[Vec<[usize; 2]>],
-    edge_rows: &[EdgeRow],
-    vertex_points: &[[f64; 3]],
-    port_identities: &[[u32; 2]],
-    budget: &WorkBudget<'_>,
-    partial_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
-    complete_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
-    candidate_gauge: Option<MeshCandidateGauge<'_>>,
-    priority_edges: Option<&[bool]>,
-    coordinate_domains: Option<&MeshCoordinateRootDomains>,
-) -> Result<Option<MeshEndpointResolve>, CodecError> {
+#[derive(Clone, Copy)]
+struct ResolveEndpointConfigurationRelationStreamingInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11, 'input12, 'input13, 'input14> {
+assignments: &'input0 [Vec<MeshFaceBoundaryAssignment>],
+endpoint_configurations: &'input1 [Vec<Option<MeshFaceEndpointConfigurations>>],
+edge_candidates: &'input2 [Vec<[usize; 2]>],
+edge_rows: &'input3 [EdgeRow],
+vertex_points: &'input4 [[f64; 3]],
+port_identities: &'input5 [[u32; 2]],
+budget: &'input7 WorkBudget<'input6>,
+partial_solution_valid: Option<&'input9 MeshEndpointSolutionPredicate<'input8>>,
+complete_solution_valid: Option<&'input11 MeshEndpointSolutionPredicate<'input10>>,
+candidate_gauge: Option<MeshCandidateGauge<'input12>>,
+priority_edges: Option<&'input13 [bool]>,
+coordinate_domains: Option<&'input14 MeshCoordinateRootDomains>
+}
+
+fn resolve_endpoint_configuration_relation_streaming(ctx : &DecodeContext<'_>, inputs: ResolveEndpointConfigurationRelationStreamingInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<Option<MeshEndpointResolve>, CodecError> {
+let ResolveEndpointConfigurationRelationStreamingInputs { assignments, endpoint_configurations, edge_candidates, edge_rows, vertex_points, port_identities, budget, partial_solution_valid, complete_solution_valid, candidate_gauge, priority_edges, coordinate_domains } = inputs;
+
     if assignments.len() != endpoint_configurations.len()
         || edge_candidates.iter().any(Vec::is_empty)
     {
@@ -7839,26 +7692,11 @@ fn resolve_endpoint_configuration_relation_streaming(
         }
         Ok(false)
     };
-    walk_endpoint_relation_domains(
-        ctx,
-        domains,
-        assignments,
-        ctx.alloc_filled(
+    walk_endpoint_relation_domains(ctx, crate::solve::mesh_quotient::WalkEndpointRelationDomainsInputs { domains, face_assignments: assignments, assigned: ctx.alloc_filled(
             edge_candidates.len(),
             None,
             "catia_endpoint_relation_assigned",
-        )?,
-        &constraints,
-        vertex_points.len(),
-        budget,
-        &mut relation_walk_state_memo,
-        candidate_gauge,
-        priority_edges,
-        partial_solution_valid,
-        coordinate_domains,
-        coordinate_budget.as_ref(),
-        &mut evaluate,
-    )?;
+        )?, constraints: &constraints, point_count: vertex_points.len(), budget, state_memo: &mut relation_walk_state_memo, candidate_gauge, priority_edges, partial_solution_valid, coordinate_domains, coordinate_budget: coordinate_budget.as_ref(), evaluate: &mut evaluate })?;
     Ok(if ambiguous {
         Some(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())))
     } else if exhausted || budget.exhausted() {
@@ -8470,17 +8308,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
     {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     }
-    if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(
-        ctx,
-        edge_rows,
-        vertex_points,
-        edge_candidates,
-        &assignment_domains,
-        port_identities,
-        None,
-        budget,
-        candidate_gauge,
-    )? {
+    if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(ctx, crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs { edge_rows, vertex_points, edge_candidates, assignments: &assignment_domains, port_identities, edge_direction_evidence: None, budget, candidate_gauge })? {
         if !matches!(
             &resolved,
             MeshSolve::Failed(MeshCandidateFailure::Rejected(()))
@@ -8706,7 +8534,6 @@ fn resolve_fixed_mesh_endpoint_pairs(
 /// here rebuilds the same relation and recurses indefinitely when multiple
 /// boundary assignments share one endpoint configuration. Enumerate only the
 /// remaining assignment choices, then apply the exact fixed-pair materializer.
-#[allow(clippy::items_after_statements)]
 fn resolve_fixed_mesh_endpoint_assignment_domains(
     ctx: &DecodeContext<'_>,
     geometry: MeshEndpointGeometry<'_>,
@@ -8716,36 +8543,23 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
     budget: &WorkBudget<'_>,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
 ) -> Result<MeshEndpointResolve, CodecError> {
-    let MeshEndpointGeometry {
-        edge_rows,
-        vertex_points,
-    } = geometry;
-    if assignment_domains.is_empty()
-        || assignment_domains.iter().any(Vec::is_empty)
-        || edge_candidates.len() != edge_rows.len()
-        || port_identities.len() != edge_rows.len()
-        || edge_candidates
-            .iter()
-            .any(|candidates| candidates.len() != 1)
-    {
-        return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
-    }
-    // Keep recursive search state explicit so budget, solution, and ambiguity
+// Keep recursive search state explicit so budget, solution, and ambiguity
     // ownership remain visible at every branch.
-    #[allow(clippy::too_many_arguments)]
-    fn visit(
-        ctx: &DecodeContext<'_>,
-        face: usize,
-        assignment_domains: &[Vec<MeshFaceBoundaryAssignment>],
-        selected: &mut Vec<MeshFaceBoundaryAssignment>,
-        edge_rows: &[EdgeRow],
-        vertex_points: &[[f64; 3]],
-        edge_candidates: &[Vec<[usize; 2]>],
-        port_identities: &[[u32; 2]],
-        budget: &WorkBudget<'_>,
-        candidate_gauge: Option<MeshCandidateGauge<'_>>,
-        outcome: &mut SearchOutcome<(StandardTopology, Vec<usize>)>,
-    ) -> Result<(), CodecError> {
+    struct FixedEndpointAssignmentSearch<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9> {
+face: usize,
+assignment_domains: &'input0 [Vec<MeshFaceBoundaryAssignment>],
+selected: &'input1 mut Vec<MeshFaceBoundaryAssignment>,
+edge_rows: &'input2 [EdgeRow],
+vertex_points: &'input3 [[f64; 3]],
+edge_candidates: &'input4 [Vec<[usize; 2]>],
+port_identities: &'input5 [[u32; 2]],
+budget: &'input7 WorkBudget<'input6>,
+candidate_gauge: Option<MeshCandidateGauge<'input8>>,
+outcome: &'input9 mut SearchOutcome<(StandardTopology, Vec<usize>)>
+}
+fn visit(ctx : &DecodeContext<'_>, inputs: FixedEndpointAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), CodecError> {
+let FixedEndpointAssignmentSearch { face, assignment_domains, selected, edge_rows, vertex_points, edge_candidates, port_identities, budget, candidate_gauge, outcome } = inputs;
+
         if outcome.is_closed() || budget.exhausted() {
             return Ok(());
         }
@@ -8789,19 +8603,7 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         }
         for assignment in &assignment_domains[face] {
             selected.push(assignment.clone());
-            visit(
-                ctx,
-                face + 1,
-                assignment_domains,
-                selected,
-                edge_rows,
-                vertex_points,
-                edge_candidates,
-                port_identities,
-                budget,
-                candidate_gauge,
-                outcome,
-            )?;
+            visit(ctx, FixedEndpointAssignmentSearch { face: face + 1, assignment_domains, selected, edge_rows, vertex_points, edge_candidates, port_identities, budget, candidate_gauge, outcome })?;
             selected.pop();
             if outcome.is_closed() {
                 return Ok(());
@@ -8810,20 +8612,26 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         Ok(())
     }
 
-    let mut outcome = SearchOutcome::Open;
-    visit(
-        ctx,
-        0,
-        assignment_domains,
-        &mut Vec::new(),
+    let MeshEndpointGeometry {
         edge_rows,
         vertex_points,
-        edge_candidates,
-        port_identities,
-        budget,
-        candidate_gauge,
-        &mut outcome,
-    )?;
+    } = geometry;
+    if assignment_domains.is_empty()
+        || assignment_domains.iter().any(Vec::is_empty)
+        || edge_candidates.len() != edge_rows.len()
+        || port_identities.len() != edge_rows.len()
+        || edge_candidates
+            .iter()
+            .any(|candidates| candidates.len() != 1)
+    {
+        return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
+    }
+
+
+
+
+    let mut outcome = SearchOutcome::Open;
+    visit(ctx, FixedEndpointAssignmentSearch { face: 0, assignment_domains, selected: &mut Vec::new(), edge_rows, vertex_points, edge_candidates, port_identities, budget, candidate_gauge, outcome: &mut outcome })?;
     if budget.exhausted() {
         outcome.exhaust();
     }
@@ -8954,18 +8762,21 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
 
 // The arguments are independent serialized evidence, solver state, and budget
 // inputs; grouping them would hide their ownership without reducing coupling.
-#[allow(clippy::too_many_arguments)]
-fn resolve_singleton_mesh_endpoint_candidates(
-    ctx: &DecodeContext<'_>,
-    edge_rows: &[EdgeRow],
-    vertex_points: &[[f64; 3]],
-    edge_candidates: &[Vec<[usize; 2]>],
-    assignments: &[Vec<MeshFaceBoundaryAssignment>],
-    port_identities: &[[u32; 2]],
-    edge_direction_evidence: Option<&[bool]>,
-    budget: &WorkBudget<'_>,
-    candidate_gauge: Option<MeshCandidateGauge<'_>>,
-) -> Result<Option<MeshEndpointResolve>, CodecError> {
+#[derive(Clone, Copy)]
+struct ResolveSingletonMeshEndpointCandidatesInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8> {
+edge_rows: &'input0 [EdgeRow],
+vertex_points: &'input1 [[f64; 3]],
+edge_candidates: &'input2 [Vec<[usize; 2]>],
+assignments: &'input3 [Vec<MeshFaceBoundaryAssignment>],
+port_identities: &'input4 [[u32; 2]],
+edge_direction_evidence: Option<&'input5 [bool]>,
+budget: &'input7 WorkBudget<'input6>,
+candidate_gauge: Option<MeshCandidateGauge<'input8>>
+}
+
+fn resolve_singleton_mesh_endpoint_candidates(ctx : &DecodeContext<'_>, inputs: ResolveSingletonMeshEndpointCandidatesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<Option<MeshEndpointResolve>, CodecError> {
+let ResolveSingletonMeshEndpointCandidatesInputs { edge_rows, vertex_points, edge_candidates, assignments, port_identities, edge_direction_evidence, budget, candidate_gauge } = inputs;
+
     if edge_candidates.len() != edge_rows.len()
         || port_identities.len() != edge_rows.len()
         || edge_direction_evidence.is_some_and(|evidence| evidence.len() != edge_rows.len())
@@ -9112,55 +8923,39 @@ fn resolve_singleton_mesh_endpoint_candidates(
         }
         fixed_directions.push(face_directions);
     }
-    if let Some(resolved) = resolve_singleton_mesh_selection(
-        ctx,
-        edge_rows,
-        vertex_points,
-        edge_candidates,
-        &selected,
-        &fixed_directions,
-        port_identities,
-        budget,
-        candidate_gauge,
-    )? {
+    if let Some(resolved) = resolve_singleton_mesh_selection(ctx, crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs { edge_rows, vertex_points, edge_candidates, selected: &selected, directions: &fixed_directions, port_identities, budget, candidate_gauge })? {
         match resolved {
             MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {}
             resolved => return Ok(Some(resolved)),
         }
     }
 
-    resolve_singleton_mesh_selection(
-        ctx,
-        edge_rows,
-        vertex_points,
-        edge_candidates,
-        &selected,
-        &endpoint_labelled_directions,
-        port_identities,
-        budget,
-        candidate_gauge,
-    )
+    resolve_singleton_mesh_selection(ctx, crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs { edge_rows, vertex_points, edge_candidates, selected: &selected, directions: &endpoint_labelled_directions, port_identities, budget, candidate_gauge })
 }
 
 // Endpoint materialization receives independent evidence, budgets, predicates,
 // and gauge state so each fallback remains separately bounded and auditable.
-#[allow(clippy::too_many_arguments)]
-fn resolve_standard_mesh_endpoint_candidates(
-    ctx: &DecodeContext<'_>,
-    edge_rows: &[EdgeRow],
-    vertex_points: &[[f64; 3]],
-    edge_candidates: &[Vec<[usize; 2]>],
-    mut assignments: Vec<Vec<MeshFaceBoundaryAssignment>>,
-    port_identities: &[[u32; 2]],
-    prepared_quotient: Option<&MeshQuotient>,
-    edge_direction_evidence: Option<&[bool]>,
-    budget: &WorkBudget<'_>,
-    partial_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
-    complete_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
-    candidate_gauge: Option<MeshCandidateGauge<'_>>,
-    priority_edges: Option<&[bool]>,
-) -> Result<MeshEndpointResolve, CodecError> {
-    const MAX_SELECTION_WORK: usize = 100_000;
+struct ResolveStandardMeshEndpointCandidatesInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11, 'input12, 'input13> {
+edge_rows: &'input0 [EdgeRow],
+vertex_points: &'input1 [[f64; 3]],
+edge_candidates: &'input2 [Vec<[usize; 2]>],
+assignments: Vec<Vec<MeshFaceBoundaryAssignment>>,
+port_identities: &'input3 [[u32; 2]],
+prepared_quotient: Option<&'input4 MeshQuotient>,
+edge_direction_evidence: Option<&'input5 [bool]>,
+budget: &'input7 WorkBudget<'input6>,
+partial_solution_valid: Option<&'input9 MeshEndpointSolutionPredicate<'input8>>,
+complete_solution_valid: Option<&'input11 MeshEndpointSolutionPredicate<'input10>>,
+candidate_gauge: Option<MeshCandidateGauge<'input12>>,
+priority_edges: Option<&'input13 [bool]>
+}
+
+fn resolve_standard_mesh_endpoint_candidates(ctx : &DecodeContext<'_>, inputs: ResolveStandardMeshEndpointCandidatesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<MeshEndpointResolve, CodecError> {
+const MAX_SELECTION_WORK: usize = 100_000;
+
+let ResolveStandardMeshEndpointCandidatesInputs { edge_rows, vertex_points, edge_candidates, mut assignments, port_identities, prepared_quotient, edge_direction_evidence, budget, partial_solution_valid, complete_solution_valid, candidate_gauge, priority_edges } = inputs;
+
+
     let face_count = assignments.len();
     let mut edge_candidates = ctx.copy_retained_rows(
         edge_candidates,
@@ -9197,17 +8992,7 @@ fn resolve_standard_mesh_endpoint_candidates(
             return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
         }
     }
-    if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(
-        ctx,
-        edge_rows,
-        vertex_points,
-        &edge_candidates,
-        &assignments,
-        port_identities,
-        edge_direction_evidence,
-        budget,
-        candidate_gauge,
-    )? {
+    if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(ctx, crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs { edge_rows, vertex_points, edge_candidates: &edge_candidates, assignments: &assignments, port_identities, edge_direction_evidence, budget, candidate_gauge })? {
         return Ok(resolved);
     }
     let coordinate_domains = if let Some(preparation_limit) = quotient
@@ -9295,21 +9080,7 @@ fn resolve_standard_mesh_endpoint_candidates(
             "catia_face_configuration_face_rows",
         )?;
     }
-    let relation = resolve_endpoint_configuration_relation_streaming(
-        ctx,
-        &assignments,
-        &endpoint_configurations,
-        &edge_candidates,
-        edge_rows,
-        vertex_points,
-        port_identities,
-        budget,
-        partial_solution_valid,
-        complete_solution_valid,
-        candidate_gauge,
-        priority_edges,
-        coordinate_domains.as_ref(),
-    )?;
+    let relation = resolve_endpoint_configuration_relation_streaming(ctx, crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs { assignments: &assignments, endpoint_configurations: &endpoint_configurations, edge_candidates: &edge_candidates, edge_rows, vertex_points, port_identities, budget, partial_solution_valid, complete_solution_valid, candidate_gauge, priority_edges, coordinate_domains: coordinate_domains.as_ref() })?;
     if let Some(resolved) = relation {
         return Ok(resolved);
     }
@@ -9354,29 +9125,33 @@ fn resolve_standard_mesh_endpoint_candidates(
 /// `complete_solution_valid` is evaluated only after every endpoint pair has
 /// been assigned. Use it for global preferences whose result cannot be known
 /// from a partial assignment.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    edge_faces: &[[usize; 2]],
-    edge_candidates: &[Vec<[usize; 2]>],
-    edge_classes: &[usize],
-    edge_geometry: &[MeshEdgeGeometry],
-    edge_identity_evidence: &[bool],
-    edge_direction_evidence: &[bool],
-    global_handle_ports: bool,
-    partial_constraint_edges: &[bool],
-    preferred_assignment_edges: &[bool],
-    priority_edges: Option<&[bool]>,
-    assignment_dependencies: Option<&[Vec<usize>]>,
-    budget: &WorkBudget<'_>,
-    partial_solution_valid: FP,
-    complete_solution_valid: FC,
-) -> Result<MeshCandidateSolve, CodecError>
+pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11, 'input12, FP, FC> where
+    FP: Fn(&[Option<[usize; 2]>]) -> bool,
+    FC: Fn(&[Option<[usize; 2]>]) -> bool, {
+pub(crate) bytes: &'input0 [u8],
+pub(crate) edge_faces: &'input1 [[usize; 2]],
+pub(crate) edge_candidates: &'input2 [Vec<[usize; 2]>],
+pub(crate) edge_classes: &'input3 [usize],
+pub(crate) edge_geometry: &'input4 [MeshEdgeGeometry],
+pub(crate) edge_identity_evidence: &'input5 [bool],
+pub(crate) edge_direction_evidence: &'input6 [bool],
+pub(crate) global_handle_ports: bool,
+pub(crate) partial_constraint_edges: &'input7 [bool],
+pub(crate) preferred_assignment_edges: &'input8 [bool],
+pub(crate) priority_edges: Option<&'input9 [bool]>,
+pub(crate) assignment_dependencies: Option<&'input10 [Vec<usize>]>,
+pub(crate) budget: &'input12 WorkBudget<'input11>,
+pub(crate) partial_solution_valid: FP,
+pub(crate) complete_solution_valid: FC
+}
+
+pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(ctx : &DecodeContext<'_>, inputs: ParseStandardMeshCandidateOutcomeInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, FP, FC>) -> Result<MeshCandidateSolve, CodecError>
 where
     FP: Fn(&[Option<[usize; 2]>]) -> bool,
     FC: Fn(&[Option<[usize; 2]>]) -> bool,
 {
+let ParseStandardMeshCandidateOutcomeInputs { bytes, edge_faces, edge_candidates, edge_classes, edge_geometry, edge_identity_evidence, edge_direction_evidence, global_handle_ports, partial_constraint_edges, preferred_assignment_edges, priority_edges, assignment_dependencies, budget, partial_solution_valid, complete_solution_valid } = inputs;
+
     let endpoint_budget = budget.session_child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
     let Some((face_count, edge_rows, vertex_points, mut mesh_domains, port_identities)) =
         (|| -> Result<Option<_>, CodecError> {
@@ -9584,17 +9359,7 @@ where
     let mut incidence_ambiguity = None;
     let mut incidence_exhausted = false;
     let mut endpoint_resolution_memo = HashMap::<Vec<[usize; 2]>, MeshEndpointResolve>::new();
-    let pair_solutions = visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
-        ctx,
-        &edge_rows,
-        &vertex_points,
-        edge_faces,
-        &completed_edge_candidates,
-        face_count,
-        Some(&mesh_domains),
-        Some(&mesh_quotient),
-        CoordinateRootPolicy::DeferToVisitor,
-        Some(MeshPartialEndpointConstraint {
+    let pair_solutions = visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_faces, edge_candidates: &completed_edge_candidates, face_count, mesh_assignments: Some(&mesh_domains), mesh_quotient: Some(&mesh_quotient), coordinate_root_policy: CoordinateRootPolicy::DeferToVisitor, partial_solution_valid: Some(MeshPartialEndpointConstraint {
             active_edges: &constraint_edges,
             coupled_edges: partial_constraint_edges,
             assignment_order: AssignmentOrder::new(
@@ -9602,9 +9367,7 @@ where
                 assignment_dependencies,
             ),
             valid: &constrained_partial_solution_valid,
-        }),
-        Some(&endpoint_budget),
-        &|pairs| {
+        }), complete_solution_budget: Some(&endpoint_budget), solution_valid: &|pairs| {
             let mut completed = Vec::new();
             ctx.reserve_vec(
                 &mut completed,
@@ -9613,8 +9376,7 @@ where
             )?;
             completed.extend(pairs.iter().copied().map(Some));
             Ok(constrained_complete_solution_valid(&completed))
-        },
-        &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
+        }, visitor: &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
             let endpoint_resolution = if let Some(cached) = endpoint_resolution_memo.get(pairs) {
                 copy_mesh_endpoint_resolution(ctx, cached)?
             } else {
@@ -9646,21 +9408,7 @@ where
                 // own MAX_MESH_CONSTRAINT_OPERATIONS child slice.
                 let endpoint_resolution_budget =
                     endpoint_budget.session_child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
-                let resolution = resolve_standard_mesh_endpoint_candidates(
-                    ctx,
-                    &edge_rows,
-                    &vertex_points,
-                    &singleton,
-                    mesh_assignments,
-                    &port_identities,
-                    None,
-                    Some(edge_direction_evidence),
-                    &endpoint_resolution_budget,
-                    Some(&constrained_partial_solution_valid),
-                    Some(&constrained_complete_solution_valid),
-                    candidate_gauge,
-                    priority_edges,
-                )?;
+                let resolution = resolve_standard_mesh_endpoint_candidates(ctx, crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_candidates: &singleton, assignments: mesh_assignments, port_identities: &port_identities, prepared_quotient: None, edge_direction_evidence: Some(edge_direction_evidence), budget: &endpoint_resolution_budget, partial_solution_valid: Some(&constrained_partial_solution_valid), complete_solution_valid: Some(&constrained_complete_solution_valid), candidate_gauge, priority_edges })?;
                 // Exhaustion is deterministic for this input and child budget.
                 // The parent budget only decreases, so retrying the same key
                 // cannot turn an exhausted materialization into a solution.
@@ -9709,8 +9457,7 @@ where
                     Ok(ControlFlow::Continue(()))
                 }
             }
-        },
-    )?;
+        } })?;
     if let Some(ambiguity) = incidence_ambiguity {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(
             ambiguity,
@@ -9767,21 +9514,7 @@ where
                 | MeshFaceBoundaryDomain::DeferredValidation(_) => return Ok(None),
             }
         }
-        let resolution = resolve_standard_mesh_endpoint_candidates(
-            ctx,
-            &edge_rows,
-            &vertex_points,
-            edge_candidates,
-            assignments,
-            &port_identities,
-            Some(&mesh_quotient),
-            Some(edge_direction_evidence),
-            &endpoint_budget,
-            Some(&constrained_partial_solution_valid),
-            Some(&constrained_complete_solution_valid),
-            candidate_gauge,
-            priority_edges,
-        )?;
+        let resolution = resolve_standard_mesh_endpoint_candidates(ctx, crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_candidates, assignments, port_identities: &port_identities, prepared_quotient: Some(&mesh_quotient), edge_direction_evidence: Some(edge_direction_evidence), budget: &endpoint_budget, partial_solution_valid: Some(&constrained_partial_solution_valid), complete_solution_valid: Some(&constrained_complete_solution_valid), candidate_gauge, priority_edges })?;
         Ok(Some(resolution))
     })()?;
     Ok(match fallback {
@@ -10132,24 +9865,13 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
     catia_test_context!(ctx);
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(matches!(
-        parse_standard_mesh_candidate_outcome(
-            &ctx,
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            false,
-            &[],
-            &[],
-            None,
-            None,
-            &budget,
-            |_| true,
-            |_| true,
-        )
+        parse_standard_mesh_candidate_outcome(&ctx, ParseStandardMeshCandidateOutcomeInputs {
+            bytes: &[], edge_faces: &[], edge_candidates: &[], edge_classes: &[],
+            edge_geometry: &[], edge_identity_evidence: &[], edge_direction_evidence: &[],
+            global_handle_ports: false, partial_constraint_edges: &[], preferred_assignment_edges: &[],
+            priority_edges: None, assignment_dependencies: None, budget: &budget,
+            partial_solution_valid: |_| true, complete_solution_valid: |_| true,
+        })
         .expect("service resource budget"),
         MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::InputStructure
@@ -10359,21 +10081,7 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
     let Some(MeshSolve::Solved((topology, point_assignment))) =
-        resolve_endpoint_configuration_relation_streaming(
-            &ctx,
-            &assignments,
-            &endpoint_configurations,
-            &edge_candidates,
-            &edge_rows,
-            &vertex_points,
-            &port_identities,
-            &budget,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+        resolve_endpoint_configuration_relation_streaming(&ctx, crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs { assignments: &assignments, endpoint_configurations: &endpoint_configurations, edge_candidates: &edge_candidates, edge_rows: &edge_rows, vertex_points: &vertex_points, port_identities: &port_identities, budget: &budget, partial_solution_valid: None, complete_solution_valid: None, candidate_gauge: None, priority_edges: None, coordinate_domains: None })
         .expect("service resource budget")
     else {
         panic!("endpoint configuration relation did not solve the cycle");
@@ -10425,21 +10133,7 @@ fn endpoint_configuration_relation_charges_covered_and_assigned_edges() {
     ]])]];
     let run = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        resolve_endpoint_configuration_relation_streaming(
-            ctx,
-            &assignments,
-            &configurations,
-            &edge_candidates,
-            &edge_rows,
-            &vertex_points,
-            &[[0, 1], [2, 3], [4, 5]],
-            &budget,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+        resolve_endpoint_configuration_relation_streaming(ctx, crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs { assignments: &assignments, endpoint_configurations: &configurations, edge_candidates: &edge_candidates, edge_rows: &edge_rows, vertex_points: &vertex_points, port_identities: &[[0, 1], [2, 3], [4, 5]], budget: &budget, partial_solution_valid: None, complete_solution_valid: None, candidate_gauge: None, priority_edges: None, coordinate_domains: None })
     };
     catia_test_context!(service_ctx);
     assert!(matches!(
@@ -10530,17 +10224,7 @@ fn singleton_mesh_selection_charges_matching_and_materialization_arrays() {
     let identities = [[0, 1], [1, 2], [2, 0]];
     let run = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        resolve_singleton_mesh_selection(
-            ctx,
-            &edge_rows,
-            &vertex_points,
-            &candidates,
-            &selected,
-            &directions,
-            &identities,
-            &budget,
-            None,
-        )
+        resolve_singleton_mesh_selection(ctx, crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_candidates: &candidates, selected: &selected, directions: &directions, port_identities: &identities, budget: &budget, candidate_gauge: None })
     };
     catia_test_context!(service_ctx);
     assert!(matches!(
@@ -10613,21 +10297,7 @@ fn general_mesh_search_charges_unselected_and_face_state_arrays() {
     }]];
     let run = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        resolve_standard_mesh_endpoint_candidates(
-            ctx,
-            &edge_rows,
-            &vertex_points,
-            &candidates,
-            assignments.clone(),
-            &[[0, 0], [1, 1]],
-            None,
-            None,
-            &budget,
-            None,
-            None,
-            None,
-            None,
-        )
+        resolve_standard_mesh_endpoint_candidates(ctx, crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_candidates: &candidates, assignments: assignments.clone(), port_identities: &[[0, 0], [1, 1]], prepared_quotient: None, edge_direction_evidence: None, budget: &budget, partial_solution_valid: None, complete_solution_valid: None, candidate_gauge: None, priority_edges: None })
     };
     catia_test_context!(service_ctx);
     run(&service_ctx).expect("service resource budget");
@@ -10905,21 +10575,7 @@ fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
         Some(vec![vec![(0, [0, 1]), (1, [1, 2]), (2, [0, 2])]]),
     ]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let result = resolve_endpoint_configuration_relation_streaming(
-        &ctx,
-        &assignments,
-        &endpoint_configurations,
-        &edge_candidates,
-        &edge_rows,
-        &vertex_points,
-        &[[0, 1], [2, 3], [4, 5]],
-        &budget,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+    let result = resolve_endpoint_configuration_relation_streaming(&ctx, crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs { assignments: &assignments, endpoint_configurations: &endpoint_configurations, edge_candidates: &edge_candidates, edge_rows: &edge_rows, vertex_points: &vertex_points, port_identities: &[[0, 1], [2, 3], [4, 5]], budget: &budget, partial_solution_valid: None, complete_solution_valid: None, candidate_gauge: None, priority_edges: None, coordinate_domains: None })
     .expect("service resource budget");
 
     let Some(MeshSolve::Solved((topology, point_assignment))) = result else {
@@ -11254,22 +10910,7 @@ fn endpoint_relation_walk_charges_branch_copies_and_nested_sets() {
     let run = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         let mut memo = HashSet::new();
-        walk_endpoint_relation_domains(
-            ctx,
-            vec![choices.clone()],
-            &assignments,
-            vec![None],
-            &constraints,
-            2,
-            &budget,
-            &mut memo,
-            None,
-            Some(&[true]),
-            None,
-            None,
-            None,
-            &mut |_, _| Ok(false),
-        )
+        walk_endpoint_relation_domains(ctx, crate::solve::mesh_quotient::WalkEndpointRelationDomainsInputs { domains: vec![choices.clone()], face_assignments: &assignments, assigned: vec![None], constraints: &constraints, point_count: 2, budget: &budget, state_memo: &mut memo, candidate_gauge: None, priority_edges: Some(&[true]), partial_solution_valid: None, coordinate_domains: None, coordinate_budget: None, evaluate: &mut |_, _| Ok(false) })
     };
     assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
     let mut refused = HashSet::new();
@@ -12679,17 +12320,7 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
     }
 
     let MeshSolve::Solved((topology, point_assignment)) =
-        resolve_singleton_mesh_endpoint_candidates(
-            &ctx,
-            &edge_rows,
-            &vertex_points,
-            &edge_candidates,
-            &assignments,
-            &port_identities,
-            None,
-            &budget,
-            None,
-        )
+        resolve_singleton_mesh_endpoint_candidates(&ctx, crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_candidates: &edge_candidates, assignments: &assignments, port_identities: &port_identities, edge_direction_evidence: None, budget: &budget, candidate_gauge: None })
         .expect("service resource budget")
         .expect("singleton path applies")
     else {
@@ -12729,17 +12360,7 @@ fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
     ]];
 
     let MeshSolve::Solved((topology, point_assignment)) =
-        resolve_singleton_mesh_endpoint_candidates(
-            &ctx,
-            &edge_rows,
-            &vertex_points,
-            &edge_candidates,
-            &assignments,
-            &port_identities,
-            None,
-            &budget,
-            None,
-        )
+        resolve_singleton_mesh_endpoint_candidates(&ctx, crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_candidates: &edge_candidates, assignments: &assignments, port_identities: &port_identities, edge_direction_evidence: None, budget: &budget, candidate_gauge: None })
         .expect("service resource budget")
         .expect("endpoint filtering should leave one face assignment")
     else {
@@ -12771,17 +12392,7 @@ fn singleton_mesh_path_handles_closed_endpoint_pairs() {
     let port_identities = vec![[0, 0]];
 
     let MeshSolve::Solved((topology, point_assignment)) =
-        resolve_singleton_mesh_endpoint_candidates(
-            &ctx,
-            &edge_rows,
-            &vertex_points,
-            &edge_candidates,
-            &assignments,
-            &port_identities,
-            None,
-            &budget,
-            None,
-        )
+        resolve_singleton_mesh_endpoint_candidates(&ctx, crate::solve::mesh_quotient::ResolveSingletonMeshEndpointCandidatesInputs { edge_rows: &edge_rows, vertex_points: &vertex_points, edge_candidates: &edge_candidates, assignments: &assignments, port_identities: &port_identities, edge_direction_evidence: None, budget: &budget, candidate_gauge: None })
         .expect("service resource budget")
         .expect("closed endpoint pair should use a direction gauge")
     else {

@@ -93,19 +93,7 @@ fn decode_over_routes(
         let stated = refusal.note_count();
         let output = (route.decode)(ctx, &scan, refusal)?;
         if let Some(out) = output {
-            return finish_decode(
-                ctx,
-                &scan,
-                &matched,
-                out.ir,
-                out.report,
-                out.annotations,
-                out.unknowns,
-                out.admitted_model_entities,
-                route.standard_face_population,
-                &fell_through,
-                refusal,
-            );
+            return finish_decode(ctx, crate::decode::FinishDecodeInputs { scan: &scan, matched: &matched, ir: out.ir, report: out.report, annotations: out.annotations, unknowns: out.unknowns, admitted_model_entities: out.admitted_model_entities, standard_face_population: route.standard_face_population, fell_through: &fell_through, refusal });
         }
         let refused = refusal.note_count() - stated;
         if refused > 0 {
@@ -126,19 +114,7 @@ fn decode_over_routes(
 
     let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
     let report = build_container_report(ctx, &scan)?;
-    finish_decode(
-        ctx,
-        &scan,
-        &matched,
-        ir,
-        report,
-        annotations,
-        unknowns,
-        0,
-        false,
-        &fell_through,
-        refusal,
-    )
+    finish_decode(ctx, crate::decode::FinishDecodeInputs { scan: &scan, matched: &matched, ir, report, annotations, unknowns, admitted_model_entities: 0, standard_face_population: false, fell_through: &fell_through, refusal })
 }
 
 #[derive(Default)]
@@ -190,20 +166,22 @@ fn incoming_entity_incidence_counts<'a>(
 }
 
 // Keep the single classified match explicit beside the independently built decode artifacts.
-#[allow(clippy::too_many_arguments)]
-fn finish_decode(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-    matched: &DialectMatch,
-    mut ir: CadIr,
-    mut report: DecodeBody,
-    mut annotations: Annotations,
-    unknowns: Vec<UnknownRecord>,
-    mut admitted_model_entities: u64,
-    standard_face_population: bool,
-    fell_through: &[String],
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Decoded, CodecError> {
+struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
+scan: &'input0 ContainerScan<'input0>,
+matched: &'input1 DialectMatch,
+ir: CadIr,
+report: DecodeBody,
+annotations: Annotations,
+unknowns: Vec<UnknownRecord>,
+admitted_model_entities: u64,
+standard_face_population: bool,
+fell_through: &'input2 [String],
+refusal: &'input3 mut crate::nurbs::LaneRefusals
+}
+
+fn finish_decode(ctx : &DecodeContext<'_>, inputs: FinishDecodeInputs<'_, '_, '_, '_>) -> Result<Decoded, CodecError> {
+let FinishDecodeInputs { scan, matched, mut ir, mut report, mut annotations, unknowns, mut admitted_model_entities, standard_face_population, fell_through, refusal } = inputs;
+
     // Drain before the first fallible step: every refusal a route stated is in
     // the `report` value. The `Ok` route returns that value, so the notes reach
     // the caller. The `Err` route below drops the value and returns the bare

@@ -46,17 +46,7 @@ fn rational_arc_pcurve(
     angle_range: [f64; 2],
 ) -> Option<B5Pcurve> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::rational_arc_pcurve(
-            ctx,
-            record,
-            surface,
-            center,
-            reference_x,
-            reference_y,
-            radius,
-            parameter_range,
-            angle_range,
-        )
+        super::super::rational_arc_pcurve(ctx, crate::families::b5::graph::RationalArcPcurveInputs { record, surface, center, reference_x, reference_y, radius, parameter_range, angle_range })
     })
     .expect("service budget")
 }

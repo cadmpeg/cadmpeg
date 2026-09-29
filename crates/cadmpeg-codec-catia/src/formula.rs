@@ -1466,12 +1466,10 @@ impl FormulaParameterType {
 }
 
 #[derive(Clone)]
-// Keep typed source payloads inline without an allocation for each admitted record.
-#[allow(clippy::large_enum_variant)]
 enum FormulaParameterRole {
     Input,
     FormulaOutput {
-        fallback: Option<(DesignParameter, FormulaParameterType)>,
+        fallback: Option<Box<(DesignParameter, FormulaParameterType)>>,
     },
 }
 
@@ -1613,10 +1611,10 @@ fn merge_formula_parameter_candidate(
             if !existing.role.is_formula_output() && candidate.role.is_formula_output() =>
         {
             candidate.role = FormulaParameterRole::FormulaOutput {
-                fallback: Some((
+                fallback: Some(Box::new((
                     copy_design_parameter(ctx, &existing.parameter)?,
                     existing.parameter_type,
-                )),
+                ))),
             };
             let key = candidate
                 .parameter
@@ -1628,7 +1626,7 @@ fn merge_formula_parameter_candidate(
             if existing.role.is_formula_output() && !candidate.role.is_formula_output() =>
         {
             if let FormulaParameterRole::FormulaOutput { fallback } = &mut existing.role {
-                fallback.get_or_insert((candidate.parameter, candidate.parameter_type));
+                fallback.get_or_insert_with(|| Box::new((candidate.parameter, candidate.parameter_type)));
             }
         }
         Some(_) => {}
@@ -1903,12 +1901,13 @@ fn formula_parameter_candidate_accepts_input(
 
 fn demote_formula_output(candidate: &mut FormulaParameterCandidate) -> bool {
     let FormulaParameterRole::FormulaOutput {
-        fallback: Some((input, parameter_type)),
+        fallback: Some(input),
     } = std::mem::replace(&mut candidate.role, FormulaParameterRole::Input)
     else {
         candidate.role = FormulaParameterRole::Input;
         return false;
     };
+    let (input, parameter_type) = *input;
     candidate.parameter = input;
     candidate.parameter_type = parameter_type;
     true

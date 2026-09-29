@@ -1231,16 +1231,15 @@ struct E5OccurrenceIntersectionSide {
 }
 
 /// Boundary lowering plan built by [`plan_e5_boundary`].
-#[allow(clippy::struct_field_names)]
 struct E5BoundaryPlan<'a> {
     faces: Vec<E5FacePlan<'a>>,
-    pcurve_plan: BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
+    pcurves: BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
     /// Whether each native pcurve occurrence runs opposite to its edge's
     /// stored endpoint order.
     pcurve_use_reversed: BTreeMap<(u32, usize), bool>,
-    edge_curve_plan: BTreeMap<u32, (CurveGeometry, [f64; 2])>,
-    surface_curve_plan: BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
-    intersection_plan: BTreeMap<u32, IntcurveSupportContext>,
+    edge_curves: BTreeMap<u32, (CurveGeometry, [f64; 2])>,
+    surface_curves: BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
+    intersections: BTreeMap<u32, IntcurveSupportContext>,
 }
 
 struct E5FacePlan<'a> {
@@ -1381,7 +1380,7 @@ fn transfer_e5_topology(
         annotations,
         topology,
         &surface_for_ref,
-        (&boundary.intersection_plan, &boundary.surface_curve_plan),
+        (&boundary.intersections, &boundary.surface_curves),
         unused_surfaces,
     )?;
 
@@ -1405,24 +1404,13 @@ fn transfer_e5_topology(
             "catia_e5_transfer_edge_ids",
         )?;
     }
-    if let Err(error) = emit_e5_curves_and_edges(
-        ctx,
-        ir,
-        annotations,
-        topology,
-        &vertex_for_ref,
-        &edge_ids,
-        &boundary.edge_curve_plan,
-        &boundary.intersection_plan,
-        &boundary.surface_curve_plan,
-        admission,
-    ) {
+    if let Err(error) = emit_e5_curves_and_edges(ctx, crate::families::e5::decode::EmitE5CurvesAndEdgesInputs { ir, annotations, topology, vertex_for_ref: &vertex_for_ref, edge_ids: &edge_ids, edge_curves: &boundary.edge_curves, intersections: &boundary.intersections, surface_curves: &boundary.surface_curves, admission }) {
         return match error {
             cadmpeg_core::CodecError::ResourceLimit(_) => Err(error),
             _ => Ok(false),
         };
     }
-    if let Err(error) = emit_e5_pcurves(ctx, ir, annotations, &boundary.pcurve_plan, admission) {
+    if let Err(error) = emit_e5_pcurves(ctx, ir, annotations, &boundary.pcurves, admission) {
         return match error {
             cadmpeg_core::CodecError::ResourceLimit(_) => Err(error),
             _ => Ok(false),
@@ -1434,18 +1422,7 @@ fn transfer_e5_topology(
             _ => Ok(false),
         };
     }
-    if !emit_e5_faces_loops_coedges(
-        ctx,
-        ir,
-        annotations,
-        topology,
-        &surface_for_ref,
-        &face_shell,
-        &edge_ids,
-        &vertex_for_ref,
-        &boundary,
-        admission,
-    )? {
+    if !emit_e5_faces_loops_coedges(ctx, crate::families::e5::decode::EmitE5FacesLoopsCoedgesInputs { ir, annotations, topology, surface_for_ref: &surface_for_ref, face_shell: &face_shell, edge_ids: &edge_ids, vertex_for_ref: &vertex_for_ref, boundary: &boundary, admission })? {
         return Ok(false);
     }
     Ok(true)
@@ -1453,7 +1430,6 @@ fn transfer_e5_topology(
 
 /// Lowers every face loop to boundary curves, pcurves, and intersection contexts,
 /// or returns `None` when any binding fails admission.
-#[allow(clippy::question_mark)]
 fn plan_e5_boundary<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &'a crate::families::e5::graph::E5Topology,
@@ -1479,10 +1455,10 @@ fn plan_e5_boundary<'a>(
             "catia_e5_boundary_face_plans",
         )?;
     }
-    let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
+    let mut pcurves = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
     let mut pcurve_use_reversed = BTreeMap::<(u32, usize), bool>::new();
-    let mut edge_curve_plan = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
-    let mut surface_curve_plan = BTreeMap::<u32, (SurfaceId, PcurveGeometry, [f64; 2])>::new();
+    let mut edge_curves = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
+    let mut surface_curves = BTreeMap::<u32, (SurfaceId, PcurveGeometry, [f64; 2])>::new();
     let mut occurrence_intersection_sides =
         BTreeMap::<u32, Vec<E5OccurrenceIntersectionSide>>::new();
     for face in &topology.faces {
@@ -1627,38 +1603,38 @@ fn plan_e5_boundary<'a>(
                 }
                 if let Some((curve, curve_range)) = lifted_curve {
                     if !support.is_intersection() {
-                        if let Some(existing) = edge_curve_plan.get(&edge_ref) {
+                        if let Some(existing) = edge_curves.get(&edge_ref) {
                             if existing != &(curve, curve_range) {
                                 return Ok(None);
                             }
                         } else {
                             ctx.insert_btree_map(
-                                &mut edge_curve_plan,
+                                &mut edge_curves,
                                 edge_ref,
                                 (curve, curve_range),
                                 "catia_e5_edge_curve_plan",
                             )?;
                         }
                     }
-                } else if !support.is_intersection() && !surface_curve_plan.contains_key(&edge_ref)
+                } else if !support.is_intersection() && !surface_curves.contains_key(&edge_ref)
                 {
                     let surface_id = surface_for_ref[&face.surface]
                         .0
                         .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
                     ctx.insert_btree_map(
-                        &mut surface_curve_plan,
+                        &mut surface_curves,
                         edge_ref,
                         (surface_id, oriented_pcurve, range),
                         "catia_e5_surface_curve_plan",
                     )?;
                 }
-                if let Some((existing, existing_range)) = pcurve_plan.get(&pcurve_ref) {
+                if let Some((existing, existing_range)) = pcurves.get(&pcurve_ref) {
                     if existing != &geometry || existing_range != &range {
                         return Ok(None);
                     }
                 } else {
                     ctx.insert_btree_map(
-                        &mut pcurve_plan,
+                        &mut pcurves,
                         pcurve_ref,
                         (geometry, range),
                         "catia_e5_pcurve_plan",
@@ -1780,7 +1756,7 @@ fn plan_e5_boundary<'a>(
         }
     }
 
-    let mut intersection_plan = BTreeMap::<u32, IntcurveSupportContext>::new();
+    let mut intersections = BTreeMap::<u32, IntcurveSupportContext>::new();
     for (&edge_ref, sides) in &intersection_sides {
         let Some(edge) = topology.edges.get(&edge_ref) else {
             return Ok(None);
@@ -1807,7 +1783,7 @@ fn plan_e5_boundary<'a>(
             continue;
         }
         ctx.insert_btree_map(
-            &mut edge_curve_plan,
+            &mut edge_curves,
             edge_ref,
             (copy_e5_curve(ctx, &left.curve)?, left.curve_range),
             "catia_e5_edge_curve_plan",
@@ -1834,14 +1810,14 @@ fn plan_e5_boundary<'a>(
             return Ok(None);
         };
         ctx.insert_btree_map(
-            &mut intersection_plan,
+            &mut intersections,
             edge_ref,
             context,
             "catia_e5_intersection_plan",
         )?;
     }
     for (&edge_ref, sides) in &occurrence_intersection_sides {
-        if intersection_plan.contains_key(&edge_ref) {
+        if intersections.contains_key(&edge_ref) {
             continue;
         }
         let Some(edge) = topology.edges.get(&edge_ref) else {
@@ -1857,7 +1833,7 @@ fn plan_e5_boundary<'a>(
             e5_support_occurrence_intersection_context(ctx, support_range, solved_range, sides)?
         else {
             if let [side] = sides.as_slice() {
-                if !surface_curve_plan.contains_key(&edge_ref) {
+                if !surface_curves.contains_key(&edge_ref) {
                     let surface_id = side
                         .surface
                         .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
@@ -1865,7 +1841,7 @@ fn plan_e5_boundary<'a>(
                         .pcurve
                         .try_clone_for_decode(ctx, "catia_e5_surface_curve_pcurve")?;
                     ctx.insert_btree_map(
-                        &mut surface_curve_plan,
+                        &mut surface_curves,
                         edge_ref,
                         (surface_id, pcurve, side.pcurve_range),
                         "catia_e5_surface_curve_plan",
@@ -1875,7 +1851,7 @@ fn plan_e5_boundary<'a>(
             continue;
         };
         ctx.insert_btree_map(
-            &mut edge_curve_plan,
+            &mut edge_curves,
             edge_ref,
             cache
                 .map(|(curve, range)| {
@@ -1889,27 +1865,27 @@ fn plan_e5_boundary<'a>(
             "catia_e5_edge_curve_plan",
         )?;
         ctx.insert_btree_map(
-            &mut intersection_plan,
+            &mut intersections,
             edge_ref,
             context,
             "catia_e5_intersection_plan",
         )?;
     }
 
-    for (&edge_ref, (_, _, range)) in &surface_curve_plan {
-        ctx.admit_btree_entry(&edge_curve_plan, &edge_ref, "catia_e5_edge_curve_plan")?;
-        edge_curve_plan.entry(edge_ref).or_insert((
+    for (&edge_ref, (_, _, range)) in &surface_curves {
+        ctx.admit_btree_entry(&edge_curves, &edge_ref, "catia_e5_edge_curve_plan")?;
+        edge_curves.entry(edge_ref).or_insert((
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             *range,
         ));
     }
     Ok(Some(E5BoundaryPlan {
         faces,
-        pcurve_plan,
+        pcurves,
         pcurve_use_reversed,
-        edge_curve_plan,
-        surface_curve_plan,
-        intersection_plan,
+        edge_curves,
+        surface_curves,
+        intersections,
     }))
 }
 
@@ -1920,7 +1896,7 @@ fn prune_e5_unused_surfaces(
     annotations: &mut AnnotationBuilder,
     topology: &crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
-    (intersection_plan, surface_curve_plan): E5CurvePlans<'_>,
+    (intersections, surface_curves): E5CurvePlans<'_>,
     unused_surfaces: &mut Vec<Surface>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut used_surfaces = HashSet::new();
@@ -1929,14 +1905,14 @@ fn prune_e5_unused_surfaces(
         .iter()
         .filter_map(|face| surface_for_ref.get(&face.surface))
         .map(|(id, _)| id.as_str())
-        .chain(intersection_plan.values().flat_map(|context| {
+        .chain(intersections.values().flat_map(|context| {
             context
                 .sides()
                 .iter()
                 .filter_map(|side| side.surface.as_ref().map(SurfaceId::as_str))
         }))
         .chain(
-            surface_curve_plan
+            surface_curves
                 .values()
                 .map(|(surface, _, _)| surface.as_str()),
         )
@@ -2001,21 +1977,23 @@ fn resolve_e5_ownership(
 }
 
 /// Emits the boundary curve, intersection/surface-curve procedural, and edge layers.
-#[allow(clippy::too_many_arguments)]
-fn emit_e5_curves_and_edges(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    topology: &crate::families::e5::graph::E5Topology,
-    vertex_for_ref: &HashMap<u32, VertexId>,
-    edge_ids: &HashMap<u32, EdgeId>,
-    edge_curve_plan: &BTreeMap<u32, (CurveGeometry, [f64; 2])>,
-    intersection_plan: &BTreeMap<u32, IntcurveSupportContext>,
-    surface_curve_plan: &BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
-    admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+struct EmitE5CurvesAndEdgesInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10> {
+ir: &'input0 mut CadIr,
+annotations: &'input1 mut AnnotationBuilder,
+topology: &'input2 crate::families::e5::graph::E5Topology,
+vertex_for_ref: &'input3 HashMap<u32, VertexId>,
+edge_ids: &'input4 HashMap<u32, EdgeId>,
+edge_curves: &'input5 BTreeMap<u32, (CurveGeometry, [f64; 2])>,
+intersections: &'input6 BTreeMap<u32, IntcurveSupportContext>,
+surface_curves: &'input7 BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
+admission: &'input10 mut FamilyEntityAdmission<'input8, 'input9>
+}
+
+fn emit_e5_curves_and_edges(ctx : &cadmpeg_core::decode::DecodeContext<'_>, inputs: EmitE5CurvesAndEdgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), cadmpeg_core::CodecError> {
+let EmitE5CurvesAndEdgesInputs { ir, annotations, topology, vertex_for_ref, edge_ids, edge_curves, intersections, surface_curves, admission } = inputs;
+
     let mut edge_curve_ids = HashMap::new();
-    for record_id in edge_curve_plan.keys().copied() {
+    for record_id in edge_curves.keys().copied() {
         ctx.insert_hash_map(
             &mut edge_curve_ids,
             record_id,
@@ -2029,7 +2007,7 @@ fn emit_e5_curves_and_edges(
             "catia_e5_emitted_curve_ids",
         )?;
     }
-    for (&record_id, (geometry, _)) in edge_curve_plan {
+    for (&record_id, (geometry, _)) in edge_curves {
         let id =
             edge_curve_ids[&record_id].try_clone_for_decode(ctx, "catia_e5_curve_record_id")?;
         annotate(
@@ -2055,7 +2033,7 @@ fn emit_e5_curves_and_edges(
             source_object: None,
         });
     }
-    for (&record_id, context) in intersection_plan {
+    for (&record_id, context) in intersections {
         let curve = edge_curve_ids[&record_id]
             .try_clone_for_decode(ctx, "catia_e5_intersection_curve_id")?;
         let id = crate::resource::compose_u32_id(
@@ -2109,8 +2087,8 @@ fn emit_e5_curves_and_edges(
             ),
         )?;
     }
-    for (&record_id, (surface, pcurve, range)) in surface_curve_plan {
-        if intersection_plan.contains_key(&record_id) {
+    for (&record_id, (surface, pcurve, range)) in surface_curves {
+        if intersections.contains_key(&record_id) {
             continue;
         }
         let curve =
@@ -2230,7 +2208,7 @@ fn emit_e5_curves_and_edges(
                     .get(&record_id)
                     .map(|id| id.try_clone_for_decode(ctx, "catia_e5_edge_carrier_id"))
                     .transpose()?,
-                edge_curve_plan.get(&record_id).map(|(_, range)| *range),
+                edge_curves.get(&record_id).map(|(_, range)| *range),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
             start: vertex_for_ref[&edge.start_vertex]
@@ -2248,10 +2226,10 @@ fn emit_e5_pcurves(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for (&record_id, (geometry, range)) in pcurve_plan {
+    for (&record_id, (geometry, range)) in pcurves {
         let id = crate::resource::compose_u32_id(
             ctx,
             &cadmpeg_ir::identity_namespace!("catia", "e5", "pcurve"),
@@ -2473,19 +2451,21 @@ fn emit_e5_bodies(
 ///
 /// Returns `false` when the lowering plan is not total for a serialized loop
 /// member.
-#[allow(clippy::too_many_arguments)]
-fn emit_e5_faces_loops_coedges(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    topology: &crate::families::e5::graph::E5Topology,
-    surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
-    face_shell: &HashMap<u32, ShellId>,
-    edge_ids: &HashMap<u32, EdgeId>,
-    vertex_for_ref: &HashMap<u32, VertexId>,
-    boundary: &E5BoundaryPlan<'_>,
-    admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<bool, cadmpeg_core::CodecError> {
+struct EmitE5FacesLoopsCoedgesInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11, 'input12> {
+ir: &'input0 mut CadIr,
+annotations: &'input1 mut AnnotationBuilder,
+topology: &'input2 crate::families::e5::graph::E5Topology,
+surface_for_ref: &'input3 HashMap<u32, (SurfaceId, &'input4 crate::families::e5::records::E5Surface)>,
+face_shell: &'input5 HashMap<u32, ShellId>,
+edge_ids: &'input6 HashMap<u32, EdgeId>,
+vertex_for_ref: &'input7 HashMap<u32, VertexId>,
+boundary: &'input9 E5BoundaryPlan<'input8>,
+admission: &'input12 mut FamilyEntityAdmission<'input10, 'input11>
+}
+
+fn emit_e5_faces_loops_coedges(ctx : &cadmpeg_core::decode::DecodeContext<'_>, inputs: EmitE5FacesLoopsCoedgesInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<bool, cadmpeg_core::CodecError> {
+let EmitE5FacesLoopsCoedgesInputs { ir, annotations, topology, surface_for_ref, face_shell, edge_ids, vertex_for_ref, boundary, admission } = inputs;
+
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for face_plan in &boundary.faces {
         let face = face_plan.source;
@@ -2633,7 +2613,7 @@ fn emit_e5_faces_loops_coedges(
                 else {
                     return Ok(false);
                 };
-                let Some((_, range)) = boundary.pcurve_plan.get(&pcurve_ref) else {
+                let Some((_, range)) = boundary.pcurves.get(&pcurve_ref) else {
                     return Ok(false);
                 };
                 let pcurve_parameter_range =
@@ -3187,17 +3167,7 @@ fn e5_boundary_curve(
             let mut choices = [None, None];
             for (index, axis) in [axis, axis.scale(-1.0)].into_iter().enumerate() {
                 let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                let range = match circle_parameter_range_from_surface_branch(
-                    surface,
-                    center,
-                    radius,
-                    axis,
-                    ref_direction,
-                    endpoints[0],
-                    endpoints[1],
-                    start_uv,
-                    span_direction,
-                ) {
+                let range = match circle_parameter_range_from_surface_branch(crate::assemble::CircleParameterRangeFromSurfaceBranchInputs { surface, center, radius, axis, ref_direction, start: endpoints[0], end: endpoints[1], pcurve_origin: start_uv, pcurve_direction: span_direction }) {
                     Ok(Some(range)) => range,
                     Ok(None) => continue,
                     Err(limit) => return Some(Err(limit.into())),
@@ -4533,8 +4503,8 @@ mod route_tests {
         })
         .expect("service resource budget")
         .expect("boundary plan");
-        assert!(plan.intersection_plan.is_empty());
-        assert!(plan.edge_curve_plan.is_empty());
+        assert!(plan.intersections.is_empty());
+        assert!(plan.edge_curves.is_empty());
     }
 
     #[test]
@@ -4657,9 +4627,9 @@ mod route_tests {
         })
         .expect("service resource budget")
         .expect("boundary plan");
-        assert!(plan.intersection_plan.is_empty());
-        assert!(!plan.surface_curve_plan.contains_key(&200));
-        assert!(!plan.edge_curve_plan.contains_key(&200));
+        assert!(plan.intersections.is_empty());
+        assert!(!plan.surface_curves.contains_key(&200));
+        assert!(!plan.edge_curves.contains_key(&200));
     }
 
     #[test]

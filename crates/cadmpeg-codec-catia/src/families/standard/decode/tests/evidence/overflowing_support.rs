@@ -43,15 +43,7 @@ fn overflowing_cone_support(parameter_range: [f64; 2]) -> StandardEdgeSupport {
 fn a_native_circle_range_reads_from_the_finite_support_when_its_partner_overflows() {
     let native = overflowing_cone_support([0.0, 1.5 * std::f64::consts::PI]);
     assert_eq!(
-        native_support_circle_param_range(
-            &native,
-            Point3::new(0.0, 0.0, 0.0),
-            1.0,
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, -1.0, 0.0),
-        )
+        native_support_circle_param_range(&native, Point3::new(0.0, 0.0, 0.0), 1.0, Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, -1.0, 0.0))
         .expect("evaluator allocation succeeds"),
         Some([0.0, 1.5 * std::f64::consts::PI])
     );

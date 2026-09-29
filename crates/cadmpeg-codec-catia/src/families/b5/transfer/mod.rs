@@ -81,13 +81,13 @@ struct RevolutionPlan {
     parameter_interval: [f64; 2],
 }
 
-#[allow(clippy::large_enum_variant)]
+
 enum SurfaceProcedure {
     Extrusion(Box<ResolvedExtrusionSurface>),
     Revolution(RevolutionPlan),
     RollingBall {
         carrier_object_id: u32,
-        definition: ProceduralSurfaceDefinition,
+        definition: Box<ProceduralSurfaceDefinition>,
     },
 }
 
@@ -1114,7 +1114,7 @@ pub(in crate::families) fn resolved_surface_procedural_definition(
         Some(SurfaceProcedure::RollingBall {
             carrier_object_id,
             definition,
-        }) => Some((carrier_object_id, definition)),
+        }) => Some((carrier_object_id, *definition)),
         Some(SurfaceProcedure::Extrusion(_) | SurfaceProcedure::Revolution(_)) | None => None,
     })
 }

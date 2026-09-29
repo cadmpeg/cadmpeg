@@ -1713,9 +1713,9 @@ fn copy_standard_procedure(
             source,
         } => StandardSurfaceProcedure::RollingBall {
             carrier_object_id: *carrier_object_id,
-            definition: crate::families::b5::transfer::surfaces::copy_rolling_ball_definition(
+            definition: Box::new(crate::families::b5::transfer::surfaces::copy_rolling_ball_definition(
                 ctx, definition,
-            )?,
+            )?),
             source: *source,
         },
         StandardSurfaceProcedure::Offset {
@@ -1857,7 +1857,7 @@ fn associate_standard_freeform_e5_rolling_ball_jets(
             *tag,
             StandardSurfaceProcedure::RollingBall {
                 carrier_object_id: jet.record_id,
-                definition,
+                definition: Box::new(definition),
                 source: StandardRollingBallSource::E5D8,
             },
             "catia_e5_rolling_ball_associations",
@@ -2754,7 +2754,7 @@ fn try_decode_standard_population(
                     StandardRollingBallSource::E5D8 => "e5_0d_03_d8",
                 },
                 carrier_object_id,
-                definition,
+                *definition,
                 Exactness::ByteExact,
             ),
             StandardSurfaceProcedure::Offset {
@@ -3085,28 +3085,7 @@ fn try_decode_standard_population(
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
     let topology_budget = ctx.work_budget(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS as u64);
-    let topology_result = attach_standard_topology(
-        ctx,
-        &mut topology_ir,
-        &mut topology_annotations,
-        &face_bindings,
-        &records,
-        &face_bounds,
-        standard_spine,
-        edge_table_form,
-        brep,
-        selection.map(|selection| selection.supports.as_slice()),
-        &scan.data,
-        selection.is_none_or(|selection| selection.vertex_roster_compatible),
-        &object_evidence.edge_owner_faces,
-        &object_evidence.edge_supports,
-        &object_evidence.limit_curves,
-        &topology_budget,
-        &mut topology_diagnostics,
-        &mut bound_standard_limit_curve_count,
-        refusal,
-        &mut admission,
-    )
+    let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
     .and_then(|()| {
         neutral_model_is_admissible(&mut topology_ir, &unknowns)?
             .then_some(())
@@ -3645,11 +3624,10 @@ struct StandardEdgeSupport {
 }
 
 #[derive(Clone, PartialEq)]
-#[allow(clippy::large_enum_variant)]
 pub(super) enum StandardSurfaceProcedure {
     RollingBall {
         carrier_object_id: u32,
-        definition: ProceduralSurfaceDefinition,
+        definition: Box<ProceduralSurfaceDefinition>,
         source: StandardRollingBallSource,
     },
     Offset {
@@ -4174,7 +4152,7 @@ pub(super) fn standard_object_evidence_from_streams(
                     } => {
                         StandardSurfaceEvidence::Procedure(StandardSurfaceProcedure::RollingBall {
                             carrier_object_id,
-                            definition: *definition,
+                            definition: Box::new(*definition),
                             source: StandardRollingBallSource::ObjectStreamA8,
                         })
                     }
@@ -4404,7 +4382,7 @@ fn standard_surface_evidence(
     {
         Some(StandardSurfaceProcedure::RollingBall {
             carrier_object_id,
-            definition,
+            definition: Box::new(definition),
             source: StandardRollingBallSource::ObjectStreamA8,
         })
     } else {
@@ -5217,29 +5195,31 @@ fn resolve_standard_limit_curve_binding(
     Some(binding)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn attach_standard_topology(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    bindings: &[(SurfaceId, bool, usize)],
-    records: &[crate::families::standard::records::StandardSurfaceRecord],
-    face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
-    spine: &[u8],
-    edge_table_form: EdgeTableForm,
-    brep: &[u8],
-    support_override: Option<&[crate::families::standard::records::StandardCurveSupport]>,
-    source: &[u8],
-    use_vertex_roster: bool,
-    native_edge_faces: &HashMap<u32, HashSet<u32>>,
-    native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
-    limit_curves: &[NurbsCurve],
-    work_budget: &WorkBudget<'_>,
-    diagnostics: &mut StandardTopologyDiagnostics,
-    bound_limit_curve_count: &mut usize,
-    refusal: &mut crate::nurbs::LaneRefusals,
-    admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<(), StandardTopologyError> {
+struct AttachStandardTopologyInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11, 'input12, 'input13, 'input14, 'input15, 'input16, 'input17, 'input18, 'input19> {
+ir: &'input0 mut CadIr,
+annotations: &'input1 mut AnnotationBuilder,
+bindings: &'input2 [(SurfaceId, bool, usize)],
+records: &'input3 [crate::families::standard::records::StandardSurfaceRecord],
+face_bounds: &'input4 [Option<crate::families::standard::records::StandardFaceBounds>],
+spine: &'input5 [u8],
+edge_table_form: EdgeTableForm,
+brep: &'input6 [u8],
+support_override: Option<&'input7 [crate::families::standard::records::StandardCurveSupport]>,
+source: &'input8 [u8],
+use_vertex_roster: bool,
+native_edge_faces: &'input9 HashMap<u32, HashSet<u32>>,
+native_edge_supports: &'input10 HashMap<u32, StandardEdgeSupport>,
+limit_curves: &'input11 [NurbsCurve],
+work_budget: &'input13 WorkBudget<'input12>,
+diagnostics: &'input14 mut StandardTopologyDiagnostics,
+bound_limit_curve_count: &'input15 mut usize,
+refusal: &'input16 mut crate::nurbs::LaneRefusals,
+admission: &'input19 mut FamilyEntityAdmission<'input17, 'input18>
+}
+
+fn attach_standard_topology(ctx : &DecodeContext<'_>, inputs: AttachStandardTopologyInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), StandardTopologyError> {
+let AttachStandardTopologyInputs { ir, annotations, bindings, records, face_bounds, spine, edge_table_form, brep, support_override, source, use_vertex_roster, native_edge_faces, native_edge_supports, limit_curves, work_budget, diagnostics, bound_limit_curve_count, refusal, admission } = inputs;
+
     let face_count = ir.model.faces.len();
     let edge_count = if edge_table_form == EdgeTableForm::FbbOnly {
         crate::families::standard::fbb::fbb_only_edge_count(ctx, spine)
@@ -6660,28 +6640,12 @@ fn attach_standard_topology(
                 )?;
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-                let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
-                    ctx,
-                    spine,
-                    selected_edge_faces,
-                    &solver_options,
-                    selected_edge_classes,
-                    &edge_geometry,
-                    &edge_identity_evidence,
-                    &edge_direction_evidence,
-                    has_open_face_domains,
-                    &partial_constraint_edges,
-                    &partial_constraint_edges,
-                    Some(&partial_constraint_edges),
-                    None,
-                    &preferred_budget,
-                    |pairs| {
+                let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(ctx, crate::solve::mesh_quotient::ParseStandardMeshCandidateOutcomeInputs { bytes: spine, edge_faces: selected_edge_faces, edge_candidates: &solver_options, edge_classes: selected_edge_classes, edge_geometry: &edge_geometry, edge_identity_evidence: &edge_identity_evidence, edge_direction_evidence: &edge_direction_evidence, global_handle_ports: has_open_face_domains, partial_constraint_edges: &partial_constraint_edges, preferred_assignment_edges: &partial_constraint_edges, priority_edges: Some(&partial_constraint_edges), assignment_dependencies: None, budget: &preferred_budget, partial_solution_valid: |pairs| {
                         endpoint_pairs_on_selected_faces(pairs)
                             && line_constraint
                                 .edge_pairs(pairs)
                                 .is_some_and(|pairs| line_constraint.is_valid(&pairs))
-                    },
-                    |pairs| {
+                    }, complete_solution_valid: |pairs| {
                         endpoint_pairs_on_selected_faces(pairs)
                             && line_constraint
                                 .edge_pairs(pairs)
@@ -6695,8 +6659,7 @@ fn attach_standard_topology(
                                 &solver_options,
                                 pairs,
                             )
-                    },
-                )?;
+                    } })?;
                 if !solve_budget.charge_by(preferred_budget.consumed()) {
                     return Ok(mesh_quotient::MeshSolve::Failed(
                         mesh_quotient::MeshCandidateFailure::Exhausted(
@@ -6714,34 +6677,17 @@ fn attach_standard_topology(
                     // an invalid endpoint relation in both searches.
                     let fallback_budget =
                         solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-                    let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(
-                        ctx,
-                        spine,
-                        selected_edge_faces,
-                        &solver_options,
-                        selected_edge_classes,
-                        &edge_geometry,
-                        &edge_identity_evidence,
-                        &edge_direction_evidence,
-                        has_open_face_domains,
-                        &partial_constraint_edges,
-                        &partial_constraint_edges,
-                        Some(&partial_constraint_edges),
-                        None,
-                        &fallback_budget,
-                        |pairs| {
+                    let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(ctx, crate::solve::mesh_quotient::ParseStandardMeshCandidateOutcomeInputs { bytes: spine, edge_faces: selected_edge_faces, edge_candidates: &solver_options, edge_classes: selected_edge_classes, edge_geometry: &edge_geometry, edge_identity_evidence: &edge_identity_evidence, edge_direction_evidence: &edge_direction_evidence, global_handle_ports: has_open_face_domains, partial_constraint_edges: &partial_constraint_edges, preferred_assignment_edges: &partial_constraint_edges, priority_edges: Some(&partial_constraint_edges), assignment_dependencies: None, budget: &fallback_budget, partial_solution_valid: |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
                                 && line_constraint
                                     .edge_pairs(pairs)
                                     .is_some_and(|pairs| line_constraint.is_simple(&pairs))
-                        },
-                        |pairs| {
+                        }, complete_solution_valid: |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
                                 && line_constraint
                                     .edge_pairs(pairs)
                                     .is_some_and(|pairs| line_constraint.is_simple(&pairs))
-                        },
-                    )?;
+                        } })?;
                     if !solve_budget.charge_by(fallback_budget.consumed()) {
                         return Ok(mesh_quotient::MeshSolve::Failed(
                             mesh_quotient::MeshCandidateFailure::Exhausted(
@@ -6920,23 +6866,7 @@ fn attach_standard_topology(
         .iter()
         .filter(|binding| binding.is_some())
         .count();
-    emit_standard_topology(
-        ctx,
-        ir,
-        annotations,
-        bindings,
-        brep,
-        &surface_indices,
-        &supports,
-        &edge_vertices,
-        &point_assignment,
-        &topology,
-        &native_supports_by_row,
-        &resolved_limit_curve_bindings,
-        limit_curves,
-        refusal,
-        admission,
-    )
+    emit_standard_topology(ctx, crate::families::standard::decode::EmitStandardTopologyInputs { ir, annotations, bindings, brep, surface_indices: &surface_indices, supports: &supports, edge_vertices: &edge_vertices, point_assignment: &point_assignment, topology: &topology, native_edge_supports: &native_supports_by_row, limit_curve_bindings: &resolved_limit_curve_bindings, limit_curves, refusal, admission })
     .map_err(|error| match error {
         cadmpeg_core::CodecError::ResourceLimit(_) => StandardTopologyError::Resource(error),
         _ => StandardTopologyError::Semantic(StandardTopologyFailure::InadmissibleNeutralModel),
@@ -6952,7 +6882,6 @@ struct StandardTopologyValidation<'a> {
 
 /// Validates the solved topology against the decoded model, applies body kinds
 /// and face partitioning, and returns the per-edge logical vertex pairs.
-#[allow(clippy::question_mark)]
 fn validate_standard_topology(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -7124,24 +7053,26 @@ fn standard_face_loops(
 }
 
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
-#[allow(clippy::too_many_arguments)]
-fn emit_standard_topology(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    bindings: &[(SurfaceId, bool, usize)],
-    brep: &[u8],
-    surface_indices: &HashMap<SurfaceId, usize>,
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    edge_vertices: &[[usize; 2]],
-    point_assignment: &[usize],
-    topology: &crate::families::standard::topology::StandardTopology,
-    native_edge_supports: &[Option<&StandardEdgeSupport>],
-    limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
-    limit_curves: &[NurbsCurve],
-    refusal: &mut crate::nurbs::LaneRefusals,
-    admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+struct EmitStandardTopologyInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input6, 'input7, 'input8, 'input9, 'input10, 'input11, 'input12, 'input13, 'input14, 'input15, 'input16> {
+ir: &'input0 mut CadIr,
+annotations: &'input1 mut AnnotationBuilder,
+bindings: &'input2 [(SurfaceId, bool, usize)],
+brep: &'input3 [u8],
+surface_indices: &'input4 HashMap<SurfaceId, usize>,
+supports: &'input5 [crate::families::standard::records::StandardCurveSupport],
+edge_vertices: &'input6 [[usize; 2]],
+point_assignment: &'input7 [usize],
+topology: &'input8 crate::families::standard::topology::StandardTopology,
+native_edge_supports: &'input9 [Option<&'input10 StandardEdgeSupport>],
+limit_curve_bindings: &'input11 [Option<StandardLimitCurveBinding>],
+limit_curves: &'input12 [NurbsCurve],
+refusal: &'input13 mut crate::nurbs::LaneRefusals,
+admission: &'input16 mut FamilyEntityAdmission<'input14, 'input15>
+}
+
+fn emit_standard_topology(ctx : &DecodeContext<'_>, inputs: EmitStandardTopologyInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>) -> Result<(), cadmpeg_core::CodecError> {
+let EmitStandardTopologyInputs { ir, annotations, bindings, brep, surface_indices, supports, edge_vertices, point_assignment, topology, native_edge_supports, limit_curve_bindings, limit_curves, refusal, admission } = inputs;
+
     let mut edge_reversed = Vec::new();
     ctx.reserve_vec(
         &mut edge_reversed,
@@ -7169,21 +7100,8 @@ fn emit_standard_topology(
             }
             _ => None,
         };
-        let (curve, param_range) = build_standard_edge_curve(
-            ctx,
-            ir,
-            annotations,
-            bindings,
-            surface_indices,
-            brep,
-            support,
-            [start_point, end_point],
-            native_support,
-            limit_curve_bindings[edge_index]
-                .map(|binding| (&limit_curves[binding.curve], binding.parameter_range)),
-            refusal,
-            admission,
-        )?;
+        let (curve, param_range) = build_standard_edge_curve(ctx, crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs { ir, annotations, bindings, surface_indices, brep, support, points: [start_point, end_point], native_support, limit_curve: limit_curve_bindings[edge_index]
+                .map(|binding| (&limit_curves[binding.curve], binding.parameter_range)), refusal, admission })?;
         let reversed = param_range.is_some_and(|range| range[0] > range[1]);
         edge_reversed.push(reversed);
         let param_range = param_range.map(ordered_range);

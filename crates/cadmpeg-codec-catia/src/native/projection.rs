@@ -255,8 +255,8 @@ pub(crate) fn consolidated_owner_packets(
             *stored_targets = identity_targets
                 .remove(&(source_index, pos))
                 .unwrap_or_default();
-            *owner_chart = owner_charts.remove(&(source_index, pos));
-            *boundary_cycle = boundary_cycles.get(&(source_index, pos)).copied();
+            *owner_chart = owner_charts.remove(&(source_index, pos)).map(Box::new);
+            *boundary_cycle = boundary_cycles.get(&(source_index, pos)).copied().map(Box::new);
         }
         output.push(CatiaConsolidatedOwnerPacket {
                 id: crate::resource::format_usize_id(ctx, "catia:consolidated:owner-packet#", pos, 10, "catia_native_owner_packet_id")?,
@@ -1126,14 +1126,14 @@ pub(crate) fn native_object_graph(
                 .transpose()?,
             owner: roles.owner.map(CatiaObjectOwner::from),
             class: roles.class_ref.map(|class_ref| CatiaObjectClass {
-                class_ref,
-                class_name: None,
-                class_entry: None,
+                ordinal: class_ref,
+                name: None,
+                entry: None,
             }),
             storage: roles.storage_ref.map(|storage_ref| CatiaObjectStorage {
-                storage_ref,
-                storage_record: None,
-                storage_design_object: None,
+                reference: storage_ref,
+                record: None,
+                design_object: None,
             }),
             payload: record.payload().copy_charged(ctx)?,
             repeated_reference_schema_selection: None,
@@ -1159,7 +1159,7 @@ pub(crate) fn native_object_graph(
         let storage_ref = records[index]
             .storage
             .as_ref()
-            .map(|storage| storage.storage_ref);
+            .map(|storage| storage.reference);
         let (storage_record, storage_design_object) =
             resolved_storage_link(ctx, storage_ref, &records, &record_indices)?;
         let references = resolved_payload_references(
@@ -1171,8 +1171,8 @@ pub(crate) fn native_object_graph(
         )?;
         let record = &mut records[index];
         if let Some(storage) = &mut record.storage {
-            storage.storage_record = storage_record;
-            storage.storage_design_object = storage_design_object;
+            storage.record = storage_record;
+            storage.design_object = storage_design_object;
         }
         record.references = references;
     }
