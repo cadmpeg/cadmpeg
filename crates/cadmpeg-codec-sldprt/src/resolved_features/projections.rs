@@ -553,13 +553,25 @@ pub(crate) fn type_display_relation_parameters(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
-    let mut families = HashMap::<cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
+    const OPERATION: &str = "group SLDPRT display relation families";
+    let mut families = HashMap::<&cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
     for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
+        ctx.charge_work(1, OPERATION)?;
         if let Some(Some(parameter)) = ownership.get(&relation.id) {
-            families
-                .entry(parameter.clone())
-                .or_default()
-                .insert(relation.family);
+            if !families.contains_key(parameter) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                families.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            let family_set = families.entry(parameter).or_default();
+            if !family_set.contains(&relation.family) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                family_set.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            family_set.insert(relation.family);
         }
     }
     for parameter in parameters {
