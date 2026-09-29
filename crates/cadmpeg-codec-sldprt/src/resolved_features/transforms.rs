@@ -5,6 +5,7 @@ use super::grid::{quantize, GridCoordinate, GridPoint};
 use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchLocus};
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 const EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
@@ -342,9 +343,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
     }
     let compatible = circles
         .iter()
-        .filter_map(|(center, radius)| {
-            Some(((*center).into(), targets_by_radius.get(radius)?.clone()))
-        })
+        .filter_map(|(center, radius)| Some(((*center).into(), targets_by_radius.get(radius)?)))
         .collect::<HashMap<_, _>>();
     if compatible.len() != circles.len() {
         return Vec::new();
@@ -488,7 +487,7 @@ fn unique_compatible_marker_transform(
             .map(|(point, loci)| {
                 (
                     GridPoint::from(*point),
-                    loci.iter().copied().map(GridPoint::from).collect(),
+                    loci.iter().copied().map(GridPoint::from).collect::<HashSet<_>>(),
                 )
             })
             .collect(),
@@ -499,16 +498,19 @@ fn unique_compatible_marker_transform(
     Some(*transform)
 }
 
-pub(super) fn compatible_marker_transform_candidates(
-    compatible_locus_points: &HashMap<GridPoint, HashSet<GridPoint>>,
-) -> Vec<MarkerTransform> {
+pub(super) fn compatible_marker_transform_candidates<V>(
+    compatible_locus_points: &HashMap<GridPoint, V>,
+) -> Vec<MarkerTransform>
+where
+    V: Borrow<HashSet<GridPoint>>,
+{
     let score = |axes: MarkerTransform| {
         let mut translations = HashMap::<(i64, i64), usize>::new();
         for (marker, loci) in compatible_locus_points {
             let Some(marker) = axes.apply_axes(*marker) else {
                 continue;
             };
-            for locus in loci {
+            for locus in loci.borrow() {
                 let Some(locus) = locus.cells() else {
                     continue;
                 };
