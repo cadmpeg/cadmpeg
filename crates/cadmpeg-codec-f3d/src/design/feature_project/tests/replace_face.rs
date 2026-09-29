@@ -220,8 +220,12 @@ fn replace_face_projects_role_order_and_historical_inputs() {
     .is_none());
 }
 
-#[test]
-fn surface_trim_projects_body_target_and_curve_tool() {
+fn surface_trim_fixture() -> (
+    DesignParameterScope,
+    DesignConstructionOperandGroup,
+    DesignConstructionOperandGroup,
+    DesignBodyRecipeOperand,
+) {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#1200",
         crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
@@ -284,12 +288,19 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         },
     )
     .unwrap();
+    (scope, target_group, tool_group, body)
+}
+
+#[test]
+fn surface_trim_projects_body_target_and_curve_tool() {
+    let (scope, target_group, tool_group, body) = surface_trim_fixture();
     let definition = project_surface_trim(
+        None,
         &scope,
         &[target_group.clone(), tool_group.clone()],
         std::slice::from_ref(&body),
     )
-    .expect("typed SurfaceTrim");
+    .unwrap().expect("typed SurfaceTrim");
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -300,6 +311,30 @@ fn surface_trim_projects_body_target_and_curve_tool() {
             && native.as_str() == target_group.id
             && tool == &tool_group.id
     ));
+}
+
+#[test]
+fn surface_trim_tool_group_id_refuses_retained_limit() {
+    let (scope, target_group, tool_group, body) = surface_trim_fixture();
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            project_surface_trim(Some(&ctx), &scope,
+                &[target_group.clone(), tool_group.clone()],
+                std::slice::from_ref(&body)),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d SurfaceTrim tool group id"
+        ) {
+            return;
+        }
+    }
+    panic!("no SurfaceTrim tool group ID refusal");
 }
 
 #[test]

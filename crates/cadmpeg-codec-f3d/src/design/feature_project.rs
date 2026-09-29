@@ -1133,7 +1133,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 )?
                 .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::SurfaceTrim) => {
-                    project_surface_trim(scope, construction_groups, body_recipe_operands)
+                    project_surface_trim(ctx, scope, construction_groups, body_recipe_operands)?
                         .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
@@ -8558,32 +8558,37 @@ fn project_replace_face(
 /// that selects the cells to remove is decoded separately and bound to the
 /// projected operation after the source selections have been resolved.
 fn project_surface_trim(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     body_recipe_operands: &[DesignBodyRecipeOperand],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, TrimRegion};
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
         || scope.reference_members().len() != 4
     {
-        return None;
+        return Ok(None);
     }
-    let stream = native_stream(&scope.id)?;
+    let stream = or_none!(native_stream(&scope.id));
     let references = scope
         .reference_members()
-        .values_array::<4>()?
+        .values_array::<4>();
+    let references = or_none!(references)
         .map(|value| *value);
     let mut groups = construction_groups
         .iter()
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let [target_group, tool_group] = groups.as_slice() else {
-        return None;
+        });
+    let (Some(first), Some(second), None) = (groups.next(), groups.next(), groups.next()) else {
+        return Ok(None);
+    };
+    let (target_group, tool_group) = if first.scope_reference_ordinal <= second.scope_reference_ordinal {
+        (first, second)
+    } else {
+        (second, first)
     };
     if target_group.scope_reference_ordinal != 0
         || target_group.record_index != references[0]
@@ -8602,15 +8607,17 @@ fn project_surface_trim(
             .map(|member| member.value)
             .eq(references[3..4].iter().copied())
     {
-        return None;
+        return Ok(None);
     }
-    Some(FeatureDefinition::Operation(
+    let faces = or_none!(resolved_body_recipe_selection(scope, target_group, body_recipe_operands));
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::TrimSurface {
-            faces: resolved_body_recipe_selection(scope, target_group, body_recipe_operands)?,
-            tool: PathRef::Native(tool_group.id.clone()),
+            faces,
+            tool: PathRef::Native(copy_feature_text(ctx, &tool_group.id,
+                "f3d SurfaceTrim tool group id")?),
             keep: TrimRegion::Unresolved,
         },
-    ))
+    )))
 }
 
 /// Bind the exact removed-cell set retained by a decoded `SurfaceTrim`.
