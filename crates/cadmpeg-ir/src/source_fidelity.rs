@@ -535,9 +535,7 @@ impl SourceFidelity {
             {
                 return Err(duplicate_record(record.id()).into());
             }
-            let id_text =
-                copy_decode_text(ctx, record.id().as_str(), "native unknown product identity")?;
-            let id = UnknownId::try_from(id_text).map_err(CodecError::malformed)?;
+            let id = record.id().try_clone_for_decode(ctx, "native unknown product identity")?;
             let mut links = Vec::new();
             ctx.charge_collection_items(
                 u64_from_index(record.links().len()),
@@ -551,7 +549,7 @@ impl SourceFidelity {
                 )
             })?;
             for link in record.links() {
-                let text = copy_decode_text(ctx, link, "native unknown product link text")?;
+                let text = ctx.copy_retained_text(link, "native unknown product link text")?;
                 links.push(crate::ids::Identity::new(text).map_err(CodecError::malformed)?);
             }
             ctx.charge_collection_items(1, "native unknown products")?;
@@ -561,8 +559,7 @@ impl SourceFidelity {
             products.push(crate::NativeUnknownRecord { id, links });
             let stream =
                 if let Some(provenance) = self.annotations.provenance.get(record.id().as_str()) {
-                    SourceOwner::from(copy_decode_text(
-                        ctx,
+                    SourceOwner::from(ctx.copy_retained_text(
                         provenance.stream(),
                         "native unknown source stream",
                     )?)
@@ -589,12 +586,10 @@ impl SourceFidelity {
                 )
             })?;
         for product in &products {
-            let id = crate::ids::Identity::new(copy_decode_text(
-                ctx,
-                product.id.as_str(),
-                "native unknown arena identity",
-            )?)
-            .map_err(CodecError::malformed)?;
+            let id = product
+                .id
+                .try_clone_for_decode(ctx, "native unknown arena identity")?
+                .into();
             let mut fields = serde_json::Map::new();
             if !product.links.is_empty() {
                 let mut links = Vec::new();
@@ -610,14 +605,13 @@ impl SourceFidelity {
                     )
                 })?;
                 for link in &product.links {
-                    links.push(serde_json::Value::String(copy_decode_text(
-                        ctx,
+                    links.push(serde_json::Value::String(ctx.copy_retained_text(
                         link.as_str(),
                         "native unknown arena link text",
                     )?));
                 }
                 ctx.charge_collection_items(1, "native unknown arena link field")?;
-                let field = copy_decode_text(ctx, "links", "native unknown arena link field name")?;
+                let field = ctx.copy_retained_text("links", "native unknown arena link field name")?;
                 fields.insert(field, serde_json::Value::Array(links));
             }
             native_records.push(crate::native::NativeRecord::new(id, fields)?);
@@ -639,7 +633,7 @@ impl SourceFidelity {
             u64_from_index(format.len()),
             "native unknown namespace name",
         )?;
-        let arena_name = copy_decode_text(ctx, "unknowns", "native unknown arena name")?;
+        let arena_name = ctx.copy_retained_text("unknowns", "native unknown arena name")?;
         ctx.charge_collection_items(
             u64_from_index(retained.len()),
             "native unknown retained records",
@@ -653,13 +647,7 @@ impl SourceFidelity {
     }
 }
 
-fn copy_decode_text(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    String::from_utf8(ctx.copy_retained(text.as_bytes(), operation)?).map_err(CodecError::malformed)
-}
+
 
 fn duplicate_record(id: &UnknownId) -> NativeConvertError {
     NativeConvertError::InvalidCollection(format!(
