@@ -4878,29 +4878,34 @@ pub(super) fn feature_payload_strings(
             if failure.is_some() {
                 return;
             }
-            let values = match crate::om::operation_payload_strings(ctx, record.payload_view()) {
-                Ok(values) => values,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
+            let result = (|| -> Result<(), CodecError> {
+                let values = crate::om::operation_payload_strings(ctx, record.payload_view())?;
+                for (ordinal, value) in values.into_iter().enumerate() {
+                    let Some(ordinal_u32) = u32::try_from(ordinal).ok() else { continue; };
+                    let Some(source_offset) = u64::try_from(value.offset).ok()
+                        .and_then(|offset| entry_offset.checked_add(offset)) else { continue; };
+                    ctx.charge_collection_items(1, "NX feature payload strings")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeaturePayloadString>()),
+                        "NX feature payload strings")?;
+                    strings.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX feature payload strings", 0, 1))?;
+                    let text = copy_operation_text(ctx, value.value.as_str(),
+                        "NX feature payload string text")?;
+                    strings.push(FeaturePayloadString {
+                        id: format_feature_history_id(ctx, "payload-string", section_key,
+                            operation_ordinal, Some(ordinal))?,
+                        operation_record: format_feature_history_id(ctx, "operation-record", section_key,
+                            operation_ordinal, None)?,
+                        ordinal: ordinal_u32,
+                        value: crate::payload_text::PayloadText::new(text)
+                            .map_err(|error| CodecError::InvalidInput(error.to_string()))?,
+                        source_offset,
+                    });
                 }
-            };
-            let operation_record = format!(
-                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-            );
-            strings.extend(
-                values.into_iter()
-                    .enumerate()
-                    .map(|(ordinal, value)| FeaturePayloadString {
-                        id: format!(
-                            "nx:feature-history:payload-string#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                        ),
-                        operation_record: operation_record.clone(),
-                        ordinal: ordinal as u32,
-                        value: value.value.into_owned(),
-                        source_offset: entry_offset + value.offset as u64,
-                    }),
-            );
+                Ok(())
+            })();
+            if let Err(error) = result { failure = Some(error); }
         },
     )?;
     if let Some(error) = failure {
@@ -4915,26 +4920,40 @@ pub(super) fn feature_body_references(
     container: &Container,
 ) -> Result<Vec<FeatureBodyReference>, cadmpeg_core::CodecError> {
     let mut references = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
             let Some(reference) = crate::om::operation_body_reference(record.body_view()) else {
                 return;
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            references.push(FeatureBodyReference {
-                ordinal: None,
-                id: format!(
-                    "nx:feature-history:body-reference#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label,
-                body: reference.object_index,
-                source_offset: entry_offset + reference.offset as u64,
-            });
+            let result = (|| -> Result<(), CodecError> {
+                let Some(source_offset) = u64::try_from(reference.offset).ok()
+                    .and_then(|offset| entry_offset.checked_add(offset)) else { return Ok(()); };
+                ctx.charge_work(1, "resolve NX feature body reference")?;
+                ctx.charge_collection_items(1, "NX feature body references")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureBodyReference>()),
+                    "NX feature body references")?;
+                references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX feature body references", 0, 1))?;
+                references.push(FeatureBodyReference {
+                    ordinal: None,
+                    id: format_feature_history_id(ctx, "body-reference", section_key,
+                        operation_ordinal, None)?,
+                    operation_label: format_feature_history_id(ctx, "operation-label", section_key,
+                        operation_ordinal, None)?,
+                    body: reference.object_index,
+                    source_offset,
+                });
+                Ok(())
+            })();
+            if let Err(error) = result { failure = Some(error); }
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(references)
 }
 
@@ -4984,29 +5003,32 @@ pub(super) fn feature_body_reference_occurrences(
             if failure.is_some() {
                 return;
             }
-            let rows = match crate::om::operation_body_references(ctx, record.body_view()) {
-                Ok(rows) => rows,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            references.extend(
-                rows
-                    .into_iter()
-                    .enumerate()
-                    .map(|(ordinal, reference)| FeatureBodyReference {
-                        id: format!(
-                            "nx:feature-history:body-reference-occurrence#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                        ),
-                        operation_label: operation_label.clone(),
-                        ordinal: Some(ordinal as u32),
+            let result = (|| -> Result<(), CodecError> {
+                let rows = crate::om::operation_body_references(ctx, record.body_view())?;
+                for (ordinal, reference) in rows.into_iter().enumerate() {
+                    let Some(ordinal_u32) = u32::try_from(ordinal).ok() else { continue; };
+                    let Some(source_offset) = u64::try_from(reference.offset).ok()
+                        .and_then(|offset| entry_offset.checked_add(offset)) else { continue; };
+                    ctx.charge_work(1, "resolve NX body reference occurrence")?;
+                    ctx.charge_collection_items(1, "NX body reference occurrences")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureBodyReference>()),
+                        "NX body reference occurrences")?;
+                    references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX body reference occurrences", 0, 1))?;
+                    references.push(FeatureBodyReference {
+                        id: format_feature_history_id(ctx, "body-reference-occurrence", section_key,
+                            operation_ordinal, Some(ordinal))?,
+                        operation_label: format_feature_history_id(ctx, "operation-label", section_key,
+                            operation_ordinal, None)?,
+                        ordinal: Some(ordinal_u32),
                         body: reference.object_index,
-                        source_offset: entry_offset + reference.offset as u64,
-                    }),
-            );
+                        source_offset,
+                    });
+                }
+                Ok(())
+            })();
+            if let Err(error) = result { failure = Some(error); }
         },
     )?;
     if let Some(error) = failure {
