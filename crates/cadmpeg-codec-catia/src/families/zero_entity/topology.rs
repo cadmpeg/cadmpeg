@@ -347,11 +347,14 @@ fn endpoint_locus_candidates_inner(
         for dx in -1..=1 {
             for dy in -1..=1 {
                 for dz in -1..=1 {
-                    let neighbor_cell = [
-                        cell[0].saturating_add(dx),
-                        cell[1].saturating_add(dy),
-                        cell[2].saturating_add(dz),
-                    ];
+                    let (Some(x), Some(y), Some(z)) = (
+                        cell[0].checked_add(dx),
+                        cell[1].checked_add(dy),
+                        cell[2].checked_add(dz),
+                    ) else {
+                        continue;
+                    };
+                    let neighbor_cell = [x, y, z];
                     for other in cells.get(&neighbor_cell).into_iter().flatten() {
                         if *other <= index {
                             continue;
@@ -474,11 +477,14 @@ fn endpoint_match_graph(
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     for dz in -1..=1 {
-                        let neighbor = [
-                            cell[0].saturating_add(dx),
-                            cell[1].saturating_add(dy),
-                            cell[2].saturating_add(dz),
-                        ];
+                        let (Some(x), Some(y), Some(z)) = (
+                            cell[0].checked_add(dx),
+                            cell[1].checked_add(dy),
+                            cell[2].checked_add(dz),
+                        ) else {
+                            continue;
+                        };
+                        let neighbor = [x, y, z];
                         if let Some(indices) = cells.get(&neighbor) {
                             for other in indices.iter().copied().filter(|other| *other > index) {
                                 if crate::resource::insert_set(

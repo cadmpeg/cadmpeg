@@ -278,10 +278,11 @@ fn enforce_edge_arc_consistency(
     edge_candidates: &[Vec<[usize; 2]>],
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<bool, CodecError> {
-    let support_work = edge_ids
-        .iter()
-        .map(|edge| edge_candidates[*edge].len().saturating_mul(2))
-        .sum::<usize>();
+    let Some(support_work) = edge_ids.iter().try_fold(0usize, |work, edge| {
+        work.checked_add(edge_candidates[*edge].len().checked_mul(2)?)
+    }) else {
+        return Ok(false);
+    };
     if support_work > 0 && budget.is_some_and(|budget| !budget.charge_by(support_work)) {
         return Ok(false);
     }
@@ -446,13 +447,21 @@ fn enforce_sparse_endpoint_membership(
             continue;
         }
         let [left, right] = edges[edge];
-        let domain_work =
-            domains[left].len() + usize::from(right != left).saturating_mul(domains[right].len());
-        let support_work = candidates.len().saturating_mul(2);
+        let Some(domain_work) = domains[left]
+            .len()
+            .checked_add(if right != left { domains[right].len() } else { 0 })
+        else {
+            continue;
+        };
+        let Some(support_work) = candidates.len().checked_mul(2) else {
+            continue;
+        };
         if support_work >= domain_work {
             continue;
         }
-        let work = support_work.saturating_add(domain_work);
+        let Some(work) = support_work.checked_add(domain_work) else {
+            continue;
+        };
         if budget.is_some_and(|budget| work > budget.remaining()) {
             continue;
         }
@@ -1124,7 +1133,12 @@ impl MeshCoordinateRootDomains {
                 )?;
             }
             let support_count = affected_domains.iter().map(Vec::len).sum::<usize>();
-            let propagation_work = support_count.saturating_mul(4);
+            let Some(propagation_work) = support_count.checked_mul(4) else {
+                return Ok(Some(RefinedCoordinateDomains {
+                    domains,
+                    coverage_matching,
+                }));
+            };
             if budget.is_some_and(|budget| propagation_work > budget.remaining()) {
                 return Ok(Some(RefinedCoordinateDomains {
                     domains,
@@ -1600,49 +1614,46 @@ impl MeshQuotient {
                 continue;
             }
             root_count += 1;
-            root_supports = root_supports.saturating_add(
+            root_supports = root_supports.checked_add(
                 self.domains[node]
                     .iter()
                     .filter(|point| **point < point_count)
                     .count(),
-            );
+            )?;
         }
         let explicit_pair_supports = edge_candidates.iter().map(Vec::len).sum::<usize>();
-        let matching_phase_bound = root_count
-            .saturating_add(point_count)
-            .isqrt()
-            .saturating_add(1);
-        let traversal_bound = matching_phase_bound.saturating_add(8);
+        let matching_phase_bound = root_count.checked_add(point_count)?.isqrt().checked_add(1)?;
+        let traversal_bound = matching_phase_bound.checked_add(8)?;
         Some(
             root_supports
-                .saturating_add(explicit_pair_supports)
-                .saturating_mul(traversal_bound)
+                .checked_add(explicit_pair_supports)?
+                .checked_mul(traversal_bound)?
                 .max(MAX_MESH_CONSTRAINT_OPERATIONS),
         )
     }
 
-    pub(super) fn signature_work(&mut self) -> usize {
+    pub(super) fn signature_work(&mut self) -> Option<usize> {
         let mut work = 0usize;
         for node in 0..self.union.len() {
             if self.union.find(node) == node {
                 work = work
-                    .saturating_add(self.members(node).len())
-                    .saturating_add(self.domains[node].len());
+                    .checked_add(self.members(node).len())?
+                    .checked_add(self.domains[node].len())?;
             }
         }
-        work_units(work)
+        Some(work_units(work))
     }
 
-    fn monotone_measure(&mut self) -> (usize, usize) {
+    fn monotone_measure(&mut self) -> Option<(usize, usize)> {
         let mut root_count = 0usize;
         let mut domain_cardinality = 0usize;
         for node in 0..self.union.len() {
             if self.union.find(node) == node {
                 root_count += 1;
-                domain_cardinality = domain_cardinality.saturating_add(self.domains[node].len());
+                domain_cardinality = domain_cardinality.checked_add(self.domains[node].len())?;
             }
         }
-        (root_count, domain_cardinality)
+        Some((root_count, domain_cardinality))
     }
 
     pub(super) fn signature_charged(
@@ -1766,7 +1777,7 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<Option<MeshCoordinateRootDomains>, CodecError> {
-        if self.union.len() != edge_candidates.len().saturating_mul(2) {
+        if edge_candidates.len().checked_mul(2) != Some(self.union.len()) {
             return Ok(None);
         }
         let mut roots = Vec::new();
@@ -3731,7 +3742,10 @@ fn deferred_face_quotient_options_limited(
             )?;
             return Ok(());
         }
-        let options = (missing_edges.len() - used.count_ones() as usize).saturating_mul(2);
+        let Some(options) = (missing_edges.len() - used.count_ones() as usize).checked_mul(2)
+        else {
+            return Ok(());
+        };
         if options > 1 && !budget.charge_by(options) {
             return Ok(());
         }
@@ -3841,9 +3855,10 @@ fn deferred_face_quotient_options_limited(
         let remaining_edges = missing_edges.len() - used.count_ones() as usize;
         let remaining_gaps = gaps.len() - gap - 1;
         let minimum = 1;
-        let maximum = gaps[gap]
-            .capacity
-            .min(remaining_edges.saturating_sub(remaining_gaps));
+        let Some(available_edges) = remaining_edges.checked_sub(remaining_gaps) else {
+            return Ok(());
+        };
+        let maximum = gaps[gap].capacity.min(available_edges);
         if maximum < minimum {
             return Ok(());
         }
@@ -4250,7 +4265,7 @@ fn common_supported_corner_equations(
                         Err(error) => return Some(Err(error)),
                     };
                     forward[0][first] = true;
-                    for index in 0..boundary.len().saturating_sub(1) {
+                    for index in 0..boundary.len() - 1 {
                         for left in 0..directions[index].len() {
                             if !forward[index][left] {
                                 continue;
@@ -4511,7 +4526,7 @@ pub(super) fn propagate_common_ordered_face_quotients(
             MeshFaceBoundaryDomain::UnorderedFullCycle(_) => (2, 0),
         });
         loop {
-            let before = quotient.monotone_measure();
+            let before = quotient.monotone_measure()?;
             for &face in &face_order {
                 let domain = &domains[face];
                 let face_budget = WorkBudget::new(match domain {
@@ -4662,7 +4677,11 @@ pub(super) fn propagate_common_ordered_face_quotients(
                 let mut alternatives = Vec::new();
                 let mut truncated = false;
                 for assignment in assignments {
-                    if !face_budget.charge_by(quotient.signature_work()) {
+                    let Some(work) = quotient.signature_work() else {
+                        truncated = true;
+                        break;
+                    };
+                    if !face_budget.charge_by(work) {
                         truncated = true;
                         break;
                     }
@@ -4707,7 +4726,7 @@ pub(super) fn propagate_common_ordered_face_quotients(
                     Err(error) => return Some(Err(error)),
                 }
             }
-            if quotient.monotone_measure() == before {
+            if quotient.monotone_measure()? == before {
                 return Some(Ok(()));
             }
         }
@@ -4919,7 +4938,10 @@ fn advance_boundary_component_states(
     let mut signatures = HashSet::new();
     let domain_edges = mesh_boundary_domain_edges(ctx, domain)?;
     for (state, oriented_edges) in states {
-        let remaining = limit.saturating_add(1).saturating_sub(next.len());
+        let Some(remaining) = limit.checked_add(1).and_then(|end| end.checked_sub(next.len()))
+        else {
+            return Ok(None);
+        };
         if remaining == 0 {
             return Ok(None);
         }
@@ -5038,11 +5060,13 @@ fn advance_boundary_component_states(
                     "catia_component_oriented_edges",
                 )?;
             }
-            if !budget.charge_by(
-                candidate
-                    .signature_work()
-                    .saturating_add(work_units(next_oriented.len())),
-            ) {
+            let Some(work) = candidate
+                .signature_work()
+                .and_then(|work| work.checked_add(work_units(next_oriented.len())))
+            else {
+                return Ok(None);
+            };
+            if !budget.charge_by(work) {
                 return Ok(None);
             }
             let mut oriented_signature = Vec::new();
@@ -5206,7 +5230,9 @@ pub(super) fn propagate_common_boundary_components(
         }
         let budget = WorkBudget::new(MAX_COMPONENT_OPERATIONS);
         for _ in 0..MAX_COMPONENT_ROUNDS {
-            let before = quotient.monotone_measure();
+            let Some(before) = quotient.monotone_measure() else {
+                return Ok(None);
+            };
             let mut cursor = 0usize;
             while cursor < ordered_faces.len() {
                 let mut states = Vec::new();
@@ -5252,7 +5278,10 @@ pub(super) fn propagate_common_boundary_components(
                 }
                 cursor += processed;
             }
-            if quotient.monotone_measure() == before {
+            let Some(after) = quotient.monotone_measure() else {
+                return Ok(None);
+            };
+            if after == before {
                 break;
             }
         }
@@ -7389,8 +7418,11 @@ fn build_endpoint_relation_constraints(
             }
             supports
         } else {
-            let comparison_work =
-                work_units(domains[face].len().saturating_mul(domains[neighbor].len()));
+            let Some(comparisons) = domains[face].len().checked_mul(domains[neighbor].len())
+            else {
+                return Ok(None);
+            };
+            let comparison_work = work_units(comparisons);
             if !budget.charge_by(comparison_work) {
                 return Ok(None);
             }
@@ -7992,15 +8024,18 @@ where
                 "catia_endpoint_relation_score_points",
             )?;
         }
-        let score = points
+        let Some(score) = points
             .into_iter()
             .filter(|point| !assigned_points.contains(point))
-            .map(|point| {
+            .try_fold(0usize, |score, point| {
                 point_count
-                    .saturating_sub(point_support.get(&point).copied().unwrap_or(0))
-                    .saturating_add(1)
+                    .checked_sub(point_support.get(&point).copied().unwrap_or(0))?
+                    .checked_add(1)
+                    .and_then(|contribution| score.checked_add(contribution))
             })
-            .sum::<usize>();
+        else {
+            return Ok(true);
+        };
         crate::resource::push(
             ctx,
             &mut branch_order,
