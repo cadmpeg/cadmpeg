@@ -2502,214 +2502,220 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         feature_ids_by_native.insert(native_key, id);
     }
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
-                break 'feature_edit;
-            };
-            let Some(native_feature) = native_features.get(native_ref).copied() else {
-                break 'feature_edit;
-            };
-            let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
-                face,
-                diameter,
-                ..
-            }) = &mut definition
-            else {
-                break 'feature_edit;
-            };
-            if !matches!(
-                face,
-                cadmpeg_ir::features::FaceSelection::Unresolved
-                    | cadmpeg_ir::features::FaceSelection::Native(_)
-            ) {
-                break 'feature_edit;
-            }
-            let mut references = lanes
-                .iter()
-                .flat_map(|lane| {
-                    let lane_key = lane
-                        .id
-                        .rsplit_once('#')
-                        .map_or(lane.id.as_str(), |(_, key)| key);
-                    lane.surface_selections
-                        .iter()
-                        .filter(move |selection| selection.feature_ref == native_feature.id)
-                        .map(move |selection| {
-                            (
-                                format!("{lane_key}:{}", selection.offset),
-                                Some(selection.components.clone()),
-                                selection.producer_feature_refs.first().cloned(),
-                            )
-                        })
-                })
-                .chain(lanes.iter().flat_map(|lane| {
-                    (|| {
-                        let (_, start, end) = feature_object_byte_ranges(histories, lane)
-                            .get(native_feature.id.as_str())
-                            .copied()?;
-                        let cylinder_tokens = lane
-                            .classes
-                            .iter()
-                            .filter(|class| class.name == "moCylinderRef_w")
-                            .filter_map(|class| {
-                                let body = usize::try_from(class.offset)
-                                    .ok()?
-                                    .checked_add(6 + class.name.len())?;
-                                let token = View::u16_le_at(&lane.native_payload, body)?;
-                                is_class_token(token).then_some(token)
-                            })
-                            .collect::<HashSet<_>>();
+        let native_ref = feature.native_ref.as_deref();
+        let feature_id = &feature.id;
+        let dependencies = &mut feature.dependencies;
+        let mut edit_result: Result<(), cadmpeg_core::CodecError> = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            edit_result = (|| {
+                let Some(native_ref) = native_ref else {
+                    return Ok(());
+                };
+                let Some(native_feature) = native_features.get(native_ref).copied() else {
+                    return Ok(());
+                };
+                let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                    face,
+                    diameter,
+                    ..
+                }) = definition
+                else {
+                    return Ok(());
+                };
+                if !matches!(
+                    face,
+                    cadmpeg_ir::features::FaceSelection::Unresolved
+                        | cadmpeg_ir::features::FaceSelection::Native(_)
+                ) {
+                    return Ok(());
+                }
+                let mut references = lanes
+                    .iter()
+                    .flat_map(|lane| {
                         let lane_key = lane
                             .id
                             .rsplit_once('#')
                             .map_or(lane.id.as_str(), |(_, key)| key);
-                        Some(
-                            cosmetic_thread_cylinder_marker_reference(
-                                native_feature,
-                                lane,
-                                start,
-                                end,
-                                &cylinder_tokens,
-                            )
-                            .into_iter()
-                            .map(|(marker, components)| {
-                                (format!("{lane_key}:{marker}"), components, None)
-                            })
-                            .collect::<Vec<_>>(),
-                        )
-                    })()
-                    .unwrap_or_default()
-                }))
-                .collect::<Vec<_>>();
-            const NATIVE_OPERATION: &str = "format SLDPRT cosmetic thread cylinder references";
-            let count = u64::try_from(references.len())
-                .map_err(|_| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
-            let levels = if references.len() > 1 { references.len().ilog2() + 1 } else { 1 };
-            let sort_work = count.checked_mul(u64::from(levels))
-                .ok_or_else(|| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(sort_work, NATIVE_OPERATION)?;
-            references.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-            let native = if references.is_empty() {
-                None
-            } else {
-                const PREFIX: &str = "sldprt:feature-input:cylinder-reference:";
-                let mut bytes = PREFIX.len();
-                let mut last = None;
-                let mut distinct = 0usize;
-                for (reference, _, _) in &references {
-                    ctx.charge_work(1, NATIVE_OPERATION)?;
-                    if last == Some(reference.as_str()) {
-                        continue;
-                    }
-                    bytes = bytes.checked_add(reference.len())
-                        .and_then(|size| size.checked_add(usize::from(distinct != 0)))
-                        .ok_or_else(|| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
-                    distinct += 1;
-                    last = Some(reference.as_str());
-                }
-                let mut native = String::new();
-                ctx.reserve_retained_string(&mut native, bytes, NATIVE_OPERATION)?;
-                native.push_str(PREFIX);
-                last = None;
-                for (reference, _, _) in &references {
-                    if last == Some(reference.as_str()) {
-                        continue;
-                    }
-                    if last.is_some() {
-                        native.push(',');
-                    }
-                    native.push_str(reference);
-                    last = Some(reference.as_str());
-                }
-                Some(native)
-            };
-            const GENERATED_OPERATION: &str = "resolve SLDPRT cosmetic thread generated face";
-            let mut generated = None;
-            let mut complete = true;
-            for (_, components, explicit_producer) in &references {
-                ctx.charge_work(1, GENERATED_OPERATION)?;
-                let candidate = (|| {
-                    let components = components.as_ref()?;
-                    let explicit = explicit_producer.as_deref().and_then(|producer_ref| {
-                        let producer = history_features
+                        lane.surface_selections
                             .iter()
-                            .copied()
-                            .find(|candidate| candidate.id.as_str() == producer_ref)?;
-                        let component = components.first()?;
-                        component.local_id.is_some().then_some((component, producer))
-                    });
-                    let (component, producer) = explicit.or_else(|| {
-                        component_path_feature(
-                            components,
-                            &history_features,
-                            native_feature.id.as_str(),
-                            ComponentPathEnd::Leading,
-                        )
-                    })?;
-                    Some((feature_ids_by_native.get(producer.id.as_str())?, component.local_id?))
-                })();
-                let Some(candidate) = candidate else {
-                    complete = false;
-                    break;
+                            .filter(move |selection| selection.feature_ref == native_feature.id)
+                            .map(move |selection| {
+                                (
+                                    format!("{lane_key}:{}", selection.offset),
+                                    Some(selection.components.clone()),
+                                    selection.producer_feature_refs.first().cloned(),
+                                )
+                            })
+                    })
+                    .chain(lanes.iter().flat_map(|lane| {
+                        (|| {
+                            let (_, start, end) = feature_object_byte_ranges(histories, lane)
+                                .get(native_feature.id.as_str())
+                                .copied()?;
+                            let cylinder_tokens = lane
+                                .classes
+                                .iter()
+                                .filter(|class| class.name == "moCylinderRef_w")
+                                .filter_map(|class| {
+                                    let body = usize::try_from(class.offset)
+                                        .ok()?
+                                        .checked_add(6 + class.name.len())?;
+                                    let token = View::u16_le_at(&lane.native_payload, body)?;
+                                    is_class_token(token).then_some(token)
+                                })
+                                .collect::<HashSet<_>>();
+                            let lane_key = lane
+                                .id
+                                .rsplit_once('#')
+                                .map_or(lane.id.as_str(), |(_, key)| key);
+                            Some(
+                                cosmetic_thread_cylinder_marker_reference(
+                                    native_feature,
+                                    lane,
+                                    start,
+                                    end,
+                                    &cylinder_tokens,
+                                )
+                                .into_iter()
+                                .map(|(marker, components)| {
+                                    (format!("{lane_key}:{marker}"), components, None)
+                                })
+                                .collect::<Vec<_>>(),
+                            )
+                        })()
+                        .unwrap_or_default()
+                    }))
+                    .collect::<Vec<_>>();
+                const NATIVE_OPERATION: &str = "format SLDPRT cosmetic thread cylinder references";
+                let count = u64::try_from(references.len())
+                    .map_err(|_| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
+                let levels = if references.len() > 1 { references.len().ilog2() + 1 } else { 1 };
+                let sort_work = count.checked_mul(u64::from(levels))
+                    .ok_or_else(|| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(sort_work, NATIVE_OPERATION)?;
+                references.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+                let native = if references.is_empty() {
+                    None
+                } else {
+                    const PREFIX: &str = "sldprt:feature-input:cylinder-reference:";
+                    let mut bytes = PREFIX.len();
+                    let mut last = None;
+                    let mut distinct = 0usize;
+                    for (reference, _, _) in &references {
+                        ctx.charge_work(1, NATIVE_OPERATION)?;
+                        if last == Some(reference.as_str()) {
+                            continue;
+                        }
+                        bytes = bytes.checked_add(reference.len())
+                            .and_then(|size| size.checked_add(usize::from(distinct != 0)))
+                            .ok_or_else(|| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
+                        distinct += 1;
+                        last = Some(reference.as_str());
+                    }
+                    let mut native = String::new();
+                    ctx.reserve_retained_string(&mut native, bytes, NATIVE_OPERATION)?;
+                    native.push_str(PREFIX);
+                    last = None;
+                    for (reference, _, _) in &references {
+                        if last == Some(reference.as_str()) {
+                            continue;
+                        }
+                        if last.is_some() {
+                            native.push(',');
+                        }
+                        native.push_str(reference);
+                        last = Some(reference.as_str());
+                    }
+                    Some(native)
                 };
-                if let Some(previous) = generated {
-                    if previous != candidate {
+                const GENERATED_OPERATION: &str = "resolve SLDPRT cosmetic thread generated face";
+                let mut generated = None;
+                let mut complete = true;
+                for (_, components, explicit_producer) in &references {
+                    ctx.charge_work(1, GENERATED_OPERATION)?;
+                    let candidate = (|| {
+                        let components = components.as_ref()?;
+                        let explicit = explicit_producer.as_deref().and_then(|producer_ref| {
+                            let producer = history_features
+                                .iter()
+                                .copied()
+                                .find(|candidate| candidate.id.as_str() == producer_ref)?;
+                            let component = components.first()?;
+                            component.local_id.is_some().then_some((component, producer))
+                        });
+                        let (component, producer) = explicit.or_else(|| {
+                            component_path_feature(
+                                components,
+                                &history_features,
+                                native_feature.id.as_str(),
+                                ComponentPathEnd::Leading,
+                            )
+                        })?;
+                        Some((feature_ids_by_native.get(producer.id.as_str())?, component.local_id?))
+                    })();
+                    let Some(candidate) = candidate else {
                         complete = false;
                         break;
+                    };
+                    if let Some(previous) = generated {
+                        if previous != candidate {
+                            complete = false;
+                            break;
+                        }
+                    } else {
+                        generated = Some(candidate);
                     }
-                } else {
-                    generated = Some(candidate);
                 }
-            }
-            if let Some((producer, local_id)) = generated.filter(|_| complete) {
-                let Some(native) = native else {
-                    break 'feature_edit;
-                };
-                let producer_id = copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
-                let local_id_text = ctx.format_retained(format_args!("{local_id}"), GENERATED_OPERATION)?;
-                *face = match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
-                    Ok(generated_face) => {
-                        let mut faces = Vec::new();
-                        ctx.reserve_collection_vec(&mut faces, 1, GENERATED_OPERATION)?;
-                        faces.push(generated_face);
-                        let native_copy = ctx.format_retained(format_args!("{native}"), GENERATED_OPERATION)?;
-                        cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
-                            .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                if let Some((producer, local_id)) = generated.filter(|_| complete) {
+                    let Some(native) = native else {
+                        return Ok(());
+                    };
+                    let producer_id = copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
+                    let local_id_text = ctx.format_retained(format_args!("{local_id}"), GENERATED_OPERATION)?;
+                    *face = match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
+                        Ok(generated_face) => {
+                            let mut faces = Vec::new();
+                            ctx.reserve_collection_vec(&mut faces, 1, GENERATED_OPERATION)?;
+                            faces.push(generated_face);
+                            let native_copy = ctx.format_retained(format_args!("{native}"), GENERATED_OPERATION)?;
+                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                                .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                        }
+                        Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
+                    };
+                    if producer != feature_id && !dependencies.contains(producer) {
+                        let dependency = copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
+                        dependencies.try_insert_charged(dependency, ctx, GENERATED_OPERATION)?;
                     }
-                    Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
-                };
-                if producer != &feature.id && !feature.dependencies.contains(producer) {
-                    let dependency = copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
-                    feature.dependencies.try_insert_charged(dependency, ctx, GENERATED_OPERATION)?;
+                    return Ok(());
                 }
-                break 'feature_edit;
-            }
-            let Some(diameter) = diameter else {
-                break 'feature_edit;
-            };
-            let diameter = diameter.get();
+                let Some(diameter) = diameter else {
+                    return Ok(());
+                };
+                let diameter = diameter.get();
 
-            let selected = match unique_cylindrical_face(ctx, diameter * 0.5, faces, surfaces)? {
-                Some(selected) => Some(selected),
-                None if native.is_some() => unique_topological_cylindrical_face(ctx, faces, surfaces)?,
-                None => None,
-            };
-            let Some(selected) = selected else {
-                break 'feature_edit;
-            };
-            let mut selected_faces = Vec::new();
-            ctx.reserve_collection_vec(&mut selected_faces, 1, "project SLDPRT unbound cosmetic thread face")?;
-            selected_faces.push(selected);
-            *face = match native {
-                Some(native) => cadmpeg_ir::features::FaceSelection::Resolved {
-                    faces: selected_faces,
-                    native,
-                },
-                None => cadmpeg_ir::features::FaceSelection::Faces(selected_faces),
-            };
-        }
-        feature.evaluation.set_definition(definition);
+                let selected = match unique_cylindrical_face(ctx, diameter * 0.5, faces, surfaces)? {
+                    Some(selected) => Some(selected),
+                    None if native.is_some() => unique_topological_cylindrical_face(ctx, faces, surfaces)?,
+                    None => None,
+                };
+                let Some(selected) = selected else {
+                    return Ok(());
+                };
+                let mut selected_faces = Vec::new();
+                ctx.reserve_collection_vec(&mut selected_faces, 1, "project SLDPRT unbound cosmetic thread face")?;
+                selected_faces.push(selected);
+                *face = match native {
+                    Some(native) => cadmpeg_ir::features::FaceSelection::Resolved {
+                        faces: selected_faces,
+                        native,
+                    },
+                    None => cadmpeg_ir::features::FaceSelection::Faces(selected_faces),
+                };
+                Ok(())
+            })();
+        });
+        edit_result?;
     }
     Ok(())
 }
