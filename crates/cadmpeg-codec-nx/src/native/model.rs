@@ -1276,12 +1276,13 @@ impl NativeModel {
         let feature_sketch_payload_names =
             feature_sketch_payload_names(ctx, container, &feature_sketch_construction_inputs)?;
         let feature_sketch_payload_named_records = feature_sketch_payload_named_records(
+            ctx,
             &feature_sketch_construction_payloads,
             &feature_sketch_payload_names,
             &feature_sketch_payload_scalars,
             &feature_sketch_payload_fixed_pairs,
             &feature_sketch_payload_mixed_pairs,
-        );
+        )?;
         let feature_sketch_fixed_points = feature_sketch_fixed_points(
             &feature_sketch_payload_named_records,
             &feature_sketch_payload_names,

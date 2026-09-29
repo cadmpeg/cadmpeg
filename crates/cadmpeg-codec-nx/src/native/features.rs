@@ -6377,80 +6377,109 @@ pub(super) fn feature_sketch_payload_names(
 }
 
 /// Join complete name-delimited intervals to their framed scalar fields.
+fn sorted_payload_refs<'ctx, 'a, T>(
+    ctx: &'ctx DecodeContext<'_>,
+    source: &'a [T],
+    include: impl Fn(&T) -> bool,
+    key: impl Fn(&T) -> u64,
+) -> Result<(Vec<&'a T>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    let scan_work = cadmpeg_core::decode::u64_from_index(source.len()).checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX sketch payload records", 0, 1))?;
+    ctx.charge_work(scan_work, "scan NX sketch payload records")?;
+    let count = source.iter().filter(|record| include(record)).count();
+    let bytes = count.checked_mul(std::mem::size_of::<&T>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload record references", 0, 1))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX sketch payload record references")?;
+    let reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes), "NX sketch payload record references")?;
+    let mut references = Vec::new();
+    references.try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload record references", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+    references.extend(source.iter().filter(|record| include(record)));
+    let sort_work = cadmpeg_core::decode::u64_from_index(count)
+        .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
+        .ok_or_else(|| ctx.refuse_codec_limit("sort NX sketch payload record references", 0, 1))?;
+    ctx.charge_work(sort_work, "sort NX sketch payload record references")?;
+    let _sorting = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes), "sort NX sketch payload record references")?;
+    references.sort_by_key(|record| key(record));
+    Ok((references, reservation))
+}
+
+fn copy_sketch_record_ids<T>(
+    ctx: &DecodeContext<'_>,
+    references: &[&T],
+    id: impl Fn(&T) -> &str,
+) -> Result<Vec<String>, CodecError> {
+    let bytes = references.len().checked_mul(std::mem::size_of::<String>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload record IDs", 0, 1))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(references.len()), "NX sketch payload record IDs")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX sketch payload record ID slots")?;
+    let mut ids = Vec::new();
+    ids.try_reserve_exact(references.len())
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload record IDs", 0, cadmpeg_core::decode::u64_from_index(references.len())))?;
+    for reference in references {
+        ids.push(copy_operation_text(ctx, id(reference), "NX sketch payload record ID")?);
+    }
+    Ok(ids)
+}
+
 pub(super) fn feature_sketch_payload_named_records(
+    ctx: &DecodeContext<'_>,
     payloads: &[FeatureConstructionPayload],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
     mixed_pairs: &[FeatureSketchPayloadMixedPair],
-) -> Vec<FeatureSketchPayloadNamedRecord> {
+) -> Result<Vec<FeatureSketchPayloadNamedRecord>, CodecError> {
     let mut records = Vec::new();
     for payload in payloads {
-        let mut payload_names = names
-            .iter()
-            .filter(|name| name.construction_payload == payload.id)
-            .collect::<Vec<_>>();
-        payload_names.sort_by_key(|name| name.frame.offset());
+        let (payload_names, _names_reservation) = sorted_payload_refs(ctx, names,
+            |name| name.construction_payload == payload.id,
+            |name| name.frame.offset())?;
         for (ordinal, name) in payload_names.iter().enumerate() {
             let end = payload_names
                 .get(ordinal + 1)
                 .map_or(payload.content.byte_len(), |next| next.frame.offset());
-            let mut scalar_fields = scalars
-                .iter()
-                .filter(|scalar| {
+            let (scalar_fields, _scalars_reservation) = sorted_payload_refs(ctx, scalars,
+                |scalar| {
                     scalar.payload.id() == payload.id
                         && scalar.payload_offset > name.frame.offset()
                         && scalar.payload_offset < end
-                })
-                .collect::<Vec<_>>();
-            scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
-            let mut record_fixed_pairs = fixed_pairs
-                .iter()
-                .filter(|pair| {
+                }, |scalar| scalar.payload_offset)?;
+            let (record_fixed_pairs, _fixed_reservation) = sorted_payload_refs(ctx, fixed_pairs,
+                |pair| {
                     pair.construction_payload == payload.id
                         && pair.position.offset() > name.frame.offset()
                         && pair.position.offset() < end
-                })
-                .collect::<Vec<_>>();
-            record_fixed_pairs.sort_by_key(|pair| pair.position.offset());
-            let mut record_mixed_pairs = mixed_pairs
-                .iter()
-                .filter(|pair| {
+                }, |pair| pair.position.offset())?;
+            let (record_mixed_pairs, _mixed_reservation) = sorted_payload_refs(ctx, mixed_pairs,
+                |pair| {
                     pair.construction_payload == payload.id
                         && pair.position.offset() > name.frame.offset()
                         && pair.position.offset() < end
-                })
-                .collect::<Vec<_>>();
-            record_mixed_pairs.sort_by_key(|pair| pair.position.offset());
+                }, |pair| pair.position.offset())?;
+            let key = payload.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+            let id = format_feature_history_id(ctx, "sketch-payload-record", key, ordinal, None)?;
+            let scalar_fields = copy_sketch_record_ids(ctx, &scalar_fields, |scalar| &scalar.id)?;
+            let fixed_pairs = copy_sketch_record_ids(ctx, &record_fixed_pairs, |pair| &pair.id)?;
+            let mixed_pairs = copy_sketch_record_ids(ctx, &record_mixed_pairs, |pair| &pair.id)?;
+            ctx.charge_collection_items(1, "NX sketch payload named records")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchPayloadNamedRecord>()), "NX sketch payload named record")?;
+            records.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload named records", 0, 1))?;
             records.push(FeatureSketchPayloadNamedRecord {
-                id: format!(
-                    "nx:feature-history:sketch-payload-record#{}-{ordinal:010}",
-                    payload
-                        .id
-                        .rsplit_once('#')
-                        .map_or("unknown", |(_, key)| key)
-                ),
-                operation_label: payload.operation_label.clone(),
-                construction_payload: payload.id.clone(),
-                name_field: name.id.clone(),
-                scalar_fields: scalar_fields
-                    .into_iter()
-                    .map(|scalar| scalar.id.clone())
-                    .collect(),
-                fixed_pairs: record_fixed_pairs
-                    .into_iter()
-                    .map(|pair| pair.id.clone())
-                    .collect(),
-                mixed_pairs: record_mixed_pairs
-                    .into_iter()
-                    .map(|pair| pair.id.clone())
-                    .collect(),
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX sketch payload record label")?,
+                construction_payload: copy_operation_text(ctx, &payload.id, "NX sketch payload record owner")?,
+                name_field: copy_operation_text(ctx, &name.id, "NX sketch payload record name")?,
+                scalar_fields,
+                fixed_pairs,
+                mixed_pairs,
                 payload_start_offset: name.frame.offset(),
                 payload_end_offset: end,
             });
         }
     }
-    records
+    Ok(records)
 }
 
 /// Decode complete `Point<decimal>` records with exactly two scalar fields.
