@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId, VertexId};
@@ -78,6 +78,7 @@ pub(crate) struct TopologyIdentityIndex {
 impl TopologyIdentityIndex {
     /// Build an index from the emitted primary topology arenas.
     pub(crate) fn from_model(
+        ctx: &DecodeContext<'_>,
         bodies: &[Body],
         faces: &[Face],
         edges: &[Edge],
@@ -85,69 +86,105 @@ impl TopologyIdentityIndex {
         face_bridge_sequences: &[(u32, u16)],
         edge_use_sequences: &[(u32, u16)],
         vertex_use_sequences: &[(u32, u16)],
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let mut index = Self::default();
         for body in bodies {
+            ctx.charge_work(1, "index SWIFT body identities")?;
             index.insert_primary_id(
+                ctx,
                 body.id.as_str(),
                 PmiTarget::Body {
-                    body: body.id.clone(),
+                    body: copy_topology_id(ctx, body.id.as_str())?,
                 },
-            );
+            )?;
         }
         for edge in edges {
+            ctx.charge_work(1, "index SWIFT edge identities")?;
             index.insert_primary_id(
+                ctx,
                 edge.id.as_str(),
                 PmiTarget::Edge {
-                    edge: edge.id.clone(),
+                    edge: copy_topology_id(ctx, edge.id.as_str())?,
                 },
-            );
+            )?;
         }
         for vertex in vertices {
+            ctx.charge_work(1, "index SWIFT vertex identities")?;
             index.insert_primary_id(
+                ctx,
                 vertex.id.as_str(),
                 PmiTarget::Vertex {
-                    vertex: vertex.id.clone(),
+                    vertex: copy_topology_id(ctx, vertex.id.as_str())?,
                 },
-            );
+            )?;
         }
         for &(sequence, attr) in face_bridge_sequences {
-            let target = face_id_for_attribute(faces, attr).map(|face| PmiTarget::Face { face });
-            index.insert_sequence_target(sequence, target.as_ref());
+            ctx.charge_work(1, "index SWIFT face sequence")?;
+            ctx.charge_work(u64_from_index(faces.len()), "scan SWIFT face attribute identities")?;
+            let target = face_id_for_attribute(faces, attr)
+                .map(|face| copy_topology_id(ctx, face.as_str()).map(|face| PmiTarget::Face { face }))
+                .transpose()?;
+            index.insert_sequence_target(ctx, sequence, target)?;
         }
         for &(sequence, attr) in edge_use_sequences {
-            let target = edge_id_for_attribute(edges, attr).map(|edge| PmiTarget::Edge { edge });
-            index.insert_sequence_target(sequence, target.as_ref());
+            ctx.charge_work(1, "index SWIFT edge sequence")?;
+            ctx.charge_work(u64_from_index(edges.len()), "scan SWIFT edge attribute identities")?;
+            let target = edge_id_for_attribute(edges, attr)
+                .map(|edge| copy_topology_id(ctx, edge.as_str()).map(|edge| PmiTarget::Edge { edge }))
+                .transpose()?;
+            index.insert_sequence_target(ctx, sequence, target)?;
         }
         for &(sequence, attr) in vertex_use_sequences {
-            let target =
-                vertex_id_for_attribute(vertices, attr).map(|vertex| PmiTarget::Vertex { vertex });
-            index.insert_sequence_target(sequence, target.as_ref());
+            ctx.charge_work(1, "index SWIFT vertex sequence")?;
+            ctx.charge_work(u64_from_index(vertices.len()), "scan SWIFT vertex attribute identities")?;
+            let target = vertex_id_for_attribute(vertices, attr)
+                .map(|vertex| {
+                    copy_topology_id(ctx, vertex.as_str()).map(|vertex| PmiTarget::Vertex { vertex })
+                })
+                .transpose()?;
+            index.insert_sequence_target(ctx, sequence, target)?;
         }
-        index
+        Ok(index)
     }
 
-    fn insert_sequence_target(&mut self, sequence: u32, target: Option<&PmiTarget>) {
-        let entry = self
-            .sequence_targets
-            .entry(u64::from(sequence))
-            .or_insert_with(|| target.cloned());
-        if entry.as_ref() != target {
-            *entry = None;
+    fn insert_sequence_target(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        sequence: u32,
+        target: Option<PmiTarget>,
+    ) -> Result<(), CodecError> {
+        if let Some(existing) = self.sequence_targets.get_mut(&u64::from(sequence)) {
+            if existing.as_ref() != target.as_ref() {
+                *existing = None;
+            }
+        } else {
+            ctx.charge_collection_items(1, "index SWIFT topology sequence")?;
+            self.sequence_targets.insert(u64::from(sequence), target);
         }
+        Ok(())
     }
 
-    fn insert_primary_id(&mut self, id: &str, target: PmiTarget) {
+    fn insert_primary_id(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+        target: PmiTarget,
+    ) -> Result<(), CodecError> {
         let Some(suffix) = id.rsplit_once('#').map(|(_, suffix)| suffix) else {
-            return;
+            return Ok(());
         };
         let Ok(suffix) = suffix.parse::<u64>() else {
-            return;
+            return Ok(());
         };
+        if !self.entries.contains_key(&suffix) {
+            ctx.charge_collection_items(1, "index SWIFT primary topology suffix")?;
+        }
         let entries = self.entries.entry(suffix).or_default();
         if !entries.contains(&target) {
+            ctx.reserve_collection_vec(entries, 1, "collect SWIFT primary topology targets")?;
             entries.push(target);
         }
+        Ok(())
     }
 
     fn resolve(&self, identifier: &str) -> Option<PmiTarget> {
@@ -166,24 +203,31 @@ impl TopologyIdentityIndex {
     }
 }
 
-fn face_id_for_attribute(faces: &[Face], attr: u16) -> Option<FaceId> {
+fn face_id_for_attribute(faces: &[Face], attr: u16) -> Option<&FaceId> {
     let prefix = format!("sldprt:brep:face#{attr}");
-    unique_id_for_attribute(faces.iter().map(|face| &face.id), &prefix, FaceId::as_str).cloned()
+    unique_id_for_attribute(faces.iter().map(|face| &face.id), &prefix, FaceId::as_str)
 }
 
-fn edge_id_for_attribute(edges: &[Edge], attr: u16) -> Option<EdgeId> {
+fn edge_id_for_attribute(edges: &[Edge], attr: u16) -> Option<&EdgeId> {
     let prefix = format!("sldprt:brep:edge#{attr}");
-    unique_id_for_attribute(edges.iter().map(|edge| &edge.id), &prefix, EdgeId::as_str).cloned()
+    unique_id_for_attribute(edges.iter().map(|edge| &edge.id), &prefix, EdgeId::as_str)
 }
 
-fn vertex_id_for_attribute(vertices: &[Vertex], attr: u16) -> Option<VertexId> {
+fn vertex_id_for_attribute(vertices: &[Vertex], attr: u16) -> Option<&VertexId> {
     let prefix = format!("sldprt:brep:vertex#{attr}");
     unique_id_for_attribute(
         vertices.iter().map(|vertex| &vertex.id),
         &prefix,
         VertexId::as_str,
     )
-    .cloned()
+}
+
+fn copy_topology_id<T>(ctx: &DecodeContext<'_>, id: &str) -> Result<T, CodecError>
+where
+    T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>,
+{
+    let text = ctx.format_retained(format_args!("{id}"), "copy SWIFT topology identity")?;
+    T::try_from(text).map_err(|_| CodecError::malformed("invalid SWIFT topology identity"))
 }
 
 fn unique_id_for_attribute<'a, T: 'a>(
