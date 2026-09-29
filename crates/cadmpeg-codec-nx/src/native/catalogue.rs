@@ -2249,6 +2249,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("NX roll-forward catalog group slots", 0, 1)
                 })?;
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(count),
+                "NX roll-forward catalog group references",
+            )?;
             let _groups_reservation = ctx.reserve_scoped(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX roll-forward catalog group slots",
@@ -4198,6 +4202,48 @@ mod tests {
         assert!(
             matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
+    }
+
+    #[test]
+    fn roll_forward_catalog_refuses_collection_reference_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let bytes = crate::test_support::test_prt::prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map(
+            ),
+        )]);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = crate::decode::scan(&ctx, root).unwrap();
+        let mut parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
+        let model = crate::native::model::NativeModel::extract(
+            &ctx,
+            root,
+            &scan.container,
+            &scan.streams,
+            &mut parsed,
+            None,
+        )
+        .unwrap();
+        let count = model.om.operation_state_groups.iter().map(|table| table.groups().len()).sum::<usize>();
+        assert!(count > 0);
+        let row = super::CATALOGUE
+            .iter()
+            .find(|row| row.arena == "om_roll_forward_state_groups")
+            .expect("roll-forward group family");
+        let refusal_arena = DecodeArena::new();
+        let mut refusal_policy = DecodePolicy::service();
+        refusal_policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(count - 1);
+        let (refusal_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &refusal_arena, &refusal_policy).unwrap();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let error = (row.emit)(&refusal_ctx, &model, row, &mut namespace).unwrap_err();
+        assert!(
+            matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "NX roll-forward catalog group references")
         );
     }
 
