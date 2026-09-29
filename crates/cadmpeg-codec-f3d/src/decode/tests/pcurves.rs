@@ -333,7 +333,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
         cadmpeg_ir::geometry::SpringSupport::Ranges([[-6.0, 7.0], [-8.0, 9.0]])
     );
     assert_eq!(
-        *first_pcurve,
+        **first_pcurve,
         cadmpeg_ir::geometry::SpringPcurve::Range([-10.0, 11.0])
     );
     assert_eq!(*second_pcurve, None);

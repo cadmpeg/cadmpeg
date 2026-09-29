@@ -201,6 +201,7 @@ impl InputCatalog {
                         crate::descriptors::FormatKind::Neutral { .. } => {
                             InputKind::Neutral { descriptor }
                         }
+                        #[cfg(any(feature = "fcstd", feature = "f3d", feature = "inventor", feature = "sldprt", feature = "catia", feature = "creo", feature = "nx", feature = "rhino", feature = "step", feature = "iges", feature = "sat"))]
                         crate::descriptors::FormatKind::Native(native) => InputKind::Native {
                             native,
                             codec: (native.decoder)(),
