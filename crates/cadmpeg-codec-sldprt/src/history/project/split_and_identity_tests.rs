@@ -7,9 +7,12 @@ use crate::history::bind::derive_feature_outputs;
 use crate::history::project::modify::project_fillet;
 use crate::history::project::neutral_feature_id;
 use crate::history::project::project_features;
+use crate::history::project::project_configurations;
+use crate::history::project::project_configurations_charged;
 use crate::history::project::project_semantic_notes;
 use crate::history::tests::feature;
 use crate::records::FeatureHistory;
+use crate::records::Configuration;
 use cadmpeg_ir::features::BooleanOp;
 use cadmpeg_ir::features::DatumPlaneReference;
 use cadmpeg_ir::features::EdgeSelection;
@@ -146,6 +149,38 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
             ..
         }] if text == &["REMOVE ALL BURRS"] && native_ref == &note.id
     ));
+}
+
+#[test]
+fn charged_configuration_projection_preserves_writer_projection() {
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: vec![Configuration {
+            id: "sldprt:history:configuration#name #% µ".into(),
+            parent: "history".into(),
+            ordinal: 1,
+            source_index: Some(5),
+            name: "Inspect".into(),
+            material: Some("Steel".into()),
+            properties: BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("Finish"),
+                "Ground".into(),
+            )]),
+        }],
+        features: Vec::new(),
+    };
+    let histories = [history];
+    let charged = with_test_ctx(|ctx| {
+        project_configurations_charged(ctx, &histories).expect("charged configuration projection")
+    });
+    assert_eq!(charged, project_configurations(&histories));
+    assert_eq!(
+        charged[0].id.as_str(),
+        "sldprt:model:configuration#name%20%23%25%20µ"
+    );
 }
 
 #[test]
