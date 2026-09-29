@@ -717,37 +717,32 @@ fn generated_datum_plane_equation(
         .filter(|id| **id == sketch_id)
         .count();
     (datum_ids == 1).then_some(())?;
-    let datums = sources
+    let mut datums = sources
         .datums
         .iter()
-        .filter(|datum| datum.id == reference_id)
-        .collect::<Vec<_>>();
-    let reference_feature = match datums.as_slice() {
-        [datum] => Some(datum.feature_id),
-        [] => unique_surface_row(sources.surface_rows, reference_id)
+        .filter(|datum| datum.id == reference_id);
+    let reference_feature = match (datums.next(), datums.next()) {
+        (Some(datum), None) => Some(datum.feature_id),
+        (None, None) => unique_surface_row(sources.surface_rows, reference_id)
             .filter(|row| row.kind == SurfaceKind::Plane)
             .map(|row| row.feature_id),
         _ => None,
     }?;
-    let candidates = sources
+    exactly_one(sources
         .affected_ids
         .iter()
         .filter(|record| {
             record.kind == AffectedIdKind::Parents && record.ids.contains(&reference_feature)
         })
         .filter_map(|parents| {
-            let other = parents
+            let other = exactly_one(parents
                 .ids
                 .iter()
-                .filter(|parent| **parent != reference_feature)
-                .collect::<Vec<_>>();
-            let [other] = other.as_slice() else {
-                return None;
-            };
-            let equations = sources
+                .filter(|parent| **parent != reference_feature))?;
+            let (equation, ambiguous) = sources
                 .datums
                 .iter()
-                .filter(|datum| datum.feature_id == **other)
+                .filter(|datum| datum.feature_id == *other)
                 .map(|datum| SignedPlaneEquation {
                     normal: datum.plane.normal(),
                     offset: datum.plane.offset,
@@ -756,7 +751,7 @@ fn generated_datum_plane_equation(
                     sources
                         .surface_rows
                         .iter()
-                        .filter(|row| row.feature_id == **other && row.kind == SurfaceKind::Plane)
+                        .filter(|row| row.feature_id == *other && row.kind == SurfaceKind::Plane)
                         .filter_map(|row| {
                             plane_equation(
                                 row.id,
@@ -770,7 +765,7 @@ fn generated_datum_plane_equation(
                     sources
                         .surface_rows
                         .iter()
-                        .filter(|row| row.feature_id == **other && row.kind == SurfaceKind::Plane)
+                        .filter(|row| row.feature_id == *other && row.kind == SurfaceKind::Plane)
                         .flat_map(|row| {
                             sources
                                 .plane_envelopes
@@ -799,22 +794,15 @@ fn generated_datum_plane_equation(
                 .filter(|equation| {
                     dot(equation.normal, reference_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY
                 })
-                .fold(Vec::<SignedPlaneEquation>::new(), |mut unique, equation| {
-                    if !unique.contains(&equation) {
-                        unique.push(equation);
+                .fold((None, false), |(first, ambiguous), candidate| {
+                    match first {
+                        None => (Some(candidate), ambiguous),
+                        Some(first) if first == candidate => (Some(first), ambiguous),
+                        Some(first) => (Some(first), true),
                     }
-                    unique
                 });
-            let [equation] = equations.as_slice() else {
-                return None;
-            };
-            Some(*equation)
-        })
-        .collect::<Vec<_>>();
-    let [equation] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*equation)
+            (!ambiguous).then_some(equation?)
+        }))
 }
 
 fn feature_generated_plane_equation(
