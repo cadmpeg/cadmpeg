@@ -10,11 +10,108 @@ use crate::om::compact::CompactIndexAtom;
 use crate::native::attach::resolve_rm_face_color_bindings;
 use crate::native::attach::resolve_rm_face_colors;
 use crate::native::attach::resolve_rm_source_color_bindings;
+use crate::native::attach::collect_rm_face_ids;
+use crate::native::attach::ensure_rm_color_appearance;
 use crate::native::attach::Color;
 use crate::native::attach::RmFaceColorBinding;
 use crate::native::attach::RmSourceColorBinding;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+
+fn rm_appearance_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    twice: bool,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let definition = crate::native::om::PartColorDefinition {
+        id: "nx:test:color#201".into(),
+        color_table: "nx:test:table#0".into(),
+        color_index: crate::om::color::PaletteIndex::new(201).unwrap(),
+        name: "Iron Gray".into(),
+        components: [(0.25_f64, 11), (0.5, 12), (0.75, 13)].map(|(value, offset)| {
+            let mut raw = (value * 4.0).to_be_bytes();
+            raw[0] -= 0x10;
+            (crate::om::color::ColorComponent::read(&raw).unwrap(), offset)
+        }),
+        source_offset: 10,
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let mut appearances = BTreeMap::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX RM appearance identity lookup")?;
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    ensure_rm_color_appearance(&ctx, &mut ir, &mut annotations, &mut appearances, &mut reservation, &definition, &stream)?;
+    if twice {
+        ensure_rm_color_appearance(&ctx, &mut ir, &mut annotations, &mut appearances, &mut reservation, &definition, &stream)?;
+        assert_eq!(ir.model.appearances.len(), 1);
+    }
+    Ok(())
+}
+
+#[test]
+fn rm_appearance_refuses_collection_limit() {
+    let error = rm_appearance_result(|policy| policy.limits.max_collection_items = 0, false).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn rm_appearance_refuses_retained_limit() {
+    let error = rm_appearance_result(|policy| policy.limits.max_retained_bytes = 0, false).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn rm_appearance_refuses_scoped_limit() {
+    let error = rm_appearance_result(|policy| policy.limits.max_materialized_bytes = 0, false).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn rm_appearance_refuses_work_limit() {
+    let error = rm_appearance_result(|policy| policy.limits.max_work_units = 0, true).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+fn rm_face_identity_lookup_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ids, reservation) = collect_rm_face_ids(&ctx, ["nx:s0:face#99", "nx:s0:face#99"])?;
+    assert_eq!(ids.len(), 1);
+    drop(reservation);
+    Ok(())
+}
+
+#[test]
+fn rm_face_identity_lookup_refuses_collection_limit() {
+    let error = rm_face_identity_lookup_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn rm_face_identity_lookup_refuses_scoped_limit() {
+    let error = rm_face_identity_lookup_result(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn rm_face_identity_lookup_refuses_work_limit() {
+    let error = rm_face_identity_lookup_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 
 #[test]
 fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
