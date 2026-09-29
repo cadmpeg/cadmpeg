@@ -1321,10 +1321,11 @@ impl NativeModel {
             &offset_store_named_points,
         )?;
         let feature_sketch_point_uses = feature_sketch_point_uses(
+            ctx,
             &feature_sketch_point_groups,
             &offset_store_named_points,
             &feature_sketch_named_point_block_uses,
-        );
+        )?;
         let feature_sketch_datum_csys_dependencies = feature_sketch_datum_csys_dependencies(
             ctx,
             &feature_operation_labels,

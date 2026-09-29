@@ -318,11 +318,11 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     second_block_use.source_offset = 301;
 
     let groups = sketch_point_groups(std::slice::from_ref(&point));
-    let uses = feature_sketch_point_uses(
+    let uses = crate::test_support::with_decode_context(|ctx| feature_sketch_point_uses(ctx,
         &groups,
         std::slice::from_ref(&named_point),
         &[second_block_use.clone(), block_use.clone()],
-    );
+    )).unwrap();
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].sketch_point_group, groups[0].id);
     assert_eq!(uses[0].named_point, named_point.id);
@@ -350,25 +350,25 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
         cadmpeg_ir::units::FiniteVector::new([1.0, f64::from_bits(2.0_f64.to_bits() + 1)])
             .expect("finite coordinates");
     let different_groups = sketch_point_groups(std::slice::from_ref(&different));
-    assert!(feature_sketch_point_uses(
+    assert!(crate::test_support::with_decode_context(|ctx| feature_sketch_point_uses(ctx,
         &different_groups,
         std::slice::from_ref(&named_point),
         std::slice::from_ref(&block_use),
-    )
+    )).unwrap()
     .is_empty());
     let mut duplicate = point.clone();
     duplicate.id = "payload-point-2".to_string();
     let duplicate_groups = sketch_point_groups(&[point.clone(), duplicate.clone()]);
     assert_eq!(duplicate_groups[0].points, [point.id.clone(), duplicate.id]);
-    let uses = feature_sketch_point_uses(
+    let uses = crate::test_support::with_decode_context(|ctx| feature_sketch_point_uses(ctx,
         &duplicate_groups,
         std::slice::from_ref(&named_point),
         std::slice::from_ref(&block_use),
-    );
+    )).unwrap();
     assert_eq!(uses[0].sketch_point_group, duplicate_groups[0].id);
     let conflicting_groups = sketch_point_groups(&[point, different]);
     assert!(conflicting_groups.is_empty());
     assert!(
-        feature_sketch_point_uses(&conflicting_groups, &[named_point], &[block_use]).is_empty()
+        crate::test_support::with_decode_context(|ctx| feature_sketch_point_uses(ctx, &conflicting_groups, &[named_point], &[block_use])).unwrap().is_empty()
     );
 }
