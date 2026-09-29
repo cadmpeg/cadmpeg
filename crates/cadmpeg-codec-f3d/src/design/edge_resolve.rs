@@ -665,20 +665,23 @@ fn resolved_edge_group_with_transition_chain(
         )
         .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
     }
-    let identity_matches = members
-        .iter()
-        .map(|member| &member.value)
-        .map(|member| {
+    let mut identity_matches = Vec::new();
+    let mut identities_complete = true;
+    for member in members.iter().map(|member| &member.value) {
             let mut matches = identity_operands.iter().filter(|operand| {
                 native_stream(&operand.id) == stream
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
                     && operand.record_index() == *member
             });
-            let operand = matches.next()?;
-            matches.next().is_none().then_some(operand)
-        })
-        .collect::<Option<Vec<_>>>();
+            let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
+                identities_complete = false;
+                break;
+            };
+            push_edge_item(ctx, &mut identity_matches, operand,
+                "f3d edge group matched identity")?;
+    }
+    let identity_matches = identities_complete.then_some(identity_matches);
     let has_recipe_operands = members
         .iter()
         .map(|member| &member.value)
