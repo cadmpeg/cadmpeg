@@ -1455,7 +1455,7 @@ pub(crate) fn project_compact_surface_selections(
                         ..
                     }) = definition
                     {
-                        let Some((target, tool)) = cut_with_surface_selection_pair(feature_selections)
+                        let Some((target, tool)) = cut_with_surface_selection_pair(ctx, feature_selections)?
                         else {
                             break 'feature_edit;
                         };
@@ -1885,19 +1885,7 @@ fn full_round_fillet_selection_triple<'a>(
     selections: &[&'a FeatureInputSurfaceSelection],
 ) -> Result<Option<[&'a FeatureInputSurfaceSelection; 3]>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "group SLDPRT full round fillet selections";
-    let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
-    for selection in selections {
-        ctx.charge_work(1, OPERATION)?;
-        if !by_lane.contains_key(selection.parent.as_str()) {
-            ctx.charge_collection_items(1, OPERATION)?;
-            by_lane.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
-        }
-        let group = by_lane.entry(selection.parent.as_str()).or_default();
-        ctx.reserve_collection_vec(group, 1, OPERATION)?;
-        group.push(*selection);
-    }
+    let by_lane = surface_selections_by_lane(ctx, selections, OPERATION)?;
     let mut consensus: Option<[&'a FeatureInputSurfaceSelection; 3]> = None;
     for mut lane_selections in by_lane.into_values() {
         let len = lane_selections.len();
@@ -1923,6 +1911,27 @@ fn full_round_fillet_selection_triple<'a>(
         }
     }
     Ok(consensus)
+}
+
+fn surface_selections_by_lane<'a>(
+    ctx: &DecodeContext<'_>,
+    selections: &[&'a FeatureInputSurfaceSelection],
+    operation: &'static str,
+) -> Result<HashMap<&'a str, Vec<&'a FeatureInputSurfaceSelection>>, cadmpeg_core::CodecError> {
+    let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
+    for selection in selections {
+        ctx.charge_work(1, operation)?;
+        if !by_lane.contains_key(selection.parent.as_str()) {
+            ctx.charge_collection_items(1, operation)?;
+            by_lane.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        let group = by_lane.entry(selection.parent.as_str()).or_default();
+        ctx.reserve_collection_vec(group, 1, operation)?;
+        group.push(*selection);
+    }
+    Ok(by_lane)
 }
 
 pub(crate) fn project_draft_operands(
@@ -2191,22 +2200,19 @@ fn same_surface_selection_semantics(
 /// Their low selector byte is a lane-local subtype and cannot identify the
 /// semantic role.  Configuration lanes must agree on both ordered paths.
 fn cut_with_surface_selection_pair<'a>(
+    ctx: &DecodeContext<'_>,
     selections: &[&'a FeatureInputSurfaceSelection],
-) -> Option<(
+) -> Result<Option<(
     &'a FeatureInputSurfaceSelection,
     &'a FeatureInputSurfaceSelection,
-)> {
-    let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
-    for selection in selections {
-        by_lane
-            .entry(selection.parent.as_str())
-            .or_default()
-            .push(*selection);
-    }
+)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "group SLDPRT surface cut selections";
+    let by_lane = surface_selections_by_lane(ctx, selections, OPERATION)?;
     let mut consensus = None;
     for mut lane_selections in by_lane.into_values() {
+        ctx.charge_work(1, OPERATION)?;
         if lane_selections.len() != 2 {
-            return None;
+            return Ok(None);
         }
         lane_selections.sort_unstable_by_key(|selection| selection.offset);
         let pair = (lane_selections[0], lane_selections[1]);
@@ -2214,13 +2220,13 @@ fn cut_with_surface_selection_pair<'a>(
             if !same_surface_selection_semantics(target, pair.0)
                 || !same_surface_selection_semantics(tool, pair.1)
             {
-                return None;
+                return Ok(None);
             }
         } else {
             consensus = Some(pair);
         }
     }
-    consensus
+    Ok(consensus)
 }
 
 /// Resolve an attached thread face when its persistent cylinder reference
