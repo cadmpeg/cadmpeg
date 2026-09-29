@@ -239,7 +239,8 @@ pub(crate) fn parse_property_set_stream<'a>(
         ));
     }
     ctx.charge_collection_items(section_count as u64, "admit OLE section directories")?;
-    let mut directories = DecodeContext::admitted_vec(section_count, "admit OLE section directories")?;
+    let mut directories =
+        DecodeContext::admitted_vec(section_count, "admit OLE section directories")?;
     ctx.charge_collection_items(section_count as u64, "admit OLE section FMTIDs")?;
     let mut fmtids = BTreeSet::new();
     for _ in 0..section_count {
@@ -255,7 +256,8 @@ pub(crate) fn parse_property_set_stream<'a>(
     directories.sort_by_key(|(_, offset)| *offset);
     let mut previous_end = header_end;
     ctx.charge_collection_items(section_count as u64, "admit OLE property-set sections")?;
-    let mut sections = DecodeContext::admitted_vec(section_count, "admit OLE property-set sections")?;
+    let mut sections =
+        DecodeContext::admitted_vec(section_count, "admit OLE property-set sections")?;
     for (fmtid, offset) in directories {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
@@ -315,7 +317,8 @@ fn parse_section<'a>(
     ctx.charge_collection_items(property_count as u64, "admit OLE property IDs")?;
     let mut ids = BTreeSet::new();
     ctx.charge_collection_items(property_count as u64, "admit OLE property directory")?;
-    let mut directory = DecodeContext::admitted_vec(property_count, "admit OLE property directory")?;
+    let mut directory =
+        DecodeContext::admitted_vec(property_count, "admit OLE property directory")?;
     for _ in 0..property_count {
         let id = cursor.u32("property id")?;
         if !ids.insert(id) {

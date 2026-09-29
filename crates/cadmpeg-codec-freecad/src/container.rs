@@ -147,7 +147,10 @@ pub(crate) fn entry_records(
     let mut records = ctx.collection_vec(scan.entries.len(), "FCStd entry records")?;
     for entry in &scan.entries {
         let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
-            return Err(CodecError::Malformed(ctx.format_retained(format_args!("entry {} disappeared after scan", entry.name), "FCStd missing entry error")?));
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("entry {} disappeared after scan", entry.name),
+                "FCStd missing entry error",
+            )?));
         };
         let mut referenced_by = Vec::new();
         for property in properties
@@ -207,7 +210,7 @@ pub(crate) fn source_attributes(
     );
     attributes.insert(
         cadmpeg_core::nonblank_literal!("application_domains"),
-        ctx.join_retained(&scan.document.domains, ", ", "FCStd source domain list")?,
+        ctx.join_retained(&scan.document.domains, ",", "FCStd source domain list")?,
     );
     attributes.insert(
         cadmpeg_core::nonblank_literal!("archive_entry_count"),
@@ -274,14 +277,30 @@ pub(crate) fn summary_notes(
 ) -> Result<Vec<String>, CodecError> {
     let mut notes = vec![
         ctx.retained_suffix("SchemaVersion=", &scan.schema_version, "FCStd schema note")?,
-        ctx.retained_suffix("FileVersion=", scan.document.file_version.as_str(), "FCStd file version note")?,
-        ctx.retained_suffix("document root=", &scan.document.root_name, "FCStd document root note")?,
-        ctx.retained_suffix("document kind=", scan.document.document_kind().as_str(), "FCStd document kind note")?,
+        ctx.retained_suffix(
+            "FileVersion=",
+            scan.document.file_version.as_str(),
+            "FCStd file version note",
+        )?,
+        ctx.retained_suffix(
+            "document root=",
+            &scan.document.root_name,
+            "FCStd document root note",
+        )?,
+        ctx.retained_suffix(
+            "document kind=",
+            scan.document.document_kind().as_str(),
+            "FCStd document kind note",
+        )?,
         format!("object count={}", scan.document.object_count),
         format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
     ];
     if let Some(version) = &scan.document.program_version {
-        notes.push(ctx.retained_suffix("ProgramVersion=", version, "FCStd program version note")?);
+        notes.push(ctx.retained_suffix(
+            "ProgramVersion=",
+            version,
+            "FCStd program version note",
+        )?);
     }
     Ok(notes)
 }
@@ -451,15 +470,21 @@ pub(crate) fn parse_document(
     let xml = match roxmltree::Document::parse(text) {
         Ok(xml) => xml,
         Err(error) => {
-            return Err(CodecError::Malformed(ctx.format_retained(format_args!("invalid Document.xml: {error}"), "FCStd document parse error")?))
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("invalid Document.xml: {error}"),
+                "FCStd document parse error",
+            )?))
         }
     };
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
-        return Err(CodecError::WrongFormat(ctx.format_retained(format_args!(
+        return Err(CodecError::WrongFormat(ctx.format_retained(
+            format_args!(
                 "Document.xml root is {}, expected Document",
                 root.tag_name().name()
-            ), "FCStd document root error")?));
+            ),
+            "FCStd document root error",
+        )?));
     }
     let schema_version = canonical_attribute(ctx, root, "SchemaVersion", "schemaVersion")?
         .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
@@ -517,7 +542,11 @@ pub(crate) fn logical_ledger(
 ) -> Result<Vec<LogicalSpan>, CodecError> {
     let mut typed_entries = HashSet::new();
     for payload in shape_payloads {
-        ctx.insert_hash_set(&mut typed_entries, payload.entry.as_str(), "FCStd typed entry identities")?;
+        ctx.insert_hash_set(
+            &mut typed_entries,
+            payload.entry.as_str(),
+            "FCStd typed entry identities",
+        )?;
     }
     for name in string_tables
         .iter()
@@ -592,7 +621,10 @@ pub(crate) fn logical_ledger(
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
                 if start < cursor || end < start || end > entry.byte_len() {
-                    return Err(CodecError::Malformed(ctx.format_retained(format_args!("overlapping or invalid {} record spans", entry.name), "FCStd logical span error")?));
+                    return Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("overlapping or invalid {} record spans", entry.name),
+                        "FCStd logical span error",
+                    )?));
                 }
                 push_logical_span(
                     ctx,
@@ -664,7 +696,8 @@ pub(crate) fn byte_coverage(
                 .insert(ctx.copy_retained_text(&span.entry, "FCStd opaque entry name")?);
         }
     }
-    let mut ordered_physical = ctx.collection_vec(physical.len(), "FCStd ordered physical spans")?;
+    let mut ordered_physical =
+        ctx.collection_vec(physical.len(), "FCStd ordered physical spans")?;
     ordered_physical.extend(physical.iter());
     ordered_physical.sort_by_key(|span| span.span.start());
     let physical_exact = ordered_physical
@@ -704,7 +737,8 @@ pub(crate) fn byte_coverage(
             }
         }
     }
-    let mut opaque_entries = ctx.collection_vec(named_opaque_entries.len(), "FCStd opaque coverage list")?;
+    let mut opaque_entries =
+        ctx.collection_vec(named_opaque_entries.len(), "FCStd opaque coverage list")?;
     opaque_entries.extend(named_opaque_entries);
     Ok(ByteCoverageRecord {
         id: crate::native::native_id("byte-coverage", "0"),

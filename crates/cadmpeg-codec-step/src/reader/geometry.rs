@@ -646,10 +646,14 @@ pub(super) fn decode(
             unresolved,
         } => {
             let default_linear = ir.tolerances.linear.get();
-            let listed = ctx.join_display_retained([first, second]
+            let listed = ctx.join_display_retained(
+                [first, second]
                     .iter()
                     .chain(&rest)
-                    .map(|value| format!("{:?}", value.get())), ", ", "step_uncertainty_values_text")?;
+                    .map(|value| format!("{:?}", value.get())),
+                ", ",
+                "step_uncertainty_values_text",
+            )?;
             let message = ctx.format_retained(format_args!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
                 2 + rest.len()
@@ -6273,7 +6277,10 @@ fn procedural_surface_parameter_scales(
         if active.contains(surface_id) {
             return Ok(None);
         }
-        let key = ctx.format_retained(format_args!("{}", surface_id.as_str()), "step_surface_scale_active_id")?;
+        let key = ctx.format_retained(
+            format_args!("{}", surface_id.as_str()),
+            "step_surface_scale_active_id",
+        )?;
         let key = geometry_or_none!(SurfaceId::mint(key).ok());
         insert_geometry_set(&mut active, key, ctx, "step_surface_scale_active")?;
         let Some(solved) = geometry.solved() else {
@@ -6474,7 +6481,10 @@ fn directrix_parameter_scale_inner(
         return Ok(None);
     }
     let _depth = ctx.enter_nested("step_directrix_scale_walk")?;
-    let key = ctx.format_retained(format_args!("{}", curve_id.as_str()), "step_directrix_scale_active_id")?;
+    let key = ctx.format_retained(
+        format_args!("{}", curve_id.as_str()),
+        "step_directrix_scale_active_id",
+    )?;
     let key = geometry_or_none!(CurveId::mint(key).ok());
     insert_geometry_set(active, key, ctx, "step_directrix_scale_active")?;
     let scale = if let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) {
@@ -6880,7 +6890,7 @@ fn expand_knots(
                 ),
             )
         })?;
-        knots.extend(std::iter::repeat(knot).take(count));
+        knots.extend(std::iter::repeat_with(|| knot).take(count));
     }
     Ok(KnotVector::from_finite_lanes(knots).ok())
 }

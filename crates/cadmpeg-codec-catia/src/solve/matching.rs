@@ -322,7 +322,11 @@ pub(crate) fn retain_distinct_matching_supports(
         ctx.push_vec(&mut stack, (start, 0usize), "catia_match_support_stack")?;
         while let Some((node, edge_index)) = stack.pop() {
             if let Some(&next) = graph[node].get(edge_index) {
-                ctx.push_vec(&mut stack, (node, edge_index + 1), "catia_match_support_stack")?;
+                ctx.push_vec(
+                    &mut stack,
+                    (node, edge_index + 1),
+                    "catia_match_support_stack",
+                )?;
                 charge_matching_work(ctx, budget)?;
                 if !visited[next] {
                     visited[next] = true;
@@ -515,7 +519,11 @@ pub(crate) fn unique_coordinate_bijection(
             class
         } else {
             let class = representatives.len();
-            ctx.push_vec(&mut representatives, point, "catia_bijection_representatives")?;
+            ctx.push_vec(
+                &mut representatives,
+                point,
+                "catia_bijection_representatives",
+            )?;
             class
         };
         ctx.push_vec(&mut point_classes, class, "catia_bijection_point_classes")?;
@@ -524,7 +532,11 @@ pub(crate) fn unique_coordinate_bijection(
     for domain in domains {
         let mut classes = Vec::new();
         for &point in domain {
-            ctx.push_vec(&mut classes, point_classes[point], "catia_bijection_domain_classes")?;
+            ctx.push_vec(
+                &mut classes,
+                point_classes[point],
+                "catia_bijection_domain_classes",
+            )?;
         }
         classes.sort_unstable();
         classes.dedup();
@@ -542,7 +554,11 @@ pub(crate) fn unique_coordinate_bijection(
         for _ in 0..capacity {
             let slot = slot_classes.len();
             ctx.push_vec(&mut slot_classes, class, "catia_bijection_slot_classes")?;
-            ctx.push_vec(&mut slots_by_class[class], slot, "catia_bijection_class_slots")?;
+            ctx.push_vec(
+                &mut slots_by_class[class],
+                slot,
+                "catia_bijection_class_slots",
+            )?;
         }
     }
     let Some(classes) = matching(ctx, &class_domains, &slots_by_class, &slot_classes, None)? else {
@@ -570,7 +586,11 @@ pub(crate) fn unique_coordinate_bijection(
         "catia_bijection_available",
     )?;
     for (point, class) in point_classes.into_iter().enumerate() {
-        ctx.push_vec(&mut available[class], point, "catia_bijection_available_points")?;
+        ctx.push_vec(
+            &mut available[class],
+            point,
+            "catia_bijection_available_points",
+        )?;
     }
     let mut used = ctx.alloc_filled(available.len(), 0usize, "catia_bijection_used")?;
     let mut points = Vec::new();

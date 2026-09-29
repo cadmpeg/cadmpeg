@@ -102,7 +102,8 @@ pub(crate) fn transfer(
         }
         let mut relationships = BTreeMap::new();
         for property in owned.iter().filter(|property| !property.links().is_empty()) {
-            let mut links = ctx.collection_vec(property.links().len(), "fcstd drawing relationship links")?;
+            let mut links =
+                ctx.collection_vec(property.links().len(), "fcstd drawing relationship links")?;
             for link in property.links() {
                 links.push(
                     link.as_ref()
@@ -204,7 +205,10 @@ pub(crate) fn transfer_neutral(
             };
             Ok(ReferenceSelection::new(
                 target,
-                ctx.copy_retained_strings(link.subelements(), "fcstd drawing relationship subelements")?,
+                ctx.copy_retained_strings(
+                    link.subelements(),
+                    "fcstd drawing relationship subelements",
+                )?,
             ))
         };
         let parameter = |name: &str| scalar_property(ctx, &owned, name);
@@ -485,7 +489,10 @@ fn source_links(
             format_args!("drawing source {name} has multiple targets"),
         ));
     }
-    let mut links = ctx.collection_vec(property.links().len(), "fcstd drawing source property links")?;
+    let mut links = ctx.collection_vec(
+        property.links().len(),
+        "fcstd drawing source property links",
+    )?;
     for link in property.links() {
         links.push(
             link.as_ref()

@@ -861,7 +861,11 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         return Ok(None);
     }
     let mut finite_controls = Vec::new();
-    ctx.reserve_vec(&mut finite_controls, controls.len(), "catia quintic jet finite controls")?;
+    ctx.reserve_vec(
+        &mut finite_controls,
+        controls.len(),
+        "catia quintic jet finite controls",
+    )?;
     for control in controls {
         let Some(control) = FiniteVector::new(control) else {
             return Ok(None);

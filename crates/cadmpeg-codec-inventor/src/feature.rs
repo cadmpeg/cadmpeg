@@ -549,7 +549,8 @@ fn parse_pattern_feature(
         slot_count as u64,
         "admit Inventor pattern feature property slots",
     )?;
-    let mut property_slots = DecodeContext::admitted_vec(slot_count, "admit Inventor pattern feature property slots")?;
+    let mut property_slots =
+        DecodeContext::admitted_vec(slot_count, "admit Inventor pattern feature property slots")?;
     for _ in 0..6 {
         property_slots.push(cursor.reference("pattern-feature property slot")?);
     }

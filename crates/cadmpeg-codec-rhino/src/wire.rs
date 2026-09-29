@@ -5,9 +5,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;
 
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeContext, ResourceDimension, ResourceLimit,
-};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -191,7 +189,9 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
     ) -> Result<Self::Value, A::Error> {
         let mut values = Vec::new();
         while let Some(value) = sequence.next_element_seed(self.0)? {
-            self.0.ctx.reserve_vec(&mut values, 1, self.0.operation)
+            self.0
+                .ctx
+                .reserve_vec(&mut values, 1, self.0.operation)
                 .map_err(|error| self.0.fail(error))?;
             values.push(value);
         }

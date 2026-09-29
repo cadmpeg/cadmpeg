@@ -339,12 +339,15 @@ pub(crate) fn compose_index_id<T>(
     construct: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let id = ctx.format_retained(format_args!(
+    let id = ctx.format_retained(
+        format_args!(
             "{}:{}:{}#{index}",
             namespace.format(),
             namespace.scope(),
             namespace.kind()
-        ), operation)?;
+        ),
+        operation,
+    )?;
     construct(id).map_err(CodecError::malformed)
 }
 
@@ -719,10 +722,10 @@ mod tests {
         crate::test_support::with_service_context(|ctx| {
             let mut admitted_map = HashMap::<u32, u32>::new();
             ctx.admit_hash_map_entry(&mut admitted_map, &7, "catia_zero_wire_source_geometries")
-            .expect("service map entry budget");
+                .expect("service map entry budget");
             admitted_map.insert(7, 11);
             ctx.admit_hash_map_entry(&mut admitted_map, &7, "catia_zero_wire_source_geometries")
-            .expect("existing entry needs no allocation");
+                .expect("existing entry needs no allocation");
             assert_eq!(admitted_map.get(&7), Some(&11));
         });
     }

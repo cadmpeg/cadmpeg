@@ -223,11 +223,23 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut records, record.directory_sequence, record, "iges drawing parameter index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges drawing parameter index",
+        )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges drawing directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges drawing directory index",
+        )?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -250,7 +262,12 @@ pub(super) fn project(
                 && record.string(3).is_some_and(|value| !value.is_empty())
         };
         if valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
             push_drawing_entity_loss(
                 ctx,
@@ -325,7 +342,12 @@ pub(super) fn project(
         });
         if drawing_directory_valid(entry, global.global_table()) && views_valid && annotations_valid
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
             push_drawing_entity_loss(
                 ctx,
@@ -427,7 +449,12 @@ pub(super) fn project(
             && scale_valid
             && form_valid
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
             push_drawing_entity_loss(
                 ctx,
@@ -464,7 +491,12 @@ pub(super) fn project(
                     });
                 if view != last_view {
                     if let Some(previous) = last_view {
-                        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut closed_views, previous, "iges drawing closed views")?;
+                        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                            Some(ctx),
+                            &mut closed_views,
+                            previous,
+                            "iges drawing closed views",
+                        )?;
                     }
                     last_breakpoint = None;
                 }
@@ -529,7 +561,12 @@ pub(super) fn project(
             false
         };
         if views_visible_directory_valid(entry, global.global_table()) && blocks_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
             push_drawing_entity_loss(
                 ctx,
@@ -622,7 +659,12 @@ pub(super) fn project(
             && views_valid
             && entities_valid
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
             push_drawing_entity_loss(
                 ctx,

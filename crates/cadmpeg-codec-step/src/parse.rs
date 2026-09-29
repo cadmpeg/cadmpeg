@@ -1170,7 +1170,7 @@ impl Parser<'_, '_, '_> {
                         Some(ctx) => {
                             ctx.copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")
                         }
-                        None => Ok::<String, CodecError>(anchor.name.to_owned()),
+                        None => Ok::<String, CodecError>(anchor.name.clone()),
                     }
                     .map_err(ParseError::Resource)?,
                     try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")
@@ -2849,9 +2849,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 let value = Value::Typed(
                     match self.budget {
                         Some(ctx) => ctx.copy_retained_text(name, "step_anchor_typed_name_copy"),
-                        None => {
-                            Ok::<String, CodecError>(name.to_owned())
-                        }
+                        None => Ok::<String, CodecError>(name.to_owned()),
                     }
                     .map_err(ResolveError::Resource)?,
                     Box::new(value),
@@ -3116,7 +3114,7 @@ fn resolve_local_references(
                 Some(ctx) => {
                     ctx.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")
                 }
-                None => Ok::<String, CodecError>(anchor.name.to_owned()),
+                None => Ok::<String, CodecError>(anchor.name.clone()),
             }
             .map_err(ResolveError::Resource)?,
             try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")

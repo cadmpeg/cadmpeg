@@ -296,7 +296,12 @@ fn identity_index_charged<'a>(
                 identity.identity,
             )
         };
-        ctx.insert_hash_map(&mut index, key, identity.id.as_str(), "catia_native_edge_wire_index")?;
+        ctx.insert_hash_map(
+            &mut index,
+            key,
+            identity.id.as_str(),
+            "catia_native_edge_wire_index",
+        )?;
     }
     Ok(index)
 }
@@ -345,7 +350,11 @@ pub(super) fn edge_node_wires_charged(
                 "catia_native_edge_wire_vertex_id",
             )?,
         ];
-        ctx.push_vec(&mut wires, CatiaConsolidatedEdgeNodeWire::from_node(node, vertices), "catia_native_edge_wires")?;
+        ctx.push_vec(
+            &mut wires,
+            CatiaConsolidatedEdgeNodeWire::from_node(node, vertices),
+            "catia_native_edge_wires",
+        )?;
     }
     Ok(wires)
 }
@@ -414,7 +423,11 @@ pub(super) fn consolidated_vertex_identities(
                     "catia_native_vertex_identity_id",
                 )?;
                 let mut reference_values = Vec::new();
-                ctx.push_vec(&mut reference_values, identity, "catia_native_vertex_identity_references")?;
+                ctx.push_vec(
+                    &mut reference_values,
+                    identity,
+                    "catia_native_vertex_identity_references",
+                )?;
                 let allocation_owner = node
                     .allocation
                     .as_ref()
@@ -422,7 +435,9 @@ pub(super) fn consolidated_vertex_identities(
                         ctx.copy_retained_text(owner, "catia_native_vertex_identity_owner")
                     })
                     .transpose()?;
-                ctx.push_vec(&mut identities, CatiaConsolidatedVertexIdentity {
+                ctx.push_vec(
+                    &mut identities,
+                    CatiaConsolidatedVertexIdentity {
                         id,
                         identity,
                         source_index: node.source_index,
@@ -430,18 +445,33 @@ pub(super) fn consolidated_vertex_identities(
                         reference_values,
                         allocation_owner,
                         incident_edge_nodes: Vec::new(),
-                    }, "catia_native_vertex_identities")?;
-                ctx.insert_hash_map(&mut identity_indices, key, index, "catia_native_vertex_identity_index")?;
+                    },
+                    "catia_native_vertex_identities",
+                )?;
+                ctx.insert_hash_map(
+                    &mut identity_indices,
+                    key,
+                    index,
+                    "catia_native_vertex_identity_index",
+                )?;
                 index
             };
             let vertex = &mut identities[index];
             if !vertex.reference_values.contains(&identity) {
-                ctx.push_vec(&mut vertex.reference_values, identity, "catia_native_vertex_identity_references")?;
+                ctx.push_vec(
+                    &mut vertex.reference_values,
+                    identity,
+                    "catia_native_vertex_identity_references",
+                )?;
             }
             if vertex.incident_edge_nodes.last() != Some(&node.id) {
                 let edge_id =
                     ctx.copy_retained_text(&node.id, "catia_native_vertex_incident_edge_id")?;
-                ctx.push_vec(&mut vertex.incident_edge_nodes, edge_id, "catia_native_vertex_incident_edges")?;
+                ctx.push_vec(
+                    &mut vertex.incident_edge_nodes,
+                    edge_id,
+                    "catia_native_vertex_incident_edges",
+                )?;
             }
         }
     }

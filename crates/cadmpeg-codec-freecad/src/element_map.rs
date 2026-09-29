@@ -613,8 +613,7 @@ fn parse_legacy_records<'a>(
             "legacy element-map record count exceeds limit".into(),
         ));
     }
-    let mut records =
-        ctx.collection_vec(count, "FreeCAD legacy element records")?;
+    let mut records = ctx.collection_vec(count, "FreeCAD legacy element records")?;
     for _ in 0..count {
         let indexed_name = ctx.copy_retained_text(
             next_token(ctx, tokens, "legacy element indexed name")?,
@@ -634,8 +633,7 @@ fn parse_legacy_records<'a>(
                 "legacy string-id count exceeds limit".into(),
             ));
         }
-        let mut string_ids =
-            ctx.collection_vec(sid_count, "FreeCAD legacy string IDs")?;
+        let mut string_ids = ctx.collection_vec(sid_count, "FreeCAD legacy string IDs")?;
         for _ in 0..sid_count {
             string_ids.push(
                 next_token(ctx, tokens, "legacy string id")?
@@ -910,8 +908,7 @@ fn parse_string_table(
     // cannot exceed the table's byte length.
     let capacity = bounded_len(declared_count as u64, 1, text.len())
         .ok_or_else(|| CodecError::Malformed("string-table record count exceeds input".into()))?;
-    let mut output =
-        ctx.collection_vec(capacity, "FreeCAD string table entries")?;
+    let mut output = ctx.collection_vec(capacity, "FreeCAD string table entries")?;
     let mut previous_id = 0_i64;
     for _ in 0..declared_count {
         scanner.skip_whitespace();
@@ -1126,8 +1123,7 @@ fn parse_element_map(
         // Each group consumes at least one token, so its count cannot exceed the byte length.
         let group_capacity = bounded_len(group_count as u64, 1, text.len())
             .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
-        let mut groups =
-            ctx.collection_vec(group_capacity, "FreeCAD element map groups")?;
+        let mut groups = ctx.collection_vec(group_capacity, "FreeCAD element map groups")?;
         for _ in 0..group_count {
             let indexed_name = ctx.copy_retained_text(
                 next_token(ctx, &mut tokens, "indexed name")?,
@@ -1140,12 +1136,17 @@ fn parse_element_map(
                 bounded_len(child_count as u64, 1, text.len()).ok_or_else(|| {
                     CodecError::Malformed("element-map child count exceeds input".into())
                 })?;
-            let mut children = ctx.collection_vec(child_capacity, "FreeCAD element map children")?;
+            let mut children =
+                ctx.collection_vec(child_capacity, "FreeCAD element map children")?;
             for _ in 0..child_count {
                 let fields = (0..7)
                     .map(|_| next_token(ctx, &mut tokens, "child descriptor"))
                     .collect::<Result<Vec<_>, _>>()?;
-                children.push(ctx.join_retained(&fields, " ", "FreeCAD element child descriptor")?);
+                children.push(ctx.join_retained(
+                    &fields,
+                    " ",
+                    "FreeCAD element child descriptor",
+                )?);
             }
             expect(ctx, &mut tokens, "NameCount")?;
             let name_count = next_count(ctx, &mut tokens, "name count", MAX_NAMES)?;
@@ -1153,8 +1154,7 @@ fn parse_element_map(
             let name_capacity = bounded_len(name_count as u64, 1, text.len()).ok_or_else(|| {
                 CodecError::Malformed("element-map name count exceeds input".into())
             })?;
-            let mut names =
-                ctx.collection_vec(name_capacity, "FreeCAD element map names")?;
+            let mut names = ctx.collection_vec(name_capacity, "FreeCAD element map names")?;
             for _ in 0..name_count {
                 let mut chain = Vec::new();
                 loop {
@@ -1244,9 +1244,13 @@ fn parse_mapped_name(
         })?;
     let mut resolved = base;
     if postfix_index != 0 {
-        ctx.append_retained(&mut resolved, postfixes.get(postfix_index - 1).ok_or_else(|| {
+        ctx.append_retained(
+            &mut resolved,
+            postfixes.get(postfix_index - 1).ok_or_else(|| {
                 CodecError::Malformed("mapped-name postfix index is out of range".into())
-            })?, "FreeCAD mapped name postfix")?;
+            })?,
+            "FreeCAD mapped name postfix",
+        )?;
     }
     let id_count = fields
         .iter()

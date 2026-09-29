@@ -142,7 +142,11 @@ pub(super) fn transfer_closed_face_topology(
         let mut occurrences = Vec::new();
         let mut occurrence_by_support = HashMap::<u32, usize>::new();
         let mut face_ids = Vec::new();
-        if let Err(error) = admission.context().reserve_vec(&mut face_ids, support_runs.len(), "catia_zero_topology_face_ids") {
+        if let Err(error) = admission.context().reserve_vec(
+            &mut face_ids,
+            support_runs.len(),
+            "catia_zero_topology_face_ids",
+        ) {
             return Some(Err(error));
         }
         let mut face_id_by_ordinal = HashMap::<u32, FaceId>::new();
@@ -163,7 +167,12 @@ pub(super) fn transfer_closed_face_topology(
                 FaceId::mint,
                 "catia_zero_topology_face_id"
             ));
-            let inserted = match admission.context().insert_hash_map(&mut face_id_by_ordinal, face.record_ordinal, copied_id!(face_id, FaceId), "catia_zero_topology_face_ordinals") {
+            let inserted = match admission.context().insert_hash_map(
+                &mut face_id_by_ordinal,
+                face.record_ordinal,
+                copied_id!(face_id, FaceId),
+                "catia_zero_topology_face_ordinals",
+            ) {
                 Ok(inserted) => inserted,
                 Err(error) => return Some(Err(error)),
             };
@@ -173,7 +182,11 @@ pub(super) fn transfer_closed_face_topology(
             face_ids.push(face_id);
 
             let mut supports_by_ordinal = HashMap::new();
-            if let Err(error) = admission.context().reserve_map(&mut supports_by_ordinal, run.supports.len(), "catia_zero_topology_support_ordinals") {
+            if let Err(error) = admission.context().reserve_map(
+                &mut supports_by_ordinal,
+                run.supports.len(),
+                "catia_zero_topology_support_ordinals",
+            ) {
                 return Some(Err(error));
             }
             for support in &run.supports {
@@ -241,7 +254,12 @@ pub(super) fn transfer_closed_face_topology(
                         None => None,
                     };
                     let occurrence_index = occurrences.len();
-                    let inserted = match admission.context().insert_hash_map(&mut occurrence_by_support, support_record_ordinal, occurrence_index, "catia_zero_topology_occurrence_ordinals") {
+                    let inserted = match admission.context().insert_hash_map(
+                        &mut occurrence_by_support,
+                        support_record_ordinal,
+                        occurrence_index,
+                        "catia_zero_topology_occurrence_ordinals",
+                    ) {
                         Ok(inserted) => inserted,
                         Err(error) => return Some(Err(error)),
                     };
@@ -259,7 +277,11 @@ pub(super) fn transfer_closed_face_topology(
                         oriented_curve: None,
                         pcurve,
                     };
-                    if let Err(error) = admission.context().push_vec(&mut occurrences, occurrence, "catia_zero_topology_occurrences") {
+                    if let Err(error) = admission.context().push_vec(
+                        &mut occurrences,
+                        occurrence,
+                        "catia_zero_topology_occurrences",
+                    ) {
                         return Some(Err(error));
                     }
                 }
@@ -454,7 +476,12 @@ pub(super) fn transfer_closed_face_topology(
                 if !occurrence_by_support.contains_key(&support_record_ordinal) {
                     return None;
                 }
-                let inserted = match admission.context().insert_hash_map(&mut edge_for_support, support_record_ordinal, edge_index, "catia_zero_topology_edge_for_support") {
+                let inserted = match admission.context().insert_hash_map(
+                    &mut edge_for_support,
+                    support_record_ordinal,
+                    edge_index,
+                    "catia_zero_topology_edge_for_support",
+                ) {
                     Ok(inserted) => inserted,
                     Err(error) => return Some(Err(error)),
                 };
@@ -484,7 +511,12 @@ pub(super) fn transfer_closed_face_topology(
                 if edge_index >= edge_candidates.len() {
                     return None;
                 }
-                let inserted = match admission.context().insert_hash_map(&mut vertex_for_endpoint, (edge_index, endpoint_index), vertex_index, "catia_zero_topology_vertex_for_endpoint") {
+                let inserted = match admission.context().insert_hash_map(
+                    &mut vertex_for_endpoint,
+                    (edge_index, endpoint_index),
+                    vertex_index,
+                    "catia_zero_topology_vertex_for_endpoint",
+                ) {
                     Ok(inserted) => inserted,
                     Err(error) => return Some(Err(error)),
                 };
@@ -507,11 +539,14 @@ pub(super) fn transfer_closed_face_topology(
                 "catia_zero_topology_body_id"
             ))
         } else {
-            admitted!(BodyId::mint(admitted!(admission.context().format_retained(format_args!(
+            admitted!(BodyId::mint(admitted!(admission.context().format_retained(
+                format_args!(
                     "catia:zero-entity:topology-body#inferred-{}-{}",
                     first_face.record_ordinal,
                     support_runs.len()
-                ), "catia_zero_topology_body_id")))
+                ),
+                "catia_zero_topology_body_id"
+            )))
             .map_err(cadmpeg_core::CodecError::malformed))
         };
         let region_id = if let Some(root) = ownership_root {
@@ -523,12 +558,17 @@ pub(super) fn transfer_closed_face_topology(
                 "catia_zero_topology_region_id"
             ))
         } else {
-            admitted!(RegionId::mint(admitted!(admission.context().format_retained(format_args!(
-                    "catia:zero-entity:topology-region#inferred-{}-{}",
-                    first_face.record_ordinal,
-                    support_runs.len()
-                ), "catia_zero_topology_region_id")))
-            .map_err(cadmpeg_core::CodecError::malformed))
+            admitted!(
+                RegionId::mint(admitted!(admission.context().format_retained(
+                    format_args!(
+                        "catia:zero-entity:topology-region#inferred-{}-{}",
+                        first_face.record_ordinal,
+                        support_runs.len()
+                    ),
+                    "catia_zero_topology_region_id"
+                )))
+                .map_err(cadmpeg_core::CodecError::malformed)
+            )
         };
         let shell_id = if let Some(root) = ownership_root {
             admitted!(crate::resource::compose_u32_id(
@@ -539,11 +579,14 @@ pub(super) fn transfer_closed_face_topology(
                 "catia_zero_topology_shell_id"
             ))
         } else {
-            admitted!(ShellId::mint(admitted!(admission.context().format_retained(format_args!(
+            admitted!(ShellId::mint(admitted!(admission.context().format_retained(
+                format_args!(
                     "catia:zero-entity:topology-shell#inferred-{}-{}",
                     first_face.record_ordinal,
                     support_runs.len()
-                ), "catia_zero_topology_shell_id")))
+                ),
+                "catia_zero_topology_shell_id"
+            )))
             .map_err(cadmpeg_core::CodecError::malformed))
         };
 
@@ -564,10 +607,18 @@ pub(super) fn transfer_closed_face_topology(
                 VertexId::mint,
                 "catia_zero_topology_vertex_id"
             ));
-            if let Err(error) = admission.context().push_vec(&mut point_ids, point_id, "catia_zero_topology_point_ids") {
+            if let Err(error) = admission.context().push_vec(
+                &mut point_ids,
+                point_id,
+                "catia_zero_topology_point_ids",
+            ) {
                 return Some(Err(error));
             }
-            if let Err(error) = admission.context().push_vec(&mut vertex_ids, vertex_id, "catia_zero_topology_vertex_ids") {
+            if let Err(error) = admission.context().push_vec(
+                &mut vertex_ids,
+                vertex_id,
+                "catia_zero_topology_vertex_ids",
+            ) {
                 return Some(Err(error));
             }
         }
@@ -592,11 +643,15 @@ pub(super) fn transfer_closed_face_topology(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            if let Err(error) = admission.context().push_vec(&mut ir.model.points, Point::new(
+            if let Err(error) = admission.context().push_vec(
+                &mut ir.model.points,
+                Point::new(
                     copied_id!(point_ids[index], PointId),
                     locus.representative_point,
                     None,
-                ), "catia_zero_topology_points") {
+                ),
+                "catia_zero_topology_points",
+            ) {
                 return Some(Err(error));
             }
             admitted!(annotate(
@@ -623,7 +678,11 @@ pub(super) fn transfer_closed_face_topology(
                 point: copied_id!(point_ids[index], PointId),
                 tolerance: Some(MODEL_POINT_TOLERANCE),
             };
-            if let Err(error) = admission.context().push_vec(&mut ir.model.vertices, vertex, "catia_zero_topology_vertices") {
+            if let Err(error) = admission.context().push_vec(
+                &mut ir.model.vertices,
+                vertex,
+                "catia_zero_topology_vertices",
+            ) {
                 return Some(Err(error));
             }
         }
@@ -666,7 +725,11 @@ pub(super) fn transfer_closed_face_topology(
                     None,
                 ),
             };
-            if let Err(error) = admission.context().push_vec(&mut ir.model.pcurves, pcurve, "catia_zero_topology_pcurves") {
+            if let Err(error) = admission.context().push_vec(
+                &mut ir.model.pcurves,
+                pcurve,
+                "catia_zero_topology_pcurves",
+            ) {
                 return Some(Err(error));
             }
         }
@@ -704,13 +767,21 @@ pub(super) fn transfer_closed_face_topology(
                 ],
                 raw_indices == [0, 1],
             );
-            if let Err(error) = admission.context().push_vec(&mut occurrence_vertex_pairs, pair, "catia_zero_topology_occurrence_vertices") {
+            if let Err(error) = admission.context().push_vec(
+                &mut occurrence_vertex_pairs,
+                pair,
+                "catia_zero_topology_occurrence_vertices",
+            ) {
                 return Some(Err(error));
             }
         }
 
         let mut edge_ids = Vec::new();
-        if let Err(error) = admission.context().reserve_vec(&mut edge_ids, edge_candidates.len(), "catia_zero_topology_edge_ids") {
+        if let Err(error) = admission.context().reserve_vec(
+            &mut edge_ids,
+            edge_candidates.len(),
+            "catia_zero_topology_edge_ids",
+        ) {
             return Some(Err(error));
         }
         let mut coedges_by_support = HashMap::<u32, CoedgeId>::new();
@@ -719,10 +790,13 @@ pub(super) fn transfer_closed_face_topology(
         for candidate in &edge_candidates {
             let first_occurrence =
                 &occurrences[*occurrence_by_support.get(&candidate.support_record_ordinals[0])?];
-            let edge_id = admitted!(EdgeId::mint(admitted!(admission.context().format_retained(format_args!(
+            let edge_id = admitted!(EdgeId::mint(admitted!(admission.context().format_retained(
+                format_args!(
                     "catia:zero-entity:topology-edge#{}-{}",
                     candidate.support_record_ordinals[0], candidate.support_record_ordinals[1]
-                ), "catia_zero_topology_edge_id")))
+                ),
+                "catia_zero_topology_edge_id"
+            )))
             .map_err(cadmpeg_core::CodecError::malformed));
             let (oriented_curve, parameter_range) = first_occurrence.oriented_curve.as_ref()?;
             let param_range = Some(*parameter_range);
@@ -782,7 +856,11 @@ pub(super) fn transfer_closed_face_topology(
                 end: copied_id!(oriented_vertices[1], VertexId),
                 tolerance: Some(MODEL_POINT_TOLERANCE),
             };
-            if let Err(error) = admission.context().push_vec(&mut ir.model.edges, edge, "catia_zero_topology_edges") {
+            if let Err(error) =
+                admission
+                    .context()
+                    .push_vec(&mut ir.model.edges, edge, "catia_zero_topology_edges")
+            {
                 return Some(Err(error));
             }
             edge_ids.push(edge_id);
@@ -800,7 +878,11 @@ pub(super) fn transfer_closed_face_topology(
                     LoopId::mint,
                     "catia_zero_topology_loop_id"
                 ));
-                if let Err(error) = admission.context().push_vec(&mut loop_ids, id, "catia_zero_topology_loop_ids") {
+                if let Err(error) =
+                    admission
+                        .context()
+                        .push_vec(&mut loop_ids, id, "catia_zero_topology_loop_ids")
+                {
                     return Some(Err(error));
                 }
             }
@@ -862,12 +944,15 @@ pub(super) fn transfer_closed_face_topology(
                 loops: match loop_ids.split_first() {
                     // The source states the outer boundary first.
                     Some((outer, inner)) => {
-                        let inner = admitted!(admission.context().try_collect_vec(inner.iter().map(|id| crate::resource::copy_id(
+                        let inner = admitted!(admission.context().try_collect_vec(
+                            inner.iter().map(|id| crate::resource::copy_id(
                                 admission.context(),
                                 id.as_str(),
                                 LoopId::mint,
                                 "catia_zero_topology_inner_loop_id"
-                            )), "catia_zero_topology_inner_loops"));
+                            )),
+                            "catia_zero_topology_inner_loops"
+                        ));
                         cadmpeg_ir::topology::FaceLoops::classified(
                             copied_id!(outer, LoopId),
                             inner,
@@ -879,7 +964,11 @@ pub(super) fn transfer_closed_face_topology(
                 color: None,
                 tolerance: None,
             };
-            if let Err(error) = admission.context().push_vec(&mut ir.model.faces, face_record, "catia_zero_topology_faces") {
+            if let Err(error) = admission.context().push_vec(
+                &mut ir.model.faces,
+                face_record,
+                "catia_zero_topology_faces",
+            ) {
                 return Some(Err(error));
             }
 
@@ -897,7 +986,11 @@ pub(super) fn transfer_closed_face_topology(
                         CoedgeId::mint,
                         "catia_zero_topology_coedge_id"
                     ));
-                    if let Err(error) = admission.context().push_vec(&mut coedge_ids, id, "catia_zero_topology_coedge_ids") {
+                    if let Err(error) = admission.context().push_vec(
+                        &mut coedge_ids,
+                        id,
+                        "catia_zero_topology_coedge_ids",
+                    ) {
                         return Some(Err(error));
                     }
                     let occurrence_index = *occurrence_by_support.get(support_record_ordinal)?;
@@ -909,7 +1002,11 @@ pub(super) fn transfer_closed_face_topology(
                         after: copied_id!(coedge_ids[member_index], CoedgeId),
                         pcurves: Vec::new(),
                     };
-                    if let Err(error) = admission.context().push_vec(&mut vertex_uses, vertex_use, "catia_zero_topology_vertex_uses") {
+                    if let Err(error) = admission.context().push_vec(
+                        &mut vertex_uses,
+                        vertex_use,
+                        "catia_zero_topology_vertex_uses",
+                    ) {
                         return Some(Err(error));
                     }
                 }
@@ -944,12 +1041,15 @@ pub(super) fn transfer_closed_face_topology(
                     "catia_annotation_field"
                 ));
                 let ring = cadmpeg_ir::topology::LoopRing::new(
-                    admitted!(admission.context().try_collect_vec(coedge_ids.iter().map(|id| crate::resource::copy_id(
+                    admitted!(admission.context().try_collect_vec(
+                        coedge_ids.iter().map(|id| crate::resource::copy_id(
                             admission.context(),
                             id.as_str(),
                             CoedgeId::mint,
                             "catia_zero_topology_ring_coedge_id"
-                        )), "catia_zero_topology_ring_coedges")),
+                        )),
+                        "catia_zero_topology_ring_coedges"
+                    )),
                     vertex_uses,
                 )
                 .ok()?;
@@ -961,7 +1061,11 @@ pub(super) fn transfer_closed_face_topology(
                     face: copied_id!(face_id, FaceId),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                 };
-                if let Err(error) = admission.context().push_vec(&mut ir.model.loops, loop_entity, "catia_zero_topology_loops") {
+                if let Err(error) = admission.context().push_vec(
+                    &mut ir.model.loops,
+                    loop_entity,
+                    "catia_zero_topology_loops",
+                ) {
                     return Some(Err(error));
                 }
 
@@ -1021,7 +1125,11 @@ pub(super) fn transfer_closed_face_topology(
                     };
                     let mut pcurves = Vec::new();
                     if let Some(pcurve_use) = pcurve_use {
-                        if let Err(error) = admission.context().push_vec(&mut pcurves, pcurve_use, "catia_zero_topology_coedge_pcurves") {
+                        if let Err(error) = admission.context().push_vec(
+                            &mut pcurves,
+                            pcurve_use,
+                            "catia_zero_topology_coedge_pcurves",
+                        ) {
                             return Some(Err(error));
                         }
                     }
@@ -1098,10 +1206,19 @@ pub(super) fn transfer_closed_face_topology(
                         pcurves,
                         use_curve,
                     };
-                    if let Err(error) = admission.context().push_vec(&mut ir.model.coedges, coedge, "catia_zero_topology_coedges") {
+                    if let Err(error) = admission.context().push_vec(
+                        &mut ir.model.coedges,
+                        coedge,
+                        "catia_zero_topology_coedges",
+                    ) {
                         return Some(Err(error));
                     }
-                    if let Err(error) = admission.context().insert_hash_map(&mut coedges_by_support, support_record_ordinal, coedge_id, "catia_zero_topology_coedges_by_support") {
+                    if let Err(error) = admission.context().insert_hash_map(
+                        &mut coedges_by_support,
+                        support_record_ordinal,
+                        coedge_id,
+                        "catia_zero_topology_coedges_by_support",
+                    ) {
                         return Some(Err(error));
                     }
                 }
@@ -1152,7 +1269,11 @@ pub(super) fn transfer_closed_face_topology(
             return Some(Err(error));
         }
         let mut regions = Vec::new();
-        if let Err(error) = admission.context().push_vec(&mut regions, copied_id!(region_id, RegionId), "catia_zero_topology_body_regions") {
+        if let Err(error) = admission.context().push_vec(
+            &mut regions,
+            copied_id!(region_id, RegionId),
+            "catia_zero_topology_body_regions",
+        ) {
             return Some(Err(error));
         }
         let body = Body {
@@ -1164,7 +1285,11 @@ pub(super) fn transfer_closed_face_topology(
             color: None,
             visible: None,
         };
-        if let Err(error) = admission.context().push_vec(&mut ir.model.bodies, body, "catia_zero_topology_bodies") {
+        if let Err(error) =
+            admission
+                .context()
+                .push_vec(&mut ir.model.bodies, body, "catia_zero_topology_bodies")
+        {
             return Some(Err(error));
         }
         admitted!(annotate(
@@ -1194,7 +1319,11 @@ pub(super) fn transfer_closed_face_topology(
             return Some(Err(error));
         }
         let mut shells = Vec::new();
-        if let Err(error) = admission.context().push_vec(&mut shells, copied_id!(shell_id, ShellId), "catia_zero_topology_region_shells") {
+        if let Err(error) = admission.context().push_vec(
+            &mut shells,
+            copied_id!(shell_id, ShellId),
+            "catia_zero_topology_region_shells",
+        ) {
             return Some(Err(error));
         }
         let region = Region {
@@ -1202,7 +1331,11 @@ pub(super) fn transfer_closed_face_topology(
             body: body_id,
             shells,
         };
-        if let Err(error) = admission.context().push_vec(&mut ir.model.regions, region, "catia_zero_topology_regions") {
+        if let Err(error) = admission.context().push_vec(
+            &mut ir.model.regions,
+            region,
+            "catia_zero_topology_regions",
+        ) {
             return Some(Err(error));
         }
         admitted!(annotate(
@@ -1232,7 +1365,11 @@ pub(super) fn transfer_closed_face_topology(
             return Some(Err(error));
         }
         let shell = Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()).ok()?;
-        if let Err(error) = admission.context().push_vec(&mut ir.model.shells, shell, "catia_zero_topology_shells") {
+        if let Err(error) =
+            admission
+                .context()
+                .push_vec(&mut ir.model.shells, shell, "catia_zero_topology_shells")
+        {
             return Some(Err(error));
         }
 

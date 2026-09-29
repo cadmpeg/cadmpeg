@@ -37,15 +37,25 @@ pub(super) fn ownership_plan(
     graph: &B5Graph,
 ) -> Result<Option<OwnershipPlan>, CodecError> {
     let mut face_ids = HashSet::new();
-    ctx.reserve_set(&mut face_ids, graph.faces.len(), "catia b5 face ownership ids")?;
+    ctx.reserve_set(
+        &mut face_ids,
+        graph.faces.len(),
+        "catia b5 face ownership ids",
+    )?;
     let mut loop_owners = HashMap::<u32, usize>::new();
     for (face_index, face) in graph.faces.iter().enumerate() {
         if !face_ids.insert(face.object_id) || face.loops.is_empty() {
             return Ok(None);
         }
         for loop_id in &face.loops {
-            if ctx.insert_hash_map(&mut loop_owners, *loop_id, face_index, "catia b5 loop owners")?
-            .is_some()
+            if ctx
+                .insert_hash_map(
+                    &mut loop_owners,
+                    *loop_id,
+                    face_index,
+                    "catia b5 loop owners",
+                )?
+                .is_some()
             {
                 return Ok(None);
             }
@@ -75,16 +85,29 @@ pub(super) fn ownership_plan(
             } else {
                 ctx.insert_hash_map(&mut edge_uses, edge, 1, "catia b5 ownership edge uses")?;
             }
-            if let Some(other_face) = ctx.insert_hash_map(&mut first_face_by_edge, edge, face, "catia b5 ownership first faces")? {
+            if let Some(other_face) = ctx.insert_hash_map(
+                &mut first_face_by_edge,
+                edge,
+                face,
+                "catia b5 ownership first faces",
+            )? {
                 parents.union(face, other_face);
             }
         }
     }
 
     let mut labels = HashMap::<usize, usize>::new();
-    ctx.reserve_map(&mut labels, graph.faces.len(), "catia b5 ownership component labels")?;
+    ctx.reserve_map(
+        &mut labels,
+        graph.faces.len(),
+        "catia b5 ownership component labels",
+    )?;
     let mut face_components = Vec::new();
-    ctx.reserve_vec(&mut face_components, graph.faces.len(), "catia b5 face components")?;
+    ctx.reserve_vec(
+        &mut face_components,
+        graph.faces.len(),
+        "catia b5 face components",
+    )?;
     for face in 0..graph.faces.len() {
         let root = parents.find(face);
         let next = labels.len();
@@ -129,10 +152,18 @@ pub(super) fn orient_loop_members(
     charge_collection(ctx, graph.loops.len(), "catia b5 orientation loop ids")?;
     charge_collection(ctx, graph.loops.len(), "catia b5 orientation loop index")?;
     let mut loop_ids = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut loop_ids, graph.loops.len(), "catia b5 orientation loop ids")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut loop_ids,
+        graph.loops.len(),
+        "catia b5 orientation loop ids",
+    )?;
     loop_ids.extend(graph.loops.keys().copied());
     let mut node_by_loop = HashMap::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_map(&mut node_by_loop, loop_ids.len(), "catia b5 orientation loop index")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_map(
+        &mut node_by_loop,
+        loop_ids.len(),
+        "catia b5 orientation loop index",
+    )?;
     for (node, loop_id) in loop_ids.iter().enumerate() {
         node_by_loop.insert(*loop_id, node);
     }
@@ -151,7 +182,12 @@ pub(super) fn orient_loop_members(
         let node = node_by_loop[loop_id];
         for (member, &sense) in graph.loops[loop_id].members.iter().zip(&reversed[loop_id]) {
             if !uses.contains_key(&member.edge) {
-                ctx.insert_hash_map(&mut uses, member.edge, Vec::new(), "catia b5 orientation edge keys")?;
+                ctx.insert_hash_map(
+                    &mut uses,
+                    member.edge,
+                    Vec::new(),
+                    "catia b5 orientation edge keys",
+                )?;
             }
             let Some(occurrences) = uses.get_mut(&member.edge) else {
                 return Ok(None);
@@ -174,8 +210,16 @@ pub(super) fn orient_loop_members(
                 return Ok(None);
             }
         } else {
-            ctx.push_vec(&mut constraints[*left], (*right, parity), "catia b5 orientation adjacent loops")?;
-            ctx.push_vec(&mut constraints[*right], (*left, parity), "catia b5 orientation adjacent loops")?;
+            ctx.push_vec(
+                &mut constraints[*left],
+                (*right, parity),
+                "catia b5 orientation adjacent loops",
+            )?;
+            ctx.push_vec(
+                &mut constraints[*right],
+                (*left, parity),
+                "catia b5 orientation adjacent loops",
+            )?;
         }
     }
 
@@ -190,7 +234,11 @@ pub(super) fn orient_loop_members(
         }
         flips[root] = Some(false);
         let mut pending = Vec::new();
-        ctx.push_vec(&mut pending, (root, false), "catia b5 orientation pending loops")?;
+        ctx.push_vec(
+            &mut pending,
+            (root, false),
+            "catia b5 orientation pending loops",
+        )?;
         while let Some((node, flip)) = pending.pop() {
             for &(neighbor, parity) in &constraints[node] {
                 let required = flip ^ parity;
@@ -199,7 +247,11 @@ pub(super) fn orient_loop_members(
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
-                        ctx.push_vec(&mut pending, (neighbor, required), "catia b5 orientation pending loops")?;
+                        ctx.push_vec(
+                            &mut pending,
+                            (neighbor, required),
+                            "catia b5 orientation pending loops",
+                        )?;
                     }
                 }
             }
@@ -215,13 +267,16 @@ pub(super) fn orient_loop_members(
             return Ok(None);
         };
         let pcurve_senses = graph.loops[&loop_id].pcurve_senses(ctx)?;
-        let members = ctx.collect_vec(senses
+        let members = ctx.collect_vec(
+            senses
                 .into_iter()
                 .zip(pcurve_senses)
                 .map(|(reversed, pcurve_reversed)| OrientedLoopMember {
                     reversed: reversed ^ flipped,
                     pcurve_reversed: pcurve_reversed ^ flipped,
-                }), "catia b5 oriented loop members")?;
+                }),
+            "catia b5 oriented loop members",
+        )?;
         charge_collection(ctx, 1, "catia b5 oriented loops")?;
         oriented.insert(loop_id, OrientedLoop { flipped, members });
     }
@@ -268,7 +323,11 @@ fn b5_planar_loop_points(
         return Ok(None);
     };
     let mut points = Vec::new();
-    ctx.reserve_vec(&mut points, loop_.members.len(), "catia_b5_planar_loop_points")?;
+    ctx.reserve_vec(
+        &mut points,
+        loop_.members.len(),
+        "catia_b5_planar_loop_points",
+    )?;
     for member in loop_orientation.member_order() {
         let edge = loop_.members[member].edge;
         let Some(mut endpoints) = graph.vertices.edge_points(edge) else {
@@ -479,7 +538,12 @@ pub(super) fn emit_faces(
             RegionId::mint,
             "catia_b5_region_id",
         )?;
-        admission.context().insert_btree_map(&mut region_ids, component, id, "catia_b5_region_ids")?;
+        admission.context().insert_btree_map(
+            &mut region_ids,
+            component,
+            id,
+            "catia_b5_region_ids",
+        )?;
     }
     annotate(
         admission.context(),
@@ -506,7 +570,9 @@ pub(super) fn emit_faces(
             RegionId::mint,
             "catia_b5_body_region_id",
         )?;
-        admission.context().push_vec(&mut body_regions, id, "catia_b5_body_regions")?;
+        admission
+            .context()
+            .push_vec(&mut body_regions, id, "catia_b5_body_regions")?;
     }
     let body_record_id = crate::resource::copy_id(
         admission.context(),
@@ -574,7 +640,11 @@ pub(super) fn emit_faces(
             "catia_b5_region_shell_id",
         )?;
         let mut region_shells = Vec::new();
-        admission.context().push_vec(&mut region_shells, region_shell_id, "catia_b5_region_shells")?;
+        admission.context().push_vec(
+            &mut region_shells,
+            region_shell_id,
+            "catia_b5_region_shells",
+        )?;
         admission.reserve_entity(&mut ir.model.regions, "catia_b5_emit_regions")?;
         ir.model.regions.push(Region {
             id: region_record_id,
@@ -613,7 +683,9 @@ pub(super) fn emit_faces(
                 FaceId::mint,
                 "catia_b5_shell_face_id",
             )?;
-            admission.context().push_vec(&mut shell_faces, face_id, "catia_b5_shell_faces")?;
+            admission
+                .context()
+                .push_vec(&mut shell_faces, face_id, "catia_b5_shell_faces")?;
         }
         admission.reserve_entity(&mut ir.model.shells, "catia_b5_emit_shells")?;
         ir.model.shells.push(
@@ -720,9 +792,16 @@ pub(super) fn emit_faces(
             )?;
             let mut coedge_ids_by_member = Vec::new();
             for index in 0..loop_.members.len() {
-                let text = admission.context().format_retained(format_args!("catia:b5:coedge#{loop_id_value}-{index}"), "catia_b5_coedge_id")?;
+                let text = admission.context().format_retained(
+                    format_args!("catia:b5:coedge#{loop_id_value}-{index}"),
+                    "catia_b5_coedge_id",
+                )?;
                 let id = CoedgeId::mint(text).map_err(CodecError::malformed)?;
-                admission.context().push_vec(&mut coedge_ids_by_member, id, "catia_b5_coedge_ids_by_member")?;
+                admission.context().push_vec(
+                    &mut coedge_ids_by_member,
+                    id,
+                    "catia_b5_coedge_ids_by_member",
+                )?;
             }
             let mut coedge_ids = Vec::new();
             for member in orientation.member_order() {
@@ -732,7 +811,11 @@ pub(super) fn emit_faces(
                     CoedgeId::mint,
                     "catia_b5_oriented_coedge_id",
                 )?;
-                admission.context().push_vec(&mut coedge_ids, id, "catia_b5_oriented_coedge_ids")?;
+                admission.context().push_vec(
+                    &mut coedge_ids,
+                    id,
+                    "catia_b5_oriented_coedge_ids",
+                )?;
             }
             let mut vertex_uses = Vec::new();
             for member in orientation.member_order() {
@@ -740,7 +823,10 @@ pub(super) fn emit_faces(
                 let endpoints = graph.vertices.edges()[&edge];
                 let endpoint = endpoints[1 - usize::from(orientation.members[member].reversed)]
                     .combined_index(graph.vertices.raw_points().len());
-                let vertex = VertexId::mint(admission.context().format_retained(format_args!("catia:b5:vertex#{endpoint}"), "catia_b5_loop_vertex_use_id")?)
+                let vertex = VertexId::mint(admission.context().format_retained(
+                    format_args!("catia:b5:vertex#{endpoint}"),
+                    "catia_b5_loop_vertex_use_id",
+                )?)
                 .map_err(CodecError::malformed)?;
                 let after = crate::resource::copy_id(
                     admission.context(),
@@ -748,11 +834,15 @@ pub(super) fn emit_faces(
                     CoedgeId::mint,
                     "catia_b5_loop_vertex_after_id",
                 )?;
-                admission.context().push_vec(&mut vertex_uses, AnchoredVertexUse {
+                admission.context().push_vec(
+                    &mut vertex_uses,
+                    AnchoredVertexUse {
                         vertex,
                         after,
                         pcurves: Vec::new(),
-                    }, "catia_b5_loop_vertex_uses")?;
+                    },
+                    "catia_b5_loop_vertex_uses",
+                )?;
             }
             annotate(
                 admission.context(),
@@ -828,8 +918,16 @@ pub(super) fn emit_faces(
                     )?;
                 }
                 let arena_index = ir.model.coedges.len();
-                admission.context().admit_hash_map_entry(&mut coedges_by_edge, &edge, "catia_b5_coedges_by_edge")?;
-                admission.context().push_vec(coedges_by_edge.entry(edge).or_default(), arena_index, "catia_b5_coedge_radial_occurrences")?;
+                admission.context().admit_hash_map_entry(
+                    &mut coedges_by_edge,
+                    &edge,
+                    "catia_b5_coedges_by_edge",
+                )?;
+                admission.context().push_vec(
+                    coedges_by_edge.entry(edge).or_default(),
+                    arena_index,
+                    "catia_b5_coedge_radial_occurrences",
+                )?;
                 let coedge_record_id = crate::resource::copy_id(
                     admission.context(),
                     id.as_str(),
@@ -868,11 +966,15 @@ pub(super) fn emit_faces(
                         cadmpeg_ir::ids::PcurveId::mint,
                         "catia_b5_coedge_pcurve_id",
                     )?;
-                    admission.context().push_vec(&mut coedge_pcurves, cadmpeg_ir::topology::PcurveUse {
+                    admission.context().push_vec(
+                        &mut coedge_pcurves,
+                        cadmpeg_ir::topology::PcurveUse {
                             pcurve: pcurve_id,
                             isoparametric: None,
                             parameter_range: directed,
-                        }, "catia_b5_coedge_pcurves")?;
+                        },
+                        "catia_b5_coedge_pcurves",
+                    )?;
                 }
                 admission.reserve_entity(&mut ir.model.coedges, "catia_b5_emit_coedges")?;
                 ir.model.coedges.push(Coedge {

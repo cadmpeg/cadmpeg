@@ -433,9 +433,7 @@ pub(super) fn decode(
                     .as_deref()
                     .map(|text| match ctx {
                         Some(ctx) => ctx.copy_retained_text(text, "step_product_description_copy"),
-                        None => {
-                            Ok::<String, CodecError>(text.to_owned())
-                        }
+                        None => Ok::<String, CodecError>(text.to_owned()),
                     })
                     .transpose()?
                     .or(definition_description)
@@ -510,9 +508,7 @@ pub(super) fn decode(
                     .as_deref()
                     .map(|text| match ctx {
                         Some(ctx) => ctx.copy_retained_text(text, "step_product_source_name_copy"),
-                        None => {
-                            Ok::<String, CodecError>(text.to_owned())
-                        }
+                        None => Ok::<String, CodecError>(text.to_owned()),
                     })
                     .transpose()?,
                 label: name
@@ -527,7 +523,7 @@ pub(super) fn decode(
                     Some(ctx) => {
                         ctx.copy_retained_text(&product_id, "step_product_part_number_copy")
                     }
-                    None => Ok::<String, CodecError>(product_id.to_owned()),
+                    None => Ok::<String, CodecError>(product_id.clone()),
                 }?),
                 bom_properties: BTreeMap::new(),
                 bodies,

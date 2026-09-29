@@ -87,7 +87,12 @@ fn sectioned_area_curves_coplanar(
             &curve_id,
             "iges section active curve id",
         )?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut active, active_id, "iges section active curves")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            ctx,
+            &mut active,
+            active_id,
+            "iges section active curves",
+        )?;
         let Some(geometry) = curve.geometry.solved() else {
             return Ok(false);
         };
@@ -1052,11 +1057,23 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut records, record.directory_sequence, record, "iges annotation parameter index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            ctx,
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges annotation parameter index",
+        )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut entries, entry.sequence, entry, "iges annotation directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            ctx,
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges annotation directory index",
+        )?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -1152,7 +1169,12 @@ pub(super) fn project(
             .transpose()?
             .unwrap_or(false);
         if valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut decoded, entry.sequence, "iges annotation decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                ctx,
+                &mut decoded,
+                entry.sequence,
+                "iges annotation decoded sequences",
+            )?;
         } else {
             let message = match kind {
                 AnnotationKind::AngularDimension

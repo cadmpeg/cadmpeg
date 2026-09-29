@@ -115,7 +115,11 @@ pub fn transfer_into_ir<'ir>(
             .add_procedural_curve(owner, procedural)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
-    ctx.extend_vec(&mut ir.model.attributes, attributes, "ASM transfer attributes")?;
+    ctx.extend_vec(
+        &mut ir.model.attributes,
+        attributes,
+        "ASM transfer attributes",
+    )?;
     // Every transfer above appends entities; procedural attachment removes none.
     ctx.charge_entities(
         (ir.model.entity_count() - before) as u64,

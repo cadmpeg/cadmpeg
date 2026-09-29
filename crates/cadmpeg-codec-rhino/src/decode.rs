@@ -829,12 +829,19 @@ impl<'a> DecodeContext<'a> {
         }
         let code = match self.resolve_object(id) {
             ObjectReference::Resolved(order) => {
-                return Ok(Some(self.expand.ctx().format_retained(format_args!("{}", Self::mint_unknown_id(order)), "Rhino resolved object record ID")?));
+                return Ok(Some(self.expand.ctx().format_retained(
+                    format_args!("{}", Self::mint_unknown_id(order)),
+                    "Rhino resolved object record ID",
+                )?));
             }
             ObjectReference::Missing => RhinoLossCode::ReferenceMemberUnresolved,
             ObjectReference::Ambiguous => RhinoLossCode::ReferenceMemberAmbiguous,
         };
-        self.expand.ctx().reserve_vec(&mut self.report.typed_losses, 1, "Rhino typed decode losses")?;
+        self.expand.ctx().reserve_vec(
+            &mut self.report.typed_losses,
+            1,
+            "Rhino typed decode losses",
+        )?;
         self.report.typed_losses.push(crate::wire::admitted_loss(
             self.expand.ctx(),
             code,
@@ -2627,7 +2634,11 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
         let ctx = self.expand.ctx();
         for loss in &self.scan.metadata.losses {
-            ctx.reserve_vec(&mut self.report.phase_losses, 1, "Rhino phase decode losses")?;
+            ctx.reserve_vec(
+                &mut self.report.phase_losses,
+                1,
+                "Rhino phase decode losses",
+            )?;
             self.report
                 .phase_losses
                 .push(loss.clone_admitted(ctx, "Rhino phase decode loss copy")?);
@@ -2731,13 +2742,23 @@ impl<'a> DecodeContext<'a> {
                 );
             }
         }
-        ctx.reserve_vec(&mut self.report.typed_losses, omissions.len(), "Rhino typed decode losses")?;
+        ctx.reserve_vec(
+            &mut self.report.typed_losses,
+            omissions.len(),
+            "Rhino typed decode losses",
+        )?;
         self.report.typed_losses.extend(omissions);
         for diagnostic in self.scan.definitions.diagnostics() {
-            self.expand.ctx().reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
+            self.expand
+                .ctx()
+                .reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
             losses.push(diagnostic.to_loss(self.expand.ctx())?);
         }
-        ctx.reserve_vec(&mut losses, self.report.typed_losses.len(), "Rhino final decode losses")?;
+        ctx.reserve_vec(
+            &mut losses,
+            self.report.typed_losses.len(),
+            "Rhino final decode losses",
+        )?;
         losses.append(&mut self.report.typed_losses);
         for diagnostic in &self.scan.warnings {
             ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
@@ -2750,7 +2771,11 @@ impl<'a> DecodeContext<'a> {
                 "Rhino final decode loss message",
             )?);
         }
-        ctx.reserve_vec(&mut losses, self.report.phase_losses.len(), "Rhino final decode losses")?;
+        ctx.reserve_vec(
+            &mut losses,
+            self.report.phase_losses.len(),
+            "Rhino final decode losses",
+        )?;
         losses.append(&mut self.report.phase_losses);
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
         for diagnostic in &self.report.phase_warnings {
@@ -2819,7 +2844,8 @@ impl<'a> DecodeContext<'a> {
                 RETAINED_RECORD_CAP
             ), "Rhino final decode note")?
         } else {
-            ctx.format_retained(format_args!(
+            ctx.format_retained(
+                format_args!(
                 "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
                  object records and {} opaque records, with complete bytes for {byte_records}; \
                  document cap {} bytes, per-record cap {} bytes",
@@ -2827,7 +2853,9 @@ impl<'a> DecodeContext<'a> {
                 self.opaque_records.len(),
                 RETAINED_DOCUMENT_CAP,
                 RETAINED_RECORD_CAP
-            ), "Rhino final decode note")?
+            ),
+                "Rhino final decode note",
+            )?
         };
         let mut notes = Vec::new();
         ctx.reserve_vec(&mut notes, 1, "Rhino final decode notes")?;
@@ -3659,8 +3687,15 @@ impl<'a> DecodeContext<'a> {
             return Ok(false);
         }
         for mut loss in mesh.losses {
-            self.expand.ctx().reserve_vec(&mut self.report.phase_losses, 1, "Rhino phase decode losses")?;
-            loss.message = self.expand.ctx().format_retained(format_args!("{}: {}", identity.source_id, loss.message), "Rhino phase decode loss message")?;
+            self.expand.ctx().reserve_vec(
+                &mut self.report.phase_losses,
+                1,
+                "Rhino phase decode losses",
+            )?;
+            loss.message = self.expand.ctx().format_retained(
+                format_args!("{}: {}", identity.source_id, loss.message),
+                "Rhino phase decode loss message",
+            )?;
             self.report.phase_losses.push(loss);
         }
         self.report.phase_warnings.append_prefixed_admitted(
@@ -3762,10 +3797,17 @@ impl<'a> DecodeContext<'a> {
         }
         let identity = &object.identity;
         for loss in &raw.losses {
-            self.expand.ctx().reserve_vec(&mut self.report.phase_losses, 1, "Rhino phase decode losses")?;
+            self.expand.ctx().reserve_vec(
+                &mut self.report.phase_losses,
+                1,
+                "Rhino phase decode losses",
+            )?;
             let mut copied =
                 loss.clone_admitted(self.expand.ctx(), "Rhino phase decode loss copy")?;
-            copied.message = self.expand.ctx().format_retained(format_args!("{}: {}", object.class_uuid, loss.message), "Rhino phase decode loss message")?;
+            copied.message = self.expand.ctx().format_retained(
+                format_args!("{}: {}", object.class_uuid, loss.message),
+                "Rhino phase decode loss message",
+            )?;
             self.report.phase_losses.push(copied);
         }
         let Some(scale) = self.neutral_scale() else {
@@ -3838,7 +3880,11 @@ impl<'a> DecodeContext<'a> {
                 } else {
                     self.expansion_budget = budget;
                     self.append_links(source_order, &links)?;
-                    self.expand.ctx().reserve_vec(&mut self.report.typed_losses, typed_losses.len(), "Rhino typed decode losses")?;
+                    self.expand.ctx().reserve_vec(
+                        &mut self.report.typed_losses,
+                        typed_losses.len(),
+                        "Rhino typed decode losses",
+                    )?;
                     self.report.typed_losses.extend(typed_losses);
                     for warning in warnings {
                         match warning.code {
@@ -3943,7 +3989,8 @@ impl<'a> DecodeContext<'a> {
         let mut sorted = Vec::new();
         reserve_transaction_vec(ctx, &mut sorted, outcomes.len(), "Rhino class outcome rows")?;
         for (class, outcome) in outcomes {
-            let label = ctx.format_retained(format_args!("{class}"), "Rhino class outcome label")?;
+            let label =
+                ctx.format_retained(format_args!("{class}"), "Rhino class outcome label")?;
             sorted.push((label, outcome));
         }
         sorted.sort_unstable_by(|(first, _), (second, _)| first.cmp(second));
@@ -4560,7 +4607,10 @@ fn stage_brep_carriers(
                     Ok(id) => id,
                     Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                     Err(error) => {
-                        child_cause = Some(expand.ctx().format_retained(format_args!("C3 slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                        child_cause = Some(expand.ctx().format_retained(
+                            format_args!("C3 slot {index}: {error}"),
+                            "Rhino Brep fallback cause",
+                        )?);
                         continue;
                     }
                 };
@@ -4568,11 +4618,17 @@ fn stage_brep_carriers(
                 c3.insert(index, id);
             }
             Ok(_) => {
-                child_cause = Some(expand.ctx().format_retained(format_args!("C3 slot {index} is not a curve"), "Rhino Brep fallback cause")?);
+                child_cause = Some(expand.ctx().format_retained(
+                    format_args!("C3 slot {index} is not a curve"),
+                    "Rhino Brep fallback cause",
+                )?);
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                child_cause = Some(expand.ctx().format_retained(format_args!("C3 slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                child_cause = Some(expand.ctx().format_retained(
+                    format_args!("C3 slot {index}: {error}"),
+                    "Rhino Brep fallback cause",
+                )?);
             }
         }
     }
@@ -4599,7 +4655,10 @@ fn stage_brep_carriers(
                 let surface_key = match IdentityKey::try_new(key.to_owned()) {
                     Ok(key) => key,
                     Err(error) => {
-                        child_cause = Some(expand.ctx().format_retained(format_args!("surface slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                        child_cause = Some(expand.ctx().format_retained(
+                            format_args!("surface slot {index}: {error}"),
+                            "Rhino Brep fallback cause",
+                        )?);
                         continue;
                     }
                 };
@@ -4671,15 +4730,24 @@ fn stage_brep_carriers(
                 }
                 Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                 Err(error) => {
-                    child_cause = Some(expand.ctx().format_retained(format_args!("surface slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                    child_cause = Some(expand.ctx().format_retained(
+                        format_args!("surface slot {index}: {error}"),
+                        "Rhino Brep fallback cause",
+                    )?);
                 }
             },
             Ok(_) => {
-                child_cause = Some(expand.ctx().format_retained(format_args!("surface slot {index} is not a surface"), "Rhino Brep fallback cause")?);
+                child_cause = Some(expand.ctx().format_retained(
+                    format_args!("surface slot {index} is not a surface"),
+                    "Rhino Brep fallback cause",
+                )?);
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                child_cause = Some(expand.ctx().format_retained(format_args!("surface slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                child_cause = Some(expand.ctx().format_retained(
+                    format_args!("surface slot {index}: {error}"),
+                    "Rhino Brep fallback cause",
+                )?);
             }
         }
     }
@@ -5128,7 +5196,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     );
     let (body_kind, body_kind_substituted) = brep.body_kind(ctx, writer_version)?;
     if let Some(loss) = body_kind_substituted {
-        ctx.reserve_vec(&mut staged.typed_losses, 1, "Rhino staged Brep typed losses")?;
+        ctx.reserve_vec(
+            &mut staged.typed_losses,
+            1,
+            "Rhino staged Brep typed losses",
+        )?;
         staged.typed_losses.push(loss);
     }
     crate::curves::reserve_collection(
@@ -5160,12 +5232,19 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         "Rhino staged Brep links",
     )?;
     for curve in &staged.draft.model().curves {
-        staged.links.push(ctx.format_retained(format_args!("{}", curve.id), "Rhino staged Brep link text")?);
+        staged.links.push(
+            ctx.format_retained(format_args!("{}", curve.id), "Rhino staged Brep link text")?,
+        );
     }
     for surface in &staged.draft.model().surfaces {
-        staged.links.push(ctx.format_retained(format_args!("{}", surface.id), "Rhino staged Brep link text")?);
+        staged.links.push(ctx.format_retained(
+            format_args!("{}", surface.id),
+            "Rhino staged Brep link text",
+        )?);
     }
-    staged.links.push(ctx.format_retained(format_args!("{body_id}"), "Rhino staged Brep link text")?);
+    staged
+        .links
+        .push(ctx.format_retained(format_args!("{body_id}"), "Rhino staged Brep link text")?);
     let derived_ids = {
         let model = staged.draft.model();
         let count = model.bodies.len()
@@ -5182,7 +5261,10 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         macro_rules! append_ids {
             ($field:ident) => {
                 for value in &model.$field {
-                    ids.push(ctx.format_retained(format_args!("{}", value.id), "Rhino staged Brep derived ID text")?);
+                    ids.push(ctx.format_retained(
+                        format_args!("{}", value.id),
+                        "Rhino staged Brep derived ID text",
+                    )?);
                 }
             };
         }
@@ -6331,8 +6413,7 @@ fn hatch_loop_ids(
             .and_then(|length| length.checked_add(".hatch-loop-".len()))
             .and_then(|length| length.checked_add(digits))
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("hatch loop ID length overflow"))?;
-        let mut id =
-            ctx.retained_string(length, "Rhino hatch loop ID text")?;
+        let mut id = ctx.retained_string(length, "Rhino hatch loop ID text")?;
         write!(&mut id, "rhino:object:curve#{key}.hatch-loop-{index}")
             .map_err(|_| cadmpeg_core::CodecError::malformed("hatch loop ID formatting failed"))?;
         ids.push((kind, id));
@@ -6625,7 +6706,10 @@ fn source_association(
     parent_color: Option<Color>,
     parent_visible: Option<bool>,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
-    let object_id = ctx.format_retained(format_args!("{}", identity.object_id), "Rhino source association object ID")?;
+    let object_id = ctx.format_retained(
+        format_args!("{}", identity.object_id),
+        "Rhino source association object ID",
+    )?;
     let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino object UUID is blank"))?;
     let name = (!identity.name.is_empty())
@@ -6635,11 +6719,16 @@ fn source_association(
         .layer
         .as_ref()
         .map(|layer| match layer.id {
-            Some(id) => ctx.format_retained(format_args!("{id}"), "Rhino source association layer ID"),
+            Some(id) => {
+                ctx.format_retained(format_args!("{id}"), "Rhino source association layer ID")
+            }
             None => ctx.copy_retained_text(&layer.name, "Rhino source association layer name"),
         })
         .transpose()?;
-    let mut admitted_path = ctx.collection_vec(instance_path.len(), "Rhino source association instance path")?;
+    let mut admitted_path = ctx.collection_vec(
+        instance_path.len(),
+        "Rhino source association instance path",
+    )?;
     for segment in instance_path {
         admitted_path
             .push(ctx.copy_retained_text(segment, "Rhino source association instance ID")?);
@@ -6681,13 +6770,16 @@ fn loss_provenance(
     class: &str,
     outcome: &ClassOutcome<'_>,
 ) -> Result<SourceProvenance, cadmpeg_core::CodecError> {
-    let tag = ctx.format_retained(format_args!(
+    let tag = ctx.format_retained(
+        format_args!(
             "OBJECT_RECORD/class={class}/type=0x{:08x}",
             outcome
                 .first_object
                 .framed()
                 .map_or(0, |object| object.object_type)
-        ), "Rhino class loss tag")?;
+        ),
+        "Rhino class loss tag",
+    )?;
     Ok(SourceProvenance::root("rhino", outcome.first_object.range().start as u64).with_tag(tag))
 }
 

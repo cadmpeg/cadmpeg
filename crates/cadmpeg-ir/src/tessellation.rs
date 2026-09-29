@@ -1033,7 +1033,9 @@ fn require_triangle_groups(
     if triangle_groups.is_empty() {
         return Ok(());
     }
-    let mut memberships = std::iter::repeat(false).take(triangle_count).collect::<Vec<_>>();
+    let mut memberships = std::iter::repeat_with(|| false)
+        .take(triangle_count)
+        .collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
     let valid = triangle_groups.iter().all(|group| {
         !group.triangles.is_empty()
@@ -1072,7 +1074,9 @@ fn require_texture_assignments(
     if texture_assignments.is_empty() {
         return Ok(());
     }
-    let mut memberships = std::iter::repeat(false).take(triangle_count).collect::<Vec<_>>();
+    let mut memberships = std::iter::repeat_with(|| false)
+        .take(triangle_count)
+        .collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
     let mut anonymous_textures = std::collections::BTreeSet::new();
     let valid = texture_assignments.iter().all(|assignment| {

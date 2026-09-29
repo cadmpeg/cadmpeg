@@ -818,7 +818,7 @@ fn legacy_spline(
         .copied()
         .ok_or_else(|| CodecError::malformed("V1 spline has no stored knots"))?;
     if clamped & 2 != 0 {
-        stored_knots.extend(std::iter::repeat(last).take(knot_count - stored_knots.len()));
+        stored_knots.extend(std::iter::repeat_with(|| last).take(knot_count - stored_knots.len()));
     } else {
         while stored_knots.len() < knot_count {
             stored_knots.push(reader.f64().map_err(malformed)?);
@@ -3481,7 +3481,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             )?
         });
     }
-    ctx.reserve_vec(&mut losses, tolerance_losses.len(), "Rhino V1 report losses")?;
+    ctx.reserve_vec(
+        &mut losses,
+        tolerance_losses.len(),
+        "Rhino V1 report losses",
+    )?;
     losses.append(&mut tolerance_losses);
     let mut notes = Vec::new();
     ctx.reserve_vec(&mut notes, 1, "Rhino V1 report notes")?;

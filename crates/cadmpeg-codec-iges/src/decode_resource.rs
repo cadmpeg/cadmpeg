@@ -240,7 +240,8 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
-        let result = ctx.collect_options([None, Some(7_u8)], "iges optional test")
+        let result = ctx
+            .collect_options([None, Some(7_u8)], "iges optional test")
             .expect("valid test fixture");
         assert_eq!(result, None);
     }
@@ -264,7 +265,8 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("valid test fixture");
-        let result = ctx.collect_options([Some(3_u8), Some(7_u8)], "iges optional test")
+        let result = ctx
+            .collect_options([Some(3_u8), Some(7_u8)], "iges optional test")
             .expect("valid test fixture");
         assert_eq!(result, Some(vec![3, 7]));
     }

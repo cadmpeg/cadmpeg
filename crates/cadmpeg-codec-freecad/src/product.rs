@@ -236,10 +236,13 @@ fn product_record_index<'a>(
     })?;
     for record in records {
         if index.insert(record.object.as_str(), record).is_some() {
-            return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!(
                     "product object {} has duplicate product records",
                     record.object
-                ), "fcstd product duplicate record")?));
+                ),
+                "fcstd product duplicate record",
+            )?));
         }
     }
     Ok(index)
@@ -260,7 +263,11 @@ pub(crate) fn transfer_neutral(
     let mut occurrence_objects = HashSet::new();
     for record in records {
         if matches!(record.node, ProductNode::Occurrence(_)) {
-            ctx.insert_hash_set(&mut occurrence_objects, record.object.as_str(), "fcstd product occurrence names")?;
+            ctx.insert_hash_set(
+                &mut occurrence_objects,
+                record.object.as_str(),
+                "fcstd product occurrence names",
+            )?;
         } else {
             ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names")?;
             component_objects.push(record.object.as_str());
@@ -398,7 +405,10 @@ pub(crate) fn transfer_neutral(
                     parent_by_object.insert(member, record.object.as_str());
                 }
                 Some(previous) if *previous != record.object.as_str() => {
-                    return Err(CodecError::Malformed(ctx.format_retained(format_args!("product member {member} has multiple parent containers"), "fcstd product parent conflict")?));
+                    return Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("product member {member} has multiple parent containers"),
+                        "fcstd product parent conflict",
+                    )?));
                 }
                 Some(_) => {}
             }
@@ -528,7 +538,10 @@ pub(crate) fn transfer_neutral(
                 ),
                 visible: None,
                 link: LinkState::new(
-                    ctx.copy_retained_strings(record.linked_subelements(), "fcstd product occurrence subelements")?,
+                    ctx.copy_retained_strings(
+                        record.linked_subelements(),
+                        "fcstd product occurrence subelements",
+                    )?,
                     record
                         .element_objects()
                         .get(index)
@@ -732,7 +745,10 @@ fn linked_prototype_transform(
         return Ok(Transform::identity());
     };
     if stack.iter().any(|object| object == &record.object) {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!("nested link cycle reaches {}", record.object), "fcstd nested product cycle")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("nested link cycle reaches {}", record.object),
+            "fcstd nested product cycle",
+        )?));
     }
     ctx.reserve_vec(stack, 1, "fcstd nested product stack")?;
     stack.push(ctx.copy_retained_text(&record.object, "fcstd nested product identity")?);
@@ -765,10 +781,16 @@ fn occurrence_count(
         Some(LinkArrayCardinality::Elements(elements)) => elements,
     };
     let count = NonZeroUsize::try_from(elements).or_else(|_| {
-        Err(CodecError::Malformed(ctx.format_retained(format_args!("{} element count exceeds addressable size", record.id), "fcstd product element count")?))
+        Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("{} element count exceeds addressable size", record.id),
+            "fcstd product element count",
+        )?))
     })?;
     if count.get() > 1_000_000 || u32::try_from(count.get()).is_err() {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!("{} link-array count limit exceeded", record.id), "fcstd product array count limit")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("{} link-array count limit exceeded", record.id),
+            "fcstd product array count limit",
+        )?));
     }
     Ok(count)
 }
@@ -883,19 +905,25 @@ fn side_bytes<'a>(
 ) -> Result<Option<View<'a>>, CodecError> {
     require_root(ctx, property, expected_type, name, name)?;
     if property.side_entries().len() > 1 {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "product property {} has multiple {name} side entries",
                 property.id
-            ), "fcstd product side entry count")?));
+            ),
+            "fcstd product side entry count",
+        )?));
     }
     let Some(entry) = property.side_entries().first() else {
         return Ok(None);
     };
     let Some(view) = entries.get(entry).copied() else {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "{property_id} references missing {entry}",
                 property_id = property.id
-            ), "fcstd product missing side entry")?));
+            ),
+            "fcstd product missing side entry",
+        )?));
     };
     Ok(Some(view))
 }
@@ -909,11 +937,14 @@ fn single_link<'a>(
 ) -> Result<Option<&'a crate::native::LinkTarget>, CodecError> {
     require_root(ctx, property, expected_type, name, root)?;
     if property.links().len() != 1 {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "product property {} requires one {name} target, found {}",
                 property.id,
                 property.links().len()
-            ), "fcstd product link target count")?));
+            ),
+            "fcstd product link target count",
+        )?));
     }
     Ok(property.links()[0].as_ref())
 }
@@ -931,10 +962,13 @@ fn link_list<'a>(
         .skip(1)
         .any(|value| value.tag != "Link")
     {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "product property {} has a non-Link child in {name}",
                 property.id
-            ), "fcstd product link list child")?));
+            ),
+            "fcstd product link list child",
+        )?));
     }
     Ok(property.links())
 }
@@ -947,10 +981,13 @@ fn require_root(
     root: &str,
 ) -> Result<(), CodecError> {
     if property.type_name != expected_type {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "product property {} has runtime type {}, expected {expected_type} for {name}",
                 property.id, property.type_name
-            ), "fcstd product runtime type")?));
+            ),
+            "fcstd product runtime type",
+        )?));
     }
     if property.values().first().map(|value| value.tag.as_str()) != Some(root)
         || property
@@ -960,10 +997,13 @@ fn require_root(
             .count()
             != 1
     {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "product property {} requires one {root} value for {name}",
                 property.id
-            ), "fcstd product root value")?));
+            ),
+            "fcstd product root value",
+        )?));
     }
     Ok(())
 }
@@ -977,10 +1017,13 @@ fn single_value<'a>(
 ) -> Result<&'a crate::native::ValueRecord, CodecError> {
     require_root(ctx, property, expected_type, name, root)?;
     if property.values().len() != 1 {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "product property {} has multiple values for {name}",
                 property.id
-            ), "fcstd product value count")?));
+            ),
+            "fcstd product value count",
+        )?));
     }
     Ok(&property.values()[0])
 }
@@ -1153,10 +1196,16 @@ fn bool_property(
     };
     let value = single_value(ctx, property, "App::PropertyBool", name, "Bool")?;
     let Some(value) = value.attributes.get("value") else {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!("product property {} has no Bool value", property.id), "fcstd product missing boolean")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("product property {} has no Bool value", property.id),
+            "fcstd product missing boolean",
+        )?));
     };
     let Some(value) = parse_bool(value) else {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!("product property {} has an invalid Bool value", property.id), "fcstd product invalid boolean")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("product property {} has an invalid Bool value", property.id),
+            "fcstd product invalid boolean",
+        )?));
     };
     Ok(Some(value))
 }
@@ -1177,14 +1226,20 @@ fn integer_property(
         "Integer",
     )?;
     let Some(value) = value.attributes.get("value") else {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!("product property {} has no Integer value", property.id), "fcstd product missing integer")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("product property {} has no Integer value", property.id),
+            "fcstd product missing integer",
+        )?));
     };
     match value.parse() {
         Ok(value) => Ok(Some(value)),
-        Err(_) => Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        Err(_) => Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "product property {} has an invalid Integer value",
                 property.id
-            ), "fcstd product invalid integer")?)),
+            ),
+            "fcstd product invalid integer",
+        )?)),
     }
 }
 
@@ -1204,15 +1259,21 @@ fn copy_on_change_property(
         "Integer",
     )?;
     let Some(raw) = value.attributes.get("value") else {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!("product property {} has no enumeration value", property.id), "fcstd product missing enumeration")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("product property {} has no enumeration value", property.id),
+            "fcstd product missing enumeration",
+        )?));
     };
     NativeCopyOnChangePolicy::from_raw(ctx.copy_retained_text(raw, "fcstd copy on change policy")?)
         .map(Some)
         .or_else(|_| {
-            Err(CodecError::Malformed(ctx.format_retained(format_args!(
+            Err(CodecError::Malformed(ctx.format_retained(
+                format_args!(
                     "product property {} has an invalid enumeration Integer value",
                     property.id
-                ), "fcstd product invalid enumeration")?))
+                ),
+                "fcstd product invalid enumeration",
+            )?))
         })
 }
 
@@ -1277,7 +1338,10 @@ fn scale_property(
     };
     let value = single_value(ctx, property, "App::PropertyFloat", "Scale", "Float")?;
     let Some(value) = value.attributes.get("value") else {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!("product property {} has no Float value", property.id), "fcstd product missing scale")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("product property {} has no Float value", property.id),
+            "fcstd product missing scale",
+        )?));
     };
     let value = parse_finite(ctx, value, property, "Scale")?;
     Ok(Some([value; 3].into()))
@@ -1296,10 +1360,13 @@ fn vector_property(
     )?;
     let component = |name: &str| {
         let Some(value) = value.attributes.get(name) else {
-            return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!(
                     "product property {} has no {name} vector component",
                     property.id
-                ), "fcstd product missing scale component")?));
+                ),
+                "fcstd product missing scale component",
+            )?));
         };
         parse_finite(ctx, value, property, "ScaleVector")
     };
@@ -1318,10 +1385,13 @@ fn parse_finite(
     name: &str,
 ) -> Result<FiniteReal, CodecError> {
     let Some(value) = value.parse::<f64>().ok().and_then(FiniteReal::new) else {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "product property {} has an invalid finite value for {name}",
                 property.id
-            ), "fcstd product invalid finite scale")?));
+            ),
+            "fcstd product invalid finite scale",
+        )?));
     };
     Ok(value)
 }
@@ -1336,13 +1406,19 @@ fn bool_list(
     };
     let value = single_value(ctx, property, "App::PropertyBoolList", name, "BoolList")?;
     let Some(encoded) = value.attributes.get("value") else {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!("product property {} has no BoolList value", property.id), "fcstd product missing visibility list")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("product property {} has no BoolList value", property.id),
+            "fcstd product missing visibility list",
+        )?));
     };
     if encoded.bytes().any(|byte| !matches!(byte, b'0' | b'1')) {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "product property {} has an invalid BoolList bit string",
                 property.id
-            ), "fcstd product invalid visibility list")?));
+            ),
+            "fcstd product invalid visibility list",
+        )?));
     }
     // FreeCAD writes the most-significant bit first: the rightmost source bit
     // belongs to element zero. The raw XML remains on the property record;

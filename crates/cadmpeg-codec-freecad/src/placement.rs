@@ -15,7 +15,10 @@ pub(crate) fn placement_matrix(
 ) -> Result<Option<FiniteFrame>, CodecError> {
     match placement_matrix_value(property) {
         Ok(value) => Ok(Some(value)),
-        Err(issue) => Err(CodecError::Malformed(ctx.format_retained(format_args!("placement property {} {issue}", property.id), "FreeCAD placement error")?)),
+        Err(issue) => Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("placement property {} {issue}", property.id),
+            "FreeCAD placement error",
+        )?)),
     }
 }
 

@@ -603,10 +603,8 @@ impl CompoundState {
             "retain CFB allocation sector ids",
         )?;
         let sector = |id| sector_slice(bytes, sector_size, sector_count, id);
-        let mut fat_sectors = cadmpeg_core::decode::DecodeContext::admitted_vec(
-            fat_count,
-            "CFB FAT sectors",
-        )?;
+        let mut fat_sectors =
+            cadmpeg_core::decode::DecodeContext::admitted_vec(fat_count, "CFB FAT sectors")?;
         let mut header_free_seen = false;
         for index in 0..109 {
             let id = field(76 + index * 4, "header DIFAT entry")?;
@@ -1690,10 +1688,7 @@ fn join_sectors<'a>(
         .count()
         .checked_mul(sector_size)
         .ok_or_else(|| CodecError::Malformed("CFB chain byte length overflow".into()))?;
-    let mut output = cadmpeg_core::decode::DecodeContext::admitted_vec(
-        length,
-        "join CFB sectors",
-    )?;
+    let mut output = cadmpeg_core::decode::DecodeContext::admitted_vec(length, "join CFB sectors")?;
     for &sector in sectors {
         let data = sector_slice(bytes, sector_size, sector_count, sector)
             .ok_or_else(|| CodecError::Malformed("CFB sector is absent".into()))?;

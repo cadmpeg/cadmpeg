@@ -164,11 +164,10 @@ impl<'a> Cur<'a> {
             self.pos = mark;
             return None;
         };
-        let mut values =
-            match ctx.collection_vec(count, "ASM counted float array") {
-                Ok(values) => values,
-                Err(error) => return Some(Err(error)),
-            };
+        let mut values = match ctx.collection_vec(count, "ASM counted float array") {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        };
         for _ in 0..count {
             let Some(value) = self.take_f64() else {
                 self.pos = mark;
@@ -240,12 +239,10 @@ pub(super) fn take_knot_table(
         mults.push(cur.take_long()?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    let mut expanded =
-        match ctx.collection_vec(expansion.expanded_len(), "ASM expanded knots")
-        {
-            Ok(expanded) => expanded,
-            Err(error) => return Some(Err(error)),
-        };
+    let mut expanded = match ctx.collection_vec(expansion.expanded_len(), "ASM expanded knots") {
+        Ok(expanded) => expanded,
+        Err(error) => return Some(Err(error)),
+    };
     for (index, (value, multiplicity)) in values.iter().zip(&mults).enumerate() {
         let run_length = usize::try_from(*multiplicity).ok()?
             + usize::from(index == 0 || index + 1 == mults.len());
@@ -335,7 +332,11 @@ pub(super) fn owned_subtype_defs<'a>(
             Token::SubtypeOpen => {
                 if depth == 0 {
                     if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1) {
-                        if let Err(error) = ctx.push_vec(&mut owned, (pos, name.as_str()), "ASM owned subtype definitions") {
+                        if let Err(error) = ctx.push_vec(
+                            &mut owned,
+                            (pos, name.as_str()),
+                            "ASM owned subtype definitions",
+                        ) {
                             return Some(Err(error));
                         }
                     }
@@ -459,7 +460,11 @@ pub(super) fn cache_scope<'a>(
             Err(error) => return Some(Err(error)),
         };
         if !markers.is_empty() {
-            if let Err(error) = ctx.push_vec(&mut cache_bearing, scope.tokens(), "ASM cache bearing scopes") {
+            if let Err(error) = ctx.push_vec(
+                &mut cache_bearing,
+                scope.tokens(),
+                "ASM cache bearing scopes",
+            ) {
                 return Some(Err(error));
             }
         }

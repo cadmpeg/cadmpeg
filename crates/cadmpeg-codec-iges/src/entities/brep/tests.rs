@@ -74,7 +74,9 @@ fn brep_counted_vectors_refuse_before_nested_allocation() {
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let admitted = ctx.collection_vec::<u8>(2, "iges B-rep use pcurves").unwrap();
+    let admitted = ctx
+        .collection_vec::<u8>(2, "iges B-rep use pcurves")
+        .unwrap();
     assert!(admitted.capacity() >= 2);
 }
 

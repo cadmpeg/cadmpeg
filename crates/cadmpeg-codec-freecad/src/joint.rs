@@ -241,7 +241,10 @@ pub(crate) fn transfer_neutral(
                 return Ok(None);
             };
             let object = ctx.copy_retained_text(name, "fcstd joint operand object")?;
-            let mut subelements = ctx.collection_vec(reference.subelements().len(), "fcstd joint operand subelements")?;
+            let mut subelements = ctx.collection_vec(
+                reference.subelements().len(),
+                "fcstd joint operand subelements",
+            )?;
             for name in reference
                 .subelements()
                 .iter()

@@ -1173,7 +1173,7 @@ fn elevate_to_degree(
                     ),
                 ))
             })?;
-            elevated_knots.extend(std::iter::repeat(knots[span]).take(added));
+            elevated_knots.extend(std::iter::repeat_with(|| knots[span]).take(added));
         }
         let added = bezier.len() - skip;
         ctx.charge_collection_items(added as u64, "Rhino polycurve elevated points")?;
@@ -1200,7 +1200,7 @@ fn elevate_to_degree(
             ),
         ))
     })?;
-    elevated_knots.extend(std::iter::repeat(domain[1]).take(target + 1));
+    elevated_knots.extend(std::iter::repeat_with(|| domain[1]).take(target + 1));
     ctx.charge_collection_items(elevated.len() as u64, "Rhino polycurve output weights")?;
     let mut output_weights = Vec::new();
     output_weights

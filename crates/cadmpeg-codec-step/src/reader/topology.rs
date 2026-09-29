@@ -1068,7 +1068,10 @@ pub(super) fn decode(
             if let Some(message) = failure_message {
                 push_topology_vec(
                     &mut result.losses,
-                    StepLossCode::TopologyRootRejected.note(ctx.format_retained(format_args!("STEP topology root #{id} rejected: {message}"), "step_topology_root_rejected_text")?),
+                    StepLossCode::TopologyRootRejected.note(ctx.format_retained(
+                        format_args!("STEP topology root #{id} rejected: {message}"),
+                        "step_topology_root_rejected_text",
+                    )?),
                     ctx,
                     "step_topology_losses",
                 )?;
@@ -1100,7 +1103,10 @@ pub(super) fn decode(
                 let detail = failure_message
                     .as_deref()
                     .map(|message| {
-                        ctx.format_retained(format_args!(": {message}"), "step_topology_root_failure_detail")
+                        ctx.format_retained(
+                            format_args!(": {message}"),
+                            "step_topology_root_failure_detail",
+                        )
                     })
                     .transpose()?
                     .unwrap_or_default();
@@ -1344,10 +1350,13 @@ fn geometric_set_omission_message(
     omitted: &[u64],
     ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
-    ctx.format_retained(format_args!(
+    ctx.format_retained(
+        format_args!(
             "{representation_type} #{id} omitted unsupported or unresolved member(s): {}",
             OmittedMembers(omitted)
-        ), "step_geometric_set_omission_text")
+        ),
+        "step_geometric_set_omission_text",
+    )
 }
 
 enum BuildOutcome {

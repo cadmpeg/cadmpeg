@@ -977,7 +977,10 @@ fn displacement_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     displacement: &crate::mesh_modifiers::DisplacementModifier,
 ) -> Result<DisplacementRecord, CodecError> {
-    let mut sub_items = ctx.collection_vec(displacement.sub_items.len(), "Rhino projected displacement sub-items")?;
+    let mut sub_items = ctx.collection_vec(
+        displacement.sub_items.len(),
+        "Rhino projected displacement sub-items",
+    )?;
     for item in &displacement.sub_items {
         sub_items.push(DisplacementSubItemRecord {
             face_index: item.face_index,
@@ -985,7 +988,10 @@ fn displacement_record(
             texture: item
                 .texture
                 .map(|uuid| {
-                    ctx.format_retained(format_args!("{uuid}"), "Rhino projected displacement sub-item texture UUID")
+                    ctx.format_retained(
+                        format_args!("{uuid}"),
+                        "Rhino projected displacement sub-item texture UUID",
+                    )
                 })
                 .transpose()?,
             channel: item.channel,
@@ -999,7 +1005,10 @@ fn displacement_record(
         texture: displacement
             .texture
             .map(|uuid| {
-                ctx.format_retained(format_args!("{uuid}"), "Rhino projected displacement texture UUID")
+                ctx.format_retained(
+                    format_args!("{uuid}"),
+                    "Rhino projected displacement texture UUID",
+                )
             })
             .transpose()?,
         channel: displacement.channel,
@@ -1063,13 +1072,19 @@ fn shut_lining_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     shut_lining: &crate::mesh_modifiers::ShutLiningModifier,
 ) -> Result<ShutLiningRecord, CodecError> {
-    let mut curves = ctx.collection_vec(shut_lining.curves.len(), "Rhino projected shut-lining curves")?;
+    let mut curves = ctx.collection_vec(
+        shut_lining.curves.len(),
+        "Rhino projected shut-lining curves",
+    )?;
     for curve in &shut_lining.curves {
         curves.push(ShutLiningCurveRecord {
             uuid: curve
                 .uuid
                 .map(|uuid| {
-                    ctx.format_retained(format_args!("{uuid}"), "Rhino projected shut-lining curve UUID")
+                    ctx.format_retained(
+                        format_args!("{uuid}"),
+                        "Rhino projected shut-lining curve UUID",
+                    )
                 })
                 .transpose()?,
             radius: curve.radius,
@@ -1386,26 +1401,46 @@ fn object_attributes_presentation(
     )?;
     let name = ctx.copy_retained_text(&attributes.name, "Rhino projected object name")?;
     let url = ctx.copy_retained_text(&attributes.url, "Rhino projected object URL")?;
-    let mut group_indexes = ctx.collection_vec(attributes.groups.len(), "Rhino projected object groups")?;
+    let mut group_indexes =
+        ctx.collection_vec(attributes.groups.len(), "Rhino projected object groups")?;
     group_indexes.extend_from_slice(&attributes.groups);
-    let mut display_materials = ctx.collection_vec(attributes.display_materials.len(), "Rhino projected display materials")?;
+    let mut display_materials = ctx.collection_vec(
+        attributes.display_materials.len(),
+        "Rhino projected display materials",
+    )?;
     for (viewport, material) in &attributes.display_materials {
         display_materials.push([
-            ctx.format_retained(format_args!("{viewport}"), "Rhino projected display viewport UUID")?,
-            ctx.format_retained(format_args!("{material}"), "Rhino projected display material UUID")?,
+            ctx.format_retained(
+                format_args!("{viewport}"),
+                "Rhino projected display viewport UUID",
+            )?,
+            ctx.format_retained(
+                format_args!("{material}"),
+                "Rhino projected display material UUID",
+            )?,
         ]);
     }
     let viewport_uuid = if attributes.viewport_id.is_nil() {
         None
     } else {
-        Some(ctx.format_retained(format_args!("{}", attributes.viewport_id), "Rhino projected active viewport UUID")?)
+        Some(ctx.format_retained(
+            format_args!("{}", attributes.viewport_id),
+            "Rhino projected active viewport UUID",
+        )?)
     };
-    let mut clipping_plane_uuids = ctx.collection_vec(attributes.clipping_plane_ids.len(), "Rhino projected clipping plane UUIDs")?;
+    let mut clipping_plane_uuids = ctx.collection_vec(
+        attributes.clipping_plane_ids.len(),
+        "Rhino projected clipping plane UUIDs",
+    )?;
     for id in &attributes.clipping_plane_ids {
-        clipping_plane_uuids.push(ctx.format_retained(format_args!("{id}"), "Rhino projected clipping plane UUID text")?);
+        clipping_plane_uuids.push(ctx.format_retained(
+            format_args!("{id}"),
+            "Rhino projected clipping plane UUID text",
+        )?);
     }
     Ok(ObjectAttributesPresentation {
-        source_uuid: ctx.format_retained(format_args!("{source_uuid}"), "Rhino projected source UUID")?,
+        source_uuid: ctx
+            .format_retained(format_args!("{source_uuid}"), "Rhino projected source UUID")?,
         name,
         url,
         layer_index: attributes.layer_index,
@@ -2219,9 +2254,7 @@ fn parse_texture(
     Ok(TextureRecord {
         source_offset: source_offset as u64,
         source_uuid: (!id.is_nil())
-            .then(|| {
-                ctx.format_retained(format_args!("{id}"), "Rhino texture source UUID")
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino texture source UUID"))
             .transpose()?,
         mapping_channel_id,
         legacy_file_path,
@@ -2236,7 +2269,10 @@ fn parse_texture(
         transparent_color,
         transparency_texture_uuid: (!transparency.is_nil())
             .then(|| {
-                ctx.format_retained(format_args!("{transparency}"), "Rhino texture transparency UUID")
+                ctx.format_retained(
+                    format_args!("{transparency}"),
+                    "Rhino texture transparency UUID",
+                )
             })
             .transpose()?,
         bump_scale,
@@ -2499,16 +2535,20 @@ fn parse_v2_v3_material(
     reader.skip_remaining()?;
     Ok(MaterialRecord {
         id: if id.is_nil() {
-            ctx.format_retained(format_args!("rhino:presentation:material#record-{source_offset}"), "Rhino material ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:material#record-{source_offset}"),
+                "Rhino material ID",
+            )?
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:material#{id}"), "Rhino material ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:material#{id}"),
+                "Rhino material ID",
+            )?
         },
         source_offset: source_offset as u64,
         archive_index: Some(archive_index),
         source_uuid: (!id.is_nil())
-            .then(|| {
-                ctx.format_retained(format_args!("{id}"), "Rhino material source UUID")
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino material source UUID"))
             .transpose()?,
         name,
         plugin_uuid: ctx.format_retained(format_args!("{plugin}"), "Rhino material plugin UUID")?,
@@ -2681,15 +2721,24 @@ fn parse_material(
     reader.skip_remaining()?;
     Ok(MaterialRecord {
         id: if component.id.is_nil() {
-            ctx.format_retained(format_args!("rhino:presentation:material#record-{source_offset}"), "Rhino material ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:material#record-{source_offset}"),
+                "Rhino material ID",
+            )?
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:material#{}", component.id), "Rhino material ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:material#{}", component.id),
+                "Rhino material ID",
+            )?
         },
         source_offset: source_offset as u64,
         archive_index: component.index,
         source_uuid: (!component.id.is_nil())
             .then(|| {
-                ctx.format_retained(format_args!("{}", component.id), "Rhino material source UUID")
+                ctx.format_retained(
+                    format_args!("{}", component.id),
+                    "Rhino material source UUID",
+                )
             })
             .transpose()?,
         name: component.name,
@@ -2710,9 +2759,7 @@ fn parse_material(
         fresnel,
         rdk_instance_uuid: rdk
             .filter(|id| !id.is_nil())
-            .map(|id| {
-                ctx.format_retained(format_args!("{id}"), "Rhino material RDK UUID")
-            })
+            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino material RDK UUID"))
             .transpose()?,
         diffuse_texture_alpha_transparency: alpha,
         physically_based,
@@ -2744,16 +2791,20 @@ fn parse_group(
     let id = id.filter(|id| !id.is_nil());
     Ok(GroupRecord {
         id: if let Some(id) = id {
-            ctx.format_retained(format_args!("rhino:presentation:group#{id}"), "Rhino group ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:group#{id}"),
+                "Rhino group ID",
+            )?
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:group#index-{index}"), "Rhino group ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:group#index-{index}"),
+                "Rhino group ID",
+            )?
         },
         source_offset: source_offset as u64,
         archive_index: index,
         source_uuid: id
-            .map(|id| {
-                ctx.format_retained(format_args!("{id}"), "Rhino group source UUID")
-            })
+            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino group source UUID"))
             .transpose()?,
         name,
         links: Vec::new(),
@@ -2795,10 +2846,13 @@ fn disambiguate_group_ids(
     let changed = duplicate_indices.len();
     for order in duplicate_indices {
         let group = &mut groups[order];
-        group.id = ctx.format_retained(format_args!(
+        group.id = ctx.format_retained(
+            format_args!(
                 "{}-source-offset-{:016x}-record-{order:06}",
                 group.id, group.source_offset
-            ), "Rhino disambiguated group ID")?;
+            ),
+            "Rhino disambiguated group ID",
+        )?;
     }
     Ok(changed)
 }
@@ -2860,15 +2914,24 @@ fn parse_light(
     }
     let mut links = Vec::new();
     if let Some(order) = link_order {
-        let link = ctx.format_retained(format_args!("rhino:object:record#{order:06}"), "Rhino light object link")?;
+        let link = ctx.format_retained(
+            format_args!("rhino:object:record#{order:06}"),
+            "Rhino light object link",
+        )?;
         ctx.reserve_vec(&mut links, 1, "Rhino light links")?;
         links.push(link);
     }
     Ok(LightRecord {
         id: if id.is_nil() {
-            ctx.format_retained(format_args!("rhino:presentation:light#record-{source_offset}"), "Rhino light ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:light#record-{source_offset}"),
+                "Rhino light ID",
+            )?
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:light#{id}"), "Rhino light ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:light#{id}"),
+                "Rhino light ID",
+            )?
         },
         source_offset: source_offset as u64,
         source_uuid: ctx.format_retained(format_args!("{id}"), "Rhino light source UUID")?,
@@ -2906,7 +2969,10 @@ fn push_light(
         .ok_or_else(|| CodecError::malformed("light source UUID is invalid"))?;
     if !source_id.is_nil() {
         if indexes.contains_key(&source_id) {
-            light.id = ctx.format_retained(format_args!("{}-offset-{}", light.id, light.source_offset), "Rhino duplicate light ID")?;
+            light.id = ctx.format_retained(
+                format_args!("{}-offset-{}", light.id, light.source_offset),
+                "Rhino duplicate light ID",
+            )?;
         } else {
             workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
                 Uuid,
@@ -3072,16 +3138,20 @@ fn parse_linetype(
     let id = component.id;
     Ok(LinetypeRecord {
         id: if id.is_nil() {
-            ctx.format_retained(format_args!("rhino:presentation:linetype#record-{source_offset}"), "Rhino linetype ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:linetype#record-{source_offset}"),
+                "Rhino linetype ID",
+            )?
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:linetype#{id}"), "Rhino linetype ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:linetype#{id}"),
+                "Rhino linetype ID",
+            )?
         },
         source_offset: source_offset as u64,
         archive_index: component.index,
         source_uuid: (!id.is_nil())
-            .then(|| {
-                ctx.format_retained(format_args!("{id}"), "Rhino linetype source UUID")
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino linetype source UUID"))
             .transpose()?,
         name: component.name,
         segments,
@@ -3315,9 +3385,15 @@ fn parse_hatch_pattern(
     };
     Ok(HatchPatternRecord {
         id: if component.id.is_nil() {
-            ctx.format_retained(format_args!("rhino:presentation:hatch_pattern#record-{source_offset}"), "Rhino hatch ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:hatch_pattern#record-{source_offset}"),
+                "Rhino hatch ID",
+            )?
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:hatch_pattern#{}", component.id), "Rhino hatch ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:hatch_pattern#{}", component.id),
+                "Rhino hatch ID",
+            )?
         },
         source_offset: source_offset as u64,
         archive_index: component.index,
@@ -3421,7 +3497,10 @@ fn dimension_style_controls(
     put!(
         "source_dimension_style_uuid",
         (!source.is_nil())
-            .then(|| ctx.format_retained(format_args!("{source}"), "Rhino dimension control source UUID"))
+            .then(|| ctx.format_retained(
+                format_args!("{source}"),
+                "Rhino dimension control source UUID"
+            ))
             .transpose()?
     );
     put!("color_sources", reader.array::<4>()?);
@@ -3491,9 +3570,18 @@ fn dimension_style_controls(
     put!(
         "arrow_block_uuids",
         [
-            ctx.format_retained(format_args!("{}", uuid(reader)?), "Rhino dimension arrow UUID")?,
-            ctx.format_retained(format_args!("{}", uuid(reader)?), "Rhino dimension arrow UUID")?,
-            ctx.format_retained(format_args!("{}", uuid(reader)?), "Rhino dimension arrow UUID")?
+            ctx.format_retained(
+                format_args!("{}", uuid(reader)?),
+                "Rhino dimension arrow UUID"
+            )?,
+            ctx.format_retained(
+                format_args!("{}", uuid(reader)?),
+                "Rhino dimension arrow UUID"
+            )?,
+            ctx.format_retained(
+                format_args!("{}", uuid(reader)?),
+                "Rhino dimension arrow UUID"
+            )?
         ]
     );
     if minor >= 1 {
@@ -3629,7 +3717,10 @@ fn parse_v5_dimension_style_extra(
     Ok(V5DimensionStyleExtraRecord {
         parent_style_uuid: (!parent_style_uuid.is_nil())
             .then(|| {
-                ctx.format_retained(format_args!("{parent_style_uuid}"), "Rhino V5 dimension parent UUID")
+                ctx.format_retained(
+                    format_args!("{parent_style_uuid}"),
+                    "Rhino V5 dimension parent UUID",
+                )
             })
             .transpose()?,
         valid_fields,
@@ -3646,7 +3737,10 @@ fn parse_v5_dimension_style_extra(
         dimension_scale_source,
         source_style_uuid: (!source_style_uuid.is_nil())
             .then(|| {
-                ctx.format_retained(format_args!("{source_style_uuid}"), "Rhino V5 dimension source UUID")
+                ctx.format_retained(
+                    format_args!("{source_style_uuid}"),
+                    "Rhino V5 dimension source UUID",
+                )
             })
             .transpose()?,
     })
@@ -3797,16 +3891,20 @@ fn parse_v5_dimension_style(
     })?;
     Ok(DimensionStyleRecord {
         id: if id.is_nil() {
-            ctx.format_retained(format_args!("rhino:presentation:dimension_style#record-{source_offset}"), "Rhino dimension style ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:dimension_style#record-{source_offset}"),
+                "Rhino dimension style ID",
+            )?
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:dimension_style#{id}"), "Rhino dimension style ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:dimension_style#{id}"),
+                "Rhino dimension style ID",
+            )?
         },
         source_offset: source_offset as u64,
         archive_index: Some(archive_index),
         source_uuid: (!id.is_nil())
-            .then(|| {
-                ctx.format_retained(format_args!("{id}"), "Rhino dimension style source UUID")
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino dimension style source UUID"))
             .transpose()?,
         name,
         extension_line_extension_mm,
@@ -3887,15 +3985,24 @@ fn parse_dimension_style(
     let controls = dimension_style_controls(ctx, data, &mut reader, archive, scale, version.1)?;
     Ok(DimensionStyleRecord {
         id: if component.id.is_nil() {
-            ctx.format_retained(format_args!("rhino:presentation:dimension_style#record-{source_offset}"), "Rhino dimension style ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:dimension_style#record-{source_offset}"),
+                "Rhino dimension style ID",
+            )?
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:dimension_style#{}", component.id), "Rhino dimension style ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:dimension_style#{}", component.id),
+                "Rhino dimension style ID",
+            )?
         },
         source_offset: source_offset as u64,
         archive_index: component.index,
         source_uuid: (!component.id.is_nil())
             .then(|| {
-                ctx.format_retained(format_args!("{}", component.id), "Rhino dimension style source UUID")
+                ctx.format_retained(
+                    format_args!("{}", component.id),
+                    "Rhino dimension style source UUID",
+                )
             })
             .transpose()?,
         name: component.name,
@@ -4033,15 +4140,19 @@ fn parse_embedded_image(
     let source_uuid = source_uuid.filter(|id| !id.is_nil());
     Ok(EmbeddedImageRecord {
         id: if let Some(id) = source_uuid {
-            ctx.format_retained(format_args!("rhino:presentation:image#{id}"), "Rhino image ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:image#{id}"),
+                "Rhino image ID",
+            )?
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:image#record-{source_offset}"), "Rhino image ID")?
+            ctx.format_retained(
+                format_args!("rhino:presentation:image#record-{source_offset}"),
+                "Rhino image ID",
+            )?
         },
         source_offset: source_offset as u64,
         source_uuid: source_uuid
-            .map(|id| {
-                ctx.format_retained(format_args!("{id}"), "Rhino image source UUID")
-            })
+            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino image source UUID"))
             .transpose()?,
         name,
         file_path,
@@ -4184,9 +4295,15 @@ fn parse_windows_bitmap(
     reader.skip_remaining()?;
     let buffer = &data[pixel_buffer_offset..pixel_buffer_end];
     Ok(WindowsBitmapRecord {
-        id: ctx.format_retained(format_args!("rhino:presentation:windows_bitmap#offset-{source_offset}"), "Rhino Windows bitmap ID")?,
+        id: ctx.format_retained(
+            format_args!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
+            "Rhino Windows bitmap ID",
+        )?,
         source_offset: source_offset as u64,
-        class_uuid: ctx.format_retained(format_args!("{class_uuid}"), "Rhino Windows bitmap class UUID")?,
+        class_uuid: ctx.format_retained(
+            format_args!("{class_uuid}"),
+            "Rhino Windows bitmap class UUID",
+        )?,
         file_path,
         header_size,
         width_pixels,
@@ -4264,7 +4381,10 @@ fn parse_texture_mapping(
                         && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
                 });
         (
-            Some(ctx.format_retained(format_args!("{}", value.class_uuid), "Rhino texture mapping primitive UUID")?),
+            Some(ctx.format_retained(
+                format_args!("{}", value.class_uuid),
+                "Rhino texture mapping primitive UUID",
+            )?),
             cache_requires_opaque,
         )
     };
@@ -4275,9 +4395,15 @@ fn parse_texture_mapping(
     Ok(ParsedTextureMapping {
         value: TextureMappingRecord {
             id: if id.is_nil() {
-                ctx.format_retained(format_args!("rhino:presentation:texture_mapping#record-{source_offset}"), "Rhino texture mapping ID")?
+                ctx.format_retained(
+                    format_args!("rhino:presentation:texture_mapping#record-{source_offset}"),
+                    "Rhino texture mapping ID",
+                )?
             } else {
-                ctx.format_retained(format_args!("rhino:presentation:texture_mapping#{id}"), "Rhino texture mapping ID")?
+                ctx.format_retained(
+                    format_args!("rhino:presentation:texture_mapping#{id}"),
+                    "Rhino texture mapping ID",
+                )?
             },
             source_offset: source_offset as u64,
             source_uuid: (!id.is_nil())
@@ -4339,7 +4465,10 @@ fn parse_rendering_mapping_channel(
         RenderingMappingChannel {
             mapping_channel_id,
             mapping_uuid: if retain_uuid {
-                ctx.format_retained(format_args!("{mapping_uuid}"), "Rhino rendering channel UUID")?
+                ctx.format_retained(
+                    format_args!("{mapping_uuid}"),
+                    "Rhino rendering channel UUID",
+                )?
             } else {
                 String::new()
             },
@@ -4403,9 +4532,15 @@ fn rendering_attributes(
                     ));
                 }
                 let plugin = uuid(&mut value)?;
-                let plugin_uuid = ctx.format_retained(format_args!("{plugin}"), "Rhino rendering material plugin UUID")?;
+                let plugin_uuid = ctx.format_retained(
+                    format_args!("{plugin}"),
+                    "Rhino rendering material plugin UUID",
+                )?;
                 let front = uuid(&mut value)?;
-                let front_material_uuid = ctx.format_retained(format_args!("{front}"), "Rhino rendering front material UUID")?;
+                let front_material_uuid = ctx.format_retained(
+                    format_args!("{front}"),
+                    "Rhino rendering front material UUID",
+                )?;
                 let obsolete_mapping_count = checked_count_bytes(
                     value.i32()?,
                     1,
@@ -4431,7 +4566,10 @@ fn rendering_attributes(
                     Some(RenderingMaterialBackFace {
                         back_material_uuid: (!id.is_nil())
                             .then(|| {
-                                ctx.format_retained(format_args!("{id}"), "Rhino rendering back material UUID")
+                                ctx.format_retained(
+                                    format_args!("{id}"),
+                                    "Rhino rendering back material UUID",
+                                )
                             })
                             .transpose()?,
                         material_source: source,
@@ -4479,7 +4617,10 @@ fn rendering_attributes(
                     ));
                 }
                 let plugin = uuid(&mut value)?;
-                let plugin_uuid = ctx.format_retained(format_args!("{plugin}"), "Rhino rendering mapping plugin UUID")?;
+                let plugin_uuid = ctx.format_retained(
+                    format_args!("{plugin}"),
+                    "Rhino rendering mapping plugin UUID",
+                )?;
                 let channel_count = checked_count_bytes(
                     value.i32()?,
                     1,
@@ -4680,8 +4821,7 @@ fn parse_text_style(
                     FramingError::structural(reader.position(), "legacy font face length overflow")
                 })?;
         }
-        let mut windows_logfont_name =
-            ctx.retained_string(face_len, "Rhino legacy font face")?;
+        let mut windows_logfont_name = ctx.retained_string(face_len, "Rhino legacy font face")?;
         for character in std::char::decode_utf16(face_units.iter().copied()) {
             windows_logfont_name.push(character.unwrap_or(char::REPLACEMENT_CHARACTER));
         }
@@ -4737,13 +4877,14 @@ fn parse_text_style(
         };
         reader.skip_remaining()?;
         return Ok(TextStyleRecord {
-            id: ctx.format_retained(format_args!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"), "Rhino text style ID")?,
+            id: ctx.format_retained(
+                format_args!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
+                "Rhino text style ID",
+            )?,
             source_offset: source_offset as u64,
             archive_index: Some(index),
             source_uuid: (!id.is_nil())
-                .then(|| {
-                    ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID")
-                })
+                .then(|| ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID"))
                 .transpose()?,
             name: ctx.copy_retained_text(&description, "Rhino text style name")?,
             font_description: description,
@@ -4783,23 +4924,30 @@ fn parse_text_style(
         id: if id.is_nil() {
             index.map_or_else(
                 || {
-                    ctx.format_retained(format_args!("rhino:presentation:text_style#offset-{source_offset}"), "Rhino text style ID")
+                    ctx.format_retained(
+                        format_args!("rhino:presentation:text_style#offset-{source_offset}"),
+                        "Rhino text style ID",
+                    )
                 },
                 |index| {
-                    ctx.format_retained(format_args!(
+                    ctx.format_retained(
+                        format_args!(
                             "rhino:presentation:text_style#index-{index}-offset-{source_offset}"
-                        ), "Rhino text style ID")
+                        ),
+                        "Rhino text style ID",
+                    )
                 },
             )
         } else {
-            ctx.format_retained(format_args!("rhino:presentation:text_style#{id}"), "Rhino text style ID")
+            ctx.format_retained(
+                format_args!("rhino:presentation:text_style#{id}"),
+                "Rhino text style ID",
+            )
         }?,
         source_offset: source_offset as u64,
         archive_index: index,
         source_uuid: (!id.is_nil())
-            .then(|| {
-                ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID")
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID"))
             .transpose()?,
         name,
         font_description,
@@ -4955,8 +5103,14 @@ pub(crate) fn install(
                     ) {
                         Ok(mut material) => {
                             if let Some(instance_id) = legacy_rdk_instance_id {
-                                material.plugin_uuid = ctx.format_retained(format_args!("{UNIVERSAL_RENDER_ENGINE}"), "Rhino material render-engine UUID")?;
-                                material.rdk_instance_uuid = Some(ctx.format_retained(format_args!("{instance_id}"), "Rhino material instance UUID")?);
+                                material.plugin_uuid = ctx.format_retained(
+                                    format_args!("{UNIVERSAL_RENDER_ENGINE}"),
+                                    "Rhino material render-engine UUID",
+                                )?;
+                                material.rdk_instance_uuid = Some(ctx.format_retained(
+                                    format_args!("{instance_id}"),
+                                    "Rhino material instance UUID",
+                                )?);
                             }
                             ctx.reserve_vec(&mut materials, 1, "Rhino materials")?;
                             materials.push(material);
@@ -5355,7 +5509,10 @@ pub(crate) fn install(
                 }
                 let members = group_members.entry(*group).or_default();
                 ctx.reserve_vec(members, 1, "Rhino group member links")?;
-                members.push(ctx.format_retained(format_args!("rhino:object:record#{source_order:06}"), "Rhino group member link")?);
+                members.push(ctx.format_retained(
+                    format_args!("rhino:object:record#{source_order:06}"),
+                    "Rhino group member link",
+                )?);
             }
         }
         if object.class_uuid == LIGHT {
@@ -5411,17 +5568,29 @@ pub(crate) fn install(
                 identity.object_id,
                 &mut losses,
             )?;
-            let mut links =
-                ctx.collection_vec(1, "Rhino object presentation links")?;
-            links.push(ctx.format_retained(format_args!("rhino:object:record#{source_order:06}"), "Rhino object presentation link")?);
-            ctx.reserve_vec(&mut object_presentation, 1, "Rhino object presentation records")?;
+            let mut links = ctx.collection_vec(1, "Rhino object presentation links")?;
+            links.push(ctx.format_retained(
+                format_args!("rhino:object:record#{source_order:06}"),
+                "Rhino object presentation link",
+            )?);
+            ctx.reserve_vec(
+                &mut object_presentation,
+                1,
+                "Rhino object presentation records",
+            )?;
             object_presentation.push(ObjectPresentationRecord {
                 id: if identity.object_id.is_nil()
                     || object_id_counts.get(&identity.object_id).copied() != Some(1)
                 {
-                    ctx.format_retained(format_args!("rhino:presentation:object#record-{source_order:06}"), "Rhino object presentation ID")?
+                    ctx.format_retained(
+                        format_args!("rhino:presentation:object#record-{source_order:06}"),
+                        "Rhino object presentation ID",
+                    )?
                 } else {
-                    ctx.format_retained(format_args!("rhino:presentation:object#{}", identity.object_id), "Rhino object presentation ID")?
+                    ctx.format_retained(
+                        format_args!("rhino:presentation:object#{}", identity.object_id),
+                        "Rhino object presentation ID",
+                    )?
                 },
                 source_offset: object.range.start as u64,
                 attributes: attributes_presentation,
@@ -5467,7 +5636,10 @@ pub(crate) fn install(
                 RenderingAttributesPresentation::default()
             }
         };
-        let mut per_viewport_settings = ctx.collection_vec(layer.per_viewport_settings.len(), "Rhino layer presentation viewport settings")?;
+        let mut per_viewport_settings = ctx.collection_vec(
+            layer.per_viewport_settings.len(),
+            "Rhino layer presentation viewport settings",
+        )?;
         per_viewport_settings.extend_from_slice(&layer.per_viewport_settings);
         ctx.reserve_vec(&mut layers, 1, "Rhino layer presentation records")?;
         layers.push(LayerPresentationRecord {
@@ -5475,19 +5647,28 @@ pub(crate) fn install(
                 .id
                 .filter(|id| layer_id_counts.get(id).copied() == Some(1))
             {
-                ctx.format_retained(format_args!("rhino:presentation:layer#{id}"), "Rhino layer presentation ID")?
+                ctx.format_retained(
+                    format_args!("rhino:presentation:layer#{id}"),
+                    "Rhino layer presentation ID",
+                )?
             } else {
-                ctx.format_retained(format_args!(
+                ctx.format_retained(
+                    format_args!(
                         "rhino:presentation:layer#index-{}-offset-{}",
                         layer.index, layer.source.range.start
-                    ), "Rhino layer presentation ID")?
+                    ),
+                    "Rhino layer presentation ID",
+                )?
             },
             source_offset: layer.source.range.start as u64,
             archive_index: layer.index,
             source_uuid: layer
                 .id
                 .map(|id| {
-                    ctx.format_retained(format_args!("{id}"), "Rhino layer presentation source UUID")
+                    ctx.format_retained(
+                        format_args!("{id}"),
+                        "Rhino layer presentation source UUID",
+                    )
                 })
                 .transpose()?,
             hierarchy: layer.hierarchy,
@@ -5510,7 +5691,10 @@ pub(crate) fn install(
                 .display_material_id
                 .filter(|id| !id.is_nil())
                 .map(|id| {
-                    ctx.format_retained(format_args!("{id}"), "Rhino layer presentation display material UUID")
+                    ctx.format_retained(
+                        format_args!("{id}"),
+                        "Rhino layer presentation display material UUID",
+                    )
                 })
                 .transpose()?,
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),

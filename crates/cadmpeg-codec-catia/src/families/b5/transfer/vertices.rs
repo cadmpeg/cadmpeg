@@ -28,7 +28,12 @@ pub(super) fn transfer_vertex_tolerances(
 ) -> Result<BTreeMap<usize, PositiveReal>, cadmpeg_core::CodecError> {
     let mut tolerances = BTreeMap::new();
     for (&vertex, &tolerance) in &graph.vertex_tolerances {
-        ctx.insert_btree_map(&mut tolerances, vertex, tolerance, "catia_b5_transfer_vertex_tolerances")?;
+        ctx.insert_btree_map(
+            &mut tolerances,
+            vertex,
+            tolerance,
+            "catia_b5_transfer_vertex_tolerances",
+        )?;
     }
     for (&edge, supports) in supports {
         let Some(&vertices) = graph.vertices.edges().get(&edge) else {

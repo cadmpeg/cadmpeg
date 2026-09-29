@@ -209,7 +209,11 @@ fn add_edge(
             None,
         ),
     ]);
-    ctx.reserve_vec(&mut ir.model.vertices, 2, "iges spline neutral vertex slots")?;
+    ctx.reserve_vec(
+        &mut ir.model.vertices,
+        2,
+        "iges spline neutral vertex slots",
+    )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_splines")?;
     ir.model.vertices.extend([
         Vertex {
@@ -275,11 +279,23 @@ pub(super) fn project(
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut records, record.directory_sequence, record, "iges splines parameter index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges splines parameter index",
+        )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges splines directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges splines directory index",
+        )?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -362,7 +378,10 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(breakpoints) = ctx.collect_options((5..5 + breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)), "iges spline curve breakpoints")?
+        let Some(breakpoints) = ctx.collect_options(
+            (5..5 + breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline curve breakpoints",
+        )?
         else {
             super::push_optional_entity_loss(
                 Some(ctx),
@@ -394,8 +413,11 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(coefficients) = ctx.collect_options((coefficient_start..coefficient_start + coefficient_count)
-                .map(|index| record.number(index).and_then(FiniteReal::new)), "iges spline curve coefficients")?
+        let Some(coefficients) = ctx.collect_options(
+            (coefficient_start..coefficient_start + coefficient_count)
+                .map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline curve coefficients",
+        )?
         else {
             super::push_optional_entity_loss(
                 Some(ctx),
@@ -591,13 +613,16 @@ pub(super) fn project(
                     }
                 }
             }
-            let Some(bezier) = ctx.collect_options((0..4).map(|index| {
+            let Some(bezier) = ctx.collect_options(
+                (0..4).map(|index| {
                     transform.apply_point(Point3::new(
                         x[index] * factor,
                         y[index] * factor,
                         z[index] * factor,
                     ))
-                }), "iges spline curve Bezier controls")?
+                }),
+                "iges spline curve Bezier controls",
+            )?
             else {
                 continuous = false;
                 break;
@@ -622,8 +647,11 @@ pub(super) fn project(
             continue;
         }
         let tail_start = coefficient_start + coefficient_count;
-        let Some(tail) = ctx.collect_options((tail_start..tail_start + 12)
-                .map(|index| record.number(index).and_then(FiniteReal::new)), "iges spline curve terminal derivatives")?
+        let Some(tail) = ctx.collect_options(
+            (tail_start..tail_start + 12)
+                .map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline curve terminal derivatives",
+        )?
         else {
             super::push_optional_entity_loss(
                 Some(ctx),
@@ -717,7 +745,12 @@ pub(super) fn project(
         wire_edges.push(edge);
         super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 112 curve type, continuity, and dimensionality are retained only in native parameters"))?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges splines decoded sequences")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut decoded,
+            entry.sequence,
+            "iges splines decoded sequences",
+        )?;
     }
 
     for entry in directory
@@ -851,7 +884,10 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(u_breakpoints) = ctx.collect_options((5..5 + u_breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)), "iges spline surface u breakpoints")?
+        let Some(u_breakpoints) = ctx.collect_options(
+            (5..5 + u_breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline surface u breakpoints",
+        )?
         else {
             super::push_optional_entity_loss(
                 Some(ctx),
@@ -862,8 +898,11 @@ pub(super) fn project(
             continue;
         };
         let v_breakpoint_start = 5 + u_breakpoint_count;
-        let Some(v_breakpoints) = ctx.collect_options((v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
-                .map(|index| record.number(index).and_then(FiniteReal::new)), "iges spline surface v breakpoints")?
+        let Some(v_breakpoints) = ctx.collect_options(
+            (v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
+                .map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline surface v breakpoints",
+        )?
         else {
             super::push_optional_entity_loss(
                 Some(ctx),
@@ -970,8 +1009,11 @@ pub(super) fn project(
                     valid = false;
                     break 'patches;
                 };
-                let Some(values) = ctx.collect_options((block_start..block_start + 48)
-                        .map(|index| record.number(index).and_then(FiniteReal::new)), "iges spline surface patch coefficients")?
+                let Some(values) = ctx.collect_options(
+                    (block_start..block_start + 48)
+                        .map(|index| record.number(index).and_then(FiniteReal::new)),
+                    "iges spline surface patch coefficients",
+                )?
                 else {
                     valid = false;
                     break 'patches;
@@ -1054,7 +1096,8 @@ pub(super) fn project(
         };
         let mut rows = ctx.collection_vec(u_count, "iges spline surface pole rows")?;
         for points in control_points.chunks(v_count) {
-            let mut row = ctx.collection_vec(points.len(), "iges spline surface pole row controls")?;
+            let mut row =
+                ctx.collection_vec(points.len(), "iges spline surface pole row controls")?;
             row.extend_from_slice(points);
             rows.push(row);
         }
@@ -1094,7 +1137,11 @@ pub(super) fn project(
             entry.sequence,
             Some(ctx),
         )?;
-        ctx.reserve_vec(&mut ir.model.surfaces, 1, "iges spline neutral surface slots")?;
+        ctx.reserve_vec(
+            &mut ir.model.surfaces,
+            1,
+            "iges spline neutral surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_splines")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
@@ -1108,7 +1155,12 @@ pub(super) fn project(
             IgesLossCode::SplineHeaderNotTransferred,
             format_args!("Type 114 curve and patch types are retained only in native parameters"),
         )?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges splines decoded sequences")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut decoded,
+            entry.sequence,
+            "iges splines decoded sequences",
+        )?;
     }
 
     Ok(WireProjectionOutcome {

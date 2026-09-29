@@ -87,11 +87,30 @@ fn binary_brep_location_capacity_refuses_on_collection_limit() {
 #[test]
 fn text_brep_location_capacity_refuses_on_collection_limit() {
     let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 1 1 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0";
-    let result = with_collection_limit(bytes, 0, |ctx| parse_text(ctx, bytes));
+    let token_count = std::str::from_utf8(bytes)
+        .expect("ASCII fixture")
+        .split_ascii_whitespace()
+        .count() as u64;
+    let result = with_collection_limit(bytes, token_count, |ctx| parse_text(ctx, bytes));
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD B-rep parse_locations"
+    ));
+}
+
+#[test]
+fn text_brep_token_capacity_refuses_on_collection_limit() {
+    let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 1 1 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0";
+    let token_count = std::str::from_utf8(bytes)
+        .expect("ASCII fixture")
+        .split_ascii_whitespace()
+        .count() as u64;
+    let result = with_collection_limit(bytes, token_count - 1, |ctx| parse_text(ctx, bytes));
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD text B-rep tokens"
     ));
 }
 

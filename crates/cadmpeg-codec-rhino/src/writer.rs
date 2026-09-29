@@ -1863,7 +1863,7 @@ fn check_knot_roundtrip(
 fn header(version: RhinoArchiveVersion) -> Vec<u8> {
     let text = version.value().to_string();
     let mut bytes = MAGIC.to_vec();
-    bytes.extend(std::iter::repeat(b' ').take(8 - text.len()));
+    bytes.extend(std::iter::repeat_with(|| b' ').take(8 - text.len()));
     bytes.extend(text.bytes());
     bytes
 }

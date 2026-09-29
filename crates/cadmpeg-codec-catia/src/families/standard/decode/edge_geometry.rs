@@ -1094,13 +1094,16 @@ pub(super) fn build_standard_edge_curve(
             let radius = admitted_radius.get();
             let start = ir.model.points[points[0]].position().get();
             let end = ir.model.points[points[1]].position().get();
-            let mut axes = ctx.collect_vec(support
+            let mut axes = ctx.collect_vec(
+                support
                     .faces
                     .iter()
                     .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
                     .filter_map(|surface| {
                         standard_circle_axis_from_carrier(center, radius, &surface.geometry)
-                    }), "catia_standard_edge_circle_axes")?;
+                    }),
+                "catia_standard_edge_circle_axes",
+            )?;
             for axis in native_support.into_iter().flat_map(|native| {
                 native.carriers.iter().filter_map(|carrier| {
                     let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
@@ -2081,7 +2084,8 @@ pub(super) fn attach_standard_circles(
         let admitted_radius = radius;
         let center = center.get();
         let radius = radius.get();
-        let axes = admission.context().collect_vec(support
+        let axes = admission.context().collect_vec(
+            support
                 .faces
                 .iter()
                 .filter_map(|face| bindings.get(*face))
@@ -2093,7 +2097,9 @@ pub(super) fn attach_standard_circles(
                 })
                 .filter_map(|surface| {
                     standard_circle_axis_from_carrier(center, radius, &surface.geometry)
-                }), "catia_standard_attached_circle_axes")?;
+                }),
+            "catia_standard_attached_circle_axes",
+        )?;
         let Some(axis) = axes.first().copied() else {
             continue;
         };

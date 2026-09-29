@@ -259,7 +259,11 @@ fn standard_surface_record_table(
     let mut analytic_ranges = Vec::new();
     for record in records.values() {
         if let StandardSurfaceRecord::Analytic(prefix) = record {
-            ctx.push_vec(&mut analytic_ranges, (prefix.pos - analytic_plane::MARKER, record.end()), "catia_surface_analytic_ranges")?;
+            ctx.push_vec(
+                &mut analytic_ranges,
+                (prefix.pos - analytic_plane::MARKER, record.end()),
+                "catia_surface_analytic_ranges",
+            )?;
         }
     }
     let mut next_analytic = analytic_ranges.iter().copied().peekable();
@@ -307,14 +311,27 @@ fn standard_surface_record_table(
     }
 
     let mut ordered_records = Vec::new();
-    ctx.reserve_vec(&mut ordered_records, records.len(), "catia_surface_ordered_records")?;
+    ctx.reserve_vec(
+        &mut ordered_records,
+        records.len(),
+        "catia_surface_ordered_records",
+    )?;
     ordered_records.extend(records.into_values());
     let mut record_indices = HashMap::new();
     for (index, record) in ordered_records.iter().enumerate() {
-        ctx.insert_hash_map(&mut record_indices, record.pos(), index, "catia_surface_record_indices")?;
+        ctx.insert_hash_map(
+            &mut record_indices,
+            record.pos(),
+            index,
+            "catia_surface_record_indices",
+        )?;
     }
     let mut successors = Vec::new();
-    ctx.reserve_vec(&mut successors, ordered_records.len(), "catia_surface_successors")?;
+    ctx.reserve_vec(
+        &mut successors,
+        ordered_records.len(),
+        "catia_surface_successors",
+    )?;
     for record in &ordered_records {
         successors.push(record_indices.get(&record.end()).copied());
     }
@@ -345,7 +362,11 @@ pub(super) fn standard_surface_record_groups(
         let mut current = Some(start);
         let mut group = Vec::new();
         while let Some(index) = current {
-            ctx.push_vec(&mut group, table.records[index].clone(), "catia_surface_group_records")?;
+            ctx.push_vec(
+                &mut group,
+                table.records[index].clone(),
+                "catia_surface_group_records",
+            )?;
             current = table.successors[index];
         }
         if group
@@ -392,7 +413,11 @@ pub(super) fn standard_surface_populations(
         else {
             continue;
         };
-        ctx.push_vec(&mut populations, StandardSurfacePopulation { records, supports }, "catia_surface_populations")?;
+        ctx.push_vec(
+            &mut populations,
+            StandardSurfacePopulation { records, supports },
+            "catia_surface_populations",
+        )?;
     }
     Ok(populations)
 }
@@ -427,8 +452,10 @@ pub(super) fn pair_standard_populations(
         Ok(Some((
             layout,
             StandardSurfacePopulation {
-                records: ctx.copy_retained_slice(&population.records, "catia_population_pair_records")?,
-                supports: ctx.copy_retained_slice(&population.supports, "catia_population_pair_supports")?,
+                records: ctx
+                    .copy_retained_slice(&population.records, "catia_population_pair_records")?,
+                supports: ctx
+                    .copy_retained_slice(&population.supports, "catia_population_pair_supports")?,
             },
         )))
     };
@@ -607,11 +634,15 @@ pub(crate) fn surface_prefixes(
         if brep[i - 2] != 0x00 || brep[i - 1] != kind.prebyte() {
             continue;
         }
-        ctx.push_vec(&mut out, SurfacePrefix {
+        ctx.push_vec(
+            &mut out,
+            SurfacePrefix {
                 pos: i,
                 target: u24_le(brep, i - analytic_plane::MARKER),
                 kind,
-            }, "catia_surface_prefixes")?;
+            },
+            "catia_surface_prefixes",
+        )?;
     }
     Ok(out)
 }
@@ -645,19 +676,26 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
             continue;
         };
         let target = u24_le(brep, pos - 3);
-        if !ctx.insert_hash_set(&mut seen_targets, target, "catia_plane_seen_targets")?
-        {
-            ctx.insert_hash_set(&mut duplicate_targets, target, "catia_plane_duplicate_targets")?;
+        if !ctx.insert_hash_set(&mut seen_targets, target, "catia_plane_seen_targets")? {
+            ctx.insert_hash_set(
+                &mut duplicate_targets,
+                target,
+                "catia_plane_duplicate_targets",
+            )?;
         }
         let Some(normal) = normals.get(&target).copied() else {
             continue;
         };
         let [x, y, z] = bounds.sphere_center;
-        ctx.push_vec(&mut out, PlaneParams {
+        ctx.push_vec(
+            &mut out,
+            PlaneParams {
                 target,
                 origin: FinitePoint3::from_coordinates(x, y, z),
                 normal,
-            }, "catia_plane_params")?;
+            },
+            "catia_plane_params",
+        )?;
     }
     out.retain(|plane| !duplicate_targets.contains(&plane.target));
     Ok(out)
@@ -731,7 +769,11 @@ pub(super) fn standard_curve_supports(
         if population.records.len() == face_count
             && edge_count.is_none_or(|count| population.supports.len() == count)
         {
-            ctx.push_vec(&mut matching_populations, population, "catia_matching_surface_populations")?;
+            ctx.push_vec(
+                &mut matching_populations,
+                population,
+                "catia_matching_surface_populations",
+            )?;
         }
     }
     if populations

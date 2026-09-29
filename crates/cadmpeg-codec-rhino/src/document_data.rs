@@ -254,7 +254,10 @@ fn annotation_settings(
             if id.is_nil() {
                 None
             } else {
-                Some(ctx.format_retained(format_args!("{id}"), "Rhino annotation dimension layer UUID")?)
+                Some(ctx.format_retained(
+                    format_args!("{id}"),
+                    "Rhino annotation dimension layer UUID",
+                )?)
             }
         } else {
             None
@@ -579,7 +582,10 @@ pub(crate) fn install(
     ir: &mut CadIr,
 ) -> Result<NativeInstall, CodecError> {
     let properties = &scan.metadata.properties;
-    let mut revisions = ctx.collection_vec(usize::from(properties.revision_history.is_some()), "Rhino document revisions")?;
+    let mut revisions = ctx.collection_vec(
+        usize::from(properties.revision_history.is_some()),
+        "Rhino document revisions",
+    )?;
     if let Some(value) = &properties.revision_history {
         revisions.push(RevisionRecord {
             id: ctx.copy_retained_text("rhino:document:revision#current", "Rhino revision ID")?,
@@ -592,7 +598,10 @@ pub(crate) fn install(
             revision_count: value.revision_count,
         });
     }
-    let mut notes = ctx.collection_vec(usize::from(properties.notes.is_some()), "Rhino document notes")?;
+    let mut notes = ctx.collection_vec(
+        usize::from(properties.notes.is_some()),
+        "Rhino document notes",
+    )?;
     if let Some(value) = &properties.notes {
         notes.push(NotesRecord {
             id: ctx.copy_retained_text("rhino:document:notes#current", "Rhino notes ID")?,
@@ -604,7 +613,10 @@ pub(crate) fn install(
             locked: value.locked,
         });
     }
-    let mut applications = ctx.collection_vec(usize::from(properties.application.is_some()), "Rhino document applications")?;
+    let mut applications = ctx.collection_vec(
+        usize::from(properties.application.is_some()),
+        "Rhino document applications",
+    )?;
     if let Some(value) = &properties.application {
         applications.push(ApplicationRecord {
             id: ctx
@@ -655,7 +667,10 @@ pub(crate) fn install(
             )?,
         });
     }
-    let mut setting_records = ctx.collection_vec(settings.unsupported.len(), "Rhino unsupported setting records")?;
+    let mut setting_records = ctx.collection_vec(
+        settings.unsupported.len(),
+        "Rhino unsupported setting records",
+    )?;
     for (index, value) in settings.unsupported.iter().enumerate() {
         setting_records.push(SettingRecord {
             id: retained_numbered_id(ctx, "rhino:document:setting#", index, "Rhino setting ID")?,
@@ -773,7 +788,11 @@ pub(crate) fn install(
                 if render_settings_seen {
                     match render_userdata(ctx, scan.data, record, scan.archive) {
                         Ok(_) => {
-                            ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
+                            ctx.reserve_vec(
+                                &mut opaque_records,
+                                1,
+                                "Rhino opaque setting records",
+                            )?;
                             opaque_records.push(OpaqueRecord {
                                 table_typecode: table.typecode,
                                 record: record.clone(),
@@ -821,7 +840,9 @@ pub(crate) fn install(
                         &scan.data[record.range.clone()],
                         "Rhino setting SHA-256",
                     )?,
-                    parse_error: Some(ctx.format_retained(format_args!("{error}"), "Rhino setting parse error")?),
+                    parse_error: Some(
+                        ctx.format_retained(format_args!("{error}"), "Rhino setting parse error")?,
+                    ),
                 });
             }
         }

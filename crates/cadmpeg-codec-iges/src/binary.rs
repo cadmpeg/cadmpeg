@@ -8,7 +8,6 @@
 //! Parameter Data owners.  The original Binary image remains the source image
 //! passed to the reader, so normalization does not replace source fidelity.
 
-
 use crate::directory::DirectoryFieldSlot;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -400,8 +399,12 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
             BinaryValue::Real(value) => Ok(BinaryValue::Real(*value)),
             BinaryValue::Pointer(value) => Ok(BinaryValue::Pointer(*value)),
             BinaryValue::String(bytes) => {
-                cadmpeg_core::decode::DecodeContext::copy_retained_optional(self.ctx, bytes, "iges binary repeated string")
-                    .map(BinaryValue::String)
+                cadmpeg_core::decode::DecodeContext::copy_retained_optional(
+                    self.ctx,
+                    bytes,
+                    "iges binary repeated string",
+                )
+                .map(BinaryValue::String)
             }
         }
     }
@@ -1116,10 +1119,17 @@ fn normalize_directory_and_parameters(
 ) -> Result<(usize, usize), CodecError> {
     let mut directory_by_offset = BTreeMap::new();
     for (index, record) in directory.iter().enumerate() {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut directory_by_offset, record.offset, index, "iges binary normalized directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut directory_by_offset,
+            record.offset,
+            index,
+            "iges binary normalized directory index",
+        )?;
     }
     let mut referenced_parameters = BTreeSet::new();
-    let mut normalized = ctx.collection_vec(parameters.len(), "iges binary normalized parameters")?;
+    let mut normalized =
+        ctx.collection_vec(parameters.len(), "iges binary normalized parameters")?;
     let mut parameter_sequence = 1_u32;
     for parameter in parameters {
         let directory_pointer =
@@ -1158,7 +1168,13 @@ fn normalize_directory_and_parameters(
     }
     let mut parameter_by_offset = BTreeMap::new();
     for (index, record) in normalized.iter().enumerate() {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut parameter_by_offset, record.offset, index, "iges binary normalized parameter index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut parameter_by_offset,
+            record.offset,
+            index,
+            "iges binary normalized parameter index",
+        )?;
     }
     let mut parameter_starts =
         ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts")?;
@@ -1173,7 +1189,12 @@ fn normalize_directory_and_parameters(
         let parameter_index = *parameter_by_offset
             .get(&parameter_offset)
             .ok_or_else(|| malformed("Binary Directory Parameter Data pointer does not resolve"))?;
-        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut referenced_parameters, parameter_index, "iges binary referenced parameters")? {
+        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut referenced_parameters,
+            parameter_index,
+            "iges binary referenced parameters",
+        )? {
             return Err(malformed(
                 "Binary Parameter Data entry is referenced by more than one Directory Entry",
             ));
@@ -1322,7 +1343,10 @@ fn render_parameter_lines(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     if language {
-        let mut cards = ctx.collection_vec(data.chunks(PARAMETER_DATA_WIDTH).count(), "iges binary macro parameter cards")?;
+        let mut cards = ctx.collection_vec(
+            data.chunks(PARAMETER_DATA_WIDTH).count(),
+            "iges binary macro parameter cards",
+        )?;
         for chunk in data.chunks(PARAMETER_DATA_WIDTH) {
             cards.push(ctx.copy_retained(chunk, "iges binary macro parameter card bytes")?);
         }
@@ -1417,7 +1441,13 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let directory = read_directory(sections.directory, sections.lengths, ctx)?;
     let mut directory_by_offset = BTreeMap::new();
     for (index, record) in directory.iter().enumerate() {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut directory_by_offset, record.offset, index, "iges binary directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut directory_by_offset,
+            record.offset,
+            index,
+            "iges binary directory index",
+        )?;
     }
     let parameters = read_parameters(
         sections.parameter,

@@ -1368,8 +1368,7 @@ fn insert_summary_attribute(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "Rhino container summary attributes")?;
     let key = ctx.format_retained(key, "Rhino container summary attribute key")?;
-    let value =
-        ctx.format_retained(value, "Rhino container summary attribute value")?;
+    let value = ctx.format_retained(value, "Rhino container summary attribute value")?;
     attributes.insert(key, value);
     Ok(())
 }
@@ -1428,7 +1427,10 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
             });
         ctx.reserve_vec(&mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: ctx.format_retained(format_args!("table-{:#x}", table.typecode), "Rhino container entry name")?,
+            name: ctx.format_retained(
+                format_args!("table-{:#x}", table.typecode),
+                "Rhino container entry name",
+            )?,
             role: ContainerRole::Table,
             storage,
             attributes,
@@ -1473,7 +1475,10 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
         )?;
         ctx.reserve_vec(&mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: ctx.format_retained(format_args!("class-{class_uuid}"), "Rhino container entry name")?,
+            name: ctx.format_retained(
+                format_args!("class-{class_uuid}"),
+                "Rhino container entry name",
+            )?,
             role: ContainerRole::ObjectClass,
             storage: EntryStorage::verbatim(VerbatimLabel::None, bytes as u64),
             attributes,

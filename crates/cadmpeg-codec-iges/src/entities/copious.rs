@@ -59,13 +59,26 @@ impl CopiousProjectionOutcome {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         for sequence in self.decoded {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), decoded, sequence, "iges merged decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                decoded,
+                sequence,
+                "iges merged decoded sequences",
+            )?;
         }
         ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
         losses.extend(self.losses);
-        ctx.reserve_vec(wire_edges, self.wire_edges.len(), "iges merged wire edge slots")?;
+        ctx.reserve_vec(
+            wire_edges,
+            self.wire_edges.len(),
+            "iges merged wire edge slots",
+        )?;
         wire_edges.extend(self.wire_edges);
-        ctx.reserve_vec(free_vertices, self.free_vertices.len(), "iges merged free vertex slots")?;
+        ctx.reserve_vec(
+            free_vertices,
+            self.free_vertices.len(),
+            "iges merged free vertex slots",
+        )?;
         free_vertices.extend(self.free_vertices);
         Ok(())
     }
@@ -239,11 +252,23 @@ pub(super) fn project(
 ) -> Result<CopiousProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut records, record.directory_sequence, record, "iges copious parameter index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges copious parameter index",
+        )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges copious directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges copious directory index",
+        )?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -427,7 +452,10 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(values) = ctx.collect_options((tuple_start..tuple_end).map(|index| record.number(index).and_then(FiniteReal::new)), "iges copious tuple values")?
+        let Some(values) = ctx.collect_options(
+            (tuple_start..tuple_end).map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges copious tuple values",
+        )?
         else {
             push_copious_loss(
                 ctx,
@@ -437,7 +465,8 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let definition_points = ctx.collect_indexed_vec(tuple_count, "iges copious definition points", |index| {
+        let definition_points =
+            ctx.collect_indexed_vec(tuple_count, "iges copious definition points", |index| {
                 let tuple = &values[index * tuple_width..(index + 1) * tuple_width];
                 let z = match common_z {
                     Some(z) => z,
@@ -449,10 +478,13 @@ pub(super) fn project(
                     z.get() * factor,
                 ))
             })?;
-        let Some(positions) = ctx.collect_options(definition_points
+        let Some(positions) = ctx.collect_options(
+            definition_points
                 .iter()
                 .copied()
-                .map(|point| transform.apply_point(point)), "iges copious positioned points")?
+                .map(|point| transform.apply_point(point)),
+            "iges copious positioned points",
+        )?
         else {
             push_copious_loss(
                 ctx,
@@ -527,7 +559,12 @@ pub(super) fn project(
                 ctx.reserve_vec(&mut free_vertices, 1, "iges copious free vertices")?;
                 free_vertices.push(vertex);
             }
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges copious decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges copious decoded sequences",
+            )?;
             continue;
         }
         let points =
@@ -651,8 +688,12 @@ pub(super) fn project(
             });
         }
         sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
-        let knots = ctx.collect_options(knots.into_iter().map(FiniteReal::new), "iges copious finite knots")?
-        .ok_or_else(|| CodecError::malformed("copious-data curve: knots must be finite"))?;
+        let knots = ctx
+            .collect_options(
+                knots.into_iter().map(FiniteReal::new),
+                "iges copious finite knots",
+            )?
+            .ok_or_else(|| CodecError::malformed("copious-data curve: knots must be finite"))?;
         let mut raw_knots = ctx.collection_vec(knots.len(), "iges copious admitted knots")?;
         raw_knots.extend(knots.into_iter().map(FiniteReal::get));
         let nurbs = KnotVector::new(raw_knots).and_then(|knots| {
@@ -691,7 +732,12 @@ pub(super) fn project(
         });
         ctx.reserve_vec(&mut wire_edges, 1, "iges copious wire edges")?;
         wire_edges.push(edge);
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges copious decoded sequences")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut decoded,
+            entry.sequence,
+            "iges copious decoded sequences",
+        )?;
     }
 
     Ok(CopiousProjectionOutcome {

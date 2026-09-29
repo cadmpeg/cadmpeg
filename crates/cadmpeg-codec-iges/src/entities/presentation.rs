@@ -44,7 +44,9 @@ fn retained_utf8(
     let Ok(value) = std::str::from_utf8(bytes) else {
         return Ok(None);
     };
-    Ok(Some(ctx.format_retained(format_args!("{value}"), operation)?))
+    Ok(Some(
+        ctx.format_retained(format_args!("{value}"), operation)?,
+    ))
 }
 
 fn push_presentation_loss(
@@ -161,7 +163,11 @@ fn appearance(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if ir.model.appearances.iter().all(|item| item.id != id) {
-        ctx.reserve_vec(&mut ir.model.appearances, 1, "iges neutral appearance slots")?;
+        ctx.reserve_vec(
+            &mut ir.model.appearances,
+            1,
+            "iges neutral appearance slots",
+        )?;
         crate::decode_resource::admit_optional_entities(
             Some(ctx),
             1,
@@ -174,7 +180,9 @@ fn appearance(
             library_id: None,
             visual_guid: None,
             physical_token: None,
-            schema: Some(ctx.format_retained(format_args!("IGES color"), "iges appearance schema")?),
+            schema: Some(
+                ctx.format_retained(format_args!("IGES color"), "iges appearance schema")?,
+            ),
             category: None,
             base_color: Some(color),
             properties: BTreeMap::new(),
@@ -256,11 +264,23 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut records, record.directory_sequence, record, "iges presentation parameter index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges presentation parameter index",
+        )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges presentation directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges presentation directory index",
+        )?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -275,7 +295,13 @@ pub(super) fn project(
             .copied()
             .and_then(|record| text_font_definition(entry, record, &entries, global.global_table()))
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut text_fonts, entry.sequence, font, "iges presentation font index")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                Some(ctx),
+                &mut text_fonts,
+                entry.sequence,
+                font,
+                "iges presentation font index",
+            )?;
         }
     }
     let mut visited_fonts = BTreeSet::new();
@@ -296,7 +322,12 @@ pub(super) fn project(
                 .is_none_or(|target| text_fonts.contains_key(&target))
         });
         if target_valid && !cyclic {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges presentation decoded sequences",
+            )?;
         } else {
             push_presentation_loss(ctx, &mut losses, entry, "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid")?;
         }
@@ -331,7 +362,12 @@ pub(super) fn project(
                 .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some());
         if directory_valid && fields_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges presentation decoded sequences",
+            )?;
         } else {
             push_presentation_loss(ctx, &mut losses, entry, "text-template metrics, font, orientation, placement, or Directory fields are invalid")?;
         }
@@ -353,7 +389,12 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut levels, level, "iges presentation definition levels")? {
+                if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                    Some(ctx),
+                    &mut levels,
+                    level,
+                    "iges presentation definition levels",
+                )? {
                     valid = false;
                     break;
                 }
@@ -363,7 +404,12 @@ pub(super) fn project(
             false
         };
         if levels_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges presentation decoded sequences",
+            )?;
         } else {
             push_presentation_loss(
                 ctx,
@@ -428,7 +474,12 @@ pub(super) fn project(
             })
         };
         if valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges presentation decoded sequences",
+            )?;
         } else {
             push_presentation_loss(
                 ctx,
@@ -510,7 +561,13 @@ pub(super) fn project(
             )?;
             continue;
         };
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut defined, entry.sequence, color, "iges presentation defined colors")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut defined,
+            entry.sequence,
+            color,
+            "iges presentation defined colors",
+        )?;
         appearance(
             ir,
             crate::ids::appearance_color_admitted(
@@ -521,7 +578,12 @@ pub(super) fn project(
             color,
             ctx,
         )?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut decoded,
+            entry.sequence,
+            "iges presentation decoded sequences",
+        )?;
     }
 
     let resolve_color = |value: i64| -> Option<Color> {
@@ -645,7 +707,11 @@ pub(super) fn project(
             color,
             ctx,
         )?;
-        ctx.reserve_vec(&mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
+        ctx.reserve_vec(
+            &mut ir.model.appearance_bindings,
+            1,
+            "iges appearance binding slots",
+        )?;
         crate::decode_resource::admit_optional_entities(
             Some(ctx),
             1,
@@ -659,7 +725,9 @@ pub(super) fn project(
             target: AppearanceTarget::Body(body_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some(ctx.format_retained(format_args!("Body"), "iges appearance object type")?),
+            object_type: Some(
+                ctx.format_retained(format_args!("Body"), "iges appearance object type")?,
+            ),
             visible: None,
             channels: BTreeMap::new(),
         });
@@ -745,7 +813,11 @@ pub(super) fn project(
             color,
             ctx,
         )?;
-        ctx.reserve_vec(&mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
+        ctx.reserve_vec(
+            &mut ir.model.appearance_bindings,
+            1,
+            "iges appearance binding slots",
+        )?;
         crate::decode_resource::admit_optional_entities(
             Some(ctx),
             1,
@@ -759,7 +831,9 @@ pub(super) fn project(
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some(ctx.format_retained(format_args!("Face"), "iges appearance object type")?),
+            object_type: Some(
+                ctx.format_retained(format_args!("Face"), "iges appearance object type")?,
+            ),
             visible: None,
             channels: BTreeMap::new(),
         });

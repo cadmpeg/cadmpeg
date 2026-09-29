@@ -876,10 +876,13 @@ impl CodecBackend for FcstdCodec {
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
-                        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+                        return Err(CodecError::Malformed(ctx.format_retained(
+                            format_args!(
                                 "property {} references missing side entry {side_entry}",
                                 property.id
-                            ), "FCStd missing side entry diagnostic")?));
+                            ),
+                            "FCStd missing side entry diagnostic",
+                        )?));
                     }
                 }
             }
@@ -1102,10 +1105,18 @@ impl CodecBackend for FcstdCodec {
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
-        ctx.reserve_vec(&mut losses, topology_losses.len(), "FCStd topology loss output")?;
+        ctx.reserve_vec(
+            &mut losses,
+            topology_losses.len(),
+            "FCStd topology loss output",
+        )?;
         losses.extend(topology_losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
-        ctx.reserve_vec(&mut losses, usize::from(dialect_losses.is_some()), "FCStd dialect loss output")?;
+        ctx.reserve_vec(
+            &mut losses,
+            usize::from(dialect_losses.is_some()),
+            "FCStd dialect loss output",
+        )?;
         losses.extend(dialect_losses);
         ctx.admit_entities(
             ir.model.entity_count() as u64,

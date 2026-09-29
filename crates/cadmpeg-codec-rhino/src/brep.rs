@@ -1560,7 +1560,11 @@ fn parse_legacy_major2(
     for edge in &edges {
         for vertex in edge.vertices {
             let vertex = slot(vertex, vertices.len(), "legacy Brep edge vertex")?;
-            ctx.reserve_vec(&mut vertices[vertex].edges, 1, "Rhino legacy Brep vertex edges")?;
+            ctx.reserve_vec(
+                &mut vertices[vertex].edges,
+                1,
+                "Rhino legacy Brep vertex edges",
+            )?;
             vertices[vertex].edges.push(edge.index);
         }
     }

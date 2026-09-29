@@ -6,8 +6,6 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 use std::fmt;
 
-
-
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::report::loss::LossNote;
@@ -108,7 +106,12 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     }
     let mut active = BTreeSet::new();
     let mut stack = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut stack, 1, "iges cycle stack")?;
+    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+        ctx,
+        &mut stack,
+        1,
+        "iges cycle stack",
+    )?;
     stack.push((sequence, false));
     while let Some((current, expanded)) = stack.pop() {
         if let Some(ctx) = ctx {
@@ -116,16 +119,31 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
         }
         if expanded {
             active.remove(&current);
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, visited, current, "iges cycle visited")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                ctx,
+                visited,
+                current,
+                "iges cycle visited",
+            )?;
             continue;
         }
         if visited.contains(&current) {
             continue;
         }
-        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut active, current, "iges cycle active")? {
+        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            ctx,
+            &mut active,
+            current,
+            "iges cycle active",
+        )? {
             return Ok(true);
         }
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut stack, 1, "iges cycle stack")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut stack,
+            1,
+            "iges cycle stack",
+        )?;
         stack.push((current, true));
         for target in successors(current).rev() {
             if let Some(ctx) = ctx {
@@ -135,7 +153,12 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
                 return Ok(true);
             }
             if !visited.contains(&target) {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut stack, 1, "iges cycle stack")?;
+                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                    ctx,
+                    &mut stack,
+                    1,
+                    "iges cycle stack",
+                )?;
                 stack.push((target, false));
             }
         }

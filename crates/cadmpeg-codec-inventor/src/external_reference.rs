@@ -195,7 +195,8 @@ fn parse_stream_grammar<'a>(
         section_count as u64,
         "admit UFRxDoc section-version entries",
     )?;
-    let mut section_versions = DecodeContext::admitted_vec(section_count, "admit UFRxDoc section-version entries")?;
+    let mut section_versions =
+        DecodeContext::admitted_vec(section_count, "admit UFRxDoc section-version entries")?;
     for _ in 0..section_count {
         section_versions.push(cursor.u16("section version")?);
     }
@@ -322,7 +323,8 @@ fn parse_stream_grammar<'a>(
     let caption = cursor.utf16(ctx, "external-reference caption", 65_536)?;
     cursor.u32("external-reference table state")?;
     ctx.charge_collection_items(reference_count as u64, "admit Inventor external references")?;
-    let mut references = DecodeContext::admitted_vec(reference_count, "admit Inventor external references")?;
+    let mut references =
+        DecodeContext::admitted_vec(reference_count, "admit Inventor external references")?;
     for _ in 0..reference_count {
         let path = cursor.utf16(ctx, "external path", 65_536)?;
         let library_id = cursor.i32("reference library id")?;
@@ -340,7 +342,10 @@ fn parse_stream_grammar<'a>(
             state_count as u64,
             "admit Inventor external-reference state groups",
         )?;
-        let mut state_groups = DecodeContext::admitted_vec(state_count, "admit Inventor external-reference state groups")?;
+        let mut state_groups = DecodeContext::admitted_vec(
+            state_count,
+            "admit Inventor external-reference state groups",
+        )?;
         for _ in 0..state_count {
             state_groups.push([
                 cursor.u16("reference state-group entry")?,
@@ -758,7 +763,8 @@ fn parse_model_states<'a>(
             parameter_count as u64,
             "admit UFRxDoc model-state parameters",
         )?;
-        let mut parameters = DecodeContext::admitted_vec(parameter_count, "admit UFRxDoc model-state parameters")?;
+        let mut parameters =
+            DecodeContext::admitted_vec(parameter_count, "admit UFRxDoc model-state parameters")?;
         for _ in 0..parameter_count {
             parameters.push(UfrxModelStateParameter {
                 name: cursor.utf16(ctx, "model-state parameter name", 65_536)?,
@@ -802,7 +808,8 @@ fn parse_schema_table(
         section_count as u64,
         "admit UFRxDoc section-version entries",
     )?;
-    let mut section_versions = DecodeContext::admitted_vec(section_count, "admit UFRxDoc section-version entries")?;
+    let mut section_versions =
+        DecodeContext::admitted_vec(section_count, "admit UFRxDoc section-version entries")?;
     for _ in 0..section_count {
         section_versions.push(cursor.u16("section version")?);
     }

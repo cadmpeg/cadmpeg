@@ -721,7 +721,10 @@ pub(super) fn decode(
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
             let display_name = record.display_name(ctx)?;
             let message = match ctx {
-                Some(ctx) => ctx.format_retained(format_args!("{display_name} #{id} has no numeric magnitude"), "step_pmi_invalid_tolerance_text")?,
+                Some(ctx) => ctx.format_retained(
+                    format_args!("{display_name} #{id} has no numeric magnitude"),
+                    "step_pmi_invalid_tolerance_text",
+                )?,
                 None => format!("{display_name} #{id} has no numeric magnitude"),
             };
             push_pmi_vec(
@@ -1649,7 +1652,10 @@ fn modifier_text(
             let value = value.value.get();
             claim_pmi_typed(typed, measure_id, ctx)?;
             let mut text = match ctx {
-                Some(ctx) => ctx.format_retained(format_args!("{kind}:{value}"), "step_pmi_datum_modifier_value_text")?,
+                Some(ctx) => ctx.format_retained(
+                    format_args!("{kind}:{value}"),
+                    "step_pmi_datum_modifier_value_text",
+                )?,
                 None => format!("{kind}:{value}"),
             };
             text.make_ascii_lowercase();

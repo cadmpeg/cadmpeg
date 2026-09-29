@@ -241,7 +241,8 @@ where
             pending.pop();
             continue;
         };
-        if !propagate_resource!(ctx.insert_hash_set(&mut seen, index, "ASM subtype search visited")) {
+        if !propagate_resource!(ctx.insert_hash_set(&mut seen, index, "ASM subtype search visited"))
+        {
             continue;
         }
         // The doc states what the index means. `docs/formats/asm.md`: "A named
@@ -258,7 +259,11 @@ where
         if let Some(decoded) = decode_scope(ctx, target) {
             return Some(decoded);
         }
-        propagate_resource!(ctx.push_vec(&mut pending, toks::subtype_refs(target.tokens()), "ASM subtype search stack"));
+        propagate_resource!(ctx.push_vec(
+            &mut pending,
+            toks::subtype_refs(target.tokens()),
+            "ASM subtype search stack"
+        ));
     }
     None
 }

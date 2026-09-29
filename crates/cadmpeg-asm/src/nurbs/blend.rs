@@ -1723,11 +1723,10 @@ pub(super) fn vertex_blend_spl_sur(
     if count > 100_000 {
         return None;
     }
-    let mut boundaries =
-        match ctx.collection_vec(count, "ASM vertex blend boundaries") {
-            Ok(boundaries) => boundaries,
-            Err(error) => return Some(Err(error)),
-        };
+    let mut boundaries = match ctx.collection_vec(count, "ASM vertex blend boundaries") {
+        Ok(boundaries) => boundaries,
+        Err(error) => return Some(Err(error)),
+    };
     for _ in 0..count {
         boundaries.push(if revision.is_some() {
             match revision_vertex_blend_boundary(ctx, &mut cur, resolver)? {

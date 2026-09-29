@@ -5,7 +5,6 @@ use std::hash::Hash;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-
 pub(super) struct UniqueIndex<K, V> {
     entries: HashMap<K, Option<V>>,
 }
