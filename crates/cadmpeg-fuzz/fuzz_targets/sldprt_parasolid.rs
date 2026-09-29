@@ -9,4 +9,4 @@
 use cadmpeg_codec_sldprt::fuzz::parasolid;
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| parasolid(data));
+fuzz_target!(|data: &[u8]| drop(parasolid(data)));

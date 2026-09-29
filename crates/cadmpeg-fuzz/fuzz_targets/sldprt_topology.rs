@@ -7,4 +7,4 @@
 use cadmpeg_codec_sldprt::fuzz::topology;
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| topology(data));
+fuzz_target!(|data: &[u8]| drop(topology(data)));
