@@ -933,6 +933,11 @@ mod tests {
         let xml = "<xml><shut-lining-object-data><curve><profile>inf</profile></curve></shut-lining-object-data></xml>";
         assert!(super::parse_shut_lining_xml(xml, 2).is_err());
     }
+    #[test]
+    fn shut_lining_profile_refuses_negative_infinity() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>-inf</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
 
     use super::{
         field_uuid, parse_xml, CapType, CURVE_PIPING_CLASS, CURVE_PIPING_ITEM, DISPLACEMENT_CLASS,
