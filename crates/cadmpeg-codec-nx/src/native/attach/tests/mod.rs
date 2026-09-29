@@ -57,6 +57,7 @@ mod extract_datum_axis;
 mod extract_face;
 mod fill_hole;
 mod holes_offsets_and_attributes;
+mod indexing;
 mod linked_face;
 mod mirror_face;
 mod material_assets;
