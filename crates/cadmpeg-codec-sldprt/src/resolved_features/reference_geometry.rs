@@ -2616,16 +2616,23 @@ fn offset_reference_plane_frame_pair(
     };
     let matrix_candidates = matrix_reference_plane_frame_candidates(payload);
     let fixed_candidates = fixed_reference_plane_frame_candidates(payload, &matrix_candidates);
-    let fixed = fixed_candidates
-        .iter()
-        .map(|(_, frame)| *frame)
-        .collect::<Vec<_>>();
-    if let [result, reference] = fixed.as_slice() {
+    if let [(_, result), (_, reference)] = fixed_candidates.as_slice() {
         return valid_pair(*result, *reference);
     }
-    let matrix = matrix_reference_plane_frames(payload);
-    if let [result, reference] = matrix.as_slice() {
-        return valid_pair(*result, *reference);
+    let mut matrix_unique = [None; 3];
+    let mut matrix_count = 0;
+    for (_, frame) in &matrix_candidates {
+        if matrix_unique[..matrix_count].contains(&Some(*frame)) {
+            continue;
+        }
+        if matrix_count == matrix_unique.len() {
+            break;
+        }
+        matrix_unique[matrix_count] = Some(*frame);
+        matrix_count += 1;
+    }
+    if let [Some(result), Some(reference), None] = matrix_unique {
+        return valid_pair(result, reference);
     }
     let mut frames = Vec::new();
     for offset in 0..payload.len() {
@@ -2815,18 +2822,6 @@ fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vect
     let mut frames = candidates.iter().map(|(_, frame)| *frame);
     let frame = frames.next()?;
     frames.all(|candidate| candidate == frame).then_some(frame)
-}
-
-fn matrix_reference_plane_frames(payload: &[u8]) -> Vec<ReferencePlaneFrame> {
-    matrix_reference_plane_frame_candidates(payload)
-        .into_iter()
-        .map(|(_, frame)| frame)
-        .fold(Vec::new(), |mut unique, frame| {
-            if !unique.contains(&frame) {
-                unique.push(frame);
-            }
-            unique
-        })
 }
 
 fn matrix_reference_plane_frame_candidates(payload: &[u8]) -> Vec<(usize, ReferencePlaneFrame)> {
