@@ -331,7 +331,7 @@ impl ParameterRecord {
 
     pub(crate) fn number(&self, index: usize) -> Option<f64> {
         match self.value(index)? {
-            TokenValue::Integer(value) => Some(*value as f64),
+            TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
             TokenValue::Omitted | TokenValue::String(_) => None,
         }
@@ -345,7 +345,7 @@ impl ParameterRecord {
         };
         match &token.value {
             TokenValue::Omitted => Some(default),
-            TokenValue::Integer(value) => Some(*value as f64),
+            TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
             TokenValue::String(_) => None,
         }
@@ -1741,7 +1741,8 @@ fn lep_artwork_stackup_primary_end(record: &ParameterRecord) -> usize {
 fn closure_primary_end(record: &ParameterRecord) -> usize {
     record
         .integer(1)
-        .and_then(|value| matches!(value, 1 | 2).then_some(value as usize))
+        .filter(|value| matches!(*value, 1 | 2))
+        .and_then(|value| usize::try_from(value).ok())
         .and_then(|count| count.checked_add(2))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
@@ -2802,7 +2803,7 @@ impl QuarantinedParameterRecord {
         )?;
         let code = IgesLossCode::ParameterDataQuarantined;
         ctx.charge_retained(
-            4 + code.code().len() as u64,
+            4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
             "iges parameter quarantine loss kind",
         )?;
         ctx.charge_retained(4, "iges parameter quarantine loss source format")?;
@@ -3744,7 +3745,7 @@ fn stream_offset(
     lines: &BTreeMap<u32, &PhysicalLine>,
 ) -> Option<u64> {
     let line = lines.get(cards.get(offset / 64)?)?;
-    line.offset.checked_add((offset % 64) as u64)
+    line.offset.checked_add(cadmpeg_core::decode::u64_from_index(offset % 64))
 }
 
 fn quarantine(

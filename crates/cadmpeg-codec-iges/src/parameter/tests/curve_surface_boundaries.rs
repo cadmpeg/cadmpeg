@@ -320,7 +320,7 @@ fn type106_entity_table_boundary_uses_interpretation_width() {
     ];
 
     for (form, interpretation, tuple_count, tuple_width) in cases {
-        let mut values = vec![106, interpretation, tuple_count as i64];
+        let mut values = vec![106, interpretation, i64::try_from(tuple_count).expect("test tuple count fits i64")];
         if interpretation == 1 {
             values.push(0);
         }

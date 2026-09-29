@@ -38,7 +38,23 @@ pub(crate) enum DirectoryFieldSlot {
 
 impl DirectoryFieldSlot {
     pub(crate) const fn slot(self) -> usize {
-        self as usize
+        match self {
+            Self::EntityType => 0,
+            Self::Structure => 1,
+            Self::LineFont => 2,
+            Self::Level => 3,
+            Self::View => 4,
+            Self::Transform => 5,
+            Self::LabelDisplay => 6,
+            Self::Status => 7,
+            Self::LineWeight => 8,
+            Self::Color => 9,
+            Self::Form => 10,
+            Self::ReservedFirst => 11,
+            Self::ReservedSecond => 12,
+            Self::Label => 13,
+            Self::Subscript => 14,
+        }
     }
 }
 
@@ -344,7 +360,7 @@ impl QuarantinedDirectoryRecord {
         )?;
         let code = IgesLossCode::DirectoryRecordQuarantined;
         ctx.charge_retained(
-            4 + code.code().len() as u64,
+            4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
             "iges directory quarantine loss kind",
         )?;
         ctx.charge_retained(4, "iges directory quarantine loss source format")?;

@@ -305,7 +305,7 @@ fn source_fidelity_refuses_id_owner_and_record_limits() {
     for (cap, operation) in [
         (0, "iges source fidelity id"),
         (
-            crate::SOURCE_IMAGE_ID.len() as u64 + 3,
+            cadmpeg_core::decode::u64_from_index(crate::SOURCE_IMAGE_ID.len()) + 3,
             "iges source fidelity stream owner",
         ),
     ] {
@@ -410,7 +410,7 @@ fn source_metadata_admits_formatted_values_before_building_attributes() {
     let representation = Representation::FixedAscii;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = representation.as_str().len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(representation.as_str().len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::source_meta(
         &ctx,
@@ -423,7 +423,7 @@ fn source_metadata_admits_formatted_values_before_building_attributes() {
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.used == 0
-                && limit.additional == representation.as_str().len() as u64
+                && limit.additional == cadmpeg_core::decode::u64_from_index(representation.as_str().len())
                 && limit.operation == "iges source representation"
     ));
 
@@ -447,7 +447,7 @@ fn source_attribute_admits_key_and_map_node_before_insertion() {
     let key = "native_units";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = key.len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(key.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::insert_source_attribute(&ctx, &mut BTreeMap::new(), key, String::new());
     assert!(matches!(
@@ -455,7 +455,7 @@ fn source_attribute_admits_key_and_map_node_before_insertion() {
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.used == 0
-                && limit.additional == key.len() as u64
+                && limit.additional == cadmpeg_core::decode::u64_from_index(key.len())
                 && limit.operation == "iges source attribute key"
     ));
 

@@ -81,7 +81,7 @@ pub(crate) fn dialect_loss(
         )?,
     };
     let code = IgesLossCode::SourceDialectUnverified;
-    ctx.charge_retained(4 + code.code().len() as u64, "iges dialect loss kind")?;
+    ctx.charge_retained(4 + cadmpeg_core::decode::u64_from_index(code.code().len()), "iges dialect loss kind")?;
     Ok(Some(code.note(message)))
 }
 

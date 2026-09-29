@@ -29,6 +29,13 @@ mod solid_entity_boundaries;
 mod type_fem;
 
 #[test]
+fn parameter_integer_number_refuses_inexact_f64() {
+    let record = integer_parameter_record(1, &[(1_i64 << 53) + 1]);
+    assert_eq!(record.number(0), None);
+    assert_eq!(record.number_or(0, 0.0), None);
+}
+
+#[test]
 fn parameter_summary_refuses_note_slot_and_text_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -49,7 +56,7 @@ fn parameter_summary_refuses_note_slot_and_text_limits() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = b"parameter_records=0".len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::summary_notes(&records, &ctx);
     assert!(matches!(
@@ -57,7 +64,7 @@ fn parameter_summary_refuses_note_slot_and_text_limits() {
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.used == 0
-                && limit.additional == b"parameter_records=0".len() as u64
+                && limit.additional == cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len())
                 && limit.operation == "iges parameter summary text"
     ));
 

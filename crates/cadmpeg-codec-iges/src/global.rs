@@ -381,7 +381,7 @@ fn admitted_global_loss(
     code: IgesLossCode,
     message: String,
 ) -> Result<LossNote, CodecError> {
-    ctx.charge_retained(4 + code.code().len() as u64, "iges global loss kind")?;
+    ctx.charge_retained(4 + cadmpeg_core::decode::u64_from_index(code.code().len()), "iges global loss kind")?;
     Ok(code.note(message))
 }
 
@@ -1847,8 +1847,10 @@ impl ProjectedGlobal {
             return None;
         };
         Some(
-            number as f64 * maximum_width.get() * self.length_factor_mm.get()
-                / scale.gradations as f64,
+            cadmpeg_core::convert::f64_from_i64(number)?
+                * maximum_width.get()
+                * self.length_factor_mm.get()
+                / cadmpeg_core::convert::f64_from_i64(scale.gradations)?,
         )
     }
 
