@@ -6,6 +6,30 @@ use crate::history::{
     history_topology_work_budget_exceeded, HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY,
 };
 
+#[test]
+fn face_operand_recipe_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let recipe = crate::records::recipes::ConstructionRecipe {
+        id: "recipe".into(),
+        byte_offset: 0,
+        kind: crate::records::recipes::ConstructionRecipeKind::Face,
+        design: None,
+        recipe_index: 0,
+        record_index: Some(crate::records::identity::RecordedValue { value: 1, offset: 0 }),
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::history::bind_face_operand_history_candidates(
+        Some(&ctx), &mut [], &[], &[], &[recipe], &[], &std::collections::HashMap::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D face operand recipe records"));
+}
+
 fn one_delta_state() -> Vec<u8> {
     let mut bytes = super::super::DELTA.to_vec();
     for (tag, value) in [(0x04, 1_i32), (0x04, 1), (0x04, 0),
