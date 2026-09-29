@@ -5,6 +5,7 @@ use super::super::{
     full_round_fillet_selection_triple,
     project_compact_body_selections, project_compact_edge_selections,
     project_compact_surface_selections,
+    project_unbound_offset_plane_faces,
 };
 use crate::records::{FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputLane, FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind};
 use cadmpeg_ir::features::{
@@ -12,6 +13,103 @@ use cadmpeg_ir::features::{
     UnresolvedFamily,
 };
 use std::collections::BTreeMap;
+
+fn offset_plane_fixture() -> (
+    Vec<cadmpeg_ir::features::Feature>,
+    Vec<cadmpeg_ir::topology::Face>,
+    Vec<cadmpeg_ir::geometry::Surface>,
+) {
+    use cadmpeg_ir::features::{DatumPlaneReference, FeatureSupportPlaneFrame};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::topology::{Face, Sense};
+
+    let surface = cadmpeg_ir::geometry::Surface {
+        id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ).expect("planar test surface"),
+        )),
+        source_object: None,
+    };
+    let face = Face {
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface: surface.id.clone(),
+        sense: Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+    };
+    let mut feature = compact_edge_projection_feature();
+    feature.evaluation.set_definition(FeatureDefinition::Operation(
+        FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::ResolvedPlane {
+                frame: FeatureSupportPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 5.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ).expect("support frame"),
+            }),
+            distance: Length::new(4.0).expect("offset distance"),
+        },
+    ));
+    (vec![feature], vec![face], vec![surface])
+}
+
+#[test]
+fn unbound_offset_plane_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (mut features, faces, surfaces) = offset_plane_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_unbound_offset_plane_faces(&ctx, &mut features, &faces, &surfaces)
+        .expect_err("planar scan exceeds work limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "find unique SLDPRT planar face"));
+}
+
+#[test]
+fn unbound_offset_plane_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (mut features, faces, surfaces) = offset_plane_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_unbound_offset_plane_faces(&ctx, &mut features, &faces, &surfaces)
+        .expect_err("selected face ID exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "find unique SLDPRT planar face"));
+}
+
+#[test]
+fn unbound_offset_plane_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (mut features, faces, surfaces) = offset_plane_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_unbound_offset_plane_faces(&ctx, &mut features, &faces, &surfaces)
+        .expect_err("selected face vector exceeds collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "project SLDPRT unbound offset plane face"));
+}
 
 fn compact_edge_projection_feature() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {

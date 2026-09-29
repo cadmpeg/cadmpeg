@@ -3108,6 +3108,7 @@ fn build_geometry_ir(
     )?;
     pmi_losses.extend(configuration_losses);
     crate::history::configuration::bind_configuration_topology_selections(
+        ctx,
         &mut ir,
         &histories,
         &all_lanes,
@@ -3122,10 +3123,11 @@ fn build_geometry_ir(
         &ir.model.surfaces,
     );
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
+        ctx,
         &mut ir.model.features,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
+    )?;
     crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
@@ -4301,10 +4303,11 @@ fn build_metadata_ir(
         &ir.model.surfaces,
     );
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
+        ctx,
         &mut ir.model.features,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
+    )?;
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses =
