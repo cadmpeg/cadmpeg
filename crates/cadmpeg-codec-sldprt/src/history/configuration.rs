@@ -618,12 +618,13 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
         );
         crate::resolved_features::axes::bind_profile_revolution_axes(
+            ctx,
             &mut features,
             histories,
             scoped_lanes,
             &ir.model.sketches,
             &surfaces,
-        );
+        )?;
         crate::resolved_features::bindings::bind_pattern_inputs(
             ctx,
             &mut features,
