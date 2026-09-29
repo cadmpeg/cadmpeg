@@ -76,6 +76,11 @@ fn resolve_operand_marker<'a>(
     resolve_operand_marker_excluding(entities, kind, address, |_| false)
 }
 
+fn unique_entity<'a>(mut candidates: impl Iterator<Item = &'a SketchInputEntity>) -> Option<&'a SketchInputEntity> {
+    let first = candidates.next()?;
+    candidates.next().is_none().then_some(first)
+}
+
 fn resolve_operand_marker_excluding<'a>(
     entities: impl IntoIterator<Item = &'a SketchInputEntity>,
     kind: FeatureInputOperandKind,
@@ -126,29 +131,23 @@ fn resolve_operand_marker_excluding<'a>(
         };
         let indexed = entities
             .iter()
+            .copied()
             .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| accepts(entity))
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>();
+            .filter(|entity| !excluded(entity.id()));
         if entities
             .iter()
             .any(|entity| entity.object_index() == Some(u32::from(address)) && accepts(entity))
         {
-            return match indexed.as_slice() {
-                [entity] => Some(*entity),
-                _ => None,
-            };
+            return unique_entity(indexed);
         }
         let local = entities
             .iter()
+            .copied()
             .filter(|entity| entity.local_id() == Some(u32::from(address)))
             .filter(|entity| accepts(entity))
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>();
-        return match local.as_slice() {
-            [entity] => Some(*entity),
-            _ => None,
-        };
+            .filter(|entity| !excluded(entity.id()));
+        return unique_entity(local);
     }
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C) {
         let indexed = entities
@@ -165,10 +164,9 @@ fn resolve_operand_marker_excluding<'a>(
                         | SketchInputKind::Arc
                 )
             })
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>();
-        if let [entity] = indexed.as_slice() {
-            return Some(*entity);
+            .filter(|entity| !excluded(entity.id()));
+        if let Some(entity) = unique_entity(indexed) {
+            return Some(entity);
         }
     }
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC87) {
@@ -183,10 +181,9 @@ fn resolve_operand_marker_excluding<'a>(
                     SketchInputKind::LineOrCircle | SketchInputKind::Arc
                 )
             })
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>();
-        if let [entity] = indexed.as_slice() {
-            return Some(*entity);
+            .filter(|entity| !excluded(entity.id()));
+        if let Some(entity) = unique_entity(indexed) {
+            return Some(entity);
         }
     }
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C) {
@@ -201,12 +198,8 @@ fn resolve_operand_marker_excluding<'a>(
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
             })
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>();
-        return match indexed.as_slice() {
-            [entity] => Some(*entity),
-            _ => None,
-        };
+            .filter(|entity| !excluded(entity.id()));
+        return unique_entity(indexed);
     }
     if matches!(
         kind,
@@ -225,10 +218,9 @@ fn resolve_operand_marker_excluding<'a>(
             .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| entity.coordinates_m.is_some())
             .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>();
-        if let [entity] = indexed.as_slice() {
-            return Some(*entity);
+            .filter(|entity| !excluded(entity.id()));
+        if let Some(entity) = unique_entity(indexed) {
+            return Some(entity);
         }
     }
     if matches!(
@@ -246,26 +238,21 @@ fn resolve_operand_marker_excluding<'a>(
             .copied()
             .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>();
+            .filter(|entity| !excluded(entity.id()));
         if entities.iter().any(|entity| {
             entity.object_index() == Some(u32::from(address))
                 && operand_accepts_marker(kind, entity.kind())
         }) {
-            return match indexed.as_slice() {
-                [entity] => Some(*entity),
-                _ => None,
-            };
+            return unique_entity(indexed);
         }
         let local = entities
             .iter()
             .copied()
             .filter(|entity| entity.local_id() == Some(u32::from(address)))
             .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>();
-        if let [entity] = local.as_slice() {
-            return Some(*entity);
+            .filter(|entity| !excluded(entity.id()));
+        if let Some(entity) = unique_entity(local) {
+            return Some(entity);
         }
     }
     if matches!(
@@ -277,10 +264,9 @@ fn resolve_operand_marker_excluding<'a>(
             .copied()
             .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>();
-        if let [entity] = indexed.as_slice() {
-            return Some(*entity);
+            .filter(|entity| !excluded(entity.id()));
+        if let Some(entity) = unique_entity(indexed) {
+            return Some(entity);
         }
         if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
             let entities_by_id = entities
@@ -294,10 +280,9 @@ fn resolve_operand_marker_excluding<'a>(
                 .filter(|entity| !excluded(entity.id()))
                 .filter(|entity| {
                     linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
-                })
-                .collect::<Vec<_>>();
-            if let [entity] = indexed_line_handles.as_slice() {
-                return Some(*entity);
+                });
+            if let Some(entity) = unique_entity(indexed_line_handles) {
+                return Some(entity);
             }
         }
     }
@@ -345,10 +330,9 @@ fn resolve_operand_marker_excluding<'a>(
                     .filter(|entity| !excluded(entity.id()))
                     .filter(|entity| {
                         linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
-                    })
-                    .collect::<Vec<_>>();
-                if let [entity] = linked_line_handles.as_slice() {
-                    return Some(*entity);
+                    });
+                if let Some(entity) = unique_entity(linked_line_handles) {
+                    return Some(entity);
                 }
             }
             let mut indirect = if point_operand_uses_link_graph(kind) {
@@ -383,35 +367,22 @@ fn resolve_operand_marker_excluding<'a>(
                     let remaining = compatible
                         .iter()
                         .copied()
-                        .filter(|entity| !excluded(entity.id()))
-                        .collect::<Vec<_>>();
-                    let [entity] = remaining.as_slice() else {
-                        return None;
-                    };
-                    Some(*entity)
+                        .filter(|entity| !excluded(entity.id()));
+                    unique_entity(remaining)
                 }
                 [] if operand_allows_compatible_ordinal_fallback(kind) => {
                     compatible.get(usize::from(address)).copied().or_else(|| {
                         (kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C))
                             .then(|| {
-                                entities
-                                    .iter()
-                                    .copied()
-                                    .filter(|entity| {
-                                        matches!(
-                                            entity.kind(),
-                                            SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                                        ) && entity.local_id() == Some(u32::from(address))
-                                            && !excluded(entity.id())
-                                    })
-                                    .collect::<Vec<_>>()
+                                unique_entity(entities.iter().copied().filter(|entity| {
+                                    matches!(
+                                        entity.kind(),
+                                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                                    ) && entity.local_id() == Some(u32::from(address))
+                                        && !excluded(entity.id())
+                                }))
                             })
-                            .and_then(|candidates| {
-                                let [candidate] = candidates.as_slice() else {
-                                    return None;
-                                };
-                                Some(*candidate)
-                            })
+                            .flatten()
                     })
                 }
                 _ => None,
