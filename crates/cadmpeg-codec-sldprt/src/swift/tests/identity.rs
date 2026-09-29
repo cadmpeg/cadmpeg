@@ -12,6 +12,12 @@ use crate::swift::ObjectSection;
 use crate::swift::RelatedObject;
 use crate::swift::TopologyIdentityIndex;
 use crate::swift::ROOT_CLASS;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::{
+    patterns::{PatternKind, PatternSeed},
+    Feature, FeatureDefinition, FeatureId, FeatureOperation,
+};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiTarget;
@@ -20,37 +26,11 @@ use std::collections::BTreeMap;
 
 #[test]
 fn empty_swift_pattern_uses_one_native_hole_join() {
-    use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed},
-        FeatureDefinition, FeatureId, FeatureOperation,
-    };
-
-    let seed = FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar");
-    let pattern_definition = FeatureDefinition::Operation(FeatureOperation::Pattern {
-        seeds: vec![PatternSeed::Feature(seed.clone())],
-        pattern: PatternKind::UNRESOLVED,
-    });
-    let features = vec![
-        neutral_feature(
-            "seed",
-            "Sketch20",
-            1,
-            Vec::new(),
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: "Sketch".into(),
-                parameters: BTreeMap::new(),
-            }),
-        ),
-        neutral_feature("pattern", "LPattern6", 2, Vec::new(), pattern_definition),
-        neutral_feature(
-            "hole",
-            "Hole5",
-            3,
-            vec![seed],
-            simple_hole_definition(6.1468),
-        ),
-    ];
-    let context = pattern_hole_nominal_context(&features);
+    let features = pattern_hole_features();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("empty root fits policy");
+    let context = pattern_hole_nominal_context(&ctx, &features).expect("pattern context");
     assert_eq!(
         context.get("Hole Pattern6").copied().map(PositiveReal::get),
         Some(6.1468)
@@ -101,7 +81,9 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
         simple_hole_definition(6.1468),
     ));
-    assert!(pattern_hole_nominal_context(&ambiguous).is_empty());
+    assert!(pattern_hole_nominal_context(&ctx, &ambiguous)
+        .expect("ambiguous pattern context")
+        .is_empty());
 
     let mut unresolved = features;
     let mut unresolved_hole = neutral_feature(
@@ -118,7 +100,73 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         shape.try_edit(|_, _, diameter| *diameter = None).unwrap();
     });
     unresolved.push(unresolved_hole);
-    assert!(pattern_hole_nominal_context(&unresolved).is_empty());
+    assert!(pattern_hole_nominal_context(&ctx, &unresolved)
+        .expect("unresolved pattern context")
+        .is_empty());
+}
+
+fn pattern_hole_features() -> Vec<Feature> {
+    let seed = FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar");
+    let pattern_definition = FeatureDefinition::Operation(FeatureOperation::Pattern {
+        seeds: vec![PatternSeed::Feature(seed.clone())],
+        pattern: PatternKind::UNRESOLVED,
+    });
+    vec![
+        neutral_feature(
+            "seed",
+            "Sketch20",
+            1,
+            Vec::new(),
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Sketch".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        neutral_feature("pattern", "LPattern6", 2, Vec::new(), pattern_definition),
+        neutral_feature(
+            "hole",
+            "Hole5",
+            3,
+            vec![seed],
+            simple_hole_definition(6.1468),
+        ),
+    ]
+}
+
+fn pattern_hole_limit_error(
+    set_limit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
+) -> CodecError {
+    let features = pattern_hole_features();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    set_limit(&mut policy.limits);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits policy");
+    pattern_hole_nominal_context(&ctx, &features).expect_err("pattern context must refuse")
+}
+
+#[test]
+fn pattern_hole_nominal_context_refuses_collection_limit() {
+    let CodecError::ResourceLimit(limit) =
+        pattern_hole_limit_error(|limits| limits.max_collection_items = 0)
+    else { panic!("expected collection refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn pattern_hole_nominal_context_refuses_retained_limit() {
+    let CodecError::ResourceLimit(limit) =
+        pattern_hole_limit_error(|limits| limits.max_retained_bytes = 0)
+    else { panic!("expected retained refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn pattern_hole_nominal_context_refuses_work_limit() {
+    let CodecError::ResourceLimit(limit) =
+        pattern_hole_limit_error(|limits| limits.max_work_units = 0)
+    else { panic!("expected work refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
 }
 
 fn cad_feature(class: &str, identifier: &str) -> Entity {
