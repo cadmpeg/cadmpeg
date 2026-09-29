@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{available_parameter_ids, emitted_entity_views};
+use super::{available_parameter_ids, emitted_entity_views, insert_set, insert_tree};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -102,3 +102,63 @@ fn available_parameter_ids_refuse_planned_tree_node() {
     }).expect("service IDs admitted");
     assert_eq!(ids, BTreeSet::from([id]));
 }
+
+macro_rules! map_node_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut values = std::collections::BTreeMap::new();
+            let error = insert_tree(&ctx, &mut values, 7usize, 9u8, $operation)
+                .expect_err("one tree node exceeds zero items");
+            assert!(matches!(error, CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::CollectionItems
+                    && resource.operation == $operation));
+            assert!(values.is_empty());
+            let service = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+            insert_tree(&ctx, &mut values, 7usize, 9u8, $operation).expect("service node admitted");
+            assert_eq!(values.get(&7), Some(&9));
+        }
+    };
+}
+
+macro_rules! set_node_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut values = BTreeSet::new();
+            let error = insert_set(&ctx, &mut values, 7usize, $operation)
+                .expect_err("one tree node exceeds zero items");
+            assert!(matches!(error, CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::CollectionItems
+                    && resource.operation == $operation));
+            assert!(values.is_empty());
+            let service = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+            insert_set(&ctx, &mut values, 7usize, $operation).expect("service node admitted");
+            assert_eq!(values, BTreeSet::from([7]));
+        }
+    };
+}
+
+map_node_test!(resolved_sketch_point_node_refuses_limit, "creo resolved sketch point nodes");
+map_node_test!(resolved_section_geometry_node_refuses_limit, "creo resolved section geometry nodes");
+map_node_test!(section_geometry_node_refuses_limit, "creo section geometry nodes");
+map_node_test!(section_circle_geometry_node_refuses_limit, "creo section circle geometry nodes");
+map_node_test!(section_point_geometry_node_refuses_limit, "creo section point geometry nodes");
+map_node_test!(section_centered_line_geometry_node_refuses_limit, "creo section centered-line geometry nodes");
+map_node_test!(section_reference_line_geometry_node_refuses_limit, "creo section reference-line geometry nodes");
+set_node_test!(solved_section_segment_node_refuses_limit, "creo solved section segment ID nodes");
+set_node_test!(emitted_section_segment_node_refuses_limit, "creo emitted section segment ID nodes");
+set_node_test!(resolved_section_offset_node_refuses_limit, "creo resolved section offset nodes");
+set_node_test!(equation_offset_node_refuses_limit, "creo equation offset nodes");
+set_node_test!(rejected_equation_offset_node_refuses_limit, "creo rejected equation offset nodes");
+set_node_test!(typed_equation_offset_node_refuses_limit, "creo typed equation offset nodes");
