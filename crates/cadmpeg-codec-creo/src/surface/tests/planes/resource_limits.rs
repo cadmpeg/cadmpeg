@@ -40,6 +40,56 @@ fn limit_reaching_operation(
 }
 
 #[test]
+fn named_spline_invalid_scalar_refusal_text_obeys_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let body = [0xff];
+    let parse = |limit| {
+        with_surface_limits(&body, u64::MAX, limit, |ctx| {
+            crate::surface::named_spline_scalar_slots(
+                ctx,
+                &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
+                "tangts",
+                &body,
+                1,
+                &scalar::ScalarCache::default(),
+                &mut crate::surface::ScalarBodyRefusal::default(),
+            )
+        })
+    };
+    assert!(parse(u64::MAX).expect("service profile").is_none());
+    assert_surface_limit(
+        parse(0).expect_err("refusal text exceeds retained limit"),
+        ResourceDimension::RetainedBytes,
+        "creo scalar body refusal text",
+    );
+}
+
+#[test]
+fn named_local_system_invalid_scalar_refusal_text_obeys_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let body = [0xff];
+    let parse = |limit| {
+        with_surface_limits(&body, u64::MAX, limit, |ctx| {
+            crate::surface::sequential_named_local_system_slots(
+                ctx,
+                &body,
+                1,
+                &scalar::ScalarCache::default(),
+                &mut crate::surface::ScalarBodyRefusal::default(),
+            )
+        })
+    };
+    assert!(parse(u64::MAX).expect("service profile").is_none());
+    assert_surface_limit(
+        parse(0).expect_err("refusal text exceeds retained limit"),
+        ResourceDimension::RetainedBytes,
+        "creo scalar body refusal text",
+    );
+}
+
+#[test]
 fn surface_parameter_refuses_header_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     let payload = [7, 0x22, 4, 0x01, 0, 0, 0xe4, 0xe3];
