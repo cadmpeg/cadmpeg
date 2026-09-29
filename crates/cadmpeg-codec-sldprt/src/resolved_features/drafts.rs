@@ -65,7 +65,7 @@ fn draft_operands(
     if let Some(operands) = declared_draft_operands(ctx, lane, object_start, object_end)? {
         return Ok(Some(operands));
     }
-    Ok(compact_parting_line_draft_operands(lane, object_start, object_end))
+    compact_parting_line_draft_operands(ctx, lane, object_start, object_end)
 }
 
 fn declared_draft_operands(
@@ -124,38 +124,58 @@ fn declared_draft_operands(
 }
 
 fn compact_parting_line_draft_operands(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
-) -> Option<DraftOperands> {
-    let end = super::DeclaredEnd::of(object_end, lane.native_payload.len())?.get();
-    let final_marker = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())?;
-    let records = (object_start.saturating_add(12)..=final_marker)
-        .filter(|marker| {
-            lane.native_payload
-                .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
-                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        })
-        .filter_map(|marker| {
+) -> Result<Option<DraftOperands>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT compact draft records";
+    let Some(end) = super::DeclaredEnd::of(object_end, lane.native_payload.len()) else {
+        return Ok(None);
+    };
+    let end = end.get();
+    let Some(final_marker) = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) else {
+        return Ok(None);
+    };
+    let Some(first_marker) = object_start.checked_add(12) else {
+        return Ok(None);
+    };
+    let mut records = Vec::new();
+    for marker in first_marker..=final_marker {
+        if lane
+            .native_payload
+            .get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
+            != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        {
+            continue;
+        }
+        if let Some((role, paths, selection_end)) =
             compact_draft_selection_at(&lane.native_payload, marker)
-                .map(|(role, paths, selection_end)| (marker, role, paths, selection_end))
-        })
-        .collect::<Vec<_>>();
+        {
+            ctx.reserve_collection_vec(&mut records, 1, OPERATION)?;
+            records.push((marker, role, paths, selection_end));
+        }
+    }
     let mut parting_records = records
         .iter()
         .enumerate()
         .filter(|(_, (_, role, _, _))| *role == CompactDraftSelectionRole::PartingTool);
     let Some((parting_index, parting_record)) = parting_records.next() else {
-        return None;
+        return Ok(None);
     };
     if parting_records.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let first_face = records.iter().find(|(marker, role, _, _)| {
+    let Some(first_face) = records.iter().find(|(marker, role, _, _)| {
         *role == CompactDraftSelectionRole::DraftedFace && *marker > parting_record.0
-    })?;
-    let pull_direction =
-        unique_draft_direction(&lane.native_payload, parting_record.3, first_face.0)?;
+    }) else {
+        return Ok(None);
+    };
+    let Some(pull_direction) =
+        unique_draft_direction(&lane.native_payload, parting_record.3, first_face.0)
+    else {
+        return Ok(None);
+    };
     let parting_start = parting_record.0;
     let mut parting_paths = None;
     let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
@@ -172,16 +192,19 @@ fn compact_parting_line_draft_operands(
                 .iter()
                 .any(|existing| same_component_path_semantics(existing, &path))
             {
+                ctx.reserve_collection_vec(&mut faces, 1, "collect SLDPRT compact draft faces")?;
                 faces.push(path);
             }
         }
     }
-    let parting_paths = parting_paths?;
-    (!faces.is_empty()).then_some(DraftOperands {
+    let Some(parting_paths) = parting_paths else {
+        return Ok(None);
+    };
+    Ok((!faces.is_empty()).then_some(DraftOperands {
         anchor: DraftAnchor::PartingTool(parting_paths),
         faces,
         pull_direction,
-    })
+    }))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -599,6 +622,56 @@ mod tests {
             bytes.extend([0; 4]);
         }
         bytes
+    }
+
+    #[test]
+    fn draft_operand_candidates_refuses_compact_record_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let mut payload = vec![0; 64];
+        let object_start = payload.len();
+        payload.extend(compact_selection(2, &[&[(0x8083, 80, 900, 1)]]));
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: vec![FeatureInputName {
+                id: "name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: object_start as u64,
+                value: "Draft1".into(),
+                object_id: ObjectId::from_value(7),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![draft_feature()],
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+            .expect("test context");
+        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
+            .expect_err("compact draft records exceed collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect SLDPRT compact draft records"));
     }
 
     fn aligned_direction(direction: [f64; 3]) -> Vec<u8> {
