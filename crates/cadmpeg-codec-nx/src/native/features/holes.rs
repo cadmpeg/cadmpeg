@@ -9,7 +9,7 @@ use super::copy_operation_text;
 use super::operation_record::FeatureOperationRecord;
 
 use super::reference::ConstructionReference;
-use super::unique_offset_data_block;
+use super::charged_unique_offset_data_block;
 use super::visit_feature_history_operation_records;
 use super::FeatureOperationLabel;
 use super::FeaturePayloadString;
@@ -1253,45 +1253,102 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
 }
 
 /// Decode and resolve exact four-block lanes from `HOLE PACKAGE` operations.
+fn package_lane_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    indexed: &[(
+        crate::container::entry_ref::EntryRef<'_>,
+        crate::om::IndexedSection<'_>,
+    )],
+    entry_offset: u64,
+    lane: &crate::om::HolePackageConstructionGroupLane,
+) -> Result<Option<[ConstructionReference<String>; 4]>, cadmpeg_core::CodecError> {
+    let mut resolved = [None, None, None, None];
+    for (slot, reference) in lane.references.iter().enumerate() {
+        let Some(data_block) =
+            charged_unique_offset_data_block(ctx, indexed, reference.token.value())?
+        else {
+            return Ok(None);
+        };
+        let Some(source_offset) = entry_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(reference.offset))
+        else {
+            return Ok(None);
+        };
+        resolved[slot] = Some(ConstructionReference {
+            token: reference.token,
+            data_block,
+            source_offset,
+        });
+    }
+    let [Some(a), Some(b), Some(c), Some(d)] = resolved else {
+        return Ok(None);
+    };
+    Ok(Some([a, b, c, d]))
+}
+
 pub(in crate::native) fn feature_hole_package_construction_group_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureHolePackageConstructionGroupLane>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(lane) = crate::om::hole_package_construction_group_lane(record.payload_view())
             else {
                 return;
             };
-            let [a, b, c, d] = lane.references.map(|reference| {
-                Some(ConstructionReference {
-                    token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, reference.token.value())?,
-                    source_offset: entry_offset + reference.offset as u64,
-                })
-            });
-            let [Some(a), Some(b), Some(c), Some(d)] = [a, b, c, d] else {
-                return;
+            let references = match package_lane_references(ctx, &indexed, entry_offset, &lane) {
+                Ok(Some(references)) => references,
+                Ok(None) => return,
+                Err(error) => { failure = Some(error); return; }
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            let operation_label = match format_feature_history_id(
+                ctx, "operation-label", section_key, operation_ordinal, None,
+            ) {
+                Ok(label) => label,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let id = match format_feature_history_id(
+                ctx, "hole-package-construction-group-lane", section_key, operation_ordinal, None,
+            ) {
+                Ok(id) => id,
+                Err(error) => { failure = Some(error); return; }
+            };
+            if let Err(error) = ctx.charge_collection_items(1, "NX hole package lanes")
+                .and_then(|()| ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureHolePackageConstructionGroupLane>()),
+                    "NX hole package lanes",
+                ))
+                .and_then(|()| lanes.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX hole package lanes", 0, 1)
+                }))
+            {
+                failure = Some(error);
+                return;
+            }
             lanes.push(FeatureHolePackageConstructionGroupLane {
-                id: format!(
-                    "nx:feature-history:hole-package-construction-group-lane#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
                 operation_label,
                 selector: lane.selector,
                 branch: lane.branch,
-                references: [a, b, c, d],
-                payload_offset: lane.offset as u64,
-                source_offset: entry_offset + record.payload_offset() as u64 + lane.offset as u64,
+                references,
+                payload_offset: cadmpeg_core::decode::u64_from_index(lane.offset),
+                source_offset: entry_offset
+                    + cadmpeg_core::decode::u64_from_index(record.payload_offset())
+                    + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(lanes)
 }
 
