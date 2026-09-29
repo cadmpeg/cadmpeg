@@ -6,6 +6,7 @@ use super::axis::SectionAxis;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::units::FinitePoint2;
@@ -742,9 +743,14 @@ fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> 
             ],
         ]),
         SketchGeometryDefinition::Nurbs { curve } => {
-            let control_points = curve.control_points();
-            let first = control_points[0];
-            let last = control_points[control_points.len() - 1];
+            let (first, last) = match curve.pole_rows() {
+                PcurveNurbsPoles::Polynomial { points } => {
+                    (points.first()?.get(), points.last()?.get())
+                }
+                PcurveNurbsPoles::Rational { points } => {
+                    (points.first()?.point.get(), points.last()?.point.get())
+                }
+            };
             Some([[first.u, first.v], [last.u, last.v]])
         }
         _ => None,
@@ -752,20 +758,35 @@ fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> 
 }
 
 pub(in crate::decode) fn saved_section_missing_line_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Option<(usize, SketchGeometry)> {
-    let order = definition.order_table.as_ref()?;
-    order.is_complete().then_some(())?;
-    let segments = definition.segments.as_ref()?;
-    segments.is_complete().then_some(())?;
-    let trim = definition.trim_entities.as_ref()?;
-    (trim.has_complete_bucket_frame() && trim.has_unique_external_ids()).then_some(())?;
-    let trimmed_external_ids = trim
-        .rows
-        .iter()
-        .filter_map(|row| trim_segment_id(definition, row))
-        .collect::<BTreeSet<_>>();
-    let missing = segments
+) -> Result<Option<(usize, SketchGeometry)>, cadmpeg_core::CodecError> {
+    let Some(order) = definition.order_table.as_ref() else {
+        return Ok(None);
+    };
+    if !order.is_complete() {
+        return Ok(None);
+    }
+    let Some(segments) = definition.segments.as_ref() else {
+        return Ok(None);
+    };
+    if !segments.is_complete() {
+        return Ok(None);
+    }
+    let Some(trim) = definition.trim_entities.as_ref() else {
+        return Ok(None);
+    };
+    if !trim.has_complete_bucket_frame() || !trim.has_unique_external_ids() {
+        return Ok(None);
+    }
+    let mut trimmed_external_ids = BTreeSet::new();
+    for id in trim.rows.iter().filter_map(|row| trim_segment_id(definition, row)) {
+        if !trimmed_external_ids.contains(&id) {
+            ctx.charge_collection_items(1, "creo missing-line trimmed ID nodes")?;
+            trimmed_external_ids.insert(id);
+        }
+    }
+    let Some(missing) = crate::decode::uniqueness::exactly_one(segments
         .rows
         .ordinary()
         .filter(|candidate| {
@@ -774,77 +795,99 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
                 crate::feature::definitions::FeatureSegmentKind::Line(_)
             ) && order.internal_id(candidate.external_id).is_none()
                 && trimmed_external_ids.contains(&candidate.external_id)
-        })
-        .collect::<Vec<_>>();
-    let [missing] = missing.as_slice() else {
-        return None;
+        })) else {
+        return Ok(None);
     };
-    let fixed_coordinate = SectionAxis::from_selector(missing.vertical_horizontal?)?;
+    let Some(fixed_coordinate) = missing.vertical_horizontal.and_then(SectionAxis::from_selector) else {
+        return Ok(None);
+    };
 
-    let geometries = semantic_saved_section_entities(definition)
-        .filter_map(saved_section_entity_geometry)
-        .filter(|(internal_id, _, _)| order.rows.iter().any(|row| row.internal_id == *internal_id))
-        .collect::<Vec<_>>();
-    let ordered_ids = order
-        .rows
-        .iter()
-        .map(|row| row.internal_id)
-        .collect::<BTreeSet<_>>();
-    let geometry_ids = geometries
-        .iter()
-        .map(|(internal_id, _, _)| *internal_id)
-        .collect::<BTreeSet<_>>();
-    (ordered_ids.len() == order.rows.len()
-        && geometry_ids.len() == geometries.len()
-        && geometry_ids == ordered_ids)
-        .then_some(())?;
-    let endpoints = geometries
-        .iter()
-        .filter_map(|(_, geometry, _)| saved_geometry_endpoints(geometry))
-        .flatten()
-        .collect::<Vec<_>>();
-    (endpoints.len() == 2 * geometries.len()).then_some(())?;
-    let mate_counts = endpoints
-        .iter()
-        .enumerate()
-        .map(|(index, endpoint)| {
-            endpoints
-                .iter()
-                .enumerate()
-                .filter(|(candidate_index, candidate)| {
-                    *candidate_index != index && saved_points_coincide(*endpoint, **candidate)
-                })
-                .count()
-        })
-        .collect::<Vec<_>>();
-    (mate_counts.iter().filter(|count| **count == 0).count() == 2
-        && mate_counts.iter().all(|count| *count <= 1))
-    .then_some(())?;
-    let open = endpoints
-        .iter()
-        .zip(mate_counts)
-        .filter(|(_, count)| *count == 0)
-        .map(|(endpoint, _)| *endpoint)
-        .collect::<Vec<_>>();
-    let [start, end] = open.as_slice() else {
-        return None;
+    let mut geometries = Vec::new();
+    for entity in semantic_saved_section_entities(definition) {
+        let Some(geometry) = saved_section_entity_geometry(entity) else {
+            continue;
+        };
+        if order.rows.iter().any(|row| row.internal_id == geometry.0) {
+            ctx.try_reserve_items(&mut geometries, 1, "creo missing-line saved geometries")?;
+            geometries.push(geometry);
+        }
+    }
+    let mut ordered_ids = BTreeSet::new();
+    for row in &order.rows {
+        if !ordered_ids.contains(&row.internal_id) {
+            ctx.charge_collection_items(1, "creo missing-line ordered ID nodes")?;
+            ordered_ids.insert(row.internal_id);
+        }
+    }
+    let mut geometry_ids = BTreeSet::new();
+    for (internal_id, _, _) in &geometries {
+        if !geometry_ids.contains(internal_id) {
+            ctx.charge_collection_items(1, "creo missing-line geometry ID nodes")?;
+            geometry_ids.insert(*internal_id);
+        }
+    }
+    if ordered_ids.len() != order.rows.len()
+        || geometry_ids.len() != geometries.len()
+        || geometry_ids != ordered_ids
+    {
+        return Ok(None);
+    }
+    let mut endpoints = Vec::new();
+    for (_, geometry, _) in &geometries {
+        if let Some(pair) = saved_geometry_endpoints(geometry) {
+            ctx.try_reserve_items(&mut endpoints, 2, "creo missing-line endpoints")?;
+            endpoints.extend(pair);
+        }
+    }
+    let expected_endpoints = geometries.len().checked_mul(2).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("Creo missing-line endpoint count overflow")
+    })?;
+    if endpoints.len() != expected_endpoints {
+        return Ok(None);
+    }
+    let mut open = [None, None];
+    let mut open_count = 0;
+    for (index, endpoint) in endpoints.iter().enumerate() {
+        let mut mate_count = 0;
+        for (candidate_index, candidate) in endpoints.iter().enumerate() {
+            if candidate_index == index {
+                continue;
+            }
+            ctx.charge_work(1, "creo missing-line endpoint pairs")?;
+            if saved_points_coincide(*endpoint, *candidate) {
+                mate_count += 1;
+            }
+        }
+        if mate_count > 1 {
+            return Ok(None);
+        }
+        if mate_count == 0 {
+            if open_count == 2 {
+                return Ok(None);
+            }
+            open[open_count] = Some(*endpoint);
+            open_count += 1;
+        }
+    }
+    let [Some(start), Some(end)] = open else {
+        return Ok(None);
     };
     let scale = start
         .iter()
-        .chain(end)
+        .chain(end.iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    ((start[fixed_coordinate.index()] - end[fixed_coordinate.index()]).abs()
-        <= EPS_PARAMETER_AGREEMENT * scale)
-        .then_some(())?;
-    Some((
-        missing.offset,
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(start[0], start[1]),
-            end: Point2::new(end[0], end[1]),
-        })
-        .ok()?,
-    ))
+    if (start[fixed_coordinate.index()] - end[fixed_coordinate.index()]).abs()
+        > EPS_PARAMETER_AGREEMENT * scale
+    {
+        return Ok(None);
+    }
+    Ok(SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(start[0], start[1]),
+        end: Point2::new(end[0], end[1]),
+    })
+    .ok()
+    .map(|geometry| (missing.offset, geometry)))
 }
 
 fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
@@ -966,17 +1009,18 @@ pub(in crate::decode) fn saved_profile_chains(
 }
 
 pub(in crate::decode) fn resolved_section_segment_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SketchGeometry> {
-    let missing_line = saved_section_missing_line_geometry(definition);
-    resolved_section_segment_geometry_with_missing_line(
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+    let missing_line = saved_section_missing_line_geometry(ctx, definition)?;
+    Ok(resolved_section_segment_geometry_with_missing_line(
         definition,
         points,
         segment,
         missing_line.as_ref(),
-    )
+    ))
 }
 
 pub(in crate::decode) fn resolved_section_segment_geometry_with_missing_line(

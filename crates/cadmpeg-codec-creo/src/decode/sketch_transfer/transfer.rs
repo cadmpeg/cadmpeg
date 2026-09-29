@@ -183,7 +183,7 @@ pub(in super::super) fn transfer_sketches(
             })
             .collect::<BTreeMap<_, _>>();
         let radii = resolved_section_radii(ctx, definition)?;
-        let missing_line_geometry = saved_section_missing_line_geometry(definition);
+        let missing_line_geometry = saved_section_missing_line_geometry(ctx, definition)?;
         let solved = definition
             .trim_entities
             .iter()

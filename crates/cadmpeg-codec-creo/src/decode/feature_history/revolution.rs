@@ -176,7 +176,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             .iter()
             .filter(|segment| generating_ids.contains(&segment.external_id))
         {
-            let Some(geometry) = resolved_section_segment_geometry(definition, &points, segment)
+            let Some(geometry) = resolved_section_segment_geometry(ctx, definition, &points, segment)?
             else {
                 continue;
             };

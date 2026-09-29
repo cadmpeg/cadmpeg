@@ -7,6 +7,8 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
+mod missing_line;
+
 fn saved_profile_fixture() -> (SketchId, Vec<(u32, SketchGeometry)>) {
     let sketch = SketchId::mint("creo:model:sketch#917").expect("sketch identity");
     let mut geometries = Vec::new();

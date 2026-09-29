@@ -577,7 +577,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             .filter(|segment| solved.contains(&segment.external_id))
         {
             let Some(section_geometry) =
-                resolved_section_segment_geometry(definition, &points, segment)
+                resolved_section_segment_geometry(ctx, definition, &points, segment)?
             else {
                 continue;
             };

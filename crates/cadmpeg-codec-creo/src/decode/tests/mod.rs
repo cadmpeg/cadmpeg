@@ -163,7 +163,9 @@ fn section_segment_intersection_carrier(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let missing_line = saved_section_missing_line_geometry(definition);
+    let missing_line = crate::decode::with_test_decode_ctx(|ctx| {
+        saved_section_missing_line_geometry(ctx, definition)
+    }).expect("test missing-line geometry admitted");
     let variable_points = definition
         .variables
         .as_ref()

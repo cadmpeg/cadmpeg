@@ -16,8 +16,8 @@ fn trimmed_section_segment_geometry(
     trim_vertices: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let missing_line = saved_section_missing_line_geometry(definition);
     crate::decode::with_test_decode_ctx(|ctx| {
+        let missing_line = saved_section_missing_line_geometry(ctx, definition)?;
         let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, definition)?;
         Ok::<_, cadmpeg_core::CodecError>(trimmed_section_segment_geometry_with_missing_line(
             definition,
