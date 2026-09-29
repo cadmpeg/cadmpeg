@@ -19,6 +19,222 @@ fn parse(
     super::super::expression_records_with_model_name(&ctx, payload, None)
 }
 
+fn with_expression_policy<T>(
+    policy: DecodePolicy,
+    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input is admitted");
+    run(&ctx)
+}
+
+fn expression_lines(source: &[&str]) -> Vec<super::super::CurveExpressionLine> {
+    source
+        .iter()
+        .enumerate()
+        .map(|(offset, text)| super::super::CurveExpressionLine {
+            text: (*text).to_owned(),
+            offset,
+        })
+        .collect()
+}
+
+fn resource_error<T>(result: Result<T, CodecError>) -> CodecError {
+    match result {
+        Err(error) => error,
+        Ok(_) => panic!("expected resource refusal"),
+    }
+}
+
+#[test]
+fn expression_dependency_items_refuse_before_growth() {
+    let line = expression_lines(&["a=b+c"]);
+    assert!(with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::expression_assignment(ctx, &line[0])
+    })
+    .expect("service profile")
+    .is_some());
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let error = with_expression_policy(policy, |ctx| {
+        super::super::expression_assignment(ctx, &line[0])
+    })
+    .expect_err("dependency vector exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo expression dependency names"));
+}
+
+#[test]
+fn expression_dependency_text_refuses_before_copy() {
+    let line = expression_lines(&["a=b"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let error = with_expression_policy(policy, |ctx| {
+        super::super::expression_assignment(ctx, &line[0])
+    })
+    .expect_err("dependency text exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo expression dependency text"));
+}
+
+#[test]
+fn expression_assignment_text_refuses_before_copy() {
+    let line = expression_lines(&["a=1"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let error = with_expression_policy(policy, |ctx| {
+        super::super::expression_assignment(ctx, &line[0])
+    })
+    .expect_err("assignment text exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo expression assignment text"));
+}
+
+#[test]
+fn solve_line_index_nodes_refuse_before_insert() {
+    let lines = expression_lines(&["SOLVE"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo solve line index nodes"));
+}
+
+#[test]
+fn pending_solve_statements_refuse_before_growth() {
+    let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo pending solve statements"));
+}
+
+#[test]
+fn solve_equations_refuse_before_growth() {
+    let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo solve equations"));
+}
+
+#[test]
+fn solve_blocks_refuse_before_growth() {
+    let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
+    assert_eq!(with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    })
+    .expect("service profile")
+    .blocks
+    .len(), 1);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 6;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo solve blocks"));
+}
+
+#[test]
+fn solve_assignment_indices_refuse_before_growth() {
+    let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 9;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo solve assignment indices"));
+}
+
+#[test]
+fn solve_assignments_refuse_before_growth() {
+    let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 10;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo solve assignments"));
+}
+
+#[test]
+fn executable_solve_line_nodes_refuse_before_insert() {
+    let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 11;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo executable solve line index nodes"));
+}
+
+#[test]
+fn solve_equation_left_refuses_retained_limit() {
+    let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo solve equation left"));
+}
+
+#[test]
+fn solve_equation_right_refuses_retained_limit() {
+    let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::curve_expression_solve_program(ctx, &lines)
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo solve equation right"));
+}
+
+#[test]
+fn conditional_expression_assignments_refuse_before_growth() {
+    let lines = expression_lines(&["else", "a=1"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let error = resource_error(with_expression_policy(policy, |ctx| {
+        super::super::evaluate_expression_program_details(
+            ctx,
+            &lines,
+            None,
+            &super::super::ExternalRelationSymbols::default(),
+        )
+    }));
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo conditional expression assignments"));
+}
+
 #[test]
 fn curve_expression_labels_refuse_before_vector_growth() {
     assert_eq!(

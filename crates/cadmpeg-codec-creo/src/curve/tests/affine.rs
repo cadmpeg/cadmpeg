@@ -146,7 +146,10 @@ fn retains_simultaneous_equations_without_sequential_assignments() {
     })
     .collect::<Vec<_>>();
 
-    let program = curve_expression_solve_program(&lines);
+    let program = crate::decode::with_test_decode_ctx(|ctx| {
+        curve_expression_solve_program(ctx, &lines)
+    })
+    .expect("solve program");
     assert!(!program.unresolved_control);
     let [block] = program.blocks.as_slice() else {
         panic!("one solve block");
@@ -1081,7 +1084,10 @@ fn unterminated_solve_block_cannot_create_assignments() {
         })
         .collect::<Vec<_>>();
 
-    let program = curve_expression_solve_program(&lines);
+    let program = crate::decode::with_test_decode_ctx(|ctx| {
+        curve_expression_solve_program(ctx, &lines)
+    })
+    .expect("solve program");
     assert!(program.unresolved_control);
     assert!(program.blocks.is_empty());
     let assignments =
