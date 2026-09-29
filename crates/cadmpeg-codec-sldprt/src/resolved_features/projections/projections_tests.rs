@@ -1715,14 +1715,15 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
         })
     };
 
-    let carried = sole_unresolved_fillet_group(&fillet(vec![group(
+    let definition = fillet(vec![group(
         native.clone(),
         RadiusSpec::Unresolved {
             form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
         },
-    )]))
-    .expect("a sole group without a radius is carried out of the check");
-    assert_eq!(carried.0, native);
+    )]);
+    let carried = sole_unresolved_fillet_group(&definition)
+        .expect("a sole group without a radius is carried out of the check");
+    assert_eq!(carried.0, &native);
 
     assert_eq!(
         sole_unresolved_fillet_group(&fillet(vec![group(
