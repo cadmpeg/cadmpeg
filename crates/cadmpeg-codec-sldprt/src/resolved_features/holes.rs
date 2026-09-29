@@ -3436,6 +3436,7 @@ pub(crate) fn project_topological_hole_constructions(
             }
             let mut common = None::<Vec<(f64, f64)>>;
             for placement in placements {
+                ctx.charge_work(1, "scan SLDPRT hole placements")?;
                 let HolePlacement::Axis {
                     origin: placement_origin,
                     axis: placement_axis,
@@ -3444,23 +3445,25 @@ pub(crate) fn project_topological_hole_constructions(
                     common = Some(Vec::new());
                     break;
                 };
-                let mut candidates = bore_faces
-                    .iter()
-                    .filter_map(|(origin, axis, radius, span, reversed)| {
-                        if !reversed {
-                            return None;
-                        }
-                        let parallel =
-                            axis.dot(placement_axis.get()).abs() >= 1.0 - EPS_HOLE_GEOMETRY;
-                        let distance = point_axis_distance_squared(
-                            placement_origin.get(),
-                            *origin,
-                            axis.get(),
-                        );
-                        (parallel && distance <= EPS_HOLE_EXACT_GEOMETRY)
-                            .then_some((*radius, *span))
-                    })
-                    .collect::<Vec<_>>();
+                let mut candidates = Vec::new();
+                for (origin, axis, radius, span, reversed) in &bore_faces {
+                    ctx.charge_work(1, "match SLDPRT hole bore faces")?;
+                    if !reversed {
+                        continue;
+                    }
+                    let parallel =
+                        axis.dot(placement_axis.get()).abs() >= 1.0 - EPS_HOLE_GEOMETRY;
+                    let distance = point_axis_distance_squared(
+                        placement_origin.get(),
+                        *origin,
+                        axis.get(),
+                    );
+                    if parallel && distance <= EPS_HOLE_EXACT_GEOMETRY {
+                        ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT matching hole bores")?;
+                        candidates.push((*radius, *span));
+                    }
+                }
+                ctx.charge_work(u64_from_index(candidates.len()), "sort SLDPRT matching hole bores")?;
                 candidates.sort_by(|left, right| {
                     left.0
                         .total_cmp(&right.0)
@@ -3472,15 +3475,20 @@ pub(crate) fn project_topological_hole_constructions(
                 });
                 common = Some(match common {
                     None => candidates,
-                    Some(previous) => previous
-                        .into_iter()
-                        .filter(|candidate| {
-                            candidates.iter().any(|other| {
+                    Some(previous) => {
+                        let mut shared = Vec::new();
+                        for candidate in previous {
+                            ctx.charge_work(u64_from_index(candidates.len()), "intersect SLDPRT hole bores")?;
+                            if candidates.iter().any(|other| {
                                 (candidate.0 - other.0).abs() <= EPS_HOLE_GEOMETRY
                                     && (candidate.1 - other.1).abs() <= EPS_HOLE_GEOMETRY
-                            })
-                        })
-                        .collect(),
+                            }) {
+                                ctx.reserve_collection_vec(&mut shared, 1, "collect SLDPRT common hole bores")?;
+                                shared.push(candidate);
+                            }
+                        }
+                        shared
+                    }
                 });
             }
             let Some([(radius, depth)]) = common.as_deref() else {
