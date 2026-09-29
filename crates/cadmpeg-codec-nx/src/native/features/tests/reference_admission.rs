@@ -11,6 +11,7 @@ use crate::native::features::feature_extrude_profile_references;
 use crate::native::features::feature_extrude_payload_headers;
 use crate::native::features::feature_extrude_construction_profiles;
 use crate::native::features::FeatureExtrudeProfileReference;
+use crate::native::features::feature_extrude_payload_32_branches;
 use crate::native::features::feature_operation_terminal_discriminators;
 use crate::native::features::feature_operation_body_scalar_triples;
 use crate::native::features::feature_operation_body_members;
@@ -113,6 +114,56 @@ fn extrude_profile_join_refusal(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test root");
     decode(&ctx).expect_err("extrude profile join resource limit")
+}
+
+fn extrude_32_branch_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
+    let container = reference_container("EXTRUDE", bytes.to_vec());
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_extrude_payload_32_branches(ctx, &container)
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted extrude 32 branches").len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("extrude 32 branch resource limit")
+}
+
+#[test]
+fn extrude_32_branch_route_refuses_collection_limit() {
+    let error = extrude_32_branch_route_refusal(
+        |policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn extrude_32_branch_route_refuses_retained_limit() {
+    let error = extrude_32_branch_route_refusal(
+        |policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn extrude_32_branch_route_refuses_scoped_limit() {
+    let error = extrude_32_branch_route_refusal(
+        |policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn extrude_32_branch_route_refuses_work_limit() {
+    let error = extrude_32_branch_route_refusal(
+        |policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
