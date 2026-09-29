@@ -993,7 +993,15 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         .unwrap(),
     )];
 
-    bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
+    bind_circular_profile_by_dimension(&ctx, &mut features, &mut sketches, &entities, &parameters)
+        .expect("charged circular profile binding");
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -1008,6 +1016,114 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         })
     ));
     assert_eq!(sketches[0].name.as_deref(), Some("Sketch1"));
+}
+
+fn circular_profile_limit_result(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let sketch_id = SketchId::mint("synthetic:test:id#limited-sketch").unwrap();
+    let entity_id = SketchEntityId::mint("synthetic:test:id#limited-circle").unwrap();
+    let feature_id = FeatureId::mint("synthetic:test:id#limited-feature").unwrap();
+    let mut features = [Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: Some("LimitedSketch".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            }),
+        ),
+        native_ref: None,
+    }];
+    let mut sketches = [Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
+            cadmpeg_ir::sketches::SketchEntityUse {
+                entity: entity_id.clone(),
+                reversed: false,
+            },
+        ]])
+        .unwrap(),
+        native_ref: None,
+    }];
+    let entities = [SketchEntity::new(
+        entity_id,
+        sketch_id,
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(2.0).unwrap(),
+        })
+        .unwrap(),
+    )];
+    let parameters = [DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#limited-diameter").unwrap(),
+        owner: Some(feature_id),
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "<MOD-DIAM>4".into(),
+        display: Some(DimensionDisplay::Diameter),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    }];
+    let mut policy = DecodePolicy::service();
+    match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        other => panic!("unsupported circular profile limit: {other:?}"),
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    bind_circular_profile_by_dimension(&ctx, &mut features, &mut sketches, &entities, &parameters)
+        .expect_err("circular profile binding exceeds configured limit")
+}
+
+#[test]
+fn circular_profile_binding_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(circular_profile_limit_result(ResourceDimension::WorkUnits),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "bind SLDPRT circular profile by dimension"));
+}
+
+#[test]
+fn circular_profile_binding_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(circular_profile_limit_result(ResourceDimension::CollectionItems),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "bind SLDPRT circular profile by dimension"));
+}
+
+#[test]
+fn circular_profile_binding_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(circular_profile_limit_result(ResourceDimension::RetainedBytes),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "bind SLDPRT circular profile by dimension"));
 }
 
 #[test]

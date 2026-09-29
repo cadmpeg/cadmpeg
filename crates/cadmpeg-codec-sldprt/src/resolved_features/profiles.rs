@@ -198,7 +198,7 @@ pub(crate) fn bind_sketch_profiles(
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(|id| !removed.contains(id));
     *annotations = builder.build();
-    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
+    bind_circular_profile_by_dimension(ctx, features, sketches, sketch_entities, parameters)?;
     Ok(())
 }
 

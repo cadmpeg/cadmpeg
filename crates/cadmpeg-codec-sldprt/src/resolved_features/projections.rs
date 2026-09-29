@@ -58,108 +58,129 @@ fn copy_projection_feature_id(
 }
 
 pub(super) fn bind_circular_profile_by_dimension(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut [Sketch],
     sketch_entities: &[SketchEntity],
     parameters: &[cadmpeg_ir::features::DesignParameter],
-) {
-    let geometry_by_entity = sketch_entities
-        .iter()
-        .map(|entity| (entity.id(), &entity.geometry))
-        .collect::<HashMap<_, _>>();
-    let circular_profiles = sketches
-        .iter()
-        .filter_map(|sketch| {
-            let [profile] = sketch.profiles.as_slice() else {
-                return None;
-            };
-            let [entity] = profile.as_slice() else {
-                return None;
-            };
-            let SketchGeometryDefinition::Circle { radius, .. } =
-                (geometry_by_entity.get(&entity.entity)?).definition()
-            else {
-                return None;
-            };
-            Some((sketch.id.clone(), radius.get()))
-        })
-        .collect::<Vec<_>>();
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "bind SLDPRT circular profile by dimension";
     let mut proposals = Vec::new();
-    for (sketch, radius) in circular_profiles {
-        let matches = features
-            .iter()
-            .enumerate()
-            .filter(|(_, feature)| {
-                matches!(
-                    feature.evaluation.definition(),
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::Sketch { .. }
-                    )
-                )
-            })
-            .filter(|(_, feature)| {
-                parameters.iter().any(|parameter| {
-                    if parameter.owner.as_ref() != Some(&feature.id) {
-                        return false;
-                    }
-                    let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
-                        &parameter.value
-                    else {
-                        return false;
-                    };
-                    let expected = match parameter.display {
-                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
-                        None => return false,
-                    };
-                    same_dimension_length(expected, radius)
-                })
-            })
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
-        if let [feature] = matches.as_slice() {
-            proposals.push((sketch, *feature));
+    for (sketch_index, sketch) in sketches.iter().enumerate() {
+        ctx.charge_work(1, OPERATION)?;
+        let [profile] = sketch.profiles.as_slice() else {
+            continue;
+        };
+        let [entity_use] = profile.as_slice() else {
+            continue;
+        };
+        let mut geometry = None;
+        for entity in sketch_entities.iter().rev() {
+            ctx.charge_work(1, OPERATION)?;
+            if entity.id() == &entity_use.entity {
+                geometry = Some(&entity.geometry);
+                break;
+            }
+        }
+        let Some(SketchGeometryDefinition::Circle { radius, .. }) =
+            geometry.map(|geometry| geometry.definition())
+        else {
+            continue;
+        };
+        let radius = radius.get();
+        let mut matched = None;
+        let mut ambiguous = false;
+        for (feature_index, feature) in features.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
+            if !matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+            ) {
+                continue;
+            }
+            let mut matches_dimension = false;
+            for parameter in parameters {
+                ctx.charge_work(1, OPERATION)?;
+                if parameter.owner.as_ref() != Some(&feature.id) {
+                    continue;
+                }
+                let Some(ParameterValue::Length(value)) = &parameter.value else {
+                    continue;
+                };
+                let expected = match parameter.display {
+                    Some(DimensionDisplay::Radius) => value.get(),
+                    Some(DimensionDisplay::Diameter) => value.get() * 0.5,
+                    None => continue,
+                };
+                if same_dimension_length(expected, radius) {
+                    matches_dimension = true;
+                    break;
+                }
+            }
+            if matches_dimension {
+                if matched.is_some() {
+                    ambiguous = true;
+                    break;
+                }
+                matched = Some(feature_index);
+            }
+        }
+        if !ambiguous {
+            if let Some(feature_index) = matched {
+                ctx.reserve_collection_vec(&mut proposals, 1, OPERATION)?;
+                proposals.push((sketch_index, feature_index));
+            }
         }
     }
-    let mut feature_counts = HashMap::new();
-    for (_, feature) in &proposals {
-        *feature_counts.entry(*feature).or_insert(0usize) += 1;
+    let mut feature_counts = HashMap::<usize, usize>::new();
+    for &(_, feature_index) in &proposals {
+        ctx.charge_work(1, OPERATION)?;
+        if !feature_counts.contains_key(&feature_index) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            feature_counts.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        let count = feature_counts.entry(feature_index).or_default();
+        *count = count.checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
-    for (sketch_id, feature_index) in proposals {
+    for (sketch_index, feature_index) in proposals {
         if feature_counts.get(&feature_index) != Some(&1) {
             continue;
         }
+        let sketch_id_text = ctx.format_retained(
+            format_args!("{}", sketches[sketch_index].id.as_str()), OPERATION,
+        )?;
+        let sketch_id = cadmpeg_ir::sketches::SketchId::mint(sketch_id_text)
+            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT sketch ID"))?;
+        let name_index = sketches.iter().position(|sketch| sketch.id == sketch_id);
         for feature in features.iter_mut() {
-            let mut definition = feature.evaluation.definition().clone();
-            'feature_edit: {
-                let cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Sketch { sketch: bound, .. },
-                ) = &mut definition
+            ctx.charge_work(1, OPERATION)?;
+            feature.evaluation.edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: bound, .. }) =
+                    definition
                 else {
-                    break 'feature_edit;
+                    return;
                 };
                 if bound.id() == Some(&sketch_id) {
                     *bound = cadmpeg_ir::features::SketchFeatureBinding::Planar(None);
                 }
-            }
-            feature.evaluation.set_definition(definition);
+            });
         }
-        let name = features[feature_index].name.clone();
-        let mut definition = features[feature_index].evaluation.definition().clone();
-        let cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Sketch { sketch, .. },
-        ) = &mut definition
-        else {
-            continue;
-        };
-        *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone()));
-        features[feature_index]
-            .evaluation
-            .set_definition(definition);
-        if let Some(native) = sketches.iter_mut().find(|sketch| sketch.id == sketch_id) {
-            native.name = name;
+        let name = features[feature_index].name.as_deref()
+            .map(|name| ctx.format_retained(format_args!("{name}"), OPERATION))
+            .transpose()?;
+        features[feature_index].evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) = definition {
+                *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
+            }
+        });
+        if let Some(index) = name_index {
+            sketches[index].name = name;
         }
     }
+    Ok(())
 }
 
 /// Bind neutral parameters to uniquely owned native scalar records.
