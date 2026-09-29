@@ -1694,15 +1694,21 @@ fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Result<Option<bool>, 
     if trailing.first() != Some(&expected_head) || trailing.len() != 1 + 2 * (3 * edge_count + 4) {
         return Err(LoopSignError::Frame);
     }
-    let signs: Vec<i16> = trailing[1..]
-        .chunks_exact(2)
-        .map(|bytes| View::i16_le_at(bytes, 0))
-        .collect::<Option<Vec<_>>>()
-        .ok_or(LoopSignError::Frame)?;
-    if signs.iter().any(|sign| !matches!(sign, -1..=1)) || !matches!(signs[1], -1 | 1) {
+    let mut outer = None;
+    for (index, bytes) in trailing[1..].chunks_exact(2).enumerate() {
+        let sign = View::i16_le_at(bytes, 0).ok_or(LoopSignError::Frame)?;
+        if !matches!(sign, -1..=1) {
+            return Err(LoopSignError::Sign);
+        }
+        if index == 1 {
+            outer = Some(sign);
+        }
+    }
+    let outer = outer.ok_or(LoopSignError::Frame)?;
+    if !matches!(outer, -1 | 1) {
         return Err(LoopSignError::Sign);
     }
-    Ok(Some(signs[1] == 1))
+    Ok(Some(outer == 1))
 }
 
 fn parse_edge(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<E5Edge>, CodecError> {
@@ -2547,6 +2553,19 @@ mod tests {
         let limited = crate::test_support::with_retained_limit(0, |ctx| parse_topology(ctx, &bytes));
         assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_e5_edge_tail"));
+    }
+
+    #[test]
+    fn e5_loop_sign_scan_preserves_role_and_rejection() {
+        let mut trailing = vec![0x82];
+        for sign in [0_i16, 1, 0, 0, 0, 0, 0, 0, 0, 0] {
+            trailing.extend_from_slice(&sign.to_le_bytes());
+        }
+        assert!(matches!(super::parse_loop_signs(&trailing, 2), Ok(Some(true))));
+        trailing[3..5].copy_from_slice(&(-1_i16).to_le_bytes());
+        assert!(matches!(super::parse_loop_signs(&trailing, 2), Ok(Some(false))));
+        trailing[9..11].copy_from_slice(&2_i16.to_le_bytes());
+        assert!(matches!(super::parse_loop_signs(&trailing, 2), Err(super::LoopSignError::Sign)));
     }
 
     #[test]
