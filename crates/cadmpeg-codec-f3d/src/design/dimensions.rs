@@ -1478,7 +1478,8 @@ fn project_all_dimension_constraints(
         groups,
         recipe_records,
     )?;
-    constraints.extend(companions.iter().filter_map(|companion| {
+    for companion in companions {
+        let projected = (|| {
         let scope = native_stream(companion.id())?;
         let owner = owners_by_companion.get(&(scope, companion.record_index()))?;
         let (parameter, parameter_id) = parameter_for(scope, companion.record_index())?;
@@ -1488,9 +1489,12 @@ fn project_all_dimension_constraints(
         {
             return None;
         }
-        let sketch = sketches_by_scope
-            .get(&(scope, owner.scope_record_index()))?
-            .clone();
+        let sketch = match copy_dimension_sketch_id(ctx,
+            sketches_by_scope.get(&(scope, owner.scope_record_index()))?,
+            "f3d companion dimension sketch id") {
+            Ok(sketch) => sketch,
+            Err(error) => return Some(Err(error)),
+        };
         let parallel_axis_angles = groups
             .iter()
             .filter(|group| {
@@ -1614,14 +1618,21 @@ fn project_all_dimension_constraints(
         {
             return None;
         }
-        let definition = exact_definition.or_else(|| {
-            Some(Definition::Native {
+        let definition = if let Some(definition) = exact_definition {
+            definition
+        } else {
+            let fallback = (|| -> Result<Definition, CodecError> {
+                let copied = copy_dimension_parameter_id(ctx, &parameter_id,
+                    "f3d companion native parameter id")?;
+                let native_ref = copy_dimension_text(ctx, companion.id(),
+                    "f3d companion native operand reference")?;
+                Ok(Definition::Native {
                 native_kind: parameter.source_kind_name(),
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
                 entities: Vec::new(),
-                parameter: Some(parameter_id.clone()),
+                parameter: Some(copied),
                 operands: vec![SketchNativeOperand {
                     native_kind: cadmpeg_core::nonblank_literal!("dimension_companion"),
                     field: Some(NativeOperandField {
@@ -1629,15 +1640,26 @@ fn project_all_dimension_constraints(
                         role: None,
                     }),
                     object_index: Some(companion.record_index()),
-                    native_ref: Some(companion.id().to_owned()),
+                    native_ref: Some(native_ref),
                 }],
-            })
-        })?;
+                })
+            })();
+            match fallback {
+                Ok(definition) => definition,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+        let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+            .ok()?;
+        let native_ref = match copy_dimension_text(ctx, companion.id(),
+            "f3d companion constraint native reference") {
+            Ok(native_ref) => native_ref,
+            Err(error) => return Some(Err(error)),
+        };
         Some(Ok(SketchConstraint {
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
             sketch,
-            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
-                .ok()?,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -1647,9 +1669,14 @@ fn project_all_dimension_constraints(
             label_distance: None,
             label_position: None,
             metadata: None,
-            native_ref: Some(companion.id().to_owned()),
+            native_ref: Some(native_ref),
         }))
-    }).collect::<Result<Vec<_>, _>>()?);
+        })();
+        if let Some(result) = projected {
+            push_dimension_item(ctx, &mut constraints, result?,
+                "f3d companion dimension constraint")?;
+        }
+    }
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(constraints)
 }

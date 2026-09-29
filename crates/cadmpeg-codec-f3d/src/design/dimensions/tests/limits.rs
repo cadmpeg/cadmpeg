@@ -417,6 +417,70 @@ fn assert_recipe_projection_refusal(
     panic!("no {operation} refusal");
 }
 
+fn assert_companion_projection_refusal(
+    operation: &'static str,
+    dimension: ResourceDimension,
+) {
+    let mut fixture = fixture();
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(21), "0.1 rad", "Angular Dimension", Some("rad"), "a1", 0.1,
+    )).unwrap();
+    parameter.id = fixture.parameter.id.clone();
+    parameter.record_index = fixture.parameter.record_index;
+    fixture.parameter = parameter;
+    let companion = parameter_companion().bound(DesignCompanionPayload::new(58, 1, Vec::new()));
+    let mut inputs = fixture.inputs();
+    inputs.companions = std::slice::from_ref(&companion);
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            _ => panic!("unsupported companion projection limit"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn companion_dimension_sketch_refuses_retained_limit() {
+    assert_companion_projection_refusal("f3d companion dimension sketch id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn companion_native_parameter_refuses_retained_limit() {
+    assert_companion_projection_refusal("f3d companion native parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn companion_native_operand_reference_refuses_retained_limit() {
+    assert_companion_projection_refusal("f3d companion native operand reference",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn companion_constraint_native_reference_refuses_retained_limit() {
+    assert_companion_projection_refusal("f3d companion constraint native reference",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn companion_dimension_constraint_refuses_collection_limit() {
+    assert_companion_projection_refusal("f3d companion dimension constraint",
+        ResourceDimension::CollectionItems);
+}
+
 #[test]
 fn recipe_dimension_sketch_refuses_retained_limit() {
     assert_recipe_projection_refusal("f3d recipe dimension sketch id",
