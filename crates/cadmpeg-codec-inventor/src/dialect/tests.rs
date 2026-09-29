@@ -230,7 +230,7 @@ fn dialect_unframed_marker_refuses_retained_limit_before_clone() {
     let container = InventorContainer::open(&setup_ctx, root).expect("dialect fixture");
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        (MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1) as u64;
+        cadmpeg_core::decode::u64_from_index(MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1);
     let (limited_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
     assert!(matches!(

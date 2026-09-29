@@ -2845,7 +2845,7 @@ mod tests {
         let parameters = std::collections::HashMap::new();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = entity.id().as_str().len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(entity.id().as_str().len()) - 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
@@ -3043,13 +3043,13 @@ mod tests {
             ),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit_bytes as u64;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
             assert!(matches!(
                 inventory_with_record(TRANSFORM_TYPE, &[], policy),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes
                         && limit.operation == operation
-                        && limit.used == used as u64
+                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
             ));
         }
     }
@@ -3111,7 +3111,7 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&marker.to_le_bytes());
         bytes.extend_from_slice(&0x3000u16.to_le_bytes());
-        bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes());
         if !references.is_empty() {
             if marker == 8 {
                 bytes.extend_from_slice(&0u16.to_le_bytes());
@@ -3248,9 +3248,9 @@ mod tests {
             let mut bytes = constraint_header(9, 0);
             for (index, value) in tail.into_iter().enumerate() {
                 if index == 2 && matches!(expected, "parallel" | "perpendicular") {
-                    bytes.extend_from_slice(&(value as u16).to_le_bytes());
+                    bytes.extend_from_slice(&(u16::try_from(value).expect("fixture value fits u16")).to_le_bytes());
                 } else {
-                    bytes.extend_from_slice(&(value as u32).to_le_bytes());
+                    bytes.extend_from_slice(&(u32::try_from(value).expect("fixture value fits u32")).to_le_bytes());
                 }
             }
             let parsed = parse(&bytes, |ctx, source| {
@@ -3387,7 +3387,7 @@ mod tests {
             .enumerate()
             .map(|(index, position)| {
                 parse(
-                    &point_bytes(index as u32 + 3, 3, position),
+                    &point_bytes(u32::try_from(index).expect("fixture value fits u32") + 3, 3, position),
                     |ctx, source| {
                         parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point")
                     },
@@ -3396,11 +3396,11 @@ mod tests {
             .collect::<Vec<_>>();
         for (index, endpoints) in [[4, 5], [5, 6], [6, 7], [7, 4]].into_iter().enumerate() {
             let mut line = parse(
-                &line_bytes(index as u32 + 7, 3, endpoints),
+                &line_bytes(u32::try_from(index).expect("fixture value fits u32") + 7, 3, endpoints),
                 |ctx, source| parse_entity(ctx, SketchEntityTag::Line, source, 22).expect("line"),
             );
-            let start = points[endpoints[0] as usize - 4];
-            let end = points[endpoints[1] as usize - 4];
+            let start = points[cadmpeg_core::decode::index_from_u32(endpoints[0]) - 4];
+            let end = points[cadmpeg_core::decode::index_from_u32(endpoints[1]) - 4];
             let PmDcSketchEntityKind::Line {
                 origin, direction, ..
             } = &mut line.kind
@@ -3439,7 +3439,7 @@ mod tests {
                     value,
                     type_id_string(type_id),
                     &cadmpeg_ir::identity_key!("segment"),
-                    index as u32 + 3,
+                    u32::try_from(index).expect("fixture value fits u32") + 3,
                 )
             })
             .collect();

@@ -499,7 +499,7 @@ mod tests {
         let bytes = database_fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "synthetic database".len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("synthetic database".len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("database fits input cap");
         assert!(matches!(
@@ -510,7 +510,7 @@ mod tests {
         ));
 
         policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
-        policy.limits.max_materialized_bytes = ("synthetic database".len() * 2 - 1) as u64;
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index("synthetic database".len() * 2 - 1);
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("database fits input cap");
         assert!(matches!(
@@ -533,7 +533,7 @@ mod tests {
         let bytes = registry_fixture(&[2]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "PmBRepSegment".len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("PmBRepSegment".len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("registry fits input cap");
         assert!(matches!(
@@ -543,7 +543,7 @@ mod tests {
                     && limit.operation == "retain RSe table UTF-16 field"
         ));
 
-        policy.limits.max_retained_bytes = "PmBRepSegment".len() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("PmBRepSegment".len());
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("registry fits input cap");
         assert!(matches!(
@@ -551,7 +551,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain RSe table UTF-16 field"
-                    && limit.used == "PmBRepSegment".len() as u64
+                    && limit.used == cadmpeg_core::decode::u64_from_index("PmBRepSegment".len())
         ));
 
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
@@ -772,7 +772,7 @@ mod tests {
         bytes.extend_from_slice(&[0x10; 16]);
         bytes.extend_from_slice(&[0x20; 16]);
         push_u32(&mut bytes, 3);
-        push_u32(&mut bytes, object_node_counts.len() as u32);
+        push_u32(&mut bytes, u32::try_from(object_node_counts.len()).expect("fixture value fits u32"));
         for value in 4..9 {
             push_u32(&mut bytes, value);
         }

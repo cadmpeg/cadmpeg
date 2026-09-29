@@ -1605,13 +1605,13 @@ mod tests {
             ),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit_bytes as u64;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
             assert!(matches!(
                 inventory_with_record(SegmentKind::PmApp, DEFAULT_STYLE_TYPE, &[], policy),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes
                         && limit.operation == operation
-                        && limit.used == used as u64
+                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
             ));
         }
     }
@@ -2117,7 +2117,7 @@ mod tests {
 
     fn utf16(bytes: &mut Vec<u8>, value: &str) {
         let units = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend((units.len() as u32).to_le_bytes());
+        bytes.extend((u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes());
         for unit in units {
             bytes.extend(unit.to_le_bytes());
         }

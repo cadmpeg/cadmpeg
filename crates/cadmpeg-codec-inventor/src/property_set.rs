@@ -1079,7 +1079,7 @@ mod tests {
             let offset = entry_start + index * 2;
             bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
         }
-        let name_len = ((name.encode_utf16().count() + 1) * 2) as u16;
+        let name_len = u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fixture value fits u16");
         bytes[entry_start + 64..entry_start + 66].copy_from_slice(&name_len.to_le_bytes());
         let arena = DecodeArena::new();
         let (setup, root) =
@@ -1435,7 +1435,7 @@ mod tests {
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         bytes.extend_from_slice(&FMTID_SUMMARY);
         bytes.extend_from_slice(&48_u32.to_le_bytes());
-        bytes.extend_from_slice(&(section_size as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(section_size).expect("fixture value fits u32")).to_le_bytes());
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         for (id, offset) in [
             (1_u32, code_page_offset),
@@ -1443,7 +1443,7 @@ mod tests {
             (17, preview_offset),
         ] {
             bytes.extend_from_slice(&id.to_le_bytes());
-            bytes.extend_from_slice(&(offset as u32).to_le_bytes());
+            bytes.extend_from_slice(&(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes());
         }
         bytes.extend_from_slice(&2_u16.to_le_bytes());
         bytes.extend_from_slice(&0_u16.to_le_bytes());
@@ -1459,7 +1459,7 @@ mod tests {
         bytes.extend_from_slice(&0x001f_u16.to_le_bytes());
         bytes.extend_from_slice(&0_u16.to_le_bytes());
         let units = value.encode_utf16().chain([0]).collect::<Vec<_>>();
-        bytes.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes());
         for unit in units {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
@@ -1473,7 +1473,7 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&0x0041_u16.to_le_bytes());
         bytes.extend_from_slice(&0_u16.to_le_bytes());
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes());
         bytes.extend_from_slice(value);
         while bytes.len() % 4 != 0 {
             bytes.push(0);
