@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cox–de Boor basis values written into a caller-owned buffer.
-use super::difference_quotient;
+use super::{difference_quotient, finite_or_refusal};
 use crate::math::sum::scaled_ratio_products;
 use crate::scalar::FiniteReal;
+use cadmpeg_core::decode::ResourceLimit;
 
 /// Writes the non-zero basis values at `t` for `span` into `values`, which
 /// holds exactly `degree + 1` entries. `None` states a buffer of another
@@ -13,9 +14,9 @@ pub(super) fn fill_bspline_basis(
     span: usize,
     t: f64,
     values: &mut [f64],
-) -> Option<()> {
-    if values.len() != degree.checked_add(1)? {
-        return None;
+) -> Result<Option<()>, ResourceLimit> {
+    if Some(values.len()) != degree.checked_add(1) {
+        return Ok(None);
     }
     let finite_t = FiniteReal::new(t);
     values[0] = 1.0;
@@ -33,21 +34,35 @@ pub(super) fn fill_bspline_basis(
                 Some((right, left, FiniteReal::new(right.get() + left.get())?))
             });
             let [right_term, left_term] = if let Some((right, left, denominator)) = ratio_terms {
-                scaled_ratio_products(FiniteReal::new(value)?, denominator, [right, left])?
-                    .map(FiniteReal::get)
+                let Some(value) = FiniteReal::new(value) else {
+                    return Ok(None);
+                };
+                let Some(terms) = scaled_ratio_products(value, denominator, [right, left]) else {
+                    return Ok(None);
+                };
+                terms.map(FiniteReal::get)
             } else {
-                let t = finite_t?;
-                let [right_knot, left_knot] =
-                    FiniteReal::array([knots[span + r + 1], knots[span + 1 - j + r]])?;
+                let Some(t) = finite_t else {
+                    return Ok(None);
+                };
+                let Some([right_knot, left_knot]) =
+                    FiniteReal::array([knots[span + r + 1], knots[span + 1 - j + r]])
+                else {
+                    return Ok(None);
+                };
+                let Some(right_quotient) = finite_or_refusal(difference_quotient(
+                    right_knot, t, right_knot, left_knot,
+                ))? else {
+                    return Ok(None);
+                };
+                let Some(left_quotient) = finite_or_refusal(difference_quotient(
+                    t, left_knot, right_knot, left_knot,
+                ))? else {
+                    return Ok(None);
+                };
                 [
-                    value
-                        * difference_quotient(right_knot, t, right_knot, left_knot)
-                            .ok()?
-                            .get(),
-                    value
-                        * difference_quotient(t, left_knot, right_knot, left_knot)
-                            .ok()?
-                            .get(),
+                    value * right_quotient.get(),
+                    value * left_quotient.get(),
                 ]
             };
             values[r] = saved + right_term;
@@ -55,5 +70,5 @@ pub(super) fn fill_bspline_basis(
         }
         values[j] = saved;
     }
-    Some(())
+    Ok(Some(()))
 }
