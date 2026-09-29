@@ -19,7 +19,7 @@ use cadmpeg_ir::geometry::{
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    AppearanceBindingId, AppearanceId, AttributeId, BodyId, CurveId, EdgeId,
+    AppearanceBindingId, AppearanceId, AttributeId, BodyId,
     FeatureResultTopologyId, LoopId, SurfaceId, UnknownId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -28,7 +28,7 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchPlacement,
 };
-use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, Sense};
+use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, FaceLoops, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
@@ -2364,7 +2364,7 @@ fn attach_feature_operations(
     let mut hole_outputs = explicit_hole_outputs;
     let mut simple_hole_diameters = BTreeMap::new();
     admit_hole_recognition_tolerances(ir)?;
-    if let Some(projection) = hole_body_projection(ir, &simple_hole_operations, &hole_outputs) {
+    if let Some(projection) = hole_body_projection(ctx, ir, &simple_hole_operations, &hole_outputs)? {
         hole_outputs.extend(projection.outputs);
         simple_hole_diameters.extend(projection.diameters);
     }
@@ -2381,14 +2381,14 @@ fn attach_feature_operations(
     let blind_hole_operations =
         blind_hole_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
     let mut blind_hole_depths = BTreeMap::new();
-    if let Some(projection) = blind_hole_body_projection(ir, &blind_hole_operations, &hole_outputs)
+    if let Some(projection) = blind_hole_body_projection(ctx, ir, &blind_hole_operations, &hole_outputs)?
     {
         hole_outputs.extend(projection.outputs);
         simple_hole_diameters.extend(projection.diameters);
         blind_hole_depths = projection.blind_depths;
     }
     let simple_hole_placements =
-        hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
+        hole_axis_placements_for_operations(ctx, ir, &simple_hole_operations, &hole_outputs)?;
     let counterbore_hole_placements = counterbore_axis_placements_for_operations(
         ctx,
         ir,
@@ -2396,9 +2396,10 @@ fn attach_feature_operations(
         &hole_outputs,
     )?;
     let blind_hole_placements =
-        blind_hole_axis_placements_for_operations(ir, &blind_hole_operations, &hole_outputs);
+        blind_hole_axis_placements_for_operations(ctx, ir, &blind_hole_operations, &hole_outputs)?;
     let simple_hole_chamfers = simple_hole_chamfers(ctx, ir, simple_hole_templates, &hole_outputs)?;
     let hole_packages = hole_package_projection(
+        ctx,
         ir,
         simple_hole_templates,
         simple_hole_construction_groups,
@@ -2406,7 +2407,7 @@ fn attach_feature_operations(
         &hole_outputs,
         &simple_hole_diameters,
         &simple_hole_chamfers,
-    );
+    )?;
     let feature_ids_by_operation = labels
         .iter()
         .filter(|label| {
@@ -7354,6 +7355,7 @@ struct HolePackageProjection {
 }
 
 fn hole_package_projection(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
@@ -7361,7 +7363,7 @@ fn hole_package_projection(
     outputs: &BTreeMap<String, Vec<BodyId>>,
     diameters: &BTreeMap<String, Length>,
     chamfers: &BTreeMap<String, HoleKind>,
-) -> HolePackageProjection {
+) -> Result<HolePackageProjection, CodecError> {
     let mut projection = HolePackageProjection::default();
     let package_counts = uses
         .iter()
@@ -7503,14 +7505,14 @@ fn hole_package_projection(
                 .chamfers
                 .insert(use_.operation_label.clone(), chamfer);
         }
-        let placements = hole_axis_placements_for_body(ir, body);
+        let placements = hole_axis_placements_for_body(ctx, ir, body)?;
         if placements.len() == group.members.len() {
             projection
                 .placements
                 .insert(use_.operation_label.clone(), placements);
         }
     }
-    projection
+    Ok(projection)
 }
 
 struct HoleBodyProjection {
@@ -7521,44 +7523,52 @@ struct HoleBodyProjection {
 }
 
 fn hole_body_projection(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Option<HoleBodyProjection> {
+) -> Result<Option<HoleBodyProjection>, CodecError> {
     if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
     {
-        return None;
+        return Ok(None);
     }
-    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return Ok(None);
+    };
 
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let body_faces = connected_solid_body_faces(ir, &body)?;
-        let bores = through_bore_cylinders(ir, &body_faces)?;
-        let radii = bores
-            .into_iter()
-            .map(|(_, _, radius)| radius)
-            .collect::<Vec<_>>();
-        let radius = radii.first().copied()?;
-        if radii.len() != operations.len()
-            || radii
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+            return Ok(None);
+        };
+        let Some(bores) = through_bore_cylinders(ctx, ir, &body_faces)? else {
+            return Ok(None);
+        };
+        let Some(radius) = bores.first().map(|(_, _, radius)| *radius) else {
+            return Ok(None);
+        };
+        if bores.len() != operations.len()
+            || bores
                 .iter()
-                .any(|candidate| candidate.to_bits() != radius.to_bits())
+                .any(|(_, _, candidate)| candidate.to_bits() != radius.to_bits())
         {
-            return None;
+            return Ok(None);
         }
         for operation in operations {
             projected_outputs.insert(operation.clone(), vec![body.clone()]);
-            diameters.insert(operation, Length::new(radius * 2.0)?);
+            let Some(diameter) = Length::new(radius * 2.0) else {
+                return Ok(None);
+            };
+            diameters.insert(operation, diameter);
         }
     }
-    Some(HoleBodyProjection {
+    Ok(Some(HoleBodyProjection {
         outputs: projected_outputs,
         diameters,
         blind_depths: BTreeMap::new(),
         counterbores: BTreeMap::new(),
-    })
+    }))
 }
 
 fn counterbore_body_projection(
@@ -7615,40 +7625,53 @@ fn counterbore_body_projection(
 }
 
 fn blind_hole_body_projection(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Option<HoleBodyProjection> {
+) -> Result<Option<HoleBodyProjection>, CodecError> {
     if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
     {
-        return None;
+        return Ok(None);
     }
-    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return Ok(None);
+    };
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     let mut blind_depths = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
-            return None;
+            return Ok(None);
         };
-        let body_faces = connected_solid_body_faces(ir, &body)?;
-        let witnesses = blind_bore_cylinders(ir, &body_faces)?;
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+            return Ok(None);
+        };
+        let Some(witnesses) = blind_bore_cylinders(ctx, ir, &body_faces)? else {
+            return Ok(None);
+        };
         let [witness] = witnesses.as_slice() else {
-            return None;
+            return Ok(None);
         };
         projected_outputs.insert(operation.clone(), vec![body.clone()]);
-        diameters.insert(operation.clone(), Length::new(witness.bore_radius * 2.0)?);
+        let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
+            return Ok(None);
+        };
+        diameters.insert(operation.clone(), diameter);
+        let Some(depth) = cadmpeg_ir::scalar::NonZeroLength::new(witness.depth) else {
+            return Ok(None);
+        };
         blind_depths.insert(
             operation.clone(),
-            cadmpeg_ir::scalar::NonZeroLength::new(witness.depth)?,
+            depth,
         );
     }
-    Some(HoleBodyProjection {
+    Ok(Some(HoleBodyProjection {
         outputs: projected_outputs,
         diameters,
         blind_depths,
         counterbores: BTreeMap::new(),
-    })
+    }))
 }
 
 /// Derive one complete unoriented placement when one operation owns exactly
@@ -7656,16 +7679,17 @@ fn blind_hole_body_projection(
 /// axial shifts of the serialized cylinder origin. Canonical axis sign makes
 /// serialization deterministic but carries no drilling-direction semantics.
 fn hole_axis_placements_for_operations(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, HolePlacement> {
+) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
     if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
     {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     }
     let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     };
 
     let mut placements = BTreeMap::new();
@@ -7673,13 +7697,13 @@ fn hole_axis_placements_for_operations(
         let [operation] = operations.as_slice() else {
             continue;
         };
-        let mut body_placements = hole_axis_placements_for_body(ir, &body);
+        let mut body_placements = hole_axis_placements_for_body(ctx, ir, &body)?;
         if body_placements.len() != 1 {
             continue;
         }
         placements.insert(operation.clone(), body_placements.remove(0));
     }
-    placements
+    Ok(placements)
 }
 
 fn counterbore_axis_placements_for_operations(
@@ -7727,36 +7751,37 @@ fn counterbore_axis_placements_for_operations(
 }
 
 fn blind_hole_axis_placements_for_operations(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, HolePlacement> {
+) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
     if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
     {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     }
     let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     };
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
-        let Some(witnesses) = blind_bore_cylinders(ir, &body_faces) else {
-            return BTreeMap::new();
+        let Some(witnesses) = blind_bore_cylinders(ctx, ir, &body_faces)? else {
+            return Ok(BTreeMap::new());
         };
         let [witness] = witnesses.as_slice() else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         let (Some(point), Some(direction)) = (
             cadmpeg_ir::features::FinitePoint3::new(witness.position),
             cadmpeg_ir::features::FeatureDirection3::new(witness.direction),
         ) else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         placements.insert(
             operation.clone(),
@@ -7766,27 +7791,27 @@ fn blind_hole_axis_placements_for_operations(
             },
         );
     }
-    placements
+    Ok(placements)
 }
 
-fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement> {
+fn hole_axis_placements_for_body(ctx: &DecodeContext<'_>, ir: &CadIr, body: &BodyId) -> Result<Vec<HolePlacement>, CodecError> {
     let Some(body_faces) = connected_solid_body_faces(ir, body) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
-        return Vec::new();
+    let Some(bores) = through_bore_cylinders(ctx, ir, &body_faces)? else {
+        return Ok(Vec::new());
     };
     let angular_tolerance = ir.tolerances.angular.get();
     let mut placements = Vec::new();
     for (origin, axis, _) in bores {
         let Some(mut axis) = FiniteVector3::new(axis).and_then(FiniteVector3::unit_nonzero) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(leading) = [axis.x, axis.y, axis.z]
             .into_iter()
             .find(|component| component.abs() > angular_tolerance)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if leading < 0.0 {
             axis = Vector3::new(-axis.x, -axis.y, -axis.z);
@@ -7801,12 +7826,15 @@ fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement
             cadmpeg_ir::features::FinitePoint3::new(origin),
             cadmpeg_ir::features::FeatureDirection3::new(axis),
         ) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.charge_collection_items(1, "NX hole axis placements")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<HolePlacement>()), "NX hole axis placements")?;
+        reserve_attach_vec(ctx, &mut placements, 1, "NX hole axis placements")?;
         placements.push(HolePlacement::Axis { origin, axis });
     }
     placements.sort_by_key(hole_placement_key);
-    placements
+    Ok(placements)
 }
 
 fn hole_placement_key(placement: &HolePlacement) -> [u64; 6] {
@@ -7860,30 +7888,64 @@ fn canonical_axis(axis: cadmpeg_ir::units::UnitVector3, angular_tolerance: f64) 
     Some(axis)
 }
 
+fn face_two_loops(face: &Face) -> Option<[&LoopId; 2]> {
+    match &face.loops {
+        FaceLoops::Unspecified { loops } => {
+            let [first, second] = loops.as_slice() else { return None; };
+            Some([first, second])
+        }
+        FaceLoops::Classified { outer, inner } => {
+            let [second] = inner.as_slice() else { return None; };
+            Some([outer, second])
+        }
+    }
+}
+
+fn face_one_loop(face: &Face) -> Option<&LoopId> {
+    match &face.loops {
+        FaceLoops::Unspecified { loops } => {
+            let [only] = loops.as_slice() else { return None; };
+            Some(only)
+        }
+        FaceLoops::Classified { outer, inner } if inner.is_empty() => Some(outer),
+        FaceLoops::Classified { .. } => None,
+    }
+}
+
 fn circular_loop_geometry(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
     loop_id: &LoopId,
-    coedges_by_loop: &BTreeMap<&LoopId, Vec<&Coedge>>,
-    edges: &BTreeMap<&EdgeId, Option<&CurveId>>,
-    curves: &BTreeMap<&CurveId, &CurveGeometry>,
     linear_tolerance: f64,
     angular_tolerance: f64,
-) -> Option<(Point3, Vector3, f64)> {
-    let coedges = coedges_by_loop.get(loop_id)?;
-    if coedges.is_empty() {
-        return None;
+) -> Result<Option<(Point3, Vector3, f64)>, CodecError> {
+    let coedge_scans = ir.model.coedges.len().checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX circular loop coedge scan", 0, cadmpeg_core::decode::u64_from_index(ir.model.coedges.len())))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(coedge_scans), "NX circular loop coedge scan")?;
+    if !ir.model.coedges.iter().any(|coedge| &coedge.owner_loop == loop_id) {
+        return Ok(None);
     }
     let mut witness: Option<(Point3, Vector3, f64)> = None;
-    for coedge in coedges {
-        let curve_id = edges.get(&coedge.edge).copied().flatten()?;
+    for coedge in ir.model.coedges.iter().filter(|coedge| &coedge.owner_loop == loop_id) {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.edges.len()), "NX circular loop edge scan")?;
+        let Some(curve_id) = ir.model.edges.iter().rev().find(|edge| edge.id == coedge.edge).and_then(|edge| edge.curve()) else {
+            return Ok(None);
+        };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.curves.len()), "NX circular loop curve scan")?;
+        let Some(curve) = ir.model.curves.iter().rev().find(|curve| &curve.id == curve_id) else {
+            return Ok(None);
+        };
         let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-            curves.get(curve_id)?
+            &curve.geometry
         else {
-            return None;
+            return Ok(None);
         };
         let center = circle_curve.center().get();
         let axis = circle_curve.frame().axis();
         let radius = circle_curve.radius().get();
-        let axis = canonical_axis(*axis, angular_tolerance)?;
+        let Some(axis) = canonical_axis(*axis, angular_tolerance) else {
+            return Ok(None);
+        };
         if let Some((previous_center, previous_axis, previous_radius)) = witness {
             if (radius - previous_radius).abs() > linear_tolerance
                 || (1.0 - axis.dot(previous_axis).abs()) > angular_tolerance
@@ -7895,93 +7957,87 @@ fn circular_loop_geometry(
                 .norm()
                     > linear_tolerance
             {
-                return None;
+                return Ok(None);
             }
         }
         witness = Some((center, axis, radius));
     }
-    witness
+    Ok(witness)
 }
 
-fn loop_edge_ids(
-    loop_id: &LoopId,
-    coedges_by_loop: &BTreeMap<&LoopId, Vec<&Coedge>>,
-) -> Option<BTreeSet<EdgeId>> {
-    let coedges = coedges_by_loop.get(loop_id)?;
-    (!coedges.is_empty()).then(|| {
-        coedges
-            .iter()
-            .map(|coedge| coedge.edge.clone())
-            .collect::<BTreeSet<_>>()
-    })
+fn same_loop_edges(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    first: &LoopId,
+    second: &LoopId,
+) -> Result<bool, CodecError> {
+    let coedge_count = ir.model.coedges.len();
+    let work = coedge_count.checked_mul(coedge_count)
+        .and_then(|count| count.checked_mul(2))
+        .and_then(|count| coedge_count.checked_mul(4).and_then(|scans| count.checked_add(scans)))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX loop edge comparison", 0, cadmpeg_core::decode::u64_from_index(coedge_count)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX loop edge comparison")?;
+    let first_has_edges = ir.model.coedges.iter().any(|coedge| &coedge.owner_loop == first);
+    let second_has_edges = ir.model.coedges.iter().any(|coedge| &coedge.owner_loop == second);
+    if first_has_edges != second_has_edges {
+        return Ok(false);
+    }
+    let first_in_second = ir.model.coedges.iter().filter(|coedge| &coedge.owner_loop == first)
+        .all(|coedge| ir.model.coedges.iter().any(|other| &other.owner_loop == second && other.edge == coedge.edge));
+    let second_in_first = ir.model.coedges.iter().filter(|coedge| &coedge.owner_loop == second)
+        .all(|coedge| ir.model.coedges.iter().any(|other| &other.owner_loop == first && other.edge == coedge.edge));
+    Ok(first_in_second && second_in_first)
 }
 
 fn cylindrical_face_witnesses(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body_faces: &[&Face],
-) -> Option<Vec<CylindricalFaceWitness>> {
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
+) -> Result<Option<Vec<CylindricalFaceWitness>>, CodecError> {
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut witnesses = Vec::new();
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(body_faces.len()), "NX cylindrical face scan")?;
     for face in body_faces
         .iter()
         .copied()
         .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
     {
-        let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) =
-            surfaces.get(&face.surface)
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()), "NX cylindrical surface lookup")?;
+        let Some(surface) = ir.model.surfaces.iter().rev().find(|surface| surface.id == face.surface) else {
+            continue;
+        };
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+            &surface.geometry
         else {
             continue;
         };
         let origin = cylinder_surface.origin().get();
         let axis = cylinder_surface.frame().axis();
         let radius = cylinder_surface.radius().get();
-        let axis = canonical_axis(*axis, angular_tolerance)?;
+        let Some(axis) = canonical_axis(*axis, angular_tolerance) else {
+            return Ok(None);
+        };
         let axial_offset = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
         let line_origin = Point3::new(
             origin.x - axial_offset * axis.x,
             origin.y - axial_offset * axis.y,
             origin.z - axial_offset * axis.z,
         );
-        let face_loops = face.loops.to_vec();
-        let [first_loop, second_loop] = face_loops.as_slice() else {
-            return None;
+        let Some([first_loop, second_loop]) = face_two_loops(face) else {
+            return Ok(None);
         };
-        let mut stations = Vec::with_capacity(2);
-        for loop_id in &face.loops {
-            let (center, circle_axis, circle_radius) = circular_loop_geometry(
+        let mut stations = [0.0; 2];
+        for (ordinal, loop_id) in [first_loop, second_loop].into_iter().enumerate() {
+            let Some((center, circle_axis, circle_radius)) = circular_loop_geometry(
+                ctx,
+                ir,
                 loop_id,
-                &coedges_by_loop,
-                &edges,
-                &curves,
                 linear_tolerance,
                 angular_tolerance,
-            )?;
+            )? else {
+                return Ok(None);
+            };
             if (circle_radius - radius).abs() > linear_tolerance
                 || (1.0 - axis.dot(circle_axis).abs()) > angular_tolerance
                 || Vector3::new(
@@ -7993,20 +8049,27 @@ fn cylindrical_face_witnesses(
                 .norm()
                     > linear_tolerance
             {
-                return None;
+                return Ok(None);
             }
             let station = Vector3::new(center.x, center.y, center.z).dot(axis);
             if !station.is_finite() {
-                return None;
+                return Ok(None);
             }
-            stations.push(station);
+            stations[ordinal] = station;
         }
         let [first, second] = stations.as_slice() else {
-            return None;
+            return Ok(None);
         };
         if (first - second).abs() <= linear_tolerance {
-            return None;
+            return Ok(None);
         }
+        let bytes = std::mem::size_of::<CylindricalFaceWitness>()
+            .checked_add(first_loop.as_str().len())
+            .and_then(|bytes| bytes.checked_add(second_loop.as_str().len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX cylindrical face witness", 0, cadmpeg_core::decode::u64_from_index(first_loop.as_str().len())))?;
+        ctx.charge_collection_items(1, "NX cylindrical face witnesses")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX cylindrical face witness")?;
+        reserve_attach_vec(ctx, &mut witnesses, 1, "NX cylindrical face witnesses")?;
         witnesses.push(CylindricalFaceWitness {
             line_origin,
             axis,
@@ -8015,17 +8078,18 @@ fn cylindrical_face_witnesses(
             loop_ids: [first_loop.clone(), second_loop.clone()],
         });
     }
-    Some(witnesses)
+    Ok(Some(witnesses))
 }
 
 fn plane_annulus_witness(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body_faces: &[&Face],
     small: &CylindricalFaceWitness,
     small_station_ordinal: usize,
     large: &CylindricalFaceWitness,
     large_station_ordinal: usize,
-) -> bool {
+) -> Result<bool, CodecError> {
     let line_origin = small.line_origin;
     let axis = small.axis;
     let station = small.stations[small_station_ordinal];
@@ -8033,40 +8097,20 @@ fn plane_annulus_witness(
     let outer_radius = large.radius;
     let inner_loop = &small.loop_ids[small_station_ordinal];
     let outer_loop = &large.loop_ids[large_station_ordinal];
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut matches = 0;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(body_faces.len()), "NX annulus face scan")?;
     for face in body_faces {
         if face.loops.len() != 2 {
             continue;
         }
-        let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
-            surfaces.get(&face.surface)
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()), "NX annulus plane lookup")?;
+        let Some(surface) = ir.model.surfaces.iter().rev().find(|surface| surface.id == face.surface) else {
+            continue;
+        };
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+            &surface.geometry
         else {
             continue;
         };
@@ -8088,17 +8132,19 @@ fn plane_annulus_witness(
         {
             continue;
         }
-        let mut boundaries = Vec::with_capacity(2);
+        let Some([first_loop, second_loop]) = face_two_loops(face) else {
+            continue;
+        };
+        let mut boundaries = [(0.0, first_loop), (0.0, second_loop)];
         let mut valid = true;
-        for loop_id in &face.loops {
+        for (ordinal, loop_id) in [first_loop, second_loop].into_iter().enumerate() {
             let Some((center, circle_axis, radius)) = circular_loop_geometry(
+                ctx,
+                ir,
                 loop_id,
-                &coedges_by_loop,
-                &edges,
-                &curves,
                 linear_tolerance,
                 angular_tolerance,
-            ) else {
+            )? else {
                 valid = false;
                 break;
             };
@@ -8125,7 +8171,7 @@ fn plane_annulus_witness(
                 valid = false;
                 break;
             }
-            boundaries.push((radius, loop_id.clone()));
+            boundaries[ordinal] = (radius, loop_id);
         }
         if !valid {
             continue;
@@ -8136,15 +8182,13 @@ fn plane_annulus_witness(
         };
         if (inner - inner_radius).abs() <= linear_tolerance
             && (outer - outer_radius).abs() <= linear_tolerance
-            && loop_edge_ids(inner_boundary, &coedges_by_loop)
-                == loop_edge_ids(inner_loop, &coedges_by_loop)
-            && loop_edge_ids(outer_boundary, &coedges_by_loop)
-                == loop_edge_ids(outer_loop, &coedges_by_loop)
+            && same_loop_edges(ctx, ir, inner_boundary, inner_loop)?
+            && same_loop_edges(ctx, ir, outer_boundary, outer_loop)?
         {
             matches += 1;
         }
     }
-    matches == 1
+    Ok(matches == 1)
 }
 
 fn counterbore_cylinders(
@@ -8152,7 +8196,7 @@ fn counterbore_cylinders(
     ir: &CadIr,
     body_faces: &[&Face],
 ) -> Result<Option<Vec<CounterboreCylinderWitness>>, CodecError> {
-    let Some(cylinders) = cylindrical_face_witnesses(ir, body_faces) else {
+    let Some(cylinders) = cylindrical_face_witnesses(ctx, ir, body_faces)? else {
         return Ok(None);
     };
     if cylinders.is_empty() || cylinders.len() % 2 != 0 {
@@ -8160,6 +8204,9 @@ fn counterbore_cylinders(
     }
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
+    let pair_work = cylinders.len().checked_mul(cylinders.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX counterbore pair scan", 0, cadmpeg_core::decode::u64_from_index(cylinders.len())))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(pair_work), "NX counterbore pair scan")?;
     let mut candidates = ctx.alloc_filled(
         cylinders.len(),
         Vec::<(usize, CounterboreCylinderWitness)>::new(),
@@ -8209,7 +8256,7 @@ fn counterbore_cylinders(
             let depth = (large_other - shared_station).abs();
             if depth <= linear_tolerance
                 || (small_other - shared_station).abs() <= linear_tolerance
-                || !plane_annulus_witness(ir, body_faces, small, small_shared, large, large_shared)
+                || !plane_annulus_witness(ctx, ir, body_faces, small, small_shared, large, large_shared)?
             {
                 continue;
             }
@@ -8221,6 +8268,10 @@ fn counterbore_cylinders(
                 depth,
             };
             ctx.charge_collection_items(2, "nx counterbore candidate pair")?;
+            let pair_bytes = std::mem::size_of::<(usize, CounterboreCylinderWitness)>()
+                .checked_mul(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("nx counterbore candidate pair", 0, 2))?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(pair_bytes), "nx counterbore candidate pair")?;
             reserve_attach_vec(
                 ctx,
                 &mut candidates[first_index],
@@ -8244,6 +8295,10 @@ fn counterbore_cylinders(
         cadmpeg_core::decode::u64_from_index(cylinders.len() / 2),
         "nx counterbore cylinder witnesses",
     )?;
+    let witness_bytes = (cylinders.len() / 2)
+        .checked_mul(std::mem::size_of::<CounterboreCylinderWitness>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx counterbore cylinder witnesses", 0, cadmpeg_core::decode::u64_from_index(cylinders.len() / 2)))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(witness_bytes), "nx counterbore cylinder witnesses")?;
     let mut witnesses = Vec::new();
     reserve_attach_vec(
         ctx,
@@ -8289,52 +8344,36 @@ fn reserve_attach_vec<T>(
 /// Identify one blind bore from its unique planar termination. The cylinder
 /// boundary and cap loop must share the exact edge identities; a radius or
 /// station match alone is not a topology relation.
-fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBoreCylinderWitness>> {
-    let cylinders = cylindrical_face_witnesses(ir, body_faces)?;
-    let [cylinder] = cylinders.as_slice() else {
-        return None;
+fn blind_bore_cylinders(ctx: &DecodeContext<'_>, ir: &CadIr, body_faces: &[&Face]) -> Result<Option<Vec<BlindBoreCylinderWitness>>, CodecError> {
+    let Some(cylinders) = cylindrical_face_witnesses(ctx, ir, body_faces)? else {
+        return Ok(None);
     };
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
+    let [cylinder] = cylinders.as_slice() else {
+        return Ok(None);
+    };
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
-    let mut cap_stations = Vec::new();
+    let mut cap_station = None;
+    let mut cap_count = 0usize;
     for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
         let cylinder_loop = &cylinder.loop_ids[station_ordinal];
-        let cylinder_edges = loop_edge_ids(cylinder_loop, &coedges_by_loop)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.coedges.len()), "NX blind bore cylinder edge scan")?;
+        if !ir.model.coedges.iter().any(|coedge| &coedge.owner_loop == cylinder_loop) {
+            return Ok(None);
+        }
         for face in body_faces {
-            let face_loops = face.loops.to_vec();
-            let [cap_loop] = face_loops.as_slice() else {
+            let Some(cap_loop) = face_one_loop(face) else {
                 continue;
             };
-            if loop_edge_ids(cap_loop, &coedges_by_loop) != Some(cylinder_edges.clone()) {
+            if !same_loop_edges(ctx, ir, cap_loop, cylinder_loop)? {
                 continue;
             }
-            let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
-                surfaces.get(&face.surface)
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()), "NX blind bore cap surface lookup")?;
+            let Some(surface) = ir.model.surfaces.iter().rev().find(|surface| surface.id == face.surface) else {
+                continue;
+            };
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+                &surface.geometry
             else {
                 continue;
             };
@@ -8344,13 +8383,12 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
                 continue;
             };
             let Some((center, circle_axis, circle_radius)) = circular_loop_geometry(
+                ctx,
+                ir,
                 cap_loop,
-                &coedges_by_loop,
-                &edges,
-                &curves,
                 linear_tolerance,
                 angular_tolerance,
-            ) else {
+            )? else {
                 continue;
             };
             if (circle_radius - cylinder.radius).abs() > linear_tolerance
@@ -8371,34 +8409,40 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
             {
                 continue;
             }
-            cap_stations.push((station_ordinal, *station));
+            cap_count = cap_count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("NX blind bore cap count", 0, cadmpeg_core::decode::u64_from_index(cap_count)))?;
+            cap_station = Some((station_ordinal, *station));
         }
     }
-    let [(cap_ordinal, cap_station)] = cap_stations.as_slice() else {
-        return None;
+    let Some((cap_ordinal, cap_station)) = cap_station.filter(|_| cap_count == 1) else {
+        return Ok(None);
     };
-    let entry_ordinal = 1 - *cap_ordinal;
+    let entry_ordinal = 1 - cap_ordinal;
     let entry_station = cylinder.stations[entry_ordinal];
-    let depth = (*cap_station - entry_station).abs();
+    let depth = (cap_station - entry_station).abs();
     if !depth.is_finite() || depth <= linear_tolerance {
-        return None;
+        return Ok(None);
     }
     let position = Point3::new(
         cylinder.line_origin.x + entry_station * cylinder.axis.x,
         cylinder.line_origin.y + entry_station * cylinder.axis.y,
         cylinder.line_origin.z + entry_station * cylinder.axis.z,
     );
-    let direction = if *cap_station > entry_station {
+    let direction = if cap_station > entry_station {
         cylinder.axis
     } else {
         Vector3::new(-cylinder.axis.x, -cylinder.axis.y, -cylinder.axis.z)
     };
-    Some(vec![BlindBoreCylinderWitness {
+    ctx.charge_collection_items(1, "NX blind bore witness")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<BlindBoreCylinderWitness>()), "NX blind bore witness")?;
+    let mut witnesses = Vec::new();
+    reserve_attach_vec(ctx, &mut witnesses, 1, "NX blind bore witness")?;
+    witnesses.push(BlindBoreCylinderWitness {
         position,
         direction,
         bore_radius: cylinder.radius,
         depth,
-    }])
+    });
+    Ok(Some(witnesses))
 }
 
 /// Resolve hole operations to their explicit output bodies, or to the one
@@ -8442,13 +8486,21 @@ fn hole_operations_by_body(
     Some(BTreeMap::from([(body.id.clone(), operations.to_vec())]))
 }
 
-fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point3, Vector3, f64)>> {
-    Some(
-        cylindrical_face_witnesses(ir, body_faces)?
-            .into_iter()
-            .map(|witness| (witness.line_origin, witness.axis, witness.radius))
-            .collect(),
-    )
+fn through_bore_cylinders(ctx: &DecodeContext<'_>, ir: &CadIr, body_faces: &[&Face]) -> Result<Option<Vec<(Point3, Vector3, f64)>>, CodecError> {
+    let Some(cylinders) = cylindrical_face_witnesses(ctx, ir, body_faces)? else {
+        return Ok(None);
+    };
+    let mut bores = Vec::new();
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(cylinders.len()), "NX through bore witnesses")?;
+    let bytes = cylinders.len().checked_mul(std::mem::size_of::<(Point3, Vector3, f64)>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX through bore witnesses", 0, cadmpeg_core::decode::u64_from_index(cylinders.len())))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX through bore witnesses")?;
+    reserve_attach_vec(ctx, &mut bores, cylinders.len(), "NX through bore witnesses")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(cylinders.len()), "NX through bore projection")?;
+    for witness in cylinders {
+        bores.push((witness.line_origin, witness.axis, witness.radius));
+    }
+    Ok(Some(bores))
 }
 
 /// Derive identical entry and exit chamfer treatments only when every simple
@@ -8522,7 +8574,7 @@ fn simple_hole_chamfers(
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return Ok(BTreeMap::new());
         };
-        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
+        let Some(bores) = through_bore_cylinders(ctx, ir, &body_faces)? else {
             return Ok(BTreeMap::new());
         };
         let [(_, _, bore_radius), ..] = bores.as_slice() else {

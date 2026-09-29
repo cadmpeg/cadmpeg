@@ -283,11 +283,15 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     );
     let mut ir = CadIr::empty();
     ir.model = model;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let outputs = std::collections::BTreeMap::from([
         ("hole-a".to_string(), vec![body.clone()]),
         ("hole-b".to_string(), vec![body]),
     ]);
-    let inferred = hole_body_projection(&ir, &operations, &std::collections::BTreeMap::new())
+    let inferred = hole_body_projection(&ctx, &ir, &operations, &std::collections::BTreeMap::new())
+        .unwrap()
         .expect("complete bore bijection");
     assert_eq!(inferred.outputs, outputs);
     assert_eq!(
@@ -329,13 +333,14 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
             ),
         ])
     );
-    assert!(hole_axis_placements_for_operations(&ir, &operations, &outputs).is_empty());
+    assert!(hole_axis_placements_for_operations(&ctx, &ir, &operations, &outputs).unwrap().is_empty());
     assert!(hole_axis_placements_for_operations(
+        &ctx,
         &ir,
         &operations,
         &std::collections::BTreeMap::new(),
     )
-    .is_empty());
+    .unwrap().is_empty());
     let mut single_hole = ir.clone();
     {
         let members = vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")];
@@ -348,7 +353,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         outputs[&operations[1]].clone(),
     )]);
     assert_eq!(
-        hole_axis_placements_for_operations(&single_hole, &single_operation, &single_output,),
+        hole_axis_placements_for_operations(&ctx, &single_hole, &single_operation, &single_output,).unwrap(),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -378,7 +383,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     )
     .unwrap();
     assert_eq!(
-        hole_axis_placements_for_operations(&single_hole, &single_operation, &single_output,),
+        hole_axis_placements_for_operations(&ctx, &single_hole, &single_operation, &single_output,).unwrap(),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -431,7 +436,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         .unwrap();
     }
     assert_eq!(
-        hole_axis_placements_for_operations(&opposite_axis, &single_operation, &single_output,),
+        hole_axis_placements_for_operations(&ctx, &opposite_axis, &single_operation, &single_output,).unwrap(),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -485,19 +490,21 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     }
     assert!(hole_diameters_for_operations(&different_radii, &operations, &outputs,).is_empty());
     assert!(hole_body_projection(
+        &ctx,
         &different_radii,
         &operations,
         &std::collections::BTreeMap::new(),
     )
-    .is_none());
+    .unwrap().is_none());
     let unresolved_primary =
         std::collections::BTreeMap::from([(operations[0].clone(), Vec::<BodyId>::new())]);
     assert!(hole_body_projection(
+        &ctx,
         &ir,
         std::slice::from_ref(&operations[0]),
         &unresolved_primary,
     )
-    .is_none());
+    .unwrap().is_none());
     assert_eq!(
         simple_hole_diameters(
             &ir,
@@ -575,7 +582,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     )
     .unwrap();
     assert!(
-        hole_axis_placements_for_operations(&nonparallel, &single_operation, &single_output,)
+        hole_axis_placements_for_operations(&ctx, &nonparallel, &single_operation, &single_output,).unwrap()
             .is_empty()
     );
     let mut sheet = ir.clone();

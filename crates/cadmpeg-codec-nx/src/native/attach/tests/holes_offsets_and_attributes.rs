@@ -232,13 +232,17 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     );
     let mut ir = CadIr::empty();
     ir.model = model;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let operation_positions = BTreeMap::from([("blind", 0usize)]);
     assert_eq!(
         blind_hole_operations(std::slice::from_ref(&template), &operation_positions),
         Some(vec![operation.clone()]),
     );
     let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
-    let projection = blind_hole_body_projection(&ir, std::slice::from_ref(&operation), &outputs)
+    let projection = blind_hole_body_projection(&ctx, &ir, std::slice::from_ref(&operation), &outputs)
+        .expect("blind bore resource budget")
         .expect("complete blind-bore witness");
     assert_eq!(projection.outputs, outputs);
     assert_eq!(
@@ -253,7 +257,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         )])
     );
     assert_eq!(
-        blind_hole_axis_placements_for_operations(&ir, std::slice::from_ref(&operation), &outputs,),
+        blind_hole_axis_placements_for_operations(&ctx, &ir, std::slice::from_ref(&operation), &outputs,).unwrap(),
         BTreeMap::from([(
             operation.clone(),
             HolePlacement::Directed {
@@ -313,7 +317,8 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         })
         .unwrap();
     assert!(
-        blind_hole_body_projection(&missing_cap, std::slice::from_ref(&operation), &outputs,)
+        blind_hole_body_projection(&ctx, &missing_cap, std::slice::from_ref(&operation), &outputs,)
+            .unwrap()
             .is_none()
     );
     let mut duplicate_cap = ir.clone();
@@ -334,15 +339,17 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
     );
     assert!(
-        blind_hole_body_projection(&duplicate_cap, std::slice::from_ref(&operation), &outputs,)
+        blind_hole_body_projection(&ctx, &duplicate_cap, std::slice::from_ref(&operation), &outputs,)
+            .unwrap()
             .is_none()
     );
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
     assert!(
-        blind_hole_body_projection(&sheet, std::slice::from_ref(&operation), &outputs,).is_none()
+        blind_hole_body_projection(&ctx, &sheet, std::slice::from_ref(&operation), &outputs,).unwrap().is_none()
     );
     assert!(blind_hole_body_projection(
+        &ctx,
         &ir,
         &[operation.clone(), "second-operation".into()],
         &BTreeMap::from([
@@ -350,7 +357,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             ("second-operation".into(), vec![body]),
         ]),
     )
-    .is_none());
+    .unwrap().is_none());
 }
 
 #[test]
@@ -591,19 +598,35 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
     let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
     let body_faces = connected_solid_body_faces(&ir, &body).expect("solid body faces");
     assert_eq!(body_faces.len(), 3);
-    let cylinders = cylindrical_face_witnesses(&ir, &body_faces).unwrap();
+    let cylinders = cylindrical_face_witnesses(&default_ctx, &ir, &body_faces).unwrap().unwrap();
     assert_eq!(cylinders.len(), 2);
     assert!(plane_annulus_witness(
+        &default_ctx,
         &ir,
         &body_faces,
         &cylinders[0],
         1,
         &cylinders[1],
         0,
-    ));
+    ).unwrap());
     assert!(counterbore_cylinders(&default_ctx, &ir, &body_faces)
         .unwrap()
         .is_some());
+    for dimension in [
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        if dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes {
+            policy.limits.max_retained_bytes = 0;
+        } else {
+            policy.limits.max_work_units = 0;
+        }
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = counterbore_cylinders(&ctx, &ir, &body_faces).err().expect("limit refusal");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+    }
     for admitted_items in [1, 5] {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
