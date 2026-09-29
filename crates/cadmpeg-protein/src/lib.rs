@@ -92,11 +92,22 @@ fn read_entry_bounded(
         if read == 0 {
             break;
         }
+        let requested = bytes
+            .len()
+            .checked_add(read)
+            .and_then(|length| u64::try_from(length).ok())
+            .ok_or_else(|| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "Protein schema allocation",
+                    MAX_SCHEMA_BYTES,
+                    u64::MAX,
+                )
+            })?;
         bytes.try_reserve(read).map_err(|_| {
             cadmpeg_core::decode::refuse_local_limit(
                 "Protein schema allocation",
                 MAX_SCHEMA_BYTES,
-                bytes.len().saturating_add(read) as u64,
+                requested,
             )
         })?;
         bytes.extend_from_slice(&chunk[..read]);

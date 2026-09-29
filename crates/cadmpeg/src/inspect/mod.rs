@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use crate::application::artifact_store::OptionalFileDestination;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::alloc_filled;
 use clap::{Args, Subcommand, ValueEnum};
 
@@ -553,7 +553,7 @@ fn hex(args: &HexArgs) -> Result<()> {
         println!("(no bytes at 0x{:x})", args.offset);
         return Ok(());
     }
-    print!("{}", hexdump::render(args.offset, &bytes, args.width));
+    print!("{}", hexdump::render(args.offset, &bytes, args.width)?);
     Ok(())
 }
 
@@ -636,12 +636,16 @@ fn find(args: &FindArgs) -> Result<()> {
     for offset in &hits {
         println!("0x{offset:08x}  {offset}");
         if args.context > 0 {
-            let start = offset.saturating_sub(args.context);
+            let start = match offset.checked_sub(args.context) {
+                Some(start) => start,
+                None => 0,
+            };
             let len = args
                 .context
-                .saturating_mul(2)
-                .saturating_add(pattern.len() as u64);
-            print!("{}", window(&bytes, start, len));
+                .checked_mul(2)
+                .and_then(|len| len.checked_add(pattern.len() as u64))
+                .ok_or_else(|| anyhow!("inspection context length exceeds u64"))?;
+            print!("{}", window(&bytes, start, len)?);
         }
     }
     if truncated {
@@ -801,11 +805,14 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
         );
     }
     if args.context > 0 {
-        let window_start = first.saturating_sub(args.context / 2);
+        let window_start = match first.checked_sub(args.context / 2) {
+            Some(start) => start,
+            None => 0,
+        };
         println!("\na @ 0x{window_start:x}:");
-        print!("{}", window(&a, window_start, args.context));
+        print!("{}", window(&a, window_start, args.context)?);
         println!("b @ 0x{window_start:x}:");
-        print!("{}", window(&b, window_start, args.context));
+        print!("{}", window(&b, window_start, args.context)?);
     }
     Ok(ExitCode::from(1))
 }
@@ -815,7 +822,7 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
 /// The window is the intersection of `start..start + len` with the buffer: a
 /// bound the buffer does not hold, including one the address space cannot
 /// name, selects the end of the buffer.
-fn window(bytes: &[u8], start: u64, len: u64) -> String {
+fn window(bytes: &[u8], start: u64, len: u64) -> Result<String> {
     let begin = match usize::try_from(start) {
         Ok(begin) if begin < bytes.len() => begin,
         _ => bytes.len(),
@@ -829,7 +836,7 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ExtractArgs;
+    use super::{find, ExtractArgs, FindArgs, FindEncoding, FindInput};
     use clap::{Args, FromArgMatches};
 
     #[test]
@@ -852,5 +859,22 @@ mod tests {
         let omitted = parse(vec!["extract", "input.zip", "entry"]);
         let explicit = parse(vec!["extract", "input.zip", "entry", "-o", "-", "--force"]);
         assert_eq!(omitted.output, explicit.output);
+    }
+
+    #[test]
+    fn find_refuses_an_unrepresentable_context_length() {
+        let file = tempfile::NamedTempFile::new().expect("create test input");
+        std::fs::write(file.path(), b"a").expect("write test input");
+        let args = FindArgs {
+            input: FindInput {
+                file: file.path().to_path_buf(),
+                needle: "a".into(),
+            },
+            encoding: FindEncoding::Ascii,
+            max: None,
+            context: u64::MAX,
+            json: false,
+        };
+        assert!(find(&args).is_err());
     }
 }
