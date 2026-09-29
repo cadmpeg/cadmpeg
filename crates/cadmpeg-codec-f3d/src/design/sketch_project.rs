@@ -255,7 +255,7 @@ fn text_frame_curve_records<'a>(
             text_reference,
         }) = relation.definition.pattern() else { continue; };
         let Some(scope) = native_stream(&relation.id) else { continue; };
-        if relation.sole_constraint_kind().is_none()
+        if crate::design::relation_kinds::sole_constraint_kind(relation).is_none()
             || relation.members().first().map(|member| member.reference.record_index())
                 != Some(*text_reference)
             || !relation.auxiliary_references().values().copied().eq([*text_reference])
@@ -619,8 +619,9 @@ pub(crate) fn project_spatial_sketch_design(
         // order: the control polygon ends with the spline there, and the
         // interleaved first run orders its members by nothing a reader can use.
         let members = relation.return_members();
-        if relation.unknown_constraint_bits() != 0
-            || relation.constraint_kinds() != [SketchConstraintKind::SplineGroup]
+        if crate::design::relation_kinds::unknown_constraint_bits(relation.definition.state()) != 0
+            || crate::records::sketch_relations::constraint_kinds_iter(relation.definition.state())
+                .ne([SketchConstraintKind::SplineGroup])
             || members.len() < 2
             || !distinct_return_member_indices(ctx, members)?
         {
@@ -1026,7 +1027,7 @@ pub(crate) fn project_spatial_sketch_constraints(
     let mut constraints = Vec::new();
     for relation in relations {
         let Some(constraint) = (|| -> Result<Option<SpatialSketchConstraint>, CodecError> {
-            let Some(sole_kind) = relation.sole_constraint_kind() else { return Ok(None); };
+            let Some(sole_kind) = crate::design::relation_kinds::sole_constraint_kind(relation) else { return Ok(None); };
             let Some(scope) = native_stream(&relation.id) else { return Ok(None); };
             let Some((sketch, placement)) = sketches.get(&(scope, relation.owner_reference)) else {
                 return Ok(None);

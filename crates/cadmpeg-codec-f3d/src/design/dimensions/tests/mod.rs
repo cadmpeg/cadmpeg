@@ -88,3 +88,5 @@ mod null_locus_limits;
 mod two_locus_limits;
 
 mod nurbs_containment_limits;
+
+mod relation_kind_limits;

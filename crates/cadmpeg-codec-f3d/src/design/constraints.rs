@@ -241,8 +241,7 @@ pub(crate) fn project_sketch_constraints(
                     "f3d sketch constraint semantic entity")?;
             }
         }
-        let sole_kind = relation
-            .sole_constraint_kind()
+        let sole_kind = crate::design::relation_kinds::sole_constraint_kind(relation)
             .filter(|_| semantic_entities.len() == relation.return_members().len());
         let mut definition = if let Some(kind) = sole_kind {
             let loci = if kind == SketchConstraintKind::Coincident {
@@ -284,7 +283,7 @@ pub(crate) fn project_sketch_constraints(
         let definition = if let Some(definition) = definition {
             definition
         } else {
-            let Some(native_kind) = cadmpeg_core::text::NonBlankString::new(relation_kind_name(relation)) else {
+            let Some(native_kind) = cadmpeg_core::text::NonBlankString::new(relation_kind_name(relation, ctx)?) else {
                 return Ok(None);
             };
             let member_indices = relation.members().iter().map(|member| member.reference.record_index());
@@ -383,7 +382,7 @@ fn exact_rectangular_pattern(
     use crate::records::sketch_relations::SketchPatternDefinition;
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
-    if relation.sole_constraint_kind().is_none()
+    if crate::design::relation_kinds::sole_constraint_kind(relation).is_none()
         || entities.len() != relation.return_members().len()
     {
         return Ok(None);
@@ -610,7 +609,7 @@ fn exact_text_relation(
     };
     use cadmpeg_ir::transform::Transform;
 
-    if relation.sole_constraint_kind().is_none() {
+    if crate::design::relation_kinds::sole_constraint_kind(relation).is_none() {
         return Ok(None);
     }
     let pattern = relation.definition.pattern();
@@ -728,7 +727,7 @@ fn exact_circular_pattern(
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
-    if relation.sole_constraint_kind().is_none()
+    if crate::design::relation_kinds::sole_constraint_kind(relation).is_none()
         || members.len() != relation.members().len()
         || returned.len() != relation.return_members().len()
     {
