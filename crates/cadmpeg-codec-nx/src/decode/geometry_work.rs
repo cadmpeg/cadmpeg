@@ -67,17 +67,6 @@ impl<'a> GeometryWorkBudget<'a> {
         }
     }
 
-    pub(super) fn charge_collection_items(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(), ResourceLimit> {
-        if let Some(charges) = self.charges {
-            charges.charge_collection_items_limit(cadmpeg_core::decode::u64_from_index(count), operation)?;
-        }
-        Ok(())
-    }
-
     pub(super) fn resource_refusal(&self) -> Option<ResourceLimit> {
         let charges = self.charges?;
         if let Some(limit) = charges.resource_refusal() {

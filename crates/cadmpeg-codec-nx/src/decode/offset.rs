@@ -1194,7 +1194,8 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     {
         return Ok(None);
     }
-    let mut starts = Vec::with_capacity(3);
+    let mut starts = Vec::new();
+    let _starts_reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut starts, 3, "nx offset support starting parameters")?;
     let add_start = |starts: &mut Vec<Point2>, candidate: Option<Point2>| {
         let Some(mut candidate) = candidate else {
             return;
@@ -1900,8 +1901,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                         0,
                         geometry_budget,
                     )?;
-                    geometry_budget
-                        .charge_collection_items(1, "nx intersection blend grid cache")?;
+                    geometry_budget.charges.map_or(Ok(()), |ctx| ctx.charge_collection_items_limit(1, "nx intersection blend grid cache"))?;
                     blend_parameter_grids.insert(surface.as_str(), grid);
                 }
                 let grid = blend_parameter_grids
