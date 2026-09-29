@@ -26,7 +26,6 @@ use crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
-use std::collections::HashSet;
 
 pub(super) fn exact_base_flange_operation(
     bytes: &[u8],
@@ -441,14 +440,15 @@ fn legacy_edge_flange_operation_at(
     {
         return None;
     }
-    let mut result_record_indices = HashSet::new();
+    // Each static layout lists at most five result references.
+    let mut result_record_indices = [None; 5];
     for (ordinal, expected_trailer) in layout.result_trailers.iter().enumerate() {
         let result_offset = layout
             .result_reference_start
             .checked_add(ordinal.checked_mul(15)?)?;
         let result_record_index =
             marked_record_reference(bytes, start.checked_add(result_offset)?)?;
-        if !result_record_indices.insert(result_record_index)
+        if result_record_indices.contains(&Some(result_record_index))
             || View::u32_le_at(
                 bytes,
                 start.checked_add(
@@ -460,6 +460,7 @@ fn legacy_edge_flange_operation_at(
         {
             return None;
         }
+        *result_record_indices.get_mut(ordinal)? = Some(result_record_index);
     }
     let aggregate_group_record_index = claim(
         marked_record_reference(bytes, start.checked_add(layout.aggregate_group_offset)?)?,
