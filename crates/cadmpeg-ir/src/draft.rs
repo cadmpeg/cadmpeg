@@ -54,7 +54,7 @@ impl ModelCheckpoint {
     /// Captures every neutral arena length.
     pub fn capture(model: &Model) -> Self {
         macro_rules! capture_lengths {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 [$(model.$field.len()),*]
             };
         }
@@ -86,7 +86,7 @@ impl ModelCheckpoint {
     /// entities that preceded the checkpoint.
     pub fn discard_appended(&self, model: &mut Model) {
         macro_rules! truncate_arenas {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(model.$field.truncate(self.length::<$ty>());)*
             };
         }
@@ -96,7 +96,7 @@ impl ModelCheckpoint {
 }
 
 macro_rules! impl_arena_entities {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         $(
             impl private::Sealed for $ty {}
 
@@ -168,7 +168,7 @@ fn index_model_identities_admitted(
 ) -> Result<Result<IdentityIndex, DraftError>, CodecError> {
     let mut identity_index = IdentityIndex::new();
     macro_rules! index_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (slot_index, entity) in model.$field.iter().enumerate() {
                 if identity_index_contains(model, &identity_index, entity.identity()) {
                     let identity = ctx.copy_retained_text(entity.identity(), "draft identity collision")?;
@@ -199,7 +199,7 @@ fn identity_index_contains(model: &Model, index: &IdentityIndex, identity: &str)
 fn index_model_identities(model: &Model) -> Result<IdentityIndex, DraftError> {
     let mut identity_index = IdentityIndex::new();
     macro_rules! index_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (slot_index, entity) in model.$field.iter().enumerate() {
                 if identity_index_contains(model, &identity_index, entity.identity()) {
                     return Err(DraftError::IdentityCollision(entity.identity().to_owned()));
@@ -369,7 +369,7 @@ impl<A> ModelDraft<A> {
     fn validate_against(&mut self, base: &CadIr) -> Result<(), DraftError> {
         let mut identities = HashSet::with_capacity(base.model.entity_count());
         macro_rules! collect_identities {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for entity in &base.model.$field {
                     identities.insert(entity.identity());
                 })*
@@ -407,7 +407,7 @@ impl<A> ModelDraft<A> {
     ) -> Result<(), DraftError> {
         let identity_index = self.take_identity_index()?;
         macro_rules! check_external_identities {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for entity in &self.model.$field {
                     if contains(entity.identity()) {
                         return Err(DraftError::IdentityCollision(entity.identity().to_owned()));
@@ -417,7 +417,7 @@ impl<A> ModelDraft<A> {
         }
         crate::document::arena_registry!(check_external_identities);
         macro_rules! validate_arenas {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for entity in &self.model.$field {
                     let owner = entity.identity();
                     let mut missing = None;
@@ -465,7 +465,7 @@ impl<A> ModelDraft<A> {
             Err(error) => return Ok(Err(error)),
         };
         macro_rules! check_external_identities {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for entity in &self.model.$field {
                     if contains(entity.identity()) {
                         let identity = ctx.copy_retained_text(entity.identity(), "draft external identity collision")?;
@@ -476,7 +476,7 @@ impl<A> ModelDraft<A> {
         }
         crate::document::arena_registry!(check_external_identities);
         macro_rules! validate_arenas {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for entity in &self.model.$field {
                     let owner = entity.identity();
                     let mut missing = None;
@@ -595,7 +595,7 @@ pub struct CommitSession<'a> {
 fn index_committed_identities(base: &CadIr) -> CommittedIdentityIndex {
     let mut identities = CommittedIdentityIndex::new();
     macro_rules! collect_model_identities {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (index, entity) in base.model.$field.iter().enumerate() {
                 identities
                     .entry(identity_hash(entity.identity()))
@@ -628,7 +628,7 @@ fn index_committed_identities_admitted(
 ) -> Result<CommittedIdentityIndex, CodecError> {
     let mut identities = CommittedIdentityIndex::new();
     macro_rules! collect_model_identities {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (index, entity) in base.model.$field.iter().enumerate() {
                 insert_admitted_identity(
                     &mut identities,
@@ -715,7 +715,7 @@ impl<'a> CommitSession<'a> {
         // Validation has succeeded. Register the admitted draft's append slots
         // directly, before moving its arenas; no checkpoint slice can be absent.
         macro_rules! register_draft {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for (offset, entity) in draft.model.$field.iter().enumerate() {
                     identities
                         .entry(identity_hash(entity.identity()))
@@ -761,7 +761,7 @@ impl<'a> CommitSession<'a> {
             return Ok(Err(error));
         }
         macro_rules! reserve_arenas {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(if !draft.model.$field.is_empty() {
                     let count = draft.model.$field.len();
                     ctx.charge_collection_items(u64_from_index(count), "committed model arena slots")?;
@@ -773,7 +773,7 @@ impl<'a> CommitSession<'a> {
         }
         crate::document::arena_registry!(reserve_arenas);
         macro_rules! register_draft {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for (offset, entity) in draft.model.$field.iter().enumerate() {
                     insert_admitted_identity(
                         identities,
@@ -920,7 +920,7 @@ mod tests {
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
             model.features.push(Feature {
                 id: format!("test:checkpoint:feature#{key}").try_into().unwrap(),
-                ordinal: ordinal as u64,
+                ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                 name: None,
                 suppressed: None,
                 dependencies: crate::features::DistinctMembers::default(),
@@ -953,7 +953,7 @@ mod tests {
             draft
                 .insert(Feature {
                     id: format!("test:draft:feature#{key}").try_into().unwrap(),
-                    ordinal: ordinal as u64,
+                    ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                     name: None,
                     suppressed: None,
                     dependencies: crate::features::DistinctMembers::default(),

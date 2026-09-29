@@ -168,8 +168,6 @@ pub(crate) struct JointRecord {
 
 /// Joint payload discriminated by grounded vs paired connectors.
 #[derive(Debug, Clone, PartialEq)]
-// Paired connector arrays stay inline and preserve their fixed cardinality without allocation.
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum JointBody {
     /// Object-to-ground constraint.
     Grounded {
@@ -183,7 +181,7 @@ pub(crate) enum JointBody {
         /// Persisted joint family code.
         kind: PairedJointFamily,
         /// Ordered connectors.
-        connectors: [JointConnectorRecord; 2],
+        connectors: Box<[JointConnectorRecord; 2]>,
     },
 }
 
@@ -394,7 +392,7 @@ impl TryFrom<JointRecordWire> for JointRecord {
             }
             JointBody::Pair {
                 kind: PairedJointFamily::new(wire.kind)?,
-                connectors: [
+                connectors: Box::new([
                     JointConnectorRecord {
                         reference: first_reference,
                         placement: first_placement
@@ -413,7 +411,7 @@ impl TryFrom<JointRecordWire> for JointRecord {
                             .try_into()
                             .map_err(|error| format!("offsets: {error}"))?,
                     },
-                ],
+                ]),
             }
         };
         Ok(Self {
@@ -586,7 +584,7 @@ mod tests {
             "object".into(),
             JointBody::Pair {
                 kind: PairedJointFamily::new("CustomCoupling".into()).unwrap(),
-                connectors: [connector.clone(), connector],
+                connectors: Box::new([connector.clone(), connector]),
             },
             BTreeMap::new(),
         )

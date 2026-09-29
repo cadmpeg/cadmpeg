@@ -761,17 +761,7 @@ fn color_search_refuses(
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
     assert!(matches!(
-        super::super::find_color(
-            1,
-            &exchange,
-            super::super::StyleDomain::Any,
-            &mut BTreeSet::new(),
-            &mut std::collections::BTreeMap::new(),
-            &mut Vec::new(),
-            &mut BTreeSet::new(),
-            0,
-            Some(&ctx),
-        ),
+        super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { active: &mut BTreeSet::new(), cache: &mut std::collections::BTreeMap::new(), losses: &mut Vec::new(), invalid_surface_sides: &mut BTreeSet::new() }, 0, Some(&ctx)),
         Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
     ));
 }
@@ -819,10 +809,7 @@ fn presentation_color_cache_copy_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
     assert!(matches!(
-        super::super::find_color(
-            1, &exchange, super::super::StyleDomain::Any,
-            &mut BTreeSet::new(), &mut cache, &mut Vec::new(), &mut BTreeSet::new(), 0, Some(&ctx),
-        ),
+        super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { active: &mut BTreeSet::new(), cache: &mut cache, losses: &mut Vec::new(), invalid_surface_sides: &mut BTreeSet::new() }, 0, Some(&ctx)),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_presentation_color_cache_copy"

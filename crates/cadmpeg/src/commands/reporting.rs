@@ -412,14 +412,14 @@ pub(super) fn print_id_delta(label: &str, ids: &[String]) {
     if ids.is_empty() {
         return;
     }
-    let more = ids.len().saturating_sub(MAX);
+    let more = ids.len().checked_sub(MAX);
     let shown = ids
         .iter()
         .take(MAX)
         .map(String::as_str)
         .collect::<Vec<_>>()
         .join(", ");
-    if more > 0 {
+    if let Some(more) = more.filter(|more| *more > 0) {
         println!("      {label}: {shown} (+{more} more)");
     } else {
         println!("      {label}: {shown}");

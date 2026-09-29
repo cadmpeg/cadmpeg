@@ -20,7 +20,7 @@ use crate::parameter::{
     OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
     Token, TokenValue, TrailingPointerAnalysis,
 };
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -1922,29 +1922,29 @@ struct OccurrenceDefinition {
     transform: Transform,
 }
 
-// The wire adapter receives the optional field by reference, including its absence.
-#[allow(clippy::ref_option)]
-fn serialize_parameter_record<S: Serializer>(
-    record: &Option<NativeParameterRecord>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    #[derive(Serialize)]
-    struct Wire<'a> {
-        parameter_line_start: Option<u32>,
-        parameter_line_end: Option<u32>,
-        parameter_bytes: &'a [u8],
-        parameters: &'a [Token],
-        comment: &'a [u8],
+#[derive(Debug, Clone, PartialEq)]
+struct NativeParameterRecordSlot(Option<NativeParameterRecord>);
+
+impl Serialize for NativeParameterRecordSlot {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            parameter_line_start: Option<u32>,
+            parameter_line_end: Option<u32>,
+            parameter_bytes: &'a [u8],
+            parameters: &'a [Token],
+            comment: &'a [u8],
+        }
+        let record = self.0.as_ref();
+        Wire {
+            parameter_line_start: record.map(|record| record.lines.start),
+            parameter_line_end: record.map(|record| record.lines.end),
+            parameter_bytes: record.map_or(&[], |record| record.bytes.as_slice()),
+            parameters: record.map_or(&[], |record| record.parameters.as_slice()),
+            comment: record.map_or(&[], |record| record.comment.as_slice()),
+        }
+        .serialize(serializer)
     }
-    let record = record.as_ref();
-    Wire {
-        parameter_line_start: record.map(|record| record.lines.start),
-        parameter_line_end: record.map(|record| record.lines.end),
-        parameter_bytes: record.map_or(&[], |record| record.bytes.as_slice()),
-        parameters: record.map_or(&[], |record| record.parameters.as_slice()),
-        comment: record.map_or(&[], |record| record.comment.as_slice()),
-    }
-    .serialize(serializer)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1976,8 +1976,8 @@ struct NativeEntity {
     reserved: [[u8; 8]; 2],
     label: [u8; 8],
     subscript: i64,
-    #[serde(flatten, serialize_with = "serialize_parameter_record")]
-    parameter_record: Option<NativeParameterRecord>,
+    #[serde(flatten)]
+    parameter_record: NativeParameterRecordSlot,
     association_links: Vec<String>,
     property_links: Vec<String>,
     links: Vec<String>,
@@ -2394,23 +2394,37 @@ fn index_native_inputs<'a>(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub(crate) struct NativeStoreInputs<'a, 'b> {
+    pub(crate) scan: &'a CardScan<'b>,
+    pub(crate) directory: &'a [DirectoryEntry],
+    pub(crate) parameters: &'a [ParameterRecord],
+    pub(crate) trailing_pointer_analysis: &'a BTreeMap<u32, TrailingPointerAnalysis>,
+    pub(crate) quarantine: QuarantinedRecords<'a>,
+    pub(crate) structure_admitted: Option<&'a crate::entities::geometry::Projection>,
+    pub(crate) sequences: &'a crate::entities::geometry::SourceSequences,
+    pub(crate) boundary_vertex_derivations: &'a [BoundaryVertexDerivation],
+}
+
 pub(crate) fn store(
     ir: &mut CadIr,
-    scan: &CardScan,
-    directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
-    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
-    quarantine: QuarantinedRecords<'_>,
-    structure_admitted: Option<&crate::entities::geometry::Projection>,
-    sequences: &crate::entities::geometry::SourceSequences,
-    boundary_vertex_derivations: &[BoundaryVertexDerivation],
+    inputs: NativeStoreInputs<'_, '_>,
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &ResolvedGlobal,
     limits: ProductOccurrenceLimits,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeStoreResult, CodecError> {
-    charge_native_entities(ctx, scan.lines.len() as u64)?;
+    let NativeStoreInputs {
+        scan,
+        directory,
+        parameters,
+        trailing_pointer_analysis,
+        quarantine,
+        structure_admitted,
+        sequences,
+        boundary_vertex_derivations,
+    } = inputs;
+    charge_native_entities(ctx, cadmpeg_core::decode::u64_from_index(scan.lines.len()))?;
     let NativeInputIndexes {
         quarantined_directory_records,
         quarantined_parameter_records,
@@ -2601,7 +2615,7 @@ pub(crate) fn store(
             ambiguity,
         });
     }
-    charge_native_entities(ctx, directory.len() as u64)?;
+    charge_native_entities(ctx, cadmpeg_core::decode::u64_from_index(directory.len()))?;
     let mut entities =
         ctx.collect_indexed_vec(directory.len(), "iges native entity slots", |index| {
             let entry = &directory[index];
@@ -2716,9 +2730,11 @@ pub(crate) fn store(
                 reserved: entry.reserved,
                 label: entry.label,
                 subscript: entry.subscript,
-                parameter_record: parameters
-                    .map(|record| copy_native_parameter_record(ctx, record))
-                    .transpose()?,
+                parameter_record: NativeParameterRecordSlot(
+                    parameters
+                        .map(|record| copy_native_parameter_record(ctx, record))
+                        .transpose()?,
+                ),
                 association_links,
                 property_links,
                 links: native_entity_ids(
@@ -5135,7 +5151,10 @@ pub(crate) fn store(
                             .iter()
                             .flatten()
                             .try_fold(0_usize, |total, count| total.checked_add(*count))
-                            .is_some_and(|total| total <= end.saturating_sub(first_list_index));
+                            .is_some_and(|total| {
+                                end.checked_sub(first_list_index)
+                                    .is_some_and(|available| total <= available)
+                            });
                     let counts = if complete {
                         count_options.map(Option::unwrap_or_default)
                     } else {
@@ -5454,9 +5473,11 @@ pub(crate) fn store(
                         Some(0)
                     } else {
                         match record.value(cursor + 2) {
-                            Some(TokenValue::Omitted) => {
-                                (stride <= end.saturating_sub(cursor + 3)).then_some(1)
-                            }
+                            Some(TokenValue::Omitted) => cursor
+                                .checked_add(3)
+                                .and_then(|start| end.checked_sub(start))
+                                .filter(|available| stride <= *available)
+                                .map(|_| 1),
                             Some(TokenValue::Integer(_)) => {
                                 record.count_with_stride_before(cursor + 2, stride, end)
                             }
@@ -5819,7 +5840,10 @@ pub(crate) fn store(
                                     let dependent_value_count = valid
                                         .then(|| dependent_count.checked_mul(point_count))
                                         .flatten()
-                                        .filter(|count| *count <= end.saturating_sub(cursor));
+                                        .filter(|count| {
+                                            end.checked_sub(cursor)
+                                                .is_some_and(|available| *count <= available)
+                                        });
                                     match dependent_value_count {
                                         Some(count) => (
                                             independent_variables,
@@ -7006,7 +7030,10 @@ pub(crate) fn store(
         quarantined_parameter_records.len(),
     ]
     .into_iter()
-    .fold(0_u64, |total, count| total.saturating_add(count as u64));
+    .try_fold(0_u64, |total, count| {
+        total.checked_add(u64_from_index(count))
+    })
+    .ok_or_else(|| ctx.refuse_codec_limit("iges_native_entities", u64::MAX, u64::MAX))?;
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     let namespace = ir.native.namespace_mut("iges");
     namespace.set_arena_from(ctx, "cards", cards)?;

@@ -1705,9 +1705,11 @@ fn projected_attributes_refusal(
         attributes,
         &[],
         &[],
-        ArchiveVersion::V8,
-        0,
-        attributes.object_id,
+        crate::presentation::ObjectPresentationSource {
+            archive: ArchiveVersion::V8,
+            offset: 0,
+            uuid: attributes.object_id,
+        },
         &mut Vec::new(),
     )
     .expect_err("projected attributes exceed configured limit")
@@ -1908,9 +1910,11 @@ fn projected_shut_lining_curves_refuse_collection_limit() {
     let value = crate::mesh_modifiers::ShutLiningModifier {
         xml_version: 2,
         on: true,
-        faceted: false,
-        auto_update: false,
-        force_update: false,
+        options: crate::mesh_modifiers::ShutLiningOptions {
+            faceted: false,
+            auto_update: false,
+            force_update: false,
+        },
         curves: vec![crate::mesh_modifiers::ShutLiningCurve {
             uuid: Some(Uuid::from_canonical([1; 16])),
             radius: crate::test_support::finite(1.0),

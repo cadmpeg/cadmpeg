@@ -328,7 +328,7 @@ impl ParameterRecord {
 
     pub(crate) fn number(&self, index: usize) -> Option<f64> {
         match self.value(index)? {
-            TokenValue::Integer(value) => Some(*value as f64),
+            TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
             TokenValue::Omitted | TokenValue::String(_) => None,
         }
@@ -342,7 +342,7 @@ impl ParameterRecord {
         };
         match &token.value {
             TokenValue::Omitted => Some(default),
-            TokenValue::Integer(value) => Some(*value as f64),
+            TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
             TokenValue::String(_) => None,
         }
@@ -439,7 +439,9 @@ impl ParameterRecord {
             .and_then(|value| usize::try_from(value).ok())?;
         let required = count.checked_mul(stride)?;
         let end = end.min(self.parameter_end());
-        (required <= end.saturating_sub(item_start)).then_some(count)
+        end.checked_sub(item_start)
+            .filter(|available| required <= *available)
+            .map(|_| count)
     }
 
     /// Report the declared count before the entity-specific end when the final
@@ -476,10 +478,17 @@ impl ParameterRecord {
         else {
             return DefaultTailCount::Unreadable;
         };
-        let present = end
-            .min(self.parameter_end())
-            .saturating_sub(item_start)
-            .div_euclid(stride);
+        let Some(available) = end.min(self.parameter_end()).checked_sub(item_start) else {
+            return if count == 0 {
+                DefaultTailCount::Held(0)
+            } else {
+                DefaultTailCount::Overdeclared(OverdeclaredCount {
+                    declared: count,
+                    present: 0,
+                })
+            };
+        };
+        let present = available.div_euclid(stride);
         if count <= present {
             DefaultTailCount::Held(count)
         } else {
@@ -533,7 +542,7 @@ impl ParameterRecord {
             return None;
         }
         let end = end.min(self.parameter_end());
-        let available = end.saturating_sub(item_start);
+        let available = end.checked_sub(item_start)?;
         Some(if end < self.tokens.len() {
             available / stride
         } else {
@@ -1605,7 +1614,13 @@ fn tabular_data_primary_end(record: &ParameterRecord) -> usize {
     else {
         return record.tokens.len();
     };
-    if record.integer(1) != i64::try_from(end.saturating_sub(2)).ok() {
+    let Some(count) = end
+        .checked_sub(2)
+        .and_then(|count| i64::try_from(count).ok())
+    else {
+        return record.tokens.len();
+    };
+    if record.integer(1) != Some(count) {
         return record.tokens.len();
     }
     end
@@ -1709,7 +1724,13 @@ fn level_to_lep_layer_map_primary_end(record: &ParameterRecord) -> usize {
     else {
         return record.tokens.len();
     };
-    if record.integer(1) != i64::try_from(end.saturating_sub(2)).ok() {
+    let Some(count) = end
+        .checked_sub(2)
+        .and_then(|count| i64::try_from(count).ok())
+    else {
+        return record.tokens.len();
+    };
+    if record.integer(1) != Some(count) {
         return record.tokens.len();
     }
     end
@@ -1729,7 +1750,13 @@ fn lep_artwork_stackup_primary_end(record: &ParameterRecord) -> usize {
     else {
         return record.tokens.len();
     };
-    if record.integer(1) != i64::try_from(end.saturating_sub(2)).ok() {
+    let Some(count) = end
+        .checked_sub(2)
+        .and_then(|count| i64::try_from(count).ok())
+    else {
+        return record.tokens.len();
+    };
+    if record.integer(1) != Some(count) {
         return record.tokens.len();
     }
     end
@@ -1738,7 +1765,8 @@ fn lep_artwork_stackup_primary_end(record: &ParameterRecord) -> usize {
 fn closure_primary_end(record: &ParameterRecord) -> usize {
     record
         .integer(1)
-        .and_then(|value| matches!(value, 1 | 2).then_some(value as usize))
+        .filter(|value| matches!(*value, 1 | 2))
+        .and_then(|value| usize::try_from(value).ok())
         .and_then(|count| count.checked_add(2))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
@@ -2803,7 +2831,7 @@ impl QuarantinedParameterRecord {
         )?;
         let code = IgesLossCode::ParameterDataQuarantined;
         ctx.charge_retained(
-            4 + code.code().len() as u64,
+            4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
             "iges parameter quarantine loss kind",
         )?;
         ctx.charge_retained(4, "iges parameter quarantine loss source format")?;
@@ -3438,7 +3466,7 @@ fn integer_within_bits(value: i64, bits: u32) -> bool {
     let maximum = if bits >= 64 {
         (1_u128 << 63) - 1
     } else {
-        (1_u128 << bits.saturating_sub(1)) - 1
+        (1_u128 << (bits - 1)) - 1
     };
     u128::from(value.unsigned_abs()) <= maximum
 }
@@ -3801,7 +3829,8 @@ fn stream_offset(
     lines: &BTreeMap<u32, &PhysicalLine>,
 ) -> Option<u64> {
     let line = lines.get(cards.get(offset / 64)?)?;
-    line.offset.checked_add((offset % 64) as u64)
+    line.offset
+        .checked_add(cadmpeg_core::decode::u64_from_index(offset % 64))
 }
 
 fn quarantine(
@@ -3823,7 +3852,10 @@ fn quarantine(
     let ownership = match retained.next() {
         Some((first, line)) => {
             let first_offset = line.offset;
-            let mut range = first..first.saturating_add(1);
+            let range_end = first
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
+            let mut range = first..range_end;
             if let Some(ctx) = ctx {
                 ctx.charge_retained(
                     u64_from_index(byte_count),
@@ -3845,7 +3877,9 @@ fn quarantine(
             })?;
             bytes.extend_from_slice(&line.payload);
             for (sequence, line) in retained {
-                range.end = sequence.saturating_add(1);
+                range.end = sequence.checked_add(1).ok_or_else(|| {
+                    CodecError::malformed("IGES parameter card sequence overflow")
+                })?;
                 bytes.extend_from_slice(&line.payload);
             }
             QuarantinedCards::Owned {
@@ -3903,12 +3937,20 @@ fn resolve_ownership<'a>(
             candidates.push(entry);
         }
     }
-    let census = lines
+    let census = match lines
         .keys()
         .next()
         .copied()
         .zip(lines.keys().next_back().copied())
-        .map_or(0..0, |(first, last)| first..last.saturating_add(1));
+    {
+        Some((first, last)) => {
+            first
+                ..last
+                    .checked_add(1)
+                    .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?
+        }
+        None => 0..0,
+    };
     let mut named_by = BTreeMap::<u32, Vec<u32>>::new();
     for (sequence, pointer) in back_pointers {
         if let Some(owner) = pointer {
@@ -4231,10 +4273,12 @@ pub(crate) fn assemble_with_context(
             continue;
         }
         let line_start = owned.cards.first().copied().unwrap_or_default();
-        let line_end = owned
-            .cards
-            .last()
-            .map_or(line_start, |last| last.saturating_add(1));
+        let line_end = match owned.cards.last() {
+            Some(last) => last
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?,
+            None => line_start,
+        };
         let parameter_end = tokens.len();
         let record = ParameterRecord {
             directory_sequence: entry.sequence,

@@ -12,7 +12,7 @@ fn occurrence(object: &str, count: Option<u64>) -> ProductNodeRecord {
     ProductNodeRecord {
         id: format!("fcstd:native:product#{object}"),
         object: format!("fcstd:native:object#{object}"),
-        node: native::ProductNode::Occurrence(native::LinkOccurrence {
+        node: native::ProductNode::Occurrence(Box::new(native::LinkOccurrence {
             members: Vec::new(),
             prototype: Some(format!("fcstd:native:object#{object}")),
             external_document: None,
@@ -31,7 +31,7 @@ fn occurrence(object: &str, count: Option<u64>) -> ProductNodeRecord {
             claim_child: None,
             copy_on_change: None,
             scale: None,
-        }),
+        })),
     }
 }
 

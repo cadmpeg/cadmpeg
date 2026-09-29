@@ -124,7 +124,7 @@ fn coordinate(point: Point3, index: u8) -> Option<f64> {
 
 fn greville(knots: &[f64], degree: usize, control: usize) -> Option<f64> {
     let values = knots.get(control + 1..=control + degree)?;
-    Some(values.iter().sum::<f64>() / degree as f64)
+    Some(values.iter().sum::<f64>() / cadmpeg_core::convert::f64_from_index(degree)?)
 }
 
 fn omitted_or_integer_zero(record: &ParameterRecord, index: usize) -> bool {
@@ -278,7 +278,6 @@ fn source_parameter_range(
     Ok(if disagreement { None } else { chosen })
 }
 
-#[allow(clippy::many_single_char_names)]
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -347,9 +346,7 @@ pub(super) fn project(
             continue;
         };
         let components = [record.number(10), record.number(11), record.number(12)];
-        #[allow(clippy::many_single_char_names)]
-        let [Some(x), Some(y), Some(z)] = components
-        else {
+        let [Some(x_component), Some(y_component), Some(z_component)] = components else {
             super::push_optional_entity_loss(
                 ctx,
                 &mut losses,
@@ -358,7 +355,11 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(mut normal) = UnitVector3::normalized_by_reciprocal(Vector3::new(x, y, z)) else {
+        let Some(mut normal) = UnitVector3::normalized_by_reciprocal(Vector3::new(
+            x_component,
+            y_component,
+            z_component,
+        )) else {
             super::push_optional_entity_loss(
                 ctx,
                 &mut losses,
@@ -367,8 +368,13 @@ pub(super) fn project(
             )?;
             continue;
         };
-        if declared_unit_vector(record, 10, Vector3::new(x, y, z), global.real_precision())
-            .is_none()
+        if declared_unit_vector(
+            record,
+            10,
+            Vector3::new(x_component, y_component, z_component),
+            global.real_precision(),
+        )
+        .is_none()
         {
             super::push_optional_entity_loss(
                 ctx,
@@ -970,7 +976,7 @@ pub(super) fn project(
                 };
                 let function_range = independent_range
                     .map(|value| function_parameter_offset + function_parameter_scale * value);
-                let degree = function_nurbs.degree() as usize;
+                let degree = cadmpeg_core::decode::index_from_u32(function_nurbs.degree());
                 let Some(domain_start) = function_nurbs.knots().get(degree).copied() else {
                     super::push_optional_entity_loss(
                         ctx,
@@ -980,9 +986,10 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                let Some(domain_end) = function_nurbs
-                    .knots()
-                    .get(function_nurbs.knots().len().saturating_sub(degree + 1))
+                let Some(domain_end) = degree
+                    .checked_add(1)
+                    .and_then(|count| function_nurbs.knots().len().checked_sub(count))
+                    .and_then(|index| function_nurbs.knots().get(index))
                     .copied()
                 else {
                     super::push_optional_entity_loss(
@@ -1369,7 +1376,7 @@ pub(super) fn project(
             "iges offset procedural curve slots",
         )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
-        let _attached = ir.model.add_procedural_curve(curve_id, procedural);
+        let _attached = ir.model.add_procedural_curve(&curve_id, procedural);
         cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
             ctx,
             &mut wire_edges,

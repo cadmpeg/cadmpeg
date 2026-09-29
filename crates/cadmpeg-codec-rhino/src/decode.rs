@@ -2589,9 +2589,11 @@ impl<'a> DecodeContext<'a> {
             self.expand,
             self.scan.data,
             object.class_data_range.clone(),
-            self.archive(),
-            self.scan.metadata.properties.writer_version,
-            scale,
+            crate::extrusion::ExtrusionFormat {
+                archive: self.archive(),
+                writer_version: self.scan.metadata.properties.writer_version,
+                scale,
+            },
             &object.userdata,
             &mut self.mesh_budget,
         );
@@ -3436,7 +3438,7 @@ impl<'a> DecodeContext<'a> {
             candidate
                 .model
                 .add_procedural_surface(
-                    surface_id.clone(),
+                    &surface_id,
                     ProceduralSurface::new(procedural_id.clone(), ir_definition, None),
                 )
                 .map_err(|error| error.to_string())?;
@@ -3533,7 +3535,7 @@ impl<'a> DecodeContext<'a> {
                 candidate
                     .model
                     .add_procedural_surface(
-                        surface_id.clone(),
+                        &surface_id,
                         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                             boundary.directrix.clone(),
                             None,
@@ -5535,7 +5537,7 @@ fn stage_brep_procedural_surface(
         .draft
         .model_mut()
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id,
             ProceduralSurface::new(procedural_id.clone(), definition, None),
         )
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
@@ -5674,7 +5676,7 @@ fn stage_curve_tree(
         staged
             .draft
             .model_mut()
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition))
+            .add_procedural_curve(&id, ProceduralCurve::new(procedure_id, definition))
             .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     }
     Ok(id)
@@ -6386,7 +6388,7 @@ fn commit_curve_tree(
             curve_key,
         );
         ir.model
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition))
+            .add_procedural_curve(&id, ProceduralCurve::new(procedure_id, definition))
             .map_err(|error| error.to_string())?;
     }
     Ok(id)
@@ -6536,7 +6538,7 @@ fn transform_curve(
     curve.geometry = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .map_control_points(|pole| {
+                .try_map_control_points(|_, pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "instance control point transform produced a non-finite coordinate"
@@ -6560,7 +6562,7 @@ fn transform_curve(
                     )),
                 })?;
             nurbs
-                .map_control_points(|pole| {
+                .try_map_control_points(|_, pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "instance control point transform produced a non-finite coordinate"
@@ -6632,7 +6634,7 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     surface.geometry = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .map_control_points(|pole| {
+                .try_map_control_points(|_, pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "instance control point transform produced a non-finite coordinate"

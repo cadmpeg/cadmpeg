@@ -149,7 +149,7 @@ fn product_element_identity_refuses_at_retained_limit() {
     let record = native::ProductNodeRecord {
         id: "fcstd:native:product#Link".into(),
         object: "fcstd:native:object#Link".into(),
-        node: native::ProductNode::Occurrence(native::LinkOccurrence {
+        node: native::ProductNode::Occurrence(Box::new(native::LinkOccurrence {
             members: Vec::new(),
             prototype: None,
             external_document: None,
@@ -161,7 +161,7 @@ fn product_element_identity_refuses_at_retained_limit() {
             claim_child: None,
             copy_on_change: None,
             scale: None,
-        }),
+        })),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();

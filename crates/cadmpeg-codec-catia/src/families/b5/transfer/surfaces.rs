@@ -856,7 +856,7 @@ pub(super) fn emit_surfaces(
                     ir,
                     annotations,
                     &surface_ids,
-                    id,
+                    &id,
                     object_id,
                     *extrusion,
                     admission,
@@ -918,7 +918,7 @@ pub(super) fn emit_surfaces(
                     "catia_b5_emit_procedural_surfaces",
                 )?;
                 let _attached = ir.model.add_procedural_surface(
-                    id,
+                    &id,
                     cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                         directrix_id,
                         (revolution.axis_origin, revolution.axis_direction),
@@ -969,7 +969,7 @@ pub(super) fn emit_surfaces(
                     "catia_b5_emit_procedural_surfaces",
                 )?;
                 let _attached = ir.model.add_procedural_surface(
-                    id,
+                    &id,
                     ProceduralSurface::new(procedural_id, definition, None),
                 );
             }
@@ -1010,7 +1010,7 @@ pub(super) fn emit_surfaces(
             "catia_b5_emit_procedural_surfaces",
         )?;
         let _attached = ir.model.add_procedural_surface(
-            crate::resource::copy_id(
+            &crate::resource::copy_id(
                 admission.context(),
                 surface.as_str(),
                 SurfaceId::mint,
@@ -1045,7 +1045,7 @@ fn emit_extrusion_procedure(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     surface_ids: &HashMap<u32, SurfaceId>,
-    surface_id: SurfaceId,
+    surface_id: &SurfaceId,
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
@@ -1503,7 +1503,7 @@ mod tests {
                 &mut ir,
                 &mut AnnotationBuilder::new(),
                 &support_ids,
-                surface_id,
+                &surface_id,
                 30,
                 extrusion,
                 &mut admission,

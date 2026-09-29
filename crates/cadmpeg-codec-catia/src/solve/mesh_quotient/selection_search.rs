@@ -90,7 +90,7 @@ impl MeshSelectionSearch<'_, '_> {
                     let remaining = (0..local.len())
                         .filter(|&node| local.find(node) == node)
                         .count();
-                    (component, roots.len().saturating_sub(remaining))
+                    (component, roots.len() - remaining)
                 })
                 .collect()
         }
@@ -178,7 +178,10 @@ impl MeshSelectionSearch<'_, '_> {
                         .or_insert(reduction);
                 }
             }
-            independent_capacity = independent_capacity.saturating_add(independent_face_capacity);
+            let Some(capacity) = independent_capacity.checked_add(independent_face_capacity) else {
+                return Ok(None);
+            };
+            independent_capacity = capacity;
             for (component, capacity) in face_capacity {
                 *component_merge_capacity.entry(component).or_default() += capacity;
             }
@@ -207,10 +210,13 @@ impl MeshSelectionSearch<'_, '_> {
                     .unwrap_or(0),
             )
         };
-        let universal_required = universal_components
+        let Some(universal_required) = universal_components
             .iter()
             .map(required_count)
-            .fold(0usize, usize::saturating_add);
+            .try_fold(0usize, usize::checked_add)
+        else {
+            return Ok(None);
+        };
         let mut domains = possible_domains
             .into_iter()
             .flat_map(|(component, domain)| {
@@ -218,7 +224,10 @@ impl MeshSelectionSearch<'_, '_> {
                 std::iter::repeat_with(move || domain.clone()).take(required)
             })
             .collect::<Vec<_>>();
-        if universal_required > point_count.saturating_sub(domains.len()) {
+        let Some(available_points) = point_count.checked_sub(domains.len()) else {
+            return Ok(None);
+        };
+        if universal_required > available_points {
             return Ok(None);
         }
         domains.sort_unstable_by_key(HashSet::len);
@@ -250,7 +259,10 @@ impl MeshSelectionSearch<'_, '_> {
                 return Ok(None);
             }
         }
-        Ok(Some(before.saturating_sub(after).min(independent_capacity)))
+        let Some(reduction) = before.checked_sub(after) else {
+            return Ok(None);
+        };
+        Ok(Some(reduction.min(independent_capacity)))
     }
 
     pub(super) fn face_projection_signature(
@@ -872,7 +884,7 @@ impl MeshSelectionSearch<'_, '_> {
                         !adjacent,
                         viable_options,
                         local_fixed == 0,
-                        usize::MAX.saturating_sub(use_count),
+                        usize::MAX - use_count,
                         directions.len(),
                         face,
                     ),
@@ -1401,7 +1413,10 @@ impl MeshSelectionSearch<'_, '_> {
                 self.outcome.exhaust();
                 return Ok(());
             }
-            let remaining = remaining_work.saturating_sub(options.len());
+            let Some(remaining) = remaining_work.checked_sub(options.len()) else {
+                self.outcome.exhaust();
+                return Ok(());
+            };
             if remaining == 0 {
                 break;
             }

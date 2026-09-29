@@ -547,12 +547,12 @@ fn euclidean_control_points(
 ) -> Result<Option<EuclideanControlNet>, CodecError> {
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(
-            homogeneous.len() as u64,
+            cadmpeg_core::decode::u64_from_index(homogeneous.len()),
             "iges composite Euclidean control points",
         )?;
         if rational {
             ctx.charge_collection_items(
-                homogeneous.len() as u64,
+                cadmpeg_core::decode::u64_from_index(homogeneous.len()),
                 "iges composite Euclidean weights",
             )?;
         }
@@ -608,7 +608,7 @@ fn elevate_bezier_homogeneous(
     }
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(
-            control_points.len() as u64,
+            cadmpeg_core::decode::u64_from_index(control_points.len()),
             "iges composite Bezier source copy",
         )?;
     }
@@ -626,7 +626,10 @@ fn elevate_bezier_homogeneous(
             return Ok(None);
         };
         if let Some(ctx) = ctx {
-            ctx.charge_collection_items(next_count as u64, "iges composite Bezier elevated net")?;
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(next_count),
+                "iges composite Bezier elevated net",
+            )?;
         }
         let mut next = cadmpeg_core::decode::DecodeContext::admitted_vec(
             next_count,
@@ -634,7 +637,13 @@ fn elevate_bezier_homogeneous(
         )?;
         next.push(elevated[0]);
         for index in 1..=degree {
-            let alpha = index as f64 / next_degree as f64;
+            let Some(index_real) = cadmpeg_core::convert::f64_from_index(index) else {
+                return Ok(None);
+            };
+            let Some(degree_real) = cadmpeg_core::convert::f64_from_index(next_degree) else {
+                return Ok(None);
+            };
+            let alpha = index_real / degree_real;
             let previous = elevated[index - 1];
             let current = elevated[index];
             let point = [
@@ -687,8 +696,6 @@ impl<T> ConcatenatedSegments<T> {
     }
 }
 
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
 /// Reflects a child about its own parameter domain.
 ///
 /// Every answer here is either the reversed child or a named cause: the values
@@ -1479,7 +1486,10 @@ fn elevate_nurbs_to_degree(
         )
         .map_err(DegreeElevationError::Allocation)?;
         let piece = NurbsCurve::from_checked_lanes(
-            target_degree as u32,
+            u32::try_from(target_degree).map_err(|_| DegreeElevationError::TargetDegree {
+                degree: stated_target,
+                bound: MAX_COMPOSITE_DEGREE,
+            })?,
             piece_knots,
             control_points,
             weights,
@@ -1559,7 +1569,7 @@ fn concatenate_nurbs<T>(
             });
         }
     }
-    let degree_usize = degree as usize;
+    let degree_usize = cadmpeg_core::decode::index_from_u32(degree);
     // Every refusal below names its own cause; the `Ok(None)` that survives is
     // the endpoint join, and only the endpoint join.
     let prepare_child = |(curve, interval, child): (NurbsCurve, [f64; 2], T),
@@ -1830,13 +1840,23 @@ fn bounded_nurbs_for_id(
             policy.min(MAX_COMPOSITE_DEPTH)
         });
     if depth >= depth_limit {
-        let requested = depth.saturating_add(1) as u64;
-        return Err(CompositeCurveError::Budget(match ctx {
-            Some(ctx) => {
-                ctx.refuse_codec_limit("iges_composite_depth", depth_limit as u64, requested)
-            }
-            None => refuse_local_limit("iges_composite_depth", depth_limit as u64, requested),
-        }));
+        let refusal = |requested| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit(
+                "iges_composite_depth",
+                u64_from_index(depth_limit),
+                requested,
+            ),
+            None => refuse_local_limit(
+                "iges_composite_depth",
+                u64_from_index(depth_limit),
+                requested,
+            ),
+        };
+        let requested = depth
+            .checked_add(1)
+            .map(u64_from_index)
+            .ok_or_else(|| CompositeCurveError::Budget(refusal(u64::MAX)))?;
+        return Err(CompositeCurveError::Budget(refusal(requested)));
     }
     let curve = match index {
         Some(index) => index
@@ -2146,20 +2166,20 @@ fn anchor_analytic_nurbs_endpoint_poles(
     let Some(last) = nurbs.pole_count().checked_sub(1) else {
         return Ok(None);
     };
-    let mut visited = 0usize;
+    let mut nurbs = nurbs;
     Ok(nurbs
-        .try_map_owned_control_points(|point| {
-            let mapped = if visited == last {
+        .try_map_control_points(|index, point| {
+            let mapped = if index == last {
                 end
-            } else if visited == 0 {
+            } else if index == 0 {
                 start
             } else {
                 point
             };
-            visited += 1;
             Ok::<_, ()>(mapped)
         })
-        .ok())
+        .ok()
+        .map(|()| nurbs))
 }
 
 fn project_native_composite(
@@ -2585,11 +2605,11 @@ fn project_with_type_130_policy(
         };
         if let Some(observed) = u64::try_from(raw_child_count)
             .ok()
-            .filter(|count| *count > MAX_COMPOSITE_CHILDREN as u64)
+            .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_COMPOSITE_CHILDREN))
         {
             return Err(refuse_local_limit(
                 "iges_composite_children",
-                MAX_COMPOSITE_CHILDREN as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_COMPOSITE_CHILDREN),
                 observed,
             ));
         }
@@ -3129,7 +3149,7 @@ fn project_with_type_130_policy(
         )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         let _attached = ir.model.add_procedural_curve(
-            curve_id,
+            &curve_id,
             ProceduralCurve::new(
                 crate::ids::procedural_curve_admitted(&stem, ctx)?,
                 ProceduralCurveDefinition::Compound(

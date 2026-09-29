@@ -3141,7 +3141,7 @@ pub(super) fn project(
                 "iges_geometry_trimming",
             )?;
             let _attached = candidate.model_mut().add_procedural_surface(
-                crate::decode_resource::clone_optional_identity(
+                &crate::decode_resource::clone_optional_identity(
                     Some(ctx),
                     &derived_surface_id,
                     "iges trimming identity copy",

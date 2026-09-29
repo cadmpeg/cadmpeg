@@ -563,7 +563,7 @@ pub(super) fn emit_topology(
                     ctx.refuse_codec_limit("nx parametric edge constructions", 0, 1)
                 })?;
                 let _attached = ir.model.add_procedural_curve(
-                    copy_typed_id(ctx, carrier.as_str(), "nx parametric construction owner")?,
+                    &copy_typed_id(ctx, carrier.as_str(), "nx parametric construction owner")?,
                     ProceduralCurve::new(
                         construction,
                         ProceduralCurveDefinition::SurfaceCurve {

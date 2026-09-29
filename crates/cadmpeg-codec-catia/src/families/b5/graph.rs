@@ -3525,11 +3525,14 @@ fn canonical_point(
     for dx in -1..=1 {
         for dy in -1..=1 {
             for dz in -1..=1 {
-                let neighbor = [
-                    cell[0].saturating_add(dx),
-                    cell[1].saturating_add(dy),
-                    cell[2].saturating_add(dz),
-                ];
+                let (Some(x), Some(y), Some(z)) = (
+                    cell[0].checked_add(dx),
+                    cell[1].checked_add(dy),
+                    cell[2].checked_add(dz),
+                ) else {
+                    continue;
+                };
+                let neighbor = [x, y, z];
                 for &point_index in index.get(&neighbor).into_iter().flatten() {
                     if distance_squared(coordinates(points[point_index]), endpoint)
                         <= POINT_TOLERANCE * POINT_TOLERANCE

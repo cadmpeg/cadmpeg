@@ -787,7 +787,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.used == 0
-                    && limit.additional == b"iges:fem:node#D1".len() as u64
+                    && limit.additional == cadmpeg_core::decode::u64_from_index(b"iges:fem:node#D1".len())
                     && limit.operation == "iges FEM entity id"
         ));
 

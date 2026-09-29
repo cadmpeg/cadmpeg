@@ -715,9 +715,9 @@ impl FiniteReal {
     /// checked. Up to `2^53` units the conversion and the product are exact,
     /// so the value is the one whose bit pattern is the sign bit and `units`.
     #[must_use]
-    pub(crate) fn subnormal_units(negative: bool, units: u64) -> Self {
-        let magnitude = units as f64 * f64::from_bits(1);
-        Self(if negative { -magnitude } else { magnitude })
+    pub(crate) fn subnormal_units(negative: bool, units: u64) -> Option<Self> {
+        let magnitude = cadmpeg_core::convert::f64_from_u64(units)? * f64::from_bits(1);
+        Some(Self(if negative { -magnitude } else { magnitude }))
     }
 
     /// The four-quadrant arctangent of `self / x`, an angle in `[-π, π]`.
@@ -727,16 +727,16 @@ impl FiniteReal {
         Self(self.0.atan2(x.0))
     }
 
-    /// An index as a real. Every `usize` converts to a finite `f64`.
+    /// An index as a real, absent when its integer value is not exact in `f64`.
     #[must_use]
-    pub(crate) fn from_index(index: usize) -> Self {
-        Self(index as f64)
+    pub(crate) fn from_index(index: usize) -> Option<Self> {
+        cadmpeg_core::convert::f64_from_index(index).map(Self)
     }
 
-    /// An integer as a real. Every `i64` converts to a finite `f64`.
+    /// An integer as a real, absent when its integer value is not exact in `f64`.
     #[must_use]
-    pub(crate) fn from_integer(value: i64) -> Self {
-        Self(value as f64)
+    pub(crate) fn from_integer(value: i64) -> Option<Self> {
+        cadmpeg_core::convert::f64_from_i64(value).map(Self)
     }
 
     /// The turns from `start` to `self`: `(self - start) / τ`, rounded once

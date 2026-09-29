@@ -2964,13 +2964,15 @@ fn parse_binary_prefix(
             version,
             index + 1,
             tshape_count,
-            curve_count,
-            curve2ds.len(),
-            surfaces.len(),
-            locations.len(),
-            polygons3d.len(),
-            polygons_on_triangulations.len(),
-            triangulations.len(),
+            BinaryGeometryCounts {
+                curves: curve_count,
+                curves2d: curve2ds.len(),
+                surfaces: surfaces.len(),
+                locations: locations.len(),
+                polygons3d: polygons3d.len(),
+                indexed_polygons: polygons_on_triangulations.len(),
+                triangulations: triangulations.len(),
+            },
         )?);
     }
     let roots = if cursor.remaining() == 0 {
@@ -3018,20 +3020,32 @@ fn parse_binary_prefix(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct BinaryGeometryCounts {
+    curves: usize,
+    curves2d: usize,
+    surfaces: usize,
+    locations: usize,
+    polygons3d: usize,
+    indexed_polygons: usize,
+    triangulations: usize,
+}
+
 fn parse_binary_tshape(
     cursor: &mut BinaryCursor<'_, '_, '_>,
     version: u8,
     index: usize,
     tshape_count: usize,
-    curve_count: usize,
-    curve2d_count: usize,
-    surface_count: usize,
-    location_count: usize,
-    polygon3d_count: usize,
-    indexed_polygon_count: usize,
-    triangulation_count: usize,
+    counts: BinaryGeometryCounts,
 ) -> Result<TextTShape, CodecError> {
+    let BinaryGeometryCounts {
+        curves: curve_count,
+        curves2d: curve2d_count,
+        surfaces: surface_count,
+        locations: location_count,
+        triangulations: triangulation_count,
+        ..
+    } = counts;
     let kind = match cursor.u8("binary TShape kind")? {
         0 => TextShapeKind::Compound,
         1 => TextShapeKind::CompSolid,
@@ -3161,13 +3175,7 @@ fn parse_binary_tshape(
                     cursor,
                     version,
                     representation_kind,
-                    curve_count,
-                    curve2d_count,
-                    surface_count,
-                    location_count,
-                    polygon3d_count,
-                    indexed_polygon_count,
-                    triangulation_count,
+                    counts,
                 )?);
             }
             TextTShapeGeometry::Edge {
@@ -3268,19 +3276,21 @@ fn parse_binary_tshape(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn parse_binary_edge_representation(
     cursor: &mut BinaryCursor<'_, '_, '_>,
     version: u8,
     kind: u8,
-    curve_count: usize,
-    curve2d_count: usize,
-    surface_count: usize,
-    location_count: usize,
-    polygon3d_count: usize,
-    indexed_polygon_count: usize,
-    triangulation_count: usize,
+    counts: BinaryGeometryCounts,
 ) -> Result<TextEdgeRepresentation, CodecError> {
+    let BinaryGeometryCounts {
+        curves: curve_count,
+        curves2d: curve2d_count,
+        surfaces: surface_count,
+        locations: location_count,
+        polygons3d: polygon3d_count,
+        indexed_polygons: indexed_polygon_count,
+        triangulations: triangulation_count,
+    } = counts;
     match kind {
         1 => {
             let curve = checked_binary_reference(

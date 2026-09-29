@@ -646,7 +646,9 @@ pub(super) fn decode(
             native_ref: None,
         });
         admit_occurrence(ctx, ir, admitted_ir_entities)?;
-        root_ordinal = root_ordinal.saturating_add(1);
+        root_ordinal = root_ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "step_root_occurrence_path_map")?;
             ctx.charge_collection_items(1, "step_root_occurrence_path_members")?;
@@ -861,7 +863,9 @@ pub(super) fn decode(
                 native_ref: Some(format!("#{usage_id}")),
             });
             admit_occurrence(ctx, ir, admitted_ir_entities)?;
-            *ordinal = ordinal.saturating_add(1);
+            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::malformed("STEP child occurrence ordinal exceeds u32")
+            })?;
             let mut path = BTreeSet::new();
             if let Some(parent_path) = parent_path {
                 for &definition in parent_path {
@@ -887,7 +891,17 @@ pub(super) fn decode(
             StepLossCode::DecodeWarning.note("assembly occurrence graph has no resolvable root"),
         );
     }
-    apply_body_placements(exchange, geometry, topology, &usages, ir, &mut losses, ctx)?;
+    apply_body_placements(
+        exchange,
+        BodyPlacementSources {
+            geometry,
+            topology,
+            usages: &usages,
+        },
+        ir,
+        &mut losses,
+        ctx,
+    )?;
     for (id, record) in exchange.entities_any(&[
         "APPLICATION_CONTEXT",
         "PRODUCT_CONTEXT",
@@ -995,16 +1009,25 @@ fn assembly_depth_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
         .map_or(MAX_ASSEMBLY_DEPTH, |policy| policy.min(MAX_ASSEMBLY_DEPTH))
 }
 
-#[allow(clippy::too_many_arguments)] // session ctx is the eighth decode-policy argument
+#[derive(Clone, Copy)]
+struct BodyPlacementSources<'a> {
+    geometry: &'a GeometryData,
+    topology: &'a TopologyData,
+    usages: &'a BTreeMap<u64, Usage>,
+}
+
 fn apply_body_placements(
     exchange: &Exchange,
-    geometry: &GeometryData,
-    topology: &TopologyData,
-    usages: &BTreeMap<u64, Usage>,
+    sources: BodyPlacementSources<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
+    let BodyPlacementSources {
+        geometry,
+        topology,
+        usages,
+    } = sources;
     let mut pds = BTreeMap::new();
     for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
         if let Some(definition) =

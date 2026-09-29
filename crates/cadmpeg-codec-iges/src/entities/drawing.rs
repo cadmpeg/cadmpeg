@@ -187,7 +187,10 @@ fn push_drawing_loss(
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(losses, 1, "iges drawing loss slots")?;
     let message = ctx.format_retained(message, "iges drawing loss message")?;
-    ctx.charge_retained(4 + code.code().len() as u64, "iges drawing loss kind")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges drawing loss kind",
+    )?;
     losses.push(
         code.note(message)
             .with_provenance(entry.admitted_loss_provenance(ctx)?),

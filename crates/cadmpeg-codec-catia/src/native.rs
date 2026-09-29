@@ -9548,8 +9548,8 @@ fn zero_entity_ownership_roots(
         "catia_native_zero_ownership_roots",
     )?;
     for (index, root) in roots.into_iter().enumerate() {
-        let shell_record_ordinal = root.shell_record_ordinal();
-        let body_record_ordinal = root.body_record_ordinal();
+        let shell_record_ordinal = root.shell_record_ordinal()?;
+        let body_record_ordinal = root.body_record_ordinal()?;
         output.push(CatiaZeroEntityOwnershipRoot {
             id: ctx.format_retained(
                 format_args!("catia:zero-entity:ownership-root#{index}"),

@@ -376,7 +376,10 @@ fn admitted_global_loss(
     code: IgesLossCode,
     message: String,
 ) -> Result<LossNote, CodecError> {
-    ctx.charge_retained(4 + code.code().len() as u64, "iges global loss kind")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges global loss kind",
+    )?;
     Ok(code.note(message))
 }
 
@@ -654,11 +657,15 @@ fn delimited_value(
     retain: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Value, usize, bool), CodecError> {
+    let remaining = bytes
+        .len()
+        .checked_sub(start)
+        .ok_or_else(|| CodecError::malformed("IGES Global value offset exceeds input"))?;
     let value_start = start
         + bytes[start..]
             .iter()
             .position(|byte| *byte != b' ')
-            .unwrap_or(bytes.len().saturating_sub(start));
+            .unwrap_or(remaining);
     if bytes.get(value_start) == Some(&parameter_delimiter) {
         return Ok((Value::Omitted, value_start + 1, false));
     }
@@ -706,10 +713,14 @@ fn delimited_value(
             }
         };
     let separator_start = if allow_padding_after {
+        let remaining = bytes
+            .len()
+            .checked_sub(end)
+            .ok_or_else(|| CodecError::malformed("IGES Global separator exceeds input"))?;
         end + bytes[end..]
             .iter()
             .position(|byte| *byte != b' ')
-            .unwrap_or(bytes.len().saturating_sub(end))
+            .unwrap_or(remaining)
     } else {
         end
     };
@@ -1833,8 +1844,10 @@ impl ProjectedGlobal {
             return None;
         };
         Some(
-            number as f64 * maximum_width.get() * self.length_factor_mm.get()
-                / scale.gradations as f64,
+            cadmpeg_core::convert::f64_from_i64(number)?
+                * maximum_width.get()
+                * self.length_factor_mm.get()
+                / cadmpeg_core::convert::f64_from_i64(scale.gradations)?,
         )
     }
 

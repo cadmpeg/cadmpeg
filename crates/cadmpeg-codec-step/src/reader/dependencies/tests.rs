@@ -601,7 +601,7 @@ fn part21_point_coordinates(exchange: &crate::parse::Exchange, id: u64) -> Optio
     let coordinates = values
         .iter()
         .map(|value| match value {
-            crate::parse::Value::Integer(value) => Some(*value as f64),
+            crate::parse::Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             crate::parse::Value::Real(value) => Some(*value),
             _ => None,
         })

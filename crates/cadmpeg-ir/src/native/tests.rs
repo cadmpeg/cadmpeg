@@ -189,7 +189,7 @@ fn native_arena_json_copy_refuses_retained_limit_before_materialization() {
         "id": "test:native:record#first",
         "payload": "a retained string"
     });
-    let needed = serde_json::to_vec(&record).unwrap().len() as u64;
+    let needed = cadmpeg_core::decode::u64_from_index(serde_json::to_vec(&record).unwrap().len());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = needed - 1;
@@ -291,11 +291,11 @@ fn native_arena_name_refuses_retained_limit_before_copy() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = "records".len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("records".len()) - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = crate::native::NativeNamespace::default();
     let error = namespace
-        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .set_arena(&limited, "records", &[serde_json::Value::Null; 0])
         .unwrap_err();
     let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
     else {
@@ -308,7 +308,7 @@ fn native_arena_name_refuses_retained_limit_before_copy() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     namespace
-        .set_arena(&service, "records", &[] as &[serde_json::Value])
+        .set_arena(&service, "records", &[serde_json::Value::Null; 0])
         .unwrap();
     assert_eq!(namespace.arenas()["records"].len(), 0);
 }
@@ -352,7 +352,7 @@ fn native_arena_slot_refuses_collection_limit_before_insert() {
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = crate::native::NativeNamespace::default();
     let error = namespace
-        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .set_arena(&limited, "records", &[serde_json::Value::Null; 0])
         .unwrap_err();
     let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
     else {

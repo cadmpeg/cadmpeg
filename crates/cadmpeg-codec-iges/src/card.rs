@@ -289,7 +289,7 @@ impl FramingRecoveries {
             )?;
             let code = IgesLossCode::CardFramingRecovered;
             ctx.charge_retained(
-                4 + code.code().len() as u64,
+                4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
                 "iges framing recovery loss kind",
             )?;
             ctx.charge_retained(4, "iges framing recovery loss source format")?;
@@ -426,7 +426,9 @@ fn physical_lines(
             }
             None => (source.len(), LineEnding::None, source.len()),
         };
-        let payload_width = payload_end.saturating_sub(start);
+        let payload_width = payload_end
+            .checked_sub(start)
+            .ok_or_else(|| CodecError::Malformed("IGES line offset exceeds payload".into()))?;
         let cards = if payload_width > CARD_WIDTH && !terminated {
             let fixed_end = start
                 .checked_add(CARD_WIDTH)
@@ -448,7 +450,10 @@ fn physical_lines(
         };
         let mut card_start = start;
         for index in 0..cards {
-            let card_end = card_start.saturating_add(CARD_WIDTH).min(payload_end);
+            let card_end = card_start
+                .checked_add(CARD_WIDTH)
+                .ok_or_else(|| CodecError::Malformed("IGES card offset overflow".into()))?
+                .min(payload_end);
             charge_line(ctx)?;
             let payload = copy_card_payload(&source[card_start..card_end], ctx)?;
             let marked = !terminated && payload.len() == CARD_WIDTH;
@@ -902,7 +907,7 @@ impl CardScan<'_> {
                     }
                 )
             })
-            .map_or(0, |index| self.lines.len().saturating_sub(index + 1))
+            .map_or(0, |index| self.lines.len() - (index + 1))
     }
 }
 

@@ -196,7 +196,7 @@ fn lookup_identity<'a, T: EntitySchema>(
 }
 
 macro_rules! define_model_index {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         define_model_index! {
             @generate [$($field),*];
             [
@@ -693,7 +693,7 @@ mod tests {
         });
         ir.model
             .add_procedural_surface(
-                cached_surface.clone(),
+                &cached_surface,
                 procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached").expect("valid identity"),
                     definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
@@ -720,7 +720,7 @@ mod tests {
         assert!(ir
             .model
             .add_procedural_surface(
-                cached_surface,
+                &cached_surface,
                 procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached-duplicate").expect("valid identity"),
                     definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },

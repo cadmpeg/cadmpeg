@@ -63,14 +63,14 @@ macro_rules! arena_registry {
             edges: Edge, "Edge arena.", [];
             vertices: Vertex, "Vertex arena.", [];
             points: Point, "Point arena.", [];
-            surfaces: Surface, "Surface arena.", [];
-            curves: Curve, "Curve arena.", [];
+            surfaces: Surface, "Surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Surface>"))];
+            curves: Curve, "Curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Curve>"))];
             subds: SubdSurface, "Subdivision surface arena.", [];
             pcurves: Pcurve, "Pcurve arena.", [];
-            procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [];
-            procedural_curves: ProceduralCurve, "Procedural curve arena.", [];
+            procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurface>"))];
+            procedural_curves: ProceduralCurve, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurve>"))];
             assets: crate::assets::Asset, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            features: Feature, "Feature arena.", [];
+            features: Feature, "Feature arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<FeatureRowWire>"))];
             feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             feature_result_topologies: FeatureResultTopology, "Feature result-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             configurations: DesignConfiguration, "Design configuration arena.", [serde(default)];
@@ -312,14 +312,8 @@ macro_rules! sorted_model_value {
     };
 }
 
-#[cfg(feature = "schema")]
-macro_rules! model_schema_type {
-    (features, $ty:ty) => { Vec<FeatureRowWire> };
-    ($field:ident, $ty:ty) => { Vec<$ty> };
-}
-
 macro_rules! declare_model {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Format-neutral entity arenas connected by typed IDs.
         #[derive(Debug, Clone, Default, PartialEq)]
         pub struct Model {
@@ -328,19 +322,6 @@ macro_rules! declare_model {
                 pub $field: Vec<$ty>,
             )*
             pub(crate) feature_regeneration_parents: FeatureRegenerationParents,
-        }
-
-        /// Format-neutral entity arenas connected by typed IDs.
-        #[cfg(feature = "schema")]
-        #[derive(JsonSchema)]
-        #[schemars(rename = "Model")]
-        #[expect(dead_code, reason = "schema-only row fields have no value readers")]
-        struct ModelSchemaWire {
-            $(
-                $(#[$attribute])*
-                #[doc = $doc]
-                $field: model_schema_type!($field, $ty),
-            )*
         }
 
         #[cfg(feature = "schema")]
@@ -354,7 +335,13 @@ macro_rules! declare_model {
             }
 
             fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-                ModelSchemaWire::json_schema(generator)
+                let mut schema = ModelReadWire::json_schema(generator);
+                schema.ensure_object().remove("additionalProperties");
+                schema.ensure_object().insert(
+                    "description".into(),
+                    "Format-neutral entity arenas connected by typed IDs.".into(),
+                );
+                schema
             }
         }
 
@@ -367,10 +354,14 @@ macro_rules! declare_model {
         }
 
         #[derive(Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[cfg_attr(feature = "schema", schemars(rename = "Model"))]
         #[serde(deny_unknown_fields)]
         struct ModelReadWire {
             $(
                 $(#[$attribute])*
+                $($(#[$schema_attr])*)?
+                #[doc = $doc]
                 $field: model_read_type!($field, $ty),
             )*
         }
@@ -412,13 +403,13 @@ macro_rules! declare_model {
                 for wire in procedural_surfaces {
                     let (owner, procedural) = wire.into_parts();
                     model
-                        .add_procedural_surface(owner, procedural)
+                        .add_procedural_surface(&owner, procedural)
                         .map_err(serde::de::Error::custom)?;
                 }
                 for wire in procedural_curves {
                     let (owner, procedural) = wire.into_parts();
                     model
-                        .add_procedural_curve(owner, procedural)
+                        .add_procedural_curve(&owner, procedural)
                         .map_err(serde::de::Error::custom)?;
                 }
                 Ok(model)
@@ -518,7 +509,7 @@ macro_rules! declare_model {
 }
 
 macro_rules! assert_entity_schemas {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         const _: fn() = || {
             fn assert_schema<T: crate::schema::EntitySchema>() {}
             $(assert_schema::<$ty>();)*
@@ -536,7 +527,7 @@ pub trait EntityRewrite {
 }
 
 macro_rules! declare_model_view {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Every model arena borrowed in canonical identity order.
         #[derive(Serialize)]
         #[serde(remote = "Self")]
@@ -572,42 +563,32 @@ fn sorted_refs<T: crate::schema::EntitySchema>(entities: &[T]) -> Vec<&T> {
 }
 
 macro_rules! declare_arena_name {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Name of a registered model arena.
         ///
-        /// Variant identifiers match the `arena_registry!` field names so a
-        /// new arena cannot be counted or diffed under a string the registry
-        /// does not declare.
+        /// Values use the `arena_registry!` field names so a new arena is
+        /// counted and diffed under its declared wire key.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        #[allow(non_camel_case_types)]
-        pub enum ArenaName {
-            $(
-                #[doc = $doc]
-                $field,
-            )*
-        }
+        pub struct ArenaName(&'static str);
 
         impl ArenaName {
             /// Every registered arena, in registry order.
-            pub const ALL: &'static [Self] = &[$(Self::$field),*];
+            pub const ALL: &'static [Self] = &[$(Self(stringify!($field))),*];
+
+            pub(crate) const fn registered(name: &'static str) -> Self {
+                Self(name)
+            }
 
             /// Registry field name, which is also the CADIR JSON object key.
             #[must_use]
             pub const fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$field => stringify!($field),)*
-                }
+                self.0
             }
 
             /// Parse a registry field name.
             #[must_use]
-            // This registry lookup returns an optional arena name rather than a parse error.
-            #[allow(clippy::should_implement_trait)]
-            pub fn from_str(name: &str) -> Option<Self> {
-                match name {
-                    $(stringify!($field) => Some(Self::$field),)*
-                    _ => None,
-                }
+            pub fn parse(name: &str) -> Option<Self> {
+                Self::ALL.iter().copied().find(|arena| arena.as_str() == name)
             }
         }
 
@@ -814,7 +795,7 @@ impl CensusKey {
     #[must_use]
     pub fn from_wire(value: impl Into<String>) -> Self {
         let value = value.into();
-        if let Some(name) = ArenaName::from_str(&value) {
+        if let Some(name) = ArenaName::parse(&value) {
             return Self::model(name);
         }
         if value == SURFACES_UNKNOWN_GEOMETRY {
@@ -1113,10 +1094,9 @@ impl Model {
 
     /// Attaches one procedural surface construction to its carrier.
     // Attachment accepts the owner ID and its construction at the same ownership boundary.
-    #[allow(clippy::needless_pass_by_value)]
     pub fn add_procedural_surface(
         &mut self,
-        owner: SurfaceId,
+        owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<(), ProceduralCarrierError> {
         if self
@@ -1130,7 +1110,7 @@ impl Model {
             )));
         }
         if let Some(existing_owner) = self.surfaces.iter().find(|surface| {
-            surface.id != owner
+            &surface.id != owner
                 && surface.geometry.procedural_construction() == Some(&procedural.id)
         }) {
             return Err(ProceduralCarrierError::new(format!(
@@ -1141,7 +1121,7 @@ impl Model {
         let surface = self
             .surfaces
             .iter_mut()
-            .find(|surface| surface.id == owner)
+            .find(|surface| &surface.id == owner)
             .ok_or_else(|| {
                 ProceduralCarrierError::new(format!(
                     "procedural surface {} references missing surface {owner}",
@@ -1187,13 +1167,12 @@ impl Model {
 
     /// Attaches one procedural curve construction to its carrier.
     // Attachment accepts the owner ID and its construction at the same ownership boundary.
-    #[allow(clippy::needless_pass_by_value)]
     pub fn add_procedural_curve(
         &mut self,
-        owner: CurveId,
+        owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<(), ProceduralCarrierError> {
-        match self.attach_procedural_curve(&owner, procedural, |id| {
+        match self.attach_procedural_curve(owner, procedural, |id| {
             Ok::<_, std::convert::Infallible>(id.clone())
         }) {
             Ok(result) => result,
@@ -1475,7 +1454,7 @@ impl CadIr {
             .collect::<BTreeMap<_, _>>();
         let parents = self.model.feature_regeneration_parents.clone();
         macro_rules! append_and_admit {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {{
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {{
                 $(let $field = self.model.$field.len();)*
                 self.model.append(model);
                 for (format, mut namespace) in native.0 {
@@ -1657,10 +1636,10 @@ impl CadIr {
 }
 
 macro_rules! define_registered_entity_census {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn registered_entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
             BTreeMap::from([
-                $((CensusKey::model(ArenaName::$field), ir.model.$field.len())),*
+                $((CensusKey::model(ArenaName::registered(stringify!($field))), ir.model.$field.len())),*
             ])
         }
     };

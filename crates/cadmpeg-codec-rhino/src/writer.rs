@@ -1181,10 +1181,15 @@ fn generated_projected_brep_c2_curve(
         WritableEdgeCurve::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
             projected
-                .edit_control_points(|point| {
-                    let uv = plane_uv(*point, origin, u_axis, v_axis);
-                    *point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                    Ok(())
+                .try_map_control_points(|_, point| {
+                    let mut point = point.get();
+                    let uv = plane_uv(point, origin, u_axis, v_axis);
+                    point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
                 })
                 .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             if sense == Sense::Reversed {

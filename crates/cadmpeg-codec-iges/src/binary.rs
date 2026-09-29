@@ -153,7 +153,9 @@ impl<'a> BitReader<'a> {
                 .bytes
                 .get(self.byte)
                 .ok_or_else(|| malformed("a Binary primitive is truncated"))?;
-            let shift = 7_u8.saturating_sub(self.bit);
+            let shift = 7_u8
+                .checked_sub(self.bit)
+                .ok_or_else(|| malformed("a Binary bit offset is out of range"))?;
             value = (value << 1) | u64::from((byte >> shift) & 1);
             self.bit += 1;
             if self.bit == 8 {
@@ -235,8 +237,11 @@ impl<'a> BitReader<'a> {
                 .ok_or_else(|| malformed("a Binary real is not finite"));
         }
         // The range checks prove this conversion and keep the power finite.
-        let exponent = exponent as i32;
-        let fraction = 0.5 + (fraction as f64 / 2_f64.powi(i32::from(fraction_bits) + 1));
+        let exponent = i32::try_from(exponent)
+            .map_err(|_| malformed("a Binary real exponent is out of range"))?;
+        let fraction = cadmpeg_core::convert::f64_from_u64(fraction)
+            .ok_or_else(|| malformed("a Binary real fraction is not exactly representable"))?;
+        let fraction = 0.5 + fraction / 2_f64.powi(i32::from(fraction_bits) + 1);
         let value = if exponent >= -1021 {
             (fraction * 2.0) * 2_f64.powi(exponent - 1)
         } else {
@@ -260,7 +265,11 @@ impl<'a> BitReader<'a> {
             let negative = count < 0;
             let count = usize::try_from(count.unsigned_abs())
                 .map_err(|_| malformed("a Binary string count is out of range"))?;
-            let remaining = self.bytes.len().saturating_sub(self.byte);
+            let remaining = self
+                .bytes
+                .len()
+                .checked_sub(self.byte)
+                .ok_or_else(|| malformed("a Binary string offset is out of range"))?;
             if count > remaining {
                 return Err(malformed("a Binary string payload is truncated"));
             }
@@ -1425,10 +1434,10 @@ fn charge_normalization(
     source_len: usize,
     normalized_len: usize,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(
-        u64_from_index(source_len.saturating_add(normalized_len)),
-        "iges_binary_normalization",
-    )
+    let total = source_len
+        .checked_add(normalized_len)
+        .ok_or_else(|| ctx.refuse_codec_limit("iges_binary_normalization", u64::MAX, u64::MAX))?;
+    ctx.charge_work(u64_from_index(total), "iges_binary_normalization")
 }
 
 /// Normalize one Binary IGES source into the Fixed ASCII image consumed by the
@@ -1458,13 +1467,23 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence, ctx)?;
-    let start_count = start_sequence.saturating_sub(1) as usize;
+    let start_count = usize::try_from(
+        start_sequence
+            .checked_sub(1)
+            .ok_or_else(|| malformed("a Binary Start sequence is zero"))?,
+    )
+    .map_err(|_| malformed("a Binary Start count does not fit memory"))?;
     let mut global_sequence = 1_u32;
     let global_cards = crate::global::layout_global_cards(&global_text, Some(ctx))?;
     for card in &global_cards {
         render_cards(&mut output, card, b'G', &mut global_sequence, ctx)?;
     }
-    let global_count = global_sequence.saturating_sub(1) as usize;
+    let global_count = usize::try_from(
+        global_sequence
+            .checked_sub(1)
+            .ok_or_else(|| malformed("a Binary Global sequence is zero"))?,
+    )
+    .map_err(|_| malformed("a Binary Global count does not fit memory"))?;
     let (directory_count, parameter_count) =
         normalize_directory_and_parameters(&mut output, &directory, parameters, ctx)?;
     render_terminate(
@@ -1709,6 +1728,17 @@ mod tests {
     }
 
     #[test]
+    fn binary_real_refuses_inexact_fraction_integer() {
+        let mut writer = BitWriter::default();
+        writer.push_bits(0, 1);
+        writer.push_bits(2048, 12);
+        writer.push_bits((1_u64 << 53) + 1, 54);
+        assert!(super::BitReader::new(&writer.bytes)
+            .read_real(12, 54)
+            .is_err());
+    }
+
+    #[test]
     fn binary_real_admission_preserves_the_underflow_zero_sign() {
         for (negative, expected) in [(0, 0.0_f64), (1, -0.0_f64)] {
             let mut writer = BitWriter::default();
@@ -1747,7 +1777,7 @@ mod tests {
     impl BitWriter {
         fn push_bits(&mut self, value: u64, count: u8) {
             for index in (0..count).rev() {
-                let bit = ((value >> index) & 1) as u8;
+                let bit = u8::try_from((value >> index) & 1).expect("test bit fits u8");
                 if self.bit == 0 {
                     self.bytes.push(0);
                 }
@@ -1802,14 +1832,18 @@ mod tests {
             }
             let negative = value.is_sign_negative();
             let value = value.abs();
-            let mut exponent = value.log2().floor() as i64;
-            let mut fraction = value / 2_f64.powi(exponent as i32);
+            let mut exponent = cadmpeg_core::convert::truncate_f64_to_i64(value.log2().floor())
+                .expect("test exponent fits i64");
+            let mut fraction =
+                value / 2_f64.powi(i32::try_from(exponent).expect("test exponent fits i32"));
             if fraction >= 1.0 {
                 exponent += 1;
                 fraction /= 2.0;
             }
             let scale = 2_f64.powi(i32::from(fraction_bits) + 1);
-            let raw_fraction = ((fraction - 0.5) * scale).round() as u64;
+            let raw_fraction =
+                cadmpeg_core::convert::truncate_f64_to_u64(((fraction - 0.5) * scale).round())
+                    .expect("test fraction fits u64");
             let bias = 1_i64 << (exponent_bits - 1);
             let biased = u64::try_from(exponent + bias)
                 .expect("Binary test real exponent fits the selected field");

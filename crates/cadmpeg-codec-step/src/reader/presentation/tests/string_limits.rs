@@ -61,10 +61,12 @@ fn color_result(source: &[u8], retained_limit: u64) -> Result<Option<ColorResolu
         1,
         &exchange,
         StyleDomain::Any,
-        &mut BTreeSet::new(),
-        &mut BTreeMap::new(),
-        &mut Vec::new(),
-        &mut BTreeSet::new(),
+        super::super::ColorSearchState {
+            active: &mut BTreeSet::new(),
+            cache: &mut BTreeMap::new(),
+            losses: &mut Vec::new(),
+            invalid_surface_sides: &mut BTreeSet::new(),
+        },
         0,
         Some(&ctx),
     )

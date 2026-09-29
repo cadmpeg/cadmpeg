@@ -373,11 +373,13 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
     super::super::decode_pcurve_geometry(
         1,
         &exchange,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        1.0,
+        super::super::PcurveSources {
+            points: &BTreeMap::new(),
+            vectors: &BTreeMap::new(),
+            placements: &BTreeMap::new(),
+            transformations: &BTreeMap::new(),
+            angle_scale: 1.0,
+        },
         &mut Vec::new(),
         &mut BTreeSet::new(),
         0,

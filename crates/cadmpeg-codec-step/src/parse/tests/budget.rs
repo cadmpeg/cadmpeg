@@ -738,7 +738,7 @@ fn reference_stack_item_is_admitted_before_push() {
         name: ReferenceName::Value(2),
         uri: "#a".into(),
     }];
-    let value = Value::ValueReference(2);
+    let value = Value::ExternalReference(2);
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
@@ -772,12 +772,13 @@ fn reference_stack_refuses_retained_limit() {
     }];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = super::super::btree_node_storage::<ReferenceName, &str>();
+    policy.limits.max_retained_bytes =
+        super::super::btree_node_storage::<ReferenceName, &str>().expect("node size fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
         .expect("root fits selected profile");
     let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))
         .expect("binding storage fits selected profile")
-        .resolve_value(&Value::ValueReference(2), 0)
+        .resolve_value(&Value::ExternalReference(2), 0)
         .expect_err("reference stack needs retained storage");
     assert!(matches!(
         error,

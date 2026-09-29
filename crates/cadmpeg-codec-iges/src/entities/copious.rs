@@ -155,8 +155,7 @@ fn has_forbidden_form_63_duplicate(
         }
         let cell_index = |value: f64| {
             let index = (value / cell_size).floor();
-            (index.is_finite() && index >= i128::MIN as f64 && index <= i128::MAX as f64)
-                .then_some(index as i128)
+            cadmpeg_core::convert::truncate_f64_to_i128(index)
         };
         let Some((x, y, z)) = cell_index(point.x)
             .zip(cell_index(point.y))
@@ -318,11 +317,11 @@ pub(super) fn project(
         };
         if let Some(observed) = u64::try_from(raw_tuple_count)
             .ok()
-            .filter(|count| *count > MAX_COPIOUS_TUPLES as u64)
+            .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_COPIOUS_TUPLES))
         {
             return Err(refuse_local_limit(
                 "iges_copious_tuples",
-                MAX_COPIOUS_TUPLES as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_COPIOUS_TUPLES),
                 observed,
             ));
         }
@@ -613,14 +612,19 @@ pub(super) fn project(
         } else {
             None
         };
-        let parameter_end = (points.len() - 1) as f64;
+        let parameter_end = cadmpeg_core::convert::f64_from_index(points.len() - 1)
+            .ok_or_else(|| ctx.refuse_codec_limit("iges copious knots", 0, 1))?;
         let knot_count = points
             .len()
             .checked_add(2)
             .ok_or_else(|| refuse_local_limit("iges copious knots", u64::MAX, 1))?;
         let mut knots = ctx.collection_vec(knot_count, "iges copious knots")?;
         knots.extend([0.0, 0.0]);
-        knots.extend((1..points.len() - 1).map(|value| value as f64));
+        for value in 1..points.len() - 1 {
+            let knot = cadmpeg_core::convert::f64_from_index(value)
+                .ok_or_else(|| ctx.refuse_codec_limit("iges copious knots", 0, 1))?;
+            knots.push(knot);
+        }
         knots.extend([parameter_end, parameter_end]);
         let start = positions[0];
         let end = positions[positions.len() - 1];

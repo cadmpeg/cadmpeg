@@ -98,10 +98,6 @@ struct SettingRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent serialized annotation scaling switches"
-)]
 struct AnnotationSettingsRecord {
     id: String,
     source_offset: u64,
@@ -144,14 +140,11 @@ struct GridDefaultsRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent serialized render switches"
-)]
 struct RenderSettingsRecord {
     id: String,
     source_offset: u64,
-    custom_image_size: bool,
+    #[serde(flatten)]
+    image_flags: RenderImageFlags,
     image_width_pixels: i32,
     image_height_pixels: i32,
     image_dpi: Option<f64>,
@@ -161,17 +154,12 @@ struct RenderSettingsRecord {
     background_color: [u8; 4],
     background_bottom_color: Option<[u8; 4]>,
     background_bitmap_path: String,
-    use_hidden_lights: bool,
-    depth_cue: bool,
-    flat_shade: bool,
-    render_backfaces: bool,
-    render_points: bool,
-    render_curves: bool,
-    render_isoparams: bool,
-    render_mesh_edges: bool,
-    render_annotations: bool,
-    scale_background_to_fit: bool,
-    transparent_background: bool,
+    #[serde(flatten)]
+    lighting_flags: RenderLightingFlags,
+    #[serde(flatten)]
+    surface_flags: RenderSurfaceFlags,
+    #[serde(flatten)]
+    detail_flags: RenderDetailFlags,
     antialias_style: i32,
     shadowmap_style: i32,
     shadowmap_size_pixels: [i32; 2],
@@ -182,6 +170,34 @@ struct RenderSettingsRecord {
     named_view: String,
     snapshot: String,
     force_viewport_aspect_ratio: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct RenderImageFlags {
+    custom_image_size: bool,
+    scale_background_to_fit: bool,
+    transparent_background: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct RenderLightingFlags {
+    use_hidden_lights: bool,
+    depth_cue: bool,
+    flat_shade: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct RenderSurfaceFlags {
+    render_backfaces: bool,
+    render_points: bool,
+    render_curves: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct RenderDetailFlags {
+    render_isoparams: bool,
+    render_mesh_edges: bool,
+    render_annotations: bool,
 }
 
 fn length(
@@ -438,7 +454,11 @@ fn render_settings(
             "Rhino render settings ID",
         )?,
         source_offset: source_offset as u64,
-        custom_image_size,
+        image_flags: RenderImageFlags {
+            custom_image_size,
+            scale_background_to_fit,
+            transparent_background,
+        },
         image_width_pixels,
         image_height_pixels,
         image_dpi,
@@ -448,17 +468,21 @@ fn render_settings(
         background_color,
         background_bottom_color,
         background_bitmap_path,
-        use_hidden_lights,
-        depth_cue,
-        flat_shade,
-        render_backfaces,
-        render_points,
-        render_curves,
-        render_isoparams,
-        render_mesh_edges,
-        render_annotations,
-        scale_background_to_fit,
-        transparent_background,
+        lighting_flags: RenderLightingFlags {
+            use_hidden_lights,
+            depth_cue,
+            flat_shade,
+        },
+        surface_flags: RenderSurfaceFlags {
+            render_backfaces,
+            render_points,
+            render_curves,
+        },
+        detail_flags: RenderDetailFlags {
+            render_isoparams,
+            render_mesh_edges,
+            render_annotations,
+        },
         antialias_style,
         shadowmap_style,
         shadowmap_size_pixels,
