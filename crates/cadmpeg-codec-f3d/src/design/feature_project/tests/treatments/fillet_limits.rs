@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{localized_fillet_scope, localized_fillet_operand_groups, localized_fillet_parameter, localized_fillet_owner};
+use super::{localized_fillet_scope, localized_fillet_group, localized_fillet_operand_groups, localized_fillet_parameter, localized_fillet_owner};
 use crate::design::decode::operands::decode_fillet_radius_groups as decode_fillet_radius_groups_charged;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
@@ -259,6 +259,29 @@ fn fillet_single_radius_scope_id_refuses_retained_limit() {
         }
     }
     panic!("no single radius edge scope ID refusal");
+}
+
+#[test]
+fn face_selection_native_fallback_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope = localized_fillet_scope();
+    let group = localized_fillet_group(101, 0, vec![201]);
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(crate::design::feature_project::project_face_selection(
+            Some(&ctx), &scope, &group, &[], &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d face selection native fallback") {
+            return;
+        }
+    }
+    panic!("no face selection native fallback refusal");
 }
 
 #[test]
