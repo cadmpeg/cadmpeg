@@ -372,7 +372,11 @@ pub(crate) fn transfer_parameters(
                             let mut output_dependencies =
                                 cadmpeg_ir::features::DistinctMembers::default();
                             for dependency in dependencies {
-                                output_dependencies.insert_for_decode(ctx, dependency, "catia_formula_output_dependencies")?;
+                                output_dependencies.insert_for_decode(
+                                    ctx,
+                                    dependency,
+                                    "catia_formula_output_dependencies",
+                                )?;
                             }
                             let output_name = ctx.copy_retained_text(
                                 &output_value.name.value,

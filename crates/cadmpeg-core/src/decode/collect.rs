@@ -1652,9 +1652,11 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = context(&arena, 0);
         let mut values = VecDeque::new();
-        assert!(matches!(ctx.push_front(&mut values, 1_u8, "test push front"),
+        assert!(
+            matches!(ctx.push_front(&mut values, 1_u8, "test push front"),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems));
+                if limit.dimension == ResourceDimension::CollectionItems)
+        );
         assert_eq!(values.capacity(), 0);
         assert!(values.is_empty());
     }
@@ -1664,7 +1666,8 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
         let mut values = VecDeque::from([2_u8]);
-        ctx.push_front(&mut values, 1, "test push front").expect("service profile");
+        ctx.push_front(&mut values, 1, "test push front")
+            .expect("service profile");
         assert_eq!(values, VecDeque::from([1, 2]));
     }
 

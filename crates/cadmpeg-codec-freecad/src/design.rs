@@ -480,7 +480,9 @@ pub(crate) fn transfer(
         };
         let mut dependency_members = DistinctMembers::default();
         dependency_members.reserve_for_decode(
-            ctx, dependencies.len(), "fcstd distinct feature dependencies",
+            ctx,
+            dependencies.len(),
+            "fcstd distinct feature dependencies",
         )?;
         dependency_members.extend(dependencies);
         ctx.charge_collection_items(
@@ -4087,12 +4089,16 @@ fn build_profiles(
                 )
             };
             unused.remove(&candidate.entity);
-            ctx.push_front(&mut chain, SketchEntityUse {
-                entity: entities[candidate.entity]
-                    .id()
-                    .try_clone_for_decode(ctx, "FCStd profile use identity")?,
-                reversed,
-            }, "FCStd profile uses")?;
+            ctx.push_front(
+                &mut chain,
+                SketchEntityUse {
+                    entity: entities[candidate.entity]
+                        .id()
+                        .try_clone_for_decode(ctx, "FCStd profile use identity")?,
+                    reversed,
+                },
+                "FCStd profile uses",
+            )?;
             head = next_head;
         }
         ctx.reserve_vec(&mut profiles, 1, "FCStd profile chains")?;

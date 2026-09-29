@@ -317,7 +317,9 @@ impl DesignFeatureTransfer {
         for feature in &mut ir.model.features {
             if let Some(dependencies) = dependencies_by_feature.remove(&feature.id) {
                 feature.dependencies.reserve_for_decode(
-                    ctx, dependencies.len(), "catia_feature_dependency_values",
+                    ctx,
+                    dependencies.len(),
+                    "catia_feature_dependency_values",
                 )?;
                 feature.dependencies.extend(dependencies);
             }
