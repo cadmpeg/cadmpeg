@@ -8507,11 +8507,14 @@ fn project_replace_face(
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let [replacement_group, target_group] = groups.as_slice() else {
+        });
+    let (Some(first), Some(second), None) = (groups.next(), groups.next(), groups.next()) else {
         return None;
+    };
+    let (replacement_group, target_group) = if first.scope_reference_ordinal <= second.scope_reference_ordinal {
+        (first, second)
+    } else {
+        (second, first)
     };
     let references = scope
         .reference_members()
