@@ -34,6 +34,7 @@ fn plane_index(payload: &[u8]) -> CompactReferencePlaneIndex {
 use crate::resolved_features::holes::project_hole_topology_axes;
 use crate::resolved_features::holes::project_topological_hole_constructions;
 use crate::resolved_features::holes::seeded_drilled_bore_candidates;
+use crate::resolved_features::holes::unclaimed_seeded_hole_candidates;
 use crate::resolved_features::holes::HoleTopology;
 
 #[test]
@@ -1205,7 +1206,10 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
     updated_vertical_evaluation.set_definition(updated_vertical_definition);
     let mut features = [horizontal, vertical, other];
 
-    let candidates = seeded_drilled_bore_candidates(&features, &[0, 1], 4.0, &topology)
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::service()).unwrap();
+    let candidates = seeded_drilled_bore_candidates(&ctx, &features, &[0, 1], 4.0, &topology)
+        .unwrap()
         .expect("complete competing ownership");
 
     assert_eq!(candidates.len(), 3);
@@ -1221,7 +1225,27 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         };
         *placements = None;
     });
-    assert!(seeded_drilled_bore_candidates(&features, &[0, 1], 4.0, &topology).is_none());
+    assert!(seeded_drilled_bore_candidates(&ctx, &features, &[0, 1], 4.0, &topology)
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn unclaimed_seeded_bore_axes_refuse_collection_growth() {
+    let placement = HolePlacement::Axis {
+        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
+        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+            .unwrap(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = unclaimed_seeded_hole_candidates(&ctx, &[model_hole()], &[0], 4.0, vec![placement])
+        .expect_err("one available bore axis requires collection admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT unclaimed bore axes"));
 }
 
 #[test]

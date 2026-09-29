@@ -2548,17 +2548,23 @@ fn expand_seeded_drilled_hole_topology_axes(
         {
             continue;
         }
-        let candidates = drilled_hole_topology_candidates(
+        let primary = drilled_hole_topology_candidates(
             diameter,
             length,
             drill_point_angle,
             cylinders,
             topology.surfaces,
-        )
-        .and_then(|candidates| {
-            unclaimed_seeded_hole_candidates(features, &siblings, diameter, candidates)
-        })
-        .or_else(|| seeded_drilled_bore_candidates(features, &siblings, diameter, topology));
+        );
+        let primary = primary
+            .map(|candidates| {
+                unclaimed_seeded_hole_candidates(ctx, features, &siblings, diameter, candidates)
+            })
+            .transpose()?
+            .flatten();
+        let candidates = match primary {
+            Some(candidates) => Some(candidates),
+            None => seeded_drilled_bore_candidates(ctx, features, &siblings, diameter, topology)?,
+        };
         let Some(candidates) = candidates else {
             continue;
         };
@@ -2568,55 +2574,69 @@ fn expand_seeded_drilled_hole_topology_axes(
 }
 
 fn seeded_drilled_bore_candidates(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     siblings: &[usize],
     diameter: f64,
     topology: &HoleTopology<'_>,
-) -> Option<Vec<HolePlacement>> {
-    let candidates = bore_carrier_placements(diameter * 0.5, topology)?;
-    unclaimed_seeded_hole_candidates(features, siblings, diameter, candidates)
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
+    let Some(candidates) = bore_carrier_placements(diameter * 0.5, topology) else {
+        return Ok(None);
+    };
+    unclaimed_seeded_hole_candidates(ctx, features, siblings, diameter, candidates)
 }
 
 fn unclaimed_seeded_hole_candidates(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     siblings: &[usize],
     diameter: f64,
     candidates: Vec<HolePlacement>,
-) -> Option<Vec<HolePlacement>> {
-    let sibling_set = siblings.iter().copied().collect::<HashSet<_>>();
-    let same_diameter = features
-        .iter()
-        .enumerate()
-        .filter(|(_, feature)| feature.suppressed != Some(true))
-        .filter_map(|(index, feature)| match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Hole {
-                shape, placements, ..
-            }) => match (&shape.diameter(),) {
-                (Some(candidate),) if candidate.get().to_bits() == diameter.to_bits() => {
-                    Some((index, placements))
-                }
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if same_diameter
-        .iter()
-        .any(|(index, placements)| !sibling_set.contains(index) && placements.is_none())
-    {
-        return None;
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
+    const OPERATION: &str = "filter SLDPRT seeded drilled bore candidates";
+    let mut claimed = HashSet::new();
+    for (index, feature) in features.iter().enumerate() {
+        ctx.charge_work(u64_from_index(siblings.len()), OPERATION)?;
+        if feature.suppressed == Some(true) || siblings.contains(&index) {
+            continue;
+        }
+        let FeatureDefinition::Operation(FeatureOperation::Hole {
+            shape, placements, ..
+        }) = feature.evaluation.definition() else {
+            continue;
+        };
+        if !shape
+            .diameter()
+            .is_some_and(|candidate| candidate.get().to_bits() == diameter.to_bits())
+        {
+            continue;
+        }
+        let Some(placements) = placements.as_deref() else {
+            return Ok(None);
+        };
+        for placement in placements {
+            ctx.charge_work(1, OPERATION)?;
+            let Some(key) = hole_axis_key(placement) else {
+                return Ok(None);
+            };
+            if !claimed.contains(&key) {
+                ctx.charge_collection_items(1, "index SLDPRT claimed bore axes")?;
+                claimed.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT claimed bore axes", u64::MAX - 1, u64::MAX)
+                })?;
+                claimed.insert(key);
+            }
+        }
     }
-    let claimed = same_diameter
-        .iter()
-        .filter(|(index, _)| !sibling_set.contains(index))
-        .flat_map(|(_, placements)| placements.iter().flatten())
-        .map(hole_axis_key)
-        .collect::<Option<HashSet<_>>>()?;
-    let candidates = candidates
-        .into_iter()
-        .filter(|placement| hole_axis_key(placement).is_some_and(|key| !claimed.contains(&key)))
-        .collect::<Vec<_>>();
-    (!candidates.is_empty()).then_some(candidates)
+    let mut available = Vec::new();
+    for placement in candidates {
+        ctx.charge_work(1, OPERATION)?;
+        if hole_axis_key(&placement).is_some_and(|key| !claimed.contains(&key)) {
+            ctx.reserve_collection_vec(&mut available, 1, "collect SLDPRT unclaimed bore axes")?;
+            available.push(placement);
+        }
+    }
+    Ok((!available.is_empty()).then_some(available))
 }
 
 fn partition_seeded_hole_axes(
