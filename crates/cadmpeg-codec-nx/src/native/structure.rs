@@ -326,16 +326,7 @@ pub(super) fn fast_load_component_object_groups(
         let Some(members) = UuidGroupMembers::new_charged(ctx, uses, values)? else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX fast-load object groups")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<FastLoadComponentObjectGroup>(),
-            ),
-            "retain NX fast-load object groups",
-        )?;
-        groups
-            .try_reserve_exact(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load object groups", 0, 1))?;
+        ctx.reserve_retained_vec(&mut groups, 1, "NX fast-load object groups")?;
         let uuid_text =
             ctx.copy_retained_text(uuid.uuid.as_str(), "retain NX fast-load group UUID")?;
         groups.push(FastLoadComponentObjectGroup {

@@ -13,16 +13,7 @@ fn charged_vec<T>(
     count: usize,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
-    let count_u64 = u64_from_index(count);
-    ctx.charge_collection_items(count_u64, operation)?;
-    let bytes = count_u64
-        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut values = Vec::new();
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    let values = ctx.retained_vec(count, operation)?;
     Ok(values)
 }
 

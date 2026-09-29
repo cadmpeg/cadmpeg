@@ -639,13 +639,7 @@ fn collect_graph_records<T>(
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
     for record in records {
-        ctx.charge_collection_items(1, operation)?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
-            operation,
-        )?;
-        out.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.reserve_retained_vec(&mut out, 1, operation)?;
         out.push(record);
     }
     Ok(out)
@@ -728,13 +722,7 @@ pub(crate) fn intersection_data_curves(
         }
         ctx.charge_collection_items(1, "NX intersection identities")?;
         seen.insert(curve.xmt);
-        ctx.charge_collection_items(1, "NX intersection data curves")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<CompositeCurve>()),
-            "NX intersection data curves",
-        )?;
-        out.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("NX intersection data curves", 0, 1))?;
+        ctx.reserve_retained_vec(&mut out, 1, "NX intersection data curves")?;
         out.push(curve);
     }
     Ok(out)
@@ -1548,14 +1536,7 @@ impl Graph {
                 .fin
                 .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
             let ring = self.fin_ring(ctx, current, first_fin)?;
-            ctx.charge_collection_items(1, "NX face loop rings")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Vec<u32>)>()),
-                "NX face loop rings",
-            )?;
-            rings
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX face loop rings", 0, 1))?;
+            ctx.reserve_retained_vec(&mut rings, 1, "NX face loop rings")?;
             rings.push((current, ring));
             loop_xmt = fields.next_loop;
         }
@@ -1592,13 +1573,7 @@ impl Graph {
                 std::mem::size_of::<u32>(),
             ))?;
             seen.insert(current);
-            ctx.charge_collection_items(1, "NX FIN ring entries")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
-                "NX FIN ring entries",
-            )?;
-            ring.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX FIN ring entries", 0, 1))?;
+            ctx.reserve_retained_vec(&mut ring, 1, "NX FIN ring entries")?;
             ring.push(current);
             let invalid_fin = FaceLoopFailure::InvalidFinRing {
                 loop_xmt,
@@ -1714,17 +1689,7 @@ impl Graph {
             return Ok(None);
         };
         let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-        ctx.charge_collection_items(count_u64, "NX shell face identities")?;
-        let bytes = count_u64
-            .checked_mul(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<u32>(),
-            ))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX shell face identities", 0, count_u64))?;
-        ctx.charge_retained(bytes, "NX shell face identities")?;
-        let mut faces = Vec::new();
-        faces
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit("NX shell face identities", 0, count_u64))?;
+        let mut faces = ctx.retained_vec(count, "NX shell face identities")?;
         let Some(fields) = shell.shell_fields() else {
             return Ok(None);
         };

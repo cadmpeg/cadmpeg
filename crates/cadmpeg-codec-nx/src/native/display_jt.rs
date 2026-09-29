@@ -2337,14 +2337,7 @@ fn parse_jt_element_sequence<'a>(
         let Some(body) = element.get(21..) else {
             return Ok(None);
         };
-        ctx.charge_collection_items(1, "store DisplayJT element")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParsedJtElement<'_>>()),
-            "retain DisplayJT element index",
-        )?;
-        elements
-            .try_reserve_exact(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT element index", 0, 1))?;
+        ctx.reserve_retained_vec(&mut elements, 1, "store DisplayJT element")?;
         elements.push(ParsedJtElement {
             offset: cursor,
             object_type_id,
@@ -3221,13 +3214,7 @@ pub(super) fn display_jt_indices(
             .ok())
         })()?;
         if let Some(index) = parsed {
-            ctx.charge_collection_items(1, "admit DisplayJT index")?;
-            let index_size = u64::try_from(std::mem::size_of::<DisplayJtIndex>())
-                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT index", 0, u64::MAX))?;
-            ctx.charge_retained(index_size, "retain DisplayJT index")?;
-            indices
-                .try_reserve_exact(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT indices", 0, 1))?;
+            ctx.reserve_retained_vec(&mut indices, 1, "admit DisplayJT index")?;
             indices.push(index);
         }
     }
@@ -3326,21 +3313,7 @@ pub(super) fn display_jt_documents(
             .rsplit_once('#')
             .map_or(row.id.as_str(), |(_, key)| key);
         ctx.charge_work(u64::from(toc_count), "scan DisplayJT table of contents")?;
-        ctx.charge_collection_items(u64::from(toc_count), "admit DisplayJT toc entries")?;
-        let entry_size = u64::try_from(std::mem::size_of::<DisplayJtTocEntry>())
-            .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT toc entries", 0, u64::MAX))?;
-        ctx.charge_retained(
-            u64::from(toc_count)
-                .checked_mul(entry_size)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("retain DisplayJT toc entries", 0, u64::MAX)
-                })?,
-            "retain DisplayJT toc entries",
-        )?;
-        let mut toc_entries = Vec::new();
-        toc_entries
-            .try_reserve_exact(toc_count_usize)
-            .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT toc entries", 0, 1))?;
+        let mut toc_entries = ctx.retained_vec(toc_count_usize, "admit DisplayJT toc entries")?;
         for ordinal in 0..toc_count_usize {
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
             let Some(bytes) = View::over_retained(&document[offset..offset + jt_toc::LEN])
@@ -3394,13 +3367,7 @@ pub(super) fn display_jt_documents(
             cadmpeg_core::decode::u64_from_index(row.id.len()),
             "retain DisplayJT document index reference",
         )?;
-        ctx.charge_collection_items(1, "admit DisplayJT document")?;
-        let document_size = u64::try_from(std::mem::size_of::<DisplayJtDocument>())
-            .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT document", 0, u64::MAX))?;
-        ctx.charge_retained(document_size, "retain DisplayJT document")?;
-        documents
-            .try_reserve_exact(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT documents", 0, 1))?;
+        ctx.reserve_retained_vec(&mut documents, 1, "admit DisplayJT document")?;
         documents.push(DisplayJtDocument {
             id: format!("nx:display-jt:document#{document_key}"),
             index_row: row.id.clone(),
@@ -3740,23 +3707,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                 TopologyPacketRole::SplitFaceSymbols,
                 TopologyPacketRole::SplitFacePositions,
             ]);
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(role_count),
-            "nx JT topology packets",
-        )?;
-        let packet_bytes = role_count
-            .checked_mul(std::mem::size_of::<DisplayJtTopologyPacket>())
-            .and_then(|bytes| u64::try_from(bytes).ok())
-            .ok_or_else(|| ctx.refuse_codec_limit("nx JT topology packets", 0, u64::MAX))?;
-        ctx.charge_retained(packet_bytes, "nx JT topology packets")?;
-        let mut packets = Vec::new();
-        packets.try_reserve_exact(role_count).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx JT topology packets",
-                0,
-                cadmpeg_core::decode::u64_from_index(role_count),
-            )
-        })?;
+        let mut packets = ctx.retained_vec(role_count, "nx JT topology packets")?;
         for role in roles {
             let Some(remaining) = representation.get(cursor..) else {
                 return Ok(DisplayJtTopologyArrays::default());

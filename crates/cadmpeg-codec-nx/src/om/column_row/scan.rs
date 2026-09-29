@@ -13,10 +13,7 @@ fn push_row<T>(
     row: T,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
-    rows.try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.reserve_retained_vec(rows, 1, operation)?;
     rows.push(row);
     Ok(())
 }

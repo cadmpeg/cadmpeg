@@ -229,14 +229,7 @@ pub(super) fn om_record_areas(
             .map_err(|_| ctx.refuse_codec_limit("allocate NX OM record area id", 0, 1))?;
         write!(&mut id, "{prefix}{section_key}-{}", header.offset)
             .map_err(|_| ctx.refuse_codec_limit("write NX OM record area id", 0, 1))?;
-        ctx.charge_collection_items(1, "NX OM record areas")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmRecordArea>()),
-            "retain NX OM record area",
-        )?;
-        areas
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX OM record areas", 0, 1))?;
+        ctx.reserve_retained_vec(&mut areas, 1, "NX OM record areas")?;
         areas.push(OmRecordArea {
             id,
             section_link: link.id,
@@ -337,13 +330,7 @@ pub(super) fn audit_trail_rows(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX audit trail rows")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmAuditTrailRow>()),
-                "retain NX audit trail row",
-            )?;
-            out.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX audit trail rows", 0, 1))?;
+            ctx.reserve_retained_vec(&mut out, 1, "NX audit trail rows")?;
             out.push(result);
         }
     }
@@ -389,11 +376,7 @@ pub(super) fn operation_state_counters(
             let Some(frame) = row.into_absolute(entry_offset) else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX operation state counters")?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmOperationStateCounter>()), "retain NX operation state counter")?;
-            out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX operation state counters", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut out, 1, "NX operation state counters")?;
             out.push(OmOperationStateCounter {
                 id: retained_om_padded_state_id(
                     ctx,
@@ -451,16 +434,7 @@ pub(super) fn operation_state_journal_groups(
             let Some(frame) = group.into_absolute(ctx, entry_offset)? else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX operation state journal groups")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    OmOperationStateJournalGroup,
-                >()),
-                "retain NX operation state journal group",
-            )?;
-            out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX operation state journal groups", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut out, 1, "NX operation state journal groups")?;
             out.push(OmOperationStateJournalGroup {
                 id: retained_om_padded_state_id(
                     ctx,
@@ -526,14 +500,7 @@ pub(super) fn operation_state_groups(
             table_end_offset,
             frames,
         )?;
-        ctx.charge_collection_items(1, "NX roll-forward state tables")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmRollForwardStateTable>()),
-            "retain NX roll-forward state tables",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward state tables", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX roll-forward state tables")?;
         output.push(table);
     }
     Ok(output)
@@ -579,11 +546,7 @@ pub(super) fn operation_state_messages(
                 .checked_add(cadmpeg_core::decode::u64_from_index(message.offset()))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX state message source offset", 0, 1))?;
             let body = message.body().into_owned(ctx)?;
-            ctx.charge_collection_items(1, "NX operation state messages")?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmOperationStateMessage>()), "retain NX operation state message")?;
-            output.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX operation state messages", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX operation state messages")?;
             output.push(OmOperationStateMessage {
                 id: retained_om_padded_state_id(
                     ctx,
@@ -674,14 +637,7 @@ pub(super) fn operation_state_statuses(
             ) else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX operation state statuses")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmOperationStateStatus>()),
-                "retain NX operation state status",
-            )?;
-            output.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX operation state statuses", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX operation state statuses")?;
             output.push(record);
         }
     }
@@ -740,16 +696,7 @@ pub(super) fn operation_state_slot_lanes(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX operation state slot lanes")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<OmOperationStateSlotLane>(),
-                ),
-                "retain NX operation state slot lane",
-            )?;
-            output.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX operation state slot lanes", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX operation state slot lanes")?;
             output.push(OmOperationStateSlotLane {
                 id: retained_om_padded_state_id(
                     ctx,
@@ -3246,11 +3193,7 @@ fn parse_material_texture_catalog(
         let source_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
             .ok_or_else(|| ctx.refuse_codec_limit("NX material catalog source offset", 0, 1))?;
-        ctx.charge_collection_items(1, "NX material catalog entries")?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<MaterialTextureCatalogEntry>()), "retain NX material catalog entry")?;
-        catalog
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX material catalog entries", 0, 1))?;
+        ctx.reserve_retained_vec(&mut catalog, 1, "NX material catalog entries")?;
         catalog.push(MaterialTextureCatalogEntry {
             id: retained_om_index_id(
                 ctx,
@@ -3379,21 +3322,7 @@ pub(super) fn external_reference_records(
 ) -> Result<Vec<ExternalReferenceRecord>, cadmpeg_core::CodecError> {
     let parsed = container.external_reference_records(ctx)?;
     let count = parsed.len();
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count_u64, "nx native external reference records")?;
-    let bytes = count
-        .checked_mul(std::mem::size_of::<ExternalReferenceRecord>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("nx native external reference records", 0, count_u64)
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx native external reference records",
-    )?;
-    let mut output = Vec::new();
-    output.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit("nx native external reference records", 0, count_u64)
-    })?;
+    let mut output = ctx.retained_vec(count, "nx native external reference records")?;
     for (entry, record) in parsed {
         let id = external_reference_record_id(
             ctx,
@@ -3487,16 +3416,7 @@ pub(super) fn external_reference_indexed_records(
         let Some(bytes) = container.bounded_entry_bytes(source_offset, byte_len) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx native external reference indexed records")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<ExternalReferenceIndexedRecord>(),
-            ),
-            "nx native external reference indexed records",
-        )?;
-        output.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx native external reference indexed records", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut output, 1, "nx native external reference indexed records")?;
         let id = external_reference_record_id(
             ctx,
             "nx:external-reference-indexed-record:",
@@ -3543,16 +3463,7 @@ pub(super) fn external_reference_empty_records(
         let Some(closing_marker) = crate::container::parse_extref_empty_record(bytes) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx native external reference empty records")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<ExternalReferenceEmptyRecord>(),
-            ),
-            "nx native external reference empty records",
-        )?;
-        output.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx native external reference empty records", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut output, 1, "nx native external reference empty records")?;
         let replacement = record.id.split_once("indexed-record");
         let id_len = if let Some((before, after)) = replacement {
             before
@@ -3611,16 +3522,7 @@ pub(super) fn external_reference_tail_reference_pairs(
                 .into_iter()
                 .enumerate()
         {
-            ctx.charge_collection_items(1, "nx native external reference tail pairs")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    ExternalReferenceTailReferencePair,
-                >()),
-                "nx native external reference tail pairs",
-            )?;
-            out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx native external reference tail pairs", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut out, 1, "nx native external reference tail pairs")?;
             let record_key = record
                 .id
                 .split_once('#')
@@ -3714,16 +3616,7 @@ pub(super) fn external_reference_record_string_uses(
             .into_iter()
             .zip([first, second, third, fourth])
         {
-            ctx.charge_collection_items(1, "nx native external reference string uses")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    ExternalReferenceRecordStringUse,
-                >()),
-                "nx native external reference string uses",
-            )?;
-            output.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx native external reference string uses", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut output, 1, "nx native external reference string uses")?;
             let record_key = record
                 .id
                 .split_once('#')
@@ -3855,16 +3748,7 @@ pub(super) fn external_reference_record_children(
         if !suffix.eq_ignore_ascii_case(".prt") || directory.path.is_empty() {
             continue;
         }
-        ctx.charge_collection_items(1, "nx native external reference children")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<ExternalReferenceRecordChild>(),
-            ),
-            "nx native external reference children",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx native external reference children", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "nx native external reference children")?;
         let id_len =
             record.id.len().checked_add(":child".len()).ok_or_else(|| {
                 ctx.refuse_codec_limit("nx native external reference child id", 0, 1)
@@ -3963,19 +3847,7 @@ pub(super) fn configurations(
     if node_count == 0 || active_count > 1 {
         return Ok(Vec::new());
     }
-    let count_u64 = cadmpeg_core::decode::u64_from_index(node_count);
-    ctx.charge_collection_items(count_u64, "nx arrangement configurations")?;
-    let record_bytes = node_count
-        .checked_mul(std::mem::size_of::<Configuration>())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx arrangement configurations", 0, count_u64))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(record_bytes),
-        "nx arrangement configurations",
-    )?;
-    let mut output = Vec::new();
-    output
-        .try_reserve_exact(node_count)
-        .map_err(|_| ctx.refuse_codec_limit("nx arrangement configurations", 0, count_u64))?;
+    let mut output = ctx.retained_vec(node_count, "nx arrangement configurations")?;
     for (ordinal, node) in root
         .children()
         .filter(roxmltree::Node::is_element)
@@ -4036,15 +3908,7 @@ pub(super) fn configuration_attribute_uses(
     if configuration.name != attribute.value {
         return Ok(Vec::new());
     }
-    ctx.charge_collection_items(1, "nx active configuration attribute uses")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ConfigurationAttributeUse>()),
-        "nx active configuration attribute uses",
-    )?;
-    let mut output = Vec::new();
-    output
-        .try_reserve_exact(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx active configuration attribute uses", 0, 1))?;
+    let mut output = ctx.retained_vec(1, "nx active configuration attribute uses")?;
     output.push(ConfigurationAttributeUse {
         id: ctx.copy_retained_text("nx:arrangements:active-attribute-use#0", "nx active configuration attribute use id")?,
         configuration: ctx.copy_retained_text(&configuration.id, "nx active configuration link")?,
@@ -4135,19 +3999,7 @@ fn parse_part_attributes(
             return Ok(None);
         }
     }
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count_u64, "nx native part attributes")?;
-    let record_bytes = count
-        .checked_mul(std::mem::size_of::<PartAttribute>())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx native part attributes", 0, count_u64))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(record_bytes),
-        "nx native part attributes",
-    )?;
-    let mut output = Vec::new();
-    output
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("nx native part attributes", 0, count_u64))?;
+    let mut output = ctx.retained_vec(count, "nx native part attributes")?;
     for (ordinal, node) in root
         .children()
         .filter(roxmltree::Node::is_element)
@@ -4532,14 +4384,7 @@ pub(super) fn object_records(
                 .map_err(|_| ctx.refuse_codec_limit("NX object record section ordinal", 0, 1))?;
             let record_ordinal_u32 = u32::try_from(record_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX object record ordinal", 0, 1))?;
-            ctx.charge_collection_items(1, "NX object records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectRecord>()),
-                "NX object records",
-            )?;
-            output
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX object records", 0, 1))?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX object records")?;
             output.push(ObjectRecord {
                 id: retained_om_index_id(
                     ctx,
@@ -4789,7 +4634,6 @@ pub(super) fn data_blocks(
                 .ok_or_else(|| ctx.refuse_codec_limit("count NX data blocks", 0, 1))?;
         }
     }
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     let map_bytes = count
         .checked_mul(std::mem::size_of::<([u8; 32], usize)>() * 4)
         .ok_or_else(|| ctx.refuse_codec_limit("reserve NX data block identities", 0, 1))?;
@@ -4816,18 +4660,7 @@ pub(super) fn data_blocks(
         }
     }
 
-    ctx.charge_collection_items(count_u64, "NX data block records")?;
-    let output_bytes = count
-        .checked_mul(std::mem::size_of::<DataBlock>())
-        .ok_or_else(|| ctx.refuse_codec_limit("retain NX data block records", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(output_bytes),
-        "retain NX data block records",
-    )?;
-    let mut output = Vec::new();
-    output
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX data block records", 0, count_u64))?;
+    let mut output = ctx.retained_vec(count, "NX data block records")?;
     for (section_ordinal, (entry, section)) in sections.iter().enumerate() {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
@@ -4993,14 +4826,7 @@ pub(super) fn data_block_control_forms(
             .checked_add(cadmpeg_core::decode::u64_from_index(control.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX control form source offset", 0, 1))?;
         ctx.charge_entities(1, "NX data block control form")?;
-        ctx.charge_collection_items(1, "NX data block control forms")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockControlForm>()),
-            "retain NX data block control form",
-        )?;
-        forms
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX data block control forms", 0, 1))?;
+        ctx.reserve_retained_vec(&mut forms, 1, "NX data block control forms")?;
         forms.push(DataBlockControlForm {
             id,
             data_block,
@@ -5193,14 +5019,7 @@ pub(super) fn data_block_control_values(
             )?;
             let block_reference = ctx.copy_retained_text(&data_block.id, "retain NX control value block reference")?;
             ctx.charge_entities(1, "NX data block control value")?;
-            ctx.charge_collection_items(1, "NX data block control values")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockControlValue>()),
-                "retain NX data block control value",
-            )?;
-            rows.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX data block control values", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut rows, 1, "NX data block control values")?;
             rows.push(DataBlockControlValue {
                 id,
                 data_block: block_reference,
@@ -5294,16 +5113,7 @@ pub(super) fn data_block_control_class_references(
             let definition = usize::try_from(class_ordinal)
                 .ok()
                 .and_then(|ordinal| registry.values().nth(ordinal));
-            ctx.charge_collection_items(1, "NX control class references")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    DataBlockControlClassReference,
-                >()),
-                "retain NX control class references",
-            )?;
-            rows.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX control class references", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut rows, 1, "NX control class references")?;
             let class = definition
                 .map(|definition| -> Result<_, CodecError> {
                     Ok(DataBlockControlClassRef {
@@ -5422,16 +5232,7 @@ pub(super) fn data_block_control_index_values(
                 None
             };
             ctx.charge_entities(1, "NX data block control index value")?;
-            ctx.charge_collection_items(1, "NX data block control index values")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<DataBlockControlIndexValue>(),
-                ),
-                "retain NX data block control index value",
-            )?;
-            rows.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX data block control index values", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut rows, 1, "NX data block control index values")?;
             rows.push(DataBlockControlIndexValue {
                 id,
                 data_block: block_reference,
@@ -5524,16 +5325,7 @@ pub(super) fn data_block_control_references(
             )?;
             let block_reference = ctx.copy_retained_text(&data_block.id, "retain NX control reference block reference")?;
             ctx.charge_entities(1, "NX data block control reference")?;
-            ctx.charge_collection_items(1, "NX data block control references")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<DataBlockControlReference>(),
-                ),
-                "retain NX data block control reference",
-            )?;
-            output.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX data block control references", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX data block control references")?;
             output.push(DataBlockControlReference {
                 id,
                 data_block: block_reference,
@@ -5625,16 +5417,7 @@ pub(super) fn data_block_control_handle_pairs(
                 let first_reference = ctx.copy_retained_text(&first.id, "retain NX control handle first reference")?;
                 let second_reference = ctx.copy_retained_text(&second.id, "retain NX control handle second reference")?;
                 ctx.charge_entities(1, "NX control handle pair")?;
-                ctx.charge_collection_items(1, "NX control handle pairs")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        DataBlockControlHandlePair,
-                    >()),
-                    "retain NX control handle pair",
-                )?;
-                pairs.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX control handle pairs", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut pairs, 1, "NX control handle pairs")?;
                 pairs.push(DataBlockControlHandlePair {
                     id,
                     data_block,
@@ -5779,14 +5562,7 @@ pub(super) fn data_block_references(
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit("NX data block reference source offset", 0, 1)
                     })?;
-                ctx.charge_collection_items(1, "NX data block references")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockReference>()),
-                    "retain NX data block reference",
-                )?;
-                output.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX data block reference", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut output, 1, "NX data block references")?;
                 output.push(DataBlockReference {
                     id: data_block_reference_id(ctx, section_ordinal, block_ordinal, ordinal)?,
                     data_block: retained_om_index_id(
@@ -5924,14 +5700,7 @@ pub(super) fn part_color_tables(
         let source_offset = source_base
             .checked_add(cadmpeg_core::decode::u64_from_index(table.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX part color table offset", 0, 1))?;
-        ctx.charge_collection_items(1, "NX part color tables")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<PartColorTable>()),
-            "retain NX part color table",
-        )?;
-        tables
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX part color tables", 0, 1))?;
+        ctx.reserve_retained_vec(&mut tables, 1, "NX part color tables")?;
         definitions.try_reserve(PALETTE_SIZE).map_err(|_| {
             ctx.refuse_codec_limit("allocate NX part color definitions", 0, definition_count)
         })?;
@@ -6083,26 +5852,12 @@ pub(super) fn data_block_column_index_tables(
         }
         let mut target_ids = Vec::new();
         for row in &targets {
-            ctx.charge_collection_items(1, "NX column index target rows")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "retain NX column index target rows",
-            )?;
-            target_ids.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX column index target rows", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut target_ids, 1, "NX column index target rows")?;
             target_ids.push(ctx.copy_retained_text(&row.id, "NX column index target row id")?);
         }
         let mut suffix_ids = Vec::new();
         for row in suffix {
-            ctx.charge_collection_items(1, "NX column index linked rows")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "retain NX column index linked rows",
-            )?;
-            suffix_ids.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX column index linked rows", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut suffix_ids, 1, "NX column index linked rows")?;
             suffix_ids.push(ctx.copy_retained_text(&row.id, "NX column index linked row id")?);
         }
         let Ok(rows) = ColumnIndexRows::new(
@@ -6112,14 +5867,7 @@ pub(super) fn data_block_column_index_tables(
         ) else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX data block column index tables")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockColumnIndexTable>()),
-            "retain NX data block column index table",
-        )?;
-        output.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX data block column index table", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX data block column index tables")?;
         output.push(DataBlockColumnIndexTable {
             id: retained_om_number_id(
                 ctx,
@@ -6169,14 +5917,7 @@ pub(super) fn store_headers(
         let source_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(version.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX store header source offset", 0, 1))?;
-        ctx.charge_collection_items(1, "NX store headers")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<StoreHeader>()),
-            "retain NX store header",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX store headers", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX store headers")?;
         let header = OffsetStoreHeader {
             id: retained_om_number_id(
                 ctx,
@@ -6229,14 +5970,7 @@ pub(super) fn string_values(
                     ctx.copy_retained_text(value.value.as_str(), "NX string value text")?;
                 let text = PrintableString::new(text)
                     .map_err(|_| ctx.refuse_codec_limit("validate NX string value", 0, 1))?;
-                ctx.charge_collection_items(1, "NX native string values")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<StringValue>()),
-                    "retain NX native string value",
-                )?;
-                output.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX native string values", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut output, 1, "NX native string values")?;
                 output.push(StringValue {
                     id: retained_om_three_number_id(
                         ctx,
@@ -6310,14 +6044,7 @@ pub(super) fn object_references(
                         }
                     }
                 };
-                ctx.charge_collection_items(1, "NX native object references")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectReference>()),
-                    "retain NX native object reference",
-                )?;
-                output.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX native object references", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut output, 1, "NX native object references")?;
                 output.push(ObjectReference {
                     id: retained_om_three_number_id(
                         ctx,
@@ -6388,16 +6115,7 @@ pub(super) fn object_record_handle_pairs(
             }
             let run = &record_references[start..=at];
             if let [(first, first_handle), (second, second_handle)] = run {
-                ctx.charge_collection_items(1, "NX record handle pairs")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<ObjectRecordHandlePair>(),
-                    ),
-                    "retain NX record handle pair",
-                )?;
-                pairs
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("allocate NX record handle pairs", 0, 1))?;
+                ctx.reserve_retained_vec(&mut pairs, 1, "NX record handle pairs")?;
                 pairs.push(ObjectRecordHandlePair {
                     id: retained_om_number_id(
                         ctx,
@@ -6537,14 +6255,7 @@ pub(super) fn persistent_handles(
     let mut handles = Vec::new();
     for (value, group) in groups {
         use std::fmt::Write;
-        ctx.charge_collection_items(1, "NX persistent handles")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<PersistentHandle>()),
-            "retain NX persistent handle",
-        )?;
-        handles
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX persistent handles", 0, 1))?;
+        ctx.reserve_retained_vec(&mut handles, 1, "NX persistent handles")?;
         let prefix = "nx:om-persistent-handles:handle#";
         let id_length = prefix
             .len()
@@ -6615,14 +6326,7 @@ pub(super) fn expression_declarations(
                 .literal
                 .map(|literal| ctx.copy_retained_text(literal, "NX declaration literal"))
                 .transpose()?;
-            ctx.charge_collection_items(1, "NX expression declarations")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ExpressionDeclaration>()),
-                "retain NX expression declaration",
-            )?;
-            declarations
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX expression declarations", 0, 1))?;
+            ctx.reserve_retained_vec(&mut declarations, 1, "NX expression declarations")?;
             declarations.push(ExpressionDeclaration {
                 id: retained_om_index_id(
                     ctx,
@@ -6772,14 +6476,7 @@ pub(super) fn expressions(
             let source_offset = entry_offset
                 .checked_add(cadmpeg_core::decode::u64_from_index(expression.offset))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX expression source offset", 0, 1))?;
-            ctx.charge_collection_items(1, "NX native expressions")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Expression>()),
-                "retain NX native expression",
-            )?;
-            expressions
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX native expressions", 0, 1))?;
+            ctx.reserve_retained_vec(&mut expressions, 1, "NX native expressions")?;
             expressions.push(Expression {
                 id: retained_om_index_id(
                     ctx,

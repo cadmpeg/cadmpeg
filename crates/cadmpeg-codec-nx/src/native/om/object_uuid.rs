@@ -180,14 +180,7 @@ pub(in crate::native) fn object_uuid_values(
                 {
                     continue;
                 }
-                ctx.charge_collection_items(1, "NX OM UUID records")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                    "retain NX OM UUID records",
-                )?;
-                record_ids
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("allocate NX OM UUID records", 0, 1))?;
+                ctx.reserve_retained_vec(&mut record_ids, 1, "NX OM UUID records")?;
                 record_ids.push(uuid_record_id(ctx, section_ordinal, record_ordinal)?);
             }
             let Some(records) = NonEmpty::from_vec(record_ids) else {
@@ -198,14 +191,7 @@ pub(in crate::native) fn object_uuid_values(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX OM UUID values")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectUuidValue>()),
-                "retain NX OM UUID values",
-            )?;
-            values
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX OM UUID values", 0, 1))?;
+            ctx.reserve_retained_vec(&mut values, 1, "NX OM UUID values")?;
             let id = uuid_value_id(ctx, section_ordinal, value.offset)?;
             let uuid = crate::canonical_uuid::CanonicalUuid::new(retained_text(
                 ctx,

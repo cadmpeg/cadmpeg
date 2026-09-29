@@ -3046,18 +3046,7 @@ fn materialize_attdef_list(
     let count = usize::try_from(shape.slot_count).map_err(|_| {
         ctx.refuse_codec_limit("NX ATTDEF references", 0, u64::from(shape.slot_count))
     })?;
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count_u64, "NX ATTDEF references")?;
-    let bytes = count_u64
-        .checked_mul(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<u32>(),
-        ))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX ATTDEF references", 0, count_u64))?;
-    ctx.charge_retained(bytes, "NX ATTDEF references")?;
-    let mut references = Vec::new();
-    references
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("NX ATTDEF references", 0, count_u64))?;
+    let mut references = ctx.retained_vec(count, "NX ATTDEF references")?;
     let mut at = shape.references_start;
     for _ in 0..count {
         let Some((reference, consumed)) = read_xmt(stream, at) else {

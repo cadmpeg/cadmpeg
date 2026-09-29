@@ -341,15 +341,7 @@ pub(super) fn saved_toggle_records(
     let Some(parsed) = parse_saved_toggle_stream(ctx, bytes, source_offset)? else {
         return Ok((Vec::new(), Vec::new()));
     };
-    ctx.charge_collection_items(1, "store NX saved toggle stream")?;
-    ctx.charge_retained(
-        std::mem::size_of::<SavedToggleStream>() as u64,
-        "retain NX saved toggle stream",
-    )?;
-    let mut streams = Vec::new();
-    streams
-        .try_reserve_exact(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX saved toggle stream", 0, 1))?;
+    let mut streams = ctx.retained_vec(1, "store NX saved toggle stream")?;
     streams.push(parsed.stream);
     Ok((streams, parsed.entries))
 }
@@ -429,26 +421,7 @@ fn parse_saved_toggle_stream(
     let count = usize::try_from(entry_count).map_err(|_| {
         ctx.refuse_codec_limit("index NX saved toggle entries", 0, u64::from(entry_count))
     })?;
-    ctx.charge_collection_items(u64::from(entry_count), "store NX saved toggle entries")?;
-    let entry_bytes = count
-        .checked_mul(std::mem::size_of::<SavedToggleEntry>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("size NX saved toggle entries", 0, u64::from(entry_count))
-        })?;
-    ctx.charge_retained(
-        u64::try_from(entry_bytes).map_err(|_| {
-            ctx.refuse_codec_limit("size NX saved toggle entries", 0, u64::from(entry_count))
-        })?,
-        "retain NX saved toggle entries",
-    )?;
-    let mut entries = Vec::new();
-    entries.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX saved toggle entries",
-            0,
-            u64::from(entry_count),
-        )
-    })?;
+    let mut entries = ctx.retained_vec(count, "store NX saved toggle entries")?;
     let mut view = View::over_retained(bytes);
     let Some(_version) = view.u8() else {
         return Ok(None);

@@ -12,11 +12,7 @@ fn push_lane<T>(
     lane: T,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
-    lanes
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.reserve_retained_vec(lanes, 1, operation)?;
     lanes.push(lane);
     Ok(())
 }
@@ -88,18 +84,7 @@ pub(crate) fn counted_lanes(
             return Ok(None);
         };
         let operation = "NX counted index lane members";
-        let count_u64 = u64_from_index(member_count);
-        ctx.charge_collection_items(count_u64, operation)?;
-        let bytes_needed = count_u64
-            .checked_mul(u64_from_index(std::mem::size_of::<
-                crate::om::compact::CompactIndexTarget<()>,
-            >()))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        ctx.charge_retained(bytes_needed, operation)?;
-        let mut members = Vec::new();
-        members
-            .try_reserve_exact(member_count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let mut members = ctx.retained_vec(member_count, operation)?;
         let mut at = members_start;
         for _ in 0..member_count {
             let Some(token) = LocatedCompactIndex::read(bytes, at) else {

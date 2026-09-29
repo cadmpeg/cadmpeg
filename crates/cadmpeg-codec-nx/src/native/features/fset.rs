@@ -236,16 +236,7 @@ pub(in crate::native) fn feature_fset_reference_graphs(
                         operation_ordinal,
                         None,
                     )?;
-                    ctx.charge_collection_items(1, "NX FSET reference graphs")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureFsetReferenceGraph,
-                        >()),
-                        "NX FSET reference graph",
-                    )?;
-                    graphs.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX FSET reference graphs", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut graphs, 1, "NX FSET reference graphs")?;
                     Ok(Some(FeatureFsetReferenceGraph {
                         id,
                         operation_label,
@@ -290,16 +281,7 @@ pub(in crate::native) fn feature_fset_construction_payloads(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX FSET construction payloads")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<FeatureConstructionPayload>(),
-                ),
-                "NX FSET construction payload",
-            )?;
-            output.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX FSET construction payloads", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX FSET construction payloads")?;
             output.push(payload);
         }
     }

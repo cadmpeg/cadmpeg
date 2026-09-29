@@ -232,20 +232,7 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.charge_collection_items(1, "NX thru-curve construction branch groups")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureThruCurveConstructionBranchGroup,
-                    >()),
-                    "NX thru-curve construction branch group",
-                )?;
-                groups.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "allocate NX thru-curve construction branch groups",
-                        0,
-                        1,
-                    )
-                })?;
+                ctx.reserve_retained_vec(&mut groups, 1, "NX thru-curve construction branch groups")?;
                 Ok(FeatureThruCurveConstructionBranchGroup {
                     id,
                     operation_label,

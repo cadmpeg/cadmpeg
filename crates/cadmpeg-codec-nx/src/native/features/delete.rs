@@ -202,16 +202,7 @@ pub(in crate::native) fn feature_delete_reference_fields(
                         operation_ordinal,
                         None,
                     )?;
-                    ctx.charge_collection_items(1, "NX DELETE reference fields")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureDeleteReferenceField,
-                        >()),
-                        "NX DELETE reference field",
-                    )?;
-                    fields.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX DELETE reference fields", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut fields, 1, "NX DELETE reference fields")?;
                     Ok(Some(FeatureDeleteReferenceField {
                         id,
                         operation_label,
@@ -244,16 +235,7 @@ pub(in crate::native) fn feature_delete_construction_payloads(
         let Some(payload) = delete_construction_payload_from_field(ctx, field, &blocks)? else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX DELETE construction payloads")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureDeleteConstructionPayload,
-            >()),
-            "NX DELETE construction payload",
-        )?;
-        output.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX DELETE construction payloads", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX DELETE construction payloads")?;
         output.push(payload);
     }
     Ok(output)
