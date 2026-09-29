@@ -158,10 +158,12 @@ fn temporary_feature_text<'a, 'b>(
     text: &str,
     operation: &'static str,
 ) -> Result<(String, Option<cadmpeg_core::decode::ScopedReservation<'a>>), CodecError> {
-    let reservation = ctx.map(|ctx| ctx.reserve_scoped(text.len() as u64, operation)).transpose()?;
+    let bytes = u64::try_from(text.len())
+        .map_err(|_| CodecError::malformed("Design temporary text size overflow"))?;
+    let reservation = ctx.map(|ctx| ctx.reserve_scoped(bytes, operation)).transpose()?;
     let mut copy = String::new();
     if let Some(ctx) = ctx {
-        copy.try_reserve(text.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, text.len() as u64))?;
+        copy.try_reserve(text.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
     }
     copy.push_str(text);
     Ok((copy, reservation))
@@ -202,6 +204,39 @@ fn copy_body_id(
 ) -> Result<cadmpeg_ir::ids::BodyId, CodecError> {
     cadmpeg_ir::ids::BodyId::try_from(copy_feature_text(ctx, id.as_str(), operation)?)
         .map_err(CodecError::malformed)
+}
+
+fn copy_spatial_sketch_id(
+    ctx: Option<&DecodeContext<'_>>,
+    id: &cadmpeg_ir::sketches::SpatialSketchId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::sketches::SpatialSketchId, CodecError> {
+    cadmpeg_ir::sketches::SpatialSketchId::try_from(copy_feature_text(ctx, id.as_str(), operation)?)
+        .map_err(CodecError::malformed)
+}
+
+fn copy_feature_record_ref(
+    ctx: Option<&DecodeContext<'_>>,
+    stream: &str,
+    offset: u64,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let suffix = offset.to_string();
+    let size = stream.len().checked_add(22).and_then(|size| size.checked_add(suffix.len()))
+        .ok_or_else(|| CodecError::malformed("Design record reference size overflow"))?;
+    let bytes = u64::try_from(size)
+        .map_err(|_| CodecError::malformed("Design record reference size overflow"))?;
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(bytes, operation)?;
+    }
+    let mut reference = String::new();
+    if let Some(ctx) = ctx {
+        reference.try_reserve(size).map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    }
+    reference.push_str(stream);
+    reference.push_str(":design-record-header#");
+    reference.push_str(&suffix);
+    Ok(reference)
 }
 
 fn insert_feature_dependency(
@@ -2705,51 +2740,53 @@ fn design_body_selection(
 
 /// Bind each Sketch history node to geometry in exactly one neutral sketch arena.
 pub(crate) fn bind_sketch_feature_geometry(
+    ctx: Option<&DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     placements: &[DesignSketchPlacement],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         DatumPointConstruction, FeatureDefinition, FeatureOperation, LoftSection, PathRef,
         PlanarProfileRef, ProfileRef, SketchPointSelection,
     };
 
     for feature in features.iter_mut() {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        feature.evaluation.edit(|definition, _| {
             if !matches!(
-                &definition,
+                definition,
                 FeatureDefinition::Operation(
                     FeatureOperation::Sketch { .. } | FeatureOperation::SpatialSketch { .. }
                 )
             ) {
-                break 'feature_edit;
+                return;
             }
             let Some(scope) = feature
                 .native_ref
                 .as_deref()
                 .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
             else {
-                break 'feature_edit;
+                return;
             };
             let stream = native_stream(&scope.id);
-            let matching = placements
+            let mut matching = placements
                 .iter()
                 .filter(|placement| {
                     native_stream(&placement.id) == stream
                         && placement.scope_record_index == Some(scope.record_index)
-                })
-                .collect::<Vec<_>>();
-            let [placement] = matching.as_slice() else {
-                break 'feature_edit;
+                });
+            let Some(placement) = matching.next() else {
+                return;
             };
+            if matching.next().is_some() {
+                return;
+            }
             let planar = neutral_sketch_id(placement);
             let spatial = neutral_spatial_sketch_id(placement);
             let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
             let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
-            definition = match (has_planar, has_spatial) {
+            *definition = match (has_planar, has_spatial) {
                 (true, false) => FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(planar)),
                 }),
@@ -2760,11 +2797,12 @@ pub(crate) fn bind_sketch_feature_geometry(
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                 }),
             };
-        }
-        feature.evaluation.set_definition(definition);
+        });
     }
     for feature in features.iter_mut() {
-        let mut definition = feature.evaluation.definition().clone();
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+        edit_result = (|| -> Result<(), CodecError> {
         'feature_edit: {
             let Some(scope) = feature
                 .native_ref
@@ -2774,30 +2812,31 @@ pub(crate) fn bind_sketch_feature_geometry(
                 break 'feature_edit;
             };
             let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
             let ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) = profile else {
                 break 'feature_edit;
             };
-            let planar_id = sketch.clone();
-            if sketches.iter().any(|candidate| candidate.id == planar_id) {
+            if sketches.iter().any(|candidate| candidate.id == *sketch) {
                 break 'feature_edit;
             }
-            let matching = placements
+            let mut matching = placements
                 .iter()
-                .filter(|placement| neutral_sketch_id(placement) == planar_id)
+                .filter(|placement| neutral_sketch_id(placement) == *sketch)
                 .filter_map(|placement| {
                     let spatial_id = neutral_spatial_sketch_id(placement);
                     spatial_sketches
                         .iter()
                         .find(|candidate| candidate.id == spatial_id)
-                })
-                .collect::<Vec<_>>();
-            let [spatial] = matching.as_slice() else {
+                });
+            let Some(spatial) = matching.next() else {
                 break 'feature_edit;
             };
+            if matching.next().is_some() {
+                break 'feature_edit;
+            }
             if spatial.profiles.is_empty() {
                 let Some(profile_operand) = scope.extrude_profile() else {
                     break 'feature_edit;
@@ -2808,51 +2847,64 @@ pub(crate) fn bind_sketch_feature_geometry(
                 // The spatial carrier has no closed loop that can be represented
                 // by a profile index. Keep the exact profile frame as a native
                 // selection instead of retaining the provisional planar ID.
-                *profile = ProfileRef::spatial_sketch_selection(
-                    spatial.id.clone(),
-                    vec![format!(
-                        "{stream}:design-record-header#{}",
-                        profile_operand.byte_offset()
-                    )],
-                )
-                .unwrap_or_else(|_| ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())));
+                let sketch_id = copy_spatial_sketch_id(ctx, &spatial.id,
+                    "f3d extrude spatial sketch id")?;
+                let selection = copy_feature_record_ref(ctx, stream,
+                    profile_operand.byte_offset(), "f3d extrude spatial selection ref")?;
+                *profile = match ProfileRef::spatial_sketch_selection(sketch_id, vec![selection]) {
+                    Ok(profile) => profile,
+                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
+                        copy_feature_text(ctx, &scope.id, "f3d extrude spatial fallback id")?)),
+                };
                 break 'feature_edit;
             }
             let Ok(profile_count) = u32::try_from(spatial.profiles.len()) else {
                 break 'feature_edit;
             };
-            *profile = ProfileRef::spatial_sketch_profiles(
-                spatial.id.clone(),
-                (0..profile_count).collect(),
-            )
-            .unwrap_or_else(|_| ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())));
+            let mut profiles = Vec::new();
+            for profile_index in 0..profile_count {
+                push_feature_item(ctx, &mut profiles, profile_index,
+                    "f3d extrude spatial profile index")?;
+            }
+            *profile = match ProfileRef::spatial_sketch_profiles(
+                copy_spatial_sketch_id(ctx, &spatial.id,
+                    "f3d extrude spatial sketch id")?,
+                profiles,
+            ) {
+                Ok(profile) => profile,
+                Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
+                    copy_feature_text(ctx, &scope.id, "f3d extrude spatial fallback id")?)),
+            };
         }
-        feature.evaluation.set_definition(definition);
+        Ok(())
+        })();
+        });
+        edit_result?;
     }
-    let sketch_features = features
-        .iter()
-        .filter_map(|feature| match feature.evaluation.definition() {
+    let mut sketch_features = HashMap::new();
+    let mut spatial_sketch_features = HashMap::new();
+    for feature in features.iter() {
+        let (index, sketch) = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            }) => Some((sketch.clone(), feature.id.clone())),
-            _ => None,
-        })
-        .collect::<HashMap<_, _>>();
-    let spatial_sketch_features = features
-        .iter()
-        .filter_map(|feature| match feature.evaluation.definition() {
+            }) => (&mut sketch_features, sketch.as_str()),
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch),
-            }) => Some((sketch.clone(), feature.id.clone())),
-            _ => None,
-        })
-        .collect::<HashMap<_, _>>();
+            }) => (&mut spatial_sketch_features, sketch.as_str()),
+            _ => continue,
+        };
+        let key = copy_feature_text(ctx, sketch, "f3d sketch feature index key")?;
+        let value = copy_feature_id(ctx, &feature.id, "f3d sketch feature index id")?;
+        // discarded-value: duplicate sketch bindings keep the last feature.
+        let _ = insert_feature_map(ctx, index, key, value,
+            "f3d sketch feature index")?;
+    }
     let planar_profile_dependency = |profile: &PlanarProfileRef| match profile {
         PlanarProfileRef::Sketch(sketch)
         | PlanarProfileRef::SketchProfiles { sketch, .. }
         | PlanarProfileRef::SketchRegions { sketch, .. }
         | PlanarProfileRef::SketchEntities { sketch, .. }
-        | PlanarProfileRef::SketchSelection { sketch, .. } => sketch_features.get(sketch).cloned(),
+        | PlanarProfileRef::SketchSelection { sketch, .. } => sketch_features.get(sketch.as_str()),
         _ => None,
     };
     let profile_dependency = |profile: &ProfileRef| match profile {
@@ -2862,84 +2914,103 @@ pub(crate) fn bind_sketch_feature_geometry(
             | PlanarProfileRef::SketchRegions { sketch, .. }
             | PlanarProfileRef::SketchEntities { sketch, .. }
             | PlanarProfileRef::SketchSelection { sketch, .. },
-        ) => sketch_features.get(sketch).cloned(),
+        ) => sketch_features.get(sketch.as_str()),
         ProfileRef::SpatialSketchProfiles { sketch, .. }
         | ProfileRef::SpatialSketchSelection { sketch, .. } => {
-            spatial_sketch_features.get(sketch).cloned()
+            spatial_sketch_features.get(sketch.as_str())
         }
         ProfileRef::Planar(_) => None,
     };
     let path_dependency = |path: &PathRef| match path {
         PathRef::Sketch(sketch) | PathRef::SketchCurves { sketch, .. } => {
-            sketch_features.get(sketch).cloned()
+            sketch_features.get(sketch.as_str())
         }
         PathRef::SpatialSketchSelection { sketch, .. }
         | PathRef::SpatialSketchCurves { sketch, .. } => {
-            spatial_sketch_features.get(sketch).cloned()
+            spatial_sketch_features.get(sketch.as_str())
         }
         _ => None,
     };
     let sketch_point_dependency = |point: &SketchPointSelection| match point {
-        SketchPointSelection::Planar { sketch, .. } => sketch_features.get(sketch).cloned(),
+        SketchPointSelection::Planar { sketch, .. } => sketch_features.get(sketch.as_str()),
         SketchPointSelection::Spatial { sketch, .. } => {
-            spatial_sketch_features.get(sketch).cloned()
+            spatial_sketch_features.get(sketch.as_str())
         }
         SketchPointSelection::Unresolved | SketchPointSelection::Native(_) => None,
     };
     for feature in features.iter_mut() {
-        let mut dependencies = Vec::new();
+        let mut add_dependency = |dependency: Option<&cadmpeg_ir::features::FeatureId>| {
+            if let Some(dependency) = dependency {
+                if dependency != &feature.id {
+                    insert_feature_dependency(ctx, &mut feature.dependencies, dependency)?;
+                }
+            }
+            Ok::<(), CodecError>(())
+        };
         match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                dependencies.extend(profile_dependency(profile));
+                add_dependency(profile_dependency(profile))?;
             }
             FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
                 profile,
                 ..
             }) => {
-                dependencies.extend(planar_profile_dependency(profile));
+                add_dependency(planar_profile_dependency(profile))?;
             }
             FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
-                dependencies.extend(construction.profile().and_then(planar_profile_dependency));
-                dependencies.extend(
+                add_dependency(construction.profile().and_then(planar_profile_dependency))?;
+                add_dependency(
                     construction
                         .axis()
                         .and_then(|axis| axis.reference.as_ref())
                         .and_then(path_dependency),
-                );
+                )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape,
-
                 path,
                 guide_rail,
                 ..
             }) => {
-                dependencies.extend(
-                    shape
-                        .referenced_profiles()
-                        .into_iter()
-                        .filter_map(planar_profile_dependency),
-                );
-                dependencies.extend(path.as_ref().and_then(path_dependency));
-                dependencies.extend(
+                add_dependency(shape.referenced_profile().and_then(planar_profile_dependency))?;
+                match shape {
+                    cadmpeg_ir::features::SweepShape::Unresolved { sections, .. }
+                    | cadmpeg_ir::features::SweepShape::Surface { sections, .. } => {
+                        for section in sections {
+                            add_dependency(section.referenced_profile()
+                                .and_then(planar_profile_dependency))?;
+                        }
+                    }
+                    cadmpeg_ir::features::SweepShape::Solid { sections, .. } => {
+                        for section in sections {
+                            add_dependency(section.referenced_profile()
+                                .and_then(planar_profile_dependency))?;
+                        }
+                    }
+                }
+                add_dependency(path.as_ref().and_then(path_dependency))?;
+                add_dependency(
                     guide_rail
                         .as_ref()
                         .and_then(|guide| path_dependency(&guide.path)),
-                );
+                )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Loft {
                 sections, guidance, ..
             }) => {
-                dependencies.extend(sections.iter().filter_map(|section| match section {
-                    LoftSection::Profile(profile) => profile_dependency(profile),
-                    LoftSection::Point(_) => None,
-                }));
+                for section in sections {
+                    if let LoftSection::Profile(profile) = section {
+                        add_dependency(profile_dependency(profile))?;
+                    }
+                }
                 match guidance {
                     cadmpeg_ir::features::LoftGuidance::Guides(paths) => {
-                        dependencies.extend(paths.iter().filter_map(path_dependency));
+                        for path in paths {
+                            add_dependency(path_dependency(path))?;
+                        }
                     }
                     cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
-                        dependencies.extend(path_dependency(path));
+                        add_dependency(path_dependency(path))?;
                     }
                 }
             }
@@ -2948,17 +3019,13 @@ pub(crate) fn bind_sketch_feature_geometry(
                 ..
             }) => {
                 if let DatumPointConstruction::SketchPoint { point } = construction.as_ref() {
-                    dependencies.extend(sketch_point_dependency(point));
+                    add_dependency(sketch_point_dependency(point))?;
                 }
             }
             _ => {}
         }
-        for dependency in dependencies {
-            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.insert(dependency);
-            }
-        }
     }
+    Ok(())
 }
 
 /// Bind `WorkPoint` inputs that select a sketch point after the sketch arenas

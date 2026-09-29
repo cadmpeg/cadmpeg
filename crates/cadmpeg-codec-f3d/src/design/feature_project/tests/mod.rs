@@ -18,6 +18,7 @@ mod pattern;
 mod pipe;
 mod replace_face;
 mod sheet_metal;
+mod sketch_binding_limits;
 mod split;
 mod surface;
 mod timeline;
