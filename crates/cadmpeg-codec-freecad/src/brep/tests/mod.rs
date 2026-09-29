@@ -800,7 +800,20 @@ fn binary_edge_continuity_retains_decimal_byte_spelling() {
                 }
                 let mut cursor = BinaryCursor::new(ctx, &bytes);
                 let record =
-                    parse_binary_edge_representation(&mut cursor, 1, kind, 0, 2, 1, 0, 0, 0, 0)
+                    parse_binary_edge_representation(
+                        &mut cursor,
+                        1,
+                        kind,
+                        super::BinaryGeometryCounts {
+                            curve_count: 0,
+                            curve2d_count: 2,
+                            surface_count: 1,
+                            location_count: 0,
+                            polygon3d_count: 0,
+                            indexed_polygon_count: 0,
+                            triangulation_count: 0,
+                        },
+                    )
                         .unwrap();
                 let (TextEdgeRepresentation::PcurvePair { continuity, .. }
                 | TextEdgeRepresentation::Regularity { continuity, .. }) = record

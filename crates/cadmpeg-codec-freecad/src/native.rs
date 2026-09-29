@@ -1759,8 +1759,6 @@ pub(crate) struct ProductNodeRecord {
 
 /// Structural family of a product node.
 #[derive(Debug, Clone, PartialEq)]
-// Keep each native node payload inline; occurrence fields are read together during projection.
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum ProductNode {
     /// `App::DocumentObjectGroup`.
     Group(ContainerNode),
@@ -1774,7 +1772,7 @@ pub(crate) enum ProductNode {
         element_objects: Vec<String>,
     },
     /// `App::Link` or `App::LinkElement`.
-    Occurrence(LinkOccurrence),
+    Occurrence(Box<LinkOccurrence>),
 }
 
 /// Shared payload of a non-occurrence product container.
@@ -2270,7 +2268,7 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     },
                 }
             }
-            "occurrence" => ProductNode::Occurrence(LinkOccurrence {
+            "occurrence" => ProductNode::Occurrence(Box::new(LinkOccurrence {
                 members: wire.members,
                 prototype: wire.prototype,
                 external_document: ExternalDocument::from_wire(
@@ -2317,7 +2315,7 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     })
                     .transpose()
                     .map_err(|error| format!("scale: {error}"))?,
-            }),
+            })),
             _ => return Err("unknown product node kind".to_owned()),
         };
         Ok(Self {

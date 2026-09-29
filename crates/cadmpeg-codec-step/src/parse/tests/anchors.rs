@@ -124,14 +124,14 @@ fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
     );
     assert_eq!(
         exchange.anchors()[1].value,
-        crate::parse::Value::ConstantValue("E".into())
+        crate::parse::Value::ExpressValueConstant("E".into())
     );
     assert_eq!(
         exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::ConstantEntity("PI".into()),
-            crate::parse::Value::ConstantValue("E".into()),
-            crate::parse::Value::ValueReference(100),
+            crate::parse::Value::ExpressValueConstant("E".into()),
+            crate::parse::Value::ExternalReference(100),
             crate::parse::Value::Reference(200),
         ]
     );
@@ -153,7 +153,7 @@ fn parser_retains_anchor_tags_and_resolves_their_references() {
     assert_eq!(exchange.anchors()[0].tags[1].name, "width");
     assert_eq!(
         exchange.anchors()[0].tags[1].value,
-        crate::parse::Value::ValueReference(100)
+        crate::parse::Value::ExternalReference(100)
     );
 }
 

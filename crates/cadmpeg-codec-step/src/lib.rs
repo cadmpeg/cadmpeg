@@ -42,7 +42,6 @@ mod export;
 mod geometry;
 mod ids;
 mod lex;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod options;
 mod parse;
