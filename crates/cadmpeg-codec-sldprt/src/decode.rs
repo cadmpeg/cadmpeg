@@ -5517,7 +5517,9 @@ mod digest_tests {
         ));
         let appearances = ir.model.appearances.clone();
         let bindings = ir.model.appearance_bindings.clone();
-        brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
+        let expected_hash = super::brep_local_sha256(&ir).unwrap();
+        let actual_hash = brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
+        assert_eq!(actual_hash, expected_hash);
         assert_eq!(ir.model.appearances, appearances);
         assert_eq!(ir.model.appearance_bindings, bindings);
     }
