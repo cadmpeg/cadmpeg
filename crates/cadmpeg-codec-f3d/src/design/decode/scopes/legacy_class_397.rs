@@ -24,8 +24,8 @@ impl Class397SymmetricFrame {
     ) -> Option<Self> {
         (class_tag == "397"
             && paired_class_tag == "262"
-            && frame_length == symmetric::LEN as u64
-            && reference_count_offset == symmetric::REFERENCE_COUNT as u64
+            && frame_length == cadmpeg_core::decode::u64_from_index(symmetric::LEN)
+            && reference_count_offset == cadmpeg_core::decode::u64_from_index(symmetric::REFERENCE_COUNT)
             && reference_count == symmetric::REFERENCE_COUNT_VALUE as usize)
             .then_some(Self(()))
     }

@@ -151,7 +151,7 @@ pub(super) fn browser_node_records(
             record_index,
             guid,
             entity_suffix,
-            hidden_offset: (frame.start + after_guid) as u64,
+            hidden_offset: cadmpeg_core::decode::u64_from_index(frame.start + after_guid),
             hidden: hidden == 1,
         });
     }
@@ -217,7 +217,7 @@ pub(crate) fn body_presentations(
                 entity_suffix,
                 BodyPresentationOwner::Named {
                     entity_id,
-                    entity_id_offset: entity_id_offset as u64,
+                    entity_id_offset: cadmpeg_core::decode::u64_from_index(entity_id_offset),
                 },
                 presentation_material(
                     ctx,
@@ -277,7 +277,7 @@ pub(crate) fn body_presentations(
             ctx.refuse_codec_limit("f3d body presentation records allocation", 0, 1)
         })?;
         out.push(BodyPresentation {
-            byte_offset: frame.start as u64,
+            byte_offset: cadmpeg_core::decode::u64_from_index(frame.start),
             entity_suffix,
             owner,
             browser_node,
@@ -462,12 +462,12 @@ fn presentation_material(
         candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
-            physical_token_offset: (token_at + 4) as u64,
+            physical_token_offset: cadmpeg_core::decode::u64_from_index(token_at + 4),
             visual_guid,
-            visual_guid_offset: (visual_at + 4) as u64,
+            visual_guid_offset: cadmpeg_core::decode::u64_from_index(visual_at + 4),
             visual_preset: visual_preset.map(|(at, value)| crate::records::identity::Located {
                 value,
-                offset: (at + 4) as u64,
+                offset: cadmpeg_core::decode::u64_from_index(at + 4),
             }),
         });
     }
@@ -574,9 +574,9 @@ fn bare_presentation_material(
         candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
-            physical_token_offset: (token_at + 4) as u64,
+            physical_token_offset: cadmpeg_core::decode::u64_from_index(token_at + 4),
             visual_guid,
-            visual_guid_offset: (visual_at + 4) as u64,
+            visual_guid_offset: cadmpeg_core::decode::u64_from_index(visual_at + 4),
             visual_preset: None,
         });
     }

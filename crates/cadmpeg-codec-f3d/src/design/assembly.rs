@@ -88,12 +88,12 @@ impl AssemblyScopeGeneration {
             744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),
             748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),
             772 => (Some(Axial), Some((10, 8, 10)), None),
-            length if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => (
+            length if length == cadmpeg_core::decode::u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES + 11,
                 ])),
-            length if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64 => (
+            length if length == cadmpeg_core::decode::u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN) => (
                 (class_tag == "383" && paired_class_tag == "258").then_some(Standard), Some((20, 8, 12)), None),
             _ => (None, None, None),
         };
@@ -144,7 +144,7 @@ pub(super) fn legacy_class_383_258_scope(
     class_tag: &str,
     paired_class_tag: &str,
 ) -> bool {
-    frame_length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64
+    frame_length == cadmpeg_core::decode::u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN)
         && class_tag == "383"
         && paired_class_tag == "258"
 }

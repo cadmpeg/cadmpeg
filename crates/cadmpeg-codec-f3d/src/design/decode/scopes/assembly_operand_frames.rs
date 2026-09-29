@@ -83,7 +83,7 @@ pub(super) fn exact_assembly_operand_frames(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
     ) {
-        let standard_tail_marker_offset = if scope.frame_length() == class_383_scope::LEN as u64
+        let standard_tail_marker_offset = if scope.frame_length() == cadmpeg_core::decode::u64_from_index(class_383_scope::LEN)
             && scope.class_tag.as_str() == "383"
             && scope.paired_class_tag.as_str() == "258"
         {
@@ -137,9 +137,9 @@ pub(super) fn exact_assembly_operand_frames(
             crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform).ok()?;
         Some(DesignAssemblyOperandFrame {
             reference_record_index,
-            reference_offset: (reference_at + 1) as u64,
+            reference_offset: cadmpeg_core::decode::u64_from_index(reference_at + 1),
             transform,
-            transform_offset: transform_at as u64,
+            transform_offset: cadmpeg_core::decode::u64_from_index(transform_at),
         })
     };
     let first = frame(start + frame_offsets.0, start + frame_offsets.1)?;

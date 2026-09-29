@@ -139,7 +139,7 @@ pub(crate) fn decode_parameter_scopes(
                 if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches)
                 {
                     let entity_reference_offset =
-                        scope.byte_offset().saturating_add(relative_offset as u64);
+                        scope.byte_offset().saturating_add(cadmpeg_core::decode::u64_from_index(relative_offset));
                     if let scope::DesignScopePayloadMut::Sketch(slot)
                     | scope::DesignScopePayloadMut::Esquisse(slot)
                     | scope::DesignScopePayloadMut::Skizze(slot)
@@ -1310,7 +1310,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
                 .ok()?,
-            paired_byte_offset: paired_at as u64,
+            paired_byte_offset: cadmpeg_core::decode::u64_from_index(paired_at),
         })
         .ok()?;
         if let Some(prologue) = extrude_prologue {

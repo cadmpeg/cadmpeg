@@ -91,7 +91,7 @@ pub(super) fn exact_shell_class_369_261(
 ) -> Option<DesignDirectFaceOperation> {
     if scope.class_tag.as_str() != "369"
         || scope.paired_class_tag.as_str() != "261"
-        || scope.frame_length() != shell_369_261::LEN as u64
+        || scope.frame_length() != cadmpeg_core::decode::u64_from_index(shell_369_261::LEN)
         || scope.reference_members().len() != 3
     {
         return None;

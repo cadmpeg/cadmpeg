@@ -32,7 +32,7 @@ pub(super) fn exact_legacy_class_388_scope(
 ) -> Option<()> {
     if scope.class_tag.as_str() != "388"
         || scope.paired_class_tag.as_str() != "266"
-        || scope.frame_length() != class_388_assemble::LEN as u64
+        || scope.frame_length() != cadmpeg_core::decode::u64_from_index(class_388_assemble::LEN)
         || scope.reference_members().len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
     {
         return None;

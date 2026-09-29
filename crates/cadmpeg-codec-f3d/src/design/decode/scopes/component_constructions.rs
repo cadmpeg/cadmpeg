@@ -43,7 +43,7 @@ pub(super) fn exact_derived_instance_construction(
     if scope.kind() != scope::DesignFeatureKind::DerivedInstance
         || scope.class_tag.as_str() != "279"
         || scope.paired_class_tag.as_str() != "261"
-        || scope.frame_length() != derived_instance_279_261::LEN as u64
+        || scope.frame_length() != cadmpeg_core::decode::u64_from_index(derived_instance_279_261::LEN)
         || scope.reference_members().len() != 1
     {
         return None;
@@ -118,7 +118,7 @@ pub(super) fn exact_derived_instance_construction(
         native_stream(&occurrence.id) == Some(stream)
             && occurrence.class_tag.as_str() == "380"
             && occurrence.record_index == carrier_record_index
-            && occurrence.byte_offset() < relation_at as u64
+            && occurrence.byte_offset() < cadmpeg_core::decode::u64_from_index(relation_at)
             && occurrence.transform().map(|frame| frame.value) == Some(transform)
     });
     let carrier = candidates.next()?;
@@ -1020,7 +1020,7 @@ pub(super) fn exact_copy_paste_component_operation(
     let mut copied_candidates = occurrences.iter().filter(|occurrence| {
         native_stream(&occurrence.id) == Some(stream)
             && occurrence.record_index == copied_occurrence_record_index
-            && occurrence.byte_offset() < relation_at as u64
+            && occurrence.byte_offset() < cadmpeg_core::decode::u64_from_index(relation_at)
             && occurrence.transform().map(|frame| frame.value) == Some(copied_transform)
     });
     let copied = copied_candidates.next()?;

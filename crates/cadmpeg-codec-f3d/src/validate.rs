@@ -199,7 +199,7 @@ fn valid_class_307_joint_origin_qualifier(
     frame.reference_record_index == *scope_record_index
         && class_tag.as_str() == "307"
         && paired_class_tag.as_str() == "264"
-        && byte_offset.checked_add(class_307_joint_origin::LEN as u64) == Some(*paired_byte_offset)
+        && byte_offset.checked_add(cadmpeg_core::decode::u64_from_index(class_307_joint_origin::LEN)) == Some(*paired_byte_offset)
         && design_header_matches(
             records_by_index,
             stream,
@@ -219,7 +219,7 @@ fn valid_class_307_joint_origin_qualifier(
                     && target_scope.byte_offset() == *byte_offset
                     && target_scope.paired_class_tag == *paired_class_tag
                     && target_scope.paired_byte_offset() == *paired_byte_offset
-                    && target_scope.frame_length() == class_307_joint_origin::LEN as u64
+                    && target_scope.frame_length() == cadmpeg_core::decode::u64_from_index(class_307_joint_origin::LEN)
                     && target_scope.joint_origin_transform() == Some(frame.transform)
             })
             .count()
@@ -232,7 +232,7 @@ fn valid_sketch_profile_region_selection(
 ) -> bool {
     let Some(expected_region_count_offset) = selection
         .byte_offset
-        .checked_add(region_selection::REGION_COUNT as u64)
+        .checked_add(cadmpeg_core::decode::u64_from_index(region_selection::REGION_COUNT))
     else {
         return false;
     };
@@ -245,7 +245,7 @@ fn valid_sketch_profile_region_selection(
     }
     let Some(mut cursor) = selection
         .byte_offset
-        .checked_add(region_selection::LEN as u64)
+        .checked_add(cadmpeg_core::decode::u64_from_index(region_selection::LEN))
     else {
         return false;
     };
@@ -3625,7 +3625,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     && operation_offset
                         == scope
                             .byte_offset()
-                            .saturating_add(class_415::OPERATION as u64)
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_415::OPERATION))
                     && direction_face_extend_values == [3, 2]
                     && side_extent_discriminators == [1, 1]
                     && extent == records::feature::extrude::DesignExtrudeExtent::SymmetricDistance
@@ -3633,32 +3633,32 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         == [
                             scope
                                 .byte_offset()
-                                .saturating_add(class_415::FIRST_SIDE_EXTENT as u64),
+                                .saturating_add(cadmpeg_core::decode::u64_from_index(class_415::FIRST_SIDE_EXTENT)),
                             scope
                                 .byte_offset()
-                                .saturating_add(class_415::SECOND_SIDE_EXTENT as u64),
+                                .saturating_add(cadmpeg_core::decode::u64_from_index(class_415::SECOND_SIDE_EXTENT)),
                         ]
                     && direction_face_extend_offsets
                         == [
                             scope
                                 .byte_offset()
-                                .saturating_add(class_415::DIRECTION as u64),
+                                .saturating_add(cadmpeg_core::decode::u64_from_index(class_415::DIRECTION)),
                             scope
                                 .byte_offset()
-                                .saturating_add(class_415::FACE_EXTEND as u64),
+                                .saturating_add(cadmpeg_core::decode::u64_from_index(class_415::FACE_EXTEND)),
                         ]
                     && direction_reversed_offset
                         == scope
                             .byte_offset()
-                            .saturating_add(class_415::DIRECTION_REVERSED as u64)
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_415::DIRECTION_REVERSED))
                     && solid_operation_offset
                         == scope
                             .byte_offset()
-                            .saturating_add(class_415::GEOMETRY_KIND as u64)
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_415::GEOMETRY_KIND))
                     && start_offset
                         == scope
                             .byte_offset()
-                            .saturating_add(class_415::START_SUPPORT as u64);
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_415::START_SUPPORT));
                 let first_side_offset_valid = side_extent_discriminator_offsets[0]
                     .checked_sub(
                         operation_offset
@@ -3790,15 +3790,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 ) && operation_offset
                     == scope
                         .byte_offset()
-                        .saturating_add(class_296_to_face::OPERATION as u64)
+                        .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_to_face::OPERATION))
                 {
                     Some([
                         scope
                             .byte_offset()
-                            .saturating_add(class_296_to_face::FIRST_SIDE_EXTENT as u64),
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_to_face::FIRST_SIDE_EXTENT)),
                         scope
                             .byte_offset()
-                            .saturating_add(class_296_to_face::SECOND_SIDE_EXTENT as u64),
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_to_face::SECOND_SIDE_EXTENT)),
                     ])
                 } else {
                     None
@@ -3814,15 +3814,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 ) && operation_offset
                     == scope
                         .byte_offset()
-                        .saturating_add(class_296_symmetric::OPERATION as u64)
+                        .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_symmetric::OPERATION))
                 {
                     Some([
                         scope
                             .byte_offset()
-                            .saturating_add(class_296_symmetric::FIRST_SIDE_EXTENT as u64),
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_symmetric::FIRST_SIDE_EXTENT)),
                         scope
                             .byte_offset()
-                            .saturating_add(class_296_symmetric::SECOND_SIDE_EXTENT as u64),
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_symmetric::SECOND_SIDE_EXTENT)),
                     ])
                 } else {
                     None
@@ -3838,15 +3838,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 ) && operation_offset
                     == scope
                         .byte_offset()
-                        .saturating_add(class_296_two_faces::OPERATION as u64)
+                        .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_two_faces::OPERATION))
                 {
                     Some([
                         scope
                             .byte_offset()
-                            .saturating_add(class_296_two_faces::FIRST_SIDE_EXTENT as u64),
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_two_faces::FIRST_SIDE_EXTENT)),
                         scope
                             .byte_offset()
-                            .saturating_add(class_296_two_faces::SECOND_SIDE_EXTENT as u64),
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_two_faces::SECOND_SIDE_EXTENT)),
                     ])
                 } else {
                     None
@@ -3863,14 +3863,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     ) && operation_offset
                         == scope
                             .byte_offset()
-                            .saturating_add(class_296_legacy_prefix::OPERATION as u64)
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_legacy_prefix::OPERATION))
                     {
                         Some([
                             scope
                                 .byte_offset()
-                                .saturating_add(class_296_legacy_prefix::FIRST_SIDE_EXTENT as u64),
+                                .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_legacy_prefix::FIRST_SIDE_EXTENT)),
                             scope.byte_offset().saturating_add(
-                                class_296_legacy_to_face::SECOND_SIDE_EXTENT as u64,
+                                cadmpeg_core::decode::u64_from_index(class_296_legacy_to_face::SECOND_SIDE_EXTENT),
                             ),
                         ])
                     } else {
@@ -3888,14 +3888,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     ) && operation_offset
                         == scope
                             .byte_offset()
-                            .saturating_add(class_296_legacy_prefix::OPERATION as u64)
+                            .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_legacy_prefix::OPERATION))
                     {
                         Some([
                             scope
                                 .byte_offset()
-                                .saturating_add(class_296_legacy_prefix::FIRST_SIDE_EXTENT as u64),
+                                .saturating_add(cadmpeg_core::decode::u64_from_index(class_296_legacy_prefix::FIRST_SIDE_EXTENT)),
                             scope.byte_offset().saturating_add(
-                                class_296_legacy_distance::SECOND_SIDE_EXTENT as u64,
+                                cadmpeg_core::decode::u64_from_index(class_296_legacy_distance::SECOND_SIDE_EXTENT),
                             ),
                         ])
                     } else {
@@ -3915,7 +3915,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         && operation_offset
                             == scope
                                 .byte_offset()
-                                .saturating_add(class_397::OPERATION as u64)
+                                .saturating_add(cadmpeg_core::decode::u64_from_index(class_397::OPERATION))
                         && direction_face_extend_values
                             == [class_397::DIRECTION_VALUE, class_397::FACE_EXTEND_VALUE]
                         && extent.is_some()
@@ -4018,10 +4018,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         == [
                             scope
                                 .byte_offset()
-                                .saturating_add(class_397::FIRST_SIDE_EXTENT as u64),
+                                .saturating_add(cadmpeg_core::decode::u64_from_index(class_397::FIRST_SIDE_EXTENT)),
                             scope
                                 .byte_offset()
-                                .saturating_add(class_397::SECOND_SIDE_EXTENT as u64),
+                                .saturating_add(cadmpeg_core::decode::u64_from_index(class_397::SECOND_SIDE_EXTENT)),
                         ]
                 } else {
                     compact_extent_offsets
@@ -6300,7 +6300,7 @@ fn validate_body_recipe_operands<'a>(
                                 selector.byte_offset.checked_add(20) == Some(recipe.byte_offset);
                             let body_suffix_frame = recipe
                                 .byte_offset
-                                .checked_add(b"body_recipe_data".len() as u64)
+                                .checked_add(cadmpeg_core::decode::u64_from_index(b"body_recipe_data".len()))
                                 .and_then(|offset| offset.checked_add(12))
                                 == Some(design_id_offset)
                                 && selector.value == operand.next_record_index();
@@ -6921,7 +6921,7 @@ fn validate_edge_operands<'a>(
             || terminal_group_member)
             && operand
                 .recipe_prefix_offset()
-                .saturating_add(operand.recipe_prefix_bytes.len() as u64)
+                .saturating_add(cadmpeg_core::decode::u64_from_index(operand.recipe_prefix_bytes.len()))
                 == recipe.map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
             && recipe_reference_frames_match(
                 &operand.recipe_references,
@@ -7460,7 +7460,7 @@ fn validate_face_operands<'a>(
             header.byte_offset == operand.byte_offset() && header.class_tag == operand.class_tag
         }) && operand
             .recipe_prefix_offset()
-            .saturating_add(operand.recipe_prefix_bytes.len() as u64)
+            .saturating_add(cadmpeg_core::decode::u64_from_index(operand.recipe_prefix_bytes.len()))
             == recipe.map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
             && recipe_reference_frames_match(
                 &operand.recipe_references,
@@ -7966,10 +7966,10 @@ fn validate_dimension_recipe_records<'a>(
         let frame_end = record.byte_offset.checked_add(record.frame_length);
         let prefix_end = record
             .prefix_offset
-            .checked_add(record.prefix_bytes.len() as u64);
+            .checked_add(cadmpeg_core::decode::u64_from_index(record.prefix_bytes.len()));
         let program_end = record
             .program_offset
-            .checked_add((record.program.len() as u64).saturating_mul(4));
+            .checked_add((cadmpeg_core::decode::u64_from_index(record.program.len())).saturating_mul(4));
         let mut decoded_references = design::decode::dimension_frames::decode_recipe_references(
             &record.prefix_bytes,
             record.prefix_offset,
@@ -7994,7 +7994,7 @@ fn validate_dimension_recipe_records<'a>(
                 && prefix_end == recipe.byte_offset.checked_sub(4)
                 && record.program_offset
                     == recipe.byte_offset.saturating_add(
-                        design::construction_recipe_family_name_len(recipe.kind) as u64,
+                        cadmpeg_core::decode::u64_from_index(design::construction_recipe_family_name_len(recipe.kind)),
                     )
         });
         let valid = record.frame_length >= 11
@@ -8290,7 +8290,7 @@ fn validate_dimension_presentation_frames(
         let operand_start = frame.byte_offset.saturating_add(24);
         let operands_valid = !frame.operands.is_empty()
             && frame.operands.iter().enumerate().all(|(ordinal, operand)| {
-                let start = operand_start.saturating_add((ordinal as u64).saturating_mul(15));
+                let start = operand_start.saturating_add((cadmpeg_core::decode::u64_from_index(ordinal)).saturating_mul(15));
                 operand.geometry_reference_offset == start.saturating_add(1)
                     && operand.role_offset == start.saturating_add(11)
                     && sketch_geometry_indices
@@ -8303,10 +8303,10 @@ fn validate_dimension_presentation_frames(
             && frame.paired_byte_offset > frame.byte_offset
             && frame.frame_length == frame.paired_byte_offset.saturating_sub(frame.byte_offset)
             && frame.presentation_byte_offset
-                == operand_start.saturating_add((frame.operands.len() as u64).saturating_mul(15))
+                == operand_start.saturating_add((cadmpeg_core::decode::u64_from_index(frame.operands.len())).saturating_mul(15))
             && frame
                 .presentation_byte_offset
-                .saturating_add(frame.presentation_bytes.len() as u64)
+                .saturating_add(cadmpeg_core::decode::u64_from_index(frame.presentation_bytes.len()))
                 == frame.paired_byte_offset
             && frame.owner_reference_offset == frame.paired_byte_offset.saturating_add(20)
             && owner_link_valid
@@ -8372,17 +8372,17 @@ fn validate_dimension_locus_groups<'a>(
         let count = group.loci.len();
         let loci_start = group.byte_offset.saturating_add(24);
         let loci_offsets_valid = group.loci.iter().enumerate().all(|(ordinal, locus)| {
-            let start = loci_start.saturating_add((ordinal as u64).saturating_mul(15));
+            let start = loci_start.saturating_add((cadmpeg_core::decode::u64_from_index(ordinal)).saturating_mul(15));
             locus.geometry_reference_offset == start.saturating_add(1)
                 && locus.role_offset == start.saturating_add(11)
                 && sketch_geometry_indices.contains(&(native_stream, locus.geometry_record_index))
         });
-        let owner_start = loci_start.saturating_add((count as u64).saturating_mul(15));
+        let owner_start = loci_start.saturating_add((cadmpeg_core::decode::u64_from_index(count)).saturating_mul(15));
         let returns_start = owner_start.saturating_add(24);
         let returns_valid = group.loci.iter().enumerate().all(|(ordinal, locus)| {
             locus.returned.offset
                 == returns_start
-                    .saturating_add((ordinal as u64).saturating_mul(11))
+                    .saturating_add((cadmpeg_core::decode::u64_from_index(ordinal)).saturating_mul(11))
                     .saturating_add(1)
                 && sketch_geometry_indices.contains(&(native_stream, locus.returned.value))
         });
@@ -8418,7 +8418,7 @@ fn validate_dimension_locus_groups<'a>(
             && locus_members == return_members
             && group.next_byte_offset
                 == returns_start
-                    .saturating_add((count as u64).saturating_mul(11))
+                    .saturating_add((cadmpeg_core::decode::u64_from_index(count)).saturating_mul(11))
                     .saturating_add(1)
             && group.frame_length == group.next_byte_offset.saturating_sub(group.byte_offset)
             && unique_index

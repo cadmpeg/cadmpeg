@@ -250,7 +250,7 @@ pub(crate) fn decode(
         states.push(AsmDeltaState {
             id: state_record_id,
             parent,
-            byte_offset: offset as u64,
+            byte_offset: cadmpeg_core::decode::u64_from_index(offset),
             state_id,
             version_flag,
             state_flag,
@@ -283,7 +283,7 @@ pub(crate) fn decode(
     let offset = history_offset;
     Ok(Some(AsmHistory {
         id: history_id,
-        byte_offset: offset as u64,
+        byte_offset: cadmpeg_core::decode::u64_from_index(offset),
         preamble,
         record_table_binding_budget_exceeded,
         states,
@@ -9620,7 +9620,7 @@ fn decode_bulletin_boards(
             changes.push(AsmEntityChange {
                 id: change_id,
                 parent,
-                byte_offset: change_offset as u64,
+                byte_offset: cadmpeg_core::decode::u64_from_index(change_offset),
                 kind,
             });
         }
@@ -9632,7 +9632,7 @@ fn decode_bulletin_boards(
         boards.push(AsmBulletinBoard {
             id: board_id,
             parent,
-            byte_offset: board_offset as u64,
+            byte_offset: cadmpeg_core::decode::u64_from_index(board_offset),
             owner_ref,
             number,
             changes,
@@ -9728,9 +9728,9 @@ fn decode_history_records(
                     id,
                     parent,
                     revision_id: None,
-                    byte_offset: record.offset as u64,
+                    byte_offset: cadmpeg_core::decode::u64_from_index(record.offset),
                     framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                        index: record.index as u64,
+                        index: cadmpeg_core::decode::u64_from_index(record.index),
                         name: record.name,
                         entity_references,
                     },
@@ -9757,7 +9757,7 @@ fn decode_history_records(
                 id,
                 parent,
                 revision_id: None,
-                byte_offset: start as u64,
+                byte_offset: cadmpeg_core::decode::u64_from_index(start),
                 framing: crate::history_records::AsmHistoryRecordFraming::Opaque { error },
                 raw_bytes,
             }])

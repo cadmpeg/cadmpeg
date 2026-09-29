@@ -1137,9 +1137,9 @@ pub(crate) fn decode_design_assignments(
                     presentation.byte_offset,
                 )?,
                 asm_body_key: body_binding.asm_key,
-                asm_body_key_offset: body_binding.asm_key_offset as u64,
+                asm_body_key_offset: cadmpeg_core::decode::u64_from_index(body_binding.asm_key_offset),
 
-                entity_suffix_offset: body_binding.entity_suffix_offset() as u64,
+                entity_suffix_offset: cadmpeg_core::decode::u64_from_index(body_binding.entity_suffix_offset()),
                 entity_id,
                 entity_id_offset,
                 visual_guid: material.visual_guid,
@@ -1228,9 +1228,9 @@ fn decode_body_appearance_overrides(
                 body_bindings,
                 &crate::ids::native_design_body_binding_id(&entry.name, map_pair.asm_key_offset),
                 map_pair.asm_key,
-                map_pair.asm_key_offset as u64,
+                cadmpeg_core::decode::u64_from_index(map_pair.asm_key_offset),
                 map_pair.entity_suffix,
-                map_pair.entity_suffix_offset() as u64,
+                cadmpeg_core::decode::u64_from_index(map_pair.entity_suffix_offset()),
             )?
             else {
                 continue;
