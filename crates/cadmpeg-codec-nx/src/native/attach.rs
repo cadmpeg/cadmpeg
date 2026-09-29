@@ -3837,11 +3837,12 @@ fn attach_feature_operations(
                 .unwrap_or(label.id.as_str());
             for write in operation_body_writes {
                 let result_members = operation_body_write_result_group_members(
+                    ctx,
                     write.id.as_str(),
                     operation_body_partition_uses,
                     body_write_group_partition_uses,
                     parasolid_group_members,
-                );
+                )?;
                 ir.model.feature_result_topologies.push(
                     FeatureResultTopology::new(
                         IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
@@ -3949,56 +3950,61 @@ struct FeatureResultGroupMembers {
 }
 
 fn operation_body_write_result_group_members(
+    ctx: &DecodeContext<'_>,
     body_write: &str,
     image_partition_uses: &[crate::native::features::FeatureOperationBodyPartitionUse],
     group_partition_uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
     members: &[crate::native::parasolid::ParasolidGroupMember],
-) -> FeatureResultGroupMembers {
+) -> Result<FeatureResultGroupMembers, CodecError> {
     let mut matching_image_uses = image_partition_uses
         .iter()
         .filter(|use_| use_.operation_body_write == body_write);
     let image_use = matching_image_uses.next();
     if matching_image_uses.next().is_some() {
-        return FeatureResultGroupMembers::default();
+        return Ok(FeatureResultGroupMembers::default());
     }
     let image_members = image_use.map(|use_| {
         feature_result_group_members(
+            ctx,
             use_.partition_stream_ordinal,
             &use_.parasolid_group_members,
             members,
         )
-    });
+    }).transpose()?;
     let mut matching_group_uses = group_partition_uses
         .iter()
         .filter(|use_| use_.body_write == body_write);
     let group_use = matching_group_uses.next();
     if matching_group_uses.next().is_some() {
-        return FeatureResultGroupMembers::default();
+        return Ok(FeatureResultGroupMembers::default());
     }
     let group_members = group_use.map(|use_| {
         feature_result_group_members(
+            ctx,
             use_.partition_stream_ordinal,
             &use_.parasolid_group_members,
             members,
         )
-    });
-    match (image_members, group_members) {
+    }).transpose()?;
+    Ok(match (image_members, group_members) {
         (Some(image), Some(group)) if image == group => image,
         (Some(_), Some(_)) => FeatureResultGroupMembers::default(),
         (Some(image), None) => image,
         (None, Some(group)) => group,
         (None, None) => FeatureResultGroupMembers::default(),
-    }
+    })
 }
 
 fn feature_result_group_members(
+    ctx: &DecodeContext<'_>,
     partition_stream_ordinal: u32,
     member_ids: &[String],
     members: &[crate::native::parasolid::ParasolidGroupMember],
-) -> FeatureResultGroupMembers {
+) -> Result<FeatureResultGroupMembers, CodecError> {
     use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
     let mut result = FeatureResultGroupMembers::default();
     for member_id in member_ids {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(members.len()), "NX feature result group member lookup")?;
         let mut matches = members.iter().filter(|member| member.id == *member_id);
         let Some(member) = matches.next() else {
             continue;
@@ -4017,20 +4023,29 @@ fn feature_result_group_members(
         else {
             continue;
         };
-        match family {
-            GroupNodeFamily::Face => result.faces.push(cadmpeg_core::nonblank_literal!(
-                "nx:s{partition_stream_ordinal}:face#{xmt}"
-            )),
-            GroupNodeFamily::Edge => result.edges.push(cadmpeg_core::nonblank_literal!(
-                "nx:s{partition_stream_ordinal}:edge#{xmt}"
-            )),
-            GroupNodeFamily::Vertex => result.vertices.push(cadmpeg_core::nonblank_literal!(
-                "nx:s{partition_stream_ordinal}:vertex#{xmt}"
-            )),
-            _ => {}
-        }
+        let (kind, output) = match family {
+            GroupNodeFamily::Face => ("face", &mut result.faces),
+            GroupNodeFamily::Edge => ("edge", &mut result.edges),
+            GroupNodeFamily::Vertex => ("vertex", &mut result.vertices),
+            _ => continue,
+        };
+        let identity_len = 5 + 10 + 1 + kind.len() + 1 + 10;
+        ctx.charge_collection_items(1, "NX feature result group members")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_core::text::NonBlankString>() + identity_len),
+            "NX feature result group member identity",
+        )?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(identity_len), "NX feature result group member identity formatting")?;
+        output.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX feature result group members", 0, 1))?;
+        let mut text = String::new();
+        text.try_reserve(identity_len).map_err(|_| ctx.refuse_codec_limit("allocate NX feature result group member identity", 0, cadmpeg_core::decode::u64_from_index(identity_len)))?;
+        std::fmt::Write::write_fmt(&mut text, format_args!("nx:s{partition_stream_ordinal}:{kind}#{xmt}"))
+            .map_err(|_| CodecError::InvalidInput("NX result member identity formatting failed".to_string()))?;
+        let identity = cadmpeg_core::text::NonBlankString::new(text)
+            .ok_or_else(|| CodecError::malformed("NX result member identity is blank"))?;
+        output.push(identity);
     }
-    result
+    Ok(result)
 }
 
 /// Select the exact native writer identity for one intermediate body result.

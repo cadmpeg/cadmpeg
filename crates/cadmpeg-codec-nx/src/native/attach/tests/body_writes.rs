@@ -450,6 +450,9 @@ fn direct_group_use(
 
 #[test]
 fn result_topology_uses_only_unique_current_group_members() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
     let members = [
         group_member("face", GroupNodeFamily::Face, Some(40)),
@@ -459,10 +462,11 @@ fn result_topology_uses_only_unique_current_group_members() {
         group_member("shell", GroupNodeFamily::Shell, Some(43)),
     ];
     let result = feature_result_group_members(
+        &ctx,
         use_.partition_stream_ordinal,
         &use_.parasolid_group_members,
         &members,
-    );
+    ).unwrap();
 
     assert_eq!(result.faces, ["nx:s4:face#40"]);
     assert_eq!(result.edges, ["nx:s4:edge#41"]);
@@ -473,7 +477,7 @@ fn result_topology_uses_only_unique_current_group_members() {
         group_member("face", GroupNodeFamily::Face, Some(40)),
     ];
     assert!(
-        feature_result_group_members(4, &["face".into()], &duplicate_members)
+        feature_result_group_members(&ctx, 4, &["face".into()], &duplicate_members).unwrap()
             .faces
             .is_empty()
     );
@@ -481,6 +485,9 @@ fn result_topology_uses_only_unique_current_group_members() {
 
 #[test]
 fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let members = [
         group_member("face", GroupNodeFamily::Face, Some(40)),
         group_member("edge", GroupNodeFamily::Edge, Some(41)),
@@ -489,25 +496,62 @@ fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
     let direct = direct_group_use(&["face"]);
 
     let from_image = operation_body_write_result_group_members(
+        &ctx,
         "write",
         std::slice::from_ref(&image),
         &[],
         &members,
-    );
+    ).unwrap();
     let from_direct = operation_body_write_result_group_members(
+        &ctx,
         "write",
         &[],
         std::slice::from_ref(&direct),
         &members,
-    );
+    ).unwrap();
     assert_eq!(from_image.faces, ["nx:s4:face#40"]);
     assert_eq!(from_direct.faces, from_image.faces);
 
     let conflict = direct_group_use(&["edge"]);
     let rejected =
-        operation_body_write_result_group_members("write", &[image], &[conflict], &members);
+        operation_body_write_result_group_members(&ctx, "write", &[image], &[conflict], &members).unwrap();
     assert!(rejected.faces.is_empty());
     assert!(rejected.edges.is_empty());
+}
+
+fn result_group_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let members = [group_member("face", GroupNodeFamily::Face, Some(40))];
+    let uses = [group_use(&["face"])];
+    let result = operation_body_write_result_group_members(&ctx, "write", &uses, &[], &members)?;
+    assert_eq!(result.faces, ["nx:s4:face#40"]);
+    Ok(())
+}
+
+#[test]
+fn result_group_refuses_collection_limit() {
+    let error = result_group_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn result_group_refuses_retained_limit() {
+    let error = result_group_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn result_group_refuses_work_limit() {
+    let error = result_group_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
