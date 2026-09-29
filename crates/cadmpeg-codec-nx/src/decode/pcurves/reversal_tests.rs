@@ -323,8 +323,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         &ir,
         &CurveId::mint("test:model:entity#nx:test:unused-orientation-curve")
             .expect("identity grammar"),
-        &support,
-        &pcurve,
+        (&support, &pcurve),
         [2.0, 6.0],
         [
             Point3::new(second.u, second.v, 0.0),
