@@ -47,24 +47,51 @@ use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use cadmpeg_core::decode::u64_from_index;
 
+fn selection_objects<'history, 'lane>(
+    ctx: &DecodeContext<'_>,
+    histories: &'history [crate::records::FeatureHistory],
+    lane: &'lane FeatureInputLane,
+    operation: &'static str,
+) -> Result<Vec<(&'lane crate::records::FeatureInputName, &'history crate::records::Feature, usize)>, CodecError> {
+    let mut objects = Vec::new();
+    for (input_index, feature) in histories.iter().flat_map(|history| &history.features).enumerate() {
+        ctx.charge_work(1, operation)?;
+        for name in &lane.names {
+            let work = u64_from_index(name.value.len()).checked_add(u64_from_index(feature.name.len()))
+                .and_then(|work| work.checked_add(2))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, operation)?;
+        }
+        let Some(name) = feature_object_name(feature, lane) else { continue; };
+        ctx.reserve_collection_vec(&mut objects, 1, operation)?;
+        objects.push((name, feature, input_index));
+    }
+    let levels = if objects.len() > 1 { objects.len().ilog2() + 1 } else { 1 };
+    ctx.charge_work(u64_from_index(objects.len()).checked_mul(u64::from(levels))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+    objects.sort_unstable_by_key(|(name, _, input_index)| (name.offset, *input_index));
+    Ok(objects)
+}
+
+fn copy_selection_text(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    ctx.charge_work(u64_from_index(text.len()), operation)?;
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, text.len(), operation)?;
+    copy.push_str(text);
+    Ok(copy)
+}
+
 pub(super) fn compact_body_selections(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputBodySelection>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact body selections";
-    let mut objects = Vec::new();
-    for (input_index, feature) in histories.iter().flat_map(|history| &history.features).enumerate() {
-        ctx.charge_work(u64_from_index(lane.names.len()).checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-        let Some(name) = feature_object_name(feature, lane) else { continue; };
-        ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
-        objects.push((name, feature, input_index));
-    }
-    let levels = if objects.len() > 1 { objects.len().ilog2() + 1 } else { 1 };
-    ctx.charge_work(u64_from_index(objects.len()).checked_mul(u64::from(levels))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-    objects.sort_unstable_by_key(|(name, _, input_index)| (name.offset, *input_index));
+    let objects = selection_objects(ctx, histories, lane, OPERATION)?;
     let lane_key = lane
         .id
         .rsplit_once('#')
@@ -126,13 +153,9 @@ pub(super) fn compact_body_selections(
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len())))?;
         ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
         let id = ctx.format_retained(format_args!("sldprt:feature-input:body-selection#{lane_key}:{offset}"), OPERATION)?;
-        let copy_text = |text: &str| {
-            ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
-            ctx.format_retained(format_args!("{text}"), OPERATION)
-        };
-        let parent = copy_text(&lane.id)?;
-        let object_name_ref = copy_text(&name.id)?;
-        let feature_ref = copy_text(&feature.id)?;
+        let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
+        let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
+        let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
         let (body_state_ids, mode) = match (kind, state_token) {
             (NativeClassKind::DeleteBody, Some(token)) => (
                 compact_body_state_ids(ctx, &lane.native_payload, start, offset, token)?,
@@ -297,18 +320,15 @@ pub(super) fn compact_edge_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputEdgeSelection>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT compact edge selections";
     let history_features = history_features_with_object_sources(ctx, histories, lane)?;
-    let mut objects = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| Some((feature_object_name(feature, lane)?, feature)))
-        .collect::<Vec<_>>();
-    objects.sort_by_key(|(name, _)| name.offset);
+    let objects = selection_objects(ctx, histories, lane, OPERATION)?;
     let lane_key = lane
         .id
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
+    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
     let mut compact_edge_classes = lane
         .classes
         .iter()
@@ -323,7 +343,8 @@ pub(super) fn compact_edge_selections(
     });
     let compact_edge_token =
         class_name_end.and_then(|offset| View::u16_le_at(&lane.native_payload, offset));
-    for (object_index, &(name, feature)) in objects.iter().enumerate() {
+    for (object_index, &(name, feature, _)) in objects.iter().enumerate() {
+        ctx.charge_work(1, OPERATION)?;
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         if !matches!(kind, NativeClassKind::Fillet | NativeClassKind::Chamfer) {
             continue;
@@ -333,7 +354,7 @@ pub(super) fn compact_edge_selections(
         };
         let object_end = objects
             .get(object_index + 1)
-            .and_then(|(next, _)| usize::try_from(next.offset).ok())
+            .and_then(|(next, _, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
         let end = if kind == NativeClassKind::Fillet {
             fillet_edge_roster_end(lane, start, object_end).unwrap_or(object_end)
@@ -350,33 +371,40 @@ pub(super) fn compact_edge_selections(
                 .get(child_start..end)
                 .and_then(|payload| compact_edge_selection_vector(payload, child_start))
             {
+                ctx.reserve_collection_vec(&mut selections, 1, OPERATION)?;
                 selections.push(selection);
             }
         }
         if let Some(token) = compact_edge_token {
-            selections.extend(repeated_edge_selections(
+            let repeated = repeated_edge_selections(
                 &lane.native_payload,
                 start,
                 end,
                 token,
-            ));
+            );
+            ctx.reserve_collection_vec(&mut selections, repeated.len(), OPERATION)?;
+            selections.extend(repeated);
         }
-        selections.extend(edge_selection_vectors_in_interval(
+        let interval = edge_selection_vectors_in_interval(
             &lane.native_payload,
             start,
             end,
-        ));
+        );
+        ctx.reserve_collection_vec(&mut selections, interval.len(), OPERATION)?;
+        selections.extend(interval);
+        let levels = if selections.len() > 1 { selections.len().ilog2() + 1 } else { 1 };
+        ctx.charge_work(u64_from_index(selections.len()).checked_mul(u64::from(levels) + 1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         selections.sort_unstable_by_key(|selection| selection.0);
         selections.dedup_by_key(|selection| selection.0);
-        let feature_selections = selections
-            .into_iter()
-            .map(|(offset, local_edge_ids)| {
-                let reference_list = compact_edge_reference_list_for_feature(
+        let mut feature_selections = Vec::new();
+        for (offset, local_edge_ids) in selections {
+                ctx.charge_work(1, OPERATION)?;
+                let references = compact_edge_reference_list_for_feature(
                     &lane.native_payload,
                     offset,
                     &feature.kind,
-                );
-                let references = reference_list.clone().unwrap_or_default();
+                ).unwrap_or_default();
                 // Keep the established component projection separate from the
                 // reference-list projection.  A vertex-bearing multi-hop
                 // reference is excluded as a whole from `components`; its
@@ -398,23 +426,32 @@ pub(super) fn compact_edge_selections(
                     &history_features,
                     &feature.id,
                 );
-                FeatureInputEdgeSelection {
-                    id: format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
-                    parent: lane.id.clone(),
+                ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
+                let id = ctx.format_retained(format_args!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"), OPERATION)?;
+                let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
+                let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
+                let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
+                ctx.reserve_collection_vec(&mut feature_selections, 1, OPERATION)?;
+                feature_selections.push(FeatureInputEdgeSelection {
+                    id,
+                    parent,
                     ordinal: 0,
-                    offset: offset as u64,
-                    object_name_ref: name.id.clone(),
-                    feature_ref: feature.id.clone(),
+                    offset: u64_from_index(offset),
+                    object_name_ref,
+                    feature_ref,
                     local_edge_ids,
                     components,
                     references,
                     producer_feature_refs,
                     terminal_feature_ref,
-                }
-            })
-            .collect::<Vec<_>>();
+                });
+        }
+        ctx.charge_work(u64_from_index(feature_selections.len()).checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         for mut selection in input_owned_edge_selections(feature_selections) {
-            selection.ordinal = result.len() as u32;
+            selection.ordinal = u32::try_from(result.len())
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len())))?;
+            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
             result.push(selection);
         }
     }
@@ -494,6 +531,7 @@ pub(super) fn compact_surface_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputSurfaceSelection>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT compact surface selections";
     let history_features = history_features_with_object_sources(ctx, histories, lane)?;
     let mut classes = lane
         .classes
@@ -506,31 +544,31 @@ pub(super) fn compact_surface_selections(
             .and_then(|offset| offset.checked_add(6 + class.name.len()))
             .and_then(|offset| lane.native_payload.get(offset..offset + 2))
     });
-    let cylinder_reference_tokens = lane
-        .classes
-        .iter()
-        .filter(|class| class.name == "moCylinderRef_w")
-        .filter_map(|class| {
-            let body = usize::try_from(class.offset)
-                .ok()?
-                .checked_add(6 + class.name.len())?;
-            let token = View::u16_le_at(&lane.native_payload, body)?;
-            is_class_token(token).then_some(token)
-        })
-        .collect::<HashSet<_>>();
+    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
+    let mut cylinder_reference_tokens = HashSet::new();
+    for class in &lane.classes {
+        ctx.charge_work(u64_from_index(class.name.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if class.name != "moCylinderRef_w" { continue; }
+        let Some(body) = usize::try_from(class.offset).ok()
+            .and_then(|offset| offset.checked_add(6 + class.name.len())) else { continue; };
+        let Some(token) = View::u16_le_at(&lane.native_payload, body).filter(|token| is_class_token(*token)) else { continue; };
+        if !cylinder_reference_tokens.contains(&token) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            cylinder_reference_tokens.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+            cylinder_reference_tokens.insert(token);
+        }
+    }
     let mirror_surface_prefix = mirror_surface_type_prefix(lane);
-    let mut objects = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| Some((feature_object_name(feature, lane)?, feature)))
-        .collect::<Vec<_>>();
-    objects.sort_by_key(|(name, _)| name.offset);
+    let objects = selection_objects(ctx, histories, lane, OPERATION)?;
     let lane_key = lane
         .id
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
-    for (index, &(name, feature)) in objects.iter().enumerate() {
+    for (index, &(name, feature, _)) in objects.iter().enumerate() {
+        ctx.charge_work(1, OPERATION)?;
         let classified = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let kind = match classified {
             NativeClassKind::Unknown if matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") => {
@@ -550,42 +588,55 @@ pub(super) fn compact_surface_selections(
             continue;
         };
         let next_object = if kind == NativeClassKind::Extrusion {
-            objects[index + 1..]
-                .iter()
-                .find(|(_, next)| next.id != feature.id)
+            let mut next_object = None;
+            for next in &objects[index + 1..] {
+                let work = u64_from_index(next.1.id.len()).checked_add(u64_from_index(feature.id.len()))
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+                if next.1.id != feature.id { next_object = Some(next); break; }
+            }
+            next_object
         } else {
             objects.get(index + 1)
         };
         let end = next_object
-            .and_then(|(next, _)| usize::try_from(next.offset).ok())
+            .and_then(|(next, _, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
         let candidates = match kind {
-            NativeClassKind::Thicken => surface_token.map_or_else(Vec::new, |token| {
-                (start..end.saturating_sub(105))
-                    .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token))
-                    .filter_map(|offset| {
+            NativeClassKind::Thicken => {
+                let mut candidates = Vec::new();
+                if let (Some(token), Some(scan_end)) = (surface_token, end.checked_sub(105)) {
+                    for offset in start..scan_end {
+                        ctx.charge_work(1, OPERATION)?;
+                        if lane.native_payload.get(offset..offset + 2) != Some(token) { continue; }
                         let marker = offset + 103;
-                        compact_surface_selection_at(&lane.native_payload, marker)
-                            .map(|ids| (marker, ids))
-                    })
-                    .collect()
-            }),
-            NativeClassKind::Extrusion => (start..end.saturating_sub(103))
-                .filter_map(|offset| {
-                    compact_extrusion_to_face_at(&lane.native_payload, offset, end)
-                        .or_else(|| {
-                            compact_extrusion_to_vertex_at(&lane.native_payload, offset, end)
-                                .map(|(marker, _)| marker)
-                        })
-                        .or_else(|| {
-                            compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end)
-                        })
-                })
-                .filter_map(|marker| {
-                    compact_termination_reference_path_at(&lane.native_payload, marker)
-                        .map(|ids| (marker, ids))
-                })
-                .collect(),
+                        if let Some(ids) = compact_surface_selection_at(&lane.native_payload, marker) {
+                            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                            candidates.push((marker, ids));
+                        }
+                    }
+                }
+                candidates
+            }
+            NativeClassKind::Extrusion => {
+                let mut candidates = Vec::new();
+                if let Some(scan_end) = end.checked_sub(103) {
+                    for offset in start..scan_end {
+                        ctx.charge_work(1, OPERATION)?;
+                        let marker = compact_extrusion_to_face_at(&lane.native_payload, offset, end)
+                            .or_else(|| compact_extrusion_to_vertex_at(&lane.native_payload, offset, end).map(|(marker, _)| marker))
+                            .or_else(|| compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end));
+                        if let Some((marker, ids)) = marker.and_then(|marker| {
+                            compact_termination_reference_path_at(&lane.native_payload, marker).map(|ids| (marker, ids))
+                        }) {
+                            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                            candidates.push((marker, ids));
+                        }
+                    }
+                }
+                candidates
+            }
             NativeClassKind::CosmeticThread => {
                 let cylinder_references = cosmetic_thread_cylinder_references(
                     feature,
@@ -594,19 +645,18 @@ pub(super) fn compact_surface_selections(
                     end,
                     &cylinder_reference_tokens,
                 );
-                let component_face_references = lane
-                    .classes
-                    .iter()
-                    .filter_map(|class| {
-                        let offset = usize::try_from(class.offset).ok()?;
-                        (class.name == "moCompFace_c" && (start..end).contains(&offset))
-                            .then(|| offset.checked_add(6 + class.name.len()))
-                            .flatten()
-                            .and_then(|body| {
-                                component_face_reference_at(&lane.native_payload, body)
-                            })
-                    })
-                    .collect::<Vec<_>>();
+                let mut component_face_references = Vec::new();
+                for class in &lane.classes {
+                    ctx.charge_work(u64_from_index(class.name.len()).checked_add(1)
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                    let Some(offset) = usize::try_from(class.offset).ok() else { continue; };
+                    if class.name != "moCompFace_c" || !(start..end).contains(&offset) { continue; }
+                    if let Some(reference) = offset.checked_add(6 + class.name.len())
+                        .and_then(|body| component_face_reference_at(&lane.native_payload, body)) {
+                        ctx.reserve_collection_vec(&mut component_face_references, 1, OPERATION)?;
+                        component_face_references.push(reference);
+                    }
+                }
                 // The component edge is a fallback carrier. Some objects serialize
                 // both forms for one support; admitting both would fail the
                 // single-selection invariant even though a canonical carrier is
@@ -616,11 +666,13 @@ pub(super) fn compact_surface_selections(
                 .then(|| cosmetic_thread_component_references(lane, start, end))
                 .into_iter()
                 .flatten();
-                cylinder_references
-                    .into_iter()
-                    .chain(component_references)
-                    .chain(component_face_references)
-                    .collect()
+                let mut candidates = Vec::new();
+                for candidate in cylinder_references.into_iter().chain(component_references).chain(component_face_references) {
+                    ctx.charge_work(1, OPERATION)?;
+                    ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                    candidates.push(candidate);
+                }
+                candidates
             }
             NativeClassKind::Fillet if feature.input_class.as_deref() == Some("Fillet_c") => {
                 fillet_face_selection_candidates(lane, start, end)
@@ -700,12 +752,20 @@ pub(super) fn compact_surface_selections(
                 terminal_feature_ref.as_deref(),
                 &history_features,
             );
+            ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
+            let id = ctx.format_retained(format_args!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"), OPERATION)?;
+            let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
+            let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
+            let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
+            let ordinal = u32::try_from(result.len())
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len())))?;
+            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
             result.push(FeatureInputSurfaceSelection {
-                id: format!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
-                parent: lane.id.clone(),
-                ordinal: result.len() as u32,
-                offset: offset as u64,
-                selector: lane.native_payload[offset.saturating_sub(8)],
+                id,
+                parent,
+                ordinal,
+                offset: u64_from_index(offset),
+                selector: lane.native_payload[offset.checked_sub(8).unwrap_or(0)],
                 kind: match endpoint_selector {
                     Some(endpoint_selector) => {
                         crate::records::FeatureInputSurfaceSelectionKind::ExtrusionEndpoint {
@@ -714,8 +774,8 @@ pub(super) fn compact_surface_selections(
                     }
                     None => crate::records::FeatureInputSurfaceSelectionKind::Component,
                 },
-                object_name_ref: name.id.clone(),
-                feature_ref: feature.id.clone(),
+                object_name_ref,
+                feature_ref,
                 producer_feature_refs,
                 terminal_feature_ref,
                 components,
