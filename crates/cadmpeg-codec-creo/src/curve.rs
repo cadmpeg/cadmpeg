@@ -2483,16 +2483,15 @@ impl RelationUnitParser<'_> {
 }
 
 fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
-    let normalized = symbol.to_ascii_lowercase();
-    let (scale, offset, dimension) = match normalized.as_str() {
-        "k" => (1.0, 0.0, RelationDimension::TEMPERATURE),
-        "c" => (1.0, 273.15, RelationDimension::TEMPERATURE),
-        "f" => (
+    let (scale, offset, dimension) = match symbol {
+        _ if symbol.eq_ignore_ascii_case("k") => (1.0, 0.0, RelationDimension::TEMPERATURE),
+        _ if symbol.eq_ignore_ascii_case("c") => (1.0, 273.15, RelationDimension::TEMPERATURE),
+        _ if symbol.eq_ignore_ascii_case("f") => (
             5.0 / 9.0,
             459.67 * 5.0 / 9.0,
             RelationDimension::TEMPERATURE,
         ),
-        "r" => (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE),
+        _ if symbol.eq_ignore_ascii_case("r") => (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE),
         symbol => {
             let (scale, dimension) = multiplicative_relation_unit_symbol(symbol)?;
             (scale, 0.0, dimension)
@@ -2507,77 +2506,77 @@ fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
 
 fn multiplicative_relation_unit_symbol(symbol: &str) -> Option<(f64, RelationDimension)> {
     Some(match symbol {
-        "mm" => (1.0, RelationDimension::LENGTH),
-        "cm" => (10.0, RelationDimension::LENGTH),
-        "m" => (1_000.0, RelationDimension::LENGTH),
-        "in" | "inch" => (25.4, RelationDimension::LENGTH),
-        "ft" | "foot" => (304.8, RelationDimension::LENGTH),
-        "micron" => (0.001, RelationDimension::LENGTH),
-        "sq_mm" => (1.0, RelationDimension::LENGTH.scale(2)?),
-        "sq_cm" => (100.0, RelationDimension::LENGTH.scale(2)?),
-        "sq_m" => (1_000_000.0, RelationDimension::LENGTH.scale(2)?),
-        "sq_in" => (645.16, RelationDimension::LENGTH.scale(2)?),
-        "sq_ft" => (92_903.04, RelationDimension::LENGTH.scale(2)?),
-        "cu_mm" => (1.0, RelationDimension::LENGTH.scale(3)?),
-        "cu_cm" => (1_000.0, RelationDimension::LENGTH.scale(3)?),
-        "cu_m" => (1_000_000_000.0, RelationDimension::LENGTH.scale(3)?),
-        "cu_in" => (16_387.064, RelationDimension::LENGTH.scale(3)?),
-        "cu_ft" => (28_316_846.592, RelationDimension::LENGTH.scale(3)?),
-        "kg" => (1.0, RelationDimension::MASS),
-        "g" => (0.001, RelationDimension::MASS),
-        "mg" => (0.000_001, RelationDimension::MASS),
-        "lb" | "lbm" => (0.453_592_37, RelationDimension::MASS),
-        "slug" => (14.593_902_937_206_4, RelationDimension::MASS),
-        "tonne" => (1_000.0, RelationDimension::MASS),
-        "s" | "sec" | "second" => (1.0, RelationDimension::TIME),
-        "msec" => (0.001, RelationDimension::TIME),
-        "min" | "minute" => (60.0, RelationDimension::TIME),
-        "hr" | "hour" => (3_600.0, RelationDimension::TIME),
-        "day" => (86_400.0, RelationDimension::TIME),
-        "deg" | "degree" => (1.0, RelationDimension::ANGLE),
-        "rad" | "radian" => (180.0 / std::f64::consts::PI, RelationDimension::ANGLE),
-        "n" | "newton" => (1_000.0, RelationDimension::FORCE),
-        "kn" => (1_000_000.0, RelationDimension::FORCE),
-        "dyne" => (0.01, RelationDimension::FORCE),
-        "lbf" => (4_448.221_615_260_5, RelationDimension::FORCE),
-        "ton" => (9_806_650.0, RelationDimension::FORCE),
-        "erg" => (
+        _ if symbol.eq_ignore_ascii_case("mm") => (1.0, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("cm") => (10.0, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("m") => (1_000.0, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("in") || symbol.eq_ignore_ascii_case("inch") => (25.4, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("ft") || symbol.eq_ignore_ascii_case("foot") => (304.8, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("micron") => (0.001, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("sq_mm") => (1.0, RelationDimension::LENGTH.scale(2)?),
+        _ if symbol.eq_ignore_ascii_case("sq_cm") => (100.0, RelationDimension::LENGTH.scale(2)?),
+        _ if symbol.eq_ignore_ascii_case("sq_m") => (1_000_000.0, RelationDimension::LENGTH.scale(2)?),
+        _ if symbol.eq_ignore_ascii_case("sq_in") => (645.16, RelationDimension::LENGTH.scale(2)?),
+        _ if symbol.eq_ignore_ascii_case("sq_ft") => (92_903.04, RelationDimension::LENGTH.scale(2)?),
+        _ if symbol.eq_ignore_ascii_case("cu_mm") => (1.0, RelationDimension::LENGTH.scale(3)?),
+        _ if symbol.eq_ignore_ascii_case("cu_cm") => (1_000.0, RelationDimension::LENGTH.scale(3)?),
+        _ if symbol.eq_ignore_ascii_case("cu_m") => (1_000_000_000.0, RelationDimension::LENGTH.scale(3)?),
+        _ if symbol.eq_ignore_ascii_case("cu_in") => (16_387.064, RelationDimension::LENGTH.scale(3)?),
+        _ if symbol.eq_ignore_ascii_case("cu_ft") => (28_316_846.592, RelationDimension::LENGTH.scale(3)?),
+        _ if symbol.eq_ignore_ascii_case("kg") => (1.0, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("g") => (0.001, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("mg") => (0.000_001, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("lb") || symbol.eq_ignore_ascii_case("lbm") => (0.453_592_37, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("slug") => (14.593_902_937_206_4, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("tonne") => (1_000.0, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("s") || symbol.eq_ignore_ascii_case("sec") || symbol.eq_ignore_ascii_case("second") => (1.0, RelationDimension::TIME),
+        _ if symbol.eq_ignore_ascii_case("msec") => (0.001, RelationDimension::TIME),
+        _ if symbol.eq_ignore_ascii_case("min") || symbol.eq_ignore_ascii_case("minute") => (60.0, RelationDimension::TIME),
+        _ if symbol.eq_ignore_ascii_case("hr") || symbol.eq_ignore_ascii_case("hour") => (3_600.0, RelationDimension::TIME),
+        _ if symbol.eq_ignore_ascii_case("day") => (86_400.0, RelationDimension::TIME),
+        _ if symbol.eq_ignore_ascii_case("deg") || symbol.eq_ignore_ascii_case("degree") => (1.0, RelationDimension::ANGLE),
+        _ if symbol.eq_ignore_ascii_case("rad") || symbol.eq_ignore_ascii_case("radian") => (180.0 / std::f64::consts::PI, RelationDimension::ANGLE),
+        _ if symbol.eq_ignore_ascii_case("n") || symbol.eq_ignore_ascii_case("newton") => (1_000.0, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("kn") => (1_000_000.0, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("dyne") => (0.01, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("lbf") => (4_448.221_615_260_5, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("ton") => (9_806_650.0, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("erg") => (
             0.1,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)?,
         ),
-        "joule" => (
+        _ if symbol.eq_ignore_ascii_case("joule") => (
             1_000_000.0,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)?,
         ),
-        "kw" => (
+        _ if symbol.eq_ignore_ascii_case("kw") => (
             1_000_000_000.0,
             RelationDimension::FORCE
                 .combine(RelationDimension::LENGTH, false)?
                 .combine(RelationDimension::TIME, true)?,
         ),
-        "mw" => (
+        _ if symbol.eq_ignore_ascii_case("mw") => (
             1_000_000_000_000.0,
             RelationDimension::FORCE
                 .combine(RelationDimension::LENGTH, false)?
                 .combine(RelationDimension::TIME, true)?,
         ),
-        "pa" => (
+        _ if symbol.eq_ignore_ascii_case("pa") => (
             0.001,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
-        "mpa" => (
+        _ if symbol.eq_ignore_ascii_case("mpa") => (
             1_000.0,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
-        "gpa" => (
+        _ if symbol.eq_ignore_ascii_case("gpa") => (
             1_000_000.0,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
-        "psi" => (
+        _ if symbol.eq_ignore_ascii_case("psi") => (
             6.894_757_293_168_361,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
-        "ksi" => (
+        _ if symbol.eq_ignore_ascii_case("ksi") => (
             6_894.757_293_168_361,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
