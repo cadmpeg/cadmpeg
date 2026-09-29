@@ -570,8 +570,6 @@ fn transfer_with_limits(
     dimension_parameters: &std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterId>,
     policy: cadmpeg_core::decode::DecodePolicy,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
-
     let mut payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8"
         .to_vec();
@@ -583,8 +581,19 @@ fn transfer_with_limits(
     let record = crate::curve::expression_records(&payload)
         .pop()
         .expect("complete curve expression");
+    transfer_record_with_limits(&payload, record, dimension_parameters, policy)
+}
+
+fn transfer_record_with_limits(
+    payload: &[u8],
+    record: crate::curve::CurveExpressionRecord,
+    dimension_parameters: &std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterId>,
+    policy: cadmpeg_core::decode::DecodePolicy,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("root bytes fit the configured limit");
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.curves.expressions.push(record);
@@ -599,6 +608,73 @@ fn transfer_with_limits(
         dimension_parameters,
         &mut carriers,
     )
+}
+
+fn assert_retained_transfer_boundary(
+    mut run: impl FnMut(cadmpeg_core::decode::DecodePolicy) -> Result<usize, cadmpeg_core::CodecError>,
+    operation: &'static str,
+) {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    assert!(run(DecodePolicy::service()).is_ok(), "service transfer must succeed");
+    for limit in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        match run(policy) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == operation =>
+            {
+                assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+                assert!(refusal.limit < refusal.used + refusal.additional);
+                return;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => {}
+            other => panic!("{operation} was not reached before {other:?}"),
+        }
+    }
+    panic!("{operation} was not reached within the retained-byte test range");
+}
+
+#[test]
+fn curve_expression_identities_refuse_retained_limit_at_each_copy() {
+    let dimensions = std::collections::BTreeMap::new();
+    for operation in [
+        "creo curve-expression feature identity",
+        "creo curve-expression parameter identity",
+        "creo curve-expression IR parameter ID copy",
+        "creo curve-expression owner ID copy",
+        "creo curve-expression source parameter ID copy",
+    ] {
+        assert_retained_transfer_boundary(
+            |policy| transfer_with_limits(&["a=1"], &dimensions, policy),
+            operation,
+        );
+    }
+    assert_retained_transfer_boundary(
+        |policy| transfer_with_limits(&["a=1", "b=a+1"], &dimensions, policy),
+        "creo curve-expression dependency identity",
+    );
+}
+
+#[test]
+fn curve_expression_helix_identities_refuse_retained_limit_at_each_copy() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x02local_sys\0\xf9\x04\x03\xe4\x0f\x0f\x0f\x0f\x0f\x18\xe5\x0f\x0f\x0f\
+        \xe0\x0aexpression\0\xf8\x03r=5\0theta=0-t*360\0z=-2+10*t\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let dimensions = std::collections::BTreeMap::new();
+    for operation in [
+        "creo curve-expression curve identity",
+        "creo curve-expression procedural identity",
+        "creo curve-expression IR curve ID copy",
+    ] {
+        assert_retained_transfer_boundary(
+            |policy| transfer_record_with_limits(payload, record.clone(), &dimensions, policy),
+            operation,
+        );
+    }
 }
 
 #[test]
