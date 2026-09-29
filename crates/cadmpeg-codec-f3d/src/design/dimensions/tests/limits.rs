@@ -894,6 +894,35 @@ fn dimension_curve_secondary_index_refuses_collection_limit() {
 }
 
 #[test]
+fn dimension_recipe_owner_index_refuses_collection_limit() {
+    assert_refusal("f3d dimension recipe owner index");
+}
+
+#[test]
+fn dimension_recipe_companion_index_refuses_collection_limit() {
+    let fixture = fixture();
+    let companion = parameter_companion();
+    let mut inputs = fixture.inputs();
+    inputs.companions = std::slice::from_ref(&companion);
+    let operation = "f3d dimension recipe companion index";
+    for limit in 0..64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
 fn planar_dimension_output_refuses_collection_limit() {
     let constraint = cadmpeg_ir::sketches::SketchConstraint {
         id: cadmpeg_ir::sketches::SketchConstraintId::mint(

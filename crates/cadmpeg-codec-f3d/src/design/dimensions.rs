@@ -1270,30 +1270,22 @@ fn project_all_dimension_constraints(
             }
         }))
         .collect::<Result<Vec<_>, CodecError>>()?;
-    let companions_by_key = companions
-        .iter()
-        .filter_map(|companion| {
-            Some((
-                (
-                    native_stream(companion.id())?.to_owned(),
-                    companion.record_index(),
-                ),
-                companion,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let owners_by_companion = owners
-        .iter()
-        .filter_map(|owner| {
-            Some((
-                (
-                    native_stream(owner.id())?.to_owned(),
-                    owner.companion_record_index(),
-                ),
-                owner,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut companions_by_key = HashMap::new();
+    for companion in companions {
+        if let Some(scope) = native_stream(companion.id()) {
+            insert_dimension_index(ctx, &mut companions_by_key,
+                (scope, companion.record_index()), companion,
+                "f3d dimension recipe companion index")?;
+        }
+    }
+    let mut owners_by_companion = HashMap::new();
+    for owner in owners {
+        if let Some(scope) = native_stream(owner.id()) {
+            insert_dimension_index(ctx, &mut owners_by_companion,
+                (scope, owner.companion_record_index()), owner,
+                "f3d dimension recipe owner index")?;
+        }
+    }
     let mut recipes_by_companion = BTreeMap::<(String, u32), Vec<_>>::new();
     for record in recipe_records {
         let Some(scope) = native_stream(&record.id) else {
@@ -1309,8 +1301,8 @@ fn project_all_dimension_constraints(
     }
     constraints.extend(recipes_by_companion.into_iter().filter_map(
         |((scope, companion_record_index), records)| {
-            let companion = companions_by_key.get(&(scope.clone(), companion_record_index))?;
-            let owner = owners_by_companion.get(&(scope.clone(), companion_record_index))?;
+            let companion = companions_by_key.get(&(scope.as_str(), companion_record_index))?;
+            let owner = owners_by_companion.get(&(scope.as_str(), companion_record_index))?;
             let (parameter, parameter_id) = parameter_for(&scope, companion_record_index)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group");
             let sketch = sketches_by_scope
@@ -1411,8 +1403,7 @@ fn project_all_dimension_constraints(
     )?;
     constraints.extend(companions.iter().filter_map(|companion| {
         let scope = native_stream(companion.id())?;
-        let key = (scope.to_owned(), companion.record_index());
-        let owner = owners_by_companion.get(&key)?;
+        let owner = owners_by_companion.get(&(scope, companion.record_index()))?;
         let (parameter, parameter_id) = parameter_for(scope, companion.record_index())?;
         if parameter.kind() != DesignParameterKind::Dimension
             || projected_parameters.contains(&parameter_id)
