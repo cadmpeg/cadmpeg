@@ -85,14 +85,14 @@ pub(crate) struct FeatureProjection {
     regeneration_parents: Vec<(FeatureId, FeatureId)>,
 }
 
-fn copy_projected_feature_text(
+pub(super) fn copy_projected_feature_text(
     ctx: &DecodeContext<'_>,
     text: &str,
 ) -> Result<String, CodecError> {
     ctx.format_retained(format_args!("{text}"), "copy SLDPRT projected feature text")
 }
 
-fn neutral_feature_id_charged(
+pub(super) fn neutral_feature_id_charged(
     ctx: &DecodeContext<'_>,
     native_id: &str,
 ) -> Result<FeatureId, CodecError> {
@@ -145,7 +145,7 @@ fn insert_projected_map<K: Eq + std::hash::Hash, V>(
     Ok(())
 }
 
-fn copy_projected_feature_properties(
+pub(super) fn copy_projected_feature_properties(
     ctx: &DecodeContext<'_>,
     properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     operation: &'static str,
@@ -1565,40 +1565,52 @@ fn project_definition(
     })
 }
 
-fn parameter_names(feature: &Feature) -> Vec<String> {
-    let mut names = feature
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            FeatureContent::Dimension(name) if feature.parameters.contains_key(name.as_str()) => {
-                Some(name.clone())
+fn parameter_names(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Vec<String>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT parameter names";
+    let mut names = Vec::new();
+    for content in &feature.content {
+        ctx.charge_work(1, OPERATION)?;
+        if let FeatureContent::Dimension(name) = content {
+            if feature.parameters.contains_key(name.as_str()) {
+                let name = copy_projected_feature_text(ctx, name)?;
+                ctx.reserve_collection_vec(&mut names, 1, OPERATION)?;
+                names.push(name);
             }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let missing = feature
-        .parameters
-        .keys()
-        .filter(|name| !names.iter().any(|known| known == name.as_str()))
-        .map(|name| name.as_str().to_owned())
-        .collect::<Vec<_>>();
-    names.extend(missing);
-    names
+        }
+    }
+    for name in feature.parameters.keys() {
+        ctx.charge_work(names.len() as u64, OPERATION)?;
+        if !names.iter().any(|known| known == name.as_str()) {
+            let name = copy_projected_feature_text(ctx, name.as_str())?;
+            ctx.reserve_collection_vec(&mut names, 1, OPERATION)?;
+            names.push(name);
+        }
+    }
+    Ok(names)
 }
 
-pub(super) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
+pub(super) fn projected_parameter_names(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Vec<String>, CodecError> {
+    const OPERATION: &str = "deduplicate SLDPRT projected parameter names";
     let mut seen = HashSet::new();
-    parameter_names(feature)
-        .into_iter()
-        .filter(|name| seen.insert(name.clone()))
-        .collect()
+    let mut projected = Vec::new();
+    for name in parameter_names(ctx, feature)? {
+        ctx.charge_work(1, OPERATION)?;
+        if seen.contains(&name) { continue; }
+        let key = copy_projected_feature_text(ctx, &name)?;
+        ctx.charge_collection_items(1, OPERATION)?;
+        seen.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        seen.insert(key);
+        ctx.reserve_collection_vec(&mut projected, 1, OPERATION)?;
+        projected.push(name);
+    }
+    Ok(projected)
 }
 
-pub(super) fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> ParameterId {
-    ParameterId::compose(
-        &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
-        feature_identity_key(&feature.id).colon(ordinal),
-    )
+pub(super) fn neutral_parameter_id(ctx: &DecodeContext<'_>, feature: &Feature, ordinal: usize) -> Result<ParameterId, CodecError> {
+    let key = feature.id.strip_prefix("sldprt:history:feature#").unwrap_or(&feature.id);
+    let id = ctx.format_retained(format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)),
+        "retain SLDPRT projected parameter ID")?;
+    ParameterId::mint(id).map_err(CodecError::malformed)
 }
 
 fn native_definition(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<FeatureDefinition, CodecError> {

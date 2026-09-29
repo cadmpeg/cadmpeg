@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native Keywords parameter projection and equation evaluation.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
 use cadmpeg_ir::{
@@ -23,7 +25,8 @@ use crate::history::literals::{
 };
 use crate::history::project::pattern::{pattern_form, NativePatternClass};
 use crate::history::project::{
-    neutral_feature_id, neutral_parameter_id, projected_parameter_names,
+    copy_projected_feature_properties, copy_projected_feature_text,
+    neutral_feature_id_charged, neutral_parameter_id, projected_parameter_names,
 };
 
 const EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9: f64 = 1.0e-9;
@@ -36,85 +39,73 @@ mod literal_tests;
 
 use self::eval::{exact_integer_f64, ParameterExpressionParser};
 
-pub(crate) fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> {
-    let feature_names = histories
-        .iter()
-        .flat_map(|history| {
-            history
-                .features
-                .iter()
-                .filter(|feature| !is_history_metadata_record(feature, &history.features))
-        })
-        .filter(|feature| !feature.name.is_empty())
-        .map(|feature| (neutral_feature_id(&feature.id), feature.name.clone()))
-        .collect::<HashMap<_, _>>();
-    let global_owners = histories
-        .iter()
-        .flat_map(|history| {
-            history
-                .features
-                .iter()
-                .filter(|feature| !is_history_metadata_record(feature, &history.features))
-        })
-        .filter(|feature| feature.kind.eq_ignore_ascii_case("EquationDriven"))
-        .map(|feature| neutral_feature_id(&feature.id))
-        .collect::<HashSet<_>>();
-    let mut parameters = histories
-        .iter()
-        .flat_map(|history| {
-            history
-                .features
-                .iter()
-                .filter(|feature| !is_history_metadata_record(feature, &history.features))
-        })
-        .flat_map(|feature| {
-            projected_parameter_names(feature)
-                .into_iter()
-                .enumerate()
-                .map(move |(ordinal, name)| {
-                    let expression = &feature.parameters[name.as_str()];
-                    let display = dimension_display(expression);
-                    let properties = feature
-                        .dimension_properties
-                        .get(&name)
-                        .cloned()
-                        .unwrap_or_default();
-                    let parse_value = |value: &str| match display {
-                        Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
-                            parse_dimension_display_length(value).map(ParameterValue::Length)
-                        }
-                        None => parse_native_parameter_literal(feature, &name, value),
-                    };
-                    let value = properties
-                        .get("Value")
-                        .and_then(|value| parse_value(value))
-                        .or_else(|| parse_value(expression));
-                    DesignParameter {
-                        id: neutral_parameter_id(feature, ordinal),
-                        owner: Some(neutral_feature_id(&feature.id)),
-                        ordinal: ordinal as u32,
-                        properties,
-                        name,
-                        expression: expression.clone(),
-                        display,
-                        value,
-                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                        native_ref: None,
-                        pmi: None,
+pub(crate) fn project_parameters(ctx: &DecodeContext<'_>, histories: &[FeatureHistory]) -> Result<Vec<DesignParameter>, CodecError> {
+    let mut feature_names = HashMap::new();
+    let mut global_owners = HashSet::new();
+    let mut parameters = Vec::new();
+    for history in histories {
+        for feature in &history.features {
+            ctx.charge_work(history.features.len() as u64, "classify SLDPRT parameter owners")?;
+            if is_history_metadata_record(feature, &history.features) { continue; }
+            if !feature.name.is_empty() {
+                let id = neutral_feature_id_charged(ctx, &feature.id)?;
+                let name = copy_projected_feature_text(ctx, &feature.name)?;
+                if !feature_names.contains_key(&id) {
+                    ctx.charge_collection_items(1, "index SLDPRT parameter owner names")?;
+                    feature_names.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "index SLDPRT parameter owner names", u64::MAX - 1, u64::MAX,
+                    ))?;
+                }
+                feature_names.insert(id, name);
+            }
+            if feature.kind.eq_ignore_ascii_case("EquationDriven") {
+                let owner = neutral_feature_id_charged(ctx, &feature.id)?;
+                if !global_owners.contains(&owner) {
+                    ctx.charge_collection_items(1, "index SLDPRT global parameter owners")?;
+                    global_owners.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "index SLDPRT global parameter owners", u64::MAX - 1, u64::MAX,
+                    ))?;
+                    global_owners.insert(owner);
+                }
+            }
+            for (ordinal, name) in projected_parameter_names(ctx, feature)?.into_iter().enumerate() {
+                let expression = &feature.parameters[name.as_str()];
+                let display = dimension_display(expression);
+                let properties = feature.dimension_properties.get(&name)
+                    .map(|properties| copy_projected_feature_properties(ctx, properties,
+                        "collect SLDPRT projected parameter properties")).transpose()?.unwrap_or_default();
+                let parse_value = |value: &str| match display {
+                    Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
+                        parse_dimension_display_length(value).map(ParameterValue::Length)
                     }
-                })
-        })
-        .collect::<Vec<_>>();
+                    None => parse_native_parameter_literal(feature, &name, value),
+                };
+                let value = properties.get("Value").and_then(|value| parse_value(value))
+                    .or_else(|| parse_value(expression));
+                let ordinal_u32 = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT parameter ordinal", u64::from(u32::MAX), ordinal as u64,
+                ))?;
+                let parameter = DesignParameter {
+                    id: neutral_parameter_id(ctx, feature, ordinal)?,
+                    owner: Some(neutral_feature_id_charged(ctx, &feature.id)?),
+                    ordinal: ordinal_u32, properties, name,
+                    expression: ctx.format_retained(format_args!("{expression}"), "retain SLDPRT parameter expression")?,
+                    display, value,
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    native_ref: None, pmi: None,
+                };
+                ctx.reserve_collection_vec(&mut parameters, 1, "collect SLDPRT projected parameters")?;
+                parameters.push(parameter);
+            }
+        }
+    }
     populate_parameter_dependencies(&mut parameters, &feature_names, &global_owners);
     order_parameters_by_dependencies(&mut parameters);
     evaluate_parameter_expressions(&mut parameters, &feature_names, &global_owners);
-    for parameter in parameters
-        .iter_mut()
-        .filter(|parameter| parameter.value.is_none())
-    {
+    for parameter in parameters.iter_mut().filter(|parameter| parameter.value.is_none()) {
         parameter.value = text_parameter_literal(&parameter.name, &parameter.expression);
     }
-    parameters
+    Ok(parameters)
 }
 
 fn text_parameter_literal(name: &str, expression: &str) -> Option<ParameterValue> {
@@ -203,36 +194,31 @@ pub(crate) fn is_global_parameter_owner(feature: &cadmpeg_ir::features::Feature)
 /// Replace evaluable expressions with canonical literals in a temporary history projection.
 ///
 /// Retained native histories keep their source expressions.
-pub(super) fn apply_evaluated_parameters(histories: &mut [FeatureHistory]) {
-    let evaluated = project_parameters(histories)
-        .into_iter()
-        .filter_map(|parameter| {
-            parameter
-                .value
-                .map(|value| ((parameter.owner, parameter.name), value))
-        })
-        .collect::<HashMap<_, _>>();
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        let owner = neutral_feature_id(&feature.id);
-        let replacements = feature
-            .parameters
-            .iter()
-            .filter(|(name, expression)| {
-                parse_native_parameter_literal(feature, name.as_str(), expression).is_none()
-            })
-            .filter_map(|(name, _)| {
-                evaluated
-                    .get(&(Some(owner.clone()), name.as_str().to_owned()))
-                    .map(|value| (name.clone(), format_parameter_value(value)))
-            })
-            .collect::<Vec<_>>();
-        for (name, value) in replacements {
-            feature.parameters.insert(name, value);
+pub(super) fn apply_evaluated_parameters(ctx: &DecodeContext<'_>, histories: &mut [FeatureHistory]) -> Result<(), CodecError> {
+    let evaluated = project_parameters(ctx, histories)?;
+    for feature in histories.iter_mut().flat_map(|history| &mut history.features) {
+        let owner = neutral_feature_id_charged(ctx, &feature.id)?;
+        let mut replacements = Vec::new();
+        for (name, expression) in &feature.parameters {
+            ctx.charge_work(1, "scan SLDPRT evaluated parameter replacements")?;
+            if parse_native_parameter_literal(feature, name.as_str(), expression).is_some() { continue; }
+            ctx.charge_work(evaluated.len() as u64, "find SLDPRT evaluated parameter replacement")?;
+            let value = evaluated.iter().rev().find(|parameter| {
+                parameter.value.is_some() && parameter.owner.as_ref() == Some(&owner) && parameter.name == name.as_str()
+            }).and_then(|parameter| parameter.value.as_ref());
+            let Some(value) = value else { continue; };
+            let value = match value {
+                ParameterValue::String(value) => ctx.format_retained(format_args!("{value}"), "retain SLDPRT evaluated parameter text")?,
+                _ => format_parameter_value(value),
+            };
+            let name = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(ctx, name.as_str())?)
+                .ok_or_else(|| CodecError::malformed("blank SLDPRT evaluated parameter name"))?;
+            ctx.reserve_collection_vec(&mut replacements, 1, "collect SLDPRT evaluated parameter replacements")?;
+            replacements.push((name, value));
         }
+        for (name, value) in replacements { feature.parameters.insert(name, value); }
     }
+    Ok(())
 }
 
 pub(crate) fn parse_native_parameter_literal(

@@ -45,14 +45,14 @@ fn repeated_aliases_from_one_parameter_remain_unambiguous() {
             "Width".into(),
         )]),
     );
-    let parameters = project_parameters(&[FeatureHistory {
+    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![owner],
-    }]);
+    }]).unwrap();
 
     let aliases = parameter_aliases(
         &parameters,
@@ -78,14 +78,14 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
         ),
         (cadmpeg_core::nonblank_literal!("D1"), "1 +".into()),
     ]);
-    let parameters = project_parameters(&[FeatureHistory {
+    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![owner],
-    }]);
+    }]).unwrap();
     let by_name = parameters
         .iter()
         .map(|parameter| (parameter.name.as_str(), parameter))
@@ -201,14 +201,14 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
             "\"4\" * 2".into(),
         ),
     ]);
-    let parameters = project_parameters(&[FeatureHistory {
+    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![owner],
-    }]);
+    }]).unwrap();
     let by_name = parameters
         .iter()
         .map(|parameter| (parameter.name.as_str(), parameter))
@@ -239,14 +239,14 @@ fn subtraction_projects_both_parameter_dependencies() {
         (cadmpeg_core::nonblank_literal!("B"), "2".into()),
         (cadmpeg_core::nonblank_literal!("C"), "A-B".into()),
     ]);
-    let parameters = project_parameters(&[FeatureHistory {
+    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![owner],
-    }]);
+    }]).unwrap();
 
     assert_eq!(
         parameters[2].dependencies.as_slice(),
@@ -265,14 +265,14 @@ fn unqualified_aliases_are_local_to_the_expression_owner() {
     second
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("Width"), "5mm".into());
-    let parameters = project_parameters(&[FeatureHistory {
+    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![first, second],
-    }]);
+    }]).unwrap();
 
     let first_aliases = parameter_aliases(
         &parameters,
@@ -317,14 +317,14 @@ fn equation_driven_parameters_are_global() {
         "Width * 2".into(),
     );
 
-    let parameters = project_parameters(&[FeatureHistory {
+    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![equations, consumer],
-    }]);
+    }]).unwrap();
 
     assert_eq!(
         parameters[1].dependencies.as_slice(),
@@ -348,14 +348,14 @@ fn ordinary_feature_parameters_do_not_leak_globally() {
         "Width * 2".into(),
     );
 
-    let parameters = project_parameters(&[FeatureHistory {
+    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![source, consumer],
-    }]);
+    }]).unwrap();
 
     assert!(parameters[1].dependencies.is_empty());
     assert_eq!(parameters[1].value, None);
@@ -377,14 +377,14 @@ fn local_parameter_precedes_same_named_global() {
         ),
     ]);
 
-    let parameters = project_parameters(&[FeatureHistory {
+    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![equations, consumer],
-    }]);
+    }]).unwrap();
 
     assert_eq!(
         parameters[1].dependencies.as_slice(),

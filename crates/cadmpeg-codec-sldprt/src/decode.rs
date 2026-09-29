@@ -4455,7 +4455,7 @@ fn project_design_history(
             lanes,
         )?;
     crate::pmi::enrich_history_parameters(ctx, &mut parameter_projection, pmi_dimensions)?;
-    ir.model.parameters = crate::history::parameters::project_parameters(&parameter_projection);
+    ir.model.parameters = crate::history::parameters::project_parameters(ctx, &parameter_projection)?;
     crate::history::configuration::project_configuration_design_states(
         ctx,
         ir,

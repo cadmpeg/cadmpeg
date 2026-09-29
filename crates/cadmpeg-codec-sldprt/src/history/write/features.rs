@@ -224,7 +224,7 @@ pub(in crate::history) fn sync_neutral_features(
             )
         })
         .collect::<HashMap<_, _>>();
-    apply_evaluated_parameters(&mut resolved_histories);
+    apply_evaluated_parameters(&ctx, &mut resolved_histories)?;
     let evaluated_parameters = resolved_histories
         .iter()
         .flat_map(|history| &history.features)

@@ -120,7 +120,7 @@ pub(crate) fn enrich_history_semantic(
         ctx, histories, lanes,
     )?;
     crate::pmi::enrich_history_parameters(ctx, histories, pmi_dimensions)?;
-    apply_evaluated_parameters(histories);
+    apply_evaluated_parameters(ctx, histories)?;
     crate::resolved_features::reference_geometry::enrich_history_reference_axes(ctx, histories, lanes)?;
     crate::resolved_features::axes::enrich_history_revolution_inputs(ctx, histories, lanes)?;
     Ok(())
@@ -233,7 +233,7 @@ pub(crate) fn project_configuration_design_states(
             &ir.model.features,
         )?;
         ir.model.configurations[configuration_index].parameter_values =
-            project_parameters(&projection)
+            project_parameters(ctx, &projection)?
                 .into_iter()
                 .filter_map(|parameter| parameter.value.map(|value| (parameter.id, value)))
                 .collect();
