@@ -923,8 +923,8 @@ fn utf16_payload<'a>(reader: &mut BoundedReader<'a>) -> Result<&'a [u8], Framing
     if count == 0 {
         return Ok(&[]);
     }
-    let bytes = reader.take(count.saturating_mul(2))?;
-    if View::u16_le_at(bytes, count.saturating_sub(1).saturating_mul(2)) != Some(0) {
+    let bytes = reader.take(count * 2)?;
+    if View::u16_le_at(bytes, (count - 1) * 2) != Some(0) {
         return Err(FramingError::structural(
             count_offset,
             "UTF-16 string is missing NUL terminator",

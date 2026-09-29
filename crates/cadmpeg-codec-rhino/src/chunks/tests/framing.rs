@@ -20,6 +20,14 @@ use crate::test_support::test_dump::{eof, header, long_chunk, short_chunk};
 use crate::{RhinoCodec, MAGIC};
 
 #[test]
+fn count_error_reports_unrepresentable_end_as_overflow() {
+    assert!(matches!(
+        checked_count_bytes(2, 1, 0, 2, usize::MAX),
+        Err(FramingError::Overflow { offset: usize::MAX })
+    ));
+}
+
+#[test]
 fn class_end_checksum_children_refuse_collection_limit() {
     let archive = ArchiveVersion::V8;
     let bytes = short_chunk(archive, TCODE_CLASS_END, 0);

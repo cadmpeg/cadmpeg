@@ -161,8 +161,23 @@ impl MeshBudget {
     }
 
     /// Records retained bytes after admission.
-    fn commit(&mut self, bytes: usize) {
-        self.used = self.used.saturating_add(bytes);
+    fn commit(&mut self, bytes: usize) -> Result<(), CodecError> {
+        let total = self.used.checked_add(bytes).ok_or_else(|| {
+            cadmpeg_core::decode::refuse_local_limit(
+                "Rhino document mesh buffer bytes",
+                u64::MAX,
+                u64::MAX,
+            )
+        })?;
+        if total > self.limit {
+            return Err(cadmpeg_core::decode::refuse_local_limit(
+                "Rhino document mesh buffer bytes",
+                u64_from_index(self.limit),
+                u64_from_index(total),
+            ));
+        }
+        self.used = total;
+        Ok(())
     }
 }
 
@@ -1051,7 +1066,7 @@ fn read_buffer<'a>(
             let stored = expand
                 .ctx()
                 .copy_retained(input.take(declared)?, "rhino_mesh_buffer")?;
-            document_budget.commit(declared);
+            document_budget.commit(declared)?;
             (Cow::Owned(stored), declared)
         }
         1 => {
@@ -1101,7 +1116,7 @@ fn read_buffer<'a>(
                 .ctx()
                 .charge_retained(u64_from_index(declared), "rhino_mesh_buffer")?;
             let (view, compressed) = inflate(expand, source, declared)?;
-            document_budget.commit(declared);
+            document_budget.commit(declared)?;
             if compressed != chunk.body().len() {
                 return Err(error(
                     chunk.body().start + compressed,
@@ -1683,6 +1698,15 @@ fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, Geom
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn document_mesh_budget_commit_refuses_overflow() {
+        let mut budget = super::MeshBudget {
+            used: usize::MAX,
+            limit: usize::MAX,
+        };
+        assert!(format!("{:?}", budget.commit(1)).contains("ResourceLimit"));
+    }
+
     #[test]
     fn numerical_audit_quad_uses_shorter_large_diagonal() {
         let vertices = [
