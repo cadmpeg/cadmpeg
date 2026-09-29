@@ -699,10 +699,12 @@ pub(super) fn transfer_curve_expression_features(
     {
         let source_section = source_section(ctx, scan, record.offset)?;
         let ordinal = ordinal_base + expression_ordinal as u64;
-        let feature_id = IrFeatureId::compose(
+        let feature_id = crate::identity::compose_checked::<IrFeatureId>(
+            ctx,
             &crate::identity::DEPDB_CURVE_EXPRESSION_FEATURE,
-            cadmpeg_ir::ids::IdentityKey::from(record.entity_id).dash(record.offset),
-        );
+            format_args!("{}-{}", record.entity_id, record.offset),
+            "creo curve-expression feature identity",
+        )?;
         let (assignment_indices_by_name, unique_assignment_indices) =
             curve_expression_assignment_indices(ctx, record)?;
         let Some((parameter_ordinals, cyclic_edges)) =
@@ -738,12 +740,12 @@ pub(super) fn transfer_curve_expression_features(
                     "creo curve-expression missing name error",
                 )?));
             };
-            let parameter_id = ParameterId::compose(
+            let parameter_id = crate::identity::compose_checked::<ParameterId>(
+                ctx,
                 &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
-                cadmpeg_ir::ids::IdentityKey::from(record.entity_id)
-                    .dash(record.offset)
-                    .dash(assignment_ordinal),
-            );
+                format_args!("{}-{}-{assignment_ordinal}", record.entity_id, record.offset),
+                "creo curve-expression parameter identity",
+            )?;
             let mut seen = BTreeSet::new();
             let mut dependencies = Vec::new();
             let mut dimension_dependencies = Vec::new();
@@ -764,12 +766,12 @@ pub(super) fn transfer_curve_expression_features(
                         1,
                         "creo curve-expression parameter dependencies",
                     )?;
-                    dependencies.push(ParameterId::compose(
+                    dependencies.push(crate::identity::compose_checked::<ParameterId>(
+                        ctx,
                         &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
-                        cadmpeg_ir::ids::IdentityKey::from(record.entity_id)
-                            .dash(record.offset)
-                            .dash(dependency),
-                    ));
+                        format_args!("{}-{}-{dependency}", record.entity_id, record.offset),
+                        "creo curve-expression dependency identity",
+                    )?);
                 }
                 if assignment_indices_by_name.contains_key(&key) {
                     continue;
@@ -842,8 +844,12 @@ pub(super) fn transfer_curve_expression_features(
                 ctx,
                 ir,
                 DesignParameter {
-                    id: parameter_id.clone(),
-                    owner: Some(feature_id.clone()),
+                    id: crate::identity::copy_checked_id(
+                        ctx, parameter_id.as_str(), "creo curve-expression IR parameter ID copy",
+                    )?,
+                    owner: Some(crate::identity::copy_checked_id(
+                        ctx, feature_id.as_str(), "creo curve-expression owner ID copy",
+                    )?),
                     ordinal,
                     name: ctx.copy_retained_text(
                         parameter_name,
@@ -865,7 +871,11 @@ pub(super) fn transfer_curve_expression_features(
                 },
             )?;
             transferred_parameter_count += 1;
-            source_content.push(FeatureSourceContent::Parameter(parameter_id.clone()));
+            source_content.push(FeatureSourceContent::Parameter(
+                crate::identity::copy_checked_id(
+                    ctx, parameter_id.as_str(), "creo curve-expression source parameter ID copy",
+                )?,
+            ));
         }
         let mut parameter_index = parameter_start;
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
@@ -914,11 +924,18 @@ pub(super) fn transfer_curve_expression_features(
                     curve_expression_helix_feature_definition(helix, procedural)
                 });
         if let Some(procedural_definition) = placed_helix {
-            let key = cadmpeg_ir::ids::IdentityKey::from(record.entity_id).dash(record.offset);
-            let curve_id =
-                CurveId::compose(&crate::identity::DEPDB_CURVE_EXPRESSION_CURVE, key.clone());
-            let procedural_id =
-                ProceduralCurveId::compose(&crate::identity::DEPDB_CURVE_EXPRESSION_HELIX, key);
+            let curve_id = crate::identity::compose_checked::<CurveId>(
+                ctx,
+                &crate::identity::DEPDB_CURVE_EXPRESSION_CURVE,
+                format_args!("{}-{}", record.entity_id, record.offset),
+                "creo curve-expression curve identity",
+            )?;
+            let procedural_id = crate::identity::compose_checked::<ProceduralCurveId>(
+                ctx,
+                &crate::identity::DEPDB_CURVE_EXPRESSION_HELIX,
+                format_args!("{}-{}", record.entity_id, record.offset),
+                "creo curve-expression procedural identity",
+            )?;
             annotate(
                 annotations,
                 curve_id.as_str(),
@@ -940,7 +957,9 @@ pub(super) fn transfer_curve_expression_features(
                 ctx,
                 ir,
                 Curve {
-                    id: curve_id.clone(),
+                    id: crate::identity::copy_checked_id(
+                        ctx, curve_id.as_str(), "creo curve-expression IR curve ID copy",
+                    )?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                     source_object: None,
                 },
