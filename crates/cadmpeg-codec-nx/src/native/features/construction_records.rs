@@ -10,8 +10,7 @@ use super::reference::ConstructionReference;
 use super::swp104_branch::FeatureSwp104LeadingBranch;
 use super::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 use super::{
-    construction_payload_frames, copy_operation_text, copy_payload_source_blocks,
-    format_charged_text, format_feature_child_id, format_feature_history_id,
+    construction_payload_frames, format_feature_child_id, format_feature_history_id,
     offset_data_block_bytes, parse_sketch_point_name, visit_feature_history_operation_records,
     FeatureBlockConstruction, FeatureBlockDimension, FeatureBlockDimensions,
     FeatureBlockPayloadNamedRecord, FeatureBlockPayloadPoint, FeatureBlockPayloadPointGroup,
@@ -30,7 +29,6 @@ use super::{
 use crate::container::Container;
 use crate::native::om::{Expression, ExpressionDeclaration};
 use crate::native::segments::SegmentBodyBinding;
-use crate::om::compact::CompactIndexAtom;
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::reference_index::PayloadIndexToken;
 use cadmpeg_core::decode::DecodeContext;
@@ -72,25 +70,13 @@ pub(super) fn resolved_feature_payload_references(
                 for (ordinal, (token, source_offset)) in decoded.into_iter().enumerate() {
                     let data_block =
                         charged_unique_offset_data_block(ctx, &indexed, token.value())?;
-                    let section_key = copy_operation_text(
-                        ctx,
-                        section_key,
-                        "NX resolved feature reference section",
+                    let section_key = ctx
+                        .copy_retained_text(section_key, "NX resolved feature reference section")?;
+                    ctx.reserve_retained_vec(
+                        &mut references,
+                        1,
+                        "NX resolved feature payload references",
                     )?;
-                    ctx.charge_collection_items(1, "NX resolved feature payload references")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            ResolvedFeaturePayloadReference,
-                        >()),
-                        "NX resolved feature payload reference",
-                    )?;
-                    references.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "allocate NX resolved feature payload references",
-                            0,
-                            1,
-                        )
-                    })?;
                     references.push(ResolvedFeaturePayloadReference {
                         section_key,
                         operation_ordinal,
@@ -146,16 +132,7 @@ pub(in crate::native) fn feature_projected_curve_references(
             reference.operation_ordinal,
             Some(reference.ordinal),
         )?;
-        ctx.charge_collection_items(1, "NX projected curve references")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<FeatureProjectedCurveReference>(),
-            ),
-            "NX projected curve reference",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX projected curve references", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX projected curve references")?;
         output.push(FeatureProjectedCurveReference {
             id,
             operation_label,
@@ -216,13 +193,12 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.charge_collection_items(1, "NX projected curve reference field")?;
-            field_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                &FeatureProjectedCurveReference,
-            >()))?;
-            field.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX projected curve reference field", 0, 1)
-            })?;
+            ctx.reserve_scoped_vec(
+                &mut field_reservation,
+                &mut field,
+                1,
+                "NX projected curve reference field",
+            )?;
             field.push(reference);
         }
         let sort_work = field
@@ -257,13 +233,13 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
                         ctx.refuse_codec_limit("retain NX projected curve block IDs", 0, 1)
                     })?,
             ))?;
-            ctx.charge_collection_items(1, "NX projected curve block IDs")?;
-            data_blocks.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX projected curve block IDs", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut data_blocks, 1, "NX projected curve block IDs")?;
             let mut copy = String::new();
-            copy.try_reserve_exact(block.len())
-                .map_err(|_| ctx.refuse_codec_limit("copy NX projected curve block ID", 0, 1))?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut copy,
+                block.len(),
+                "copy NX projected curve block ID",
+            )?;
             copy.push_str(block);
             data_blocks.push(copy);
         }
@@ -291,38 +267,24 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
             continue;
         };
-        let id = format_charged_text(
-            ctx,
+        let id = ctx.format_retained_with_work(
             format_args!("nx:feature-history:projected-curve-construction-payload#{operation_key}"),
             "NX projected curve payload identity",
         )?;
         let operation_label =
-            copy_operation_text(ctx, operation_label, "NX projected curve payload operation")?;
+            ctx.copy_retained_text(operation_label, "NX projected curve payload operation")?;
         let mut construction_references = Vec::new();
         for reference in field {
-            let identity = copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX projected curve construction reference",
-            )?;
-            ctx.charge_collection_items(1, "NX projected curve construction references")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+            let identity =
+                ctx.copy_retained_text(&reference.id, "NX projected curve construction reference")?;
+            ctx.reserve_retained_vec(
+                &mut construction_references,
+                1,
                 "NX projected curve construction references",
             )?;
-            construction_references.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX projected curve construction references", 0, 1)
-            })?;
             construction_references.push(identity);
         }
-        ctx.charge_collection_items(1, "NX projected curve payloads")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureConstructionPayload>()),
-            "NX projected curve payloads",
-        )?;
-        payloads
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX projected curve payloads", 0, 1))?;
+        ctx.reserve_retained_vec(&mut payloads, 1, "NX projected curve payloads")?;
         payloads.push(FeatureConstructionPayload {
             id,
             operation_label,
@@ -357,32 +319,21 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!("{}-string-{ordinal:010}", payload.id),
                 "NX projected curve string identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
+            let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,
                 "NX projected curve string operation",
             )?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX projected curve string payload")?;
+                ctx.copy_retained_text(&payload.id, "NX projected curve string payload")?;
             let text =
-                copy_operation_text(ctx, value.value.as_str(), "NX projected curve string value")?;
+                ctx.copy_retained_text(value.value.as_str(), "NX projected curve string value")?;
             let value = crate::printable_string::PrintableString::new(text)
                 .map_err(|error| CodecError::Malformed(error.into()))?;
-            ctx.charge_collection_items(1, "NX projected curve strings")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureProjectedCurveConstructionString,
-                >()),
-                "NX projected curve strings",
-            )?;
-            strings
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX projected curve strings", 0, 1))?;
+            ctx.reserve_retained_vec(&mut strings, 1, "NX projected curve strings")?;
             strings.push(FeatureProjectedCurveConstructionString {
                 id,
                 operation_label,
@@ -445,16 +396,7 @@ pub(in crate::native) fn feature_point_construction_headers(
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit("NX point construction header source offset", 0, 1)
                     })?;
-                ctx.charge_collection_items(1, "NX point construction headers")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeaturePointConstructionHeader,
-                    >()),
-                    "NX point construction headers",
-                )?;
-                headers.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX point construction headers", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut headers, 1, "NX point construction headers")?;
                 headers.push(FeaturePointConstructionHeader {
                     id,
                     operation_label,
@@ -535,7 +477,7 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
             ) else {
                 continue;
             };
-            let Some(lane) = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes)
+            let Some(lane) = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes)?
             else {
                 continue;
             };
@@ -572,37 +514,23 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
             "point-construction-scalar-lane#",
             "NX point scalar lane identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &header.operation_label,
-            "NX point scalar lane operation",
-        )?;
+        let operation_label =
+            ctx.copy_retained_text(&header.operation_label, "NX point scalar lane operation")?;
         let construction_header =
-            copy_operation_text(ctx, &header.id, "NX point scalar lane header")?;
-        let first_block = format_charged_text(
-            ctx,
+            ctx.copy_retained_text(&header.id, "NX point scalar lane header")?;
+        let first_block = ctx.format_retained_with_work(
             format_args!(
                 "nx:om-data-blocks-{section_ordinal}:block#{}",
                 target_ordinal - 1
             ),
             "NX point scalar lane first block",
         )?;
-        let second_block = format_charged_text(
-            ctx,
+        let second_block = ctx.format_retained_with_work(
             format_args!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"),
             "NX point scalar lane second block",
         )?;
         let data_blocks = [first_block, second_block];
-        ctx.charge_collection_items(1, "NX point scalar lanes")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeaturePointConstructionScalarLane,
-            >()),
-            "NX point scalar lanes",
-        )?;
-        lanes
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX point scalar lanes", 0, 1))?;
+        ctx.reserve_retained_vec(&mut lanes, 1, "NX point scalar lanes")?;
         lanes.push(FeaturePointConstructionScalarLane {
             id,
             operation_label,
@@ -647,16 +575,7 @@ pub(in crate::native) fn feature_surface_construction_references(
             reference.operation_ordinal,
             Some(reference.ordinal),
         )?;
-        ctx.charge_collection_items(1, "NX surface construction references")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureSurfaceConstructionReference,
-            >()),
-            "NX surface construction reference",
-        )?;
-        output.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX surface construction references", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX surface construction references")?;
         output.push(FeatureSurfaceConstructionReference {
             id,
             operation_label,
@@ -706,16 +625,11 @@ pub(in crate::native) fn feature_thru_curve_construction_envelopes(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.charge_collection_items(1, "NX thru-curve construction envelopes")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureThruCurveConstructionEnvelope,
-                    >()),
-                    "NX thru-curve construction envelope",
+                ctx.reserve_retained_vec(
+                    &mut envelopes,
+                    1,
+                    "NX thru-curve construction envelopes",
                 )?;
-                envelopes.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX thru-curve construction envelopes", 0, 1)
-                })?;
                 Ok(FeatureThruCurveConstructionEnvelope {
                     id,
                     operation_label,
@@ -796,16 +710,7 @@ pub(in crate::native) fn feature_swp104_leading_branches(
             match resolved {
                 Ok(Some(branch)) => {
                     let admitted = (|| -> Result<(), CodecError> {
-                        ctx.charge_collection_items(1, "NX SWP104 leading branches")?;
-                        ctx.charge_retained(
-                            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                                FeatureSwp104LeadingBranch,
-                            >()),
-                            "NX SWP104 leading branches",
-                        )?;
-                        branches.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("allocate NX SWP104 leading branches", 0, 1)
-                        })?;
+                        ctx.reserve_retained_vec(&mut branches, 1, "NX SWP104 leading branches")?;
                         branches.push(branch);
                         Ok(())
                     })();
@@ -863,25 +768,9 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
             .count();
-        let graph_bytes = graph_count
-            .checked_mul(std::mem::size_of::<&FeatureSurfaceConstructionReference>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX surface construction graph", 0, 1))?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(graph_count),
-            "NX surface construction graph",
-        )?;
-        let _graph_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(graph_bytes),
-            "NX surface construction graph",
-        )?;
-        let mut graph = Vec::new();
-        graph.try_reserve_exact(graph_count).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX surface construction graph",
-                0,
-                cadmpeg_core::decode::u64_from_index(graph_count),
-            )
-        })?;
+
+        let (mut graph, _graph_reservation) =
+            ctx.temporary_vec(graph_count, "NX surface construction graph")?;
         graph.extend(
             references
                 .iter()
@@ -907,23 +796,17 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             continue;
         };
         let mut data_blocks = Vec::new();
-        ctx.charge_collection_items(14, "NX surface construction source blocks")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(14 * std::mem::size_of::<String>()),
-            "NX surface construction source block slots",
+        ctx.reserve_retained_vec(
+            &mut data_blocks,
+            14,
+            "NX surface construction source blocks",
         )?;
-        data_blocks.try_reserve_exact(14).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX surface construction source blocks", 0, 14)
-        })?;
         for reference in graph {
             let Some(block) = reference.data_block.as_deref() else {
                 break;
             };
-            data_blocks.push(copy_operation_text(
-                ctx,
-                block,
-                "NX surface construction source block",
-            )?);
+            data_blocks
+                .push(ctx.copy_retained_text(block, "NX surface construction source block")?);
         }
         if data_blocks.len() != 14 {
             continue;
@@ -954,41 +837,19 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("NX surface construction payload identity", 0, 1)
             })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX surface construction payload identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX surface construction payload identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX surface construction payload identity")?;
         id.push_str(prefix);
         id.push_str(operation_key);
         let mut construction_references: [String; 14] = std::array::from_fn(|_| String::new());
         for (slot, reference) in graph.into_iter().enumerate() {
-            construction_references[slot] = copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX surface construction reference identity",
-            )?;
+            construction_references[slot] = ctx
+                .copy_retained_text(&reference.id, "NX surface construction reference identity")?;
         }
-        ctx.charge_collection_items(1, "NX surface construction payloads")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureSurfaceConstructionPayload,
-            >()),
-            "NX surface construction payload",
-        )?;
-        output.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX surface construction payloads", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX surface construction payloads")?;
         output.push(FeatureSurfaceConstructionPayload {
             id,
-            operation_label: copy_operation_text(
-                ctx,
-                operation_label,
-                "NX surface construction operation label",
-            )?,
+            operation_label: ctx
+                .copy_retained_text(operation_label, "NX surface construction operation label")?,
             construction_references,
             content,
         });
@@ -1024,17 +885,11 @@ pub(in crate::native) fn feature_surface_construction_scalar_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX surface scalar pair ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX surface scalar pair label",
-                )?,
+                operation_label: ctx
+                    .copy_retained_text(&payload.operation_label, "NX surface scalar pair label")?,
                 payload: FeatureScalarPairPayload::SurfaceConstruction {
-                    surface_construction_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX surface scalar pair payload",
-                    )?,
+                    surface_construction_payload: ctx
+                        .copy_retained_text(&payload.id, "NX surface scalar pair payload")?,
                     frame,
                 },
                 ordinal,
@@ -1071,31 +926,18 @@ pub(in crate::native) fn feature_surface_construction_strings(
             })?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
             let text =
-                copy_operation_text(ctx, value.value.as_str(), "NX surface payload string text")?;
+                ctx.copy_retained_text(value.value.as_str(), "NX surface payload string text")?;
             let value = crate::payload_text::PayloadText::new(text)
                 .map_err(|error| CodecError::Malformed(error.to_owned()))?;
-            ctx.charge_collection_items(1, "NX surface payload strings")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureSurfaceConstructionString,
-                >()),
-                "NX surface payload string record",
-            )?;
-            strings
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX surface payload strings", 0, 1))?;
+            ctx.reserve_retained_vec(&mut strings, 1, "NX surface payload strings")?;
             strings.push(FeatureSurfaceConstructionString {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
+                operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
                     "NX surface payload string label",
                 )?,
-                surface_construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX surface payload string owner",
-                )?,
+                surface_construction_payload: ctx
+                    .copy_retained_text(&payload.id, "NX surface payload string owner")?,
                 ordinal: ordinal_u32,
                 value,
                 payload_offset,
@@ -1158,16 +1000,7 @@ pub(in crate::native) fn feature_extrude_profile_references(
                     let ordinal = u32::try_from(ordinal).map_err(|_| {
                         ctx.refuse_codec_limit("NX extrude profile reference ordinal", 0, 1)
                     })?;
-                    ctx.charge_collection_items(1, "NX extrude profile references")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureExtrudeProfileReference,
-                        >()),
-                        "NX extrude profile references",
-                    )?;
-                    references.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX extrude profile references", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut references, 1, "NX extrude profile references")?;
                     references.push(FeatureExtrudeProfileReference {
                         id,
                         operation_label,
@@ -1229,16 +1062,7 @@ pub(in crate::native) fn feature_extrude_payload_headers(
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit("NX extrude header source offset", 0, 1)
                     })?;
-                ctx.charge_collection_items(1, "NX extrude payload headers")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureExtrudePayloadHeader,
-                    >()),
-                    "NX extrude payload headers",
-                )?;
-                headers.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX extrude payload headers", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut headers, 1, "NX extrude payload headers")?;
                 headers.push(FeatureExtrudePayloadHeader {
                     id,
                     operation_label,
@@ -1300,16 +1124,7 @@ pub(in crate::native) fn feature_operation_terminal_discriminators(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.charge_collection_items(1, "NX operation terminal discriminators")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureOperationTerminalDiscriminator,
-                    >()),
-                    "NX operation terminal discriminators",
-                )?;
-                lanes.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX operation terminal discriminators", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut lanes, 1, "NX operation terminal discriminators")?;
                 lanes.push(FeatureOperationTerminalDiscriminator {
                     id,
                     operation_label,
@@ -1358,10 +1173,8 @@ pub(in crate::native) fn feature_operation_body_scalar_triples(
                     continue;
                 };
                 let projected = (|| -> Result<(), CodecError> {
-                    let id = format_charged_text(ctx,
-                        format_args!("nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
-                            triple.body_reference_ordinal),
-                        "NX operation body scalar triple identity")?;
+                    let id = ctx.format_retained_with_work(format_args!("nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
+                            triple.body_reference_ordinal), "NX operation body scalar triple identity")?;
                     let operation_label = format_feature_history_id(
                         ctx,
                         "operation-label",
@@ -1369,16 +1182,7 @@ pub(in crate::native) fn feature_operation_body_scalar_triples(
                         operation_ordinal,
                         None,
                     )?;
-                    ctx.charge_collection_items(1, "NX operation body scalar triples")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureOperationBodyScalarTriple,
-                        >()),
-                        "NX operation body scalar triples",
-                    )?;
-                    triples.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX operation body scalar triples", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut triples, 1, "NX operation body scalar triples")?;
                     triples.push(FeatureOperationBodyScalarTriple {
                         id,
                         operation_label,
@@ -1429,10 +1233,8 @@ pub(in crate::native) fn feature_operation_body_members(
                         let ordinal = u32::try_from(ordinal).map_err(|_| {
                             ctx.refuse_codec_limit("NX operation body member ordinal", 0, 1)
                         })?;
-                        let id = format_charged_text(ctx,
-                            format_args!("nx:feature-history:operation-body-member#{section_key}-{operation_ordinal:010}-{}-{ordinal}",
-                                group.body_reference_ordinal),
-                            "NX operation body member identity")?;
+                        let id = ctx.format_retained_with_work(format_args!("nx:feature-history:operation-body-member#{section_key}-{operation_ordinal:010}-{}-{ordinal}",
+                                group.body_reference_ordinal), "NX operation body member identity")?;
                         let operation_label = format_feature_history_id(
                             ctx,
                             "operation-label",
@@ -1449,16 +1251,7 @@ pub(in crate::native) fn feature_operation_body_members(
                                     1,
                                 )
                             })?;
-                        ctx.charge_collection_items(1, "NX operation body members")?;
-                        ctx.charge_retained(
-                            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                                FeatureOperationBodyMember,
-                            >()),
-                            "NX operation body members",
-                        )?;
-                        members.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("allocate NX operation body members", 0, 1)
-                        })?;
+                        ctx.reserve_retained_vec(&mut members, 1, "NX operation body members")?;
                         members.push(FeatureOperationBodyMember {
                             id,
                             operation_label,
@@ -1535,8 +1328,11 @@ pub(in crate::native) fn feature_operation_body_operands(
                 "format NX operand data block id",
             )?;
             let mut id = String::new();
-            id.try_reserve_exact(length)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX operand data block id", 0, 1))?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut id,
+                length,
+                "allocate NX operand data block id",
+            )?;
             write!(id, "{store}:block#{}", member.member.atom.value())
                 .map_err(|_| ctx.refuse_codec_limit("write NX operand data block id", 0, 1))?;
             if blocks.iter().any(|block| block.id == id) {
@@ -1566,29 +1362,20 @@ pub(in crate::native) fn feature_operation_body_operands(
                 binding.body_object_index == member.member.atom.value()
                     || binding.body_alias_object_index == member.member.atom.value()
             }) {
-                ctx.charge_collection_items(1, "NX operation operand bindings")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                    "retain NX operation operand bindings",
+                ctx.reserve_retained_vec(
+                    &mut segment_body_bindings,
+                    1,
+                    "NX operation operand bindings",
                 )?;
-                segment_body_bindings.try_reserve_exact(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX operation operand bindings", 0, 1)
-                })?;
-                segment_body_bindings.push(copy_operation_text(
-                    ctx,
-                    &binding.id,
-                    "retain NX operation operand binding id",
-                )?);
+                segment_body_bindings.push(
+                    ctx.copy_retained_text(&binding.id, "retain NX operation operand binding id")?,
+                );
             }
         }
         if !same_namespace_reference && segment_body_bindings.is_empty() {
             continue;
         }
-        ctx.charge_collection_items(1, "NX feature operation body operands")?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureOperationBodyOperand>()), "retain NX feature operation body operands")?;
-        operands.try_reserve_exact(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX feature operation body operands", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut operands, 1, "NX feature operation body operands")?;
         operands.push(FeatureOperationBodyOperand {
             id: replace_operation_text(
                 ctx,
@@ -1597,8 +1384,7 @@ pub(in crate::native) fn feature_operation_body_operands(
                 "operation-body-operand",
                 "retain NX operation body operand id",
             )?,
-            operation_label: copy_operation_text(
-                ctx,
+            operation_label: ctx.copy_retained_text(
                 &member.operation_label,
                 "retain NX operation body operand label",
             )?,
@@ -1658,11 +1444,7 @@ pub(super) fn replace_operation_text(
             })
         })
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut result = String::new();
-    result
-        .try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    let mut result = ctx.retained_string(length, operation)?;
     result.push_str(prefix);
     if prefix.len() != value.len() {
         result.push_str(new);
@@ -1694,10 +1476,8 @@ pub(in crate::native) fn feature_operation_body_11_continuations(
             };
             let projected = (|| -> Result<(), CodecError> {
                 for continuation in rows {
-                    let id = format_charged_text(ctx,
-                        format_args!("nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal:010}-{}",
-                            continuation.body_reference_ordinal),
-                        "NX trim body continuation identity")?;
+                    let id = ctx.format_retained_with_work(format_args!("nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal:010}-{}",
+                            continuation.body_reference_ordinal), "NX trim body continuation identity")?;
                     let operation_label = format_feature_history_id(
                         ctx,
                         "operation-label",
@@ -1719,16 +1499,7 @@ pub(in crate::native) fn feature_operation_body_11_continuations(
                         .ok_or_else(|| {
                             ctx.refuse_codec_limit("NX trim body terminal offset", 0, 1)
                         })?;
-                    ctx.charge_collection_items(1, "NX trim body continuations")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureOperationBody11Continuation,
-                        >()),
-                        "NX trim body continuations",
-                    )?;
-                    continuations.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX trim body continuations", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut continuations, 1, "NX trim body continuations")?;
                     continuations.push(FeatureOperationBody11Continuation {
                         id,
                         operation_label,
@@ -1797,21 +1568,11 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                                             1,
                                         )
                                     })?;
-                                ctx.charge_collection_items(1, "NX body compact references")?;
-                                ctx.charge_retained(
-                                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                                        ConstructionReference<Option<String>, CompactIndexAtom>,
-                                    >(
-                                    )),
+                                ctx.reserve_retained_vec(
+                                    &mut references,
+                                    1,
                                     "NX body compact references",
                                 )?;
-                                references.try_reserve(1).map_err(|_| {
-                                    ctx.refuse_codec_limit(
-                                        "allocate NX body compact references",
-                                        0,
-                                        1,
-                                    )
-                                })?;
                                 references.push(ConstructionReference {
                                     token: value.atom,
                                     data_block,
@@ -1837,21 +1598,11 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                                             1,
                                         )
                                     })?;
-                                ctx.charge_collection_items(1, "NX body object references")?;
-                                ctx.charge_retained(
-                                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                                        ConstructionReference<Option<String>, PayloadIndexToken>,
-                                    >(
-                                    )),
+                                ctx.reserve_retained_vec(
+                                    &mut references,
+                                    1,
                                     "NX body object references",
                                 )?;
-                                references.try_reserve(1).map_err(|_| {
-                                    ctx.refuse_codec_limit(
-                                        "allocate NX body object references",
-                                        0,
-                                        1,
-                                    )
-                                })?;
                                 references.push(ConstructionReference {
                                     token: value.token,
                                     data_block,
@@ -1861,10 +1612,8 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                             FeatureOperationBodyReferences::PayloadObjectIndex(references)
                         }
                     };
-                    let id = format_charged_text(ctx,
-                    format_args!("nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal:010}-{}",
-                        lane.body_reference_ordinal),
-                    "NX operation body reference lane identity")?;
+                    let id = ctx.format_retained_with_work(format_args!("nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal:010}-{}",
+                        lane.body_reference_ordinal), "NX operation body reference lane identity")?;
                     let operation_label = format_feature_history_id(
                         ctx,
                         "operation-label",
@@ -1872,16 +1621,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                         operation_ordinal,
                         None,
                     )?;
-                    ctx.charge_collection_items(1, "NX operation body reference lanes")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureOperationBodyReferenceLane,
-                        >()),
-                        "NX operation body reference lanes",
-                    )?;
-                    lanes.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX operation body reference lanes", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut lanes, 1, "NX operation body reference lanes")?;
                     lanes.push(FeatureOperationBodyReferenceLane {
                         id,
                         operation_label,
@@ -1931,13 +1671,12 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.charge_collection_items(1, "NX extrude profile reference order")?;
-            reference_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<&FeatureExtrudeProfileReference>(),
-            ))?;
-            operation_references.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX extrude profile reference order", 0, 1)
-            })?;
+            ctx.reserve_scoped_vec(
+                &mut reference_reservation,
+                &mut operation_references,
+                1,
+                "NX extrude profile reference order",
+            )?;
             operation_references.push(reference);
         }
         let sort_work = operation_references
@@ -1971,17 +1710,12 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
                 continue;
             };
             let data_block =
-                copy_operation_text(ctx, block, "NX extrude construction profile block")?;
-            ctx.charge_collection_items(1, "NX extrude construction profile references")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureExtrudeConstructionProfileReference,
-                >()),
+                ctx.copy_retained_text(block, "NX extrude construction profile block")?;
+            ctx.reserve_retained_vec(
+                &mut profile_references,
+                1,
                 "NX extrude construction profile references",
             )?;
-            profile_references.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX extrude construction profile references", 0, 1)
-            })?;
             profile_references.push(FeatureExtrudeConstructionProfileReference {
                 object_index: reference.token.value(),
                 data_block,
@@ -1996,21 +1730,9 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             "extrude-construction-profile",
             "NX extrude construction profile identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            operation_label,
-            "NX extrude construction profile operation",
-        )?;
-        ctx.charge_collection_items(1, "NX extrude construction profiles")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureExtrudeConstructionProfile,
-            >()),
-            "NX extrude construction profiles",
-        )?;
-        profiles.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX extrude construction profiles", 0, 1)
-        })?;
+        let operation_label =
+            ctx.copy_retained_text(operation_label, "NX extrude construction profile operation")?;
+        ctx.reserve_retained_vec(&mut profiles, 1, "NX extrude construction profiles")?;
         profiles.push(FeatureExtrudeConstructionProfile {
             id,
             operation_label,
@@ -2070,16 +1792,7 @@ pub(in crate::native) fn feature_extrude_payload_32_branches(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.charge_collection_items(1, "NX extrude payload 32 branches")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureExtrudePayload32Branch,
-                    >()),
-                    "NX extrude payload 32 branches",
-                )?;
-                branches.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX extrude payload 32 branches", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut branches, 1, "NX extrude payload 32 branches")?;
                 branches.push(FeatureExtrudePayload32Branch {
                     id,
                     operation_label,
@@ -2122,15 +1835,8 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             let Some(binding) = binding.as_deref() else {
                 return Ok(None);
             };
-            let id = copy_operation_text(ctx, binding, operation)?;
-            ctx.charge_collection_items(1, operation)?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                operation,
-            )?;
-            copied
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            let id = ctx.copy_retained_text(binding, operation)?;
+            ctx.reserve_retained_vec(&mut copied, 1, operation)?;
             copied.push(id);
         }
         crate::om::branch_items::BranchItems::new(copied)
@@ -2172,13 +1878,12 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.charge_collection_items(1, "NX extrude 32 profile order")?;
-            profile_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                &FeatureExtrudeProfileReference,
-            >()))?;
-            profile.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX extrude 32 profile order", 0, 1)
-            })?;
+            ctx.reserve_scoped_vec(
+                &mut profile_reservation,
+                &mut profile,
+                1,
+                "NX extrude 32 profile order",
+            )?;
             profile.push(reference);
         }
         let sort_work = profile
@@ -2213,12 +1918,9 @@ pub(in crate::native) fn feature_extrude_32_constructions(
                 return Err(ctx.refuse_codec_limit("NX extrude 32 profile block", 0, 1));
             };
             Ok(FeatureConstructionMember {
-                reference: copy_operation_text(
-                    ctx,
-                    &reference.id,
-                    "NX extrude 32 profile reference",
-                )?,
-                data_block: copy_operation_text(ctx, block, "NX extrude 32 profile block")?,
+                reference: ctx
+                    .copy_retained_text(&reference.id, "NX extrude 32 profile reference")?,
+                data_block: ctx.copy_retained_text(block, "NX extrude 32 profile block")?,
             })
         })?;
         let Some(atom_data_blocks) = copy_bindings(
@@ -2252,22 +1954,12 @@ pub(in crate::native) fn feature_extrude_32_constructions(
             "extrude-32-construction",
             "NX extrude 32 construction identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &branch.operation_label,
             "NX extrude 32 construction operation",
         )?;
-        let branch_id = copy_operation_text(ctx, &branch.id, "NX extrude 32 construction branch")?;
-        ctx.charge_collection_items(1, "NX extrude 32 constructions")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<FeatureExtrude32Construction>(),
-            ),
-            "NX extrude 32 constructions",
-        )?;
-        constructions
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX extrude 32 constructions", 0, 1))?;
+        let branch_id = ctx.copy_retained_text(&branch.id, "NX extrude 32 construction branch")?;
+        ctx.reserve_retained_vec(&mut constructions, 1, "NX extrude 32 constructions")?;
         constructions.push(FeatureExtrude32Construction {
             id,
             operation_label,
@@ -2325,16 +2017,11 @@ pub(in crate::native) fn feature_block_construction_references(
                     )?;
                     let data_block =
                         charged_unique_offset_data_block(ctx, &indexed, token.value())?;
-                    ctx.charge_collection_items(1, "NX block construction references")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureBlockConstructionReference,
-                        >()),
+                    ctx.reserve_retained_vec(
+                        &mut references,
+                        1,
                         "NX block construction references",
                     )?;
-                    references.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX block construction references", 0, 1)
-                    })?;
                     references.push(FeatureBlockConstructionReference {
                         id,
                         operation_label,
@@ -2384,13 +2071,12 @@ pub(in crate::native) fn feature_block_constructions(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.charge_collection_items(1, "NX block construction field order")?;
-            field_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                &FeatureBlockConstructionReference,
-            >()))?;
-            field.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX block construction field order", 0, 1)
-            })?;
+            ctx.reserve_scoped_vec(
+                &mut field_reservation,
+                &mut field,
+                1,
+                "NX block construction field order",
+            )?;
             field.push(reference);
         }
         let sort_work = field
@@ -2422,26 +2108,19 @@ pub(in crate::native) fn feature_block_constructions(
             ),
             "NX block construction member array",
         )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(members.len()),
+        ctx.reserve_vec(
+            &mut owned_members,
+            members.len(),
             "NX block construction member array",
         )?;
-        owned_members
-            .try_reserve_exact(members.len())
-            .map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX block construction member array", 0, 1)
-            })?;
         for reference in members {
             let Some(block) = reference.data_block.as_deref() else {
                 continue;
             };
             owned_members.push(FeatureConstructionMember {
-                reference: copy_operation_text(
-                    ctx,
-                    &reference.id,
-                    "NX block construction member reference",
-                )?,
-                data_block: copy_operation_text(ctx, block, "NX block construction member block")?,
+                reference: ctx
+                    .copy_retained_text(&reference.id, "NX block construction member reference")?,
+                data_block: ctx.copy_retained_text(block, "NX block construction member block")?,
             });
         }
         let Ok(members): Result<[FeatureConstructionMember; 18], _> = owned_members.try_into()
@@ -2453,12 +2132,9 @@ pub(in crate::native) fn feature_block_constructions(
             continue;
         };
         let terminal_data_block =
-            copy_operation_text(ctx, terminal_block, "NX block construction terminal block")?;
-        let terminal_reference = copy_operation_text(
-            ctx,
-            &terminal.id,
-            "NX block construction terminal reference",
-        )?;
+            ctx.copy_retained_text(terminal_block, "NX block construction terminal block")?;
+        let terminal_reference =
+            ctx.copy_retained_text(&terminal.id, "NX block construction terminal reference")?;
         let id = replace_operation_text(
             ctx,
             operation_label,
@@ -2467,15 +2143,8 @@ pub(in crate::native) fn feature_block_constructions(
             "NX block construction identity",
         )?;
         let operation_label =
-            copy_operation_text(ctx, operation_label, "NX block construction operation")?;
-        ctx.charge_collection_items(1, "NX block constructions")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBlockConstruction>()),
-            "NX block constructions",
-        )?;
-        constructions
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX block constructions", 0, 1))?;
+            ctx.copy_retained_text(operation_label, "NX block construction operation")?;
+        ctx.reserve_retained_vec(&mut constructions, 1, "NX block constructions")?;
         constructions.push(FeatureBlockConstruction {
             id,
             operation_label,
@@ -2497,8 +2166,7 @@ pub(in crate::native) fn feature_block_construction_payloads(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut payloads = Vec::new();
     for construction in constructions {
-        let (data_blocks, reservation) = copy_payload_source_blocks(
-            ctx,
+        let (data_blocks, reservation) = ctx.collect_scoped_texts(
             construction
                 .members
                 .iter()
@@ -2517,21 +2185,13 @@ pub(in crate::native) fn feature_block_construction_payloads(
             "block-construction-payload",
             "NX block construction payload identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &construction.operation_label,
             "NX block construction payload operation",
         )?;
         let construction_id =
-            copy_operation_text(ctx, &construction.id, "NX block construction payload owner")?;
-        ctx.charge_collection_items(1, "NX block construction payloads")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureConstructionPayload>()),
-            "NX block construction payloads",
-        )?;
-        payloads
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX block construction payloads", 0, 1))?;
+            ctx.copy_retained_text(&construction.id, "NX block construction payload owner")?;
+        ctx.reserve_retained_vec(&mut payloads, 1, "NX block construction payloads")?;
         payloads.push(FeatureConstructionPayload {
             id,
             operation_label,
@@ -2565,28 +2225,19 @@ pub(in crate::native) fn feature_block_payload_scalars(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!("{}-scalar-{ordinal}", payload.id),
                 "NX block payload scalar identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
+            let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,
                 "NX block payload scalar operation",
             )?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX block payload scalar owner")?;
+                ctx.copy_retained_text(&payload.id, "NX block payload scalar owner")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX block payload scalar ordinal", 0, 1))?;
-            ctx.charge_collection_items(1, "NX block payload scalars")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeaturePayloadScalar>()),
-                "NX block payload scalars",
-            )?;
-            scalars
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX block payload scalars", 0, 1))?;
+            ctx.reserve_retained_vec(&mut scalars, 1, "NX block payload scalars")?;
             scalars.push(FeaturePayloadScalar {
                 id,
                 operation_label,
@@ -2629,28 +2280,17 @@ pub(in crate::native) fn feature_block_payload_names(
             let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else {
                 continue;
             };
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!("{}-name-{ordinal}", payload.id),
                 "NX block payload name identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &payload.operation_label,
-                "NX block payload name operation",
-            )?;
+            let operation_label = ctx
+                .copy_retained_text(&payload.operation_label, "NX block payload name operation")?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX block payload name owner")?;
+                ctx.copy_retained_text(&payload.id, "NX block payload name owner")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX block payload name ordinal", 0, 1))?;
-            ctx.charge_collection_items(1, "NX block payload names")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeaturePayloadName>()),
-                "NX block payload names",
-            )?;
-            names
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX block payload names", 0, 1))?;
+            ctx.reserve_retained_vec(&mut names, 1, "NX block payload names")?;
             names.push(FeaturePayloadName {
                 id,
                 operation_label,
@@ -2679,13 +2319,12 @@ pub(in crate::native) fn feature_block_payload_named_records(
             .iter()
             .filter(|name| name.construction_payload == payload.id)
         {
-            ctx.charge_collection_items(1, "NX block payload names for join")?;
-            name_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                &FeaturePayloadName,
-            >()))?;
-            payload_names.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX block payload names for join", 0, 1)
-            })?;
+            ctx.reserve_scoped_vec(
+                &mut name_reservation,
+                &mut payload_names,
+                1,
+                "NX block payload names for join",
+            )?;
             payload_names.push(name);
         }
         let name_sort_work = payload_names
@@ -2709,13 +2348,12 @@ pub(in crate::native) fn feature_block_payload_named_records(
                     && scalar.payload_offset > name.frame.offset()
                     && scalar.payload_offset < end
             }) {
-                ctx.charge_collection_items(1, "NX block payload scalars for join")?;
-                scalar_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<&FeaturePayloadScalar>(),
-                ))?;
-                scalar_fields.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX block payload scalars for join", 0, 1)
-                })?;
+                ctx.reserve_scoped_vec(
+                    &mut scalar_reservation,
+                    &mut scalar_fields,
+                    1,
+                    "NX block payload scalars for join",
+                )?;
                 scalar_fields.push(scalar);
             }
             let scalar_sort_work = scalar_fields
@@ -2727,51 +2365,30 @@ pub(in crate::native) fn feature_block_payload_named_records(
                 "sort NX block payload scalars",
             )?;
             scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!("{}-record-{ordinal}", payload.id),
                 "NX block payload named record identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
+            let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,
                 "NX block payload named record operation",
             )?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX block payload named record owner")?;
+                ctx.copy_retained_text(&payload.id, "NX block payload named record owner")?;
             let name_field =
-                copy_operation_text(ctx, &name.id, "NX block payload named record name field")?;
+                ctx.copy_retained_text(&name.id, "NX block payload named record name field")?;
             let mut scalar_ids = Vec::new();
             for scalar in scalar_fields {
-                let scalar_id = copy_operation_text(
-                    ctx,
-                    &scalar.id,
-                    "NX block payload named record scalar field",
-                )?;
-                ctx.charge_collection_items(1, "NX block payload named record scalar fields")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+                let scalar_id = ctx
+                    .copy_retained_text(&scalar.id, "NX block payload named record scalar field")?;
+                ctx.reserve_retained_vec(
+                    &mut scalar_ids,
+                    1,
                     "NX block payload named record scalar fields",
                 )?;
-                scalar_ids.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "allocate NX block payload named record scalar fields",
-                        0,
-                        1,
-                    )
-                })?;
                 scalar_ids.push(scalar_id);
             }
-            ctx.charge_collection_items(1, "NX block payload named records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureBlockPayloadNamedRecord,
-                >()),
-                "NX block payload named records",
-            )?;
-            records.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX block payload named records", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut records, 1, "NX block payload named records")?;
             records.push(FeatureBlockPayloadNamedRecord {
                 id,
                 operation_label,
@@ -2824,30 +2441,19 @@ pub(in crate::native) fn feature_block_payload_points(
         let Some(second) = scalars.iter().rev().find(|scalar| scalar.id == *second_id) else {
             continue;
         };
-        let id = format_charged_text(
-            ctx,
+        let id = ctx.format_retained_with_work(
             format_args!("{}-point", record.id),
             "NX block payload point identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &record.operation_label,
-            "NX block payload point operation",
-        )?;
+        let operation_label =
+            ctx.copy_retained_text(&record.operation_label, "NX block payload point operation")?;
         let named_record =
-            copy_operation_text(ctx, &record.id, "NX block payload point named record")?;
-        let name = copy_operation_text(ctx, name.frame.value(), "NX block payload point name")?;
-        let first_id = copy_operation_text(ctx, &first.id, "NX block payload point first scalar")?;
+            ctx.copy_retained_text(&record.id, "NX block payload point named record")?;
+        let name = ctx.copy_retained_text(name.frame.value(), "NX block payload point name")?;
+        let first_id = ctx.copy_retained_text(&first.id, "NX block payload point first scalar")?;
         let second_id =
-            copy_operation_text(ctx, &second.id, "NX block payload point second scalar")?;
-        ctx.charge_collection_items(1, "NX block payload points")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBlockPayloadPoint>()),
-            "NX block payload points",
-        )?;
-        points
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX block payload points", 0, 1))?;
+            ctx.copy_retained_text(&second.id, "NX block payload point second scalar")?;
+        ctx.reserve_retained_vec(&mut points, 1, "NX block payload points")?;
         points.push(FeatureBlockPayloadPoint {
             id,
             operation_label,
@@ -2900,38 +2506,20 @@ pub(in crate::native) fn feature_block_payload_point_groups(
         for witness in points.iter().filter(|candidate| {
             candidate.operation_label == point.operation_label && candidate.name == point.name
         }) {
-            let id = copy_operation_text(ctx, &witness.id, "NX block payload point group witness")?;
-            ctx.charge_collection_items(1, "NX block payload point group witnesses")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX block payload point group witnesses",
-            )?;
-            witnesses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX block payload point group witnesses", 0, 1)
-            })?;
+            let id = ctx.copy_retained_text(&witness.id, "NX block payload point group witness")?;
+            ctx.reserve_retained_vec(&mut witnesses, 1, "NX block payload point group witnesses")?;
             witnesses.push(id);
         }
-        let id = format_charged_text(
-            ctx,
+        let id = ctx.format_retained_with_work(
             format_args!("{}-group", point.id),
             "NX block payload point group identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &point.operation_label,
             "NX block payload point group operation",
         )?;
-        let name = copy_operation_text(ctx, &point.name, "NX block payload point group name")?;
-        ctx.charge_collection_items(1, "NX block payload point groups")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<FeatureBlockPayloadPointGroup>(),
-            ),
-            "NX block payload point groups",
-        )?;
-        groups
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX block payload point groups", 0, 1))?;
+        let name = ctx.copy_retained_text(&point.name, "NX block payload point group name")?;
+        ctx.reserve_retained_vec(&mut groups, 1, "NX block payload point groups")?;
         groups.push(FeatureBlockPayloadPointGroup {
             id,
             operation_label,
@@ -2973,13 +2561,12 @@ pub(in crate::native) fn feature_block_dimensions(
             .iter()
             .filter(|binding| binding.operation_label == construction.operation_label)
         {
-            ctx.charge_collection_items(1, "NX block dimension bindings")?;
-            binding_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                &FeatureParameterBinding,
-            >()))?;
-            operation_bindings.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX block dimension bindings", 0, 1)
-            })?;
+            ctx.reserve_scoped_vec(
+                &mut binding_reservation,
+                &mut operation_bindings,
+                1,
+                "NX block dimension bindings",
+            )?;
             operation_bindings.push(binding);
         }
         let Some(anchor) = operation_bindings
@@ -3064,58 +2651,40 @@ pub(in crate::native) fn feature_block_dimensions(
             continue;
         }
         let id = if let Some((prefix, suffix)) = construction.id.split_once("block-construction") {
-            format_charged_text(
-                ctx,
+            ctx.format_retained_with_work(
                 format_args!("{prefix}block-dimensions{suffix}"),
                 "NX block dimensions identity",
             )?
         } else {
-            copy_operation_text(ctx, &construction.id, "NX block dimensions identity")?
+            ctx.copy_retained_text(&construction.id, "NX block dimensions identity")?
         };
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &construction.operation_label,
             "NX block dimensions operation",
         )?;
         let construction_id =
-            copy_operation_text(ctx, &construction.id, "NX block dimensions construction")?;
+            ctx.copy_retained_text(&construction.id, "NX block dimensions construction")?;
         let mut anchor_bindings = Vec::new();
         for binding in operation_bindings {
-            let id = copy_operation_text(ctx, &binding.id, "NX block dimension anchor binding")?;
-            ctx.charge_collection_items(1, "NX block dimension anchor bindings")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+            let id = ctx.copy_retained_text(&binding.id, "NX block dimension anchor binding")?;
+            ctx.reserve_retained_vec(
+                &mut anchor_bindings,
+                1,
                 "NX block dimension anchor bindings",
             )?;
-            anchor_bindings.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX block dimension anchor bindings", 0, 1)
-            })?;
             anchor_bindings.push(id);
         }
         let dimension = |slot: usize| -> Result<FeatureBlockDimension, CodecError> {
             Ok(FeatureBlockDimension {
-                declaration: copy_operation_text(
-                    ctx,
-                    &run[slot].id,
-                    "NX block dimension declaration",
-                )?,
-                expression: copy_operation_text(
-                    ctx,
-                    &resolved[slot].0.id,
-                    "NX block dimension expression",
-                )?,
+                declaration: ctx
+                    .copy_retained_text(&run[slot].id, "NX block dimension declaration")?,
+                expression: ctx
+                    .copy_retained_text(&resolved[slot].0.id, "NX block dimension expression")?,
                 value: resolved[slot].1,
             })
         };
         let values = [dimension(0)?, dimension(1)?, dimension(2)?];
-        ctx.charge_collection_items(1, "NX block dimensions")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBlockDimensions>()),
-            "NX block dimensions",
-        )?;
-        dimensions
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX block dimensions", 0, 1))?;
+        ctx.reserve_retained_vec(&mut dimensions, 1, "NX block dimensions")?;
         dimensions.push(FeatureBlockDimensions {
             id,
             operation_label,
@@ -3141,21 +2710,14 @@ pub(in crate::native) fn data_block_object_frames(
         {
             let id = data_block_object_frame_id(ctx, data_block, ordinal)?;
             let data_block =
-                copy_operation_text(ctx, data_block, "retain NX data block object frame source")?;
+                ctx.copy_retained_text(data_block, "retain NX data block object frame source")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX data block object frame ordinal", 0, 1))?;
             let offset = source_offset
                 .checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX data block object frame offset", 0, 1))?;
             ctx.charge_entities(1, "NX data block object frame")?;
-            ctx.charge_collection_items(1, "NX data block object frames")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockObjectFrame>()),
-                "retain NX data block object frame",
-            )?;
-            out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX data block object frames", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut out, 1, "NX data block object frames")?;
             out.push(DataBlockObjectFrame {
                 id,
                 data_block,
@@ -3201,13 +2763,7 @@ pub(super) fn data_block_object_frame_id(
             )
         })
         .ok_or_else(|| ctx.refuse_codec_limit("retain NX data block object frame id", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "retain NX data block object frame id",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX data block object frame id", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX data block object frame id")?;
     write!(&mut id, "{prefix}{section}{infix}{block}-{ordinal}")
         .map_err(|_| ctx.refuse_codec_limit("format NX data block object frame id", 0, 1))?;
     Ok(id)
@@ -3251,13 +2807,7 @@ pub(super) fn format_offset_data_block_id(
         .and_then(|length| length.checked_add(":block#".len()))
         .and_then(|length| length.checked_add(object_digits))
         .ok_or_else(|| ctx.refuse_codec_limit("NX source block identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "NX source block identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX source block identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "NX source block identity")?;
     write!(
         &mut id,
         "nx:om-data-blocks-{section_ordinal}:block#{object_index}"

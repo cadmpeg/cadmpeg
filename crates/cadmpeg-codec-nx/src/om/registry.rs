@@ -2,7 +2,7 @@
 //! NX OM registry-token framing.
 
 use super::{FieldDefinition, TypeDefinition};
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::num::NonZeroU32;
 
@@ -226,7 +226,12 @@ fn complete_type_registry_at<'a>(
         let Some(registry_tail) = bytes.get(declaration.name_end()..tail_end) else {
             return Ok(None);
         };
-        reserve_registry_item(ctx, &mut reservation, &mut definitions)?;
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut definitions,
+            1,
+            "nx complete type registry",
+        )?;
         definitions.push(TypeDefinition {
             offset: declaration.offset,
             name: declaration.name,
@@ -311,7 +316,7 @@ fn legacy_type_definitions<'a>(
     while at < end {
         if let Some(declaration) = registry_declaration_at(bytes, at, end, b"UGS::") {
             let name_end = declaration.name_end();
-            reserve_retained_registry_item(ctx, &mut out, "nx legacy type definitions")?;
+            ctx.reserve_retained_vec(&mut out, 1, "nx legacy type definitions")?;
             out.push(TypeDefinition {
                 offset: declaration.offset,
                 name: declaration.name,
@@ -345,7 +350,7 @@ pub(super) fn field_definitions<'a>(
         let next = at + definition.name.len() + 2;
         search = next;
         limit = search.saturating_add(256).min(end);
-        reserve_retained_registry_item(ctx, &mut out, "nx field definitions")?;
+        ctx.reserve_retained_vec(&mut out, 1, "nx field definitions")?;
         out.push(definition);
     }
     bound_field_registry_tails(bytes, &mut out);
@@ -363,7 +368,7 @@ pub(super) fn all_field_definitions<'a>(
     while at < end {
         if let Some(definition) = field_definition_at(bytes, at, end) {
             at += definition.name.len() + 2;
-            reserve_retained_registry_item(ctx, &mut out, "nx all field definitions")?;
+            ctx.reserve_retained_vec(&mut out, 1, "nx all field definitions")?;
             out.push(definition);
         } else {
             at += 1;
@@ -371,36 +376,6 @@ pub(super) fn all_field_definitions<'a>(
     }
     bound_field_registry_tails(bytes, &mut out);
     Ok(out)
-}
-
-fn reserve_registry_item<T>(
-    ctx: &DecodeContext<'_>,
-    reservation: &mut ScopedReservation<'_>,
-    items: &mut Vec<T>,
-) -> Result<(), CodecError> {
-    let operation = "nx complete type registry";
-    ctx.charge_collection_items(1, operation)?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<T>(),
-    ))?;
-    items
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
-}
-
-fn reserve_retained_registry_item<T>(
-    ctx: &DecodeContext<'_>,
-    items: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
-        operation,
-    )?;
-    items
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
 }
 
 fn bound_field_registry_tails<'a>(bytes: &'a [u8], definitions: &mut [FieldDefinition<'a>]) {

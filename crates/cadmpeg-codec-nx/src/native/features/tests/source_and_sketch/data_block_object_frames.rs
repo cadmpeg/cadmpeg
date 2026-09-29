@@ -59,7 +59,7 @@ fn data_block_object_frame_route_refuses_retained_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "retain NX data block object frame"),
+            && limit.operation == "NX data block object frames"),
         "{error:?}"
     );
 }

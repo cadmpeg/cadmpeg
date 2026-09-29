@@ -433,7 +433,7 @@ fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>
 /// cross cards.
 pub(crate) fn layout_global_cards(
     bytes: &[u8],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     let (parameter_delimiter, mut cursor) = if bytes.first() == Some(&b',') {
         (b',', 1)
@@ -479,11 +479,7 @@ pub(crate) fn layout_global_cards(
         delimiter
     };
 
-    let mut fields = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        1,
-        "iges global layout fields",
-    )?;
+    let mut fields = ctx.collection_vec(1, "iges global layout fields")?;
     fields.push(0..cursor);
     while cursor < bytes.len() {
         let start = cursor;
@@ -502,12 +498,7 @@ pub(crate) fn layout_global_cards(
             .ok_or_else(|| malformed("Global record delimiter is missing"))?
             == &record_delimiter;
         end += 1;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut fields,
-            1,
-            "iges global layout fields",
-        )?;
+        ctx.reserve_vec(&mut fields, 1, "iges global layout fields")?;
         fields.push(start..end);
         cursor = end;
         if is_record {
@@ -533,23 +524,13 @@ pub(crate) fn layout_global_cards(
         }
         if card.len() + minimum > 72 {
             card.extend(std::iter::repeat_with(|| b' ').take(72 - card.len()));
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut cards,
-                1,
-                "iges global layout cards",
-            )?;
+            ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
             cards.push(std::mem::take(&mut card));
             card = layout_global_card(ctx)?;
         }
         for byte in field.iter().copied() {
             if card.len() == 72 {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
-                    &mut cards,
-                    1,
-                    "iges global layout cards",
-                )?;
+                ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
                 cards.push(std::mem::take(&mut card));
                 card = layout_global_card(ctx)?;
             }
@@ -557,21 +538,14 @@ pub(crate) fn layout_global_cards(
         }
     }
     if !card.is_empty() {
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut cards,
-            1,
-            "iges global layout cards",
-        )?;
+        ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
         cards.push(card);
     }
     Ok(cards)
 }
 
-fn layout_global_card(ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u8>, CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_retained(72, "iges global layout card bytes")?;
-    }
+fn layout_global_card(ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
+    ctx.charge_retained(72, "iges global layout card bytes")?;
     let mut card = Vec::new();
     card.try_reserve_exact(72).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(

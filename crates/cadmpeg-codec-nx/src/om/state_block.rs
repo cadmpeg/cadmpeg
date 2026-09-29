@@ -104,14 +104,7 @@ fn locate_messages<'a>(
             return Ok(None);
         };
         offset = message.end_offset();
-        ctx.charge_collection_items(1, "nx state messages")?;
-        ctx.charge_retained(
-            u64_from_index(std::mem::size_of::<OperationStateMessage<'_>>()),
-            "retain NX state message",
-        )?;
-        located
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx state messages", 0, 1))?;
+        ctx.reserve_retained_vec(&mut located, 1, "nx state messages")?;
         located.push(message);
     }
     Ok(Some(located))
@@ -183,10 +176,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
     let mut opaque_lane_starts = Vec::new();
     for at in start..end.saturating_sub(1) {
         if bytes.get(at..at + 2) == Some(&[0x02, 0x11]) {
-            ctx.charge_collection_items(1, "nx opaque state lanes")?;
-            opaque_lane_starts
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx opaque state lanes", 0, 1))?;
+            ctx.reserve_vec(&mut opaque_lane_starts, 1, "nx opaque state lanes")?;
             opaque_lane_starts.push(at);
         }
     }
@@ -206,10 +196,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                     return Ok(None);
                 };
                 let path_end = continuation.map_or(next, |path| path.end);
-                ctx.charge_collection_items(1, "nx state message paths")?;
-                message_paths
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx state message paths", 0, 1))?;
+                ctx.reserve_vec(&mut message_paths, 1, "nx state message paths")?;
                 message_paths.push((
                     at,
                     OperationStatePath {
@@ -239,10 +226,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
             .filter(|status| message_path.is_none_or(|message| status.length >= message.length))
             .or(message_path);
         if let Some(path) = best_path {
-            ctx.charge_collection_items(1, "nx state status paths")?;
-            status_paths
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx state status paths", 0, 1))?;
+            ctx.reserve_vec(&mut status_paths, 1, "nx state status paths")?;
             status_paths.push((at, path));
         }
     }
@@ -307,14 +291,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                 if lane_end != next {
                     return Ok(None);
                 }
-                ctx.charge_collection_items(1, "nx state block entries")?;
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<StateTableEntry<'_>>()),
-                    "retain NX state block entry",
-                )?;
-                entries
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx state block entries", 0, 1))?;
+                ctx.reserve_retained_vec(&mut entries, 1, "nx state block entries")?;
                 entries.push(StateTableEntry::Slots(lane.into_slots()));
                 at = next;
             } else {
@@ -331,14 +308,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                 if row_end != next {
                     return Ok(None);
                 }
-                ctx.charge_collection_items(1, "nx state block entries")?;
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<StateTableEntry<'_>>()),
-                    "retain NX state block entry",
-                )?;
-                entries
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx state block entries", 0, 1))?;
+                ctx.reserve_retained_vec(&mut entries, 1, "nx state block entries")?;
                 entries.push(StateTableEntry::Status(row.body()));
                 at = next;
             }
@@ -350,14 +320,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
             if next <= at || next > path_end {
                 return Ok(None);
             }
-            ctx.charge_collection_items(1, "nx state block messages")?;
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<StateMessage<&str>>()),
-                "retain NX state block message",
-            )?;
-            messages
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx state block messages", 0, 1))?;
+            ctx.reserve_retained_vec(&mut messages, 1, "nx state block messages")?;
             messages.push(message.body());
             at = next;
             break;
@@ -371,14 +334,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
         if next <= at || next > path_end {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "nx state block messages")?;
-        ctx.charge_retained(
-            u64_from_index(std::mem::size_of::<StateMessage<&str>>()),
-            "retain NX state block message",
-        )?;
-        messages
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx state block messages", 0, 1))?;
+        ctx.reserve_retained_vec(&mut messages, 1, "nx state block messages")?;
         messages.push(message.body());
         at = next;
     }

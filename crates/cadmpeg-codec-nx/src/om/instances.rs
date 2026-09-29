@@ -71,7 +71,7 @@ impl<O> MultiInstanceOutputs<O> {
         }
         let mut selectors = Vec::new();
         for (selector, _) in rows {
-            super::reserve_om_retained_item(ctx, &mut selectors, "nx instance selectors")?;
+            ctx.reserve_retained_vec(&mut selectors, 1, "nx instance selectors")?;
             selectors.push(selector);
         }
         Ok(Some(Self {
@@ -109,7 +109,7 @@ impl<O> MultiInstanceOutputs<O> {
     ) -> Result<MultiInstanceOutputs<P>, CodecError> {
         let mut selectors = Vec::new();
         for selector in self.selectors {
-            super::reserve_om_retained_item(ctx, &mut selectors, "nx mapped instance selectors")?;
+            ctx.reserve_retained_vec(&mut selectors, 1, "nx mapped instance selectors")?;
             selectors.push(LocatedCompactIndex {
                 atom: selector.atom,
                 offset: map(selector.offset),
@@ -117,7 +117,7 @@ impl<O> MultiInstanceOutputs<O> {
         }
         let mut references = Vec::new();
         for reference in self.references {
-            super::reserve_om_retained_item(ctx, &mut references, "nx mapped instance references")?;
+            ctx.reserve_retained_vec(&mut references, 1, "nx mapped instance references")?;
             references.push(PayloadObjectReference {
                 token: reference.token,
                 offset: map(reference.offset),

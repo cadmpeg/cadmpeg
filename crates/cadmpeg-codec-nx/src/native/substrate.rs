@@ -33,22 +33,7 @@ pub(crate) fn topology_streams<'a>(
     scan: &'a Scan<'_>,
 ) -> Result<Vec<Cow<'a, [u8]>>, CodecError> {
     let semantic = prepare_topology_streams(ctx, scan, None)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(semantic.len()),
-        "nx topology byte views",
-    )?;
-    let view_bytes = semantic
-        .len()
-        .checked_mul(std::mem::size_of::<Cow<'_, [u8]>>())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx topology byte views", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(view_bytes),
-        "nx topology byte views",
-    )?;
-    let mut bytes = Vec::new();
-    bytes
-        .try_reserve_exact(semantic.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx topology byte views", 0, 1))?;
+    let mut bytes = ctx.retained_vec(semantic.len(), "nx topology byte views")?;
     for stream in semantic {
         bytes.push(stream.bytes);
     }
@@ -60,23 +45,7 @@ fn prepare_topology_streams<'a>(
     scan: &'a Scan<'_>,
     mut unmatched_tombstone_counts: Option<&mut BTreeMap<&'static str, usize>>,
 ) -> Result<Vec<TopologyStream<'a>>, CodecError> {
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(scan.streams.len()),
-        "nx prepared topology streams",
-    )?;
-    let stream_bytes = scan
-        .streams
-        .len()
-        .checked_mul(std::mem::size_of::<TopologyStream<'_>>())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx prepared topology streams", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(stream_bytes),
-        "nx prepared topology streams",
-    )?;
-    let mut semantic = Vec::new();
-    semantic
-        .try_reserve_exact(scan.streams.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx prepared topology streams", 0, 1))?;
+    let mut semantic = ctx.retained_vec(scan.streams.len(), "nx prepared topology streams")?;
     for stream in &scan.streams {
         semantic.push(TopologyStream {
             bytes: Cow::Borrowed(stream.inflated.as_slice()),
@@ -223,14 +192,7 @@ pub(super) fn pair_stream_indices(
                 )?;
             }
             let deltas = pairs.entry(partition).or_default();
-            ctx.charge_collection_items(1, "nx delta pair members")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()),
-                "nx delta pair members",
-            )?;
-            deltas
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx delta pair members", 0, 1))?;
+            ctx.reserve_retained_vec(deltas, 1, "nx delta pair members")?;
             deltas.push(delta);
         }
     }
@@ -313,22 +275,8 @@ impl StreamView {
             .as_ref()
             .map_or_else(|| Rc::clone(&graph), Rc::clone);
         let intersections = if let Some(delta_indices) = paired_deltas {
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(delta_indices.len()),
-                "nx auxiliary replacement views",
-            )?;
-            let replacement_bytes = delta_indices
-                .len()
-                .checked_mul(std::mem::size_of::<&[u8]>())
-                .ok_or_else(|| ctx.refuse_codec_limit("nx auxiliary replacement views", 0, 1))?;
-            let _replacement_reservation = ctx.reserve_scoped(
-                cadmpeg_core::decode::u64_from_index(replacement_bytes),
-                "nx auxiliary replacement views",
-            )?;
-            let mut replacement_streams = Vec::new();
-            replacement_streams
-                .try_reserve_exact(delta_indices.len())
-                .map_err(|_| ctx.refuse_codec_limit("nx auxiliary replacement views", 0, 1))?;
+            let (mut replacement_streams, _replacement_reservation) =
+                ctx.temporary_vec(delta_indices.len(), "nx auxiliary replacement views")?;
             for delta in delta_indices {
                 replacement_streams.push(scan.streams[*delta].inflated.as_slice());
             }
@@ -422,23 +370,7 @@ impl<'a> ParsedStreams<'a> {
             }
         }
 
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(scan.streams.len()),
-            "nx parsed stream records",
-        )?;
-        let stream_bytes = scan
-            .streams
-            .len()
-            .checked_mul(std::mem::size_of::<StreamParse<'_>>())
-            .ok_or_else(|| ctx.refuse_codec_limit("nx parsed stream records", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(stream_bytes),
-            "nx parsed stream records",
-        )?;
-        let mut streams = Vec::new();
-        streams
-            .try_reserve_exact(scan.streams.len())
-            .map_err(|_| ctx.refuse_codec_limit("nx parsed stream records", 0, 1))?;
+        let mut streams = ctx.retained_vec(scan.streams.len(), "nx parsed stream records")?;
         for (si, stream) in scan.streams.iter().enumerate() {
             let mut semantic_bytes = std::mem::take(&mut topology_streams[si].bytes);
             let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
@@ -473,9 +405,11 @@ impl<'a> ParsedStreams<'a> {
                         census,
                     )?;
                     residual_reservation.grow(cadmpeg_core::decode::u64_from_index(part.len()))?;
-                    residual.try_reserve(part.len()).map_err(|_| {
-                        ctx.refuse_codec_limit("nx semantic residual aggregation", 0, 1)
-                    })?;
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                        &mut residual,
+                        part.len(),
+                        "nx semantic residual aggregation",
+                    )?;
                     residual.extend_from_slice(&part);
                 }
             }
@@ -489,9 +423,11 @@ impl<'a> ParsedStreams<'a> {
                         )?;
                         residual_reservation
                             .grow(cadmpeg_core::decode::u64_from_index(part.len()))?;
-                        residual.try_reserve(part.len()).map_err(|_| {
-                            ctx.refuse_codec_limit("nx semantic residual aggregation", 0, 1)
-                        })?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                            &mut residual,
+                            part.len(),
+                            "nx semantic residual aggregation",
+                        )?;
                         residual.extend_from_slice(&part);
                     }
                 }
@@ -522,9 +458,11 @@ impl<'a> ParsedStreams<'a> {
                         Cow::Borrowed(bytes) => Cow::Borrowed(*bytes),
                         Cow::Owned(bytes) => {
                             let mut copy = Vec::new();
-                            copy.try_reserve_exact(bytes.len()).map_err(|_| {
-                                ctx.refuse_codec_limit("nx auxiliary topology snapshot", 0, 1)
-                            })?;
+                            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                                &mut copy,
+                                bytes.len(),
+                                "nx auxiliary topology snapshot",
+                            )?;
                             copy.extend_from_slice(bytes);
                             Cow::Owned(copy)
                         }
@@ -543,9 +481,11 @@ impl<'a> ParsedStreams<'a> {
                             "nx extended semantic topology",
                         )?;
                         let mut owned = Vec::new();
-                        owned.try_reserve_exact(total_len).map_err(|_| {
-                            ctx.refuse_codec_limit("nx extended semantic topology", 0, 1)
-                        })?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                            &mut owned,
+                            total_len,
+                            "nx extended semantic topology",
+                        )?;
                         owned.extend_from_slice(bytes);
                         owned.extend_from_slice(&residual);
                         semantic_bytes = Cow::Owned(owned);
@@ -555,9 +495,11 @@ impl<'a> ParsedStreams<'a> {
                             cadmpeg_core::decode::u64_from_index(residual.len()),
                             "nx extended semantic topology",
                         )?;
-                        bytes.try_reserve(residual.len()).map_err(|_| {
-                            ctx.refuse_codec_limit("nx extended semantic topology", 0, 1)
-                        })?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                            bytes,
+                            residual.len(),
+                            "nx extended semantic topology",
+                        )?;
                         bytes.extend_from_slice(&residual);
                     }
                 }
@@ -602,23 +544,7 @@ impl<'a> ParsedStreams<'a> {
         &mut self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<Option<Census>>, CodecError> {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(self.streams.len()),
-            "nx delta census slots",
-        )?;
-        let census_bytes = self
-            .streams
-            .len()
-            .checked_mul(std::mem::size_of::<Option<Census>>())
-            .ok_or_else(|| ctx.refuse_codec_limit("nx delta census slots", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(census_bytes),
-            "nx delta census slots",
-        )?;
-        let mut censuses = Vec::new();
-        censuses
-            .try_reserve_exact(self.streams.len())
-            .map_err(|_| ctx.refuse_codec_limit("nx delta census slots", 0, 1))?;
+        let mut censuses = ctx.retained_vec(self.streams.len(), "nx delta census slots")?;
         for stream in &mut self.streams {
             censuses.push(stream.delta_census.take());
         }

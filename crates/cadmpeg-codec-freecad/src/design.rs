@@ -502,10 +502,13 @@ pub(crate) fn transfer(
             dependencies
         };
         ctx.charge_collection_items(
-            dependencies.len() as u64,
+            cadmpeg_core::decode::u64_from_index(dependencies.len()),
             "fcstd distinct feature dependencies",
         )?;
-        ctx.charge_collection_items(outputs.len() as u64, "fcstd distinct feature outputs")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(outputs.len()),
+            "fcstd distinct feature outputs",
+        )?;
         ctx.reserve_vec(&mut ir.model.features, 1, "fcstd neutral features")?;
         ir.model.features.push(Feature {
             id,
@@ -617,7 +620,10 @@ fn body_definition(
         BodyTipResolution::Valid(active_child) => active_child,
         BodyTipResolution::Invalid => return Ok(None),
     };
-    ctx.charge_collection_items(children.len() as u64, "fcstd distinct body children")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(children.len()),
+        "fcstd distinct body children",
+    )?;
     Ok(
         cadmpeg_ir::features::TreeChildren::new(children, active_child)
             .ok()
@@ -696,25 +702,28 @@ fn feature_ordinals<'a>(
         (&mut object_by_id, "fcstd design id index"),
         (&mut object_by_name, "fcstd design name index"),
     ] {
-        ctx.charge_collection_items(count as u64, operation)?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
         map.try_reserve(count).map_err(|_| {
             cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::CollectionItems,
                     ctx.policy().limits.max_collection_items,
-                    count as u64,
+                    cadmpeg_core::decode::u64_from_index(count),
                     operation,
                 ),
             )
         })?;
     }
-    ctx.charge_collection_items(count as u64, "fcstd design feature index")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "fcstd design feature index",
+    )?;
     object_by_feature.try_reserve(count).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems,
                 ctx.policy().limits.max_collection_items,
-                count as u64,
+                cadmpeg_core::decode::u64_from_index(count),
                 "fcstd design feature index",
             ),
         )
@@ -724,7 +733,7 @@ fn feature_ordinals<'a>(
         object_by_id.insert(object.id.as_str(), *object);
         object_by_name.insert(object.name.as_str(), *object);
         object_by_feature.insert(feature_id(ctx, object)?, object.id.as_str());
-        source_ordinals.push(object.order as u64);
+        source_ordinals.push(cadmpeg_core::decode::u64_from_index(object.order));
     }
     source_ordinals.sort_unstable();
     let mut emitted = BTreeSet::new();
@@ -733,7 +742,7 @@ fn feature_ordinals<'a>(
 
     while emitted.len() < design_objects.len() {
         ctx.charge_work(
-            design_objects.len() as u64,
+            cadmpeg_core::decode::u64_from_index(design_objects.len()),
             "fcstd design dependency ordering",
         )?;
         let next = design_objects
@@ -1080,7 +1089,13 @@ fn append_spreadsheet(
         parameters.push(DesignParameter {
             id,
             owner: Some(feature_id(ctx, object)?),
-            ordinal: index as u32,
+            ordinal: u32::try_from(index).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "FreeCAD ordinal",
+                    u64::from(u32::MAX),
+                    cadmpeg_core::decode::u64_from_index(index),
+                )
+            })?,
             name: ctx.copy_retained_text(name, "fcstd spreadsheet cell name")?,
             expression: ctx.copy_retained_text(content, "fcstd spreadsheet cell expression")?,
             display: None,
@@ -1121,19 +1136,19 @@ fn append_spreadsheet(
         "height",
     )?;
     ctx.charge_collection_items(
-        cell_ids.len() as u64,
+        cadmpeg_core::decode::u64_from_index(cell_ids.len()),
         "fcstd spreadsheet distinct parameter IDs",
     )?;
     ctx.charge_collection_items(
-        cell_ids.len() as u64,
+        cadmpeg_core::decode::u64_from_index(cell_ids.len()),
         "fcstd spreadsheet distinct addresses",
     )?;
     ctx.charge_collection_items(
-        column_widths.len() as u64,
+        cadmpeg_core::decode::u64_from_index(column_widths.len()),
         "fcstd spreadsheet distinct column widths",
     )?;
     ctx.charge_collection_items(
-        row_heights.len() as u64,
+        cadmpeg_core::decode::u64_from_index(row_heights.len()),
         "fcstd spreadsheet distinct row heights",
     )?;
     Spreadsheet::new(
@@ -1269,8 +1284,14 @@ fn merged_range(cell: roxmltree::Node<'_, '_>) -> Result<Option<SpreadsheetRange
     let start = cell
         .attribute("address")
         .ok_or_else(|| CodecError::Malformed("spreadsheet cell has no address".into()))?;
-    let end = offset_cell_address(start, (rows - 1) as u32, (columns - 1) as u32)
-        .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))?;
+    let end = offset_cell_address(
+        start,
+        u32::try_from(rows - 1)
+            .map_err(|_| CodecError::Malformed("spreadsheet cell span is out of range".into()))?,
+        u32::try_from(columns - 1)
+            .map_err(|_| CodecError::Malformed("spreadsheet cell span is out of range".into()))?,
+    )
+    .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))?;
     let start = CellAddress::parse(start)
         .ok_or_else(|| CodecError::Malformed("spreadsheet cell has invalid address".into()))?;
     let end = CellAddress::parse(&end)
@@ -1404,7 +1425,13 @@ fn append_operation_parameters(
                 )
                 .map_err(CodecError::malformed)?,
             ),
-            ordinal: property.order as u32,
+            ordinal: u32::try_from(property.order).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "FreeCAD ordinal",
+                    u64::from(u32::MAX),
+                    cadmpeg_core::decode::u64_from_index(property.order),
+                )
+            })?,
             name: ctx.copy_retained_text(&property.name, "fcstd operation parameter name")?,
             expression,
             display: None,
@@ -2093,7 +2120,7 @@ fn sketch_nurbs(
     };
     if lanes.weights.is_some() {
         ctx.charge_collection_items(
-            lanes.control_points.len() as u64,
+            cadmpeg_core::decode::u64_from_index(lanes.control_points.len()),
             "fcstd sketch NURBS weighted pole pairs",
         )?;
     }
@@ -2236,7 +2263,10 @@ fn sketch_nurbs_lanes(
     } else {
         None
     };
-    ctx.charge_collection_items(expanded_count as u64, "fcstd sketch NURBS knot conversion")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(expanded_count),
+        "fcstd sketch NURBS knot conversion",
+    )?;
     let Some(knots) = KnotVector::from_finite_lanes(full_knots).ok() else {
         return Ok(None);
     };
@@ -2611,7 +2641,13 @@ fn parse_constraints(
                         )?)
                         .map_err(CodecError::malformed)?,
                         owner: Some(feature_id(ctx, object)?),
-                        ordinal: index as u32,
+                        ordinal: u32::try_from(index).map_err(|_| {
+                            ctx.refuse_codec_limit(
+                                "FreeCAD ordinal",
+                                u64::from(u32::MAX),
+                                cadmpeg_core::decode::u64_from_index(index),
+                            )
+                        })?,
                         name: ctx.format_retained(
                             format_args!("Constraint{}", index + 1),
                             "fcstd constraint parameter name",
@@ -2684,7 +2720,7 @@ fn parse_constraints(
                         return Ok(None);
                     };
                     let _reservation = ctx.reserve_scoped(
-                        metadata.len() as u64,
+                        cadmpeg_core::decode::u64_from_index(metadata.len()),
                         "fcstd constraint text metadata parse",
                     )?;
                     let Ok(metadata) = serde_json::from_str::<serde_json::Value>(metadata) else {
@@ -3110,7 +3146,10 @@ fn bind_parameter_dependencies(
             let mut members =
                 ctx.collection_vec(dependencies.len(), "fcstd parameter dependency members")?;
             members.extend(dependencies);
-            ctx.charge_collection_items(members.len() as u64, "fcstd parameter distinct check")?;
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(members.len()),
+                "fcstd parameter distinct check",
+            )?;
             members.try_into().map_err(CodecError::malformed)?
         };
     }
@@ -3213,7 +3252,7 @@ fn order_parameters_by_dependencies(
     let mut cycle_features = BTreeSet::new();
     while !remaining.is_empty() {
         ctx.charge_work(
-            remaining.len() as u64,
+            cadmpeg_core::decode::u64_from_index(remaining.len()),
             "fcstd parameter dependency ordering",
         )?;
         let Some(index) = remaining.iter().position(|parameter| {
@@ -4076,28 +4115,44 @@ fn build_profiles(
     // Internal entities arrive in GeometryList order; appended external and built-in reference
     // entities are construction entries. Indices therefore preserve the persisted ordinal for
     // every eligible profile entity.
-    ctx.charge_work(entities.len() as u64, "FCStd profile entity scan")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(entities.len()),
+        "FCStd profile entity scan",
+    )?;
     let eligible_count = entities
         .iter()
         .filter(|entity| !entity.construction)
         .count();
-    let ordinal_work = eligible_count as u64 * (u64::from(eligible_count.max(2).ilog2()) + 1);
+    let ordinal_work = cadmpeg_core::decode::u64_from_index(eligible_count)
+        * (u64::from(eligible_count.max(2).ilog2()) + 1);
     ctx.charge_work(ordinal_work, "FCStd profile ordinal index")?;
-    ctx.charge_collection_items(eligible_count as u64, "FCStd profile ordinals")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(eligible_count),
+        "FCStd profile ordinals",
+    )?;
     let profile_entities = entities
         .iter()
         .enumerate()
         .filter(|(_, entity)| !entity.construction)
         .map(|(index, _)| index)
         .collect::<BTreeSet<_>>();
-    ctx.charge_work(eligible_count as u64, "FCStd remaining profile ordinals")?;
-    ctx.charge_collection_items(eligible_count as u64, "FCStd remaining profile ordinals")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(eligible_count),
+        "FCStd remaining profile ordinals",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(eligible_count),
+        "FCStd remaining profile ordinals",
+    )?;
     let mut unused = profile_entities.clone();
     let explicit_relations =
         explicit_endpoint_relations(ctx, &profile_entities, entities, constraints)?;
     let index = EndpointIndex::new(ctx, &profile_entities, entities)?;
     let mut ambiguous = BTreeSet::new();
-    ctx.charge_work(eligible_count as u64 * 2, "FCStd profile ambiguity scan")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(eligible_count) * 2,
+        "FCStd profile ambiguity scan",
+    )?;
     for &entity in &unused {
         for start in [true, false] {
             let matches = endpoint_candidates(
@@ -4310,7 +4365,8 @@ impl EndpointIndex {
             }
         }
         for bucket in by_scale.values_mut() {
-            let sorting_work = bucket.len() as u64 * (u64::from(bucket.len().max(2).ilog2()) + 1);
+            let sorting_work = cadmpeg_core::decode::u64_from_index(bucket.len())
+                * (u64::from(bucket.len().max(2).ilog2()) + 1);
             ctx.charge_work(sorting_work, "FCStd profile index sort")?;
             bucket.sort_by(|left, right| left.point.u.total_cmp(&right.point.u));
         }
@@ -4333,7 +4389,10 @@ fn endpoint_candidates(
     // Active explicit coincident loci override coordinates. Coordinate matching below is the
     // decoder-owned CADIR boundary, not a producer tolerance.
     if let Some(explicit) = explicit_relations.get(&endpoint) {
-        ctx.charge_work(explicit.len() as u64, "FCStd explicit profile candidates")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(explicit.len()),
+            "FCStd explicit profile candidates",
+        )?;
         let match_count = explicit
             .iter()
             .filter(|candidate| available.contains(&candidate.entity))
@@ -4359,7 +4418,7 @@ fn endpoint_candidates(
         let bucket_scale = f64::from_bits((bucket_number.max(scale) + 1) << 52).min(f64::MAX);
         let tolerance = SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * bucket_scale;
         ctx.charge_work(
-            bucket.len().max(2).ilog2() as u64 + 1,
+            u64::from(bucket.len().max(2).ilog2()) + 1,
             "FCStd profile index search",
         )?;
         let first = bucket.partition_point(|candidate| candidate.point.u < point.u - tolerance);
@@ -4379,7 +4438,8 @@ fn endpoint_candidates(
         }
     }
     ctx.charge_work(
-        matches.len().max(2).ilog2() as u64 * matches.len() as u64,
+        u64::from(matches.len().max(2).ilog2())
+            * cadmpeg_core::decode::u64_from_index(matches.len()),
         "FCStd profile candidate order",
     )?;
     matches.sort_unstable();
@@ -4392,15 +4452,24 @@ fn explicit_endpoint_relations(
     entities: &[SketchEntity],
     constraints: &[SketchConstraint],
 ) -> Result<BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>, CodecError> {
-    ctx.charge_work(entities.len() as u64, "FCStd profile entity lookup")?;
-    ctx.charge_collection_items(entities.len() as u64, "FCStd profile entity lookup")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(entities.len()),
+        "FCStd profile entity lookup",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(entities.len()),
+        "FCStd profile entity lookup",
+    )?;
     let entity_indices = entities
         .iter()
         .enumerate()
         .map(|(index, entity)| (entity.id().as_str(), index))
         .collect::<HashMap<_, _>>();
     let mut relations = BTreeMap::new();
-    ctx.charge_work(constraints.len() as u64, "FCStd profile constraint scan")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(constraints.len()),
+        "FCStd profile constraint scan",
+    )?;
     for constraint in constraints {
         if constraint.active == Some(false) {
             continue;
@@ -4413,8 +4482,14 @@ fn explicit_endpoint_relations(
             .iter()
             .filter(|locus| matches!(locus, SketchLocus::Start(_) | SketchLocus::End(_)))
             .count();
-        ctx.charge_work(endpoint_count as u64, "FCStd explicit profile loci")?;
-        ctx.charge_collection_items(endpoint_count as u64, "FCStd explicit profile loci")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(endpoint_count),
+            "FCStd explicit profile loci",
+        )?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(endpoint_count),
+            "FCStd explicit profile loci",
+        )?;
         let endpoints = loci
             .iter()
             .filter_map(|locus| match locus {
@@ -4840,10 +4915,14 @@ fn vector_list_property(
             return Ok(None);
         };
         let mut view = View::over_retained(data);
-        let Some(count) = view.u32_le().map(|count| count as usize) else {
+        let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
             return Ok(None);
         };
-        if count > MAX_SKETCH_RECORDS || view.counted(count as u64, 24).is_none() {
+        if count > MAX_SKETCH_RECORDS
+            || view
+                .counted(cadmpeg_core::decode::u64_from_index(count), 24)
+                .is_none()
+        {
             return Ok(None);
         }
         let mut points = ctx.collection_vec(count, "fcstd vector-list points")?;
@@ -5760,7 +5839,14 @@ fn part_fillet_edge_values(
     let Some(count) = view.u32_le() else {
         return Ok(None);
     };
-    if count as usize > MAX_SKETCH_RECORDS {
+    if usize::try_from(count).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "FreeCAD count",
+            cadmpeg_core::decode::u64_from_index(usize::MAX),
+            u64::from(count),
+        )
+    })? > MAX_SKETCH_RECORDS
+    {
         return Ok(None);
     }
     let Some(bounded) = view.counted(u64::from(count), 20) else {
@@ -6745,12 +6831,18 @@ fn sweep_definition(
         };
         profiles.push(ProfileRef::Planar(profile));
     }
-    ctx.charge_work(profiles.len() as u64, "fcstd sweep profile deduplication")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(profiles.len()),
+        "fcstd sweep profile deduplication",
+    )?;
     profiles.dedup();
     if profiles.is_empty() {
         return Ok(None);
     }
-    ctx.charge_work(profiles.len() as u64, "fcstd sweep primary profile removal")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(profiles.len()),
+        "fcstd sweep primary profile removal",
+    )?;
     let profile = profiles.remove(0);
     let Some(path_property) = property(properties, "Spine")
         .or_else(|| property(properties, "Path"))
@@ -7635,7 +7727,7 @@ fn pattern_definition(
                 return Ok(None);
             }
             ctx.charge_collection_items(
-                transformations.links().len() as u64,
+                cadmpeg_core::decode::u64_from_index(transformations.links().len()),
                 "freecad pattern stages",
             )?;
             let mut stages = cadmpeg_core::decode::DecodeContext::admitted_vec(
@@ -7810,10 +7902,11 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
     }) else {
         return Ok(None);
     };
-    if count == 0 || count > MAX_SKETCH_RECORDS as u64 {
+    if count == 0 || count > cadmpeg_core::decode::u64_from_index(MAX_SKETCH_RECORDS) {
         return Ok(None);
     }
-    let count = count as u32;
+    let count = u32::try_from(count)
+        .map_err(|_| CodecError::Malformed("pattern count exceeds u32".into()))?;
     let Some(mode) = enumeration_selector(properties, "Mode", 0) else {
         return Ok(None);
     };
@@ -7840,15 +7933,22 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         let Some(count2) = integer_constraint_selector(properties, "Occurrences2", 1, false) else {
             return Ok(None);
         };
-        if count2 == 0 || count2 > MAX_SKETCH_RECORDS as u64 {
+        if count2 == 0 || count2 > cadmpeg_core::decode::u64_from_index(MAX_SKETCH_RECORDS) {
             return Ok(None);
         }
         if count2 > 1 {
             let Some(mode2) = enumeration_selector(properties, "Mode2", 0) else {
                 return Ok(None);
             };
-            let Some(second) =
-                linear_pattern_axis(ctx, properties, "2", count2 as u32, mode2, sources)?
+            let Some(second) = linear_pattern_axis(
+                ctx,
+                properties,
+                "2",
+                u32::try_from(count2)
+                    .map_err(|_| CodecError::Malformed("pattern count exceeds u32".into()))?,
+                mode2,
+                sources,
+            )?
             else {
                 return Ok(None);
             };
@@ -8027,7 +8127,17 @@ fn pattern_locations(
             let Some(interval) = FiniteReal::new(extent.get() / f64::from(count - 1)) else {
                 return Ok(None);
             };
-            ctx.alloc_filled(count as usize - 1, interval, "freecad pattern intervals")?
+            ctx.alloc_filled(
+                usize::try_from(count).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "FreeCAD count",
+                        cadmpeg_core::decode::u64_from_index(usize::MAX),
+                        u64::from(count),
+                    )
+                })? - 1,
+                interval,
+                "freecad pattern intervals",
+            )?
         }
         1 => {
             let Some(fallback) = scalar_named(properties, &name(offset_base)) else {
@@ -8047,12 +8157,36 @@ fn pattern_locations(
             let Some(pattern) = pattern else {
                 return Ok(None);
             };
-            if !spacings.is_empty() && spacings.len() != count as usize - 1 {
+            if !spacings.is_empty()
+                && spacings.len()
+                    != usize::try_from(count).map_err(|_| {
+                        ctx.refuse_codec_limit(
+                            "FreeCAD count",
+                            cadmpeg_core::decode::u64_from_index(usize::MAX),
+                            u64::from(count),
+                        )
+                    })? - 1
+            {
                 return Ok(None);
             }
-            let mut intervals =
-                ctx.collection_vec(count as usize - 1, "freecad pattern intervals")?;
-            for index in 0..count as usize - 1 {
+            let mut intervals = ctx.collection_vec(
+                usize::try_from(count).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "FreeCAD count",
+                        cadmpeg_core::decode::u64_from_index(usize::MAX),
+                        u64::from(count),
+                    )
+                })? - 1,
+                "freecad pattern intervals",
+            )?;
+            for index in 0..usize::try_from(count).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "FreeCAD count",
+                    cadmpeg_core::decode::u64_from_index(usize::MAX),
+                    u64::from(count),
+                )
+            })? - 1
+            {
                 let explicit = spacings
                     .get(index)
                     .copied()
@@ -8071,7 +8205,13 @@ fn pattern_locations(
     };
     ctx.charge_collection_items(u64::from(count), "freecad pattern locations")?;
     let mut locations = cadmpeg_core::decode::DecodeContext::admitted_vec(
-        count as usize,
+        usize::try_from(count).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "FreeCAD count",
+                cadmpeg_core::decode::u64_from_index(usize::MAX),
+                u64::from(count),
+            )
+        })?,
         "freecad pattern locations",
     )?;
     locations.push(FiniteReal::ZERO);
@@ -8265,7 +8405,7 @@ fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
     Some(if value >= U64_UPPER_EXCLUSIVE {
         u64::MAX
     } else {
-        value as u64
+        cadmpeg_core::convert::truncate_f64_to_u64(value)?
     })
 }
 
@@ -8328,10 +8468,14 @@ fn numeric_list(
             return Ok(None);
         };
         let mut view = View::over_retained(data);
-        let Some(count) = view.u32_le().map(|count| count as usize) else {
+        let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
             return Ok(None);
         };
-        if count > MAX_SKETCH_RECORDS || view.counted(count as u64, 8).is_none() {
+        if count > MAX_SKETCH_RECORDS
+            || view
+                .counted(cadmpeg_core::decode::u64_from_index(count), 8)
+                .is_none()
+        {
             return Ok(None);
         }
         let mut values = ctx.collection_vec(count, "fcstd numeric-list values")?;

@@ -285,7 +285,7 @@ fn framing_error(error: FramingError) -> CodecError {
         FramingError::Truncated { offset, .. } => CodecError::truncated(
             cadmpeg_core::decode::SourceLocation {
                 space: cadmpeg_core::decode::SpaceId::ROOT,
-                offset: offset as u64,
+                offset: cadmpeg_core::decode::u64_from_index(offset),
             },
             "rhino chunk framing",
         ),
@@ -1173,7 +1173,7 @@ fn scan_with_record_limit<'a>(
             let child = chunk_at(data, child_offset, chunk.body().end, archive, false)
                 .map_err(framing_error)?;
             if child.typecode == TCODE_ENDOFTABLE {
-                if !child.short() || child.value() != 0 {
+                if !child.short() || child.value().map_err(framing_error)? != 0 {
                     return Err(CodecError::Malformed(
                         "end-of-table marker must be short with value zero".to_string(),
                     ));
@@ -1480,7 +1480,10 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
                 "Rhino container entry name",
             )?,
             role: ContainerRole::ObjectClass,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, bytes as u64),
+            storage: EntryStorage::verbatim(
+                VerbatimLabel::None,
+                cadmpeg_core::decode::u64_from_index(bytes),
+            ),
             attributes,
         });
     }

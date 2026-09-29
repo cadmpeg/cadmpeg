@@ -50,7 +50,7 @@ pub(crate) fn circular_arc_nurbs(
     reference: Vector3,
     radius: PositiveLength,
     interval: [f64; 2],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsCurve>, CurveConversionError> {
     elliptical_arc_nurbs(center, axis, reference, radius, radius, interval, ctx)
 }
@@ -62,7 +62,7 @@ pub(crate) fn elliptical_arc_nurbs(
     major_radius: PositiveLength,
     minor_radius: PositiveLength,
     interval: [f64; 2],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsCurve>, CurveConversionError> {
     let delta = interval[1] - interval[0];
     if !delta.is_finite() || delta <= 0.0 || delta > std::f64::consts::TAU + ANGULAR_TOLERANCE {
@@ -79,16 +79,8 @@ pub(crate) fn elliptical_arc_nurbs(
         return Ok(None);
     };
     let step = delta / span_count;
-    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        spans * 2 + 4,
-        "iges analytic arc knots",
-    )?;
-    let mut poles = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        spans * 2 + 1,
-        "iges analytic arc weighted poles",
-    )?;
+    let mut knots = ctx.collection_vec(spans * 2 + 4, "iges analytic arc knots")?;
+    let mut poles = ctx.collection_vec(spans * 2 + 1, "iges analytic arc weighted poles")?;
     for span in 0..spans {
         let start = if span == 0 {
             interval[0]
@@ -165,7 +157,7 @@ pub(crate) fn parabolic_arc_nurbs(
     major_direction: Vector3,
     focal_distance: PositiveLength,
     interval: [f64; 2],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsCurve>, CurveConversionError> {
     let [start, end] = interval;
     let delta = end - start;
@@ -222,17 +214,9 @@ pub(crate) fn parabolic_arc_nurbs(
     {
         return Ok(None);
     }
-    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        6,
-        "iges parabolic arc knots",
-    )?;
+    let mut knots = ctx.collection_vec(6, "iges parabolic arc knots")?;
     knots.extend([start, start, start, end, end, end]);
-    let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        3,
-        "iges parabolic arc poles",
-    )?;
+    let mut points = ctx.collection_vec(3, "iges parabolic arc poles")?;
     for point in [start_point, middle_point, end_point] {
         points.push(finite_arc_point(point)?);
     }

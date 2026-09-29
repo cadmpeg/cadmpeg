@@ -3569,6 +3569,9 @@ fn oriented_curve_entity(
         entity.status = EntityStatus::PhysicallyDependent;
         return Ok(entity);
     }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let reversed_span = CurveSpan {
         range: span.range,
         start: span.end,
@@ -3605,9 +3608,14 @@ fn oriented_curve_entity(
                 *ref_direction,
                 radius,
                 span.range.get(),
-                None,
+                &ctx,
             )
-            .map_err(|error| CodecError::malformed(format_args!("circular: {error}")))?
+            .map_err(|error| match error {
+                crate::entities::curve_conversion::CurveConversionError::Resource(error) => error,
+                other @ crate::entities::curve_conversion::CurveConversionError::Carrier(_) => {
+                    CodecError::malformed(format_args!("circular: {other}"))
+                }
+            })?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES reversed circular edge span is not convertible ({span:?})"
@@ -3637,9 +3645,14 @@ fn oriented_curve_entity(
                 major_radius,
                 minor_radius,
                 span.range.get(),
-                None,
+                &ctx,
             )
-            .map_err(|error| CodecError::malformed(format_args!("elliptical: {error}")))?
+            .map_err(|error| match error {
+                crate::entities::curve_conversion::CurveConversionError::Resource(error) => error,
+                other @ crate::entities::curve_conversion::CurveConversionError::Carrier(_) => {
+                    CodecError::malformed(format_args!("elliptical: {other}"))
+                }
+            })?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES reversed elliptical edge span is not convertible ({span:?})"
@@ -3667,9 +3680,14 @@ fn oriented_curve_entity(
                 *major_direction,
                 focal_distance,
                 span.range.get(),
-                None,
+                &ctx,
             )
-            .map_err(|error| CodecError::malformed(format_args!("parabolic: {error}")))?
+            .map_err(|error| match error {
+                crate::entities::curve_conversion::CurveConversionError::Resource(error) => error,
+                other @ crate::entities::curve_conversion::CurveConversionError::Carrier(_) => {
+                    CodecError::malformed(format_args!("parabolic: {other}"))
+                }
+            })?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES reversed parabolic edge span is not convertible ({span:?})"
@@ -7118,7 +7136,10 @@ fn encode_file(
         finite(minimum_resolution, "Global minimum resolution")?,
         finite(maximum_coordinate, "Global maximum coordinate")?,
     );
-    let global_cards = crate::global::layout_global_cards(&global, None)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&global, &arena, &policy)?;
+    let global_cards = crate::global::layout_global_cards(&global, &ctx)?;
     let global_count = global_cards.len();
     let mut expanded = Vec::new();
     let mut expanded_index_by_entity = Vec::new();
@@ -7175,7 +7196,14 @@ fn encode_file(
             .ok_or_else(|| {
                 CodecError::NotImplemented("IGES directory sequence overflows".into())
             })?;
-        let fragments = crate::parameter::layout_parameter_cards(&entity.parameter_text(), None)?;
+        let parameter_text = entity.parameter_text();
+        let parameter_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (parameter_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &parameter_text,
+            &parameter_arena,
+            &policy,
+        )?;
+        let fragments = crate::parameter::layout_parameter_cards(&parameter_text, &parameter_ctx)?;
         let parameter_count = fragments.len();
         let parameter_count = u32::try_from(parameter_count)
             .map_err(|_| CodecError::NotImplemented("IGES parameter count overflows".into()))?;

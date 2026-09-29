@@ -193,9 +193,11 @@ pub(in crate::native) fn material_texture_assets(
         "sort NX material texture entries",
     )?;
     let mut entries = Vec::new();
-    entries
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX material texture entries", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut entries,
+        count,
+        "allocate NX material texture entries",
+    )?;
     entries.extend(
         container
             .entries
@@ -231,14 +233,7 @@ pub(in crate::native) fn material_texture_assets(
         let Some((offset, size, payload, byte_order, first_ifd_offset)) = parsed else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX material texture assets")?;
-        ctx.charge_retained(
-            u64_from_index(std::mem::size_of::<MaterialTextureAsset>()),
-            "retain NX material texture assets",
-        )?;
-        assets
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX material texture assets", 0, 1))?;
+        ctx.reserve_retained_vec(&mut assets, 1, "NX material texture assets")?;
         let ordinal = assets.len();
         let mut digits = 1;
         let mut value = ordinal;
@@ -250,25 +245,11 @@ pub(in crate::native) fn material_texture_assets(
             .len()
             .checked_add(digits)
             .ok_or_else(|| ctx.refuse_codec_limit("NX material texture identity length", 0, 1))?;
-        ctx.charge_retained(
-            u64_from_index(id_len),
-            "retain NX material texture identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX material texture identity", 0, 1))?;
+        let mut id = ctx.retained_string(id_len, "retain NX material texture identity")?;
         write!(id, "nx:container:material-texture#{ordinal}")
             .map_err(|_| ctx.refuse_codec_limit("write NX material texture identity", 0, 1))?;
-        ctx.charge_retained(
-            u64_from_index(entry.name.len()),
-            "retain NX material texture source entry",
-        )?;
-        let mut source_entry = String::new();
-        source_entry
-            .try_reserve_exact(entry.name.len())
-            .map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX material texture source entry", 0, 1)
-            })?;
+        let mut source_entry =
+            ctx.retained_string(entry.name.len(), "retain NX material texture source entry")?;
         source_entry.push_str(&entry.name);
         ctx.charge_retained(64, "retain NX material texture digest")?;
         ctx.charge_work(

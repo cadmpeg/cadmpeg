@@ -268,22 +268,6 @@ impl Stem {
     }
 }
 
-pub(crate) trait MintContext<'borrow, 'arena> {
-    fn optional(self) -> Option<&'borrow DecodeContext<'arena>>;
-}
-
-impl<'borrow, 'arena> MintContext<'borrow, 'arena> for &'borrow DecodeContext<'arena> {
-    fn optional(self) -> Option<&'borrow DecodeContext<'arena>> {
-        Some(self)
-    }
-}
-
-impl<'borrow, 'arena> MintContext<'borrow, 'arena> for Option<&'borrow DecodeContext<'arena>> {
-    fn optional(self) -> Option<&'borrow DecodeContext<'arena>> {
-        self
-    }
-}
-
 impl fmt::Display for Stem {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         for piece in self.pieces.iter() {
@@ -295,6 +279,24 @@ impl fmt::Display for Stem {
 
 /// Declare one minter over a const-admitted `iges:{scope}:{kind}` namespace.
 macro_rules! minter {
+    ($(#[$meta:meta])* body, $admitted:ident, $ty:ty, $scope:literal, $kind:literal) => {
+        $(#[$meta])*
+        pub(crate) fn body(stem: &Stem) -> $ty {
+            <$ty>::compose(
+                &cadmpeg_ir::identity_namespace!("iges", $scope, $kind),
+                stem.key(),
+            )
+        }
+
+        pub(crate) fn $admitted(stem: &Stem, ctx: &DecodeContext<'_>) -> Result<$ty, CodecError> {
+            let text = ctx.format_retained(
+                format_args!("iges:{}:{}#{stem}", $scope, $kind),
+                "iges generated identity",
+            )?;
+            <$ty>::try_from(text)
+                .map_err(|_| CodecError::Malformed("IGES generated identity is invalid".into()))
+        }
+    };
     ($(#[$meta:meta])* $name:ident, $ty:ty, $scope:literal, $kind:literal) => {
         $(#[$meta])*
         pub(crate) fn $name(stem: &Stem) -> $ty {
@@ -306,17 +308,17 @@ macro_rules! minter {
     };
     ($(#[$meta:meta])* $name:ident, $admitted:ident, $ty:ty, $scope:literal, $kind:literal) => {
         $(#[$meta])*
+        #[cfg(test)]
         pub(crate) fn $name(stem: &Stem) -> $ty {
             <$ty>::compose(
                 &cadmpeg_ir::identity_namespace!("iges", $scope, $kind),
                 stem.key(),
             )
         }
-            pub(crate) fn $admitted<'borrow, 'arena: 'borrow>(
+            pub(crate) fn $admitted(
                 stem: &Stem,
-                ctx: impl MintContext<'borrow, 'arena>,
+                ctx: &DecodeContext<'_>,
             ) -> Result<$ty, CodecError> {
-                let Some(ctx) = ctx.optional() else { return Ok($name(stem)); };
                 let text = ctx.format_retained(format_args!("iges:{}:{}#{stem}", $scope, $kind), "iges generated identity")?;
                 <$ty>::try_from(text)
                     .map_err(|_| CodecError::Malformed("IGES generated identity is invalid".into()))

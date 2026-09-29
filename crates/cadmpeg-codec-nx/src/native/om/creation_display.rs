@@ -54,29 +54,10 @@ fn retained_identity(
         .len()
         .checked_add(decimal_len(ordinal))
         .ok_or_else(|| ctx.refuse_codec_limit("NX creation display identity length", 0, 1))?;
-    ctx.charge_retained(
-        u64_from_index(length),
-        "retain NX creation display identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX creation display identity")?;
     write!(id, "{prefix}{ordinal}")
         .map_err(|_| ctx.refuse_codec_limit("write NX creation display identity", 0, 1))?;
     Ok(id)
-}
-
-fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    ctx.charge_retained(
-        u64_from_index(text.len()),
-        "retain NX creation display text",
-    )?;
-    let mut owned = String::new();
-    owned
-        .try_reserve_exact(text.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display text", 0, 1))?;
-    owned.push_str(text);
-    Ok(owned)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -97,27 +78,14 @@ fn push_relation(
     definition_offset: usize,
     source_entry: &str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX creation display relations")?;
-    ctx.charge_retained(
-        u64_from_index(std::mem::size_of::<RmCreationDisplayDataRelation>()),
-        "retain NX creation display relations",
-    )?;
-    relations
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display relations", 0, 1))?;
+    ctx.reserve_retained_vec(relations, 1, "NX creation display relations")?;
     let class_len = "nx:om-entry-:class#"
         .len()
         .checked_add(decimal_len(entry_index))
         .and_then(|length| length.checked_add(decimal_len(definition_offset)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX creation display class identity length", 0, 1))?;
-    ctx.charge_retained(
-        u64_from_index(class_len),
-        "retain NX creation display class identity",
-    )?;
-    let mut class_definition = String::new();
-    class_definition
-        .try_reserve_exact(class_len)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display class identity", 0, 1))?;
+    let mut class_definition =
+        ctx.retained_string(class_len, "retain NX creation display class identity")?;
     write!(
         class_definition,
         "nx:om-entry-{entry_index}:class#{definition_offset}"
@@ -128,7 +96,7 @@ fn push_relation(
         ordinal: 0,
         class_definition,
         encoding,
-        source_entry: retained_text(ctx, source_entry)?,
+        source_entry: ctx.copy_retained_text(source_entry, "retain NX creation display text")?,
     });
     Ok(())
 }

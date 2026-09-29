@@ -18,21 +18,6 @@ impl Write for CountBytes {
     }
 }
 
-/// Copy one admitted typed identity into retained decode storage.
-pub(crate) fn copy_typed_id<T>(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-    operation: &'static str,
-) -> Result<T, CodecError>
-where
-    T: TryFrom<String>,
-    T::Error: Display,
-{
-    let bytes = ctx.copy_retained(id.as_bytes(), operation)?;
-    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
-    T::try_from(text).map_err(CodecError::malformed)
-}
-
 /// The format component every NX identity carries.
 fn nx() -> IdentityComponent {
     identity_component!("nx")
@@ -45,8 +30,7 @@ pub(crate) struct IdScope(IdentityComponent);
 impl IdScope {
     /// Copy one decoded scope under the caller's retained-text limit.
     pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let bytes = ctx.copy_retained(self.0.as_str().as_bytes(), "nx completion scope copy")?;
-        let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
+        let text = ctx.copy_retained_text(self.0.as_str(), "nx completion scope copy")?;
         IdentityComponent::try_new(text)
             .map(Self)
             .map_err(CodecError::malformed)
@@ -70,11 +54,7 @@ impl IdScope {
         let mut count = CountBytes(0);
         write!(&mut count, "s{stream_index}")
             .map_err(|_| ctx.refuse_codec_limit("nx stream scope text", 0, u64::MAX))?;
-        ctx.charge_retained(u64_from_index(count.0), "nx stream scope text")?;
-        let mut text = String::new();
-        text.try_reserve_exact(count.0).map_err(|_| {
-            ctx.refuse_codec_limit("nx stream scope text", 0, u64_from_index(count.0))
-        })?;
+        let mut text = ctx.retained_string(count.0, "nx stream scope text")?;
         write!(&mut text, "s{stream_index}").map_err(|_| {
             ctx.refuse_codec_limit("nx stream scope text", 0, u64_from_index(count.0))
         })?;
@@ -110,10 +90,7 @@ impl IdScope {
         let mut count = CountBytes(0);
         write!(&mut count, "nx:{}", self.0.as_str())
             .map_err(|_| ctx.refuse_codec_limit("nx scope prefix", 0, u64::MAX))?;
-        ctx.charge_retained(u64_from_index(count.0), "nx scope prefix")?;
-        let mut text = String::new();
-        text.try_reserve_exact(count.0)
-            .map_err(|_| ctx.refuse_codec_limit("nx scope prefix", 0, u64_from_index(count.0)))?;
+        let mut text = ctx.retained_string(count.0, "nx scope prefix")?;
         write!(&mut text, "nx:{}", self.0.as_str())
             .map_err(|_| ctx.refuse_codec_limit("nx scope prefix", 0, u64_from_index(count.0)))?;
         Ok(text)
@@ -142,10 +119,7 @@ impl IdScope {
         let mut count = CountBytes(0);
         write!(&mut count, "nx:{}:{}#{key}", self.0.as_str(), kind.as_str())
             .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64::MAX))?;
-        ctx.charge_retained(u64_from_index(count.0), "nx identity text")?;
-        let mut text = String::new();
-        text.try_reserve_exact(count.0)
-            .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64_from_index(count.0)))?;
+        let mut text = ctx.retained_string(count.0, "nx identity text")?;
         write!(&mut text, "nx:{}:{}#{key}", self.0.as_str(), kind.as_str())
             .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64_from_index(count.0)))?;
         Identity::new(text)

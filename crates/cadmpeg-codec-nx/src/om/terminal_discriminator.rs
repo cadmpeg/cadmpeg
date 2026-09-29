@@ -161,17 +161,8 @@ pub(crate) fn operation_terminal_discriminator(
     let Some((origin, indices, flags, trailing_bytes, trailing_count)) = found else {
         return Ok(None);
     };
-    let count = u64_from_index(trailing_count);
     let operation = "NX terminal discriminator trailing indices";
-    ctx.charge_collection_items(count, operation)?;
-    let bytes = count
-        .checked_mul(u64_from_index(std::mem::size_of::<CompactIndexAtom>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut trailing_indices = Vec::new();
-    trailing_indices
-        .try_reserve_exact(trailing_count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    let mut trailing_indices = ctx.retained_vec(trailing_count, operation)?;
     let mut scan = 0;
     while scan < trailing_bytes.len() {
         let Some(tail) = trailing_bytes.get(scan..) else {

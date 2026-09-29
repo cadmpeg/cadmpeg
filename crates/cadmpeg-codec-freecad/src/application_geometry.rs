@@ -166,18 +166,24 @@ fn parse_mesh(
     // Each facet consumes three point indices and three neighbour indices (24 bytes),
     // so the declared count cannot exceed the unread payload.
     let facet_capacity = reader
-        .counted(facet_count as u64, mesh_facet::LEN)
+        .counted(
+            cadmpeg_core::decode::u64_from_index(facet_count),
+            mesh_facet::LEN,
+        )
         .ok_or_else(|| {
             CodecError::Malformed("mesh facet count exceeds remaining payload".into())
         })?;
-    ctx.charge_collection_items(facet_capacity as u64, "FreeCAD mesh facets")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(facet_capacity),
+        "FreeCAD mesh facets",
+    )?;
     let mut triangles = Vec::new();
     triangles.try_reserve_exact(facet_capacity).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems,
                 ctx.policy().limits.max_collection_items,
-                facet_capacity as u64,
+                cadmpeg_core::decode::u64_from_index(facet_capacity),
                 "FreeCAD mesh facets",
             ),
         )

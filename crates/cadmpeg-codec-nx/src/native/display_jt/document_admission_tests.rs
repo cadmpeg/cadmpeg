@@ -97,7 +97,7 @@ fn display_jt_toc_storage_refuses_before_vector_reservation() {
         refused_at(policy),
         (
             ResourceDimension::RetainedBytes,
-            "retain DisplayJT toc entries".to_string()
+            "admit DisplayJT toc entries".to_string()
         )
     );
 }
@@ -193,7 +193,7 @@ fn display_jt_document_storage_refuses_before_vector_reservation() {
         refused_at(policy),
         (
             ResourceDimension::RetainedBytes,
-            "retain DisplayJT document".to_string()
+            "admit DisplayJT document".to_string()
         )
     );
 }

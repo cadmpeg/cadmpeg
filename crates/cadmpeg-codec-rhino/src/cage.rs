@@ -170,9 +170,11 @@ pub(crate) fn decode_at(
             .ok_or_else(|| {
                 GeometryError::malformed(body.position(), "NURBS cage knot count overflows")
             })?;
-        let bound = body.counted(knot_count as u64, 8).ok_or_else(|| {
-            GeometryError::malformed(body.position(), "NURBS cage knot vector truncated")
-        })?;
+        let bound = body
+            .counted(cadmpeg_core::decode::u64_from_index(knot_count), 8)
+            .ok_or_else(|| {
+                GeometryError::malformed(body.position(), "NURBS cage knot vector truncated")
+            })?;
         let mut reserved =
             ExactVec::<FiniteReal>::new(expand.ctx(), bound, "Rhino cage knot values")
                 .map_err(|error| refused(body.position(), &error))?;
@@ -210,7 +212,10 @@ pub(crate) fn decode_at(
         })?;
 
     let control_bound = body
-        .counted(control_count as u64, stored_dimension * 8)
+        .counted(
+            cadmpeg_core::decode::u64_from_index(control_count),
+            stored_dimension * 8,
+        )
         .ok_or_else(|| {
             GeometryError::malformed(body.position(), "NURBS cage control net truncated")
         })?;
@@ -227,9 +232,11 @@ pub(crate) fn decode_at(
         None
     };
     for _ in 0..control_count {
-        let tuple_bound = body.counted(dimension as u64, 8).ok_or_else(|| {
-            GeometryError::malformed(body.position(), "NURBS cage coordinate tuple truncated")
-        })?;
+        let tuple_bound = body
+            .counted(cadmpeg_core::decode::u64_from_index(dimension), 8)
+            .ok_or_else(|| {
+                GeometryError::malformed(body.position(), "NURBS cage coordinate tuple truncated")
+            })?;
         let mut stored =
             ExactVec::<FiniteReal>::new(expand.ctx(), tuple_bound, "Rhino cage coordinate tuple")
                 .map_err(|error| refused(body.position(), &error))?;

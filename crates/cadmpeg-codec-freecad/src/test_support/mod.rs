@@ -94,3 +94,14 @@ pub(crate) fn validate_native(
         .expect("empty root is within the input limit");
     crate::validate_native(&ctx, ir).expect("test validation is within resource limits")
 }
+
+pub(crate) fn with_service_context<T>(
+    input: &[u8],
+    use_context: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+        .expect("test input is within service limits");
+    use_context(&ctx)
+}

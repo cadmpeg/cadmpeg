@@ -11,18 +11,6 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use std::num::NonZeroU8;
 
-fn reserve_thru_item<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ThruCurveBranch<B> {
     pub(crate) mode: NonZeroU8,
@@ -123,7 +111,7 @@ impl ThruCurveGroup<()> {
                 .members
                 .try_map_indexed_charged(ctx, |_, (token, ())| Ok((token, target(token)?)))?;
             let terminal = (branch.terminal.0, target(branch.terminal.0)?);
-            reserve_thru_item(ctx, &mut branches, "NX resolved thru-curve branches")?;
+            ctx.reserve_retained_vec(&mut branches, 1, "NX resolved thru-curve branches")?;
             branches.push(ThruCurveBranch {
                 mode: branch.mode,
                 members,
@@ -155,7 +143,8 @@ fn thru_curve_payload_branch(
         for _ in 1..declared_count {
             let token = PayloadIndexToken::read(record.payload().get(cursor..)?)?;
             cursor += token.raw().len();
-            if let Err(error) = reserve_thru_item(ctx, &mut members, "NX thru-curve branch members")
+            if let Err(error) =
+                ctx.reserve_retained_vec(&mut members, 1, "NX thru-curve branch members")
             {
                 failure = Some(error);
                 return None;
@@ -226,7 +215,7 @@ pub(crate) fn thru_curve_payload_branch_group(
         let Some((branch, next)) = thru_curve_payload_branch(ctx, record, at)? else {
             return Ok(None);
         };
-        reserve_thru_item(ctx, &mut branches, "NX thru-curve branches")?;
+        ctx.reserve_retained_vec(&mut branches, 1, "NX thru-curve branches")?;
         branches.push(branch);
         at = next;
     }

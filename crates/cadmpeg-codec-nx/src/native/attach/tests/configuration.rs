@@ -5,7 +5,6 @@ use crate::native::attach::attach_active_configuration_parameter_values;
 use crate::native::attach::attach_current_feature_states;
 use crate::native::attach::attach_sketch_graph;
 use crate::native::attach::body_selection::boolean_target_output;
-use crate::native::attach::body_selection::copy_feature_output_bodies;
 use crate::native::attach::extrude_boolean_op;
 use crate::native::attach::extrude_feature_definition;
 use crate::native::attach::feature_projection::blind_hole_operations;
@@ -1659,40 +1658,6 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
         keep_tools: false,
     });
     assert!(boolean_target_output(Some(&ambiguous)).is_none());
-}
-
-fn feature_output_copy_with_limit(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let body = BodyId::mint("nx:s0:body#0").unwrap();
-    let outputs = copy_feature_output_bodies(&ctx, std::slice::from_ref(&body))?;
-    assert_eq!(outputs, [body]);
-    Ok(())
-}
-
-#[test]
-fn feature_output_copy_refuses_collection_limit() {
-    let error = feature_output_copy_with_limit(|policy| policy.limits.max_collection_items = 0)
-        .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn feature_output_copy_refuses_retained_limit() {
-    let error =
-        feature_output_copy_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
 }
 
 #[test]

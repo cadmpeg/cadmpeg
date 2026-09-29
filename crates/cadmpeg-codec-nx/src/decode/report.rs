@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-report losses for NX decode.
 
-use super::emit::render_retained_text;
 use super::feature_completeness::operands::{
     body_selection_is_incomplete, face_selection_is_incomplete, path_ref_is_incomplete,
     pattern_feature_is_incomplete,
@@ -48,7 +47,7 @@ fn push_report_loss(
     code: NxLossCode,
     message: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let message = render_retained_text(ctx, message, "nx geometry report loss text")?;
+    let message = ctx.format_retained(message, "nx geometry report loss text")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index("nx".len()),
         "nx geometry report loss namespace",
@@ -57,10 +56,7 @@ fn push_report_loss(
         cadmpeg_core::decode::u64_from_index(code.code().len()),
         "nx geometry report loss code",
     )?;
-    ctx.charge_collection_items(1, "nx geometry report losses")?;
-    losses
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx geometry report losses", 0, 1))?;
+    ctx.reserve_vec(losses, 1, "nx geometry report losses")?;
     losses.push(code.note(message));
     Ok(())
 }
@@ -394,18 +390,10 @@ pub(super) fn build_geometry_report(
     }
 
     for loss in dialect_losses {
-        ctx.charge_collection_items(1, "nx geometry report losses")?;
-        losses
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx geometry report losses", 0, 1))?;
+        ctx.reserve_vec(&mut losses, 1, "nx geometry report losses")?;
         losses.push(loss.clone_admitted(ctx, "nx geometry report dialect loss")?);
     }
-    let note_count = cadmpeg_core::decode::u64_from_index(notes.len());
-    ctx.charge_collection_items(note_count, "nx geometry report notes")?;
-    let mut copied_notes = Vec::new();
-    copied_notes
-        .try_reserve_exact(notes.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx geometry report notes", 0, note_count))?;
+    let mut copied_notes = ctx.collection_vec(notes.len(), "nx geometry report notes")?;
     for note in notes {
         let bytes = ctx.copy_retained(note.as_bytes(), "nx geometry report note text")?;
         copied_notes.push(String::from_utf8(bytes).map_err(cadmpeg_core::CodecError::malformed)?);
@@ -424,18 +412,13 @@ pub(crate) fn append_design_intent_losses(
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(ir.model.bodies.len());
-    ctx.charge_collection_items(count, "nx report current body identities")?;
-    let mut current_body_ids = Vec::new();
-    current_body_ids
-        .try_reserve_exact(ir.model.bodies.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx report current body identities", 0, count))?;
+    let mut current_body_ids =
+        ctx.collection_vec(ir.model.bodies.len(), "nx report current body identities")?;
     for body in &ir.model.bodies {
-        current_body_ids.push(crate::decode::ids::copy_typed_id(
-            ctx,
-            body.id.as_str(),
-            "nx report current body identity",
-        )?);
+        current_body_ids.push(
+            body.id
+                .try_clone_for_decode(ctx, "nx report current body identity")?,
+        );
     }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
     let (active_features, closure_rejection) =
@@ -980,11 +963,8 @@ pub(crate) fn append_design_intent_losses(
         }) = feature.evaluation.definition()
         {
             ctx.charge_collection_items(1, "nx report active sketch identities")?;
-            active_sketch_ids.insert(crate::decode::ids::copy_typed_id(
-                ctx,
-                sketch.as_str(),
-                "nx report active sketch identity",
-            )?);
+            active_sketch_ids
+                .insert(sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?);
         }
     }
     let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {

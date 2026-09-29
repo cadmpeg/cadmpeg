@@ -170,16 +170,7 @@ pub(in crate::native) fn feature_datum_plane_headers(
                     None,
                 )?;
                 ctx.charge_entities(1, "NX datum-plane header")?;
-                ctx.charge_collection_items(1, "NX datum-plane headers")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureDatumPlaneHeader,
-                    >()),
-                    "retain NX datum-plane header",
-                )?;
-                headers
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("allocate NX datum-plane headers", 0, 1))?;
+                ctx.reserve_retained_vec(&mut headers, 1, "NX datum-plane headers")?;
                 headers.push(FeatureDatumPlaneHeader {
                     id,
                     operation_label,

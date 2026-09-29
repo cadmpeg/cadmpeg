@@ -81,7 +81,10 @@ pub(crate) struct Scan<'a> {
 /// Scan an archive through the session resource budget.
 pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
-    ctx.charge_collection_items(archive.entries().len() as u64, "fcstd ZIP entries")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(archive.entries().len()),
+        "fcstd ZIP entries",
+    )?;
     if !archive
         .entries()
         .iter()
@@ -94,7 +97,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     let document_view = archive.open(ctx, "Document.xml")?;
     let document_bytes = document_view.window();
     ctx.charge_work(
-        document_bytes.len() as u64,
+        cadmpeg_core::decode::u64_from_index(document_bytes.len()),
         "FCStd Document.xml lexical admission",
     )?;
     if let Some((node_count, object_count)) = xml_envelope_counts(document_bytes) {

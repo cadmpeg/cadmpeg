@@ -299,13 +299,13 @@ impl ScalarValue {
     pub(super) fn hex(self) -> String {
         let bits = match self {
             Self::U8(value) => u64::from(value),
-            Self::I8(value) => u64::from(u8::from_ne_bytes(value.to_ne_bytes())),
+            Self::I8(value) => u64::from(value.cast_unsigned()),
             Self::U16(value) => u64::from(value),
-            Self::I16(value) => u64::from(u16::from_ne_bytes(value.to_ne_bytes())),
+            Self::I16(value) => u64::from(value.cast_unsigned()),
             Self::U32(value) => u64::from(value),
-            Self::I32(value) => u64::from(u32::from_ne_bytes(value.to_ne_bytes())),
+            Self::I32(value) => u64::from(value.cast_unsigned()),
             Self::U64(value) => value,
-            Self::I64(value) => u64::from_ne_bytes(value.to_ne_bytes()),
+            Self::I64(value) => value.cast_unsigned(),
             Self::F32(value) => u64::from(value.to_bits()),
             Self::F64(value) => value.to_bits(),
         };

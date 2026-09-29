@@ -76,13 +76,7 @@ impl JournalGroup<usize> {
                 return Ok(None);
             };
             cursor = next;
-            ctx.charge_collection_items(1, "NX state-journal rows")?;
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<JournalRow<usize>>()),
-                "NX state-journal rows",
-            )?;
-            rows.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX state-journal rows", 0, 1))?;
+            ctx.reserve_retained_vec(&mut rows, 1, "NX state-journal rows")?;
             rows.push(row);
         }
         Ok(NonEmpty::from_vec(rows).map(|rows| Self {

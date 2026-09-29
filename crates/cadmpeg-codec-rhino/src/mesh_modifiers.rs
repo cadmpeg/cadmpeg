@@ -639,7 +639,7 @@ fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifi
         .children()
         .filter(|node| node.is_element() && same_name(*node, "curve"))
         .map(parse_shut_lining_curve)
-        .collect();
+        .collect::<Result<_, _>>()?;
     Ok(ShutLiningModifier {
         xml_version,
         on: field_bool(shut_lining, "on", false)?,
@@ -652,15 +652,15 @@ fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifi
     })
 }
 
-fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> ShutLiningCurve {
-    ShutLiningCurve {
+fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> Result<ShutLiningCurve, FramingError> {
+    Ok(ShutLiningCurve {
         uuid: field_uuid_untyped(node, "uuid"),
         radius: field_f64_untyped(node, "radius", FiniteReal::ONE),
-        profile: field_i32_untyped(node, "profile", 0),
+        profile: field_i32_untyped(node, "profile", 0)?,
         enabled: field_bool_untyped(node, "enabled", false),
         pull: field_bool_untyped(node, "pull", false),
         is_bump: field_bool_untyped(node, "is-bump", false),
-    }
+    })
 }
 
 fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> Result<DisplacementSubItem, FramingError> {
@@ -768,7 +768,7 @@ fn field_i32_optional(
                 && value >= f64::from(i32::MIN)
                 && value < f64::from(i32::MAX) + 1.0
             {
-                Some(value as i32)
+                cadmpeg_core::convert::truncate_f64_to_i32(value)
             } else {
                 None
             }
@@ -844,15 +844,23 @@ fn field_bool_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: bool
         || text.parse::<i32>().is_ok_and(|value| value != 0)
 }
 
-fn field_i32_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) -> i32 {
+fn field_i32_untyped(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: i32,
+) -> Result<i32, FramingError> {
     let Some(node) = direct_child(parent, name) else {
-        return default;
+        return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
     if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
-        1
+        Ok(1)
     } else {
-        text.parse::<f64>().ok().map_or(0, |value| value as i32)
+        match text.parse::<f64>() {
+            Ok(value) => cadmpeg_core::convert::truncate_f64_to_i32(value)
+                .ok_or_else(|| FramingError::unpositioned(format!("{name} is outside i32 range"))),
+            Err(_) => Ok(0),
+        }
     }
 }
 
@@ -895,7 +903,7 @@ fn parse_uuid(value: &str) -> Option<Uuid> {
     while index < bytes.len() {
         let high = digits.next()?.to_digit(16)?;
         let low = digits.next()?.to_digit(16)?;
-        bytes[index] = ((high << 4) | low) as u8;
+        bytes[index] = u8::try_from((high << 4) | low).ok()?;
         index += 1;
     }
     digits.next().is_none().then(|| Uuid::from_canonical(bytes))
@@ -907,6 +915,35 @@ fn same_name(node: roxmltree::Node<'_, '_>, name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shut_lining_profile_refuses_positive_overflow() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>2147483648</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+
+    #[test]
+    fn shut_lining_profile_refuses_negative_overflow() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>-2147483649</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+
+    #[test]
+    fn shut_lining_profile_refuses_nan() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>NaN</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+
+    #[test]
+    fn shut_lining_profile_refuses_infinity() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>inf</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+    #[test]
+    fn shut_lining_profile_refuses_negative_infinity() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>-inf</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+
     use super::{
         field_uuid, parse_xml, CapType, CURVE_PIPING_CLASS, CURVE_PIPING_ITEM, DISPLACEMENT_CLASS,
         DISPLACEMENT_ITEM, EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM, MESH_MODIFIER_PLUGIN,

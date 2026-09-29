@@ -8,24 +8,6 @@ use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal, PositiveReal};
 
-fn charged_vec<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let count_u64 = u64_from_index(count);
-    ctx.charge_collection_items(count_u64, operation)?;
-    let bytes = count_u64
-        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut values = Vec::new();
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-    Ok(values)
-}
-
 /// At least two chart points, each with one native parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ChartSamples {
@@ -49,7 +31,7 @@ impl ChartParameter {
 
 impl ChartSamples {
     pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let mut values = charged_vec(ctx, self.samples.len(), "NX solved chart sample copy")?;
+        let mut values = ctx.retained_vec(self.samples.len(), "NX solved chart sample copy")?;
         ctx.charge_work(
             u64_from_index(self.samples.len()),
             "copy NX solved chart samples",
@@ -67,7 +49,7 @@ impl ChartSamples {
         if points.len() != parameters.len() || points.len() < 2 {
             return Ok(None);
         }
-        let mut samples = charged_vec(ctx, points.len(), "NX chart sample pairs")?;
+        let mut samples = ctx.retained_vec(points.len(), "NX chart sample pairs")?;
         for (point, parameter) in points.into_iter().zip(parameters) {
             samples.push((point, ChartParameter::Source(parameter)));
         }
@@ -83,7 +65,7 @@ impl ChartSamples {
         if points.len() < 2 {
             return Ok(None);
         }
-        let mut samples = charged_vec(ctx, points.len(), "NX derived chart sample pairs")?;
+        let mut samples = ctx.retained_vec(points.len(), "NX derived chart sample pairs")?;
         let mut parameter = preamble.base_parameter();
         let mut previous = None::<FinitePoint3>;
         for point in points {
@@ -139,7 +121,7 @@ impl ChartSamples {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<Point3>, CodecError> {
-        let mut points = charged_vec(ctx, self.samples.len(), "NX chart points")?;
+        let mut points = ctx.retained_vec(self.samples.len(), "NX chart points")?;
         points.extend(self.samples.iter().map(|sample| sample.0.get()));
         Ok(points)
     }
@@ -157,7 +139,7 @@ impl ChartSamples {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<f64>, CodecError> {
-        let mut parameters = charged_vec(ctx, self.samples.len(), "NX chart parameters")?;
+        let mut parameters = ctx.retained_vec(self.samples.len(), "NX chart parameters")?;
         parameters.extend(self.samples.iter().map(|sample| sample.1.get()));
         Ok(parameters)
     }
@@ -180,7 +162,7 @@ impl ChartSamples {
             return Ok(false);
         }
         let mut replacement =
-            charged_vec(ctx, self.samples.len(), "NX chart parameter replacement")?;
+            ctx.retained_vec(self.samples.len(), "NX chart parameter replacement")?;
         for (old, new) in self.samples.iter().zip(other.samples.iter()) {
             replacement.push((old.0, new.1));
         }
@@ -274,7 +256,7 @@ impl SourceChartData {
         if u32::try_from(points.len()).is_err() || points.len() < 2 {
             return Ok(None);
         }
-        let mut checked = charged_vec(ctx, points.len(), "NX finite chart points")?;
+        let mut checked = ctx.retained_vec(points.len(), "NX finite chart points")?;
         for point in points {
             let Some(point) = FinitePoint3::new(point) else {
                 return Ok(None);
@@ -314,7 +296,7 @@ impl SourceChartData {
             return Ok(None);
         }
         let mut checked_parameters =
-            charged_vec(ctx, parameters.len(), "NX finite chart parameters")?;
+            ctx.retained_vec(parameters.len(), "NX finite chart parameters")?;
         for value in parameters {
             let Some(value) = FiniteReal::new(value) else {
                 return Ok(None);

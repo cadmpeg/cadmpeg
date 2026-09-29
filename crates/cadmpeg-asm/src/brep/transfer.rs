@@ -122,7 +122,7 @@ pub fn transfer_into_ir<'ir>(
     )?;
     // Every transfer above appends entities; procedural attachment removes none.
     ctx.charge_entities(
-        (ir.model.entity_count() - before) as u64,
+        cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
         "admit ASM entities",
     )?;
 

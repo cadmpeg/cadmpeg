@@ -2244,23 +2244,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit("NX roll-forward catalog group count", 0, 1)
                     })?;
-            let bytes = count
-                .checked_mul(std::mem::size_of::<&OmRollForwardStateGroup>())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("NX roll-forward catalog group slots", 0, 1)
-                })?;
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(count),
-                "NX roll-forward catalog group references",
-            )?;
-            let _groups_reservation = ctx.reserve_scoped(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "NX roll-forward catalog group slots",
-            )?;
-            let mut groups = Vec::new();
-            groups.try_reserve_exact(count).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX roll-forward catalog groups", 0, 1)
-            })?;
+
+            let (mut groups, _groups_reservation) =
+                ctx.temporary_vec(count, "NX roll-forward catalog group references")?;
             groups.extend(
                 m.om.operation_state_groups
                     .iter()
