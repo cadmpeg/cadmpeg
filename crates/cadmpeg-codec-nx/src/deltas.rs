@@ -4005,32 +4005,34 @@ mod inline_schema_tests {
     #[test]
     fn deltas_attdef_route_refuses_collection_limit() {
         let stream = attdef_list_declaration();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
-                .expect("test root is admitted");
+        
+        
+        
+        crate::test_support::with_decode_context_over(&stream, |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
+
         assert!(matches!(
-            super::census::walk(&ctx, &stream),
+            super::census::walk(ctx, &stream),
             Err(cadmpeg_core::CodecError::ResourceLimit(_))
         ));
-    }
+    
+})
+}
 
     #[test]
     fn deltas_attdef_route_refuses_retained_limit() {
         let stream = attdef_list_declaration();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 7;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
-                .expect("test root is admitted");
+        
+        
+        
+        crate::test_support::with_decode_context_over(&stream, |policy| { policy.limits.max_retained_bytes = 7; }, |ctx| {
+
         assert!(matches!(
-            super::census::walk(&ctx, &stream),
+            super::census::walk(ctx, &stream),
             Err(cadmpeg_core::CodecError::ResourceLimit(_))
         ));
-    }
+    
+})
+}
 
     fn type_70_declaration() -> Vec<u8> {
         let mut bytes = TYPE_70_SCHEMA_HEADER.to_vec();
@@ -4992,18 +4994,21 @@ mod transmit_header_tests {
 
     #[test]
     fn deltas_census_route_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
         let bytes = header(&[0x04, 0x27, 0x04, 0x28]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = walk(&ctx, &bytes).expect_err("retained refusal");
+        
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+        let error = walk(ctx, &bytes).expect_err("retained refusal");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes)
         );
-    }
+    
+})
+}
 
     fn header(references: &[u8]) -> Vec<u8> {
         let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";

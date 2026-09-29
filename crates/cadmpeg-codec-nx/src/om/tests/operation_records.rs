@@ -64,88 +64,100 @@ fn one_body_write_payload() -> &'static [u8] {
 #[test]
 fn body_write_frame_route_refuses_collection_limit() {
     let bytes = one_body_write_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
     let record = OperationPayload::new(bytes, 0, "EXTRUDE").unwrap();
-    let error = crate::om::operation_body_write_frames(&ctx, record).unwrap_err();
+    let error = crate::om::operation_body_write_frames(ctx, record).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
+
+})
 }
 
 #[test]
 fn body_write_frame_route_refuses_retained_limit() {
     let bytes = one_body_write_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
     let record = OperationPayload::new(bytes, 0, "EXTRUDE").unwrap();
-    let error = crate::om::operation_body_write_frames(&ctx, record).unwrap_err();
+    let error = crate::om::operation_body_write_frames(ctx, record).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
+
+})
 }
 
 #[test]
 fn body_write_frame_route_refuses_work_limit() {
     let bytes = one_body_write_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
     let record = OperationPayload::new(bytes, 0, "EXTRUDE").unwrap();
-    let error = crate::om::operation_body_write_frames(&ctx, record).unwrap_err();
+    let error = crate::om::operation_body_write_frames(ctx, record).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
+
+})
 }
 
 #[test]
 fn operation_header_scan_refuses_collection_limit() {
     let bytes = one_labeled_operation();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let error = crate::om::operation_labels(&ctx, bytes, 0).unwrap_err();
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+    let error = crate::om::operation_labels(ctx, bytes, 0).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
+
+})
 }
 
 #[test]
 fn operation_header_scan_refuses_retained_limit() {
     let bytes = one_labeled_operation();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let error = crate::om::operation_labels(&ctx, bytes, 0).unwrap_err();
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+    let error = crate::om::operation_labels(ctx, bytes, 0).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
+
+})
 }
 
 #[test]
 fn operation_header_scan_refuses_work_limit() {
     let bytes = one_labeled_operation();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let error = crate::om::operation_labels(&ctx, bytes, 0).unwrap_err();
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
+    let error = crate::om::operation_labels(ctx, bytes, 0).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
+
+})
 }
 
 #[test]

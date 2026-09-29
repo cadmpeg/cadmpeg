@@ -405,15 +405,17 @@ fn deltas_support_uv_route_refuses_scoped_limit() {
     .unwrap()
     .expect("support UV");
     let stream = &source[record.pos..end];
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(stream, &arena, &policy).unwrap();
-    assert!(matches!(crate::deltas::census::walk(&ctx, stream),
+    
+    
+    
+    crate::test_support::with_decode_context_over(stream, |policy| { policy.limits.max_materialized_bytes = 0; }, |ctx| {
+
+    assert!(matches!(crate::deltas::census::walk(ctx, stream),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && limit.operation == "NX support-UV scalar lane"));
+
+})
 }
 
 #[test]

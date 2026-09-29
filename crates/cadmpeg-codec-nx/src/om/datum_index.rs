@@ -142,44 +142,41 @@ pub(crate) fn scan(
 mod tests {
     use super::{scan, DatumIndexLane};
 
-    fn datum_index_limit_error(
-        policy: &cadmpeg_core::decode::DecodePolicy,
-    ) -> cadmpeg_core::CodecError {
+    fn datum_index_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
         let bytes = [
             0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
         ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, policy).unwrap();
-        scan(&ctx, &bytes).expect_err("datum index resource refusal")
-    }
+        
+        crate::test_support::with_decode_context_over(&bytes, adjust, |ctx| {
+
+        scan(ctx, &bytes).expect_err("datum index resource refusal")
+    
+})
+}
 
     #[test]
     fn om_datum_index_route_refuses_collection_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
         assert!(
-            matches!(datum_index_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(datum_index_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
     }
 
     #[test]
     fn om_datum_index_route_refuses_retained_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
         assert!(
-            matches!(datum_index_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(datum_index_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
     }
 
     #[test]
     fn om_datum_index_route_refuses_work_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
         assert!(
-            matches!(datum_index_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(datum_index_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
         );
     }

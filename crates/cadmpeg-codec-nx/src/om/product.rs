@@ -90,14 +90,13 @@ mod tests {
     #[test]
     fn product_text_preserves_wire_and_length_bound() {
         let text = format!("NX {}", "x".repeat(250));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy)
-                .unwrap();
+        
+        
+        crate::test_support::with_decode_context_over(text.as_bytes(), |_| {}, |ctx| {
+
         let value = ProductText::new(text.as_str())
             .unwrap()
-            .try_into_owned_for_decode(&ctx)
+            .try_into_owned_for_decode(ctx)
             .unwrap();
         let wire = serde_json::to_string(&value).unwrap();
         assert_eq!(wire, serde_json::to_string(&text).unwrap());
@@ -112,7 +111,9 @@ mod tests {
                     .unwrap_err();
             assert!(error.to_string().contains("product_version/version"));
         }
-    }
+    
+})
+}
 
     #[test]
     fn product_frames_derive_lengths_for_both_modern_markers_and_legacy() {

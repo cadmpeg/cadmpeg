@@ -3378,10 +3378,10 @@ fn operation_state_group_table(
     end: usize,
     base_offset: usize,
 ) -> Option<OperationStateGroupTable> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("test group input is admitted");
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |_| {}, |ctx| {
+
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -3389,7 +3389,7 @@ fn operation_state_group_table(
     let mut at = start;
     let mut trailing_start = end;
     while at < end {
-        let Some(group) = operation_state_group_at(&ctx, bytes, at, end, base_offset)
+        let Some(group) = operation_state_group_at(ctx, bytes, at, end, base_offset)
             .expect("test group allocation is admitted")
         else {
             if bytes.get(at..end) == Some(&[0x01, 0x01]) {
@@ -3406,6 +3406,8 @@ fn operation_state_group_table(
         return None;
     }
     OperationStateGroupTable::new(groups, bytes.get(trailing_start..end)?)
+
+})
 }
 
 fn audit_trail_row_at(
@@ -4074,12 +4076,12 @@ mod uuid_string_value_tests {
 
     #[test]
     fn decodes_only_complete_canonical_uuid_frames() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        crate::test_support::with_decode_context(|ctx| {
+
         let mut bytes = b"prefix\x03\x2601234567-89ab-cdef-0123-456789abcdef\0suffix".to_vec();
-        let values = uuid_string_values(&ctx, &bytes, 100).unwrap();
+        let values = uuid_string_values(ctx, &bytes, 100).unwrap();
         assert_eq!(values.len(), 1);
         assert_eq!(values[0].offset, 106);
         assert_eq!(
@@ -4088,7 +4090,7 @@ mod uuid_string_value_tests {
         );
 
         bytes[6 + 2 + 9] = b'A';
-        assert!(uuid_string_values(&ctx, &bytes, 0).unwrap().is_empty());
+        assert!(uuid_string_values(ctx, &bytes, 0).unwrap().is_empty());
         assert!(
             crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcde")
                 .is_err()
@@ -4101,69 +4103,79 @@ mod uuid_string_value_tests {
             crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcdeg")
                 .is_err()
         );
-    }
+    
+})
+}
 
     #[test]
     fn uuid_frames_refuse_collection_limit() {
         let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = uuid_string_values(&ctx, bytes, 0).unwrap_err();
+        
+        
+        
+        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+        let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
-    }
+    
+})
+}
 
     #[test]
     fn uuid_frames_refuse_retained_limit() {
         let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = uuid_string_values(&ctx, bytes, 0).unwrap_err();
+        
+        
+        
+        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+        let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
-    }
+    
+})
+}
 
     #[test]
     fn uuid_frames_refuse_work_limit() {
         let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = uuid_string_values(&ctx, bytes, 0).unwrap_err();
+        
+        
+        
+        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
+        let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
         );
-    }
+    
+})
+}
 
     #[test]
     fn rejects_truncated_or_unterminated_uuid_frames() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        crate::test_support::with_decode_context(|ctx| {
+
         let frame = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-        assert!(uuid_string_values(&ctx, &frame[..frame.len() - 1], 0)
+        assert!(uuid_string_values(ctx, &frame[..frame.len() - 1], 0)
             .unwrap()
             .is_empty());
         let mut unterminated = frame.to_vec();
         *unterminated.last_mut().expect("nonempty frame") = 1;
-        assert!(uuid_string_values(&ctx, &unterminated, 0)
+        assert!(uuid_string_values(ctx, &unterminated, 0)
             .unwrap()
             .is_empty());
-    }
+    
+})
+}
 }
 
 /// Decode `66 1b 03, byte-length, printable UTF-8, 00` values in `bytes`.

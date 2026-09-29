@@ -161,46 +161,43 @@ mod tests {
     use super::super::operation_record::OperationPayload;
     use super::scan;
 
-    fn draft_leading_limit_error(
-        policy: &cadmpeg_core::decode::DecodePolicy,
-    ) -> cadmpeg_core::CodecError {
+    fn draft_leading_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
         let bytes = [
             0x67, 0, 0, 1, 0, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 3, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 1, 2, 8, 1, 2,
         ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, policy).unwrap();
-        scan(&ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap())
+        
+        crate::test_support::with_decode_context_over(&bytes, adjust, |ctx| {
+
+        scan(ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap())
             .expect_err("draft leading resource refusal")
-    }
+    
+})
+}
 
     #[test]
     fn om_draft_leading_route_refuses_collection_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
         assert!(
-            matches!(draft_leading_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(draft_leading_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
     }
 
     #[test]
     fn om_draft_leading_route_refuses_retained_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
         assert!(
-            matches!(draft_leading_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(draft_leading_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
     }
 
     #[test]
     fn om_draft_leading_route_refuses_work_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
         assert!(
-            matches!(draft_leading_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(draft_leading_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
         );
     }

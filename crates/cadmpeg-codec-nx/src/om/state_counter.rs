@@ -252,16 +252,18 @@ mod tests {
             0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
             0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
         ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = super::StateCounterMap::read(&ctx, &bytes, 0).unwrap_err();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+        let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
-    }
+    
+})
+}
 
     #[test]
     fn operation_state_counter_map_refuses_retained_limit() {
@@ -269,16 +271,18 @@ mod tests {
             0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
             0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
         ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = super::StateCounterMap::read(&ctx, &bytes, 0).unwrap_err();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+        let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
-    }
+    
+})
+}
 
     #[test]
     fn operation_state_counter_map_refuses_work_limit() {
@@ -286,14 +290,16 @@ mod tests {
             0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
             0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
         ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = super::StateCounterMap::read(&ctx, &bytes, 0).unwrap_err();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
+        let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
         );
-    }
+    
+})
+}
 }

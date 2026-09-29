@@ -157,16 +157,18 @@ mod tests {
     fn extrude_profile_references_refuse_collection_limit() {
         let bytes = b"\x01\x02\x00\x01\x03\xf0\x00\xf1\x01\x00\x01\x03\x79\x01\x03\xf0\x00\xf1\x01\x00\x00\x00";
         let record = OperationPayload::new(bytes, 100, "EXTRUDE").unwrap();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = super::extrude_profile_references(&ctx, record).unwrap_err();
+        
+        
+        
+        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+        let error = super::extrude_profile_references(ctx, record).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
-    }
+    
+})
+}
 
     #[test]
     fn relocation_preserves_the_shared_witness_and_checks_both_complete_spans() {

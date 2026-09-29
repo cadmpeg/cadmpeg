@@ -270,18 +270,21 @@ mod tests {
     use super::super::reference_index::FeatureReferenceToken;
     use super::super::scalar::ShiftedBinary64;
     use super::Extrude32Frame;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
         let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        configure(&mut policy);
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(bytes, |policy| { configure(policy); }, |ctx| {
+
         let record = super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap();
-        super::extrude_payload_32_branch(&ctx, record).unwrap_err()
-    }
+        super::extrude_payload_32_branch(ctx, record).unwrap_err()
+    
+})
+}
 
     #[test]
     fn extrude_32_branch_refuses_collection_limit() {

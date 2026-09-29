@@ -273,16 +273,18 @@ fn dialect_classification_refuses_collection_limit() {
         .unwrap(),
         streams: extract_streams(&bytes),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = classify_layers(&ctx, &scan)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+    let error = classify_layers(ctx, &scan)
         .err()
         .expect("resource refusal");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+
+})
 }
 
 #[test]
@@ -295,16 +297,18 @@ fn dialect_classification_refuses_retained_limit() {
         .unwrap(),
         streams: extract_streams(&bytes),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = classify_layers(&ctx, &scan)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+    let error = classify_layers(ctx, &scan)
         .err()
         .expect("resource refusal");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+
+})
 }
 
 #[test]
@@ -317,14 +321,16 @@ fn dialect_classification_refuses_work_limit() {
         .unwrap(),
         streams: extract_streams(&bytes),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = classify_layers(&ctx, &scan)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
+    let error = classify_layers(ctx, &scan)
         .err()
         .expect("resource refusal");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+
+})
 }

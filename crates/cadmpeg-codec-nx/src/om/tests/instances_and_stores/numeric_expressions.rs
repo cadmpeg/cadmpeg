@@ -49,10 +49,10 @@ fn counted_record_references_for_test(
 
 #[test]
 fn om_numeric_expression_types_only_canonical_parameter_names() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     for name in ["p12foo", "p12_", "p4294967296_radius"] {
         let text = format!("(Number [mm]) {name}: 5; ");
         let mut bytes = b"hostglobalvariables".to_vec();
@@ -64,7 +64,7 @@ fn om_numeric_expression_types_only_canonical_parameter_names() {
         bytes.extend_from_slice(text.as_bytes());
         bytes.push(0);
 
-        let expressions = numeric_expressions(&ctx, &bytes).unwrap();
+        let expressions = numeric_expressions(ctx, &bytes).unwrap();
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].name.as_str(), name);
         assert_eq!(expressions[0].name.index(), None);
@@ -72,14 +72,16 @@ fn om_numeric_expression_types_only_canonical_parameter_names() {
     }
     assert!(expression_declaration_name_for_test(b"\x04\x08p12foo\0").is_none());
     assert!(expression_declaration_name_for_test(b"\x04\x06p12_\0").is_none());
+
+})
 }
 
 #[test]
 fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let text = b"(Number [mm]) p9: (193.94 - 6) / 2 + 1.5e1; ";
     let mut bytes = b"hostglobalvariables".to_vec();
     bytes.extend_from_slice(&[
@@ -90,24 +92,26 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
     bytes.extend_from_slice(text);
     bytes.push(0);
 
-    let expressions = numeric_expressions(&ctx, &bytes).unwrap();
+    let expressions = numeric_expressions(ctx, &bytes).unwrap();
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
     assert_eq!(
         expressions[0]
-            .constant_value(&ctx)
+            .constant_value(ctx)
             .unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(108.97)
     );
+
+})
 }
 
 #[test]
 fn om_numeric_expression_accepts_inches_and_terminal_comments() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let texts = [
         b"(Number [in]) p1: 0.5; ".as_slice(),
         b"(Number [in]) p2: p1 * 2; // Used By ...\n".as_slice(),
@@ -124,31 +128,33 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
         bytes.push(0);
     }
 
-    let expressions = numeric_expressions(&ctx, &bytes).unwrap();
+    let expressions = numeric_expressions(ctx, &bytes).unwrap();
 
     assert_eq!(expressions.len(), 3);
     assert_eq!(expressions[0].unit, ExpressionUnit::Inch);
     assert_eq!(expressions[0].expression, "0.5");
     assert_eq!(
         expressions[0]
-            .constant_value(&ctx)
+            .constant_value(ctx)
             .unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(0.5)
     );
     assert_eq!(expressions[1].expression, "p1 * 2");
-    assert_eq!(expressions[1].constant_value(&ctx).unwrap(), None);
+    assert_eq!(expressions[1].constant_value(ctx).unwrap(), None);
     assert_eq!(
         expressions[2].unit,
         ExpressionUnit::Native("custom/unit".into())
     );
     assert_eq!(
         expressions[2]
-            .constant_value(&ctx)
+            .constant_value(ctx)
             .unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(4.0)
     );
+
+})
 }
 
 #[test]
@@ -162,16 +168,18 @@ fn om_numeric_expressions_refuse_collection_limit() {
     ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = numeric_expressions(&ctx, &bytes).unwrap_err();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+    let error = numeric_expressions(ctx, &bytes).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
+
+})
 }
 
 #[test]
@@ -185,16 +193,18 @@ fn om_numeric_expressions_refuse_retained_limit() {
     ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = numeric_expressions(&ctx, &bytes).unwrap_err();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+    let error = numeric_expressions(ctx, &bytes).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
+
+})
 }
 
 #[test]
@@ -208,16 +218,18 @@ fn om_numeric_expressions_refuse_work_limit() {
     ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = numeric_expressions(&ctx, &bytes).unwrap_err();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
+    let error = numeric_expressions(ctx, &bytes).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
+
+})
 }
 
 #[test]
@@ -325,12 +337,12 @@ fn om_record_references_require_adjacent_persistent_tagged_pairs() {
 
 #[test]
 fn om_numeric_expression_table_is_independent_of_entity_indexing() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let bytes = b"hostglobalvariables\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00";
-    let expressions = numeric_expressions(&ctx, bytes).unwrap();
+    let expressions = numeric_expressions(ctx, bytes).unwrap();
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, None);
     assert_eq!(
@@ -344,35 +356,41 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
     );
     assert_eq!(
         expressions[0]
-            .constant_value(&ctx)
+            .constant_value(ctx)
             .unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(120.0)
     );
+
+})
 }
 
 fn tagged_reference_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    crate::om::references(&ctx, bytes, 0).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { configure(policy); }, |ctx| {
+
+    crate::om::references(ctx, bytes, 0).unwrap_err()
+
+})
 }
 
 fn counted_reference_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = b"\x01\x03\x90\x00\x02\x90\x00\x04";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    crate::om::counted_record_references(&ctx, bytes, 0, 5).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { configure(policy); }, |ctx| {
+
+    crate::om::counted_record_references(ctx, bytes, 0, 5).unwrap_err()
+
+})
 }
 
 #[test]
@@ -427,12 +445,14 @@ fn printable_string_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = b"\x66\x32\x03\x03A\0";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    crate::om::string_values(&ctx, bytes, 0).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { configure(policy); }, |ctx| {
+
+    crate::om::string_values(ctx, bytes, 0).unwrap_err()
+
+})
 }
 
 #[test]
@@ -463,12 +483,14 @@ fn expression_stack_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = b"(1 + 2) * 3";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    crate::om::evaluate_constant_expression(&ctx, std::str::from_utf8(bytes).unwrap()).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { configure(policy); }, |ctx| {
+
+    crate::om::evaluate_constant_expression(ctx, std::str::from_utf8(bytes).unwrap()).unwrap_err()
+
+})
 }
 
 #[test]
@@ -498,13 +520,15 @@ fn expression_stacks_refuse_work_limit() {
 #[test]
 fn expression_declaration_propagates_expression_limit() {
     let bytes = b"\x04\x04p1\0\x04\x052+2\0";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let error = crate::om::expression_declaration_name(&ctx, bytes).unwrap_err();
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+    let error = crate::om::expression_declaration_name(ctx, bytes).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
+
+})
 }
