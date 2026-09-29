@@ -14,6 +14,7 @@ mod dispatcher;
 mod extrude;
 mod extrude_limits;
 mod loft_limits;
+mod sweep_limits;
 mod form;
 mod hole_limits;
 mod mirror;
