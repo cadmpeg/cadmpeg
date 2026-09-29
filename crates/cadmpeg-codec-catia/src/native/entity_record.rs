@@ -6,6 +6,7 @@ use super::{
     CatiaDefinitionSchemaSelection, CatiaDefinitionValue, CatiaEntitySuffixFraming,
     CatiaEntitySuffixSchemaSelection, CatiaEntitySuffixValue, CatiaEntityValueSchemaSelection,
     CatiaFormulaRelation, CatiaParameterValue, CatiaRangeInterval, CatiaReferenceSignature,
+    CatiaReferenceSignatureWire,
     CatiaEntityReference, CatiaRelationExpression, CatiaRelationExpressionWire,
     CatiaRelationProgramInstance, CatiaRelationProgramInstanceWire, CatiaRelationTypeSignature,
     CatiaSchemaConfigurationRecord,
@@ -469,7 +470,7 @@ pub(super) struct CatiaEntityRecordWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_reference_signature"
     )]
-    reference_signature: Option<CatiaReferenceSignature>,
+    reference_signature: Option<CatiaReferenceSignatureWire>,
     #[serde(with = "cadmpeg_ir::bytes")]
     record_suffix: Vec<u8>,
     #[serde(
@@ -493,7 +494,7 @@ pub(super) struct CatiaEntityRecordWire {
 }
 
 impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
-    fn from(value: CatiaEntityRecord) -> Self {
+    fn from(mut value: CatiaEntityRecord) -> Self {
         let payload = match &value.body {
             CatiaEntityRecordBody::Inline(_) => &[][..],
             CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
@@ -509,14 +510,16 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
                 instance.output_entity().cloned(),
             _ => None,
         };
-        Self::from_with_views(value, value_fields, value_packets, signature, output_entity)
+        let reference_signature = value.reference_signature.take().map(Into::into);
+        Self::from_with_views(value, value_fields, value_packets, signature, output_entity,
+            reference_signature)
     }
 }
 
 impl CatiaEntityRecordWire {
     pub(super) fn from_charged(
         ctx: &DecodeContext<'_>,
-        value: CatiaEntityRecord,
+        mut value: CatiaEntityRecord,
     ) -> Result<Self, CodecError> {
         let payload = match &value.body {
             CatiaEntityRecordBody::Inline(_) => &[][..],
@@ -533,7 +536,10 @@ impl CatiaEntityRecordWire {
                 instance.output_entity().map(|entity| entity.copy_charged(ctx)).transpose()?,
             _ => None,
         };
-        Ok(Self::from_with_views(value, value_fields, value_packets, signature, output_entity))
+        let reference_signature = value.reference_signature.take()
+            .map(|signature| CatiaReferenceSignatureWire::from_charged(ctx, signature)).transpose()?;
+        Ok(Self::from_with_views(value, value_fields, value_packets, signature, output_entity,
+            reference_signature))
     }
 
     fn from_with_views(
@@ -542,6 +548,7 @@ impl CatiaEntityRecordWire {
         value_packets: Vec<entity_table::EntityValuePacket>,
         signature: Option<CatiaRelationTypeSignature>,
         output_entity: Option<CatiaEntityReference>,
+        reference_signature: Option<CatiaReferenceSignatureWire>,
     ) -> Self {
         let byte_len = value.byte_len();
         let (
@@ -659,7 +666,7 @@ impl CatiaEntityRecordWire {
             formula_relation,
             value_packets,
             numeric_pair,
-            reference_signature: value.reference_signature,
+            reference_signature,
             record_suffix,
             suffix_value,
             suffix_framing,
@@ -788,7 +795,7 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             object_production,
             value_production,
             range_interval: wire.range_interval,
-            reference_signature: wire.reference_signature,
+            reference_signature: wire.reference_signature.map(TryInto::try_into).transpose()?,
             suffix,
             suffix_schema_selection: wire.suffix_schema_selection,
         })
@@ -932,7 +939,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(
     deserialize_reference_signature,
-    CatiaReferenceSignature,
+    CatiaReferenceSignatureWire,
     "reference_signature"
 );
 cadmpeg_core::named_optional_field!(
