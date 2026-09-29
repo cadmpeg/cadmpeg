@@ -8,6 +8,7 @@ use crate::native::features::feature_operation_body_image_segment_uses;
 use crate::native::features::feature_operation_body_partition_uses;
 use crate::native::features::feature_operation_body_writes;
 use crate::native::features::feature_operation_labels;
+use crate::native::features::feature_operation_object_references;
 use crate::native::features::feature_operation_records;
 use crate::native::features::feature_unlabeled_operation_records;
 use crate::native::features::feature_operation_state_journal_uses;
@@ -643,6 +644,81 @@ fn operation_body_write_retains_identity_group_and_image() {
         first.frame.group_node().value()
     );
     assert_eq!(second.frame.body_image().value(), 0x694);
+}
+
+fn operation_object_reference_refusal(
+    kind: crate::om::direct_reference::ReferenceFieldKind,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let field: &[u8] = match kind {
+        crate::om::direct_reference::ReferenceFieldKind::DataBlock03 =>
+            b"\x01\x02\x03\x07\x01\x00\x00\x00\x00\x00",
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17 =>
+            b"\x01\x02\x17\x07\xff\x80\x00\x00\x02",
+    };
+    let payload = composed_feature_history_payload(
+        &[(&[0xff; 4], "EXTRUDE", field.to_vec())], &[],
+    );
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]))
+    }).expect("synthetic direct-reference container");
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_operation_object_references(ctx, &container, kind)
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted operation object reference");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("operation object reference resource limit")
+}
+
+#[test]
+fn operation_object_reference_route_refuses_collection_limit() {
+    for kind in [crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17] {
+        let error = operation_object_reference_refusal(kind,
+            |policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+}
+
+#[test]
+fn operation_object_reference_route_refuses_retained_limit() {
+    for kind in [crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17] {
+        let error = operation_object_reference_refusal(kind,
+            |policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+}
+
+#[test]
+fn operation_object_reference_route_refuses_scoped_limit() {
+    for kind in [crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17] {
+        let error = operation_object_reference_refusal(kind,
+            |policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+}
+
+#[test]
+fn operation_object_reference_route_refuses_work_limit() {
+    for kind in [crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17] {
+        let error = operation_object_reference_refusal(kind,
+            |policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
 }
 
 fn operation_body_write_refusal(
