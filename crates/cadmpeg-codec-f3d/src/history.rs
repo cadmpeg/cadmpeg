@@ -2878,12 +2878,13 @@ pub(crate) fn project_feature_input_topologies(
 /// Resolve persistent vertex recipes in the last history-bearing feature state
 /// that precedes their owning construction in authored timeline order.
 pub(crate) fn bind_vertex_recipe_history(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     scopes: &mut [crate::records::feature::scope::DesignParameterScope],
     timelines: &[crate::records::entity_header::DesignFeatureTimeline],
     histories: &[AsmHistory],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let source_ordinals =
-        crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)?;
+        crate::design::feature_project::authored_scope_ordinals_per_stream(ctx, scopes, timelines)?;
     let input_states = scopes
         .iter()
         .filter(|scope| {

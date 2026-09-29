@@ -221,6 +221,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     )
     .unwrap();
     let ordinals = crate::design::feature_project::authored_scope_ordinals(
+        None,
         &scopes,
         &[unrelated, authored.clone()],
     )
@@ -631,6 +632,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
     )
     .unwrap();
     let result = crate::design::feature_project::authored_scope_ordinals(
+        None,
         &scopes,
         std::slice::from_ref(&timeline),
     );
@@ -834,7 +836,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     );
     second.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     let scopes = vec![second.clone(), first.clone()];
-    let ordinals = crate::design::feature_project::authored_scope_ordinals(&scopes, &[])
+    let ordinals = crate::design::feature_project::authored_scope_ordinals(None, &scopes, &[])
         .expect("complete family ordinals carry exact order");
     assert_eq!(ordinals[&(stream, first.record_index)], 0);
     assert_eq!(ordinals[&(stream, second.record_index)], 1);
@@ -848,7 +850,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
         })
         .unwrap();
     let mixed_scopes = vec![first, mixed];
-    let error = crate::design::feature_project::authored_scope_ordinals(&mixed_scopes, &[])
+    let error = crate::design::feature_project::authored_scope_ordinals(None, &mixed_scopes, &[])
         .expect_err("mixed families have no timeline-independent total order");
     assert!(error
         .to_string()
@@ -871,12 +873,12 @@ fn authored_scope_validation_orders_independent_streams_separately() {
     second.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     let scopes = vec![first, second];
 
-    let ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(&scopes, &[])
+    let ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(None, &scopes, &[])
         .expect("independent stream-local orders");
     assert_eq!(ordinals.len(), 2);
     assert!(ordinals.values().all(|ordinal| *ordinal == 0));
     assert!(matches!(
-        crate::design::feature_project::authored_scope_ordinals(&scopes, &[]),
+        crate::design::feature_project::authored_scope_ordinals(None, &scopes, &[]),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 }
@@ -1148,4 +1150,100 @@ fn feature_dependency_ordinal_index_refuses_collection_limit() {
 #[test]
 fn feature_unique_ordinal_index_refuses_collection_limit() {
     assert_feature_dependency_index_refusal("f3d feature unique ordinal index");
+}
+
+fn authored_ordinal_limit_fixture() -> (Vec<DesignParameterScope>, DesignFeatureTimeline) {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut first = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        10,
+    );
+    first.feature_ordinal = std::num::NonZeroU32::new(1).unwrap();
+    let mut second = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#11",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        11,
+    );
+    second.feature_ordinal = std::num::NonZeroU32::new(2).unwrap();
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        crate::records::entity_header::DesignTimelineFrame::test_items(
+            0,
+            vec![
+                crate::records::identity::Located { value: 10, offset: 0 },
+                crate::records::identity::Located { value: 11, offset: 0 },
+            ],
+        ),
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
+    ).unwrap();
+    (vec![first, second], timeline)
+}
+
+fn assert_authored_ordinal_refusal(operation: &'static str, with_timeline: bool, per_stream: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (scopes, timeline) = authored_ordinal_limit_fixture();
+    let timelines = if with_timeline { std::slice::from_ref(&timeline) } else { &[] };
+    for limit in 0..25 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = if per_stream {
+            crate::design::feature_project::authored_scope_ordinals_per_stream(
+                Some(&ctx), &scopes, timelines,
+            )
+        } else {
+            crate::design::feature_project::authored_scope_ordinals(
+                Some(&ctx), &scopes, timelines,
+            )
+        };
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected {operation} refusal: {other:?}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn authored_stream_index_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored stream index", false, true);
+}
+
+#[test]
+fn authored_stream_scope_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored stream scope", false, true);
+}
+
+#[test]
+fn authored_scope_record_index_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored scope record index", false, true);
+}
+
+#[test]
+fn authored_scope_order_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored scope order", false, true);
+}
+
+#[test]
+fn authored_scope_ordinal_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored scope ordinal", false, true);
+}
+
+#[test]
+fn authored_stream_timeline_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored stream timeline", true, false);
+}
+
+#[test]
+fn authored_timeline_item_ordinal_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored timeline item ordinal", true, false);
 }
