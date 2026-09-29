@@ -361,6 +361,18 @@ pub(in super::super) fn section_segment_identity_suffix(
     }
 }
 
+pub(in super::super) fn section_segment_identity_suffix_admitted(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    unique_external_ids: &BTreeSet<u32>,
+    segment: &crate::feature::definitions::FeatureSegment,
+) -> Result<String, cadmpeg_core::CodecError> {
+    if unique_external_ids.contains(&segment.external_id) {
+        ctx.format_retained(format_args!("{}", segment.external_id), "creo section entity suffix")
+    } else {
+        ctx.format_retained(format_args!("offset:{}", segment.offset), "creo section entity suffix")
+    }
+}
+
 pub(super) fn opaque_section_segment_identity_suffix(
     unique_external_ids: &BTreeSet<u32>,
     segment: &crate::feature::definitions::FeatureOpaqueSegment,
@@ -372,6 +384,18 @@ pub(super) fn opaque_section_segment_identity_suffix(
     }
 }
 
+pub(super) fn opaque_section_segment_identity_suffix_admitted(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    unique_external_ids: &BTreeSet<u32>,
+    segment: &crate::feature::definitions::FeatureOpaqueSegment,
+) -> Result<String, cadmpeg_core::CodecError> {
+    if unique_external_ids.contains(&segment.external_id) {
+        ctx.format_retained(format_args!("{}", segment.external_id), "creo opaque entity suffix")
+    } else {
+        ctx.format_retained(format_args!("opaque:offset:{}", segment.offset), "creo opaque entity suffix")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -379,6 +403,56 @@ mod tests {
         saved_section_ordinary_geometry_allowed,
     };
     use crate::decode::tests::opaque;
+
+    #[test]
+    fn section_entity_suffix_refuses_before_retained_formatting() {
+        let segment = crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 42,
+            body: Vec::new(),
+            offset: 9,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = "offset:9".len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        assert!(matches!(super::section_segment_identity_suffix_admitted(&ctx, &std::collections::BTreeSet::new(), &segment),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && refusal.operation == "creo section entity suffix"));
+        let service = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
+            .expect("empty root");
+        assert_eq!(super::section_segment_identity_suffix_admitted(&ctx, &std::collections::BTreeSet::new(), &segment)
+            .expect("service suffix"), "offset:9");
+    }
+
+    #[test]
+    fn opaque_entity_suffix_refuses_before_retained_formatting() {
+        let segment = opaque(42);
+        let expected = format!("opaque:offset:{}", segment.offset);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        assert!(matches!(super::opaque_section_segment_identity_suffix_admitted(&ctx, &std::collections::BTreeSet::new(), &segment),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && refusal.operation == "creo opaque entity suffix"));
+        let service = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
+            .expect("empty root");
+        assert_eq!(super::opaque_section_segment_identity_suffix_admitted(&ctx, &std::collections::BTreeSet::new(), &segment)
+            .expect("service suffix"), expected);
+    }
 
     fn definition(
         segments: Option<crate::feature::definitions::FeatureSegmentTable>,

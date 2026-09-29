@@ -86,14 +86,36 @@ fn sketch_curve_references_require_a_materialized_curve() {
     .expect("valid test fixture");
 
     assert_eq!(
-        placed_sketch_curve_ref(Some(&transform), &sketch, 3, &line),
+        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(ctx, Some(&transform), &sketch, 3, &line)).expect("test curve reference"),
         Some("creo:featdefs:section_curve#5:3".to_string())
     );
-    assert_eq!(placed_sketch_curve_ref(None, &sketch, 3, &line), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(ctx, None, &sketch, 3, &line)).expect("test absent curve reference"), None);
     assert_eq!(
-        placed_sketch_curve_ref(Some(&transform), &sketch, 4, &point),
+        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(ctx, Some(&transform), &sketch, 4, &point)).expect("test point curve reference"),
         None
     );
+}
+
+#[test]
+fn placed_sketch_curve_reference_refuses_before_retained_formatting() {
+    let transform = crate::placement::FeatureSectionTransform::new(
+        5, Some(5), [10.0, 20.0, 30.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], 7,
+    ).expect("valid section frame");
+    let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(2.0, 0.0),
+    }).expect("valid line");
+    let expected = "creo:featdefs:section_curve#5:3";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(placed_sketch_curve_ref(&ctx, Some(&transform), &sketch, 3, &line),
+        Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && resource.operation == "creo section curve reference"));
 }
 
 #[test]

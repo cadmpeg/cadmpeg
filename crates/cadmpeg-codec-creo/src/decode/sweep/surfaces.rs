@@ -13,7 +13,7 @@ use super::super::sketch::geometry::{
 use super::super::sketch::intersect::section_point_in_model;
 use super::super::sketch::radii::trim_segment_id;
 use super::super::sketch::skamp::complete_section_segment_rows;
-use super::super::sketch_ids::sketch_section_curve_id;
+use super::super::sketch_ids::sketch_section_curve_id_admitted;
 use super::super::uniqueness::{
     unique_feature_definition_for_transform, unique_feature_section_transform,
 };
@@ -222,13 +222,17 @@ pub(in super::super) fn placed_section_geometry_curve(
 }
 
 pub(in super::super) fn placed_sketch_curve_ref(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transform: Option<&crate::placement::FeatureSectionTransform>,
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
     geometry: &SketchGeometry,
-) -> Option<String> {
-    placed_section_geometry_curve(transform?, geometry)?;
-    Some(sketch_section_curve_id(sketch, suffix))
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let Some(transform) = transform else { return Ok(None); };
+    if placed_section_geometry_curve(transform, geometry).is_none() {
+        return Ok(None);
+    }
+    sketch_section_curve_id_admitted(ctx, sketch, suffix).map(Some)
 }
 
 fn unique_feature_surface_row(

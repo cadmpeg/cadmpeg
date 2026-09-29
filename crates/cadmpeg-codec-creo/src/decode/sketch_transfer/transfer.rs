@@ -23,7 +23,7 @@ use super::super::sketch::radii::{
 use super::super::sketch::skamp::section_segment_rows;
 use super::super::sketch_ids::{
     feature_definition_has_sketch_design, model_sketch_id, sketch_constraint_id, sketch_entity_id,
-    sketch_feature_id, sketch_native_ref,
+    sketch_feature_id_admitted, sketch_native_ref,
 };
 use super::super::uniqueness::unique_feature_section_transform;
 use super::entities::transfer_section_entities;
@@ -917,7 +917,7 @@ pub(in super::super) fn transfer_sketches(
             },
         )?;
         if owned_section_feature_id(scan, definition.identity.id()).is_none() {
-            let Some(feature_id) = sketch_feature_id(&sketch_id) else {
+            let Some(feature_id) = sketch_feature_id_admitted(ctx, &sketch_id)? else {
                 continue;
             };
             annotate(

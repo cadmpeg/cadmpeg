@@ -4,9 +4,87 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 
 use super::{
     feature_sketch_record_id_in_scan, model_sketch_id, owning_feature_definition_ref,
-    section_owner_feature_id, sketch_constraint_id_admitted, sketch_native_ref_admitted,
-    sketch_table_headers,
+    section_owner_feature_id, sketch_constraint_id_admitted, sketch_entity_id_admitted,
+    sketch_native_ref_admitted,
+    sketch_point_ref_admitted, sketch_section_curve_id_admitted,
+    typed_sketch_section_curve_id_admitted, sketch_feature_id_admitted, sketch_table_headers,
 };
+
+fn with_retained_limit<T>(limit: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    run(&ctx)
+}
+
+#[test]
+fn sketch_entity_identity_refuses_before_retained_formatting() {
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40")
+        .expect("sketch ID");
+    let expected = "creo:featdefs:sketch_entity#40:7";
+    assert!(matches!(with_retained_limit(expected.len() as u64 - 1, |ctx| {
+        sketch_entity_id_admitted(ctx, &sketch, 7)
+    }), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo sketch entity identity"));
+    assert_eq!(with_retained_limit(expected.len() as u64, |ctx| {
+        sketch_entity_id_admitted(ctx, &sketch, 7)
+    }).expect("exact cap admits entity ID").expect("valid entity ID").as_str(), expected);
+}
+
+#[test]
+fn sketch_point_reference_refuses_before_retained_formatting() {
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40")
+        .expect("sketch ID");
+    let expected = "creo:featdefs:sketch#40:point#7";
+    assert!(matches!(with_retained_limit(expected.len() as u64 - 1, |ctx| {
+        sketch_point_ref_admitted(ctx, &sketch, 7)
+    }), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo sketch point reference"));
+    assert_eq!(with_retained_limit(expected.len() as u64, |ctx| {
+        sketch_point_ref_admitted(ctx, &sketch, 7)
+    }).expect("exact retained cap admits point ref"), expected);
+}
+
+#[test]
+fn section_curve_identity_and_reference_refuse_before_formatting() {
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40")
+        .expect("sketch ID");
+    let expected = "creo:featdefs:section_curve#40:7";
+    let limit = expected.len() as u64 - 1;
+    for (operation, result) in [
+        ("creo section curve reference", with_retained_limit(limit, |ctx| {
+            sketch_section_curve_id_admitted(ctx, &sketch, 7).map(|text| text.len())
+        })),
+        ("creo section curve identity", with_retained_limit(limit, |ctx| {
+            typed_sketch_section_curve_id_admitted(ctx, &sketch, 7).map(|id| id.map(|id| id.as_str().len()).unwrap_or_default())
+        })),
+    ] {
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == operation));
+    }
+    assert_eq!(with_retained_limit(expected.len() as u64, |ctx| {
+        typed_sketch_section_curve_id_admitted(ctx, &sketch, 7)
+    }).expect("exact cap admits curve ID").expect("valid curve ID").as_str(), expected);
+}
+
+#[test]
+fn sketch_feature_identity_refuses_before_formatting() {
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40")
+        .expect("sketch ID");
+    let expected = "creo:model:sketch_feature#40";
+    assert!(matches!(with_retained_limit(expected.len() as u64 - 1, |ctx| {
+        sketch_feature_id_admitted(ctx, &sketch)
+    }), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo sketch feature identity"));
+    assert_eq!(with_retained_limit(expected.len() as u64, |ctx| {
+        sketch_feature_id_admitted(ctx, &sketch)
+    }).expect("exact cap admits feature ID").expect("valid feature ID").as_str(), expected);
+}
 use crate::decode::native_records::CreoSketchTableKind;
 use crate::feature::definitions::{
     DefinitionIdentity, FeatureDefinition, FeatureTrimBucket, FeatureTrimEntityTable,
