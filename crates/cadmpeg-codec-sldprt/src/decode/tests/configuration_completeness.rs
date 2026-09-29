@@ -631,6 +631,47 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
 }
 
 #[test]
+fn active_configuration_snapshot_refuses_parameter_text_limit() {
+    let mut ir = CadIr::empty();
+    ir.model.parameters.push(DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#text-parameter").unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: "Text".into(),
+        expression: "payload".into(),
+        value: Some(ParameterValue::String("payload".to_owned())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        display: None,
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#active").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Active".to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"configuration", &arena, &policy,
+    ).unwrap();
+    let error = snapshot_active_configuration(&ctx, &mut ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    assert!(ir.model.configurations[0].parameter_values.is_empty());
+}
+
+#[test]
 fn active_configuration_snapshots_final_neutral_design_state() {
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
@@ -692,7 +733,12 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         });
     }
 
-    snapshot_active_configuration(&mut ir);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"configuration", &arena, &policy,
+    ).unwrap();
+    snapshot_active_configuration(&ctx, &mut ir).unwrap();
 
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
@@ -727,7 +773,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         .evaluation = cadmpeg_ir::features::ConfigurationEvaluation::Active {
         outputs: cadmpeg_ir::features::DistinctMembers::default(),
     };
-    snapshot_active_configuration(&mut ir);
+    snapshot_active_configuration(&ctx, &mut ir).unwrap();
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
         ParameterValue::Length(Length::new(25.0).unwrap())
