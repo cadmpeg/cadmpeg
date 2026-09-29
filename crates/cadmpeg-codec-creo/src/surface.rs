@@ -4162,6 +4162,7 @@ struct InlineSurfaceBody {
 
 const EPS_INLINE_WITNESS: f64 = 1.0e-9;
 const EPS_INLINE_FRAME: f64 = 1.0e-8;
+const MAX_INLINE_FRAME_CANDIDATES: usize = 24;
 
 fn inline_surface_body(
     kind: SurfaceKind,
@@ -4180,7 +4181,7 @@ fn inline_surface_body(
         return inline_surface_suffix_body(kind, body, cache);
     };
     let local_start = envelope.close.checked_add(1)?;
-    let mut layouts: Vec<InlineSurfaceBody> = Vec::new();
+    let mut sole_layout = None;
     for terminal_close in local_start..body.len() {
         if body.get(terminal_close) != Some(&psb::token::COMPOUND_CLOSE) {
             continue;
@@ -4188,7 +4189,8 @@ fn inline_surface_body(
         let local = body.get(local_start..terminal_close)?;
         let mut structurally_complete = false;
         let mut geometric_interpretation_count = 0;
-        let mut carriers = Vec::new();
+        let mut first_carrier = None;
+        let mut conflicting_carriers = false;
         if kind == SurfaceKind::Cone {
             if let Some(angle) = terminal_cone_half_angle_layout(local) {
                 if let Some(frame) =
@@ -4196,7 +4198,7 @@ fn inline_surface_body(
                 {
                     structurally_complete = true;
                     geometric_interpretation_count += 1;
-                    carriers.push(InlineSurfaceCarrier::Cone(frame));
+                    first_carrier = Some(InlineSurfaceCarrier::Cone(frame));
                 }
             }
         }
@@ -4211,27 +4213,27 @@ fn inline_surface_body(
                 }
                 geometric_interpretation_count += 1;
                 if let Some(carrier) = inline_surface_carrier(kind, envelope, local, frame, cache) {
-                    carriers.push(carrier);
+                    if first_carrier.is_some_and(|first| first != carrier) {
+                        conflicting_carriers = true;
+                    } else {
+                        first_carrier = Some(carrier);
+                    }
                 }
             }
         }
         if !structurally_complete || geometric_interpretation_count == 0 {
             continue;
         }
-        let carrier = carriers
-            .first()
-            .copied()
-            .filter(|first| carriers.iter().all(|candidate| candidate == first));
-        layouts.push(InlineSurfaceBody {
+        let carrier = if conflicting_carriers { None } else { first_carrier };
+        let layout = InlineSurfaceBody {
             terminal_close,
             carrier,
-        });
+        };
+        if sole_layout.replace(layout).is_some() {
+            return None;
+        }
     }
-    match layouts.as_slice() {
-        [layout] => Some(*layout),
-        [] => inline_surface_suffix_body(kind, body, cache),
-        _ => None,
-    }
+    sole_layout.or_else(|| inline_surface_suffix_body(kind, body, cache))
 }
 
 /// Decode the local-system suffix form used by positional rows that have no
@@ -4242,33 +4244,40 @@ fn inline_surface_suffix_body(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<InlineSurfaceBody> {
-    let mut layouts = Vec::new();
+    let mut sole_layout = None;
     let local_starts =
         std::iter::once(0).chain(body.iter().enumerate().filter_map(|(offset, byte)| {
             (*byte == psb::token::COMPOUND_CLOSE).then_some(offset + 1)
         }));
     for local_start in local_starts {
         let local = body.get(local_start..)?;
-        let mut terminal_closes = Vec::new();
+        let mut terminal_closes = [0usize; MAX_INLINE_FRAME_CANDIDATES];
+        let mut close_count = 0;
         for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
             for frame in inline_resolved_frames(local, prefix, cache) {
                 if let Some((_, end)) =
                     decode_inline_surface_suffix_at(kind, local, frame.cursor, cache)
                 {
                     if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
-                        terminal_closes.push(end);
+                        *terminal_closes.get_mut(close_count)? = end;
+                        close_count += 1;
                     }
                 }
             }
         }
-        terminal_closes.sort_unstable();
-        terminal_closes.dedup();
-        for relative_close in terminal_closes {
+        terminal_closes[..close_count].sort_unstable();
+        let mut previous_close = None;
+        for relative_close in terminal_closes[..close_count].iter().copied() {
+            if previous_close == Some(relative_close) {
+                continue;
+            }
+            previous_close = Some(relative_close);
             let terminal_close = local_start + relative_close;
             let local = body.get(local_start..terminal_close)?;
             let mut structurally_complete = false;
             let mut geometric_interpretation_count = 0;
-            let mut carriers = Vec::new();
+            let mut carriers = [None; MAX_INLINE_FRAME_CANDIDATES];
+            let mut carrier_count = 0;
             for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
                 for frame in inline_resolved_frames(local, prefix, cache) {
                     if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
@@ -4281,36 +4290,37 @@ fn inline_surface_suffix_body(
                     geometric_interpretation_count += 1;
                     if let Some(carrier) = inline_surface_suffix_carrier(kind, local, frame, cache)
                     {
-                        carriers.push(carrier);
+                        *carriers.get_mut(carrier_count)? = Some(carrier);
+                        carrier_count += 1;
                     }
                 }
             }
             if !structurally_complete || geometric_interpretation_count == 0 {
                 continue;
             }
-            let carrier = (carriers.len() == geometric_interpretation_count)
-                .then(|| carriers.first().copied())
+            let carrier = (carrier_count == geometric_interpretation_count)
+                .then(|| carriers.first().copied().flatten())
                 .flatten()
-                .filter(|first| carriers.iter().all(|candidate| candidate == first));
+                .filter(|first| carriers[..carrier_count].iter().all(|candidate| *candidate == Some(*first)));
             let carrier = inline_suffix_witness(kind, body, local_start, cache)
                 .filter(|witness| {
                     inline_suffix_witness_agrees(
                         *witness,
-                        &carriers,
+                        &carriers[..carrier_count],
                         geometric_interpretation_count,
                     )
                 })
                 .or(carrier);
-            layouts.push(InlineSurfaceBody {
+            let layout = InlineSurfaceBody {
                 terminal_close,
                 carrier,
-            });
+            };
+            if sole_layout.replace(layout).is_some() {
+                return None;
+            }
         }
     }
-    let [layout] = layouts.as_slice() else {
-        return None;
-    };
-    Some(*layout)
+    sole_layout
 }
 
 /// Recover a complete legacy analytic envelope immediately before an inline
@@ -4391,7 +4401,7 @@ fn decode_11_10_13_cylinder_witness(
 
 fn inline_suffix_witness_agrees(
     witness: InlineSurfaceCarrier,
-    candidates: &[InlineSurfaceCarrier],
+    candidates: &[Option<InlineSurfaceCarrier>],
     interpretation_count: usize,
 ) -> bool {
     if candidates.is_empty() || candidates.len() != interpretation_count {
@@ -4401,6 +4411,7 @@ fn inline_suffix_witness_agrees(
         InlineSurfaceCarrier::Cylinder { frame: witness, .. } => {
             let matching = candidates
                 .iter()
+                .flatten()
                 .filter(|candidate| {
                     let InlineSurfaceCarrier::Cylinder {
                         frame: candidate, ..
@@ -4427,7 +4438,7 @@ fn inline_suffix_witness_agrees(
                 .count();
             matching == 1
         }
-        InlineSurfaceCarrier::Cone(witness) => candidates.iter().all(|candidate| {
+        InlineSurfaceCarrier::Cone(witness) => candidates.iter().flatten().all(|candidate| {
             let InlineSurfaceCarrier::Cone(candidate) = *candidate else {
                 return false;
             };
