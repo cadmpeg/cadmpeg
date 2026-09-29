@@ -563,14 +563,10 @@ fn attach_rm_face_colors(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let face_indices = ir
-        .model
-        .faces
-        .iter()
-        .enumerate()
-        .map(|(index, face)| (face.id.as_str().to_owned(), index))
-        .collect::<BTreeMap<_, _>>();
-    let face_ids = face_indices.keys().cloned().collect::<BTreeSet<_>>();
+    let (face_ids, _face_ids_reservation) = collect_rm_face_ids(
+        ctx,
+        ir.model.faces.iter().map(|face| face.id.as_str()),
+    )?;
     let bindings = resolve_rm_face_colors(
         ctx,
         &face_ids,
@@ -580,7 +576,11 @@ fn attach_rm_face_colors(
         &super::substrate::paired_delta_streams(ctx, scan)?,
     )?;
     for (face_id, color) in bindings {
-        let Some(index) = face_indices.get(&face_id).copied() else {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(ir.model.faces.len()),
+            "NX RM face color target lookup",
+        )?;
+        let Some(index) = ir.model.faces.iter().rposition(|face| face.id.as_str() == face_id) else {
             continue;
         };
         let face = &mut ir.model.faces[index];
@@ -592,6 +592,27 @@ fn attach_rm_face_colors(
         }
     }
     Ok(())
+}
+
+fn collect_rm_face_ids<'a, 'b>(
+    ctx: &'a DecodeContext<'_>,
+    faces: impl IntoIterator<Item = &'b str>,
+) -> Result<(BTreeSet<String>, cadmpeg_core::decode::ScopedReservation<'a>), CodecError> {
+    let mut ids = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX RM face identity lookup")?;
+    for id in faces {
+        ctx.charge_work(1, "NX RM face identity lookup")?;
+        if ids.contains(id) {
+            continue;
+        }
+        let bytes = std::mem::size_of::<String>()
+            .checked_add(id.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX RM face identity lookup", 0, cadmpeg_core::decode::u64_from_index(id.len())))?;
+        ctx.charge_collection_items(1, "NX RM face identity lookup")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        ids.insert(id.to_owned());
+    }
+    Ok((ids, reservation))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -616,12 +637,10 @@ fn attach_rm_appearances(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
     let source_bindings = resolve_rm_source_color_bindings(ctx, &model.om.rm_display_color_assignments)?;
-    let face_ids = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| face.id.as_str().to_owned())
-        .collect::<BTreeSet<_>>();
+    let (face_ids, _face_ids_reservation) = collect_rm_face_ids(
+        ctx,
+        ir.model.faces.iter().map(|face| face.id.as_str()),
+    )?;
     let face_bindings = resolve_rm_face_color_bindings(
         ctx,
         &face_ids,
@@ -633,24 +652,26 @@ fn attach_rm_appearances(
     if source_bindings.is_empty() && face_bindings.is_empty() {
         return Ok(());
     }
-    let definitions = model
-        .om
-        .part_color_definitions
-        .iter()
-        .map(|definition| (definition.id.as_str(), definition))
-        .collect::<BTreeMap<_, _>>();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let mut appearances = BTreeMap::<String, AppearanceId>::new();
+    let mut appearances_reservation = ctx.reserve_scoped(0, "NX RM appearance identity lookup")?;
     for binding in source_bindings {
-        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(model.om.part_color_definitions.len()), "NX RM appearance definition lookup")?;
+        let Some(definition) = model.om.part_color_definitions.iter().rev().find(|definition| definition.id == binding.color_definition) else {
             continue;
         };
         let appearance_id = ensure_rm_color_appearance(
+            ctx,
             ir,
             annotations,
             &mut appearances,
+            &mut appearances_reservation,
             definition,
             &annotation_stream,
+        )?;
+        let binding_id_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(binding.source_id.len().checked_add(128).ok_or_else(|| ctx.refuse_codec_limit("NX RM source binding identity", 0, cadmpeg_core::decode::u64_from_index(binding.source_id.len())))?),
+            "NX RM source binding identity",
         )?;
         let binding_id: AppearanceBindingId =
             IdScope::native(cadmpeg_ir::identity_component!("appearance-binding")).id(
@@ -661,6 +682,7 @@ fn attach_rm_appearances(
                     ))
                 })?,
             );
+        drop(binding_id_reservation);
         annotations
             .note(
                 binding_id.as_str(),
@@ -674,6 +696,14 @@ fn attach_rm_appearances(
         annotations
             .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        let binding_bytes = std::mem::size_of::<AppearanceBinding>()
+            .checked_add(binding_id.as_str().len())
+            .and_then(|bytes| bytes.checked_add(binding.source_id.len()))
+            .and_then(|bytes| bytes.checked_add(appearance_id.as_str().len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX RM source appearance binding", 0, cadmpeg_core::decode::u64_from_index(binding.source_id.len())))?;
+        ctx.charge_collection_items(1, "NX RM source appearance bindings")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(binding_bytes), "NX RM source appearance binding")?;
+        reserve_attach_vec(ctx, &mut ir.model.appearance_bindings, 1, "NX RM source appearance bindings")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
             target: AppearanceTarget::Source {
@@ -687,18 +717,20 @@ fn attach_rm_appearances(
         });
     }
     for binding in face_bindings {
-        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(model.om.part_color_definitions.len()), "NX RM appearance definition lookup")?;
+        let Some(definition) = model.om.part_color_definitions.iter().rev().find(|definition| definition.id == binding.color_definition) else {
             continue;
         };
-        let Some((face_id, existing_color)) = ir
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.faces.len()), "NX RM appearance face lookup")?;
+        let Some(face) = ir
             .model
             .faces
             .iter()
             .find(|face| face.id.as_str() == binding.face_id)
-            .map(|face| (face.id.clone(), face.color))
         else {
             continue;
         };
+        let existing_color = face.color;
         let color = Color::new(
             definition.components[0].0.value(),
             definition.components[1].0.value(),
@@ -709,12 +741,20 @@ fn attach_rm_appearances(
         if existing_color.is_some_and(|existing| existing != color) {
             continue;
         }
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(face.id.as_str().len()), "NX RM appearance face target")?;
+        let face_id = face.id.clone();
         let appearance_id = ensure_rm_color_appearance(
+            ctx,
             ir,
             annotations,
             &mut appearances,
+            &mut appearances_reservation,
             definition,
             &annotation_stream,
+        )?;
+        let binding_id_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(binding.face_id.len().checked_add(128).ok_or_else(|| ctx.refuse_codec_limit("NX RM face binding identity", 0, cadmpeg_core::decode::u64_from_index(binding.face_id.len())))?),
+            "NX RM face binding identity",
         )?;
         let binding_id: AppearanceBindingId =
             IdScope::native(cadmpeg_ir::identity_component!("appearance-binding")).id(
@@ -725,6 +765,7 @@ fn attach_rm_appearances(
                     ))
                 })?,
             );
+        drop(binding_id_reservation);
         annotations
             .note(
                 binding_id.as_str(),
@@ -738,6 +779,14 @@ fn attach_rm_appearances(
         annotations
             .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        let binding_bytes = std::mem::size_of::<AppearanceBinding>()
+            .checked_add(binding_id.as_str().len())
+            .and_then(|bytes| bytes.checked_add(face_id.as_str().len()))
+            .and_then(|bytes| bytes.checked_add(appearance_id.as_str().len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX RM face appearance binding", 0, cadmpeg_core::decode::u64_from_index(face_id.as_str().len())))?;
+        ctx.charge_collection_items(1, "NX RM face appearance bindings")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(binding_bytes), "NX RM face appearance binding")?;
+        reserve_attach_vec(ctx, &mut ir.model.appearance_bindings, 1, "NX RM face appearance bindings")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
             target: AppearanceTarget::Face(face_id),
@@ -752,9 +801,11 @@ fn attach_rm_appearances(
 }
 
 fn ensure_rm_color_appearance(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     appearances: &mut BTreeMap<String, AppearanceId>,
+    appearances_reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     definition: &crate::native::om::PartColorDefinition,
     annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<AppearanceId, CodecError> {
@@ -765,9 +816,15 @@ fn ensure_rm_color_appearance(
         1.0,
     )
     .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(appearances.len()), "NX RM appearance reuse lookup")?;
     if let Some(id) = appearances.get(&definition.id) {
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id.as_str().len()), "NX RM reused appearance identity")?;
         return Ok(id.clone());
     }
+    let identity_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(definition.id.len().checked_add(128).ok_or_else(|| ctx.refuse_codec_limit("NX RM color appearance identity", 0, cadmpeg_core::decode::u64_from_index(definition.id.len())))?),
+        "NX RM color appearance identity",
+    )?;
     let id: AppearanceId = IdScope::native(cadmpeg_ir::identity_component!("appearance")).id(
         &cadmpeg_ir::identity_component!("rmfastload-color"),
         native_entity_key(&definition.id).ok_or_else(|| {
@@ -776,6 +833,7 @@ fn ensure_rm_color_appearance(
             ))
         })?,
     );
+    drop(identity_reservation);
     annotations
         .note(id.as_str(), annotation_stream, definition.source_offset)
         .tag("RMFASTLOAD_COLOR_APPEARANCE");
@@ -788,6 +846,14 @@ fn ensure_rm_color_appearance(
     annotations
         .derived(id.as_str(), "base_color")
         .map_err(cadmpeg_core::CodecError::malformed)?;
+    let appearance_bytes = std::mem::size_of::<Appearance>()
+        .checked_add(id.as_str().len())
+        .and_then(|bytes| bytes.checked_add(definition.name.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX RM color appearance", 0, cadmpeg_core::decode::u64_from_index(definition.name.len())))?;
+    ctx.charge_collection_items(1, "NX RM color appearances")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(appearance_bytes), "NX RM color appearance")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id.as_str().len()), "NX RM color appearance binding identity")?;
+    reserve_attach_vec(ctx, &mut ir.model.appearances, 1, "NX RM color appearances")?;
     ir.model.appearances.push(Appearance {
         id: id.clone(),
         name: Some(definition.name.clone()),
@@ -801,6 +867,12 @@ fn ensure_rm_color_appearance(
         properties: BTreeMap::new(),
         textures: Vec::new(),
     });
+    let lookup_bytes = std::mem::size_of::<(String, AppearanceId)>()
+        .checked_add(definition.id.len())
+        .and_then(|bytes| bytes.checked_add(id.as_str().len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX RM appearance identity lookup", 0, cadmpeg_core::decode::u64_from_index(definition.id.len())))?;
+    ctx.charge_collection_items(1, "NX RM appearance identity lookup")?;
+    appearances_reservation.grow(cadmpeg_core::decode::u64_from_index(lookup_bytes))?;
     appearances.insert(definition.id.clone(), id.clone());
     Ok(id)
 }
