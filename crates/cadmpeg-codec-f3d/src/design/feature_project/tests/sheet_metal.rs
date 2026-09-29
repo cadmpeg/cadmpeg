@@ -582,18 +582,16 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     );
 }
 
-#[test]
-fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
+fn edge_flange_to_object_fixture(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    include_target_scope: bool,
+) -> Result<Option<(cadmpeg_ir::features::FeatureDefinition, crate::records::feature::scope::DesignParameterScope)>, cadmpeg_core::CodecError> {
     use crate::records::feature::{
         scope::DesignParameterScope,
         sheet_metal::{
             DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation,
             DesignSheetMetalHeightDatum,
         },
-    };
-
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
@@ -808,7 +806,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     let inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
         owners: &owners,
-        scopes: &target_scopes,
+        scopes: if include_target_scope { &target_scopes } else { &[] },
         timelines: &[],
         construction_groups: &groups,
         fillet_radius_groups: &[],
@@ -825,9 +823,17 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         component_naming_spaces: &[],
         histories: &[],
     };
-    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, None)
-        .unwrap()
-        .expect("typed to-object EdgeFlange definition");
+    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, ctx)?;
+    Ok(definition.map(|definition| (definition, target_scope)))
+}
+
+#[test]
+fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+    };
+    let (definition, target_scope) = edge_flange_to_object_fixture(None, true)
+        .unwrap().expect("typed to-object EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { height, .. }) =
         definition
     else {
