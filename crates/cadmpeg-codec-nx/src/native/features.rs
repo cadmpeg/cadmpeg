@@ -7927,22 +7927,37 @@ pub(super) fn feature_sketch_references(
                     return;
                 }
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            references.extend(decoded.into_positioned().map(|(position, reference)| {
-                let ordinal = position.ordinal();
-                let data_block = unique_offset_data_block(&indexed, reference.token.value());
-                FeatureSketchReference {
-                    id: format!(
-                        "nx:feature-history:sketch-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_label: operation_label.clone(),
-                    position,
-                    token: reference.token,
-                    data_block,
-                    source_offset: entry_offset + reference.offset as u64,
+            let projected = (|| -> Result<(), CodecError> {
+                for (position, reference) in decoded.into_positioned() {
+                    let data_block = charged_unique_offset_data_block(
+                        ctx, &indexed, reference.token.value())?;
+                    let ordinal = usize::try_from(position.ordinal()).map_err(|_| {
+                        ctx.refuse_codec_limit("NX sketch reference ordinal", 0, 1)
+                    })?;
+                    let id = format_feature_history_id(ctx, "sketch-reference",
+                        section_key, operation_ordinal, Some(ordinal))?;
+                    let operation_label = format_feature_history_id(ctx, "operation-label",
+                        section_key, operation_ordinal, None)?;
+                    let source_offset = entry_offset.checked_add(
+                        cadmpeg_core::decode::u64_from_index(reference.offset))
+                        .ok_or_else(|| ctx.refuse_codec_limit(
+                            "NX sketch reference source offset", 0, 1))?;
+                    ctx.charge_collection_items(1, "NX sketch references")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureSketchReference>()),
+                        "NX sketch references")?;
+                    references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX sketch references", 0, 1))?;
+                    references.push(FeatureSketchReference {
+                        id, operation_label, position, token: reference.token,
+                        data_block, source_offset,
+                    });
                 }
-            }));
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
     if let Some(error) = failure {
