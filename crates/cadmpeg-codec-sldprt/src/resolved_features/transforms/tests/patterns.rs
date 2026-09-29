@@ -1780,11 +1780,12 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     ];
 
     project_relation_point_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     project_relation_solved_point_geometry(
         &ctx,
         &mut entities,

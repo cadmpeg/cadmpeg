@@ -55,6 +55,13 @@ fn unique_axis_swap_maps_marker_coordinates_to_profile_loci() {
 
 #[test]
 fn relation_point_materializes_under_one_proven_marker_transform() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation point",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -381,18 +388,20 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         sketch_entities: markers,
     };
     project_relation_point_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     let projected_len = entities.len();
     project_relation_point_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
     assert_eq!(entities.len(), projected_len);
     assert!(entities.iter().any(|entity| {
         entity.construction
@@ -473,6 +482,13 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
 
 #[test]
 fn relation_point_coexists_with_nonpoint_native_carrier() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation point",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -570,11 +586,12 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     };
 
     project_relation_point_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
 
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some(point_marker.id())
@@ -633,6 +650,13 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
 
 #[test]
 fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation point",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -720,11 +744,12 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
     let mut entities = Vec::new();
 
     project_relation_point_geometry(
+        &ctx,
         &mut entities,
         std::slice::from_ref(&sketch_record),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
 
     assert_eq!(entities.len(), 2);
     assert!(entities.iter().any(|entity| {

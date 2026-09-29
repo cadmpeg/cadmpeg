@@ -516,38 +516,58 @@ pub(crate) fn project_spatial_relation_bindings(
 
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
 pub(crate) fn project_relation_point_geometry(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
-    let sketches_by_feature = features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some((feature.native_ref.as_deref()?, sketch.clone()))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut sketches_by_feature = HashMap::new();
+    for feature in features {
+        let operation = "index SLDPRT relation-point sketches";
+        ctx.charge_work(1, operation)?;
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !sketches_by_feature.contains_key(native_ref) {
+            ctx.charge_collection_items(1, operation)?;
+            sketches_by_feature.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
+        sketches_by_feature.insert(native_ref, sketch_id);
+    }
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
-    let markers_by_id = lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
-    let point_operands = lanes
-        .iter()
-        .flat_map(|lane| &lane.relation_instances)
-        .flat_map(|relation| {
+    let mut markers_by_id = HashMap::new();
+    for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
+        let operation = "index SLDPRT relation-point markers";
+        ctx.charge_work(1, operation)?;
+        if !markers_by_id.contains_key(marker.id()) {
+            ctx.charge_collection_items(1, operation)?;
+            markers_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        markers_by_id.insert(marker.id(), marker);
+    }
+    let mut point_operands = HashSet::new();
+    let mut curve_operands = HashSet::new();
+    let mut referenced = HashSet::new();
+    for lane in lanes {
+        for relation in &lane.relation_instances {
+            ctx.charge_work(1, "scan SLDPRT relation-point operands")?;
             let count = match relation.family {
                 FeatureInputRelationFamily::PointPointDistance
                 | FeatureInputRelationFamily::PointPointHorizontalDistance
@@ -555,50 +575,74 @@ pub(crate) fn project_relation_point_geometry(
                 FeatureInputRelationFamily::PointLineDistance => 1,
                 _ => 0,
             };
-            relation
-                .operands
-                .iter()
-                .take(count)
-                .filter_map(|operand| operand.entity_ref.as_deref())
-        })
-        .collect::<HashSet<_>>();
-    let curve_operands = lanes
-        .iter()
-        .flat_map(|lane| &lane.relation_instances)
-        .flat_map(|relation| {
+            for operand in relation.operands.iter().take(count) {
+                let Some(id) = operand.entity_ref.as_deref() else {
+                    continue;
+                };
+                if !point_operands.contains(id) {
+                    let operation = "index SLDPRT relation-point operands";
+                    ctx.charge_collection_items(1, operation)?;
+                    point_operands.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                    })?;
+                    point_operands.insert(id);
+                }
+            }
             let first = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance
                 | FeatureInputRelationFamily::Angle => 0,
                 FeatureInputRelationFamily::PointLineDistance => 1,
                 _ => relation.operands.len(),
             };
-            relation
-                .operands
-                .iter()
-                .skip(first)
-                .filter_map(|operand| operand.entity_ref.as_deref())
-        })
-        .collect::<HashSet<_>>();
-    let mut referenced = lanes
-        .iter()
-        .flat_map(|lane| {
-            lane.relation_instances
-                .iter()
-                .flat_map(|relation| &relation.operands)
-                .filter_map(|operand| operand.entity_ref.as_deref())
-                .chain(
-                    lane.sketch_entities
-                        .iter()
-                        .filter(|marker| matches!(marker.kind(), SketchInputKind::Relation(_)))
-                        .map(super::super::records::SketchInputEntity::id),
-                )
-        })
-        .collect::<HashSet<_>>();
+            for operand in relation.operands.iter().skip(first) {
+                let Some(id) = operand.entity_ref.as_deref() else {
+                    continue;
+                };
+                if !curve_operands.contains(id) {
+                    let operation = "index SLDPRT relation-curve operands";
+                    ctx.charge_collection_items(1, operation)?;
+                    curve_operands.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                    })?;
+                    curve_operands.insert(id);
+                }
+            }
+            for operand in &relation.operands {
+                let Some(id) = operand.entity_ref.as_deref() else {
+                    continue;
+                };
+                if !referenced.contains(id) {
+                    let operation = "index SLDPRT referenced relation markers";
+                    ctx.charge_collection_items(1, operation)?;
+                    referenced.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                    })?;
+                    referenced.insert(id);
+                }
+            }
+        }
+        for marker in &lane.sketch_entities {
+            if !matches!(marker.kind(), SketchInputKind::Relation(_)) {
+                continue;
+            }
+            let id = marker.id();
+            if !referenced.contains(id) {
+                let operation = "index SLDPRT referenced relation markers";
+                ctx.charge_collection_items(1, operation)?;
+                referenced.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+                referenced.insert(id);
+            }
+        }
+    }
     loop {
         let mut linked = Vec::new();
         for marker in markers_by_id.values() {
+            ctx.charge_work(1, "scan SLDPRT relation marker links")?;
             let marker_referenced = referenced.contains(marker.id());
             for link in marker.links() {
+                ctx.charge_work(1, "scan SLDPRT relation marker links")?;
                 let adjacent = if marker_referenced {
                     Some(link.entity_ref.as_str())
                 } else if referenced.contains(link.entity_ref.as_str()) {
@@ -607,6 +651,11 @@ pub(crate) fn project_relation_point_geometry(
                     None
                 };
                 if let Some(id) = adjacent.filter(|id| !referenced.contains(id)) {
+                    ctx.reserve_collection_vec(
+                        &mut linked,
+                        1,
+                        "collect SLDPRT adjacent relation markers",
+                    )?;
                     linked.push(id);
                 }
             }
@@ -614,7 +663,16 @@ pub(crate) fn project_relation_point_geometry(
         if linked.is_empty() {
             break;
         }
-        referenced.extend(linked);
+        for id in linked {
+            if !referenced.contains(id) {
+                let operation = "index SLDPRT referenced relation markers";
+                ctx.charge_collection_items(1, operation)?;
+                referenced.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+                referenced.insert(id);
+            }
+        }
     }
     for lane in lanes {
         let lane_key = lane
@@ -906,6 +964,7 @@ pub(crate) fn project_relation_point_geometry(
             );
         }
     }
+    Ok(())
 }
 
 pub(super) fn relation_operand_geometry_ref(
