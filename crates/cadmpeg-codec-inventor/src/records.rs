@@ -542,7 +542,10 @@ fn parse_extended_record_trailer(
                 cursor.skip(len, "record trailer byte array")?;
             }
             value => {
-                ctx.charge_formatted_retained(format_args!("RSe record trailer property type {value} is not implemented"), "retain RSe record trailer property diagnostic")?;
+                ctx.charge_formatted_retained(
+                    format_args!("RSe record trailer property type {value} is not implemented"),
+                    "retain RSe record trailer property diagnostic",
+                )?;
                 return Err(CodecError::NotImplemented(format!(
                     "RSe record trailer property type {value} is not implemented"
                 )));

@@ -126,7 +126,8 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<ScopedReservation<'_>, CodecError> {
         self.charge_collection_items(u64_from_index(count), operation)?;
-        let bytes = count.checked_mul(std::mem::size_of::<T>())
+        let bytes = count
+            .checked_mul(std::mem::size_of::<T>())
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         self.reserve_scoped(u64_from_index(bytes), operation)
     }
@@ -137,7 +138,8 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(Vec<T>, ScopedReservation<'_>), CodecError> {
-        let bytes = count.checked_mul(std::mem::size_of::<T>())
+        let bytes = count
+            .checked_mul(std::mem::size_of::<T>())
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         let reservation = self.reserve_scoped(u64_from_index(bytes), operation)?;
         let values = Self::admitted_vec(count, operation)?;
@@ -2859,11 +2861,15 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let mut output = String::new();
-        let error = ctx.append_formatted_retained(&mut output, format_args!("{}", 123),
-            "test formatted append").expect_err("three bytes exceed two");
+        let error = ctx
+            .append_formatted_retained(
+                &mut output,
+                format_args!("{}", 123),
+                "test formatted append",
+            )
+            .expect_err("three bytes exceed two");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes));
         assert!(output.is_empty());
@@ -2876,8 +2882,12 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("test context");
         let mut output = String::from("prefix:");
-        ctx.append_formatted_retained(&mut output, format_args!("{}", 123),
-            "test formatted append").expect("service profile admits text");
+        ctx.append_formatted_retained(
+            &mut output,
+            format_args!("{}", 123),
+            "test formatted append",
+        )
+        .expect("service profile admits text");
         assert_eq!(output, "prefix:123");
     }
 
@@ -2886,9 +2896,15 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 1);
         let mut values = Vec::<u16>::new();
-        let mut storage = ctx.reserve_scoped(0, "test scoped push").expect("test reservation");
-        let error = ctx.push_scoped_vec(&mut storage, &mut values, 7, "test scoped push").expect_err("one below required storage");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes));
+        let mut storage = ctx
+            .reserve_scoped(0, "test scoped push")
+            .expect("test reservation");
+        let error = ctx
+            .push_scoped_vec(&mut storage, &mut values, 7, "test scoped push")
+            .expect_err("one below required storage");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
         assert!(values.is_empty());
         assert_eq!(values.capacity(), 0);
     }
@@ -2896,10 +2912,14 @@ mod tests {
     #[test]
     fn push_scoped_vec_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
         let mut values = Vec::<u16>::new();
-        let mut storage = ctx.reserve_scoped(0, "test scoped push").expect("test reservation");
-        ctx.push_scoped_vec(&mut storage, &mut values, 7, "test scoped push").expect("service admission");
+        let mut storage = ctx
+            .reserve_scoped(0, "test scoped push")
+            .expect("test reservation");
+        ctx.push_scoped_vec(&mut storage, &mut values, 7, "test scoped push")
+            .expect("service admission");
         assert_eq!(values, [7]);
     }
 
@@ -2908,17 +2928,23 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = context(&arena, 0);
 
-        let error = ctx.collect_btree_set([7u16], "test ordered set").expect_err("one below required storage");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
-
+        let error = ctx
+            .collect_btree_set([7u16], "test ordered set")
+            .expect_err("one below required storage");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
     fn collect_btree_set_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
 
-        let result = ctx.collect_btree_set([7u16, 9, 7], "test ordered set").expect("service admission");
+        let result = ctx
+            .collect_btree_set([7u16, 9, 7], "test ordered set")
+            .expect("service admission");
         assert_eq!(result, BTreeSet::from([7, 9]));
     }
 
@@ -2927,19 +2953,26 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = context(&arena, 1);
         let mut values = BTreeMap::<u8, Vec<u16>>::new();
-        let error = ctx.push_btree_group(&mut values, 1, 7, "test group", "test member").expect_err("one below required storage");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+        let error = ctx
+            .push_btree_group(&mut values, 1, 7, "test group", "test member")
+            .expect_err("one below required storage");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
         assert!(values.is_empty());
     }
 
     #[test]
     fn push_btree_group_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
         let mut values = BTreeMap::<u8, Vec<u16>>::new();
-        ctx.push_btree_group(&mut values, 1, 7, "test group", "test member").expect("service admission");
+        ctx.push_btree_group(&mut values, 1, 7, "test group", "test member")
+            .expect("service admission");
         assert_eq!(values[&1], [7]);
-        ctx.push_btree_group(&mut values, 1, 9, "test group", "test member").expect("second member");
+        ctx.push_btree_group(&mut values, 1, 9, "test group", "test member")
+            .expect("second member");
         assert_eq!(values[&1], [7, 9]);
     }
 
@@ -2948,19 +2981,26 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = context(&arena, 1);
         let mut values = BTreeMap::<u8, BTreeSet<u16>>::new();
-        let error = ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member").expect_err("one below required storage");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+        let error = ctx
+            .insert_btree_group_set(&mut values, 1, 7, "test group", "test member")
+            .expect_err("one below required storage");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
         assert!(values.is_empty());
     }
 
     #[test]
     fn insert_btree_group_set_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
         let mut values = BTreeMap::<u8, BTreeSet<u16>>::new();
-        ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member").expect("service admission");
+        ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member")
+            .expect("service admission");
         assert_eq!(values[&1], BTreeSet::from([7]));
-        ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member").expect("duplicate member");
+        ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member")
+            .expect("duplicate member");
         assert_eq!(values[&1], BTreeSet::from([7]));
     }
 
@@ -2968,15 +3008,20 @@ mod tests {
     fn retained_admitted_vec_refuses_one_below_need_before_allocation() {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 3);
-        assert!(matches!(ctx.retained_admitted_vec::<u16>(2, "test retained admitted storage"),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(ctx.retained_admitted_vec::<u16>(2, "test retained admitted storage"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
     fn retained_admitted_vec_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
-        let mut values = ctx.retained_admitted_vec(2, "test retained admitted storage").expect("service admission");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut values = ctx
+            .retained_admitted_vec(2, "test retained admitted storage")
+            .expect("service admission");
         values.extend([7u16, 9]);
         assert_eq!(values, [7, 9]);
     }
@@ -2985,15 +3030,20 @@ mod tests {
     fn scoped_admitted_vec_refuses_one_below_need_before_allocation() {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 3);
-        assert!(matches!(ctx.scoped_admitted_vec::<u16>(2, "test scoped admitted storage"),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert!(
+            matches!(ctx.scoped_admitted_vec::<u16>(2, "test scoped admitted storage"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
     }
 
     #[test]
     fn scoped_admitted_vec_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
-        let (mut values, _reservation) = ctx.scoped_admitted_vec(2, "test scoped admitted storage").expect("service admission");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let (mut values, _reservation) = ctx
+            .scoped_admitted_vec(2, "test scoped admitted storage")
+            .expect("service admission");
         values.extend([7u16, 9]);
         assert_eq!(values, [7, 9]);
     }
@@ -3002,15 +3052,19 @@ mod tests {
     fn charge_formatted_retained_refuses_one_below_need_before_allocation() {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 2);
-        assert!(matches!(ctx.charge_formatted_retained(format_args!("a{}", 12), "test formatted admission"),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3));
+        assert!(
+            matches!(ctx.charge_formatted_retained(format_args!("a{}", 12), "test formatted admission"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3)
+        );
     }
 
     #[test]
     fn charge_formatted_retained_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
-        ctx.charge_formatted_retained(format_args!("a{}", 12), "test formatted admission").expect("service admission");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        ctx.charge_formatted_retained(format_args!("a{}", 12), "test formatted admission")
+            .expect("service admission");
     }
 
     #[test]
@@ -3018,7 +3072,9 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 1);
         let mut values = HashSet::new();
-        assert!(matches!(ctx.insert_retained_hash_set(&mut values, 7u16, "test retained set"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(ctx.insert_retained_hash_set(&mut values, 7u16, "test retained set"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
         assert!(values.is_empty());
         assert_eq!(values.capacity(), 0);
     }
@@ -3026,10 +3082,15 @@ mod tests {
     #[test]
     fn insert_retained_hash_set_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
         let mut values = HashSet::new();
-        assert!(ctx.insert_retained_hash_set(&mut values, 7u16, "test retained set").expect("service admission"));
-        assert!(!ctx.insert_retained_hash_set(&mut values, 7u16, "test retained set").expect("duplicate"));
+        assert!(ctx
+            .insert_retained_hash_set(&mut values, 7u16, "test retained set")
+            .expect("service admission"));
+        assert!(!ctx
+            .insert_retained_hash_set(&mut values, 7u16, "test retained set")
+            .expect("duplicate"));
         assert_eq!(values, HashSet::from([7]));
     }
 
@@ -3037,20 +3098,31 @@ mod tests {
     fn insert_scoped_btree_value_refuses_one_below_need_before_allocation() {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 1);
-        let mut reservation = ctx.reserve_scoped(0, "test scoped value").expect("empty reserve");
+        let mut reservation = ctx
+            .reserve_scoped(0, "test scoped value")
+            .expect("empty reserve");
         let mut values = BTreeSet::new();
-        assert!(matches!(ctx.insert_scoped_btree_value(&mut reservation, &mut values, 7u16, "test scoped value"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert!(
+            matches!(ctx.insert_scoped_btree_value(&mut reservation, &mut values, 7u16, "test scoped value"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
         assert!(values.is_empty());
     }
 
     #[test]
     fn insert_scoped_btree_value_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
-        let mut reservation = ctx.reserve_scoped(0, "test scoped value").expect("empty reserve");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut reservation = ctx
+            .reserve_scoped(0, "test scoped value")
+            .expect("empty reserve");
         let mut values = BTreeSet::new();
-        assert!(ctx.insert_scoped_btree_value(&mut reservation, &mut values, 7u16, "test scoped value").expect("service admission"));
-        assert!(!ctx.insert_scoped_btree_value(&mut reservation, &mut values, 7u16, "test scoped value").expect("duplicate"));
+        assert!(ctx
+            .insert_scoped_btree_value(&mut reservation, &mut values, 7u16, "test scoped value")
+            .expect("service admission"));
+        assert!(!ctx
+            .insert_scoped_btree_value(&mut reservation, &mut values, 7u16, "test scoped value")
+            .expect("duplicate"));
         assert_eq!(values, BTreeSet::from([7]));
     }
 
@@ -3059,7 +3131,9 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = context(&arena, 0);
         let mut values = HashSet::new();
-        assert!(matches!(ctx.extend_hash_set(&mut values, [7u16], "test extend set"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems));
+        assert!(
+            matches!(ctx.extend_hash_set(&mut values, [7u16], "test extend set"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems)
+        );
         assert!(values.is_empty());
         assert_eq!(values.capacity(), 0);
     }
@@ -3067,9 +3141,11 @@ mod tests {
     #[test]
     fn extend_hash_set_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
         let mut values = HashSet::from([7u16]);
-        ctx.extend_hash_set(&mut values, [7, 9, 9], "test extend set").expect("service admission");
+        ctx.extend_hash_set(&mut values, [7, 9, 9], "test extend set")
+            .expect("service admission");
         assert_eq!(values, HashSet::from([7, 9]));
     }
 
@@ -3077,15 +3153,19 @@ mod tests {
     fn reserve_scoped_collection_refuses_one_below_need_before_allocation() {
         let arena = DecodeArena::new();
         let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 3);
-        assert!(matches!(ctx.reserve_scoped_collection::<u16>(2, "test scoped collection"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.additional == 4));
+        assert!(
+            matches!(ctx.reserve_scoped_collection::<u16>(2, "test scoped collection"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.additional == 4)
+        );
     }
 
     #[test]
     fn reserve_scoped_collection_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
-        let reservation = ctx.reserve_scoped_collection::<u16>(2, "test scoped collection").expect("service admission");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let reservation = ctx
+            .reserve_scoped_collection::<u16>(2, "test scoped collection")
+            .expect("service admission");
         drop(reservation);
     }
-
 }

@@ -446,8 +446,11 @@ fn record_error_reason(
     name: &str,
     description: &'static str,
 ) -> Result<String, StreamFailure> {
-    ctx.format_retained(format_args!("record `{name}` {description}"), "SAT record error text")
-        .map_err(StreamFailure::Resource)
+    ctx.format_retained(
+        format_args!("record `{name}` {description}"),
+        "SAT record error text",
+    )
+    .map_err(StreamFailure::Resource)
 }
 
 /// Parse a complete text stream into its header and typed record table.

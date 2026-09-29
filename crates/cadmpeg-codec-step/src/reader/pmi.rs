@@ -10,7 +10,7 @@ use super::{named_parameter, record_values, source_numeric_id, RecordExt, ValueE
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{PmiId};
+use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
     LimitsAndFits, PmiDefinition, PmiDimension, PmiQuantity, PmiTarget, PmiValue,
@@ -67,10 +67,16 @@ pub(super) fn decode(
             notes: Vec::new(),
         });
     }
-    let base_aspects = ctx.collect_btree_set(exchange
+    let base_aspects = ctx.collect_btree_set(
+        exchange
             .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
-            .map(|(id, _)| id), "step_pmi_base_aspects")?;
-    let shape_aspects = ctx.collect_btree_set(exchange.matching_entity_ids(is_shape_aspect_name), "step_pmi_shape_aspects")?;
+            .map(|(id, _)| id),
+        "step_pmi_base_aspects",
+    )?;
+    let shape_aspects = ctx.collect_btree_set(
+        exchange.matching_entity_ids(is_shape_aspect_name),
+        "step_pmi_shape_aspects",
+    )?;
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
     let mut annotations = Annotations::default();
@@ -120,8 +126,7 @@ pub(super) fn decode(
                 definition: PmiDefinition::Datum { identification },
             },
         )?;
-        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")?;
     }
 
     for id in exchange.matching_entity_ids(is_datum_target_name) {
@@ -186,8 +191,7 @@ pub(super) fn decode(
                 },
             },
         )?;
-        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")?;
     }
 
     for (id, record) in exchange.entities("DATUM_SYSTEM") {
@@ -266,8 +270,7 @@ pub(super) fn decode(
                 },
             },
         )?;
-        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")?;
         ctx.extend_hash_set(&mut typed, datum_records, "step_pmi_typed_claims")?;
     }
 
@@ -353,8 +356,7 @@ pub(super) fn decode(
                 definition: PmiDefinition::Dimension(definition),
             },
         )?;
-        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")?;
     }
 
     for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
@@ -470,8 +472,7 @@ pub(super) fn decode(
                 .map_err(|error| {
                     CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
                 })? {
-                    ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-                        ?;
+                    ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")?;
                     ctx.extend_hash_set(&mut typed, refs, "step_pmi_typed_claims")?;
                 } else {
                     ctx.push_vec(
@@ -678,15 +679,20 @@ pub(super) fn decode(
                 },
             },
         )?;
-        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            ?;
-        ctx.extend_hash_set(&mut typed, refs.iter().copied().filter(|reference| {
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")?;
+        ctx.extend_hash_set(
+            &mut typed,
+            refs.iter().copied().filter(|reference| {
                 exchange
                     .records()
                     .get(reference)
                     .is_some_and(is_measure_record)
-            }), "step_pmi_typed_claims")?;
-        ctx.extend_hash_set(&mut typed, record
+            }),
+            "step_pmi_typed_claims",
+        )?;
+        ctx.extend_hash_set(
+            &mut typed,
+            record
                 .partials
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
@@ -696,7 +702,9 @@ pub(super) fn decode(
                         .records()
                         .get(reference)
                         .is_some_and(is_measure_record)
-                }), "step_pmi_typed_claims")?;
+                }),
+            "step_pmi_typed_claims",
+        )?;
     }
 
     for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
@@ -708,11 +716,16 @@ pub(super) fn decode(
         if annotations.get(definition).is_some() {
             if let Some(items) = named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4) {
                 for item in references(items) {
-                    ctx.push_btree_group(&mut presentation_semantics, item, definition, "step_pmi_presentation_semantic_groups", "step_pmi_presentation_semantic_members")?;
+                    ctx.push_btree_group(
+                        &mut presentation_semantics,
+                        item,
+                        definition,
+                        "step_pmi_presentation_semantic_groups",
+                        "step_pmi_presentation_semantic_members",
+                    )?;
                 }
             }
-            ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-                ?;
+            ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")?;
         }
     }
 
@@ -813,15 +826,13 @@ pub(super) fn decode(
                 },
             },
         )?;
-        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")?;
         ctx.extend_hash_set(&mut typed, text_records, "step_pmi_typed_claims")?;
     }
     for (id, _) in
         exchange.entities_any(&["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])
     {
-        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")?;
     }
 
     resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed, ctx)?;
@@ -841,7 +852,8 @@ pub(super) fn decode(
         ctx,
     )?;
 
-    let targeted_aspects = ctx.collect_btree_set(ir.model
+    let targeted_aspects = ctx.collect_btree_set(
+        ir.model
             .pmi
             .iter()
             .flat_map(|annotation| &annotation.targets)
@@ -850,8 +862,14 @@ pub(super) fn decode(
                     source_id.as_str().strip_prefix('#')?.parse().ok()
                 }
                 _ => None,
-            }), "step_pmi_targeted_aspects")?;
-    ctx.extend_hash_set(&mut typed, shape_aspects.intersection(&targeted_aspects).copied(), "step_pmi_typed_claims")?;
+            }),
+        "step_pmi_targeted_aspects",
+    )?;
+    ctx.extend_hash_set(
+        &mut typed,
+        shape_aspects.intersection(&targeted_aspects).copied(),
+        "step_pmi_typed_claims",
+    )?;
     mark_characteristic_representations(exchange, &annotations, &mut typed, ctx)?;
     Ok(StageOutcome {
         value: (),
@@ -883,8 +901,7 @@ fn mark_characteristic_representations(
         }) else {
             continue;
         };
-        ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")
-            ?;
+        ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")?;
         for parameter in record_values(record) {
             for representation_id in references(parameter) {
                 let Some(representation) = exchange.records().get(&representation_id) else {
@@ -897,8 +914,7 @@ fn mark_characteristic_representations(
                 {
                     continue;
                 }
-                ctx.insert_hash_set(typed, representation_id, "step_pmi_typed_claims")
-                    ?;
+                ctx.insert_hash_set(typed, representation_id, "step_pmi_typed_claims")?;
                 for parameter in record_values(representation) {
                     for reference in references(parameter) {
                         if exchange
@@ -906,8 +922,7 @@ fn mark_characteristic_representations(
                             .get(&reference)
                             .is_some_and(is_measure_record)
                         {
-                            ctx.insert_hash_set(typed, reference, "step_pmi_typed_claims")
-                                ?;
+                            ctx.insert_hash_set(typed, reference, "step_pmi_typed_claims")?;
                         }
                     }
                 }
@@ -963,12 +978,24 @@ fn resolve_geometric_item_usages(
             continue;
         };
         if shape_aspects.contains(&annotation_id) {
-            ctx.insert_btree_group_set(&mut aspect_annotations, annotation_id, annotation_index, "step_pmi_aspect_annotation_groups", "step_pmi_aspect_annotation_members")?;
+            ctx.insert_btree_group_set(
+                &mut aspect_annotations,
+                annotation_id,
+                annotation_index,
+                "step_pmi_aspect_annotation_groups",
+                "step_pmi_aspect_annotation_members",
+            )?;
         }
         for parameter in record_values(record) {
             for reference in references(parameter) {
                 if shape_aspects.contains(&reference) {
-                    ctx.insert_btree_group_set(&mut aspect_annotations, reference, annotation_index, "step_pmi_aspect_annotation_groups", "step_pmi_aspect_annotation_members")?;
+                    ctx.insert_btree_group_set(
+                        &mut aspect_annotations,
+                        reference,
+                        annotation_index,
+                        "step_pmi_aspect_annotation_groups",
+                        "step_pmi_aspect_annotation_members",
+                    )?;
                 }
             }
         }
@@ -979,8 +1006,20 @@ fn resolve_geometric_item_usages(
         let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
         };
-        ctx.insert_btree_group_set(&mut relationship_aspects, relating, related, "step_pmi_relationship_aspect_groups", "step_pmi_relationship_aspect_members")?;
-        ctx.insert_btree_group_set(&mut relationship_aspects, related, relating, "step_pmi_relationship_aspect_groups", "step_pmi_relationship_aspect_members")?;
+        ctx.insert_btree_group_set(
+            &mut relationship_aspects,
+            relating,
+            related,
+            "step_pmi_relationship_aspect_groups",
+            "step_pmi_relationship_aspect_members",
+        )?;
+        ctx.insert_btree_group_set(
+            &mut relationship_aspects,
+            related,
+            relating,
+            "step_pmi_relationship_aspect_groups",
+            "step_pmi_relationship_aspect_members",
+        )?;
     }
 
     for (&id, record) in exchange.records() {
@@ -1003,8 +1042,7 @@ fn resolve_geometric_item_usages(
                 &mut annotation_indices,
                 index,
                 "step_pmi_usage_annotation_indices",
-            )
-            ?;
+            )?;
         }
         if let Some(aspects) = relationship_aspects.get(&definition) {
             for aspect in aspects {
@@ -1013,8 +1051,7 @@ fn resolve_geometric_item_usages(
                         &mut annotation_indices,
                         index,
                         "step_pmi_usage_annotation_indices",
-                    )
-                    ?;
+                    )?;
                 }
             }
         }
@@ -1036,8 +1073,7 @@ fn resolve_geometric_item_usages(
                 )?;
             }
         }
-        ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")
-            ?;
+        ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")?;
     }
     Ok(())
 }
@@ -1151,8 +1187,16 @@ fn point_sources(
         let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
             continue;
         };
-        let id = point.id.try_clone_for_decode(ctx, "step_pmi_point_source_identity")?;
-        ctx.push_btree_group(&mut points, source, id, "step_pmi_point_source_groups", "step_pmi_point_source_items")?;
+        let id = point
+            .id
+            .try_clone_for_decode(ctx, "step_pmi_point_source_identity")?;
+        ctx.push_btree_group(
+            &mut points,
+            source,
+            id,
+            "step_pmi_point_source_groups",
+            "step_pmi_point_source_items",
+        )?;
     }
     Ok(points)
 }
@@ -1166,8 +1210,16 @@ fn curve_sources(
         let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
             continue;
         };
-        let id = curve.id.try_clone_for_decode(ctx, "step_pmi_curve_source_identity")?;
-        ctx.push_btree_group(&mut curves, source, id, "step_pmi_curve_source_groups", "step_pmi_curve_source_items")?;
+        let id = curve
+            .id
+            .try_clone_for_decode(ctx, "step_pmi_curve_source_identity")?;
+        ctx.push_btree_group(
+            &mut curves,
+            source,
+            id,
+            "step_pmi_curve_source_groups",
+            "step_pmi_curve_source_items",
+        )?;
     }
     Ok(curves)
 }
@@ -1192,8 +1244,7 @@ fn datum_references_for_compartment(
     {
         return Ok(Vec::new());
     }
-    ctx.insert_hash_set(typed, compartment_id, "step_pmi_typed_claims")
-        ?;
+    ctx.insert_hash_set(typed, compartment_id, "step_pmi_typed_claims")?;
     let mut compartment_modifiers = Vec::new();
     for modifier in datum_modifiers(compartment)
         .and_then(ValueExt::list)
@@ -1230,7 +1281,12 @@ fn datum_references_for_compartment(
             if annotations.get(datum).is_none() {
                 continue;
             }
-            let mut modifiers = ctx.try_collect_vec(compartment_modifiers.iter().map(|value| ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")), "step_pmi_datum_modifier_items")?;
+            let mut modifiers = ctx.try_collect_vec(
+                compartment_modifiers
+                    .iter()
+                    .map(|value| ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")),
+                "step_pmi_datum_modifier_items",
+            )?;
             for modifier in datum_modifiers(element)
                 .and_then(ValueExt::list)
                 .into_iter()
@@ -1259,15 +1315,19 @@ fn datum_references_for_compartment(
             if annotations.get(datum).is_none() {
                 return Ok(());
             }
-            ctx.insert_hash_set(typed, datum, "step_pmi_typed_claims")
-                ?;
+            ctx.insert_hash_set(typed, datum, "step_pmi_typed_claims")?;
             ctx.push_vec(
                 &mut output,
                 DatumReference {
                     datum: pmi_id(datum),
                     precedence,
                     common_group: None,
-                    modifiers: ctx.try_collect_vec(compartment_modifiers.iter().map(|value| ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")), "step_pmi_datum_modifier_items")?,
+                    modifiers: ctx.try_collect_vec(
+                        compartment_modifiers.iter().map(|value| {
+                            ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")
+                        }),
+                        "step_pmi_datum_modifier_items",
+                    )?,
                 },
                 "step_pmi_datum_reference_items",
             )
@@ -1368,8 +1428,7 @@ fn modifier_text(
                 return Ok(None);
             };
             let parameters = parameters.parameters.as_slice();
-            ctx.insert_hash_set(typed, *id, "step_pmi_typed_claims")
-                ?;
+            ctx.insert_hash_set(typed, *id, "step_pmi_typed_claims")?;
             let Some(kind) = parameters.first().and_then(ValueExt::enumeration) else {
                 return Ok(None);
             };
@@ -1381,8 +1440,7 @@ fn modifier_text(
                 return Ok(None);
             };
             let value = value.value.get();
-            ctx.insert_hash_set(typed, measure_id, "step_pmi_typed_claims")
-                ?;
+            ctx.insert_hash_set(typed, measure_id, "step_pmi_typed_claims")?;
             let mut text = ctx.format_retained(
                 format_args!("{kind}:{value}"),
                 "step_pmi_datum_modifier_value_text",
@@ -1436,8 +1494,7 @@ fn hidden_presentation_annotation_ids(
                 .get(&target)
                 .is_some_and(is_supported_invisibility_target)
             {
-                ctx.insert_btree_set(&mut hidden, target, "step_pmi_hidden_annotation_ids")
-                    ?;
+                ctx.insert_btree_set(&mut hidden, target, "step_pmi_hidden_annotation_ids")?;
             }
         }
     }
@@ -1479,8 +1536,7 @@ fn collect_typed_placement_candidates(
                         reference,
                         transform,
                         "step_pmi_placement_candidates",
-                    )
-                    ?;
+                    )?;
                 }
             }
         }
@@ -1584,8 +1640,7 @@ fn collect_placement_candidates(
         return Ok(());
     }
     let _nested = ctx.enter_nested("step_pmi_placement_walk")?;
-    ctx.insert_btree_map(visited, id, depth, "step_pmi_placement_visited")
-        ?;
+    ctx.insert_btree_map(visited, id, depth, "step_pmi_placement_visited")?;
     if let Some(record) = exchange.records().get(&id) {
         collect_typed_placement_candidates(record, geometry, candidates, ctx)?;
     }
@@ -2143,12 +2198,10 @@ fn collect_measure_ids(
             if active.contains(id) {
                 return Ok(());
             }
-            ctx.insert_btree_set(active, *id, "step_pmi_measure_active_ids")
-                ?;
+            ctx.insert_btree_set(active, *id, "step_pmi_measure_active_ids")?;
             if let Some(record) = exchange.records().get(id) {
                 if is_measure_record(record) {
-                    ctx.insert_btree_set(measure_ids, *id, "step_pmi_measure_ids")
-                        ?;
+                    ctx.insert_btree_set(measure_ids, *id, "step_pmi_measure_ids")?;
                 } else {
                     for partial in &record.partials {
                         for parameter in &partial.parameters {
@@ -2306,8 +2359,7 @@ fn measure_inner(
             if active.contains(id) {
                 return Ok(None);
             }
-            ctx.insert_btree_set(active, *id, "step_pmi_measure_eval_active")
-                ?;
+            ctx.insert_btree_set(active, *id, "step_pmi_measure_eval_active")?;
             let Some(record) = exchange.records().get(id) else {
                 active.remove(id);
                 return Ok(None);

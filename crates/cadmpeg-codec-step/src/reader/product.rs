@@ -344,8 +344,7 @@ pub(super) fn decode(
             ctx.reserve_vec(grouped, 1, "step_product_source_group_members")?;
             grouped.push(product_definition_id);
         }
-        ctx.insert_hash_set(&mut typed, step_id, "step_product_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed, step_id, "step_product_typed_claims")?;
     }
     let mut product_definition_ids_by_shape = BTreeMap::new();
     for (shape_id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
@@ -359,8 +358,7 @@ pub(super) fn decode(
         product_definition_ids_by_shape.insert(shape_id, prototype.clone());
     }
     for id in formations.keys().chain(definitions.keys()) {
-        ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims")?;
     }
 
     let mut usages = BTreeMap::new();
@@ -637,8 +635,7 @@ pub(super) fn decode(
                 (usage.child_definition, id),
                 "step_pending_occurrence",
             )?;
-            ctx.insert_hash_set(&mut typed, usage_id, "step_product_typed_claims")
-                ?;
+            ctx.insert_hash_set(&mut typed, usage_id, "step_product_typed_claims")?;
         }
     }
     if !had_roots && !usages.is_empty() {
@@ -689,8 +686,7 @@ pub(super) fn decode(
                 .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
                 .is_some()
         {
-            ctx.insert_hash_set(&mut typed, id, "step_product_typed_claims")
-                ?;
+            ctx.insert_hash_set(&mut typed, id, "step_product_typed_claims")?;
         }
     }
     for (&usage_id, source_ids) in &ambiguous_placements {

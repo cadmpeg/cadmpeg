@@ -3449,10 +3449,17 @@ fn numeric_with_limits(
                 start,
             ));
         }
-        let mut reservation = ctx.reserve_scoped(0, "iges numeric token text").map_err(TokenizeFailure::Refusal)?;
-        let mut normalized = String::new();
-        ctx.reserve_scoped_string(&mut reservation, &mut normalized, text.len(), "iges numeric token text")
+        let mut reservation = ctx
+            .reserve_scoped(0, "iges numeric token text")
             .map_err(TokenizeFailure::Refusal)?;
+        let mut normalized = String::new();
+        ctx.reserve_scoped_string(
+            &mut reservation,
+            &mut normalized,
+            text.len(),
+            "iges numeric token text",
+        )
+        .map_err(TokenizeFailure::Refusal)?;
         normalized.extend(text.bytes().map(|byte| {
             char::from(if matches!(byte, b'D' | b'd') {
                 b'E'
@@ -3695,7 +3702,6 @@ fn owned_bytes(
         .ok_or_else(|| refuse_local_limit("iges owned parameter bytes", u64::MAX, 1))?;
     let mut bytes = ctx.retained_admitted_vec(byte_count, "iges owned parameter bytes")?;
 
-
     let mut card_boundaries = ctx.collection_vec(card_count, "iges parameter card boundaries")?;
     for sequence in cards {
         let Some(line) = lines.get(sequence) else {
@@ -3744,8 +3750,8 @@ fn quarantine(
                 .checked_add(1)
                 .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
             let mut range = first..range_end;
-            let mut bytes = ctx.retained_admitted_vec(byte_count, "iges quarantined parameter bytes")?;
-
+            let mut bytes =
+                ctx.retained_admitted_vec(byte_count, "iges quarantined parameter bytes")?;
 
             bytes.extend_from_slice(&line.payload);
             for (sequence, line) in retained {

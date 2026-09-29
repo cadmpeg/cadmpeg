@@ -110,7 +110,12 @@ fn resolve_uri<'a>(
     let mut component_bytes = ctx.reserve_scoped(0, "step_zip_uri_components_temp")?;
     if let Some((directory, _)) = base_member.rsplit_once('/') {
         for component in directory.split('/') {
-            ctx.push_scoped_vec(&mut component_bytes, &mut components, component, "step_zip_uri_components")?;
+            ctx.push_scoped_vec(
+                &mut component_bytes,
+                &mut components,
+                component,
+                "step_zip_uri_components",
+            )?;
         }
     }
     if path.is_empty() {
@@ -136,7 +141,12 @@ fn resolve_uri<'a>(
                     )));
                 }
             }
-            component => ctx.push_scoped_vec(&mut component_bytes, &mut components, component, "step_zip_uri_components")?,
+            component => ctx.push_scoped_vec(
+                &mut component_bytes,
+                &mut components,
+                component,
+                "step_zip_uri_components",
+            )?,
         }
     }
     if components.is_empty() {
@@ -242,9 +252,7 @@ fn push_reference_note(
         .ok_or_else(|| ctx.refuse_codec_limit("step_zip_reference_note", 0, 1))?;
     ctx.reserve_vec(notes, 1, "step_zip_reference_notes")?;
 
-
     let mut note = ctx.retained_string(len, "step_zip_reference_note")?;
-
 
     note.push_str(prefix);
     note.push(marker);

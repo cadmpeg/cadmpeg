@@ -77,7 +77,10 @@ fn unsupported_message(
         StreamFormat::Text => "SAT parse",
         StreamFormat::Binary => "SAB framing",
     };
-    ctx.format_retained(format_args!("{prefix} failed at byte {}: {}", error.offset, error.reason), "ASM stream error text")
+    ctx.format_retained(
+        format_args!("{prefix} failed at byte {}: {}", error.offset, error.reason),
+        "ASM stream error text",
+    )
 }
 
 impl From<StreamError> for StreamFailure {

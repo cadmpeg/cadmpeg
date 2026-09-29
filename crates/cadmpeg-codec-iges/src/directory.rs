@@ -504,7 +504,6 @@ fn quarantine(
         .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
     let mut bytes = ctx.retained_admitted_vec(bytes_len, "iges quarantined directory bytes")?;
 
-
     for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
         bytes.extend_from_slice(&line.payload);
     }

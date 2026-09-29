@@ -6,15 +6,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-
-
-
-
-
-
-
-
-
 #[test]
 fn uncertainty_values_text_refuses_retained_limit() {
     let arena = DecodeArena::new();
@@ -537,7 +528,6 @@ fn curve_strips_refuse_collection_limit() {
             && refusal.operation == "step_curve_strips")
     );
 }
-
 
 #[test]
 fn curve_strip_source_name_refuses_retained_limit() {

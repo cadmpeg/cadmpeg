@@ -3,7 +3,9 @@
 
 use std::io::Read;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ExpandWriter, View};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ExpandWriter, View,
+};
 use cadmpeg_core::CodecError;
 use flate2::read::{DeflateDecoder, ZlibDecoder};
 use flate2::{Decompress, FlushDecompress, Status};
@@ -168,7 +170,8 @@ fn probe_decoder(
         {
             return None;
         }
-        ctx.extend_retained_bytes(&mut output, &chunk[..read], "retain format probe output").ok()?;
+        ctx.extend_retained_bytes(&mut output, &chunk[..read], "retain format probe output")
+            .ok()?;
     }
 }
 

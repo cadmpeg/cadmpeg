@@ -21,7 +21,7 @@ fn rse_issue_detail(ctx: &DecodeContext<'_>, error: CodecError) -> Result<String
     if matches!(error, CodecError::ResourceLimit(_)) {
         return Err(error);
     }
-    ctx.charge_formatted_retained(format_args!("{}", &error), "retain RSe issue detail")?;
+    ctx.charge_formatted_retained(format_args!("{error}"), "retain RSe issue detail")?;
     crate::issue_detail(error)
 }
 

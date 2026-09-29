@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -105,7 +105,11 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            ctx.insert_btree_set(&mut notes, document_note(identifier, name, &source, ctx)?, "step_dependency_note_set")?;
+            ctx.insert_btree_set(
+                &mut notes,
+                document_note(identifier, name, &source, ctx)?,
+                "step_dependency_note_set",
+            )?;
             ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
             ctx.insert_hash_set(&mut typed, document_id, "step_dependency_claims")?;
             if let Some(kind) = kind {
@@ -126,7 +130,15 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            ctx.insert_btree_set(&mut notes, ctx.join_retained(&["external source ", source, " item ", &item], "", "step_dependency_note_text")?, "step_dependency_note_set")?;
+            ctx.insert_btree_set(
+                &mut notes,
+                ctx.join_retained(
+                    &["external source ", source, " item ", &item],
+                    "",
+                    "step_dependency_note_text",
+                )?,
+                "step_dependency_note_set",
+            )?;
             ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
             ctx.insert_hash_set(&mut typed, source_id, "step_dependency_claims")?;
         }

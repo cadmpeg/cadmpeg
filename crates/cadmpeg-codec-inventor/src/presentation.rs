@@ -686,7 +686,10 @@ pub(crate) fn inventory<'a>(
                 }
                 ctx.charge_collection_items(1, "admit Inventor presentation issue")?;
                 ctx.charge_entities(1, "admit Inventor presentation issue")?;
-                ctx.charge_formatted_retained(format_args!("{}", &error), "retain Inventor presentation issue detail")?;
+                ctx.charge_formatted_retained(
+                    format_args!("{error}"),
+                    "retain Inventor presentation issue detail",
+                )?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                     "retain Inventor presentation issue token",

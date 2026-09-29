@@ -200,8 +200,14 @@ fn appearance_id(
     instance_ordinal: usize,
     record_ordinal: u64,
 ) -> Result<AppearanceId, CodecError> {
-    ctx.charge_formatted_retained(format_args!("{instance_ordinal}"), "retain Inventor appearance instance key")?;
-    ctx.charge_formatted_retained(format_args!("{record_ordinal}"), "retain Inventor appearance record key")?;
+    ctx.charge_formatted_retained(
+        format_args!("{instance_ordinal}"),
+        "retain Inventor appearance instance key",
+    )?;
+    ctx.charge_formatted_retained(
+        format_args!("{record_ordinal}"),
+        "retain Inventor appearance record key",
+    )?;
     let instance_key = cadmpeg_ir::ids::IdentityKey::from(instance_ordinal);
     let record_key = cadmpeg_ir::ids::IdentityKey::from(record_ordinal);
     let key_len = instance_key

@@ -856,13 +856,19 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         };
         let (mut output, reservation) = match storage {
             LiteralStorage::Retained => (
-                self.budget.retained_string(byte_count, operation)
-                    .map_err(|error| Self::resource_error(start, error))?, None),
+                self.budget
+                    .retained_string(byte_count, operation)
+                    .map_err(|error| Self::resource_error(start, error))?,
+                None,
+            ),
             LiteralStorage::Transient => {
-                let mut reservation = self.budget.reserve_scoped(0, operation)
+                let mut reservation = self
+                    .budget
+                    .reserve_scoped(0, operation)
                     .map_err(|error| Self::resource_error(start, error))?;
                 let mut output = String::new();
-                self.budget.reserve_scoped_string(&mut reservation, &mut output, byte_count, operation)
+                self.budget
+                    .reserve_scoped_string(&mut reservation, &mut output, byte_count, operation)
                     .map_err(|error| Self::resource_error(start, error))?;
                 (output, Some(reservation))
             }
@@ -881,7 +887,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         bytes: &[u8],
         start: usize,
     ) -> Result<(), LexError> {
-        self.budget.extend_retained_bytes(output, bytes, "step_string_lexeme_items")
+        self.budget
+            .extend_retained_bytes(output, bytes, "step_string_lexeme_items")
             .map_err(|error| Self::resource_error(start, error))
     }
 

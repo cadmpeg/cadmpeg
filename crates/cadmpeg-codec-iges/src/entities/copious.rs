@@ -126,7 +126,11 @@ fn has_forbidden_form_63_duplicate(
     for (index, point) in points.iter().copied().enumerate() {
         if cell_size <= 0.0 {
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
-            ctx.admit_hash_map_entry(exact_points, &exact_key(point), "iges copious exact-point index")?;
+            ctx.admit_hash_map_entry(
+                exact_points,
+                &exact_key(point),
+                "iges copious exact-point index",
+            )?;
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
                     return Ok(true);
@@ -144,7 +148,11 @@ fn has_forbidden_form_63_duplicate(
             .map(|((x, y), z)| (x, y, z))
         else {
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
-            ctx.admit_hash_map_entry(exact_points, &exact_key(point), "iges copious exact-point index")?;
+            ctx.admit_hash_map_entry(
+                exact_points,
+                &exact_key(point),
+                "iges copious exact-point index",
+            )?;
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
                     return Ok(true);

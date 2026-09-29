@@ -807,10 +807,11 @@ fn variable_blend_value(
             if count > 100_000 {
                 return None;
             }
-            let mut points = match ctx.collection_vec(count, "decode variable blend interpolation points") {
-                Ok(points) => points,
-                Err(error) => return Some(Err(error)),
-            };
+            let mut points =
+                match ctx.collection_vec(count, "decode variable blend interpolation points") {
+                    Ok(points) => points,
+                    Err(error) => return Some(Err(error)),
+                };
             for _ in 0..count {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;

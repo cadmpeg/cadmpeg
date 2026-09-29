@@ -465,7 +465,6 @@ fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Unframed
             card_start = card_end;
         }
         if card_start != payload_end {
-
             let payload = ctx.copy_retained(
                 &source[card_start..payload_end],
                 "iges physical card payload",
@@ -496,7 +495,6 @@ fn frame_sections(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<ScannedLine>, CodecError> {
     let mut scanned = ctx.collection_vec(lines.len(), "iges framed cards")?;
-
 
     let mut section = None;
     let mut position = 1_usize;

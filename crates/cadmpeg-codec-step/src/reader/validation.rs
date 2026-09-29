@@ -124,7 +124,11 @@ pub(super) fn decode(
         let Some(item_ids) = representations.get(&representation_id) else {
             continue;
         };
-        ctx.insert_btree_set(&mut validation_representations, representation_id, "step_validation_used_representations")?;
+        ctx.insert_btree_set(
+            &mut validation_representations,
+            representation_id,
+            "step_validation_used_representations",
+        )?;
         for &item_id in item_ids {
             let Some(item) = exchange.records().get(&item_id) else {
                 continue;
@@ -173,9 +177,14 @@ pub(super) fn decode(
                         "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
                     ), "step_validation_notes", "step_validation_note_text")?;
             } else {
-                ctx.push_formatted_retained(&mut notes, format_args!(
+                ctx.push_formatted_retained(
+                    &mut notes,
+                    format_args!(
                         "geometric validation {kind} {description}: expected {expected_text}"
-                    ), "step_validation_notes", "step_validation_note_text")?;
+                    ),
+                    "step_validation_notes",
+                    "step_validation_note_text",
+                )?;
             }
         }
     }

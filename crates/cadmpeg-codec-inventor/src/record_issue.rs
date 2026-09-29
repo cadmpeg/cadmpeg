@@ -4,7 +4,6 @@
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RecordIssueFamily {
     Assembly,

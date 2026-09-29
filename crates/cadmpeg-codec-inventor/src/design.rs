@@ -801,7 +801,11 @@ fn render_expression<'a>(
         let length = plan.lengths[&ordinal].length;
         let mut text = String::new();
 
-        DecodeContext::reserve_admitted_string(&mut text, length, "Inventor expression string allocation")?;
+        DecodeContext::reserve_admitted_string(
+            &mut text,
+            length,
+            "Inventor expression string allocation",
+        )?;
         let expression = expressions[&(token, ordinal)];
         match &expression.kind {
             PmDcExpressionKind::Value { .. } => {

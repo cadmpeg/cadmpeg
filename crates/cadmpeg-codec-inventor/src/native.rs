@@ -374,11 +374,17 @@ impl AssemblyOccurrenceRecord {
     ) -> Result<Self, CodecError> {
         ctx.charge_collection_items(1, "collect Inventor native assembly occurrence")?;
         ctx.charge_entities(1, "admit Inventor native assembly occurrence")?;
-        let id = ctx.format_retained(format_args!(
+        let id = ctx.format_retained(
+            format_args!(
                 "inventor:assembly:occurrence#{}-{}",
                 occurrence.segment_token, occurrence.record_ordinal
-            ), "retain Inventor assembly occurrence id")?;
-        let segment_token = ctx.copy_retained_text(&occurrence.segment_token, "retain Inventor assembly occurrence token")?;
+            ),
+            "retain Inventor assembly occurrence id",
+        )?;
+        let segment_token = ctx.copy_retained_text(
+            &occurrence.segment_token,
+            "retain Inventor assembly occurrence token",
+        )?;
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(occurrence.related_references.len()),
             "copy Inventor assembly related references",
@@ -451,11 +457,17 @@ impl AssemblyPlacementRecordWire {
         placement: &crate::assembly::AssemblyPlacement<'_>,
     ) -> Result<Self, CodecError> {
         Ok(Self {
-            id: ctx.format_retained(format_args!(
+            id: ctx.format_retained(
+                format_args!(
                     "inventor:assembly:placement#{}-{}",
                     placement.segment_token, placement.record_ordinal
-                ), "retain Inventor assembly placement id")?,
-            segment_token: ctx.copy_retained_text(&placement.segment_token, "retain Inventor assembly placement token")?,
+                ),
+                "retain Inventor assembly placement id",
+            )?,
+            segment_token: ctx.copy_retained_text(
+                &placement.segment_token,
+                "retain Inventor assembly placement token",
+            )?,
             record_ordinal: placement.record_ordinal,
             header_id: placement.header_id,
             owner_reference: placement.owner_reference,
@@ -1172,7 +1184,10 @@ impl RseRecordRecord {
         frame: &crate::records::RseRecordFrame<'_>,
     ) -> Result<Self, CodecError> {
         Ok(Self {
-            id: ctx.format_retained(format_args!("inventor:rse:record#{token}-{}", frame.ordinal), "retain Inventor RSe record id")?,
+            id: ctx.format_retained(
+                format_args!("inventor:rse:record#{token}-{}", frame.ordinal),
+                "retain Inventor RSe record id",
+            )?,
             token: ctx.copy_retained_text(token, "retain Inventor RSe record token")?,
             ordinal: frame.ordinal,
             selector: frame.selector,
@@ -1526,7 +1541,10 @@ impl ActiveCarrierRecord {
         ctx: &DecodeContext<'_>,
         state: &crate::kernel::ActiveCarrierState<'_>,
     ) -> Result<Self, CodecError> {
-        let id = ctx.copy_retained_text("inventor:kernel:active-carrier#root", "retain Inventor active carrier id")?;
+        let id = ctx.copy_retained_text(
+            "inventor:kernel:active-carrier#root",
+            "retain Inventor active carrier id",
+        )?;
         Ok(match state {
             crate::kernel::ActiveCarrierState::NotApplicable => Self::NotApplicable { id },
             crate::kernel::ActiveCarrierState::Unavailable(detail) => Self::Unavailable {
@@ -1535,7 +1553,10 @@ impl ActiveCarrierRecord {
             },
             crate::kernel::ActiveCarrierState::Selected(carrier) => Self::Selected {
                 id,
-                segment_token: ctx.copy_retained_text(carrier.segment_token.as_str(), "retain Inventor active carrier segment token")?,
+                segment_token: ctx.copy_retained_text(
+                    carrier.segment_token.as_str(),
+                    "retain Inventor active carrier segment token",
+                )?,
                 record_ordinal: carrier.record_ordinal,
                 segment_version_major: carrier.segment_version_major,
                 family: carrier.family,

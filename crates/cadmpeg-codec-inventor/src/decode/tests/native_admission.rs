@@ -12,8 +12,8 @@ use crate::decode::rse_native_projection;
 use crate::decode::{
     admit_assembly_placement, admit_coverage_entries, admit_kernel_annotation,
     admit_kernel_unknown_fidelity, admit_untransferred_carrier, admitted_kernel_attribute,
-    admitted_loss, decode_container, index_asm_face_keys,
-    index_face_colors, index_projected_colors, insert_source_attribute, project_preview_asset,
+    admitted_loss, decode_container, index_asm_face_keys, index_face_colors,
+    index_projected_colors, insert_source_attribute, project_preview_asset,
     project_property_set_issue, project_protein_records, project_protein_state,
     project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
     project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
@@ -1287,10 +1287,14 @@ fn product_body_id_copy_refuses_limits_before_target_changes() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     (|| {
-        target = ctx.collect_indexed_vec(body_ids.len(), "collect Inventor product body ids", |index|
-            body_ids[index].try_clone_for_decode(&ctx, "retain Inventor product body id"))?;
+        target = ctx.collect_indexed_vec(
+            body_ids.len(),
+            "collect Inventor product body ids",
+            |index| body_ids[index].try_clone_for_decode(&ctx, "retain Inventor product body id"),
+        )?;
         Ok::<(), CodecError>(())
-    })().expect("admitted copy");
+    })()
+    .expect("admitted copy");
     assert_eq!(target, body_ids);
 }
 
