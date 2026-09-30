@@ -2,7 +2,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use super::{
-    collect_brep_references, insert_brep_adjacency, insert_brep_string, persistent_design_links,
+    collect_brep_references, insert_brep_adjacency, persistent_design_links,
     persistent_subentity_tags, Brep,
 };
 use crate::records::recipes::CreationTimestamp;
@@ -491,12 +491,7 @@ fn brep_adjacent_ids_refuse_collection_limit() {
 #[test]
 fn brep_reachable_id_set_refuses_collection_limit() {
     let error = with_limits(0, u64::MAX, |ctx| {
-        insert_brep_string(
-            ctx,
-            &mut HashSet::new(),
-            "f3d:brep:entity#1".to_owned(),
-            "collect F3D reachable BREP IDs",
-        )
+        (ctx).insert_hash_set(&mut HashSet::new(), "f3d:brep:entity#1".to_owned(), "collect F3D reachable BREP IDs").map(|_| ())
         .unwrap_err()
     });
     assert!(

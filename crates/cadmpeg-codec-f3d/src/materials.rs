@@ -23,7 +23,7 @@ use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::ids::{AppearanceId, BodyId};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_protein::appearance::{
@@ -51,50 +51,16 @@ fn library_id(ctx: &DecodeContext<'_>, asset_lib_id: &str) -> Result<Option<Stri
     if asset_lib_id.is_empty() || asset_lib_id == NO_ASSET_LIB_ID {
         return Ok(None);
     }
-    Ok(Some(copy_material_text(
-        ctx,
-        asset_lib_id,
-        "copy F3D appearance library ID",
-    )?))
+    Ok(Some((ctx).copy_retained_text(asset_lib_id, "copy F3D appearance library ID")?))
 }
 
-fn copy_material_text(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let length =
-        u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(length, operation)?;
-    let mut copy = String::new();
-    copy.try_reserve(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
-    copy.push_str(value);
-    Ok(copy)
-}
 
-fn copy_material_option(
-    ctx: &DecodeContext<'_>,
-    value: Option<&str>,
-    operation: &'static str,
-) -> Result<Option<String>, CodecError> {
-    value
-        .map(|text| copy_material_text(ctx, text, operation))
-        .transpose()
-}
 
-fn copy_body_id(ctx: &DecodeContext<'_>, value: &BodyId) -> Result<BodyId, CodecError> {
-    let text = copy_material_text(ctx, value.as_str(), "copy F3D material body ID")?;
-    BodyId::mint(text).map_err(CodecError::malformed)
-}
 
-fn copy_appearance_id(
-    ctx: &DecodeContext<'_>,
-    value: &AppearanceId,
-) -> Result<AppearanceId, CodecError> {
-    let text = copy_material_text(ctx, value.as_str(), "copy F3D material appearance ID")?;
-    AppearanceId::mint(text).map_err(CodecError::malformed)
-}
+
+
+
+
 
 fn copy_act_channels(
     ctx: &DecodeContext<'_>,
@@ -103,10 +69,9 @@ fn copy_act_channels(
     let mut copied = BTreeMap::new();
     if let Some(channels) = channels {
         for (name, guid) in channels {
-            let name = copy_material_text(ctx, name, "copy F3D ACT channel name")?;
-            let guid = copy_material_text(ctx, guid, "copy F3D ACT channel GUID")?;
-            ctx.charge_collection_items(1, "copy F3D ACT channel map")?;
-            copied.insert(name, guid);
+            let name = (ctx).copy_retained_text(name, "copy F3D ACT channel name")?;
+            let guid = (ctx).copy_retained_text(guid, "copy F3D ACT channel GUID")?;
+            ctx.insert_btree_map(&mut copied, name, guid, "copy F3D ACT channel map")?;
         }
     }
     Ok(copied)
@@ -151,87 +116,22 @@ fn lp_ascii_printable_charged(
     let text = std::str::from_utf8(raw)
         .map_err(|_| CodecError::Malformed("F3D printable ASCII validation failed".into()))?;
     Ok(Some((
-        copy_material_text(ctx, text, "retain F3D printable ASCII string")?,
+        (ctx).copy_retained_text(text, "retain F3D printable ASCII string")?,
         end,
     )))
 }
 
-fn push_material_item<T>(
-    ctx: &DecodeContext<'_>,
-    items: &mut Vec<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    items
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    items.push(value);
-    Ok(())
-}
 
-fn append_material_items<T>(
-    ctx: &DecodeContext<'_>,
-    items: &mut Vec<T>,
-    mut additional: Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = u64::try_from(additional.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_collection_items(count, operation)?;
-    items
-        .try_reserve(additional.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
-    items.append(&mut additional);
-    Ok(())
-}
 
-fn index_schema_appearance_ids<'a>(
-    ctx: &DecodeContext<'_>,
-    appearances: &'a [Appearance],
-) -> Result<std::collections::HashSet<&'a str>, CodecError> {
-    let count = u64::try_from(appearances.len())
-        .map_err(|_| ctx.refuse_codec_limit("index F3D schema appearance IDs", 0, u64::MAX))?;
-    ctx.charge_collection_items(count, "index F3D schema appearance IDs")?;
-    let mut ids = std::collections::HashSet::new();
-    ids.try_reserve(appearances.len())
-        .map_err(|_| ctx.refuse_codec_limit("index F3D schema appearance IDs", 0, count))?;
-    for appearance in appearances {
-        ids.insert(appearance.id.as_str());
-    }
-    Ok(ids)
-}
 
-struct MaterialFormatLength {
-    len: usize,
-}
 
-impl std::fmt::Write for MaterialFormatLength {
-    fn write_str(&mut self, text: &str) -> std::fmt::Result {
-        self.len = self.len.checked_add(text.len()).ok_or(std::fmt::Error)?;
-        Ok(())
-    }
-}
 
-fn format_material_text_charged(
-    ctx: &DecodeContext<'_>,
-    args: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let mut length = MaterialFormatLength { len: 0 };
-    std::fmt::write(&mut length, args)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let length_u64 =
-        u64::try_from(length.len).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(length_u64, operation)?;
-    let mut formatted = String::new();
-    formatted
-        .try_reserve(length.len)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length_u64))?;
-    std::fmt::write(&mut formatted, args)
-        .map_err(|_| CodecError::Malformed("F3D material diagnostic formatting failed".into()))?;
-    Ok(formatted)
-}
+
+
+
+
+
+
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
     if !appearance.textures.is_empty() {
@@ -736,15 +636,11 @@ pub(crate) fn decode_with_body_bindings<'a>(
             let outcome =
                 cadmpeg_protein::decode_frames_admitted(ctx, &mut schema_catalog, &record_frames)?;
             for rejected in &outcome.rejected {
-                let note = format_material_text_charged(
-                    ctx,
-                    format_args!(
+                let note = (ctx).format_retained(format_args!(
                         "Protein {} record {} rejected: {}",
                         entry.name, rejected.ordinal, rejected.detail
-                    ),
-                    "retain F3D protein rejection note",
-                )?;
-                push_material_item(ctx, &mut notes, note, "collect F3D protein rejection notes")?;
+                    ), "retain F3D protein rejection note")?;
+                (ctx).push_vec(&mut notes, note, "collect F3D protein rejection notes")?;
             }
             let records = outcome.records;
             let (mut decoded, untyped_count) = appearances_from_schema_records(ctx, &records)?;
@@ -753,10 +649,10 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 .ok_or_else(|| {
                     CodecError::Malformed("untyped material distance count overflows".into())
                 })?;
-            let decoded_ids = index_schema_appearance_ids(ctx, &decoded)?;
+            let decoded_ids = (ctx).collect_hash_set(decoded.iter().map(|appearance| appearance.id.as_str()), "index F3D schema appearance IDs")?;
             let mut fixed = decode_fixed_logical_records(ctx, &record_frames)?;
             fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
-            append_material_items(ctx, &mut decoded, fixed, "merge F3D fixed appearances")?;
+            (ctx).append_vec(&mut decoded, &mut { fixed }, "merge F3D fixed appearances")?;
             decoded
         } else {
             decode_fixed_logical_records(ctx, &record_frames)?
@@ -773,17 +669,13 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 if let Some(((_, schema), category)) = matches.next() {
                     if matches.next().is_none() {
                         appearance.schema =
-                            Some(copy_material_text(ctx, schema, "copy F3D catalog schema")?);
-                        appearance.category = copy_material_option(
-                            ctx,
-                            category.as_deref(),
-                            "copy F3D catalog category",
-                        )?;
+                            Some((ctx).copy_retained_text(schema, "copy F3D catalog schema")?);
+                        appearance.category = (category.as_deref()).map(|text| (ctx).copy_retained_text(text, "copy F3D catalog category")).transpose()?;
                     }
                 }
             }
         }
-        append_material_items(ctx, &mut out, appearances, "collect F3D asset appearances")?;
+        (ctx).append_vec(&mut out, &mut { appearances }, "collect F3D asset appearances")?;
     }
     out.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
     if let Some(pair) = out
@@ -801,46 +693,25 @@ pub(crate) fn decode_with_body_bindings<'a>(
     let object_types = decode_design_object_types(ctx, scan)?;
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
-            push_material_item(
-                ctx,
-                &mut out,
-                Appearance {
+            (ctx).push_vec(&mut out, Appearance {
                     id: crate::ids::appearance_id_charged(ctx, &assignment.visual_guid)?,
-                    name: copy_material_option(
-                        ctx,
-                        assignment
+                    name: (assignment
                             .visual_preset
                             .as_ref()
-                            .map(|field| field.value.as_str()),
-                        "copy F3D assigned appearance name",
-                    )?,
-                    asset_guid: Some(copy_material_text(
-                        ctx,
-                        &assignment.visual_guid,
-                        "copy F3D assigned asset GUID",
-                    )?),
+                            .map(|field| field.value.as_str())).map(|text| (ctx).copy_retained_text(text, "copy F3D assigned appearance name")).transpose()?,
+                    asset_guid: Some((ctx).copy_retained_text(&assignment.visual_guid, "copy F3D assigned asset GUID")?),
                     library_id: None,
-                    visual_guid: Some(copy_material_text(
-                        ctx,
-                        &assignment.visual_guid,
-                        "copy F3D assigned visual GUID",
-                    )?),
-                    physical_token: copy_material_option(
-                        ctx,
-                        assignment
+                    visual_guid: Some((ctx).copy_retained_text(&assignment.visual_guid, "copy F3D assigned visual GUID")?),
+                    physical_token: (assignment
                             .physical_token
                             .as_ref()
-                            .map(|field| field.value.as_str()),
-                        "copy F3D assigned physical token",
-                    )?,
+                            .map(|field| field.value.as_str())).map(|text| (ctx).copy_retained_text(text, "copy F3D assigned physical token")).transpose()?,
                     schema: None,
                     category: None,
                     base_color: None,
                     properties: BTreeMap::new(),
                     textures: Vec::new(),
-                },
-                "collect F3D assignment appearances",
-            )?;
+                }, "collect F3D assignment appearances")?;
         }
     }
     for appearance in &mut out {
@@ -850,14 +721,10 @@ pub(crate) fn decode_with_body_bindings<'a>(
                     && guid.eq_ignore_ascii_case(&assignment.visual_guid)
             })
         }) {
-            appearance.physical_token = copy_material_option(
-                ctx,
-                assignment
+            appearance.physical_token = (assignment
                     .physical_token
                     .as_ref()
-                    .map(|field| field.value.as_str()),
-                "copy F3D matched physical token",
-            )?;
+                    .map(|field| field.value.as_str())).map(|text| (ctx).copy_retained_text(text, "copy F3D matched physical token")).transpose()?;
         }
     }
     let mut bindings = bind_bodies(
@@ -878,23 +745,16 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let Some(appearance) = appearance_for_visual_token(&out, &over.visual_guid, None)? else {
             continue;
         };
-        push_material_item(
-            ctx,
-            &mut bindings,
-            AppearanceBinding {
+        (ctx).push_vec(&mut bindings, AppearanceBinding {
                 id: crate::ids::body_appearance_binding_id_charged(
                     ctx,
                     over.entity_suffix,
                     &over.visual_guid,
                 )?,
-                target: AppearanceTarget::Body(copy_body_id(ctx, &over.body)?),
-                appearance: copy_appearance_id(ctx, &appearance.id)?,
+                target: AppearanceTarget::Body((&over.body).try_clone_for_decode(ctx, "copy F3D material body ID")?),
+                appearance: (&appearance.id).try_clone_for_decode(ctx, "copy F3D material appearance ID")?,
                 source_entity_id: None,
-                object_type: copy_material_option(
-                    ctx,
-                    object_types.get(&over.entity_suffix).map(String::as_str),
-                    "copy F3D override object type",
-                )?,
+                object_type: (object_types.get(&over.entity_suffix).map(String::as_str)).map(|text| (ctx).copy_retained_text(text, "copy F3D override object type")).transpose()?,
                 visible: None,
                 channels: named_act_channels(
                     ctx,
@@ -904,9 +764,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                     ),
                     act_channels.get(&over.entity_suffix),
                 )?,
-            },
-            "collect F3D override appearance bindings",
-        )?;
+            }, "collect F3D override appearance bindings")?;
     }
     let face_assignments = decode_face_appearance_assignments(ctx, scan)?;
     let has_topology_assignments =
@@ -942,9 +800,9 @@ fn appearances_from_schema_records(
         };
         match textures.get(&texture.asset_guid) {
             None => {
-                ctx.charge_collection_items(1, "index F3D texture assets")?;
+                ctx.admit_btree_entry(&mut textures, &texture.asset_guid, "index F3D texture assets")?;
                 let key =
-                    copy_material_text(ctx, &texture.asset_guid, "copy F3D texture asset key")?;
+                    (ctx).copy_retained_text(&texture.asset_guid, "copy F3D texture asset key")?;
                 textures.insert(key, texture);
             }
             Some(existing) if existing == &texture => {}
@@ -967,25 +825,12 @@ fn appearances_from_schema_records(
         let mut connected = Vec::new();
         for (id, property) in &record.properties {
             if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) = property.value() {
-                ctx.charge_collection_items(1, "collect F3D appearance properties")?;
-                properties.insert(
-                    copy_material_text(
-                        ctx,
-                        neutral_property_name(id),
-                        "copy F3D appearance property name",
-                    )?,
-                    cadmpeg_protein::appearance::finite_scalar(record, id, *value)?,
-                );
+                ctx.insert_btree_map(&mut properties, (ctx).copy_retained_text(neutral_property_name(id), "copy F3D appearance property name")?, cadmpeg_protein::appearance::finite_scalar(record, id, *value)?, "collect F3D appearance properties")?;
             }
             for guid in property.connections() {
                 if let Some(texture) = textures.get(guid) {
                     let reference = texture.to_ref(ctx, id)?;
-                    push_material_item(
-                        ctx,
-                        &mut connected,
-                        reference,
-                        "collect F3D connected textures",
-                    )?;
+                    (ctx).push_vec(&mut connected, reference, "collect F3D connected textures")?;
                 }
             }
         }
@@ -997,32 +842,16 @@ fn appearances_from_schema_records(
         let base_color = appearance_base_color(record);
         let appearance = Appearance {
             id: crate::ids::appearance_id_charged(ctx, &record.guid)?,
-            name: Some(copy_material_text(
-                ctx,
-                &record.base,
-                "copy F3D appearance name",
-            )?),
-            asset_guid: Some(copy_material_text(
-                ctx,
-                &record.guid,
-                "copy F3D appearance GUID",
-            )?),
+            name: Some((ctx).copy_retained_text(&record.base, "copy F3D appearance name")?),
+            asset_guid: Some((ctx).copy_retained_text(&record.guid, "copy F3D appearance GUID")?),
             library_id: library_id(ctx, &record.asset_lib_id)?,
             visual_guid: if is_physical_schema(&record.schema) {
                 None
             } else {
-                Some(copy_material_text(
-                    ctx,
-                    &record.guid,
-                    "copy F3D appearance visual GUID",
-                )?)
+                Some((ctx).copy_retained_text(&record.guid, "copy F3D appearance visual GUID")?)
             },
             physical_token: None,
-            schema: Some(copy_material_text(
-                ctx,
-                &record.schema,
-                "copy F3D appearance schema",
-            )?),
+            schema: Some((ctx).copy_retained_text(&record.schema, "copy F3D appearance schema")?),
             category: None,
             base_color,
             properties: cadmpeg_core::text::named_entries(
@@ -1031,7 +860,7 @@ fn appearances_from_schema_records(
             )?,
             textures: connected,
         };
-        push_material_item(ctx, &mut appearances, appearance, "collect F3D appearances")?;
+        (ctx).push_vec(&mut appearances, appearance, "collect F3D appearances")?;
     }
     Ok((appearances, untyped_distance_properties))
 }
@@ -1162,12 +991,7 @@ pub(crate) fn decode_design_assignments(
                     }
                 }),
             };
-            push_material_item(
-                ctx,
-                &mut out,
-                assignment,
-                "collect F3D material assignments",
-            )?;
+            (ctx).push_vec(&mut out, assignment, "collect F3D material assignments")?;
         }
     }
     Ok(out)
@@ -1217,12 +1041,7 @@ fn decode_body_appearance_overrides(
             let Some(material) = presentation.material else {
                 continue;
             };
-            push_material_item(
-                ctx,
-                &mut appearances,
-                (presentation.entity_suffix, material.visual_guid),
-                "collect F3D browser body appearances",
-            )?;
+            (ctx).push_vec(&mut appearances, (presentation.entity_suffix, material.visual_guid), "collect F3D browser body appearances")?;
         }
         for (entity_suffix, visual_guid) in appearances {
             let Some(map_pair) =
@@ -1242,16 +1061,11 @@ fn decode_body_appearance_overrides(
             else {
                 continue;
             };
-            push_material_item(
-                ctx,
-                &mut out,
-                BodyAppearanceOverride {
+            (ctx).push_vec(&mut out, BodyAppearanceOverride {
                     body,
                     entity_suffix,
                     visual_guid,
-                },
-                "collect F3D body appearance overrides",
-            )?;
+                }, "collect F3D body appearance overrides")?;
         }
     }
     out.sort_by(|left, right| {
@@ -1307,12 +1121,7 @@ fn decode_face_appearance_assignments(
             continue;
         };
         for frame in crate::metastream::primary_record_frames(ctx, &metadata, bytes.len())? {
-            append_material_items(
-                ctx,
-                &mut out,
-                face_appearance_assignments_in_frame(ctx, &bytes[frame.start..frame.end])?,
-                "collect F3D face appearance assignments",
-            )?;
+            (ctx).append_vec(&mut out, &mut { face_appearance_assignments_in_frame(ctx, &bytes[frame.start..frame.end])? }, "collect F3D face appearance assignments")?;
         }
     }
     Ok(out)
@@ -1333,12 +1142,7 @@ fn face_appearance_assignments_in_frame(
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
     let strings = lp_utf16_strings(ctx, bytes)?;
     let mut out = legacy_face_appearance_assignments(ctx, bytes, &strings)?;
-    append_material_items(
-        ctx,
-        &mut out,
-        modern_face_appearance_assignments(ctx, bytes, &strings)?,
-        "merge F3D modern face appearances",
-    )?;
+    (ctx).append_vec(&mut out, &mut { modern_face_appearance_assignments(ctx, bytes, &strings)? }, "merge F3D modern face appearances")?;
     Ok(out)
 }
 
@@ -1370,7 +1174,7 @@ fn legacy_face_appearance_assignments(
             continue;
         }
 
-        let visual_text = copy_material_text(ctx, visual, "copy F3D face visual token")?;
+        let visual_text = (ctx).copy_retained_text(visual, "copy F3D face visual token")?;
         let Ok(visual) = DesignVisualToken::try_from(visual_text) else {
             continue;
         };
@@ -1431,16 +1235,11 @@ fn legacy_face_appearance_assignments(
             continue;
         }
 
-        push_material_item(
-            ctx,
-            &mut out,
-            FaceAppearanceAssignment {
+        (ctx).push_vec(&mut out, FaceAppearanceAssignment {
                 face_guid,
                 visual_guid: visual,
                 color: Some(color),
-            },
-            "collect F3D legacy face appearances",
-        )?;
+            }, "collect F3D legacy face appearances")?;
     }
     Ok(out)
 }
@@ -1511,7 +1310,7 @@ fn modern_face_appearance_assignments(
             continue;
         }
 
-        let visual_text = copy_material_text(ctx, visual, "copy F3D face visual token")?;
+        let visual_text = (ctx).copy_retained_text(visual, "copy F3D face visual token")?;
         let Ok(visual) = DesignVisualToken::try_from(visual_text) else {
             continue;
         };
@@ -1560,16 +1359,11 @@ fn modern_face_appearance_assignments(
         {
             continue;
         }
-        push_material_item(
-            ctx,
-            &mut out,
-            FaceAppearanceAssignment {
+        (ctx).push_vec(&mut out, FaceAppearanceAssignment {
                 face_guid,
                 visual_guid: visual,
                 color: None,
-            },
-            "collect F3D modern face appearances",
-        )?;
+            }, "collect F3D modern face appearances")?;
     }
     Ok(out)
 }
@@ -1632,17 +1426,12 @@ fn browser_body_appearances(
             continue;
         }
         let visual = &strings[visual_index].1;
-        let visual_text = copy_material_text(ctx, visual, "copy F3D browser visual token")?;
+        let visual_text = (ctx).copy_retained_text(visual, "copy F3D browser visual token")?;
         let Ok(visual) = DesignVisualToken::try_from(visual_text) else {
             continue;
         };
         if let Some(entity_suffix) = body_node_candidate(ctx, &strings, visual_index, &nodes)? {
-            push_material_item(
-                ctx,
-                &mut out,
-                (entity_suffix, visual),
-                "collect F3D browser body appearances",
-            )?;
+            (ctx).push_vec(&mut out, (entity_suffix, visual), "collect F3D browser body appearances")?;
         }
     }
     let mut keep = ctx.alloc_filled(out.len(), false, "mark F3D unique browser appearances")?;
@@ -1652,9 +1441,8 @@ fn browser_body_appearances(
         if seen.contains(&(*entity_suffix, text)) {
             continue;
         }
-        ctx.charge_collection_items(1, "index F3D unique browser appearances")?;
-        seen.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("index F3D unique browser appearances", 0, 1))?;
+        
+        ctx.reserve_set(&mut seen, 1, "index F3D unique browser appearances")?;
         seen.insert((*entity_suffix, text));
         keep[index] = true;
     }
@@ -1697,11 +1485,9 @@ fn body_node_candidate(
         let length = u64::try_from(candidate.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
         ctx.charge_work(length, operation)?;
-        let _reservation = ctx.reserve_scoped(length, operation)?;
+        let mut reservation = ctx.reserve_scoped(0, operation)?;
         let mut folded = String::new();
-        folded
-            .try_reserve(candidate.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
+        ctx.reserve_scoped_string(&mut reservation, &mut folded, candidate.len(), operation)?;
         folded.extend(
             candidate
                 .chars()
@@ -1743,29 +1529,18 @@ fn bind_bodies(
         let Some(appearance) = appearance_for_assignment(appearances, assignment)? else {
             continue;
         };
-        push_material_item(
-            ctx,
-            &mut out,
-            AppearanceBinding {
+        (ctx).push_vec(&mut out, AppearanceBinding {
                 id: crate::ids::assignment_appearance_binding_id_charged(
                     ctx,
                     assignment.entity_id.as_str(),
                     &assignment.visual_guid,
                 )?,
                 target: AppearanceTarget::Body(body),
-                appearance: copy_appearance_id(ctx, &appearance.id)?,
-                source_entity_id: Some(copy_material_text(
-                    ctx,
-                    assignment.entity_id.as_str(),
-                    "copy F3D binding entity ID",
-                )?),
-                object_type: copy_material_option(
-                    ctx,
-                    object_types
+                appearance: (&appearance.id).try_clone_for_decode(ctx, "copy F3D material appearance ID")?,
+                source_entity_id: Some((ctx).copy_retained_text(assignment.entity_id.as_str(), "copy F3D binding entity ID")?),
+                object_type: (object_types
                         .get(&assignment.entity_id.suffix())
-                        .map(String::as_str),
-                    "copy F3D binding object type",
-                )?,
+                        .map(String::as_str)).map(|text| (ctx).copy_retained_text(text, "copy F3D binding object type")).transpose()?,
                 visible: None,
                 channels: named_act_channels(
                     ctx,
@@ -1776,9 +1551,7 @@ fn bind_bodies(
                     ),
                     act_channels.get(&assignment.entity_id.suffix()),
                 )?,
-            },
-            "collect F3D material body bindings",
-        )?;
+            }, "collect F3D material body bindings")?;
     }
     Ok(out)
 }
@@ -1883,7 +1656,7 @@ fn resolved_body_for_map_pair(
     binding
         .body
         .as_ref()
-        .map(|body| copy_body_id(ctx, body))
+        .map(|body| (body).try_clone_for_decode(ctx, "copy F3D material body ID"))
         .transpose()
 }
 
@@ -1925,12 +1698,10 @@ fn decode_design_object_types(
                 let Some(id) = view.u64_le() else {
                     break;
                 };
-                let value = copy_material_text(ctx, &object_type, "copy F3D Design object type")?;
+                let value = (ctx).copy_retained_text(&object_type, "copy F3D Design object type")?;
                 if !out.contains_key(&id) {
-                    ctx.charge_collection_items(1, "index F3D Design object types")?;
-                    out.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("index F3D Design object types", 0, 1)
-                    })?;
+                    
+                    ctx.reserve_map(&mut out, 1, "index F3D Design object types")?;
                 }
                 out.insert(id, value);
             }
@@ -1991,18 +1762,15 @@ fn decode_act_channels(
                     valid = false;
                     break;
                 }
-                ctx.charge_collection_items(1, "collect F3D ACT channels")?;
-                channels.insert(name, guid);
+                ctx.insert_btree_map(&mut channels, name, guid, "collect F3D ACT channels")?;
                 cursor = after_guid;
             }
             if valid {
                 if let Some((entity, end)) = lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=64)? {
                     if let Some(suffix) = entity_suffix(&entity) {
                         if !out.contains_key(&suffix) {
-                            ctx.charge_collection_items(1, "index F3D ACT entities")?;
-                            out.try_reserve(1).map_err(|_| {
-                                ctx.refuse_codec_limit("index F3D ACT entities", 0, 1)
-                            })?;
+                            
+                            ctx.reserve_map(&mut out, 1, "index F3D ACT entities")?;
                         }
                         out.insert(suffix, channels);
                     }
@@ -2043,7 +1811,7 @@ fn lp_utf16_strings(
             continue;
         }
         if let Some((value, record_len)) = lp_utf16_string_at(ctx, bytes, offset)? {
-            push_material_item(ctx, &mut out, (offset, value), "collect F3D UTF-16 strings")?;
+            (ctx).push_vec(&mut out, (offset, value), "collect F3D UTF-16 strings")?;
             offset += record_len;
         } else {
             offset += 1;
@@ -2149,13 +1917,10 @@ fn definition_catalog<'a>(
         let definition = decode_definition_catalog_record(ctx, frame.bytes())?;
         merge_definition_catalog_record(ctx, &mut definitions, definition)?;
     }
-    let count = u64::try_from(definitions.len())
-        .map_err(|_| ctx.refuse_codec_limit("project F3D definition catalog", 0, u64::MAX))?;
-    ctx.charge_collection_items(count, "project F3D definition catalog")?;
+    
+    
     let mut catalog = std::collections::HashMap::new();
-    catalog
-        .try_reserve(definitions.len())
-        .map_err(|_| ctx.refuse_codec_limit("project F3D definition catalog", 0, count))?;
+    ctx.reserve_map(&mut catalog, definitions.len(), "project F3D definition catalog")?;
     for ((asset_id, schema), definition) in definitions {
         catalog.insert((asset_id, schema), definition.category);
     }
@@ -2175,14 +1940,12 @@ fn merge_definition_catalog_record(
     definition: DefinitionCatalog,
 ) -> Result<(), CodecError> {
     let key = (
-        copy_material_text(ctx, &definition.asset_id, "copy F3D definition asset ID")?,
-        copy_material_text(ctx, &definition.schema, "copy F3D definition schema")?,
+        (ctx).copy_retained_text(&definition.asset_id, "copy F3D definition asset ID")?,
+        (ctx).copy_retained_text(&definition.schema, "copy F3D definition schema")?,
     );
     if !definitions.contains_key(&key) {
-        ctx.charge_collection_items(1, "index F3D definition catalog")?;
-        definitions
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("index F3D definition catalog", 0, 1))?;
+        
+        ctx.reserve_map(definitions, 1, "index F3D definition catalog")?;
     }
     match definitions.entry(key) {
         std::collections::hash_map::Entry::Vacant(entry) => {
@@ -2303,12 +2066,7 @@ fn decode_fixed_logical_records(
     let mut appearances = Vec::new();
     for frame in frames {
         if let Some(appearance) = decode_fixed_record(ctx, frame.bytes())? {
-            push_material_item(
-                ctx,
-                &mut appearances,
-                appearance,
-                "collect F3D fixed appearances",
-            )?;
+            (ctx).push_vec(&mut appearances, appearance, "collect F3D fixed appearances")?;
         }
     }
     Ok(appearances)
@@ -2386,11 +2144,7 @@ fn decode_fixed_record(
     Ok(Some(Appearance {
         id: crate::ids::appearance_id_charged(ctx, &guid)?,
         name: Some(base),
-        asset_guid: Some(copy_material_text(
-            ctx,
-            &guid,
-            "copy F3D fixed appearance GUID",
-        )?),
+        asset_guid: Some((ctx).copy_retained_text(&guid, "copy F3D fixed appearance GUID")?),
         library_id: library_id(ctx, &asset_lib_id)?,
         visual_guid: (!matches!(
             schema.as_str(),

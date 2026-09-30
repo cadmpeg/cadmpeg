@@ -19,19 +19,7 @@ use cadmpeg_ir::report::loss::LossNote;
 mod archive;
 mod merge;
 
-fn push_note(
-    ctx: &DecodeContext<'_>,
-    notes: &mut Vec<String>,
-    args: std::fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "collect F3Z report notes";
-    ctx.charge_collection_items(1, OPERATION)?;
-    notes
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
-    notes.push(ctx.format_retained(args, "retain F3Z report note")?);
-    Ok(())
-}
+
 
 fn push_loss(
     ctx: &DecodeContext<'_>,
@@ -40,29 +28,13 @@ fn push_loss(
     args: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "collect F3Z report losses";
-    ctx.charge_collection_items(1, OPERATION)?;
-    losses
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+    
+    ctx.reserve_vec(losses, 1, OPERATION)?;
     losses.push(code.note(ctx.format_retained(args, "retain F3Z report loss")?));
     Ok(())
 }
 
-fn append_losses(
-    ctx: &DecodeContext<'_>,
-    target: &mut Vec<LossNote>,
-    mut incoming: Vec<LossNote>,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "append F3Z report losses";
-    let count = u64::try_from(incoming.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
-    ctx.charge_collection_items(count, OPERATION)?;
-    target
-        .try_reserve(incoming.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, count))?;
-    target.append(&mut incoming);
-    Ok(())
-}
+
 
 /// Inspects every document member under the F3Z archive identity.
 pub(crate) fn inspect<'a>(
@@ -82,11 +54,7 @@ pub(crate) fn inspect<'a>(
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
     let mut notes = Vec::new();
-    push_note(
-        ctx,
-        &mut notes,
-        format_args!("f3z archive: {member_count} document member(s); model root {model_root}"),
-    )?;
+    (ctx).push_formatted_retained(&mut notes, format_args!("f3z archive: {member_count} document member(s); model root {model_root}"), "collect F3Z report notes", "retain F3Z report note")?;
     Ok(ContainerSummary::classified(
         classified.layers,
         cadmpeg_ir::ContainerKind::Zip,
@@ -122,13 +90,9 @@ pub(crate) fn decode<'a>(
         .iter()
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
-    push_note(
-        ctx,
-        &mut report.notes,
-        format_args!("f3z archive: {member_count} document member(s); root {model_root}"),
-    )?;
+    (ctx).push_formatted_retained(&mut report.notes, format_args!("f3z archive: {member_count} document member(s); root {model_root}"), "collect F3Z report notes", "retain F3Z report note")?;
     if ctx.container_only() {
-        append_losses(ctx, &mut report.losses, outer.losses)?;
+        (ctx).append_vec(&mut report.losses, &mut { outer.losses }, "append F3Z report losses")?;
         return finalize_result(ctx, ir, source, report, fidelity);
     }
 
@@ -143,17 +107,13 @@ pub(crate) fn decode<'a>(
     )?;
     if merged > 0 {
         fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
-        push_note(ctx, &mut report.notes, format_args!(
+        (ctx).push_formatted_retained(&mut report.notes, format_args!(
             "{merged} merged component(s) retain occurrence-scoped model entities, native records, and source bytes"
-        ))?;
+        ), "collect F3Z report notes", "retain F3Z report note")?;
     }
-    push_note(
-        ctx,
-        &mut report.notes,
-        format_args!("merged {merged} external occurrence(s) from the f3z archive"),
-    )?;
+    (ctx).push_formatted_retained(&mut report.notes, format_args!("merged {merged} external occurrence(s) from the f3z archive"), "collect F3Z report notes", "retain F3Z report note")?;
     merge::make_sibling_ordinals_unique(ctx, &mut ir.model.occurrences)?;
-    append_losses(ctx, &mut report.losses, outer.losses)?;
+    (ctx).append_vec(&mut report.losses, &mut { outer.losses }, "append F3Z report losses")?;
     finalize_result(ctx, ir, source, report, fidelity)
 }
 
@@ -166,11 +126,7 @@ fn finalize_result(
 ) -> Result<Decoded, CodecError> {
     ir.finalize();
     let hash = crate::decode::document_local_sha256_with_source(&ir, &source)?;
-    ctx.charge_collection_items(1, "record F3Z document digest")?;
-    source.attributes.insert(
-        cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        hash,
-    );
+    ctx.insert_btree_map(&mut source.attributes, cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE), hash, "record F3Z document digest")?;
     ir.source = Some(source);
     Ok(Decoded {
         ir,

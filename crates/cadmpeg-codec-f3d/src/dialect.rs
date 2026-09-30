@@ -137,20 +137,10 @@ impl F3dDialect {
         version: &str,
     ) -> Result<DialectMatch, CodecError> {
         const OPERATION: &str = "classify F3D manifest dialect";
-        ctx.charge_collection_items(1, OPERATION)?;
-        let length = u64::try_from(version.len())
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
-        ctx.charge_retained(length, OPERATION)?;
-        let mut declared_version = String::new();
-        declared_version
-            .try_reserve(version.len())
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, length))?;
-        declared_version.push_str(version);
         let mut declared = BTreeMap::new();
-        declared.insert(
-            cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION),
-            declared_version,
-        );
+        let key = cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION);
+        ctx.admit_btree_entry(&mut declared, &key, OPERATION)?;
+        declared.insert(key, ctx.copy_retained_text(version, OPERATION)?);
         let dialect = if version == TOP_LEVEL_MANIFEST_VERSION {
             Self::Manifest3200
         } else {
@@ -170,34 +160,10 @@ impl F3dDialect {
         root_document_members: &[&str],
     ) -> Result<DialectMatch, CodecError> {
         const OPERATION: &str = "classify F3Z root document members";
-        let separators = if root_document_members.is_empty() {
-            0
-        } else {
-            root_document_members.len() - 1
-        };
-        let length = root_document_members
-            .iter()
-            .try_fold(separators, |total, member| total.checked_add(member.len()))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
-        let length_u64 =
-            u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
-        ctx.charge_collection_items(1, OPERATION)?;
-        ctx.charge_retained(length_u64, OPERATION)?;
-        let mut joined = String::new();
-        joined
-            .try_reserve(length)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, length_u64))?;
-        for (index, member) in root_document_members.iter().enumerate() {
-            if index > 0 {
-                joined.push_str(MEMBER_SEPARATOR);
-            }
-            joined.push_str(member);
-        }
         let mut declared = BTreeMap::new();
-        declared.insert(
-            cadmpeg_core::nonblank_const!(DECLARED_ROOT_DOCUMENT_MEMBERS),
-            joined,
-        );
+        let key = cadmpeg_core::nonblank_const!(DECLARED_ROOT_DOCUMENT_MEMBERS);
+        ctx.admit_btree_entry(&mut declared, &key, OPERATION)?;
+        declared.insert(key, ctx.join_retained(root_document_members, MEMBER_SEPARATOR, OPERATION)?);
         Ok(Self::F3zMultiDocument.matched(declared))
     }
 
@@ -229,10 +195,8 @@ pub(crate) fn classify_layers(
     let mut losses = Vec::new();
     let mut add_layer = |layer: DialectMatch| -> Result<(), CodecError> {
         if let Err(rejected) = layers.insert_charged(ctx, layer, "collect F3D dialect layers")? {
-            ctx.charge_collection_items(1, "collect F3D dialect collision losses")?;
-            losses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("collect F3D dialect collision losses", 0, 1)
-            })?;
+            
+            ctx.reserve_vec(&mut losses, 1, "collect F3D dialect collision losses")?;
             let format = rejected.format();
             let instance = rejected.instance().unwrap_or("unidentified");
             losses.push(F3dLossCode::DialectLayerCollision.note(
@@ -290,7 +254,7 @@ pub(crate) fn dialect_losses(
     let mut losses = Vec::new();
     for matched in layers.iter().filter(|matched| matched.format() == FORMAT) {
         if let Some(loss) = dialect_loss(ctx, matched)? {
-            push_recovery_loss(ctx, &mut losses, loss)?;
+            (ctx).push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
         }
     }
     for matched in layers
@@ -298,25 +262,13 @@ pub(crate) fn dialect_losses(
         .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
     {
         if let Some(loss) = kernel_dialect_loss(ctx, matched)? {
-            push_recovery_loss(ctx, &mut losses, loss)?;
+            (ctx).push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
         }
     }
     Ok(losses)
 }
 
-fn push_recovery_loss(
-    ctx: &DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    loss: LossNote,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "collect F3D dialect recovery losses";
-    ctx.charge_collection_items(1, OPERATION)?;
-    losses
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
-    losses.push(loss);
-    Ok(())
-}
+
 
 fn archive_loss_text(
     ctx: &DecodeContext<'_>,

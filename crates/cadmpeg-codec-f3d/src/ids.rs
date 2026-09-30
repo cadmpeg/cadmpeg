@@ -86,15 +86,7 @@ pub(crate) fn brep_face_id(
     )
 }
 
-/// The neutral B-rep identity for one edge slot.
-pub(crate) fn brep_edge_id(
-    index: impl Into<cadmpeg_ir::ids::IdentityKey>,
-) -> cadmpeg_ir::ids::EdgeId {
-    cadmpeg_ir::ids::EdgeId::compose(
-        &cadmpeg_ir::identity_namespace!("f3d", "brep", "entity"),
-        index,
-    )
-}
+
 
 /// Build an appearance identity from its source visual token.
 #[cfg(test)]
