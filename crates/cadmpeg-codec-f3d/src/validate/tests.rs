@@ -25,6 +25,7 @@ use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
 mod act_limits;
+mod arithmetic;
 mod body_recipe_limits;
 mod construction_group_limits;
 mod construction_identity_limits;
