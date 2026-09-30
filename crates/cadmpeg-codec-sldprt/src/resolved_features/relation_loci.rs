@@ -9,7 +9,7 @@ use super::relation_geometry::{
 use super::relation_records::{relation_uses_dynamic_operands, relation_uses_solver_points};
 use super::transforms::{
     compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
-    marker_transforms_with_frame_fallback, sketch_entity_loci, sketch_entity_locus_points, MarkerTransform, ProfileAxis,
+    marker_transforms_with_frame_fallback, sketch_entity_locus_points, MarkerTransform, ProfileAxis,
 };
 use super::typed_relations::{
     line_endpoint_markers, relation_link_identifies_owner, relation_link_is_geometric_operand,
@@ -507,14 +507,14 @@ pub(super) fn typed_relation_definition_with_profile_axis(
         )
         && dynamic_point_pair.is_none()
     {
-        unique_dynamic_direct_point_roster_pair(
+        unique_dynamic_direct_point_roster_pair(ctx, 
             relation,
             sketch,
             parameter,
             sketch_entities,
             markers_by_id,
             profile_axis,
-        )
+        )?
     } else {
         None
     };
@@ -564,14 +564,14 @@ pub(super) fn typed_relation_definition_with_profile_axis(
         match selected {
             Some(pair) => Some(pair),
             None => {
-            unique_dynamic_roster_point_line_pair(
+            unique_dynamic_roster_point_line_pair(ctx, 
                 relation,
                 sketch,
                 parameter,
                 point(0)?,
                 curve(1)?,
                 sketch_entities,
-            )
+            )?
             }
         }
     } else {
@@ -892,20 +892,20 @@ let partner = resolved_or_none!(unique_profile_axis_distance_locus(ctx,
                 None => match (point, line) {
                     (Some(point), Some(line)) => (point, line),
                     (Some(point), None) => {
-let partner = resolved_or_none!(unique_profile_point_line_entity(
+let partner = resolved_or_none!(unique_profile_point_line_entity(ctx, 
                             sketch,
                             &point,
                             parameter,
                             sketch_entities,
-                        ));
+                        )?);
 (point, partner)
 },
                     (None, Some(line)) => (
-                        resolved_or_none!(unique_profile_line_point_locus(sketch, &line, parameter, sketch_entities)),
+                        resolved_or_none!(unique_profile_line_point_locus(ctx, sketch, &line, parameter, sketch_entities)?),
                         line,
                     ),
                     (None, None) => {
-                        resolved_or_none!(unique_profile_point_line_pair(sketch, parameter, sketch_entities))
+                        resolved_or_none!(unique_profile_point_line_pair(ctx, sketch, parameter, sketch_entities)?)
                     }
                 },
             };
@@ -923,13 +923,13 @@ let partner = resolved_or_none!(unique_profile_point_line_entity(
                     return Ok(None);
                 }
                 if !authoritative {
-                    (point, line) = resolved_or_none!(unique_repaired_profile_point_line_pair(
+                    (point, line) = resolved_or_none!(unique_repaired_profile_point_line_pair(ctx, 
                         sketch,
                         &point,
                         &line,
                         parameter,
                         sketch_entities,
-                    ));
+                    )?);
                 }
             }
             Some(SketchConstraintDefinitionInput::DistanceLoci {
@@ -1332,23 +1332,6 @@ fn repeated_dimensioned_circular_entities(
         }
     }
     Ok(Some(entities))
-}
-
-// Reduce a set of candidate locus pairs to the sole survivor: order the pairs
-// by their component locus keys, drop exact duplicates, and yield the pair only
-// when exactly one remains. Shared by every profile-pair resolver so the
-// tie-breaking order is identical across measurements.
-fn sole_locus_pair(
-    mut candidates: Vec<(SketchLocus, SketchLocus)>,
-) -> Option<(SketchLocus, SketchLocus)> {
-    candidates.sort_by(|(first_left, second_left), (first_right, second_right)| {
-        locus_key(first_left)
-            .cmp(&locus_key(first_right))
-            .then_with(|| locus_key(second_left).cmp(&locus_key(second_right)))
-    });
-    candidates.dedup();
-    if candidates.len() != 1 { return None; }
-    candidates.into_iter().next()
 }
 
 // Find the unique profile locus pair whose spanned dimension, measured by
@@ -2005,8 +1988,8 @@ fn unique_dynamic_marker_point_pair(
     };
     let mut first_candidates = candidates(0, known_first)?;
     let mut second_candidates = candidates(1, known_second)?;
-    deduplicate_physical_loci(&mut first_candidates, sketch_entities);
-    deduplicate_physical_loci(&mut second_candidates, sketch_entities);
+    deduplicate_physical_loci(ctx, &mut first_candidates, |locus| profile_locus_point_charged(ctx, locus, sketch_entities, "resolve SLDPRT physical locus"))?;
+    deduplicate_physical_loci(ctx, &mut second_candidates, |locus| profile_locus_point_charged(ctx, locus, sketch_entities, "resolve SLDPRT physical locus"))?;
     if first_candidates.is_empty() || second_candidates.is_empty() {
         return Ok(None);
     }
@@ -2030,19 +2013,18 @@ fn unique_dynamic_marker_point_pair(
 }
 
 fn unique_dynamic_direct_point_roster_pair(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     profile_axis: Option<ProfileAxis>,
-) -> Option<(SketchLocus, SketchLocus)> {
-    if relation
-        .operands
-        .iter()
-        .any(|operand| operand.entity_ref.is_some())
-    {
-        return None;
+) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT direct marker point roster";
+    for operand in &relation.operands {
+        ctx.charge_work(1, OPERATION)?;
+        if operand.entity_ref.is_some() { return Ok(None); }
     }
     let is_direct_point = |marker: &SketchInputEntity| {
         marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
@@ -2053,45 +2035,48 @@ fn unique_dynamic_direct_point_roster_pair(
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
     };
-    if (0..2).any(|index| {
-        relation_operand_marker(relation, index, sketch, markers_by_id)
-            .and_then(|marker| markers_by_id.get(marker))
-            .is_none_or(|marker| !is_direct_point(marker))
-    }) {
-        return None;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(markers_by_id.len()), OPERATION)?;
+    let marker_bytes = markers_by_id.keys().try_fold(0u64, |bytes, key| bytes.checked_add(cadmpeg_core::decode::u64_from_index(key.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)))?;
+    for index in 0..2 {
+        let Some(marker_id) = relation_operand_marker(relation, index, sketch, markers_by_id) else { return Ok(None); };
+        ctx.charge_work(marker_bytes.checked_add(cadmpeg_core::decode::u64_from_index(marker_id.len())).and_then(|bytes| bytes.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let Some(marker) = markers_by_id.get(marker_id) else { return Ok(None); };
+        charge_relation_identity_work(ctx, [marker.feature_ref.as_deref().unwrap_or(""), relation.feature_ref.as_str()], 16, OPERATION)?;
+        if !is_direct_point(marker) { return Ok(None); }
     }
-    let direct_marker_ids = markers_by_id
-        .values()
-        .filter(|marker| is_direct_point(marker))
-        .map(|marker| marker.id())
-        .collect::<HashSet<_>>();
-    let mut loci = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .filter(|entity| {
-            matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Point { .. }
-            )
-        })
-        .filter(|entity| {
-            entity
-                .native_ref
-                .as_deref()
-                .is_some_and(|marker| direct_marker_ids.contains(marker))
-        })
-        .map(|entity| SketchLocus::Entity(entity.id().clone()))
-        .collect::<Vec<_>>();
-    loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-    loci.dedup();
-    deduplicate_physical_loci(&mut loci, sketch_entities);
-    let cadmpeg_ir::features::ParameterValue::Length(expected) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let measure = |first: &SketchLocus, second: &SketchLocus| {
-        let first = profile_locus_point(first, sketch_entities)?;
-        let second = profile_locus_point(second, sketch_entities)?;
-        Some(match relation.family {
+    let mut direct_marker_ids = HashSet::new();
+    let mut source_bytes = 0u64;
+    for marker in markers_by_id.values() {
+        charge_relation_identity_work(ctx, [marker.feature_ref.as_deref().unwrap_or(""), relation.feature_ref.as_str()], 16, OPERATION)?;
+        if !is_direct_point(marker) { continue; }
+        let marker_id = marker.id();
+        let bytes = cadmpeg_core::decode::u64_from_index(marker_id.len());
+        if reserve_profile_locus_set_slot(ctx, &mut direct_marker_ids, &marker_id, source_bytes, bytes, OPERATION)? {
+            source_bytes = source_bytes.checked_add(bytes).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            direct_marker_ids.insert(marker_id);
+        }
+    }
+    let mut loci = Vec::new();
+    for entity in sketch_entities {
+        charge_relation_identity_work(ctx, [entity.sketch.as_str(), sketch.as_str()], 16, OPERATION)?;
+        if entity.sketch != *sketch || !matches!(entity.geometry.definition(), SketchGeometryDefinition::Point { .. }) { continue; }
+        let Some(reference) = entity.native_ref.as_deref() else { continue; };
+        ctx.charge_work(source_bytes.checked_add(cadmpeg_core::decode::u64_from_index(reference.len())).and_then(|bytes| bytes.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if !direct_marker_ids.contains(reference) { continue; }
+        ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+        loci.push(super::transforms::SketchLocusRole::Entity.copy_locus(ctx, entity.id(), OPERATION)?);
+    }
+    sort_profile_loci(ctx, &mut loci, OPERATION)?;
+    deduplicate_physical_loci(ctx, &mut loci, |locus| profile_locus_point_charged(ctx, locus, sketch_entities, OPERATION))?;
+    let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref() else { return Ok(None); };
+    let measure = |first: &SketchLocus, second: &SketchLocus| -> Result<Option<f64>, cadmpeg_core::CodecError> {
+        let Some(first) = profile_locus_point_charged(ctx, first, sketch_entities, OPERATION)? else { return Ok(None); };
+        let Some(second) = profile_locus_point_charged(ctx, second, sketch_entities, OPERATION)? else { return Ok(None); };
+        ctx.charge_work(256, OPERATION)?;
+        Ok(Some(match relation.family {
             FeatureInputRelationFamily::PointPointDistance => {
                 (second.u - first.u).hypot(second.v - first.v)
             }
@@ -2103,31 +2088,50 @@ fn unique_dynamic_direct_point_roster_pair(
                     (second.v - first.v).abs()
                 }
             }
-            _ => return None,
-        })
+            _ => return Ok(None),
+        }))
     };
-    let mut pairs = Vec::new();
+    let mut selected: Option<(&SketchLocus, &SketchLocus)> = None;
     for (first_index, first) in loci.iter().enumerate() {
         for second in &loci[first_index + 1..] {
-            if measure(first, second)
-                .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
-            {
-                pairs.push((first.clone(), second.clone()));
-            }
+            let (selected_first, selected_second) = selected.map_or(("", ""), |(first, second)| (locus_entity(first).as_str(), locus_entity(second).as_str()));
+            charge_relation_identity_work(ctx, [locus_entity(first).as_str(), locus_entity(second).as_str(), selected_first, selected_second], 16, OPERATION)?;
+            if !measure(first, second)?.is_some_and(|value| same_relation_dimension_length(value, expected.get())) { continue; }
+            let pair = (first, second);
+            if selected.is_some_and(|selected| selected != pair) { return Ok(None); }
+            selected = Some(pair);
         }
     }
-    sole_locus_pair(pairs)
+    let Some((first, second)) = selected else { return Ok(None); };
+    Ok(Some((super::transforms::SketchLocusRole::of_locus(first).copy_locus(ctx, locus_entity(first), OPERATION)?,
+        super::transforms::SketchLocusRole::of_locus(second).copy_locus(ctx, locus_entity(second), OPERATION)?)))
 }
 
 const DYNAMIC_POINT_LOCUS_QUANTUM: f64 = 1.0e-8;
 
-fn deduplicate_physical_loci(candidates: &mut Vec<SketchLocus>, sketch_entities: &[SketchEntity]) {
+fn deduplicate_physical_loci<T>(
+    ctx: &DecodeContext<'_>, candidates: &mut Vec<T>,
+    point: impl Fn(&T) -> Result<Option<Point2>, cadmpeg_core::CodecError>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "deduplicate SLDPRT physical loci";
     let mut points = HashSet::new();
-    candidates.retain(|locus| {
-        profile_locus_point(locus, sketch_entities)
-            .is_none_or(|point| points.insert(quantize(point, DYNAMIC_POINT_LOCUS_QUANTUM)))
-    });
+    let mut write = 0;
+    for read in 0..candidates.len() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()).checked_add(128)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let keep = if let Some(point) = point(&candidates[read])? {
+            let key = quantize(point, DYNAMIC_POINT_LOCUS_QUANTUM);
+            if reserve_profile_locus_set_slot(ctx, &mut points, &key, 0, 0, OPERATION)? {
+                points.insert(key);
+                true
+            } else { false }
+        } else { true };
+        if keep { candidates.swap(write, read); write += 1; }
+    }
+    candidates.truncate(write);
+    Ok(())
 }
+
 
 /// The point-line operands a dynamic roster relation already knows.
 enum KnownOperands {
@@ -2148,147 +2152,57 @@ impl KnownOperands {
 }
 
 fn unique_dynamic_roster_point_line_pair(
-    relation: &FeatureInputRelationInstance,
-    sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
-    known_point: Option<SketchLocus>,
-    known_line: Option<SketchEntityId>,
-    sketch_entities: &[SketchEntity],
-) -> Option<(SketchLocus, SketchEntityId)> {
-    let explicit_point = relation
-        .operands
-        .first()
-        .is_some_and(|operand| operand.entity_ref.is_some());
-    let explicit_line = relation
-        .operands
-        .get(1)
-        .is_some_and(|operand| operand.entity_ref.is_some());
-    if (explicit_point && known_point.is_none()) || (explicit_line && known_line.is_none()) {
-        return None;
-    }
-    // A family-local tag without an explicit reference is not an identity;
-    // let the complete geometry roster arbitrate it instead of trusting a
-    // provisional ordinal or a colliding solver-line alias. A single
-    // explicitly referenced operand narrows that roster to the other operand.
-    let Some(known) = KnownOperands::resolve(
-        explicit_point.then_some(known_point).flatten(),
-        explicit_line.then_some(known_line).flatten(),
-    ) else {
-        if explicit_point || explicit_line {
-            return None;
-        }
-        return unique_roster_point_line_pair(sketch, parameter, sketch_entities);
+    ctx: &DecodeContext<'_>, relation: &FeatureInputRelationInstance, sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter, known_point: Option<SketchLocus>,
+    known_line: Option<SketchEntityId>, sketch_entities: &[SketchEntity],
+) -> Result<Option<(SketchLocus, SketchEntityId)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT dynamic roster point-line pair";
+    ctx.charge_work(16, OPERATION)?;
+    let explicit_point = relation.operands.first().is_some_and(|operand| operand.entity_ref.is_some());
+    let explicit_line = relation.operands.get(1).is_some_and(|operand| operand.entity_ref.is_some());
+    if (explicit_point && known_point.is_none()) || (explicit_line && known_line.is_none()) { return Ok(None); }
+    // Explicit identities narrow the geometry roster to the other operand.
+    let Some(known) = KnownOperands::resolve(explicit_point.then_some(known_point).flatten(), explicit_line.then_some(known_line).flatten()) else {
+        if explicit_point || explicit_line { return Ok(None); }
+        return unique_roster_point_line_pair(ctx, sketch, parameter, sketch_entities);
     };
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let lines = sketch_entities
-        .iter()
-        .filter(|entity| {
-            entity.sketch == *sketch
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                )
-        })
-        .collect::<Vec<_>>();
-    let mut points = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
-        .map(|(_, locus)| locus)
-        .collect::<Vec<_>>();
-    deduplicate_physical_loci(&mut points, sketch_entities);
-    let mut candidates = Vec::new();
+    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref() else { return Ok(None); };
+    let lines = collect_profile_lines(ctx, sketch, sketch_entities)?;
+    let mut points = collect_profile_loci(ctx, sketch, sketch_entities)?;
+    deduplicate_physical_loci(ctx, &mut points, |(_, locus)| profile_locus_point_charged(ctx, locus, sketch_entities, OPERATION))?;
     match known {
         KnownOperands::Point(point) => {
-            let position = profile_locus_point(&point, sketch_entities)?;
-            candidates.extend(lines.iter().filter_map(|line| {
-                point_line_distance_value(position, line)
-                    .filter(|measured| same_dimension_length(*measured, distance.get()))
-                    .map(|_| (point.clone(), line.id().clone()))
-            }));
+            let Some(position) = profile_locus_point_charged(ctx, &point, sketch_entities, OPERATION)? else { return Ok(None); };
+            select_profile_point_line_pairs(ctx, *distance, &[(position, point)], &lines)
         }
         KnownOperands::Line(line) => {
-            let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
-            candidates.extend(points.into_iter().filter_map(|point| {
-                let position = profile_locus_point(&point, sketch_entities)?;
-                point_line_distance_value(position, line_entity)
-                    .filter(|measured| same_dimension_length(*measured, distance.get()))
-                    .map(|_| (point, line.clone()))
-            }));
+            let Some(line_entity) = find_profile_entity(ctx, sketch_entities, &line, OPERATION)? else { return Ok(None); };
+            resolve_profile_locus_positions(ctx, &mut points, sketch_entities)?;
+            select_profile_point_line_pairs(ctx, *distance, &points, &[line_entity])
         }
         KnownOperands::Both(point, line) => {
-            let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
-            let position = profile_locus_point(&point, sketch_entities)?;
-            if point_line_distance_value(position, line_entity)
-                .is_some_and(|measured| same_dimension_length(measured, distance.get()))
-            {
-                candidates.push((point, line));
-            }
+            let Some(line_entity) = find_profile_entity(ctx, sketch_entities, &line, OPERATION)? else { return Ok(None); };
+            let Some(position) = profile_locus_point_charged(ctx, &point, sketch_entities, OPERATION)? else { return Ok(None); };
+            ctx.charge_work(256, OPERATION)?;
+            Ok(point_line_distance_value(position, line_entity).is_some_and(|measured| same_dimension_length(measured, distance.get())).then_some((point, line)))
         }
     }
-    candidates.sort_by(|(left_point, left_line), (right_point, right_line)| {
-        locus_key(left_point)
-            .cmp(&locus_key(right_point))
-            .then_with(|| left_line.cmp(right_line))
-    });
-    candidates.dedup();
-    if candidates.len() != 1 { return None; }
-    candidates.into_iter().next()
 }
 
+
 fn unique_roster_point_line_pair(
-    sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
-) -> Option<(SketchLocus, SketchEntityId)> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let mut loci = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
-        .map(|(_, locus)| locus)
-        .collect::<Vec<_>>();
-    deduplicate_physical_loci(&mut loci, sketch_entities);
-    // A family-scoped point-line operand does not carry a line identity. The
-    // complete owning sketch is the semantic scope; uniqueness of the
-    // measured point/line pair is the ownership certificate. Restricting the
-    // candidates to synthetic solver lines drops ordinary profile lines.
-    let lines = sketch_entities
-        .iter()
-        .filter(|entity| {
-            entity.sketch == *sketch
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                )
-        })
-        .collect::<Vec<_>>();
-    let mut candidates = Vec::new();
-    for locus in loci {
-        let Some(point) = profile_locus_point(&locus, sketch_entities) else {
-            continue;
-        };
-        for line in &lines {
-            if point_line_distance_value(point, line)
-                .is_some_and(|measured| same_dimension_length(measured, distance.get()))
-            {
-                candidates.push((locus.clone(), line.id().clone()));
-            }
-        }
-    }
-    candidates.sort_by(|(left_locus, left_line), (right_locus, right_line)| {
-        locus_key(left_locus)
-            .cmp(&locus_key(right_locus))
-            .then_with(|| left_line.cmp(right_line))
-    });
-    candidates.dedup();
-    if candidates.len() != 1 { return None; }
-    candidates.into_iter().next()
+    ctx: &DecodeContext<'_>, sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter, sketch_entities: &[SketchEntity],
+) -> Result<Option<(SketchLocus, SketchEntityId)>, cadmpeg_core::CodecError> {
+    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref() else { return Ok(None); };
+    let mut loci = collect_profile_loci(ctx, sketch, sketch_entities)?;
+    deduplicate_physical_loci(ctx, &mut loci, |(_, locus)| profile_locus_point_charged(ctx, locus, sketch_entities, "resolve SLDPRT roster locus"))?;
+    // The owning sketch roster supplies line witnesses for family-scoped operands.
+    let lines = collect_profile_lines(ctx, sketch, sketch_entities)?;
+    resolve_profile_locus_positions(ctx, &mut loci, sketch_entities)?;
+    select_profile_point_line_pairs(ctx, *distance, &loci, &lines)
 }
+
 
 fn unique_point_line_candidate_pair(
     ctx: &DecodeContext<'_>, expected: cadmpeg_ir::scalar::Length,
@@ -2646,127 +2560,134 @@ pub(super) fn same_dimension_angle(left: f64, right: f64) -> bool {
         <= EPS_RELATION_LOCI_SAME_DIMENSION_ANGLE_E9 * left.abs().max(right.abs()).max(1.0)
 }
 
-fn unique_profile_point_line_entity(
-    sketch: &SketchId,
-    point: &SketchLocus,
-    parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
-) -> Option<SketchEntityId> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let point = profile_locus_point(point, sketch_entities)?;
-    let mut candidates = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .filter_map(|line| {
-            point_line_distance_value(point, line)
-                .filter(|measured| same_dimension_length(*measured, distance.get()))
-                .map(|_| line.id().clone())
-        })
-        .collect::<Vec<_>>();
-    candidates.sort();
-    candidates.dedup();
-    if candidates.len() != 1 { return None; }
-    candidates.into_iter().next()
-}
-
-fn unique_profile_line_point_locus(
-    sketch: &SketchId,
-    line: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
-) -> Option<SketchLocus> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let line = sketch_entities.iter().find(|entity| entity.id() == line)?;
-    let mut candidates = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
-        .filter_map(|(point, locus)| {
-            point_line_distance_value(point, line)
-                .filter(|measured| same_dimension_length(*measured, distance.get()))
-                .map(|_| locus)
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-    candidates.dedup();
-    if candidates.len() != 1 { return None; }
-    candidates.into_iter().next()
-}
-
-fn unique_profile_point_line_pair(
-    sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
-) -> Option<(SketchLocus, SketchEntityId)> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let loci = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
-        .collect::<Vec<_>>();
-    let lines = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .filter(|entity| {
-            matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Line { .. }
-            )
-        })
-        .collect::<Vec<_>>();
-    let mut candidates = Vec::new();
-    for (point, locus) in loci {
-        for line in &lines {
-            if point_line_distance_value(point, line)
-                .is_some_and(|measured| same_dimension_length(measured, distance.get()))
-            {
-                candidates.push((locus.clone(), line.id().clone()));
-            }
+fn collect_profile_loci(ctx: &DecodeContext<'_>, sketch: &SketchId, entities: &[SketchEntity]) -> Result<Vec<(Point2, SketchLocus)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "collect SLDPRT profile locus candidates";
+    let mut result = Vec::new();
+    for entity in entities {
+        charge_relation_identity_work(ctx, [entity.sketch.as_str(), sketch.as_str()], 256, OPERATION)?;
+        if entity.sketch != *sketch { continue; }
+        for (point, role) in sketch_entity_locus_points(entity).into_iter().flatten() {
+            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            result.push((point, role.copy_locus(ctx, entity.id(), OPERATION)?));
         }
     }
-    candidates.sort_by(|(left_locus, left_line), (right_locus, right_line)| {
-        locus_key(left_locus)
-            .cmp(&locus_key(right_locus))
-            .then_with(|| left_line.cmp(right_line))
-    });
-    candidates.dedup();
-    if candidates.len() != 1 { return None; }
-    candidates.into_iter().next()
+    Ok(result)
 }
 
-fn unique_repaired_profile_point_line_pair(
-    sketch: &SketchId,
-    point: &SketchLocus,
-    line: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
-) -> Option<(SketchLocus, SketchEntityId)> {
-    let mut candidates = Vec::new();
-    if let Some(candidate_line) =
-        unique_profile_point_line_entity(sketch, point, parameter, sketch_entities)
-    {
-        candidates.push((point.clone(), candidate_line));
+fn collect_profile_lines<'a>(ctx: &DecodeContext<'_>, sketch: &SketchId, entities: &'a [SketchEntity]) -> Result<Vec<&'a SketchEntity>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "collect SLDPRT profile line candidates";
+    let mut result = Vec::new();
+    for entity in entities {
+        charge_relation_identity_work(ctx, [entity.sketch.as_str(), sketch.as_str()], 16, OPERATION)?;
+        if entity.sketch == *sketch && matches!(entity.geometry.definition(), SketchGeometryDefinition::Line { .. }) {
+            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+            result.push(entity);
+        }
     }
-    if let Some(candidate_point) =
-        unique_profile_line_point_locus(sketch, line, parameter, sketch_entities)
-    {
-        candidates.push((candidate_point, line.clone()));
-    }
-    candidates.sort_by(|(left_point, left_line), (right_point, right_line)| {
-        locus_key(left_point)
-            .cmp(&locus_key(right_point))
-            .then_with(|| left_line.cmp(right_line))
-    });
-    candidates.dedup();
-    if candidates.len() != 1 { return None; }
-    candidates.into_iter().next()
+    Ok(result)
 }
+
+fn resolve_profile_locus_positions(ctx: &DecodeContext<'_>, loci: &mut Vec<(Point2, SketchLocus)>, entities: &[SketchEntity]) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "resolve SLDPRT profile candidate coordinates";
+    let mut write = 0;
+    for read in 0..loci.len() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(Point2, SketchLocus)>()), OPERATION)?;
+        if let Some(point) = profile_locus_point_charged(ctx, &loci[read].1, entities, OPERATION)? {
+            loci[read].0 = point;
+            loci.swap(write, read);
+            write += 1;
+        }
+    }
+    loci.truncate(write);
+    Ok(())
+}
+
+fn select_profile_point_line_pairs(ctx: &DecodeContext<'_>, distance: cadmpeg_ir::scalar::Length,
+    loci: &[(Point2, SketchLocus)], lines: &[&SketchEntity],
+) -> Result<Option<(SketchLocus, SketchEntityId)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT profile point-line pairs";
+    let mut selected: Option<(&SketchLocus, &SketchEntityId)> = None;
+    for (point, locus) in loci {
+        for line in lines {
+            let (selected_point, selected_line) = selected.map_or(("", ""), |(point, line)| (locus_entity(point).as_str(), line.as_str()));
+            charge_relation_identity_work(ctx, [locus_entity(locus).as_str(), line.id().as_str(), selected_point, selected_line], 256, OPERATION)?;
+            if !point_line_distance_value(*point, line).is_some_and(|measured| same_dimension_length(measured, distance.get())) { continue; }
+            let pair = (locus, line.id());
+            if selected.is_some_and(|selected| selected != pair) { return Ok(None); }
+            selected = Some(pair);
+        }
+    }
+    let Some((point, line)) = selected else { return Ok(None); };
+    Ok(Some((super::transforms::SketchLocusRole::of_locus(point).copy_locus(ctx, locus_entity(point), OPERATION)?,
+        super::transforms::copy_sketch_entity_identity(ctx, line, OPERATION)?)))
+}
+
+fn unique_profile_point_line_entity(
+    ctx: &DecodeContext<'_>, sketch: &SketchId, point: &SketchLocus,
+    parameter: &cadmpeg_ir::features::DesignParameter, sketch_entities: &[SketchEntity],
+) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT profile point-line entity";
+    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref() else { return Ok(None); };
+    let Some(point) = profile_locus_point_charged(ctx, point, sketch_entities, OPERATION)? else { return Ok(None); };
+    let mut selected: Option<&SketchEntityId> = None;
+    for line in sketch_entities {
+        charge_relation_identity_work(ctx, [line.sketch.as_str(), sketch.as_str(), line.id().as_str(), selected.map_or("", |id| id.as_str())], 256, OPERATION)?;
+        if line.sketch != *sketch || !point_line_distance_value(point, line).is_some_and(|measured| same_dimension_length(measured, distance.get())) { continue; }
+        if selected.is_some_and(|selected| selected != line.id()) { return Ok(None); }
+        selected = Some(line.id());
+    }
+    selected.map(|id| super::transforms::copy_sketch_entity_identity(ctx, id, OPERATION)).transpose()
+}
+
+
+fn unique_profile_line_point_locus(
+    ctx: &DecodeContext<'_>, sketch: &SketchId, line: &SketchEntityId,
+    parameter: &cadmpeg_ir::features::DesignParameter, sketch_entities: &[SketchEntity],
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT profile line-point locus";
+    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref() else { return Ok(None); };
+    let Some(line) = find_profile_entity(ctx, sketch_entities, line, OPERATION)? else { return Ok(None); };
+    let mut selected: Option<SketchLocus> = None;
+    for (point, locus) in collect_profile_loci(ctx, sketch, sketch_entities)? {
+        charge_relation_identity_work(ctx, [locus_entity(&locus).as_str(), selected.as_ref().map_or("", |locus| locus_entity(locus).as_str())], 256, OPERATION)?;
+        if !point_line_distance_value(point, line).is_some_and(|measured| same_dimension_length(measured, distance.get())) { continue; }
+        if selected.as_ref().is_some_and(|selected| selected != &locus) { return Ok(None); }
+        selected = Some(locus);
+    }
+    Ok(selected)
+}
+
+
+fn unique_profile_point_line_pair(
+    ctx: &DecodeContext<'_>, sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter, sketch_entities: &[SketchEntity],
+) -> Result<Option<(SketchLocus, SketchEntityId)>, cadmpeg_core::CodecError> {
+    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref() else { return Ok(None); };
+    let loci = collect_profile_loci(ctx, sketch, sketch_entities)?;
+    let lines = collect_profile_lines(ctx, sketch, sketch_entities)?;
+    select_profile_point_line_pairs(ctx, *distance, &loci, &lines)
+}
+
+
+fn unique_repaired_profile_point_line_pair(
+    ctx: &DecodeContext<'_>, sketch: &SketchId, point: &SketchLocus, line: &SketchEntityId,
+    parameter: &cadmpeg_ir::features::DesignParameter, sketch_entities: &[SketchEntity],
+) -> Result<Option<(SketchLocus, SketchEntityId)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "repair SLDPRT profile point-line pair";
+    let mut selected = None;
+    if let Some(candidate_line) = unique_profile_point_line_entity(ctx, sketch, point, parameter, sketch_entities)? {
+        selected = Some((super::transforms::SketchLocusRole::of_locus(point).copy_locus(ctx, locus_entity(point), OPERATION)?, candidate_line));
+    }
+    if let Some(candidate_point) = unique_profile_line_point_locus(ctx, sketch, line, parameter, sketch_entities)? {
+        let (selected_point, selected_line) = selected.as_ref().map_or(("", ""), |(point, line)| (locus_entity(point).as_str(), line.as_str()));
+        charge_relation_identity_work(ctx, [locus_entity(&candidate_point).as_str(), line.as_str(), selected_point, selected_line], 16, OPERATION)?;
+        let pair = (candidate_point, super::transforms::copy_sketch_entity_identity(ctx, line, OPERATION)?);
+        if selected.as_ref().is_some_and(|selected| selected != &pair) { return Ok(None); }
+        selected = Some(pair);
+    }
+    Ok(selected)
+}
+
 
 pub(super) fn profile_locus_point(
     locus: &SketchLocus,
