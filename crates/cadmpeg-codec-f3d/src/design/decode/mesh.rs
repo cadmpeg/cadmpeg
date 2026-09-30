@@ -879,30 +879,46 @@ fn scene_state_mask_is_exact(mask: &[u8]) -> bool {
         })
 }
 
-#[allow(clippy::option_option)] // Distinguish an invalid footer from a valid footer without bounds.
-fn parse_scene_footer(record: &[u8], at: usize) -> Option<Option<DesignMeshSceneBounds>> {
-    (at.checked_add(SCENE_FOOTER_BYTES) == Some(record.len()) && record.get(at) == Some(&1))
-        .then_some(())?;
-    parse_scene_bounds_payload(record, at.checked_add(1)?)
+enum SceneBoundsPayload {
+    Invalid,
+    Absent,
+    Present(DesignMeshSceneBounds),
 }
 
-#[allow(clippy::option_option)] // Distinguish an invalid payload from the exact no-bounds state mask.
-fn parse_scene_bounds_payload(
-    record: &[u8],
-    payload_at: usize,
-) -> Option<Option<DesignMeshSceneBounds>> {
-    let payload = record.get(payload_at..)?;
-    if scene_state_mask_is_exact(payload) {
-        return Some(None);
+fn parse_scene_footer(record: &[u8], at: usize) -> SceneBoundsPayload {
+    if at.checked_add(SCENE_FOOTER_BYTES) != Some(record.len()) || record.get(at) != Some(&1) {
+        return SceneBoundsPayload::Invalid;
     }
-    (payload.len() == 49 && payload[48] == 1).then_some(())?;
+    let Some(payload_at) = at.checked_add(1) else {
+        return SceneBoundsPayload::Invalid;
+    };
+    parse_scene_bounds_payload(record, payload_at)
+}
+
+fn parse_scene_bounds_payload(record: &[u8], payload_at: usize) -> SceneBoundsPayload {
+    let Some(payload) = record.get(payload_at..) else {
+        return SceneBoundsPayload::Invalid;
+    };
+    if scene_state_mask_is_exact(payload) {
+        return SceneBoundsPayload::Absent;
+    }
+    if payload.len() != 49 || payload[48] != 1 {
+        return SceneBoundsPayload::Invalid;
+    }
     let mut values = [0.0; 6];
     for (ordinal, value) in values.iter_mut().enumerate() {
-        *value = View::f64_le_at(record, payload_at.checked_add(ordinal.checked_mul(8)?)?)?;
+        let Some(offset) = ordinal.checked_mul(8).and_then(|relative| payload_at.checked_add(relative)) else {
+            return SceneBoundsPayload::Invalid;
+        };
+        let Some(parsed) = View::f64_le_at(record, offset) else {
+            return SceneBoundsPayload::Invalid;
+        };
+        *value = parsed;
     }
-    let maximum = [values[0], values[1], values[2]];
-    let minimum = [values[3], values[4], values[5]];
-    Some(Some(DesignMeshSceneBounds::new(maximum, minimum).ok()?))
+    match DesignMeshSceneBounds::new([values[0], values[1], values[2]], [values[3], values[4], values[5]]) {
+        Ok(bounds) => SceneBoundsPayload::Present(bounds),
+        Err(_) => SceneBoundsPayload::Invalid,
+    }
 }
 
 fn parse_mesh_scene_state_record(
@@ -922,11 +938,14 @@ fn parse_mesh_scene_state_record(
     let identity =
         DesignMeshFixedRecord::try_from(record_identity(ctx, record, frame, "mesh-scene-state")?)
             .map_err(|_| malformed_frame(ctx, "mesh-scene-state", frame.entity_id))?;
-    let bounds = (record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER)
-        == Some(&[0; 34]))
-    .then(|| parse_scene_footer(record, scene_state::FOOTER_MARKER))
-    .flatten()
-    .ok_or_else(|| malformed_frame(ctx, "mesh-scene-state", frame.entity_id))?;
+    if record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER) != Some(&[0; 34]) {
+        return Err(malformed_frame(ctx, "mesh-scene-state", frame.entity_id));
+    }
+    let bounds = match parse_scene_footer(record, scene_state::FOOTER_MARKER) {
+        SceneBoundsPayload::Invalid => return Err(malformed_frame(ctx, "mesh-scene-state", frame.entity_id)),
+        SceneBoundsPayload::Absent => None,
+        SceneBoundsPayload::Present(bounds) => Some(bounds),
+    };
     Ok(DesignMeshSceneState::new(identity, bounds))
 }
 
@@ -954,13 +973,13 @@ fn parse_scene_node_record(
         let (bounds, transform) = if record.len() == scene_node::LEN
             && record.get(scene_node::ZERO_RUN_24..scene_node::FOOTER_MARKER) == Some(&[0; 24])
         {
-            (parse_scene_footer(record, scene_node::FOOTER_MARKER)?, None)
+            (parse_scene_footer(record, scene_node::FOOTER_MARKER), None)
         } else if record.len() == placed_scene_node::LEN
             && record.get(placed_scene_node::ZERO_RUN_25..placed_scene_node::TRANSFORM)
                 == Some(&[0; 25])
         {
             (
-                parse_scene_bounds_payload(record, placed_scene_node::FOOTER_MASK)?,
+                parse_scene_bounds_payload(record, placed_scene_node::FOOTER_MASK),
                 Some(MeshAffineTransform::parse(
                     record,
                     placed_scene_node::TRANSFORM,
@@ -968,6 +987,11 @@ fn parse_scene_node_record(
             )
         } else {
             return None;
+        };
+        let bounds = match bounds {
+            SceneBoundsPayload::Invalid => return None,
+            SceneBoundsPayload::Absent => None,
+            SceneBoundsPayload::Present(bounds) => Some(bounds),
         };
         Some(MeshSceneNodeRecord {
             node: DesignMeshSceneNode::new(identity, bounds, transform).ok()?,

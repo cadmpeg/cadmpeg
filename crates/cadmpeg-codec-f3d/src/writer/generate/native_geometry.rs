@@ -2706,8 +2706,8 @@ fn encode_native_sweep_surface(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     input: SweepSurfaceRecord<'_>,
 ) -> Result<(), CodecError> {
-    let SweepSurfaceRecord { profile, spine, construction, solved_cache } = input;
     use cadmpeg_ir::geometry::SweepSurfaceLayout;
+    let SweepSurfaceRecord { profile, spine, construction, solved_cache } = input;
     let cache_fit_tolerance = procedural.cache_fit_tolerance();
     if let Some(form) = &construction.cache.form() {
         if let cadmpeg_ir::geometry::SweepSurfaceLayout::LawDriven {

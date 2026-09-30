@@ -810,39 +810,37 @@ fn edge_flange_to_object_operation_at(
     })
 }
 
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
 fn exact_hem_operation(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: impl ExactSizeIterator<Item = u32> + Clone,
-    has_kind: impl Fn(u32, &str) -> bool,
+    references: &(impl ExactSizeIterator<Item = u32> + Clone),
+    has_kind: &impl Fn(u32, &str) -> bool,
 ) -> Option<DesignHemOperation> {
     // The header shift and form are recovered by agreement, so all candidates
     // are evaluated and a frame that admits more than one is refused.
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
-            hem_gap_length_operation_at(bytes, start, paired_at, references.clone(), header_shift),
+            hem_gap_length_operation_at(bytes, start, paired_at, (*references).clone(), header_shift),
             hem_radius_angle_operation_at(
                 bytes,
                 start,
                 paired_at,
-                references.clone(),
+                (*references).clone(),
                 header_shift,
             ),
             hem_gap_length_radius_operation_at(
                 bytes,
                 start,
                 paired_at,
-                references.clone(),
+                (*references).clone(),
                 header_shift,
             ),
         ]
         .into_iter()
         .flatten()
-        .filter(|candidate| hem_parameter_kinds_match(candidate, &has_kind))
+        .filter(|candidate| hem_parameter_kinds_match(candidate, has_kind))
         {
             if resolved.is_some() {
                 return None;
@@ -927,12 +925,12 @@ pub(super) fn bind_hem_operation_from_parameters(
     };
     {
         let construction = exact_hem_operation(
-            bytes,
-            start,
-            paired_at,
-            scope.reference_members().values().copied(),
-            has_kind,
-        );
+bytes,
+start,
+paired_at,
+&scope.reference_members().values().copied(),
+&has_kind,
+);
         if let crate::records::feature::scope::DesignScopePayloadMut::Hem(slot) =
             scope.payload_mut()
         {

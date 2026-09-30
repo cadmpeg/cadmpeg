@@ -422,8 +422,8 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     input: EdgeTreatmentInputs<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
-    let EdgeTreatmentInputs { groups, operands, identity_operands, vertex_operands, histories, previous_state_id, feature_id, treatment_radius } = input;
     use cadmpeg_ir::features::EdgeSelection;
+    let EdgeTreatmentInputs { groups, operands, identity_operands, vertex_operands, histories, previous_state_id, feature_id, treatment_radius } = input;
 
     let stream = native_stream(&group.id);
     let has_group_corner = vertex_operands.iter().any(|operand| {
