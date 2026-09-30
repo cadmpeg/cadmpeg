@@ -4030,151 +4030,174 @@ fn point_on_quantized_segment(point: (i64, i64), start: GridPoint, end: GridPoin
     squared_length != 0 && cross == 0 && (0..=squared_length).contains(&projection)
 }
 
-pub(super) fn marker_transform_candidates_by_feature(
+pub(super) fn marker_transform_candidates_by_feature<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    features: &[cadmpeg_ir::features::Feature],
+    features: &'a [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
-) -> Result<HashMap<String, Vec<MarkerTransform>>, cadmpeg_core::CodecError> {
+) -> Result<HashMap<&'a str, Vec<MarkerTransform>>, cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = RELATION_GEOMETRY_QUANTUM_MM;
+    const OPERATION: &str = "index SLDPRT marker transform candidates";
 
-    let sketches_by_feature = features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some((feature.native_ref.as_deref()?, sketch))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut result = HashMap::new();
+    let mut sketches_by_feature = HashMap::<&str, &SketchId>::new();
+    for feature in features {
+        ctx.charge_work(1, OPERATION)?;
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            },
+        ) = feature.evaluation.definition() else { continue; };
+        let Some(native_ref) = feature.native_ref.as_deref() else { continue; };
+        ctx.charge_work(u64::try_from(native_ref.len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if !sketches_by_feature.contains_key(native_ref) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            if sketches_by_feature.len() == sketches_by_feature.capacity() {
+                for key in sketches_by_feature.keys() {
+                    ctx.charge_work(u64::try_from(key.len()).ok().and_then(|len| len.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                }
+            }
+            sketches_by_feature.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        sketches_by_feature.insert(native_ref, sketch);
+    }
+    let mut result = HashMap::<&str, Vec<MarkerTransform>>::new();
     for lane in lanes {
         let mut markers_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
         for marker in &lane.sketch_entities {
-            let Some(feature) = marker.feature_ref.as_deref() else {
-                continue;
-            };
+            ctx.charge_work(1, OPERATION)?;
+            let Some(feature) = marker.feature_ref.as_deref() else { continue; };
+            ctx.charge_work(u64::try_from(feature.len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
             if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
-                markers_by_feature.entry(feature).or_default().push(marker);
+                if !markers_by_feature.contains_key(feature) {
+                    ctx.charge_collection_items(1, OPERATION)?;
+                    if markers_by_feature.len() == markers_by_feature.capacity() {
+                        for key in markers_by_feature.keys() {
+                            ctx.charge_work(u64::try_from(key.len()).ok().and_then(|len| len.checked_add(1))
+                            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                        }
+                    }
+                    markers_by_feature.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                }
+                let markers = markers_by_feature.entry(feature).or_default();
+                ctx.reserve_collection_vec(markers, 1, OPERATION)?;
+                markers.push(marker);
             }
         }
         for (feature, markers) in markers_by_feature {
-            let Some(sketch) = sketches_by_feature.get(feature) else {
-                continue;
-            };
-            if !sketch_entities
-                .iter()
-                .any(|entity| entity.sketch == **sketch)
-            {
-                continue;
+            ctx.charge_work(u64::try_from(feature.len()).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            let Some((canonical_feature, sketch)) = sketches_by_feature.get_key_value(feature) else { continue; };
+            for entity in sketch_entities {
+                let work = entity.sketch.as_str().len().checked_add(sketch.as_str().len()).and_then(|len| len.checked_add(1))
+                    .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
             }
+            if !sketch_entities.iter().any(|entity| entity.sketch == **sketch) { continue; }
             let mut directly_bound = HashMap::<GridPoint, HashSet<GridPoint>>::new();
             for marker in &markers {
-                let Some([u, v]) = marker
-                    .coordinates_m
-                    .map(cadmpeg_ir::units::FiniteVector::get)
-                else {
-                    continue;
-                };
+                ctx.charge_work(64, OPERATION)?;
+                let Some([u, v]) = marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { continue; };
                 let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                for entity in sketch_entities.iter().filter(|entity| {
-                    entity.sketch == **sketch && entity.native_ref.as_deref() == Some(marker.id())
-                }) {
+                for entity in sketch_entities {
+                    let work = entity.sketch.as_str().len().checked_add(sketch.as_str().len())
+                        .and_then(|len| len.checked_add(entity.native_ref.as_deref().map_or(0, str::len)))
+                        .and_then(|len| len.checked_add(marker.id().len())).and_then(|len| len.checked_add(64))
+                        .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    ctx.charge_work(work, OPERATION)?;
+                    if entity.sketch != **sketch || entity.native_ref.as_deref() != Some(marker.id()) { continue; }
                     let anchors = match *entity.geometry.definition() {
                         SketchGeometryDefinition::Point { position } => vec![position.get()],
                         _ => marker_geometry_anchors(marker.kind(), &entity.geometry),
                     };
                     for anchor in anchors {
-                        directly_bound
-                            .entry(native)
-                            .or_default()
-                            .insert(quantize(anchor, QUANTUM));
+                        insert_compatible_locus(ctx, &mut directly_bound, native, quantize(anchor, QUANTUM))?;
                     }
                 }
             }
-            let compatible = |primary_only: bool| {
+            let compatible = |primary_only: bool| -> Result<HashMap<GridPoint, HashSet<GridPoint>>, cadmpeg_core::CodecError> {
                 let mut points = HashMap::<GridPoint, HashSet<GridPoint>>::new();
                 for marker in &markers {
-                    if !matches!(
-                        marker.kind(),
-                        SketchInputKind::Point
-                            | SketchInputKind::LineOrCircle
-                            | SketchInputKind::Arc
-                            | SketchInputKind::ConstrainedPoint
-                    ) {
-                        continue;
-                    }
-                    let Some([u, v]) = marker
-                        .coordinates_m
-                        .map(cadmpeg_ir::units::FiniteVector::get)
-                    else {
-                        continue;
-                    };
-                    if primary_only
-                        && index_from_u64(marker.offset()).is_none_or(|offset| {
-                            !marker_is_geometry_locus(&lane.native_payload, offset)
-                        })
-                    {
-                        continue;
-                    }
-                    let marker_point =
-                        quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                    let anchors = sketch_entities
-                        .iter()
-                        .filter(|entity| entity.sketch == **sketch)
-                        .flat_map(|entity| {
-                            if primary_only {
-                                sketch_entity_loci(entity)
-                                    .into_iter()
-                                    .filter_map(|(point, locus)| {
-                                        marker_accepts_locus(marker.kind(), &entity.geometry)
-                                            .then_some((point, locus))
-                                    })
-                                    .map(|(point, _)| point)
-                                    .collect::<Vec<_>>()
-                            } else {
-                                marker_geometry_anchors(marker.kind(), &entity.geometry)
+                    ctx.charge_work(64, OPERATION)?;
+                    if !matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::LineOrCircle | SketchInputKind::Arc | SketchInputKind::ConstrainedPoint) { continue; }
+                    let Some([u, v]) = marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { continue; };
+                    if primary_only && index_from_u64(marker.offset()).is_none_or(|offset| !marker_is_geometry_locus(&lane.native_payload, offset)) { continue; }
+                    let marker_point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                    for entity in sketch_entities {
+                        let work = entity.sketch.as_str().len().checked_add(sketch.as_str().len()).and_then(|len| len.checked_add(64))
+                            .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                        ctx.charge_work(work, OPERATION)?;
+                        if entity.sketch != **sketch { continue; }
+                        if primary_only {
+                            for (point, _) in sketch_entity_loci(entity) {
+                                if marker_accepts_locus(marker.kind(), &entity.geometry) {
+                                    insert_compatible_locus(ctx, &mut points, marker_point, quantize(point, QUANTUM))?;
+                                }
                             }
-                        });
-                    for point in anchors {
-                        points
-                            .entry(marker_point)
-                            .or_default()
-                            .insert(quantize(point, QUANTUM));
+                        } else {
+                            for point in marker_geometry_anchors(marker.kind(), &entity.geometry) {
+                                insert_compatible_locus(ctx, &mut points, marker_point, quantize(point, QUANTUM))?;
+                            }
+                        }
                     }
                 }
-                points
+                Ok(points)
             };
             let direct = compatible_marker_transform_candidates(ctx, &directly_bound)?;
-            let primary = compatible_marker_transform_candidates(ctx, &compatible(true))?;
-            let fallback = compatible_marker_transform_candidates(ctx, &compatible(false))?;
-            let candidates = if direct.len() == 1 {
-                direct
-            } else if primary.len() == 1 || fallback.is_empty() {
-                primary
-            } else {
-                fallback
-            };
-            let candidates = if let Some(sketch) =
-                sketches.iter().find(|candidate| candidate.id == **sketch)
-            {
+            let primary = compatible_marker_transform_candidates(ctx, &compatible(true)?)?;
+            let fallback = compatible_marker_transform_candidates(ctx, &compatible(false)?)?;
+            let candidates = if direct.len() == 1 { direct }
+                else if primary.len() == 1 || fallback.is_empty() { primary } else { fallback };
+            for candidate in sketches {
+                let work = candidate.id.as_str().len().checked_add(sketch.as_str().len()).and_then(|len| len.checked_add(1))
+                    .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
+            let candidates = if let Some(sketch) = sketches.iter().find(|candidate| candidate.id == **sketch) {
                 marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM)
-            } else {
-                candidates
-            };
+            } else { candidates };
             if !candidates.is_empty() {
-                result.insert(feature.to_string(), candidates);
+                ctx.charge_work(u64::try_from(feature.len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                if !result.contains_key(canonical_feature) {
+                    ctx.charge_collection_items(1, OPERATION)?;
+                    if result.len() == result.capacity() {
+                        for key in result.keys() {
+                            ctx.charge_work(u64::try_from(key.len()).ok().and_then(|len| len.checked_add(1))
+                            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                        }
+                    }
+                    result.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                }
+                result.insert(*canonical_feature, candidates);
             }
         }
     }
     Ok(result)
+}
+
+fn insert_compatible_locus(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    points: &mut HashMap<GridPoint, HashSet<GridPoint>>,
+    marker: GridPoint,
+    locus: GridPoint,
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "index SLDPRT compatible marker loci";
+    ctx.charge_work(64, OPERATION)?;
+    if !points.contains_key(&marker) {
+        ctx.charge_collection_items(1, OPERATION)?;
+        points.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    }
+    let loci = points.entry(marker).or_default();
+    if !loci.contains(&locus) {
+        ctx.charge_collection_items(1, OPERATION)?;
+        loci.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    }
+    loci.insert(locus);
+    Ok(())
 }
 
 fn marker_geometry_anchors(kind: SketchInputKind, geometry: &SketchGeometry) -> Vec<Point2> {
