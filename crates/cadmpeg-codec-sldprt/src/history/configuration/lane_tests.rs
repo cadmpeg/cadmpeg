@@ -1736,8 +1736,10 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         type_signature,
         local_id: Some(11),
     }];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let native =
-        crate::resolved_features::terminations::compact_surface_selection_value(&components);
+        crate::resolved_features::terminations::compact_surface_selection_value(&ctx, &components).expect("surface selection text");
     let selection = || crate::records::FeatureInputSurfaceSelection {
         id: "selection".into(),
         parent: "lane".into(),
@@ -1807,9 +1809,6 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     );
     let mut lane = feature_input_lane("lane", Some("1"));
     lane.surface_selections.push(selection());
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
 
     bind_configuration_topology_selections(
         &ctx,
