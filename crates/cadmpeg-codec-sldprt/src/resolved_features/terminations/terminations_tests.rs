@@ -1435,7 +1435,11 @@ fn enrich_combine_uses_outermost_body_paths() {
         sketch_entities: Vec::new(),
     }];
 
-    enrich_history_combine_selections(&mut histories, &lanes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lanes[0].native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    enrich_history_combine_selections(&ctx, &mut histories, &lanes).unwrap();
 
     let properties = &histories[0].features[0].properties;
     assert_eq!(
@@ -1546,4 +1550,101 @@ fn sweep_path_enrichment_refuses_work_limit() {
     assert!(matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && limit.operation == "enrich SLDPRT sweep paths"));
+}
+
+fn combine_selection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    let mut payload = vec![0; 420];
+    for (marker, local_id) in [(100usize, 1u32), (200, 2), (300, 3)] {
+        payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 3, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload[marker + 16..marker + 18].copy_from_slice(&[0, 0]);
+        payload[marker + 18..marker + 20].copy_from_slice(&0x8032u16.to_le_bytes());
+        payload[marker + 22..marker + 34].copy_from_slice(&[1; 12]);
+        payload[marker + 34..marker + 38].copy_from_slice(&local_id.to_le_bytes());
+    }
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "combine".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(119),
+            ordinal: 0,
+            name: "Combine".into(),
+            kind: "Combine".into(),
+            input_class: Some("moCombineBodies_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let lanes = [FeatureInputLane {
+        id: "lane#35".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "combine-name".into(),
+            parent: "lane#35".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(119),
+            value: "Combine".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }];
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lanes[0].native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    let mut admitted = histories.clone();
+    enrich_history_combine_selections(&service, &mut admitted, &lanes).unwrap();
+    assert_eq!(admitted[0].features[0].properties.get("Target").map(String::as_str),
+        Some("sldprt:feature-input:body-path:35:100"));
+    assert_eq!(admitted[0].features[0].properties.get("Tools").map(String::as_str),
+        Some("sldprt:feature-input:body-path:35:300"));
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&lanes[0].native_payload, &arena, &policy).unwrap();
+    enrich_history_combine_selections(&ctx, &mut histories, &lanes).unwrap_err()
+}
+
+#[test]
+fn combine_selection_enrichment_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn combine_selection_enrichment_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn combine_selection_enrichment_refuses_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    assert!(matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
