@@ -57,8 +57,13 @@ pub(crate) fn native_parameters_match_source(
     ir: &cadmpeg_ir::CadIr,
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<bool, CodecError> {
+    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+
     Ok(native
-        .map(|native| native_parameter_hash(&native.feature_histories))
+        .map(|native| native_parameter_hash(&hash_ctx, &native.feature_histories))
         .transpose()?
         .zip(
             ir.source
@@ -125,10 +130,15 @@ pub(crate) fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<Vec<features::FeatureInputRename>, CodecError> {
-    let neutral_hash = feature_hash(&ir.model)?;
+    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+
+    let neutral_hash = feature_hash(&hash_ctx, &ir.model)?;
     let native_hash = native
         .as_ref()
-        .map(|value| history_hash(&value.feature_histories))
+        .map(|value| history_hash(&hash_ctx, &value.feature_histories))
         .transpose()?;
     let baseline_neutral = ir
         .source
@@ -173,7 +183,7 @@ pub(crate) fn prepare_features_for_write(
                 })
                 .transpose()?
                 .unwrap_or_default();
-            if feature_hash(&projected_model)? == neutral_hash {
+            if feature_hash(&hash_ctx, &projected_model)? == neutral_hash {
                 Ok(Vec::new())
             } else {
                 Err(CodecError::Malformed(

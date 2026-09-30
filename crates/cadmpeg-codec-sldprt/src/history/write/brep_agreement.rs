@@ -24,6 +24,11 @@ pub(crate) fn validate(
     native: Option<&crate::native::SldprtNative>,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
 ) -> Result<(), CodecError> {
+    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        source_scan.map_or(&[][..], |scan| scan.source_image), &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+
     let Some(source) = ir.source.as_ref() else {
         return Ok(());
     };
@@ -32,14 +37,14 @@ pub(crate) fn validate(
     };
     let neutral_feature_baseline = source.attributes.get("sldprt_neutral_feature_local_sha256");
     let neutral_features_changed = match neutral_feature_baseline {
-        Some(baseline) => baseline != &feature_hash(&ir.model)?,
+        Some(baseline) => baseline != &feature_hash(&hash_ctx, &ir.model)?,
         None => false,
     };
     let neutral_parameters_changed = match source
         .attributes
         .get("sldprt_neutral_parameter_local_sha256")
     {
-        Some(baseline) => baseline != &parameter_hash(&ir.model.parameters)?,
+        Some(baseline) => baseline != &parameter_hash(&hash_ctx, &ir.model.parameters)?,
         None => false,
     };
     if neutral_features_changed {
@@ -86,7 +91,7 @@ pub(crate) fn validate(
                 }
             }
             let residual_change = match neutral_feature_baseline {
-                Some(expected) => expected != &feature_hash(&naming_only)?,
+                Some(expected) => expected != &feature_hash(&hash_ctx, &naming_only)?,
                 None => false,
             };
             if residual_change {
@@ -136,7 +141,7 @@ pub(crate) fn validate(
         }
     }
     let native_history_changed = match source.attributes.get("sldprt_native_history_sha256") {
-        Some(baseline) => baseline != &history_hash(&native.feature_histories)?,
+        Some(baseline) => baseline != &history_hash(&hash_ctx, &native.feature_histories)?,
         None => false,
     };
     if let Some(scan) = source_scan.filter(|_| native_history_changed) {
@@ -225,12 +230,12 @@ pub(crate) fn validate(
         .attributes
         .get("sldprt_neutral_configuration_local_sha256")
     {
-        if expected != &configuration_hash(&ir.model.configurations)? {
+        if expected != &configuration_hash(&hash_ctx, &ir.model.configurations)? {
             if let Some(scan) = source_scan {
                 validate_configuration_design_edits(ir, scan)?;
             } else {
                 let configurations = crate::writer::configurations_without_synthesized_snapshot(ir);
-                if expected == &configuration_hash(&configurations)? {
+                if expected == &configuration_hash(&hash_ctx, &configurations)? {
                     return Ok(());
                 }
                 let parameter_values_changed = match source
@@ -238,7 +243,7 @@ pub(crate) fn validate(
                     .get("sldprt_configuration_parameter_values_local_sha256")
                 {
                     Some(baseline) => {
-                        baseline != &configuration_parameter_value_hash(&configurations)?
+                        baseline != &configuration_parameter_value_hash(&hash_ctx, &configurations)?
                     }
                     None => false,
                 };
@@ -247,7 +252,7 @@ pub(crate) fn validate(
                     .get("sldprt_configuration_feature_states_local_sha256")
                 {
                     Some(baseline) => {
-                        baseline != &configuration_feature_state_hash(&configurations)?
+                        baseline != &configuration_feature_state_hash(&hash_ctx, &configurations)?
                     }
                     None => false,
                 };
