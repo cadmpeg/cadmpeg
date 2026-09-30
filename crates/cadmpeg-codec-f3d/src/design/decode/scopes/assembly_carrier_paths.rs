@@ -232,7 +232,7 @@ fn exact_class_307_joint_origin(
     {
         return None;
     }
-    for ordinal in 0..class_307_joint_origin::REFERENCE_COUNT_VALUE as usize {
+    for ordinal in 0..cadmpeg_core::decode::index_from_u32(class_307_joint_origin::REFERENCE_COUNT_VALUE) {
         marked_record_reference(
             bytes,
             start

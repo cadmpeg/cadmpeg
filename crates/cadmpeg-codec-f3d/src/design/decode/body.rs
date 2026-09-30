@@ -1511,11 +1511,12 @@ fn scan_browser_node_identities(
     bytes: &[u8],
 ) -> Result<Vec<ScannedBrowserNodeIdentity>, cadmpeg_core::CodecError> {
     const GUID_CHARS: usize = 36;
+const GUID_CHARS_U32: u32 = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
-        if View::u32_le_at(bytes, at) != Some(GUID_CHARS as u32)
+        if View::u32_le_at(bytes, at) != Some(GUID_CHARS_U32)
             || !is_utf16_guid(&bytes[at + 4..at + 4 + GUID_BYTES])
         {
             at += 1;

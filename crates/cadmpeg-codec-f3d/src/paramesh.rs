@@ -90,12 +90,16 @@ const STREAM_VALUES: u64 = 2;
 const STREAM_INDEX: u64 = 3;
 /// Element code of a two-component `f32` element.
 const ELEMENT_PAIR: u64 = 2;
+const ELEMENT_PAIR_CODE: u32 = 2;
 /// Element code of a four-component `f32` element.
 const ELEMENT_QUAD: u64 = 4;
+const ELEMENT_QUAD_CODE: u32 = 4;
 /// Element code of a three-component direction packed into two `f32` values.
 const ELEMENT_PACKED_DIRECTION: u64 = 5;
+const ELEMENT_PACKED_DIRECTION_CODE: u32 = 5;
 /// Element code of one delta-coded value per triangle.
 const ELEMENT_TRIANGLE_DELTA: u64 = 7;
+const ELEMENT_TRIANGLE_DELTA_CODE: u32 = 7;
 /// Bytes of one [`ELEMENT_PACKED_DIRECTION`] element.
 const PACKED_DIRECTION_BYTES: u32 = 8;
 
@@ -303,13 +307,13 @@ impl MeshElements {
             Self::Float {
                 width: FloatWidth::Pair,
                 ..
-            } => ELEMENT_PAIR as u32,
+            } => ELEMENT_PAIR_CODE,
             Self::Float {
                 width: FloatWidth::Quad,
                 ..
-            } => ELEMENT_QUAD as u32,
-            Self::PackedDirection { .. } => ELEMENT_PACKED_DIRECTION as u32,
-            Self::TriangleDelta(_) => ELEMENT_TRIANGLE_DELTA as u32,
+            } => ELEMENT_QUAD_CODE,
+            Self::PackedDirection { .. } => ELEMENT_PACKED_DIRECTION_CODE,
+            Self::TriangleDelta(_) => ELEMENT_TRIANGLE_DELTA_CODE,
             Self::Opaque { code, .. } => *code,
         }
     }
@@ -1486,7 +1490,7 @@ fn decode_terminal_delta_values(
     let mut delta_total = 0i64;
     for word in deltas.iter() {
         // Delta words use the same bits as signed two's-complement values.
-        let delta = i64::from(*word as i32);
+        let delta = i64::from(word.cast_signed());
         delta_total = delta_total
             .checked_add(delta)
             .ok_or_else(|| malformed("paramesh terminal-delta accumulation overflows"))?;
@@ -1495,7 +1499,7 @@ fn decode_terminal_delta_values(
         .checked_sub(delta_total)
         .ok_or_else(|| malformed("paramesh terminal-delta start overflows"))?;
     for word in deltas {
-        let delta = i64::from(*word as i32);
+        let delta = i64::from(word.cast_signed());
         *word = u32::try_from(current)
             .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?;
         current = current
@@ -1629,7 +1633,7 @@ fn decode_corner_normals(
     let mut view = View::over_retained(values);
     let mut table = reserve_mesh_items(
         ctx,
-        values.len() / PACKED_DIRECTION_BYTES as usize,
+        values.len() / cadmpeg_core::decode::index_from_u32(PACKED_DIRECTION_BYTES),
         "collect paramesh normal table",
     )?;
     while !view.is_empty() {

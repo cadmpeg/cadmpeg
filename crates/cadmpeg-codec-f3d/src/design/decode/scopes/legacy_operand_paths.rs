@@ -33,7 +33,7 @@ pub(super) fn exact_legacy_class_388_scope(
     if scope.class_tag.as_str() != "388"
         || scope.paired_class_tag.as_str() != "266"
         || scope.frame_length() != cadmpeg_core::decode::u64_from_index(class_388_assemble::LEN)
-        || scope.reference_members().len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
+        || scope.reference_members().len() != cadmpeg_core::decode::index_from_u32(class_388_assemble::REFERENCE_COUNT_VALUE)
     {
         return None;
     }
@@ -525,7 +525,7 @@ pub(super) fn exact_legacy_class_388_operand_paths(
             .operand_frame_variant(),
             Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
         ) || scope.reference_members().len()
-            != class_388_assemble::REFERENCE_COUNT_VALUE as usize
+            != cadmpeg_core::decode::index_from_u32(class_388_assemble::REFERENCE_COUNT_VALUE)
         {
             return None;
         }

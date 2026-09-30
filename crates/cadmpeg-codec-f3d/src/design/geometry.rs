@@ -1522,7 +1522,7 @@ fn sketch_geometry_parameter_range(
             ..
         } => Some([start.get(), end.get()]),
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => Some([
-            curve.knots()[curve.degree() as usize],
+            curve.knots()[cadmpeg_core::decode::index_from_u32(curve.degree())],
             curve.knots()[curve.control_points().len()],
         ]),
         _ => None,
@@ -2345,7 +2345,7 @@ fn certified_nurbs_tubes(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
     let speed = geometric!(nurbs_speed_bound(curve));
-    let degree = curve.degree() as usize;
+    let degree = cadmpeg_core::decode::index_from_u32(curve.degree());
     let knots = curve.knots();
     if let Some(ctx) = ctx {
         let count = u64::try_from(curve.pole_rows().count())
@@ -4004,7 +4004,7 @@ pub(super) fn sketch_entity_endpoints(
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
-            let start_parameter = curve.knots()[curve.degree() as usize];
+            let start_parameter = curve.knots()[cadmpeg_core::decode::index_from_u32(curve.degree())];
             let end_parameter = curve.knots()[control_points.len()];
             let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 curve.degree(),

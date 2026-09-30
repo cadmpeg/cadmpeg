@@ -94,7 +94,7 @@ pub(super) fn exact_one_sided_extrude_prologue(
         OneSidedVariant::ToFace => (
             481,
             to_face::REFERENCE_COUNT,
-            to_face::REFERENCE_COUNT_VALUE as usize,
+            cadmpeg_core::decode::index_from_u32(to_face::REFERENCE_COUNT_VALUE),
             to_face::FIRST_SIDE_EXTENT,
             to_face::FIRST_SIDE_EXTENT_VALUE,
             to_face::FACE_EXTEND_VALUE,
@@ -103,7 +103,7 @@ pub(super) fn exact_one_sided_extrude_prologue(
         OneSidedVariant::Distance => (
             449,
             distance::REFERENCE_COUNT,
-            distance::REFERENCE_COUNT_VALUE as usize,
+            cadmpeg_core::decode::index_from_u32(distance::REFERENCE_COUNT_VALUE),
             distance::FIRST_SIDE_EXTENT,
             distance::FIRST_SIDE_EXTENT_VALUE,
             distance::FACE_EXTEND_VALUE,
