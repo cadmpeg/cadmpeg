@@ -1607,12 +1607,12 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         native_ref: Some("scalar".into()),
     };
     let transforms =
-        crate::resolved_features::relation_loci::marker_transform_candidates_by_feature(
+        crate::resolved_features::relation_loci::marker_transform_candidates_by_feature(&ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&sketch),
             &entities,
             std::slice::from_ref(&lane),
-        );
+        ).expect("transform resource admission");
     assert!(transforms["feature-native"].len() > 1);
     project_relation_solved_line_geometry(
         &ctx,
@@ -1817,12 +1817,12 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let loci = profile_loci_by_marker(
+    let loci = profile_loci_by_marker(&ctx,
         std::slice::from_ref(&feature),
         &[],
         &entities,
         std::slice::from_ref(&lane),
-    );
+    ).expect("transform resource admission");
     for (index, relation) in relations.iter().enumerate() {
         let definition = typed_relation_definition(
             relation,

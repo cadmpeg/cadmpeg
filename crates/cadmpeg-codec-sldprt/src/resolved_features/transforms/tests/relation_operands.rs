@@ -627,6 +627,8 @@ fn construction_line_endpoints_accept_reverse_incidence() {
 
 #[test]
 fn endpoint_incidence_binds_an_existing_profile_line() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line_id = SketchEntityId::mint("synthetic:test:id#profile-line").unwrap();
     let sketch = Sketch {
@@ -702,13 +704,15 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
     };
 
     assert_eq!(
-        profile_loci_by_marker(&[feature], &[sketch], &[entity], &[lane])["line"],
+        profile_loci_by_marker(&resource_ctx, &[feature], &[sketch], &[entity], &[lane]).expect("transform resource admission")["line"],
         vec![SketchLocus::Entity(line_id)]
     );
 }
 
 #[test]
 fn point_marker_materializing_a_circle_binds_its_center() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let circle_id = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     let sketch = Sketch {
@@ -774,13 +778,15 @@ fn point_marker_materializing_a_circle_binds_its_center() {
     };
 
     assert_eq!(
-        profile_loci_by_marker(&[feature], &[sketch], &[entity], &[lane])["circle-marker"],
+        profile_loci_by_marker(&resource_ctx, &[feature], &[sketch], &[entity], &[lane]).expect("transform resource admission")["circle-marker"],
         vec![SketchLocus::Center(circle_id)]
     );
 }
 
 #[test]
 fn point_operand_canonicalizes_shared_endpoint_loci() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
@@ -881,12 +887,12 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         sketch_entities: vec![first_start, shared, second_end],
     };
 
-    let loci = profile_loci_by_marker(
+    let loci = profile_loci_by_marker(&resource_ctx,
         &[feature],
         std::slice::from_ref(&sketch),
         &[first, second],
         std::slice::from_ref(&lane),
-    );
+    ).expect("transform resource admission");
 
     assert_eq!(
         loci["shared"],

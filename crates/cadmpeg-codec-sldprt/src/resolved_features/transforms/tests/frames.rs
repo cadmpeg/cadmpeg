@@ -1590,3 +1590,39 @@ fn dimensioned_sketch_projection_refuses_retained_limit() {
 fn dimensioned_sketch_projection_refuses_work_limit() {
     assert_dimensioned_circle_projection_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }
+
+fn assert_marker_circle_projection_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let DimensionedCircleFixture { mut entities, feature, parameter, lane } = dimensioned_circle_fixture();
+    let expected = entities.clone();
+    crate::resolved_features::dimensions::project_marker_dimensioned_circles(
+        &service, &mut entities, &mut [], &[feature], &[parameter], &[lane],
+    ).unwrap();
+    assert_eq!(entities, expected);
+
+    let DimensionedCircleFixture { mut entities, feature, parameter, lane } = dimensioned_circle_fixture();
+    let mut policy = DecodePolicy::service();
+    match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        _ => panic!("unsupported marker circle projection dimension"),
+    }
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::resolved_features::dimensions::project_marker_dimensioned_circles(
+        &limited, &mut entities, &mut [], &[feature], &[parameter], &[lane],
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == dimension && limit.operation == "score SLDPRT compatible marker transforms"));
+}
+
+#[test]
+fn marker_circle_projection_refuses_collection_limit() {
+    assert_marker_circle_projection_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn marker_circle_projection_refuses_work_limit() {
+    assert_marker_circle_projection_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}

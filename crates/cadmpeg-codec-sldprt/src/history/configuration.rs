@@ -667,6 +667,7 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         )?;
         crate::resolved_features::dimensions::project_marker_dimensioned_circles(
+            ctx,
             &mut ir.model.sketch_entities,
             &mut ir.model.sketches,
             &features,

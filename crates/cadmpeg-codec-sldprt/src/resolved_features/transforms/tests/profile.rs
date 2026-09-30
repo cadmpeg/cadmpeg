@@ -904,6 +904,8 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
 
 #[test]
 fn unowned_radial_records_do_not_override_complete_diameter_circles() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -1029,7 +1031,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     invalid_lane.sketch_entities.push(extra);
     let mut invalid_entities = entities.clone();
     let mut invalid_sketches = sketches.clone();
-    project_marker_dimensioned_circles(
+    project_marker_dimensioned_circles(&resource_ctx,
         &mut invalid_entities,
         &mut invalid_sketches,
         std::slice::from_ref(&feature),
@@ -1040,7 +1042,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     assert_eq!(invalid_entities.len(), 3);
     assert!(invalid_sketches[0].profiles.is_empty());
 
-    project_marker_dimensioned_circles(
+    project_marker_dimensioned_circles(&resource_ctx,
         &mut entities,
         &mut sketches,
         std::slice::from_ref(&feature),

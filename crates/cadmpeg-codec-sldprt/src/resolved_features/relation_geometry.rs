@@ -549,7 +549,7 @@ pub(crate) fn project_relation_point_geometry(
         let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
         sketches_by_feature.insert(native_ref, sketch_id);
     }
-    let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    let transforms = marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
     let mut markers_by_id = HashMap::new();
     for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
         let operation = "index SLDPRT relation-point markers";
@@ -1132,7 +1132,7 @@ pub(crate) fn project_relation_solved_line_geometry(
         }
         parameters_by_id.insert(&parameter.id, parameter);
     }
-    let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    let transforms = marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
     let mut markers_by_id = HashMap::new();
     for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
         let operation = "index SLDPRT solved-line markers";
@@ -1878,7 +1878,7 @@ pub(crate) fn project_relation_solved_point_geometry(
         }
         sketches_by_feature.insert(native_ref, sketch);
     }
-    let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    let transforms = marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
     let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let mut parameters_by_id = HashMap::new();
     for parameter in parameters {
@@ -1904,7 +1904,7 @@ pub(crate) fn project_relation_solved_point_geometry(
         }
         markers_by_id.insert(marker.id(), marker);
     }
-    let loci_by_marker = profile_loci_by_marker(features, sketches, entities, lanes);
+    let loci_by_marker = profile_loci_by_marker(ctx, features, sketches, entities, lanes)?;
 
     for lane in lanes {
         let lane_key = lane
@@ -2860,8 +2860,8 @@ pub(crate) fn project_relation_bindings(
         sketches_by_feature.insert(native_ref, sketch);
     }
     let transforms =
-        marker_transform_candidates_by_feature(features, sketches, sketch_entities, lanes);
-    let loci_by_marker = profile_loci_by_marker(features, sketches, sketch_entities, lanes);
+        marker_transform_candidates_by_feature(ctx, features, sketches, sketch_entities, lanes)?;
+    let loci_by_marker = profile_loci_by_marker(ctx, features, sketches, sketch_entities, lanes)?;
     let mut markers_by_id = HashMap::new();
     for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
         let operation = "index SLDPRT planar relation markers";
