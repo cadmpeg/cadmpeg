@@ -15,7 +15,7 @@ use super::selections::{
 };
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
@@ -626,116 +626,135 @@ fn compact_combine_operation_at(payload: &[u8], name_offset: usize) -> Option<&'
 
 /// Add compact general-curve reference identities carried by solid sweeps.
 pub(crate) fn enrich_history_sweep_paths(
-    histories: &mut [crate::records::FeatureHistory],
+    ctx: &DecodeContext<'_>, histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "enrich SLDPRT sweep paths";
     let mut paths = HashMap::<String, Vec<Option<String>>>::new();
     for lane in lanes {
-        let mut objects = histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .filter_map(|feature| {
-                Some((
-                    feature_object_name(feature, lane)?.offset,
-                    feature.id.clone(),
-                ))
-            })
-            .collect::<Vec<_>>();
+        let mut objects = Vec::new();
+        for feature in histories.iter().flat_map(|history| &history.features) {
+            ctx.charge_work(1, OPERATION)?;
+            for name in &lane.names {
+                let work = u64_from_index(name.value.len()).checked_add(u64_from_index(feature.name.len()))
+                    .and_then(|work| work.checked_add(2))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
+            let Some(name) = feature_object_name(feature, lane) else { continue; };
+            let id = copy_termination_text(ctx, &feature.id, OPERATION)?;
+            ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+            objects.push((name.offset, id));
+        }
+        let levels = if objects.len() > 1 { objects.len().ilog2() + 1 } else { 1 };
+        ctx.charge_work(u64_from_index(objects.len()).checked_mul(u64::from(levels))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         objects.sort_unstable_by_key(|object| object.0);
         for (index, &(start, ref feature_id)) in objects.iter().enumerate() {
-            let Some(feature) = histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .find(|feature| feature.id == *feature_id)
-            else {
-                continue;
-            };
-            if !matches!(
-                native_object_class(feature.input_class.as_deref().unwrap_or_default()),
-                NativeClassKind::Sweep | NativeClassKind::SweepReferenceSurface
-            ) || feature.properties.contains_key("Path")
-            {
-                continue;
+            let mut feature = None;
+            for candidate in histories.iter().flat_map(|history| &history.features) {
+                let work = u64_from_index(candidate.id.len()).checked_add(u64_from_index(feature_id.len()))
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+                if candidate.id == *feature_id { feature = Some(candidate); break; }
             }
-            let (Ok(start), end) = (
-                usize::try_from(start),
-                objects
-                    .get(index + 1)
-                    .and_then(|object| usize::try_from(object.0).ok())
-                    .unwrap_or(lane.native_payload.len()),
-            ) else {
-                continue;
+            let Some(feature) = feature else { continue; };
+            if !matches!(native_object_class(feature.input_class.as_deref().unwrap_or_default()),
+                NativeClassKind::Sweep | NativeClassKind::SweepReferenceSurface)
+                || feature.properties.contains_key("Path") { continue; }
+            let (Ok(start), end) = (usize::try_from(start), objects.get(index + 1)
+                .and_then(|object| usize::try_from(object.0).ok())
+                .unwrap_or(lane.native_payload.len())) else { continue; };
+            let mut path_offset = None;
+            let mut ambiguous_offset = false;
+            let mut source = None;
+            let mut ambiguous_source = false;
+            let mut observe_offset = |offset| {
+                if path_offset.is_some_and(|existing| existing != offset) { ambiguous_offset = true; }
+                else if path_offset.is_none() { path_offset = Some(offset); }
             };
-            let declared = lane
-                .classes
-                .iter()
-                .filter(|class| {
-                    class.name == "moGeneralCurveRef_w"
-                        && class.offset >= u64_from_index(start)
-                        && class.offset < u64_from_index(end)
-                })
-                .filter_map(|class| usize::try_from(class.offset).ok())
-                .collect::<Vec<_>>();
-            let compact = (start..end.saturating_sub(16))
-                .filter(|offset| compact_general_curve_ref_at(&lane.native_payload, *offset))
-                .collect::<Vec<_>>();
-            let compact_profiles = (start..end.saturating_sub(16))
-                .filter(|offset| {
-                    compact_profile_general_curve_ref_at(&lane.native_payload, *offset)
-                })
-                .collect::<Vec<_>>();
-            let mut source_candidates = declared
-                .iter()
-                .filter_map(|offset| {
-                    declared_general_curve_profile_prefix(&lane.native_payload, *offset)
-                })
-                .chain(compact_profiles.iter().map(|offset| offset + 6))
-                .filter_map(|prefix| component_profile_source_at(&lane.native_payload, prefix))
-                .collect::<Vec<_>>();
-            source_candidates.sort_unstable();
-            source_candidates.dedup();
-            let path = if let [source] = source_candidates.as_slice() {
-                Some(source.to_string())
-            } else {
-                let mut candidates = declared;
-                candidates.extend(compact);
-                candidates.extend(compact_profiles);
-                candidates.sort_unstable();
-                candidates.dedup();
-                if let [offset] = candidates.as_slice() {
-                    let lane_key = lane
-                        .id
-                        .rsplit_once('#')
-                        .map_or(lane.id.as_str(), |(_, key)| key);
-                    Some(format!(
-                        "sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"
-                    ))
-                } else {
-                    None
+            let mut observe_source = |value| {
+                if source.is_some_and(|existing| existing != value) { ambiguous_source = true; }
+                else if source.is_none() { source = Some(value); }
+            };
+            for class in &lane.classes {
+                ctx.charge_work(1, OPERATION)?;
+                if class.name != "moGeneralCurveRef_w" || class.offset < u64_from_index(start)
+                    || class.offset >= u64_from_index(end) { continue; }
+                let Ok(offset) = usize::try_from(class.offset) else { continue; };
+                observe_offset(offset);
+                ctx.charge_work(320, OPERATION)?;
+                if let Some(value) = declared_general_curve_profile_prefix(&lane.native_payload, offset)
+                    .and_then(|prefix| component_profile_source_at(&lane.native_payload, prefix)) {
+                    observe_source(value);
                 }
-            };
-            paths.entry(feature_id.clone()).or_default().push(path);
+            }
+            if let Some(scan_end) = end.checked_sub(16) {
+                for offset in start..scan_end {
+                    ctx.charge_work(32, OPERATION)?;
+                    if compact_general_curve_ref_at(&lane.native_payload, offset) { observe_offset(offset); }
+                    if compact_profile_general_curve_ref_at(&lane.native_payload, offset) {
+                        observe_offset(offset);
+                        ctx.charge_work(224, OPERATION)?;
+                        if let Some(value) = component_profile_source_at(&lane.native_payload, offset + 6) {
+                            observe_source(value);
+                        }
+                    }
+                }
+            }
+            let path = if let Some(source) = source.filter(|_| !ambiguous_source) {
+                Some(ctx.format_retained(format_args!("{source}"), OPERATION)?)
+            } else if let Some(offset) = path_offset.filter(|_| !ambiguous_offset) {
+                let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
+                ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
+                Some(ctx.format_retained(format_args!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"), OPERATION)?)
+            } else { None };
+            ctx.charge_work(u64_from_index(feature_id.len()).checked_mul(3)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            if !paths.contains_key(feature_id) {
+                let key = copy_termination_text(ctx, feature_id, OPERATION)?;
+                ctx.charge_collection_items(1, OPERATION)?;
+                paths.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                paths.insert(key, Vec::new());
+            }
+            if let Some(votes) = paths.get_mut(feature_id) {
+                ctx.reserve_collection_vec(votes, 1, OPERATION)?;
+                votes.push(path);
+            }
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        if feature.properties.contains_key("Path") {
-            continue;
+    for feature in histories.iter_mut().flat_map(|history| &mut history.features) {
+        ctx.charge_work(u64_from_index(feature.id.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if feature.properties.contains_key("Path") { continue; }
+        let Some(votes) = paths.get(&feature.id) else { continue; };
+        let Some(Some(first)) = votes.first() else { continue; };
+        let mut agreement = true;
+        for vote in votes {
+            let work = u64_from_index(first.len()).checked_add(u64_from_index(vote.as_ref().map_or(0, String::len)))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            if vote.as_ref() != Some(first) { agreement = false; break; }
         }
-        let Some(votes) = paths.get(&feature.id) else {
-            continue;
-        };
-        let Some(Some(first)) = votes.first() else {
-            continue;
-        };
-        if votes.iter().all(|vote| vote.as_ref() == Some(first)) {
-            feature
-                .properties
-                .insert(cadmpeg_core::nonblank_literal!("Path"), first.clone());
+        if agreement {
+            let path = copy_termination_text(ctx, first, OPERATION)?;
+            ctx.charge_collection_items(1, OPERATION)?;
+            feature.properties.insert(cadmpeg_core::nonblank_literal!("Path"), path);
         }
     }
+    Ok(())
+}
+
+fn copy_termination_text(
+    ctx: &DecodeContext<'_>, text: &str, operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    ctx.charge_work(u64_from_index(text.len()), operation)?;
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, text.len(), operation)?;
+    copy.push_str(text);
+    Ok(copy)
 }
 
 /// Bind reference-curve cross sections consumed by surface sweeps.
