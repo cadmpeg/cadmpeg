@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design dimension recipe records: loci, annotation frames and presentation frames.
 
+use crate::records::admission::RecordAdmission;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::identity::Located;
@@ -674,27 +675,12 @@ impl From<String> for AnnotationFrameBuildError {
 }
 
 impl DesignDimensionAnnotationFrame {
-    /// Admit an annotation frame with representable offsets and matching operand runs.
-    pub(crate) fn try_new(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(|error| error.to_string())?;
-        Self::try_new_inner(&ctx, draft).map_err(|error| match error {
-            AnnotationFrameBuildError::Invalid(message) => message,
-            AnnotationFrameBuildError::Resource(error) => error.to_string(),
-        })
-    }
-
     /// Admit an annotation frame using the source decode budget.
     pub(crate) fn try_new_charged(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         draft: DesignDimensionAnnotationFrameDraft,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        Self::try_new_inner(ctx, draft).map_err(|error| match error {
+        Self::try_new_inner(RecordAdmission::Charged(ctx), draft).map_err(|error| match error {
             AnnotationFrameBuildError::Invalid(message) => {
                 cadmpeg_core::CodecError::malformed(message)
             }
@@ -703,7 +689,7 @@ impl DesignDimensionAnnotationFrame {
     }
 
     fn try_new_inner(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        admission: RecordAdmission<'_, '_>,
         draft: DesignDimensionAnnotationFrameDraft,
     ) -> Result<Self, AnnotationFrameBuildError> {
         if draft.operands.is_empty() {
@@ -763,7 +749,7 @@ impl DesignDimensionAnnotationFrame {
                 return Err("return_member_offsets disagree with frame layout".into());
             }
         }
-        let mut operand_members = ctx
+        let mut operand_members = admission
             .collect_vec(
                 draft
                     .operands
@@ -772,7 +758,7 @@ impl DesignDimensionAnnotationFrame {
                 "index F3D annotation operands",
             )
             .map_err(AnnotationFrameBuildError::Resource)?;
-        let mut return_members = ctx
+        let mut return_members = admission
             .collect_vec(
                 draft.return_members.iter().map(|member| member.value),
                 "index F3D annotation return members",
@@ -791,7 +777,7 @@ impl DesignDimensionAnnotationFrame {
             class_tag: draft.class_tag,
             record_index: draft.record_index,
             frame_length: draft.frame_length,
-            operands: ctx
+            operands: admission
                 .collect_vec(
                     draft
                         .operands
@@ -806,7 +792,7 @@ impl DesignDimensionAnnotationFrame {
             entity_genesis: draft.entity_genesis,
             annotation_bytes: draft.annotation_bytes,
             governing_owner_record_index: draft.governing_owner_record_index,
-            return_members: ctx
+            return_members: admission
                 .collect_vec(
                     draft.return_members.into_iter().map(|member| member.value),
                     "retain F3D annotation return members",
@@ -1036,7 +1022,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
         if wire.return_members.len() != wire.return_member_offsets.len() {
             return Err("return_members and return_member_offsets must have equal lengths".into());
         }
-        Self::try_new(DesignDimensionAnnotationFrameDraft {
+        Self::try_new_inner(RecordAdmission::Admitted,DesignDimensionAnnotationFrameDraft {
             return_members: wire
                 .return_members
                 .into_iter()
@@ -1064,6 +1050,9 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
             paired_byte_offset: wire.paired_byte_offset,
             owner_reference: wire.owner_reference,
             owner_reference_offset: wire.owner_reference_offset,
+        }).map_err(|error| match error {
+            AnnotationFrameBuildError::Invalid(message) => message,
+            AnnotationFrameBuildError::Resource(error) => error.to_string(),
         })
     }
 }

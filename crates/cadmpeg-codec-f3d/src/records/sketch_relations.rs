@@ -9,6 +9,7 @@ use super::{
 };
 use crate::records::serde_column::SliceColumn;
 use cadmpeg_core::decode::DecodeContext;
+use crate::records::admission::RecordAdmission;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
@@ -857,20 +858,20 @@ impl SketchRelation {
 }
 
 fn zip_relation_members(
-    ctx: &DecodeContext<'_>,
+    admission: RecordAdmission<'_, '_>,
     members: Vec<u32>,
     offsets: Vec<u32>,
     ordinals: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
 ) -> Result<SketchRelationMembers, SketchRelationWireError> {
     let len = members.len();
-    let offsets = pad_or_check(ctx, "member_offsets", offsets, len)?;
-    let resolved = pad_resolved(ctx, "resolved_members", resolved, len)?;
+    let offsets = pad_or_check(admission, "member_offsets", offsets, len)?;
+    let resolved = pad_resolved(admission, "resolved_members", resolved, len)?;
     let ordinals = if ordinals.is_empty() {
-        ctx.collect_vec((0..len).map(|_| None), "admit sketch relation ordinals")
+        admission.collect_vec((0..len).map(|_| None), "admit sketch relation ordinals")
             .map_err(SketchRelationWireError::Resource)?
     } else if ordinals.len() == len {
-        ctx.collect_vec(
+        admission.collect_vec(
             ordinals.into_iter().map(Some),
             "admit sketch relation ordinals",
         )
@@ -881,7 +882,7 @@ fn zip_relation_members(
         )
         .into());
     };
-    ctx.try_collect_vec(
+    admission.try_collect_vec(
         (members
             .into_iter()
             .zip(offsets)
@@ -906,15 +907,15 @@ fn zip_relation_members(
 }
 
 fn zip_return_members(
-    ctx: &DecodeContext<'_>,
+    admission: RecordAdmission<'_, '_>,
     members: Vec<u32>,
     offsets: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
 ) -> Result<SketchRelationReturnMembers, SketchRelationWireError> {
     let len = members.len();
-    let offsets = pad_or_check(ctx, "return_member_offsets", offsets, len)?;
-    let resolved = pad_resolved(ctx, "resolved_return_members", resolved, len)?;
-    ctx.try_collect_vec(
+    let offsets = pad_or_check(admission, "return_member_offsets", offsets, len)?;
+    let resolved = pad_resolved(admission, "resolved_return_members", resolved, len)?;
+    admission.try_collect_vec(
         (members.into_iter().zip(offsets).zip(resolved).map(
             |((record_index, offset), resolved)| {
                 Ok(SketchRelationReturnMember {
@@ -935,13 +936,13 @@ fn zip_return_members(
 }
 
 fn pad_or_check(
-    ctx: &DecodeContext<'_>,
+    admission: RecordAdmission<'_, '_>,
     name: &str,
     values: Vec<u32>,
     len: usize,
 ) -> Result<Vec<u32>, SketchRelationWireError> {
     if values.is_empty() {
-        ctx.alloc_filled(len, 0, "pad sketch relation offsets")
+        admission.alloc_filled(len, 0, "pad sketch relation offsets")
             .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
         Ok(values)
@@ -955,16 +956,16 @@ fn pad_or_check(
 }
 
 fn pad_resolved(
-    ctx: &DecodeContext<'_>,
+    admission: RecordAdmission<'_, '_>,
     name: &str,
     values: Vec<SketchRelationOperand>,
     len: usize,
 ) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationWireError> {
     if values.is_empty() {
-        ctx.alloc_filled(len, None, "pad sketch relation resolutions")
+        admission.alloc_filled(len, None, "pad sketch relation resolutions")
             .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
-        ctx.collect_vec(
+        admission.collect_vec(
             values.into_iter().map(Some),
             "admit sketch relation resolutions",
         )
@@ -1030,14 +1031,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
     type Error = SketchRelationPayloadError;
 
     fn try_from(wire: SketchRelationSerde) -> Result<Self, Self::Error> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(|error| SketchRelationPayloadError(error.to_string()))?;
-        Self::from_wire_with_context(&ctx, wire).map_err(|error| match error {
+Self::from_wire_with_context(RecordAdmission::Admitted, wire).map_err(|error| match error {
             SketchRelationWireError::Payload(error) => error,
             SketchRelationWireError::Resource(error) => {
                 SketchRelationPayloadError(error.to_string())
@@ -1051,14 +1045,14 @@ impl SketchRelation {
         ctx: &DecodeContext<'_>,
         wire: SketchRelationSerde,
     ) -> Result<Self, CodecError> {
-        Self::from_wire_with_context(ctx, wire).map_err(|error| match error {
+        Self::from_wire_with_context(RecordAdmission::Charged(ctx), wire).map_err(|error| match error {
             SketchRelationWireError::Payload(error) => CodecError::Malformed(error.0),
             SketchRelationWireError::Resource(error) => error,
         })
     }
 
     fn from_wire_with_context(
-        ctx: &DecodeContext<'_>,
+        admission: RecordAdmission<'_, '_>,
         wire: SketchRelationSerde,
     ) -> Result<Self, SketchRelationWireError> {
         let (derived_kinds, derived_unknown) = constraint_kinds_from_state(wire.state);
@@ -1091,7 +1085,7 @@ impl SketchRelation {
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
             auxiliary_references: ReferenceRun::located(
-                ctx.collect_vec(
+                admission.collect_vec(
                     wire.auxiliary_references
                         .into_iter()
                         .zip(wire.auxiliary_reference_offsets)
@@ -1102,7 +1096,7 @@ impl SketchRelation {
             ),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
-                ctx,
+                admission,
                 wire.members,
                 wire.member_offsets,
                 wire.member_relation_ordinals,
@@ -1112,7 +1106,7 @@ impl SketchRelation {
             definition,
             entity_genesis: wire.entity_genesis,
             return_members: zip_return_members(
-                ctx,
+                admission,
                 wire.return_members,
                 wire.return_member_offsets,
                 wire.resolved_return_members,
