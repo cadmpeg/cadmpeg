@@ -1065,7 +1065,7 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
     entities.extend(points);
     let markers = entities.iter().collect::<Vec<_>>();
     assert!(
-        super::coordinate_ellipse_axes(&payload, &ellipse, &markers).is_some_and(
+        super::coordinate_ellipse_axes(&cadmpeg_test_support::service_decode_context(), &payload, &ellipse, &markers).unwrap().is_some_and(
             |(axis, major, minor)| {
                 axis == [1.0, 0.0]
                     && same_dimension_length(major, 4.0)
@@ -1077,7 +1077,7 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
     entities[4].coordinates_m = cadmpeg_ir::units::FiniteVector::new([6.0, 5.0]);
     let markers = entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::coordinate_ellipse_axes(&payload, &ellipse, &markers),
+        super::coordinate_ellipse_axes(&cadmpeg_test_support::service_decode_context(), &payload, &ellipse, &markers).unwrap(),
         None
     );
 }
