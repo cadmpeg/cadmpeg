@@ -138,14 +138,14 @@ pub(super) fn resolved_face_group(
         };
         for face in operand_faces {
             if !faces.contains(&face) {
-                (ctx).push_vec(&mut faces, face, "f3d resolved face group member")?;
+                ctx.push_vec(&mut faces, face, "f3d resolved face group member")?;
             }
         }
     }
     if faces.is_empty() {
         return Ok(None);
     }
-    let native = (ctx).copy_retained_text(&group.id, "f3d resolved face group native id")?;
+    let native = ctx.copy_retained_text(&group.id, "f3d resolved face group native id")?;
     Ok(Some(cadmpeg_ir::features::FaceSelection::Resolved {
         faces,
         native,
@@ -194,14 +194,14 @@ pub(super) fn resolved_explicit_bounded_face_group(
         };
         for face in candidate_faces {
             if !faces.contains(&face) {
-                (ctx).push_vec(&mut faces, face, "f3d explicit bounded face group member")?;
+                ctx.push_vec(&mut faces, face, "f3d explicit bounded face group member")?;
             }
         }
     }
     if faces.is_empty() {
         return Ok(None);
     }
-    let native = (ctx).copy_retained_text(&group.id, "f3d explicit bounded face group native id")?;
+    let native = ctx.copy_retained_text(&group.id, "f3d explicit bounded face group native id")?;
     Ok(Some(cadmpeg_ir::features::FaceSelection::Resolved {
         faces,
         native,
@@ -232,7 +232,7 @@ pub(super) fn resolved_direct_face_selection(
                 .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                 == Some(&operand.record_index())
     }) {
-        (ctx).push_vec(&mut matching, operand, "f3d direct face operand")?;
+        ctx.push_vec(&mut matching, operand, "f3d direct face operand")?;
     }
     crate::design::sort::sort_by_key(ctx, &mut matching[..], |operand| {
         operand.scope_reference_ordinal
@@ -264,7 +264,7 @@ pub(super) fn resolved_direct_face_selection(
             return Ok(None);
         }
     }
-    let native = (ctx).copy_retained_text(&scope.id, "f3d direct face native id")?;
+    let native = ctx.copy_retained_text(&scope.id, "f3d direct face native id")?;
     Ok(Some(FaceSelection::Resolved { faces, native }))
 }
 
@@ -285,7 +285,7 @@ pub(super) fn resolved_historical_face_operand(
     let Some(face_slot) = resolve_face_operand_history_candidates(operand) else {
         return Ok(None);
     };
-    let native = (ctx).copy_retained_text(&operand.id, "f3d historical face operand id")?;
+    let native = ctx.copy_retained_text(&operand.id, "f3d historical face operand id")?;
     historical_face_selection_with_native(ctx, scope, previous_state_id, vec![face_slot], native)
 }
 
@@ -319,7 +319,7 @@ pub(super) fn resolved_body_recipe_selection(
         .map(|member| &member.value)
         .enumerate()
     {
-        if !(ctx).insert_hash_set(&mut member_records, *record_index, "f3d body recipe member index")? {
+        if !ctx.insert_hash_set(&mut member_records, *record_index, "f3d body recipe member index")? {
             return Ok(None);
         }
         let Some(ordinal) = u32::try_from(ordinal).ok() else {
@@ -351,7 +351,7 @@ pub(super) fn resolved_body_recipe_selection(
         }
         for face in &operand.resolved_body_face_slots {
             if !faces.contains(face) {
-                (ctx).push_vec(&mut faces, *face, "f3d body recipe face slot")?;
+                ctx.push_vec(&mut faces, *face, "f3d body recipe face slot")?;
             }
         }
     }
@@ -405,7 +405,7 @@ pub(super) fn resolved_profile_face_group(
     else {
         return Ok(None);
     };
-    let native_copy = (ctx).copy_retained_text(native.as_str(), "f3d Loft face profile native id")?;
+    let native_copy = ctx.copy_retained_text(native.as_str(), "f3d Loft face profile native id")?;
     Ok(Some(ProfileRef::Planar(
         cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
             state,
@@ -438,7 +438,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
             && group.scope_record_index == scope.record_index
             && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
     }) {
-        (ctx).push_vec(&mut profile_groups, group, "f3d Extrude profile group")?;
+        ctx.push_vec(&mut profile_groups, group, "f3d Extrude profile group")?;
     }
     crate::design::sort::sort_by_key(ctx, &mut profile_groups[..], |group| {
         group.scope_reference_ordinal
@@ -453,7 +453,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
     let mut groups_by_record = HashMap::new();
     for group in &profile_groups {
         // discarded-value: duplicate record indices are rejected by the length check below.
-        let _ = (ctx).insert_hash_map(&mut groups_by_record, group.record_index, *group, "f3d Extrude profile group index")?;
+        let _ = ctx.insert_hash_map(&mut groups_by_record, group.record_index, *group, "f3d Extrude profile group index")?;
     }
     if groups_by_record.len() != profile_groups.len() {
         return Ok(None);
@@ -467,7 +467,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
             if child.scope_reference_ordinal <= parent.scope_reference_ordinal {
                 return Ok(None);
             }
-            if (ctx).insert_hash_map(&mut parent_by_child, child.record_index, parent.record_index, "f3d Extrude profile parent index")?
+            if ctx.insert_hash_map(&mut parent_by_child, child.record_index, parent.record_index, "f3d Extrude profile parent index")?
             .is_some()
             {
                 return Ok(None);
@@ -480,7 +480,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
         .copied()
         .filter(|group| !parent_by_child.contains_key(&group.record_index))
     {
-        (ctx).push_vec(&mut roots, group, "f3d Extrude profile root")?;
+        ctx.push_vec(&mut roots, group, "f3d Extrude profile root")?;
     }
     if !profile_groups.is_empty() && roots.is_empty() {
         return Ok(None);
@@ -508,7 +508,7 @@ fn visit_extrude_profile_group(
     {
         ctx.charge_work(1, "f3d Extrude profile hierarchy")?;
     }
-    if !(ctx).insert_hash_set(visited, group.record_index, "f3d Extrude profile visited group")? {
+    if !ctx.insert_hash_set(visited, group.record_index, "f3d Extrude profile visited group")? {
         return Ok(false);
     }
     for member in group.members().iter().map(|member| &member.value) {
@@ -544,12 +544,12 @@ pub(crate) fn extrude_profile_group_operand_indices(
             && group.scope_record_index == root.scope_record_index
             && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
     }) {
-        (ctx).push_vec(&mut profile_groups, group, "f3d Extrude leaf profile group")?;
+        ctx.push_vec(&mut profile_groups, group, "f3d Extrude leaf profile group")?;
     }
     let mut groups_by_record = HashMap::new();
     for group in &profile_groups {
         // discarded-value: duplicate record indices are rejected by the length check below.
-        let _ = (ctx).insert_hash_map(&mut groups_by_record, group.record_index, *group, "f3d Extrude leaf group index")?;
+        let _ = ctx.insert_hash_map(&mut groups_by_record, group.record_index, *group, "f3d Extrude leaf group index")?;
     }
     if groups_by_record.len() != profile_groups.len()
         || groups_by_record.get(&root.record_index).copied() != Some(root)
@@ -581,7 +581,7 @@ fn collect_extrude_profile_group_operands(
         ctx.charge_work(1, "f3d Extrude leaf hierarchy")?;
     }
     if group.members().is_empty()
-        || !(ctx).insert_hash_set(visited_groups, group.record_index, "f3d Extrude leaf visited group")?
+        || !ctx.insert_hash_set(visited_groups, group.record_index, "f3d Extrude leaf visited group")?
     {
         return Ok(None);
     }
@@ -635,7 +635,7 @@ fn collect_extrude_profile_group_operands(
         if indices.contains(&index) {
             return Ok(None);
         }
-        (ctx).push_vec(&mut indices, index, "f3d Extrude leaf index")?;
+        ctx.push_vec(&mut indices, index, "f3d Extrude leaf index")?;
     }
     Ok(Some(indices))
 }
@@ -728,7 +728,7 @@ pub(crate) fn resolved_extrude_profile_face_group(
         }
         for slot in slots {
             if !faces.contains(slot) {
-                (ctx).push_vec(&mut faces, *slot, "f3d Extrude historical face slot")?;
+                ctx.push_vec(&mut faces, *slot, "f3d Extrude historical face slot")?;
             }
         }
     }
@@ -747,7 +747,7 @@ pub(crate) fn resolved_extrude_profile_face_group(
         cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
-            native: vec![(ctx).copy_retained_text(native.as_str(), "f3d Extrude historical group id")?]
+            native: vec![ctx.copy_retained_text(native.as_str(), "f3d Extrude historical group id")?]
             .try_into()
             .map_err(CodecError::malformed)?,
         },
@@ -787,7 +787,7 @@ fn resolved_extrude_profile_active_faces(
         for face in &operand.candidate_faces {
             if !faces.contains(face) {
                 let face = (face).try_clone_for_decode(ctx, "f3d Extrude active face id")?;
-                (ctx).push_vec(&mut faces, face, "f3d Extrude active face")?;
+                ctx.push_vec(&mut faces, face, "f3d Extrude active face")?;
             }
         }
     }
@@ -828,7 +828,7 @@ pub(super) fn resolved_loft_edge_profile_group(
     };
     let mut member_ids = HashSet::new();
     for member in group.members().iter().map(|member| member.value) {
-        if !(ctx).insert_hash_set(&mut member_ids, member, "f3d Loft edge profile member index")? {
+        if !ctx.insert_hash_set(&mut member_ids, member, "f3d Loft edge profile member index")? {
             return Ok(None);
         }
     }
@@ -873,7 +873,7 @@ pub(super) fn resolved_loft_edge_profile_group(
         })() else {
             return Ok(None);
         };
-        (ctx).push_vec(&mut member_operands, operand, "f3d Loft edge profile member")?;
+        ctx.push_vec(&mut member_operands, operand, "f3d Loft edge profile member")?;
     }
     let Some(face_slot) = loft_edge_profile_face_slot(group.members().len(), &member_operands)
     else {
@@ -894,7 +894,7 @@ pub(super) fn resolved_loft_edge_profile_group(
         cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
-            native: vec![(ctx).copy_retained_text(native.as_str(), "f3d Loft historical group id")?]
+            native: vec![ctx.copy_retained_text(native.as_str(), "f3d Loft historical group id")?]
             .try_into()
             .map_err(CodecError::malformed)?,
         },
@@ -1084,7 +1084,7 @@ fn historical_face_selection_in_state(
     previous_state_id: i64,
     faces: Vec<i64>,
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
-    let native = (ctx).copy_retained_text(&group.id, "f3d historical face group id")?;
+    let native = ctx.copy_retained_text(&group.id, "f3d historical face group id")?;
     historical_face_selection_with_native(ctx, scope, previous_state_id, faces, native)
 }
 
@@ -1107,9 +1107,9 @@ fn historical_face_selection_with_native(
     let mut historical_faces = Vec::new();
     for face in faces {
         let id = historical_face_id(ctx, &prefix, face)?;
-        (ctx).push_vec(&mut historical_faces, id, "f3d historical face member")?;
+        ctx.push_vec(&mut historical_faces, id, "f3d historical face member")?;
     }
-    let fallback_native = (ctx).copy_retained_text(&native, "f3d historical face fallback id")?;
+    let fallback_native = ctx.copy_retained_text(&native, "f3d historical face fallback id")?;
     Ok(Some(
         FaceSelection::historical(
             crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
@@ -1203,7 +1203,7 @@ fn split_face_updated_target_slots(
     }
     let mut updated = HashSet::new();
     for slot in updated_face_slots {
-        (ctx).insert_hash_set(&mut updated, *slot, "f3d SplitFace updated face index")?;
+        ctx.insert_hash_set(&mut updated, *slot, "f3d SplitFace updated face index")?;
     }
     if updated.len() != updated_face_slots.len() {
         return Ok(None);
@@ -1246,9 +1246,9 @@ fn split_face_updated_target_slots(
                 return Ok(None);
             };
             if updated.contains(&slot)
-                && (ctx).insert_hash_set(&mut represented, slot, "f3d SplitFace represented face index")?
+                && ctx.insert_hash_set(&mut represented, slot, "f3d SplitFace represented face index")?
             {
-                (ctx).push_vec(&mut faces, slot, "f3d SplitFace updated face")?;
+                ctx.push_vec(&mut faces, slot, "f3d SplitFace updated face")?;
             }
         }
     }
@@ -1314,7 +1314,7 @@ fn historical_face_group_slots(
         contributing_members += 1;
         for face in member_slots {
             if !faces.contains(face) {
-                (ctx).push_vec(&mut faces, *face, "f3d historical face group slot")?;
+                ctx.push_vec(&mut faces, *face, "f3d historical face group slot")?;
             }
         }
     }
@@ -1349,7 +1349,7 @@ fn split_face_complete_candidate_slots(
         else {
             return Ok(None);
         };
-        (ctx).push_vec(&mut slots, slot, "f3d SplitFace complete candidate slot")?;
+        ctx.push_vec(&mut slots, slot, "f3d SplitFace complete candidate slot")?;
     }
     let mut preceding = HashSet::new();
     for face in &operand.preceding_candidate_faces {
@@ -1358,7 +1358,7 @@ fn split_face_complete_candidate_slots(
             .rsplit_once('#')
             .and_then(|(_, slot)| slot.parse::<i64>().ok())
         {
-            (ctx).insert_hash_set(&mut preceding, slot, "f3d SplitFace preceding candidate index")?;
+            ctx.insert_hash_set(&mut preceding, slot, "f3d SplitFace preceding candidate index")?;
         }
     }
     Ok((!slots.is_empty() && slots.iter().all(|slot| preceding.contains(slot))).then_some(slots))
@@ -1394,7 +1394,7 @@ fn resolved_face_operand(
     if let Some(face) = &operand.resolved_active_face {
         let mut faces = Vec::new();
         let face = (face).try_clone_for_decode(ctx, "f3d resolved active face id")?;
-        (ctx).push_vec(&mut faces, face, "f3d resolved active face")?;
+        ctx.push_vec(&mut faces, face, "f3d resolved active face")?;
         return Ok(Some(faces));
     }
     if !operand.resolved_face_slots.is_empty() {
@@ -1420,7 +1420,7 @@ fn resolved_face_operand(
                 };
                 (face).try_clone_for_decode(ctx, "f3d resolved face slot candidate id")?
             };
-            (ctx).push_vec(&mut faces, face, "f3d resolved face slot")?;
+            ctx.push_vec(&mut faces, face, "f3d resolved face slot")?;
         }
         return Ok(Some(faces));
     }
@@ -1429,7 +1429,7 @@ fn resolved_face_operand(
         let mut faces = Vec::new();
         for face in candidates {
             let face = (face).try_clone_for_decode(ctx, "f3d alternate face candidate id")?;
-            (ctx).push_vec(&mut faces, face, "f3d alternate face candidate")?;
+            ctx.push_vec(&mut faces, face, "f3d alternate face candidate")?;
         }
         return Ok(Some(faces));
     }
@@ -1439,7 +1439,7 @@ fn resolved_face_operand(
             for face in &reference.candidate_faces {
                 if !referenced.contains(face) {
                     let face = (face).try_clone_for_decode(ctx, "f3d referenced face id")?;
-                    (ctx).push_vec(&mut referenced, face, "f3d referenced face")?;
+                    ctx.push_vec(&mut referenced, face, "f3d referenced face")?;
                 }
             }
         }
@@ -1453,14 +1453,14 @@ fn resolved_face_operand(
         let mut faces = Vec::new();
         for face in candidates {
             let face = (face).try_clone_for_decode(ctx, "f3d unreferenced face candidate id")?;
-            (ctx).push_vec(&mut faces, face, "f3d unreferenced face candidate")?;
+            ctx.push_vec(&mut faces, face, "f3d unreferenced face candidate")?;
         }
         return Ok(Some(faces));
     }
     let [face] = candidates else { return Ok(None) };
     let mut faces = Vec::new();
     let face = (face).try_clone_for_decode(ctx, "f3d unique face candidate id")?;
-    (ctx).push_vec(&mut faces, face, "f3d unique face candidate")?;
+    ctx.push_vec(&mut faces, face, "f3d unique face candidate")?;
     Ok(Some(faces))
 }
 
@@ -1480,7 +1480,7 @@ fn explicit_bounded_face_candidates(
         let mut candidates = Vec::new();
         for face in &operand.candidate_faces {
             let face = (face).try_clone_for_decode(ctx, "f3d explicit bounded face candidate id")?;
-            (ctx).push_vec(&mut candidates, face, "f3d explicit bounded face candidate")?;
+            ctx.push_vec(&mut candidates, face, "f3d explicit bounded face candidate")?;
         }
         return Ok(Some(candidates));
     }
@@ -1504,14 +1504,14 @@ fn explicit_bounded_face_candidates(
                 let lane = lanes.entry(reference.design_reference).or_default();
                 if !lane.contains(face) {
                     let face = (face).try_clone_for_decode(ctx, "f3d explicit bounded face lane id")?;
-                    (ctx).push_vec(lane, face, "f3d explicit bounded face lane member")?;
+                    ctx.push_vec(lane, face, "f3d explicit bounded face lane member")?;
                 }
             }
         }
     }
     let mut ordered_lanes = Vec::new();
     for lane in lanes.into_values().filter(|lane| !lane.is_empty()) {
-        (ctx).push_vec(&mut ordered_lanes, lane, "f3d explicit bounded face ordered lane")?;
+        ctx.push_vec(&mut ordered_lanes, lane, "f3d explicit bounded face ordered lane")?;
     }
     for lane in &mut ordered_lanes {
         crate::design::sort::sort_by(ctx, &mut lane[..], |left, right| {
@@ -1530,7 +1530,7 @@ fn explicit_bounded_face_candidates(
     let mut selected = Vec::new();
     for face in lane {
         let face = (face).try_clone_for_decode(ctx, "f3d explicit bounded selected face id")?;
-        (ctx).push_vec(&mut selected, face, "f3d explicit bounded selected face")?;
+        ctx.push_vec(&mut selected, face, "f3d explicit bounded selected face")?;
     }
     Ok(Some(selected))
 }
@@ -1599,7 +1599,7 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
         })
     {
         let face = (face).try_clone_for_decode(ctx, "f3d legacy face candidate id")?;
-        (ctx).push_vec(&mut candidates, face, "f3d legacy face candidate")?;
+        ctx.push_vec(&mut candidates, face, "f3d legacy face candidate")?;
     }
     crate::design::sort::sort_by(ctx, &mut candidates[..], |left, right| {
         left.as_str().cmp(right.as_str())
@@ -1608,11 +1608,11 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
     if !operand.candidate_faces.is_empty() {
         let mut active = HashSet::new();
         for face in &operand.candidate_faces {
-            (ctx).insert_hash_set(&mut active, face, "f3d legacy active face index")?;
+            ctx.insert_hash_set(&mut active, face, "f3d legacy active face index")?;
         }
         let mut selected = HashSet::new();
         for face in &candidates {
-            (ctx).insert_hash_set(&mut selected, face, "f3d legacy selected face index")?;
+            ctx.insert_hash_set(&mut selected, face, "f3d legacy selected face index")?;
         }
         if active != selected {
             return Ok(None);
@@ -1707,7 +1707,7 @@ pub(crate) fn resolve_stable_bounded_face_history_set(
         if active_faces.contains(&slot) {
             return Ok(None);
         }
-        (ctx).push_vec(&mut active_faces, slot, "f3d stable bounded active face")?;
+        ctx.push_vec(&mut active_faces, slot, "f3d stable bounded active face")?;
     }
     stable_face_support_set(ctx, &active_faces, &operand.historical_support_contexts)
 }
@@ -1749,7 +1749,7 @@ pub(crate) fn resolve_surface_delete_face_history_set(
         {
             return Ok(None);
         }
-        if !(ctx).insert_hash_set(&mut covered, context.active_face_slot, "f3d SurfaceDeleteFace covered face index")? {
+        if !ctx.insert_hash_set(&mut covered, context.active_face_slot, "f3d SurfaceDeleteFace covered face index")? {
             return Ok(None);
         }
         let Some(boundaries) = valid_preceding_face_boundaries(context) else {
@@ -1778,7 +1778,7 @@ fn unique_stable_face_slots(
         else {
             return Ok(None);
         };
-        (ctx).push_vec(&mut slots, slot, "f3d stable face slot")?;
+        ctx.push_vec(&mut slots, slot, "f3d stable face slot")?;
     }
     if slots.iter().any(|slot| *slot < 0) {
         return Ok(None);
@@ -1819,7 +1819,7 @@ fn stable_face_support_set(
     }
     let mut unique_active = HashSet::new();
     for face in active_faces {
-        if !(ctx).insert_hash_set(&mut unique_active, *face, "f3d stable bounded active face index")? {
+        if !ctx.insert_hash_set(&mut unique_active, *face, "f3d stable bounded active face index")? {
             return Ok(None);
         }
     }
@@ -1831,13 +1831,13 @@ fn stable_face_support_set(
         {
             return Ok(None);
         }
-        if !(ctx).insert_hash_set(&mut covered, context.active_face_slot, "f3d stable bounded covered face index")? {
+        if !ctx.insert_hash_set(&mut covered, context.active_face_slot, "f3d stable bounded covered face index")? {
             return Ok(None);
         }
     }
     let mut result = Vec::new();
     for face in active_faces {
-        (ctx).push_vec(&mut result, *face, "f3d stable bounded support face")?;
+        ctx.push_vec(&mut result, *face, "f3d stable bounded support face")?;
     }
     Ok(Some(result))
 }
@@ -1879,14 +1879,14 @@ fn effective_historical_face_slots(
         else {
             return Ok(None);
         };
-        (ctx).push_vec(&mut candidate_slots, slot, "f3d effective candidate face slot")?;
+        ctx.push_vec(&mut candidate_slots, slot, "f3d effective candidate face slot")?;
     }
     candidate_slots.sort_unstable();
     candidate_slots.dedup();
 
     let mut active_faces = Vec::new();
     for context in contexts {
-        (ctx).push_vec(&mut active_faces, context.active_face_slot, "f3d effective active face slot")?;
+        ctx.push_vec(&mut active_faces, context.active_face_slot, "f3d effective active face slot")?;
     }
     active_faces.sort_unstable();
     active_faces.dedup();
@@ -1911,7 +1911,7 @@ fn convergent_face_support(
     };
     let mut support = Vec::new();
     for slot in &first.preceding_face_slots {
-        (ctx).push_vec(&mut support, *slot, "f3d convergent support face")?;
+        ctx.push_vec(&mut support, *slot, "f3d convergent support face")?;
     }
     support.sort_unstable();
     support.dedup();
@@ -1919,18 +1919,18 @@ fn convergent_face_support(
         return Ok(None);
     }
     let mut covered = Vec::new();
-    (ctx).push_vec(&mut covered, first.active_face_slot, "f3d convergent covered face")?;
+    ctx.push_vec(&mut covered, first.active_face_slot, "f3d convergent covered face")?;
     for context in contexts {
         let mut candidate = Vec::new();
         for slot in &context.preceding_face_slots {
-            (ctx).push_vec(&mut candidate, *slot, "f3d convergent candidate support face")?;
+            ctx.push_vec(&mut candidate, *slot, "f3d convergent candidate support face")?;
         }
         candidate.sort_unstable();
         candidate.dedup();
         if candidate != support {
             return Ok(None);
         }
-        (ctx).push_vec(&mut covered, context.active_face_slot, "f3d convergent covered face")?;
+        ctx.push_vec(&mut covered, context.active_face_slot, "f3d convergent covered face")?;
     }
     covered.sort_unstable();
     covered.dedup();
@@ -1952,7 +1952,7 @@ fn bounded_face_candidate_by_boundary_cardinality(
         }
         let mut slots = Vec::new();
         for boundary in boundaries {
-            (ctx).push_vec(&mut slots, boundary.face_slot, "f3d bounded face cardinality candidate")?;
+            ctx.push_vec(&mut slots, boundary.face_slot, "f3d bounded face cardinality candidate")?;
         }
         slots.sort_unstable();
         if selected.as_ref().is_some_and(|first| first != &slots) {
@@ -1970,7 +1970,7 @@ fn bounded_face_candidate_by_boundary_cardinality(
                     (edges != 0).then(|| total.checked_add(edges)).flatten()
                 })
             });
-            (ctx).push_vec(&mut slots, boundary.face_slot, "f3d bounded face cardinality union")?;
+            ctx.push_vec(&mut slots, boundary.face_slot, "f3d bounded face cardinality union")?;
         }
         if edge_count == Some(header_value) {
             slots.sort_unstable();
@@ -2130,7 +2130,7 @@ pub(crate) fn historical_face_operand_candidates(
                 .chain(&reference.alternate_selector_faces)
         }) {
             let candidate = (candidate).try_clone_for_decode(ctx, "f3d historical face candidate id")?;
-            (ctx).push_vec(&mut referenced, candidate, "f3d historical face candidate")?;
+            ctx.push_vec(&mut referenced, candidate, "f3d historical face candidate")?;
         }
         crate::design::sort::sort_by(ctx, &mut referenced[..], |left, right| {
             left.as_str().cmp(right.as_str())
@@ -2143,7 +2143,7 @@ pub(crate) fn historical_face_operand_candidates(
     let mut candidates = Vec::new();
     for candidate in face_operand_candidates(operand) {
         let candidate = (candidate).try_clone_for_decode(ctx, "f3d historical fallback face id")?;
-        (ctx).push_vec(&mut candidates, candidate, "f3d historical fallback face")?;
+        ctx.push_vec(&mut candidates, candidate, "f3d historical fallback face")?;
     }
     Ok(candidates)
 }
@@ -2198,7 +2198,7 @@ pub(crate) fn nested_bounded_face_history_candidates(
             .chain(&reference.alternate_selector_faces)
     }) {
         let candidate = (candidate).try_clone_for_decode(ctx, "f3d nested bounded face candidate id")?;
-        (ctx).push_vec(&mut candidates, candidate, "f3d nested bounded face candidate")?;
+        ctx.push_vec(&mut candidates, candidate, "f3d nested bounded face candidate")?;
     }
     crate::design::sort::sort_by(ctx, &mut candidates[..], |left, right| {
         left.as_str().cmp(right.as_str())
@@ -2254,8 +2254,8 @@ fn extrude_start_plane_geometry_candidates(
     }
     let mut candidates = Vec::new();
     for face in faces {
-        let id = (&face.id).try_clone_for_decode(ctx, "f3d start plane candidate ID")?;
-        (ctx).push_vec(&mut candidates, id, "f3d start plane candidate")?;
+        let id = face.id.try_clone_for_decode(ctx, "f3d start plane candidate ID")?;
+        ctx.push_vec(&mut candidates, id, "f3d start plane candidate")?;
     }
     Ok(Some(candidates))
 }
@@ -2362,7 +2362,7 @@ pub(crate) fn bind_extrude_start_planes(
                         }
                         for face in face_operand_candidates(operand) {
                             let id = (face).try_clone_for_decode(ctx, "f3d start plane operand face ID")?;
-                            (ctx).push_vec(&mut candidates, id, "f3d start plane operand candidate")?;
+                            ctx.push_vec(&mut candidates, id, "f3d start plane operand candidate")?;
                         }
                     }
                     crate::design::sort::sort_by(ctx, &mut candidates[..], |left, right| {
@@ -2389,13 +2389,13 @@ pub(crate) fn bind_extrude_start_planes(
                             resolution.linear_tolerance,
                             resolution.angular_tolerance,
                         ) {
-                            (ctx).push_vec(&mut coincident, candidate, "f3d coincident start plane face")?;
+                            ctx.push_vec(&mut coincident, candidate, "f3d coincident start plane face")?;
                         }
                     }
                     if let [face] = coincident.as_slice() {
                         let selected = (face).try_clone_for_decode(ctx, "f3d selected start plane face ID")?;
                         let native =
-                            (ctx).copy_retained_text(native, "f3d selected start plane native ID")?;
+                            ctx.copy_retained_text(native, "f3d selected start plane native ID")?;
                         if retain_face_operand_resolution(ctx, group, resolution.operands, face)? {
                             *start = ExtrudeStart::FromFace {
                                 face: FaceSelection::Resolved {
@@ -2534,7 +2534,7 @@ fn bind_extrude_target_face(
     else {
         return Ok(());
     };
-    let native = (ctx).copy_retained_text(native, "f3d target face native ID")?;
+    let native = ctx.copy_retained_text(native, "f3d target face native ID")?;
     if retain_face_operand_resolution(ctx, group, resolution.operands, &face)? {
         *termination = LinearTermination::ToFace {
             face: FaceSelection::Resolved {

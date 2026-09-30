@@ -32,7 +32,7 @@ fn design_formatted_text_refuses_before_input_sized_allocation() {
     policy.limits.max_retained_bytes = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!((&ctx).format_retained(format_args!("é"), "formatted text"),
+        matches!(ctx.format_retained(format_args!("é"), "formatted text"),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "formatted text")

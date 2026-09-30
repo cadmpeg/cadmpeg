@@ -54,7 +54,7 @@ pub(crate) fn inspect<'a>(
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
     let mut notes = Vec::new();
-    (ctx).push_formatted_retained(&mut notes, format_args!("f3z archive: {member_count} document member(s); model root {model_root}"), "collect F3Z report notes", "retain F3Z report note")?;
+    ctx.push_formatted_retained(&mut notes, format_args!("f3z archive: {member_count} document member(s); model root {model_root}"), "collect F3Z report notes", "retain F3Z report note")?;
     Ok(ContainerSummary::classified(
         classified.layers,
         cadmpeg_ir::ContainerKind::Zip,
@@ -90,9 +90,9 @@ pub(crate) fn decode<'a>(
         .iter()
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
-    (ctx).push_formatted_retained(&mut report.notes, format_args!("f3z archive: {member_count} document member(s); root {model_root}"), "collect F3Z report notes", "retain F3Z report note")?;
+    ctx.push_formatted_retained(&mut report.notes, format_args!("f3z archive: {member_count} document member(s); root {model_root}"), "collect F3Z report notes", "retain F3Z report note")?;
     if ctx.container_only() {
-        (ctx).append_vec(&mut report.losses, &mut { outer.losses }, "append F3Z report losses")?;
+        ctx.append_vec(&mut report.losses, &mut { outer.losses }, "append F3Z report losses")?;
         return finalize_result(ctx, ir, source, report, fidelity);
     }
 
@@ -107,13 +107,13 @@ pub(crate) fn decode<'a>(
     )?;
     if merged > 0 {
         fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
-        (ctx).push_formatted_retained(&mut report.notes, format_args!(
+        ctx.push_formatted_retained(&mut report.notes, format_args!(
             "{merged} merged component(s) retain occurrence-scoped model entities, native records, and source bytes"
         ), "collect F3Z report notes", "retain F3Z report note")?;
     }
-    (ctx).push_formatted_retained(&mut report.notes, format_args!("merged {merged} external occurrence(s) from the f3z archive"), "collect F3Z report notes", "retain F3Z report note")?;
+    ctx.push_formatted_retained(&mut report.notes, format_args!("merged {merged} external occurrence(s) from the f3z archive"), "collect F3Z report notes", "retain F3Z report note")?;
     merge::make_sibling_ordinals_unique(ctx, &mut ir.model.occurrences)?;
-    (ctx).append_vec(&mut report.losses, &mut { outer.losses }, "append F3Z report losses")?;
+    ctx.append_vec(&mut report.losses, &mut { outer.losses }, "append F3Z report losses")?;
     finalize_result(ctx, ir, source, report, fidelity)
 }
 

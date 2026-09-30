@@ -254,7 +254,7 @@ pub(crate) fn dialect_losses(
     let mut losses = Vec::new();
     for matched in layers.iter().filter(|matched| matched.format() == FORMAT) {
         if let Some(loss) = dialect_loss(ctx, matched)? {
-            (ctx).push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
+            ctx.push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
         }
     }
     for matched in layers
@@ -262,7 +262,7 @@ pub(crate) fn dialect_losses(
         .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
     {
         if let Some(loss) = kernel_dialect_loss(ctx, matched)? {
-            (ctx).push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
+            ctx.push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
         }
     }
     Ok(losses)

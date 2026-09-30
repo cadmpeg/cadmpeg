@@ -29,7 +29,7 @@ fn f3z_report_note_refuses_collection_limit() {
         .unwrap()
         .0;
     let error =
-        (&ctx).push_formatted_retained(&mut Vec::new(), format_args!("root {}", "model.f3d"), "collect F3Z report notes", "retain F3Z report note")
+        ctx.push_formatted_retained(&mut Vec::new(), format_args!("root {}", "model.f3d"), "collect F3Z report notes", "retain F3Z report note")
             .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -46,7 +46,7 @@ fn f3z_report_note_refuses_retained_limit() {
         .unwrap()
         .0;
     let error =
-        (&ctx).push_formatted_retained(&mut Vec::new(), format_args!("root {}", "model.f3d"), "collect F3Z report notes", "retain F3Z report note")
+        ctx.push_formatted_retained(&mut Vec::new(), format_args!("root {}", "model.f3d"), "collect F3Z report notes", "retain F3Z report note")
             .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -84,7 +84,7 @@ fn f3z_report_loss_append_refuses_collection_limit() {
         .unwrap()
         .0;
     let incoming = vec![F3dLossCode::DrawingDocumentOmitted.note("drawing")];
-    let error = (&ctx).append_vec(&mut Vec::new(), &mut { incoming }, "append F3Z report losses").unwrap_err();
+    let error = ctx.append_vec(&mut Vec::new(), &mut { incoming }, "append F3Z report losses").unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "append F3Z report losses")

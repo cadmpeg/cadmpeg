@@ -181,7 +181,7 @@ impl ReferenceJson {
             ))
         })?;
         Ok(XrefReference {
-            id: (ctx).format_retained(format_args!("f3d:xref:reference#{ordinal}"), "retain F3D xref record ID")?,
+            id: ctx.format_retained(format_args!("f3d:xref:reference#{ordinal}"), "retain F3D xref record ID")?,
             ordinal: ordinal_at(ordinal)?,
             occurrence_ordinal: 0,
             from,
@@ -330,7 +330,7 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
             format_args!("designs[{ordinal}].targetFileName"),
         )?;
         designs.push(XrefDesign {
-            id: (ctx).format_retained(format_args!("f3d:xref:design#{ordinal}"), "retain F3D xref record ID")?,
+            id: ctx.format_retained(format_args!("f3d:xref:design#{ordinal}"), "retain F3D xref record ID")?,
             ordinal: ordinal_at(ordinal)?,
             file_version: design.file_version,
             target_file_name: design.target_file_name,
@@ -402,11 +402,11 @@ pub(crate) fn docstruct(
     let Some(doc_type) = docstruct.get("type").and_then(serde_json::Value::as_str) else {
         return Ok(None);
     };
-    let doc_type = (ctx).copy_retained_text(doc_type, "copy F3D docstruct type")?;
+    let doc_type = ctx.copy_retained_text(doc_type, "copy F3D docstruct type")?;
     let subtype = docstruct
         .get("subtype")
         .and_then(serde_json::Value::as_str)
-        .map(|subtype| (ctx).copy_retained_text(subtype, "copy F3D docstruct subtype"))
+        .map(|subtype| ctx.copy_retained_text(subtype, "copy F3D docstruct subtype"))
         .transpose()?;
     Ok(Some(Docstruct { doc_type, subtype }))
 }
@@ -448,7 +448,7 @@ pub(crate) fn project_occurrences(
     for (ordinal, reference) in table.references.iter().enumerate() {
         
         ctx.reserve_vec(&mut occurrences, 1, "project F3D xref occurrence")?;
-        let path = (ctx).copy_retained_text(&reference.relative_path, "copy F3D xref path")?;
+        let path = ctx.copy_retained_text(&reference.relative_path, "copy F3D xref path")?;
         let transform = reference.transform.map_or(
             [
                 [1.0, 0.0, 0.0, 0.0],
@@ -475,7 +475,7 @@ pub(crate) fn project_occurrences(
             name: None,
             visible: None,
             link: None,
-            native_ref: Some((ctx).copy_retained_text(&reference.id, "copy F3D xref native reference")?),
+            native_ref: Some(ctx.copy_retained_text(&reference.id, "copy F3D xref native reference")?),
         });
     }
     Ok(occurrences)
@@ -649,7 +649,7 @@ fn bind_occurrences(
         for (occurrence_ordinal, transform) in occurrences.into_iter().enumerate() {
             
             ctx.reserve_vec(&mut expanded, 1, "expand F3D xref references")?;
-            let occurrence_id = (ctx).format_retained(format_args!(
+            let occurrence_id = ctx.format_retained(format_args!(
                     "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
                     reference.ordinal
                 ), "retain F3D xref record ID")?;
@@ -679,14 +679,14 @@ fn copy_reference_charged(
     Ok(XrefReference {
         id: match occurrence_id {
             Some(id) => id,
-            None => (ctx).copy_retained_text(&source.id, operation)?,
+            None => ctx.copy_retained_text(&source.id, operation)?,
         },
         ordinal: source.ordinal,
         occurrence_ordinal: source.occurrence_ordinal,
-        from: (ctx).copy_retained_text(&source.from, operation)?,
-        relative_path: (ctx).copy_retained_text(&source.relative_path, operation)?,
-        neutron_role: (ctx).copy_retained_text(&source.neutron_role, operation)?,
-        neutron_data: (ctx).copy_retained_text(&source.neutron_data, operation)?,
+        from: ctx.copy_retained_text(&source.from, operation)?,
+        relative_path: ctx.copy_retained_text(&source.relative_path, operation)?,
+        neutron_role: ctx.copy_retained_text(&source.neutron_role, operation)?,
+        neutron_data: ctx.copy_retained_text(&source.neutron_data, operation)?,
         transform: source.transform,
     })
 }
@@ -704,7 +704,7 @@ fn select_component_insert_transforms<'a, I>(
 where
     I: IntoIterator<Item = (&'a str, &'a DesignComponentInsertConstruction)>,
 {
-    (ctx).collect_vec(constructions
+    ctx.collect_vec(constructions
             .into_iter()
             .filter(|(construction_stream, construction)| {
                 *construction_stream == stream && construction.neutron_role == role
@@ -725,7 +725,7 @@ fn occurrence_transforms_with_precedence(
     if direct.is_empty() {
         occurrence_transforms(ctx, placements, role)
     } else {
-        (ctx).collect_vec(direct.into_iter().map(Some), "select F3D direct xref transforms")
+        ctx.collect_vec(direct.into_iter().map(Some), "select F3D direct xref transforms")
     }
 }
 
@@ -801,7 +801,7 @@ fn occurrence_transforms(
     placements: &[OccurrencePlacement],
     role: &str,
 ) -> Result<Vec<Option<[[f64; 4]; 4]>>, CodecError> {
-    (ctx).collect_vec(placements
+    ctx.collect_vec(placements
             .iter()
             .filter(|placement| placement.link_names.iter().any(|name| name == role))
             .map(|placement| placement.transform), "select F3D structured xref transforms")
@@ -913,7 +913,7 @@ fn occurrence_placements_with_failures(
             ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
             failures.push(OccurrencePlacementFailure { link_names });
         } else if let Some(link_name) = legacy_occurrence_role(body) {
-            let link_names = (ctx).collect_vec([link_name], "collect F3D legacy xref role")?;
+            let link_names = ctx.collect_vec([link_name], "collect F3D legacy xref role")?;
             
             ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
             failures.push(OccurrencePlacementFailure { link_names });
@@ -1566,7 +1566,7 @@ fn occurrence_path(
         };
         if let Some(link_name) = element.link_name() {
             let name = { let ctx = decode; {
-                    (ctx).copy_retained_text(link_name, "copy F3D xref placement link name")?
+                    ctx.copy_retained_text(link_name, "copy F3D xref placement link name")?
                 } };
             { let ctx = decode;
                 

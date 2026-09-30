@@ -1043,8 +1043,8 @@ fn historical_transition(
     };
     let empty = AsmHistoricalTopology::default();
     let previous_topology = previous_topology.unwrap_or(&empty);
-    let current_record_keys = ctx.collect_vec((&current_versions).keys().copied(), "collect F3D transition version keys")?;
-    let previous_record_keys = ctx.collect_vec((&previous_versions).keys().copied(), "collect F3D transition version keys")?;
+    let current_record_keys = ctx.collect_vec(current_versions.keys().copied(), "collect F3D transition version keys")?;
+    let previous_record_keys = ctx.collect_vec(previous_versions.keys().copied(), "collect F3D transition version keys")?;
     Ok(Some(AsmHistoricalTransition {
         previous_state_id: previous.map(|state| state.state_id),
         records: entity_delta(
@@ -1103,9 +1103,9 @@ fn entity_delta(
         .ok_or_else(|| ctx.refuse_codec_limit("compare F3D transition entities", 0, u64::MAX))?;
     ctx.charge_work(work, "compare F3D transition entities")?;
     Ok(AsmHistoricalEntityDelta {
-        inserted: (ctx).collect_vec(current.difference(&previous).copied(), "collect F3D transition delta")?,
-        deleted: (ctx).collect_vec(previous.difference(&current).copied(), "collect F3D transition delta")?,
-        updated: (ctx).collect_vec(current
+        inserted: ctx.collect_vec(current.difference(&previous).copied(), "collect F3D transition delta")?,
+        deleted: ctx.collect_vec(previous.difference(&current).copied(), "collect F3D transition delta")?,
+        updated: ctx.collect_vec(current
                 .intersection(&previous)
                 .copied()
                 .filter(|entity| current_versions.get(entity) != previous_versions.get(entity)), "collect F3D transition delta")?,
@@ -1541,12 +1541,12 @@ pub(crate) fn bind_feature_body_selections(
                         let body_id = admitted!(crate::ids::history_input_body_id_charged(
                             ctx, feature_id, previous_state_id, body));
                         let native_id = admitted!(ctx.copy_retained_text(native, "copy F3D Combine target identity"));
-                        admitted!(ctx.charge_collection_items(1,
-                            "validate F3D Combine target body"));
+                        let mut target_bodies = admitted!(ctx.collection_vec(1, "validate F3D Combine target body"));
+                        target_bodies.push(body_id);
                         if let Ok(historical) = BodySelection::historical(
                             admitted!(crate::ids::history_input_state_id_charged(
                                 ctx, feature_id, previous_state_id)),
-                            vec![body_id], native_id,
+                            target_bodies, native_id,
                         ) {
                             *target = historical;
                         }
@@ -1647,9 +1647,9 @@ pub(crate) fn bind_feature_body_selections(
                             *tools = if direct_tool_rows.len() == 1 {
                                 let Some(row) = direct_tool_rows.pop() else { return; };
                                 let (body, native) = row.into_parts();
-                                admitted!(ctx.charge_collection_items(1,
-                                    "validate F3D Combine resolved body"));
-                                let Ok(bodies) = vec![body].try_into() else { return; };
+                                let mut selected = admitted!(ctx.collection_vec(1, "validate F3D Combine resolved body"));
+                                selected.push(body);
+                                let Ok(bodies) = selected.try_into() else { return; };
                                 BodySelection::Resolved {
                                     bodies,
                                     native,
@@ -1873,12 +1873,15 @@ pub(crate) fn bind_feature_body_selections(
                     break 'feature_edit;
                 }
             };
-            if let Err(error) = ctx.charge_collection_items(1,
-                "validate F3D pattern body selection") {
-                edit_result = Err(error);
-                break 'feature_edit;
-            }
-            if let Ok(historical) = BodySelection::historical(state_id, vec![body_id], native) {
+            let mut selected = match ctx.collection_vec(1, "validate F3D pattern body selection") {
+                Ok(selected) => selected,
+                Err(error) => {
+                    edit_result = Err(error);
+                    break 'feature_edit;
+                }
+            };
+            selected.push(body_id);
+            if let Ok(historical) = BodySelection::historical(state_id, selected, native) {
                 *bodies = historical;
             }
         }
@@ -3358,8 +3361,9 @@ fn bind_hole_face_selection(
         topology.faces.insert_for_decode(ctx, retained, "index F3D historical hole face")?;
     }
     let native = ctx.copy_retained_text(native_id, "copy F3D historical hole identity")?;
-    ctx.charge_collection_items(1, "validate F3D historical hole face")?;
-    if let Ok(historical) = FaceSelection::historical(state_id, vec![face], native) {
+    let mut selected = ctx.collection_vec(1, "validate F3D historical hole face")?;
+    selected.push(face);
+    if let Ok(historical) = FaceSelection::historical(state_id, selected, native) {
         *selection = historical;
     }
     Ok(())
@@ -6291,7 +6295,7 @@ fn bind_profile_face_group_cardinality(
             };
             for (index, face) in indices.into_iter().zip(faces) {
                 let face_id = historical_face_id(decode, face)?;
-                let preceding_id = (&face_id).try_clone_for_decode(decode, "copy F3D historical face identity")?;
+                let preceding_id = face_id.try_clone_for_decode(decode, "copy F3D historical face identity")?;
                 operands[index].preceding_candidate_faces = decode.collect_vec(std::iter::once(preceding_id), "bind F3D profile preceding face")?;
                 operands[index].changed_candidate_faces = decode.collect_vec(std::iter::once(face_id), "bind F3D profile changed face")?;
                 operands[index].resolved_face_slots = vec![face];

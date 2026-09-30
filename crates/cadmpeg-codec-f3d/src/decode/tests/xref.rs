@@ -130,14 +130,10 @@ fn assembly_note_refuses_collection_limit() {
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
     let table = placement_table();
-    let error = super::super::push_decode_note(
-        &ctx,
-        &mut report,
-        format_args!(
+    let error = ctx.push_formatted_retained(&mut report.notes, format_args!(
             "xref {}",
             super::super::XrefPropertyNote(&table.references[0])
-        ),
-    )
+        ), "collect F3D decode notes", "retain F3D decode note")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

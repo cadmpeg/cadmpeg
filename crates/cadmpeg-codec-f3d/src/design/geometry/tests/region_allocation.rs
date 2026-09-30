@@ -15,7 +15,7 @@ macro_rules! region_item_refusal {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut items = Vec::new();
             assert!(matches!(
-                (&ctx).push_vec(&mut items, 1, $operation),
+                ctx.push_vec(&mut items, 1, $operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.operation == $operation
             ));
@@ -50,7 +50,7 @@ fn incident_boundary_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut incident = std::collections::HashSet::new();
     assert!(matches!(
-        (&ctx).insert_hash_set(&mut incident, 0, "f3d profile incident boundary"),
+        ctx.insert_hash_set(&mut incident, 0, "f3d profile incident boundary"),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d profile incident boundary"
     ));

@@ -10,7 +10,7 @@ pub(super) fn malformed_design(
     ctx: &DecodeContext<'_>,
     arguments: fmt::Arguments<'_>,
 ) -> CodecError {
-    match (ctx).format_retained(arguments, "f3d Design diagnostic") {
+    match ctx.format_retained(arguments, "f3d Design diagnostic") {
         Ok(text) => CodecError::Malformed(text),
         Err(error) => error,
     }

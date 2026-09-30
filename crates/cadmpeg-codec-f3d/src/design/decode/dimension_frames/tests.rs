@@ -12,7 +12,7 @@ use super::{
     contiguous_i32_program, find_dimension_locus_groups, find_dimension_locus_pair,
     find_dimension_null_locus_pair, indexed_record_containing, parse_dimension_annotation_frame,
     parse_dimension_locus_group, parse_dimension_locus_pair, parse_dimension_null_locus_pair,
-    parse_dimension_presentation_frame, push_dimension_recipe_edge_id, recipe_record_prefix,
+    parse_dimension_presentation_frame,  recipe_record_prefix,
 };
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::{
@@ -162,7 +162,7 @@ fn dimension_recipe_edge_id_refuses_collection_and_retained_limits() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ids = Vec::new();
         assert!(matches!(
-            push_dimension_recipe_edge_id(&ctx, &mut ids, id),
+            ctx.push_formatted_retained(&mut ids, format_args!("{}", id), "f3d dimension recipe edge IDs", "f3d dimension recipe edge ID text"),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation
         ));

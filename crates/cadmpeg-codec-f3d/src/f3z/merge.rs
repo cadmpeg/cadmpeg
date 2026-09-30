@@ -253,13 +253,13 @@ impl MergeSession<'_, '_> {
             for loss in &mut component_report.losses {
                 loss.message = self.ctx.format_retained(format_args!("xref {label}: {}", loss.message), "prefix F3Z component loss")?;
             }
-            (self.ctx).append_vec(&mut parent_report.losses, &mut { component_report.losses }, "append F3Z report losses")?;
+            self.ctx.append_vec(&mut parent_report.losses, &mut { component_report.losses }, "append F3Z report losses")?;
             let placement = if reference.transform.is_some() {
                 "Design occurrence transform"
             } else {
                 "identity placement"
             };
-            (self.ctx).push_formatted_retained(&mut parent_report.notes, format_args!(
+            self.ctx.push_formatted_retained(&mut parent_report.notes, format_args!(
                     "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested occurrence(s))",
                     reference.relative_path
                 ), "collect F3Z report notes", "retain F3Z report note")?;

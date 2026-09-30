@@ -80,7 +80,7 @@ fn recipe_operand_ids_refuse_retained_limit() {
     policy.limits.max_retained_bytes = u64::try_from(recipe.id.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        &ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID"),
+        ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID"),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d face operand recipe ID"

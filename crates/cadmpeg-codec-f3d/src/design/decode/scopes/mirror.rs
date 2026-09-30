@@ -270,7 +270,7 @@ pub(crate) fn bind_mirror_constructions(
         let Some(stream) = native_stream(&scopes[index].id) else {
             continue;
         };
-        let (_stream_reservation, stream) = (ctx).format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
+        let (_stream_reservation, stream) = ctx.format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;

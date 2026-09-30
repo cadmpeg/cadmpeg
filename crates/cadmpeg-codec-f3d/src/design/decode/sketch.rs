@@ -224,9 +224,8 @@ pub(in crate::design) fn cached_owned_record_offsets<'a>(
     bytes: &[u8],
 ) -> Result<&'a IndexedRecordOffsets, CodecError> {
     if !cache.contains_key(stream) {
-        ctx.charge_collection_items(1, "f3d indexed stream cache entry")?;
+        ctx.reserve_map(cache, 1, "f3d indexed stream cache entry")?;
         ctx.charge_retained(u64_from_index(stream.len()), "f3d indexed stream cache key")?;
-        DecodeContext::reserve_admitted_map(cache, 1, "f3d indexed stream cache entry")?;
     }
     let mut _key_bytes =
         ctx.reserve_scoped(0, "f3d indexed stream lookup")?;
@@ -5056,21 +5055,12 @@ fn decode_sketch_streams<T>(
         let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
-        extend_sketch_stream(ctx, &mut out, decode(ctx, bytes, &meta, &entry.name)?)?;
+        ctx.append_vec(&mut out, &mut { decode(ctx, bytes, &meta, &entry.name)? }, "f3d sketch stream output")?;
     }
     Ok(out)
 }
 
-fn extend_sketch_stream<T>(
-    ctx: &DecodeContext<'_>,
-    out: &mut Vec<T>,
-    mut decoded: Vec<T>,
-) -> Result<(), CodecError> {
 
-    ctx.reserve_vec(out, decoded.len(), "f3d sketch stream output")?;
-    out.append(&mut decoded);
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests;
