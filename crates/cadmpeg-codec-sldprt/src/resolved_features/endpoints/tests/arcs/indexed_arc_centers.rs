@@ -70,12 +70,12 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
         .chain(std::iter::once(&curve))
         .collect::<Vec<_>>();
     assert_eq!(
-        coordinate_roster_arc_center(
+        coordinate_roster_arc_center(&cadmpeg_test_support::service_decode_context(),
             &payload,
             &curve,
             &markers,
             [&coordinates[8], &coordinates[10]],
-        ),
+        ).unwrap(),
         Some([0.0, -0.02])
     );
 
@@ -169,21 +169,21 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
     let start = Point2::new(1.0, 0.0);
     let end = Point2::new(0.0, 1.0);
     assert_eq!(
-        unique_arc_center_marker(
+        unique_arc_center_marker(&cadmpeg_test_support::service_decode_context(),
             start,
             end,
             &[Point2::new(0.0, 0.0), Point2::new(4.0, 3.0)],
             1.0e-8,
-        ),
+        ).unwrap(),
         Some(Point2::new(0.0, 0.0))
     );
     assert_eq!(
-        unique_arc_center_marker(
+        unique_arc_center_marker(&cadmpeg_test_support::service_decode_context(),
             start,
             end,
             &[Point2::new(0.0, 0.0), Point2::new(0.5, 0.5)],
             1.0e-8,
-        ),
+        ).unwrap(),
         None
     );
 }
@@ -226,7 +226,7 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
     let markers = [&start, &center, &end, &off_axis];
 
     assert_eq!(
-        legacy_compact_diameter_arc_center(&payload, &curve, &markers, [&start, &end]),
+        legacy_compact_diameter_arc_center(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers, [&start, &end]).unwrap(),
         Some([0.0, 0.0])
     );
 }
