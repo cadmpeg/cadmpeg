@@ -208,6 +208,12 @@ struct ChargingJsonWriter<'a, 'b> {
 
 impl Write for ChargingJsonWriter<'_, '_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let work = u64::try_from(bytes.len()).ok().and_then(|length| length.checked_mul(4))
+            .ok_or_else(|| self.ctx.refuse_codec_limit("serialize native record work size", u64::MAX - 1, u64::MAX));
+        if let Err(error) = work.and_then(|work| self.ctx.charge_work(work, "serialize native record")) {
+            self.refusal = Some(error);
+            return Err(std::io::Error::other("native record resource limit"));
+        }
         let needed = self.bytes.len().checked_add(bytes.len()).ok_or_else(|| {
             self.refusal = Some(self.ctx.refuse_codec_limit(
                 "serialize native record length",
