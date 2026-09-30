@@ -24,10 +24,15 @@ pub(crate) fn prepare_parameters_for_write(
     native: &mut Option<crate::native::SldprtNative>,
     feature_parameter_changes_authorized: bool,
 ) -> Result<(), CodecError> {
-    let neutral_hash = parameter_hash(&ir.model.parameters)?;
+    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+
+    let neutral_hash = parameter_hash(&hash_ctx, &ir.model.parameters)?;
     let native_hash = native
         .as_ref()
-        .map(|value| native_parameter_hash(&value.feature_histories))
+        .map(|value| native_parameter_hash(&hash_ctx, &value.feature_histories))
         .transpose()?;
     let baseline_neutral = ir.source.as_ref().and_then(|source| {
         source
@@ -66,7 +71,7 @@ pub(crate) fn prepare_parameters_for_write(
             let projected = native.as_ref()
                 .map(|value| project_parameters(&ctx, &value.feature_histories))
                 .transpose()?.unwrap_or_default();
-            if parameter_hash(&projected)? == neutral_hash {
+            if parameter_hash(&hash_ctx, &projected)? == neutral_hash {
                 Ok(())
             } else {
                 Err(CodecError::Malformed(

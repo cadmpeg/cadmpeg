@@ -2727,7 +2727,7 @@ fn build_geometry_ir(
     )?;
     crate::history::configuration::align_configuration_parameter_kinds(ctx, &mut ir)?;
     complete_resolved_configuration_parameter_snapshots(ctx, &mut ir)?;
-    stamp_parameter_baseline(&mut ir)?;
+    stamp_parameter_baseline(ctx, &mut ir)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         mut sketches,
         entities: mut sketch_entities,
@@ -2899,7 +2899,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &sketch_lanes,
     )?;
-    stamp_feature_baseline(&mut ir)?;
+    stamp_feature_baseline(ctx, &mut ir)?;
     let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
     ctx.reserve_precharged_vec(
@@ -2912,7 +2912,7 @@ fn build_geometry_ir(
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
     ir.model.sketch_constraints = sketch_constraints;
-    stamp_sketch_baseline(&mut ir, &all_lanes)?;
+    stamp_sketch_baseline(ctx, &mut ir, &all_lanes)?;
 
     let brep_entities = brep.neutral_entity_count()?;
     ir.model.bodies = brep.bodies;
@@ -3163,7 +3163,7 @@ fn build_geometry_ir(
         Some(&topology_index),
         Some(&pattern_hole_nominals),
     )?;
-    stamp_feature_baseline(&mut ir)?;
+    stamp_feature_baseline(ctx, &mut ir)?;
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
@@ -3173,11 +3173,11 @@ fn build_geometry_ir(
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"),
-            crate::history::hash::native_configuration_hash(&native.feature_histories)?,
+            crate::history::hash::native_configuration_hash(ctx, &native.feature_histories)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
-            crate::history::hash::history_hash(&native.feature_histories)?,
+            crate::history::hash::history_hash(ctx, &native.feature_histories)?,
         );
     }
     ctx.admit_entities(
@@ -3187,7 +3187,7 @@ fn build_geometry_ir(
     )?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     // Stamp baseline before fabricating the read-side configuration snapshot.
-    stamp_configuration_baseline(&mut ir)?;
+    stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(ctx, &mut ir)?;
     let mut unknowns = brep.unknowns;
     for owned_face_color in brep.face_colors {
@@ -4088,7 +4088,7 @@ fn build_metadata_ir(
     )?;
     crate::history::configuration::align_configuration_parameter_kinds(ctx, &mut ir)?;
     complete_resolved_configuration_parameter_snapshots(ctx, &mut ir)?;
-    stamp_parameter_baseline(&mut ir)?;
+    stamp_parameter_baseline(ctx, &mut ir)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
         ctx,
         &mut ir.model.features,
@@ -4367,7 +4367,7 @@ fn build_metadata_ir(
     pmi_losses.extend(configuration_losses);
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
-    stamp_feature_baseline(&mut ir)?;
+    stamp_feature_baseline(ctx, &mut ir)?;
     let native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
@@ -4379,10 +4379,10 @@ fn build_metadata_ir(
         "admit SLDPRT entities",
     )?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
-    stamp_sketch_baseline(&mut ir, &native.feature_input_lanes)?;
+    stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
-    stamp_configuration_baseline(&mut ir)?;
+    stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(ctx, &mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     // Sort arenas for the order-sensitive loss scans that follow; the local
@@ -4478,23 +4478,23 @@ fn project_design_history(
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
-            crate::history::hash::feature_hash(&ir.model)?,
+            crate::history::hash::feature_hash(ctx, &ir.model)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
-            crate::history::hash::history_hash(histories)?,
+            crate::history::hash::history_hash(ctx, histories)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"),
-            crate::history::hash::native_configuration_hash(histories)?,
+            crate::history::hash::native_configuration_hash(ctx, histories)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_parameter_local_sha256"),
-            crate::history::hash::parameter_hash(&ir.model.parameters)?,
+            crate::history::hash::parameter_hash(ctx, &ir.model.parameters)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_parameter_sha256"),
-            crate::history::hash::native_parameter_hash(histories)?,
+            crate::history::hash::native_parameter_hash(ctx, histories)?,
         );
     }
 
@@ -4522,8 +4522,8 @@ fn parameter_identity_lanes<'a>(
     Ok(selected)
 }
 
-fn stamp_parameter_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
-    let hash = crate::history::hash::parameter_hash(&ir.model.parameters)?;
+fn stamp_parameter_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+    let hash = crate::history::hash::parameter_hash(ctx, &ir.model.parameters)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_parameter_local_sha256"),
@@ -4956,8 +4956,8 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
     Ok(())
 }
 
-fn stamp_feature_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
-    let hash = crate::history::hash::feature_hash(&ir.model)?;
+fn stamp_feature_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+    let hash = crate::history::hash::feature_hash(ctx, &ir.model)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
@@ -5130,12 +5130,12 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
     Some((active_index, position))
 }
 
-fn stamp_configuration_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
-    let hash = crate::history::hash::configuration_hash(&ir.model.configurations)?;
+fn stamp_configuration_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+    let hash = crate::history::hash::configuration_hash(ctx, &ir.model.configurations)?;
     let parameter_value_hash =
-        crate::history::hash::configuration_parameter_value_hash(&ir.model.configurations)?;
+        crate::history::hash::configuration_parameter_value_hash(ctx, &ir.model.configurations)?;
     let feature_state_hash =
-        crate::history::hash::configuration_feature_state_hash(&ir.model.configurations)?;
+        crate::history::hash::configuration_feature_state_hash(ctx, &ir.model.configurations)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_configuration_local_sha256"),
@@ -5159,13 +5159,13 @@ fn stamp_configuration_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
 /// geometry through libm). `sldprt_native_sketch_sha256` has no suffix: it
 /// digests lane fields that are strings, integers, or verbatim `f64` bit
 /// patterns from the payload.
-fn stamp_sketch_baseline(
+fn stamp_sketch_baseline(ctx: &DecodeContext<'_>, 
     ir: &mut CadIr,
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), CodecError> {
-    let neutral_hash = crate::resolved_features::hashes::sketch_hash(ir)?;
-    let constraint_hash = crate::resolved_features::hashes::constraint_hash(ir)?;
-    let native_hash = crate::resolved_features::hashes::lane_hash(lanes)?;
+    let neutral_hash = crate::resolved_features::hashes::sketch_hash(ctx, ir)?;
+    let constraint_hash = crate::resolved_features::hashes::constraint_hash(ctx, ir)?;
+    let native_hash = crate::resolved_features::hashes::lane_hash(ctx, lanes)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_sketch_local_sha256"),

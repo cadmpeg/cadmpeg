@@ -43,6 +43,24 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> Result<String, DigestEr
     Ok(encode_hex(&hasher.finalize()))
 }
 
+/// Hash canonical JSON while admitting each emitted byte through the caller.
+pub fn canonical_json_sha256_with_charge<T: Serialize + ?Sized, E: From<DigestError>>(
+    value: &T,
+    charge: impl FnMut(u64) -> Result<(), E>,
+) -> Result<String, E> {
+    let mut hasher = Sha256::new();
+    let mut writer = std::io::BufWriter::new(ChargingDigestWriter { hasher: &mut hasher, charge, error: None });
+    let serialized = write_canonical_json(&mut writer, value);
+    if let Some(error) = writer.get_mut().error.take() { return Err(error); }
+    serialized.map_err(|error| E::from(DigestError::from(error)))?;
+    if let Err(error) = writer.flush() {
+        if let Some(charged) = writer.get_mut().error.take() { return Err(charged); }
+        return Err(E::from(DigestError::Write(error)));
+    }
+    drop(writer);
+    Ok(encode_hex(&hasher.finalize()))
+}
+
 /// A digest could not be computed.
 ///
 /// A digested value can carry a raw `f64`. `serde_json` writes a non-finite one
@@ -861,3 +879,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod charge_tests;

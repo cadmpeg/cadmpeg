@@ -956,3 +956,5 @@ fn decoded_curve_carrier_copy_refuses_collection_limit() {
     let source = sldprt_with_body(&crate::test_support::parasolid::nurbs_sketch_body(true));
     collection_refusal_at(&source, "copy Parasolid curve poles");
 }
+
+mod baseline_hashes;
