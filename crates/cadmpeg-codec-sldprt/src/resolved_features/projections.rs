@@ -20,7 +20,7 @@ use super::selections::{
     cosmetic_thread_cylinder_marker_reference, variable_fillet_control_references,
     variable_fillet_dimension_index_for_feature,
 };
-use super::terminations::compact_surface_selection_value_charged;
+use super::terminations::compact_surface_selection_value;
 use crate::records::{
     FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
@@ -1578,7 +1578,7 @@ pub(crate) fn project_compact_surface_selections(
                                 .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                             ctx.charge_work(history_work.checked_add(1)
                                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-                            let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
+                            let native = compact_surface_selection_value(ctx, &selection.components)?;
                             let generated = component_path_feature(
                                 ctx,
                                 &selection.components,
@@ -1726,7 +1726,7 @@ pub(crate) fn project_compact_surface_selections(
                         else {
                             break 'feature_edit;
                         };
-                        let target_native = compact_surface_selection_value_charged(ctx, &target.components)?;
+                        let target_native = compact_surface_selection_value(ctx, &target.components)?;
                         let target_producer = target
                             .terminal_feature_ref
                             .as_ref()
@@ -1778,7 +1778,7 @@ pub(crate) fn project_compact_surface_selections(
                                 dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                             }
                         }
-                        let tool_native = compact_surface_selection_value_charged(ctx, &tool.components)?;
+                        let tool_native = compact_surface_selection_value(ctx, &tool.components)?;
                         let tool_generated = tool
                             .terminal_feature_ref
                             .as_ref()
@@ -1829,7 +1829,7 @@ pub(crate) fn project_compact_surface_selections(
                         };
                         let [center_faces, side_one_faces, side_two_faces] =
                             [center_faces, side_one_faces, side_two_faces].map(|selection| -> Result<FaceSelection, cadmpeg_core::CodecError> {
-                                let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
+                                let native = compact_surface_selection_value(ctx, &selection.components)?;
                                 let generated = selection
                                     .terminal_feature_ref
                                     .as_ref()
@@ -1934,7 +1934,7 @@ pub(crate) fn project_compact_surface_selections(
                     }) = definition
                     {
                         const OPERATION: &str = "project SLDPRT datum offset face";
-                        let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
+                        let native = compact_surface_selection_value(ctx, &selection.components)?;
                         let generated = selection
                             .terminal_feature_ref
                             .as_ref()
@@ -2031,7 +2031,7 @@ pub(crate) fn project_compact_surface_selections(
                         }) => SelectionSlot::Vertex(vertex),
                         _ => break 'feature_edit,
                     };
-                    let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
+                    let native = compact_surface_selection_value(ctx, &selection.components)?;
                     let producer = if first_component {
                         selection.producer_feature_refs.first()
                     } else {

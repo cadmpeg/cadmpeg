@@ -450,7 +450,7 @@ fn compact_termination_face_vote(
     }
     let selection = lane.surface_selections.iter().find(|selection| selection.feature_ref == feature_ref
         && usize::try_from(selection.offset).ok() == Some(offset));
-    let canonical_reference = selection.map(|selection| compact_surface_selection_value_charged(ctx, &selection.components)).transpose()?;
+    let canonical_reference = selection.map(|selection| compact_surface_selection_value(ctx, &selection.components)).transpose()?;
     let identity = match selection {
         Some(selection) => {
             let canonical = canonical_reference.as_deref().unwrap_or_default();
@@ -1919,24 +1919,6 @@ fn compact_termination_reference_frame_at(payload: &[u8], marker: usize) -> Opti
 }
 
 pub(crate) fn compact_surface_selection_value(
-    components: &[FeatureInputComponentPathEntry],
-) -> String {
-    let mut value = String::from("sldprt:feature-input:surface-component-ids:");
-    for (index, component) in components.iter().enumerate() {
-        if index != 0 {
-            value.push(',');
-        }
-        match component.local_id {
-            Some(local_id) => {
-                value.push_str(&local_id.to_string());
-            }
-            None => value.push('_'),
-        }
-    }
-    value
-}
-
-pub(crate) fn compact_surface_selection_value_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     components: &[FeatureInputComponentPathEntry],
 ) -> Result<String, cadmpeg_core::CodecError> {
@@ -1959,6 +1941,7 @@ pub(crate) fn compact_surface_selection_value_charged(
             .and_then(|value| value.checked_add(digits))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
+    ctx.charge_work(u64_from_index(size), OPERATION)?;
     let mut value = String::new();
     ctx.reserve_retained_string(&mut value, size, OPERATION)?;
     value.push_str(PREFIX);

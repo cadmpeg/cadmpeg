@@ -99,7 +99,7 @@ fn surface_selection_face_bindings<'a>(
             }?;
             faces_by_identity.get(&(feature_source_id, component.local_id?)).copied().flatten()
         }).map(|face| copy_selection_id(ctx, face)).transpose()?;
-        let native = crate::resolved_features::terminations::compact_surface_selection_value_charged(ctx, &selection.components)?;
+        let native = crate::resolved_features::terminations::compact_surface_selection_value(ctx, &selection.components)?;
         let key = (copy_selection_text(ctx, &selection.feature_ref)?, native);
         reserve_selection_map(ctx, &mut bindings)?;
         match bindings.entry(key) {

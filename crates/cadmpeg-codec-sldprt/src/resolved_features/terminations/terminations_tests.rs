@@ -33,9 +33,9 @@ fn charged_surface_component_text_matches_native_text() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("test context");
     assert_eq!(
-        super::compact_surface_selection_value_charged(&ctx, &entries)
+        super::compact_surface_selection_value(&ctx, &entries)
             .expect("charged surface text"),
-        super::compact_surface_selection_value(&entries)
+        "sldprt:feature-input:surface-component-ids:_,0,4294967295"
     );
 }
 
@@ -47,7 +47,7 @@ fn charged_surface_component_text_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = super::compact_surface_selection_value_charged(&ctx, &[])
+    let error = super::compact_surface_selection_value(&ctx, &[])
         .expect_err("surface text exceeds retained limit");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes

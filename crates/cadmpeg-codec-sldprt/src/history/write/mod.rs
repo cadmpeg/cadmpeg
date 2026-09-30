@@ -505,6 +505,10 @@ fn validate_compact_surface_selection_edits(
         Vertex(&'a VertexSelection),
     }
     let Some(native) = native else { return Ok(()) };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputSurfaceSelection>>::new();
     for selection in native
         .feature_input_lanes
@@ -565,8 +569,8 @@ fn validate_compact_surface_selection_edits(
             _ => continue,
         };
         let native = crate::resolved_features::terminations::compact_surface_selection_value(
-            &selection.components,
-        );
+            &ctx, &selection.components,
+        )?;
         let producer = if first_component {
             selection.producer_feature_refs.first().map(String::as_str)
         } else {
