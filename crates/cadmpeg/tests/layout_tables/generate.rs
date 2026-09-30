@@ -6,6 +6,8 @@
 //! crate's `src/layout.rs` constants. Neither validates; both assume the table
 //! already passed `validate`.
 
+mod read_set;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::Write as IoWrite;
@@ -355,8 +357,13 @@ fn fence_text(text: &str) -> String {
 }
 
 /// Turn one validated table into the checked-in `layout.rs` source.
-pub(crate) fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
-    emit_layout_source(file).map_err(|failure| match failure {
+pub(crate) fn emit_layout_rs(file: &LayoutFile, source_root: &std::path::Path) -> Result<String, Vec<String>> {
+    let reads = if file.format == "iges" {
+        Some(read_set::layout_reads(source_root).map_err(|error| vec![error])?)
+    } else {
+        None
+    };
+    emit_layout_source(file, reads.as_ref()).map_err(|failure| match failure {
         EmitFailure::Invalid(errors) => errors,
         EmitFailure::Format(error) => vec![error.to_string()],
     })
@@ -470,7 +477,8 @@ fn nx_reader_constant(record: &str, name: &str) -> bool {
     }
 }
 
-fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
+fn emit_layout_source(file: &LayoutFile, reads: Option<&BTreeSet<(String, String)>>) -> Result<String, EmitFailure> {
+    let is_read = |record: &str, name: &str| reads.map_or_else(|| file.format != "nx" || nx_reader_constant(record, name), |reads| reads.contains(&(record.to_string(), name.to_string())));
     let mut errors = Vec::new();
     let mut omitted = Vec::new();
     let mut modules = String::new();
@@ -531,7 +539,7 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
             } else {
                 format!("`{}`", field.ty)
             };
-            if file.format != "nx" || nx_reader_constant(&record.name, &const_name) {
+            if is_read(&record.name, &const_name) {
                 writeln!(
                     fields_out,
                     "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
@@ -555,7 +563,7 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
                 let width = type_width(&field.ty, &custom).ok().flatten();
                 match decode_field_value(raw, &field.ty, width) {
                     Ok(binding) => {
-                        if file.format != "nx" || nx_reader_constant(&record.name, &value_name) {
+                        if is_read(&record.name, &value_name) {
                             writeln!(
                                 fields_out,
                                 "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
@@ -569,7 +577,7 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
             }
         }
 
-        if file.format == "nx" && fields_out.is_empty() && !nx_reader_constant(&record.name, "LEN")
+        if fields_out.is_empty() && !is_read(&record.name, "LEN")
         {
             continue;
         }
@@ -613,7 +621,7 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
         writeln!(modules, "pub(crate) mod {} {{", record.name)?;
         if let Some(size) = record
             .size
-            .filter(|_| file.format != "nx" || nx_reader_constant(&record.name, "LEN"))
+            .filter(|_| is_read(&record.name, "LEN"))
         {
             writeln!(
                 modules,
@@ -640,7 +648,9 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
         let Some(name) = token_const_name(&token.name) else {
             continue;
         };
-        token_consts.push((name, value, token));
+        if is_read("token", &name) {
+            token_consts.push((name, value, token));
+        }
     }
     if !token_consts.is_empty() {
         writeln!(token_mod, "/// Tag constants from the table inventory.")?;
@@ -694,7 +704,7 @@ fn emit_layout_source(file: &LayoutFile) -> Result<String, EmitFailure> {
         "//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`."
     )?;
     writeln!(out)?;
-    if file.format != "nx" {
+    if reads.is_none() && file.format != "nx" {
         writeln!(
             out,
             "#![allow(dead_code)] // Not every generated constant is referenced yet."
