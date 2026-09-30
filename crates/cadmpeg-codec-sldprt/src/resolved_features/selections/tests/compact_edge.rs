@@ -1200,3 +1200,25 @@ fn scalar_binding_refuses_sparse_path_nesting_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
             && limit.operation == "decode SLDPRT sparse component path"));
 }
+
+#[test]
+fn variable_fillet_control_names_require_canonical_unsigned_indices() {
+    let mut feature = Feature {
+        id: "varfillet".into(), parent: "history".into(), xml_tag: "Feature".into(), tree_parent: None,
+        source_id: FeatureSource::from_value(37), ordinal: 0, name: "VarFillet1".into(), kind: "VarFillet".into(),
+        input_class: Some("VarFillet_c".into()), suppressed: false, parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(), properties: BTreeMap::new(), text: None, content: Vec::new(),
+    };
+    let index = |feature: &Feature, name: &str| crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(feature, name);
+    for (name, expected) in [("D0", 0), ("D01", 1), ("D012", 12), ("D1", 1)] {
+        assert_eq!(index(&feature, name), Some(expected), "{name}");
+    }
+    assert_eq!(index(&feature, &format!("D0{}", usize::MAX)), Some(usize::MAX));
+    for name in ["D00", "D001", "D0+1", "D0-1", "D0 1", "D01 ", "D0١", "D2", "d01"] {
+        assert_eq!(index(&feature, name), None, "{name}");
+    }
+    assert_eq!(index(&feature, &format!("D0{}0", usize::MAX)), None);
+    feature.parameters.insert(cadmpeg_core::nonblank_literal!("D01"), "1mm".into());
+    assert_eq!(index(&feature, "D1"), None);
+    assert_eq!(index(&feature, "D01"), Some(1));
+}

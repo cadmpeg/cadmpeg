@@ -2648,21 +2648,6 @@ pub(super) fn variable_fillet_control_references(
     Ok((!result.is_empty()).then_some(result))
 }
 
-fn variable_fillet_dimension_index(name: &str) -> Option<usize> {
-    let suffix = name.strip_prefix("D0")?;
-    let index = if suffix.is_empty() {
-        0
-    } else {
-        suffix.parse().ok()?
-    };
-    let canonical = if index == 0 {
-        "D0".to_string()
-    } else {
-        format!("D0{index}")
-    };
-    (name == canonical).then_some(index)
-}
-
 pub(crate) fn variable_fillet_dimension_index_for_feature(
     feature: &crate::records::Feature,
     name: &str,
@@ -2671,7 +2656,10 @@ pub(crate) fn variable_fillet_dimension_index_for_feature(
         // SW2013-era lanes use D1 for the second variable-radius control.
         return Some(1);
     }
-    variable_fillet_dimension_index(name)
+    let suffix = name.strip_prefix("D0")?;
+    if suffix.is_empty() { return Some(0); }
+    if suffix.starts_with('0') || !suffix.bytes().all(|byte| byte.is_ascii_digit()) { return None; }
+    suffix.parse().ok()
 }
 
 pub(super) fn compact_component_path_end_at(
