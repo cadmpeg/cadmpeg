@@ -1344,50 +1344,6 @@ pub(super) fn relation_bindings_scoped(
     Ok(bindings)
 }
 
-pub(crate) fn reference_cells(
-    scalars: &[FeatureInputScalar],
-    classes: &[FeatureInputClass],
-) -> Vec<FeatureInputReference> {
-    let mut cells = scalars
-        .iter()
-        .flat_map(|scalar| {
-            scalar.operands.iter().map(|operand| FeatureInputReference {
-                id: operand.reference_ref.clone(),
-                parent: scalar.parent.clone(),
-                feature_ref: scalar.feature_ref.clone(),
-                ordinal: 0,
-                offset: operand.offset,
-                kind: operand.kind,
-                class_ref: None,
-                object_index: operand.entity_index,
-            })
-        })
-        .collect::<Vec<_>>();
-    cells.sort_by_key(|cell| cell.offset);
-    cells.dedup_by_key(|cell| cell.offset);
-    for (ordinal, cell) in cells.iter_mut().enumerate() {
-        cell.ordinal = ordinal as u32;
-    }
-    let mut declarations = HashMap::<FeatureInputOperandKind, Vec<&FeatureInputClass>>::new();
-    for cell in &cells {
-        for class in classes.iter().filter(|class| {
-            class.parent == cell.parent && class.offset.checked_sub(cell.offset) == Some(12)
-        }) {
-            declarations.entry(cell.kind).or_default().push(class);
-        }
-    }
-    for declared in declarations.values_mut() {
-        declared.sort_unstable_by_key(|class| class.offset);
-        declared.dedup_by_key(|class| class.id.as_str());
-    }
-    for cell in &mut cells {
-        if let Some([class]) = declarations.get(&cell.kind).map(Vec::as_slice) {
-            cell.class_ref = Some(class.id.clone());
-        }
-    }
-    cells
-}
-
 pub(crate) fn reference_cells_charged(
     ctx: &DecodeContext<'_>,
     scalars: &[FeatureInputScalar],
