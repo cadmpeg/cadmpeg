@@ -37,7 +37,7 @@ fn projection_set_index_refuses_collection_limit() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
-        super::super::collect_decode_set(&ctx, ["native:one"], "index projected F3D constraints")
+        ctx.collect_hash_set(["native:one"], "index projected F3D constraints")
             .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -52,11 +52,7 @@ fn projection_map_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::collect_decode_map(
-        &ctx,
-        [("native:one", 1)],
-        "index projected F3D feature records",
-    )
+    let error = ctx.collect_hash_map([("native:one", 1)], "index projected F3D feature records")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
