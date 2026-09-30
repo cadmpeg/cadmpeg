@@ -491,106 +491,119 @@ pub(super) fn is_extrusion_end_spec_owner(feature: &crate::records::Feature) -> 
         || matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
 }
 
+#[derive(PartialEq)]
+struct CombineSelection {
+    target: String,
+    tools: String,
+    operation: Option<String>,
+}
+
 /// Add target and tool body paths carried by compact combine objects.
 pub(crate) fn enrich_history_combine_selections(
-    histories: &mut [crate::records::FeatureHistory],
+    ctx: &DecodeContext<'_>, histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
-    let mut selections = HashMap::<String, Vec<Option<(String, String, Option<String>)>>>::new();
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "enrich SLDPRT combine selections";
+    let mut selections = HashMap::<String, Vec<Option<CombineSelection>>>::new();
     for lane in lanes {
-        let mut objects = histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .filter_map(|feature| {
-                Some((
-                    feature_object_name(feature, lane)?.offset,
-                    feature.id.clone(),
-                ))
-            })
-            .collect::<Vec<_>>();
+        let mut objects = Vec::new();
+        for feature in histories.iter().flat_map(|history| &history.features) {
+            ctx.charge_work(1, OPERATION)?;
+            for name in &lane.names {
+                let work = u64_from_index(name.value.len()).checked_add(u64_from_index(feature.name.len()))
+                    .and_then(|work| work.checked_add(2))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
+            let Some(name) = feature_object_name(feature, lane) else { continue; };
+            let id = copy_termination_text(ctx, &feature.id, OPERATION)?;
+            ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+            objects.push((name.offset, id));
+        }
+        let levels = if objects.len() > 1 { objects.len().ilog2() + 1 } else { 1 };
+        ctx.charge_work(u64_from_index(objects.len()).checked_mul(u64::from(levels))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         objects.sort_unstable_by_key(|object| object.0);
         for (index, (start, feature_id)) in objects.iter().enumerate() {
-            let Some(feature) = histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .find(|feature| feature.id == *feature_id)
-            else {
-                continue;
-            };
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                != NativeClassKind::Combine
-            {
-                continue;
+            for feature in histories.iter().flat_map(|history| &history.features) {
+                let work = u64_from_index(feature.id.len()).checked_add(u64_from_index(feature_id.len()))
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
             }
-            let Ok(start) = usize::try_from(*start) else {
-                continue;
-            };
-            let end = objects
-                .get(index + 1)
-                .and_then(|object| usize::try_from(object.0).ok())
+            let Some(feature) = histories.iter().flat_map(|history| &history.features)
+                .find(|feature| feature.id == *feature_id) else { continue; };
+            ctx.charge_work(u64_from_index(feature.input_class.as_ref().map_or(0, String::len)), OPERATION)?;
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default()) != NativeClassKind::Combine { continue; }
+            let Ok(start) = usize::try_from(*start) else { continue; };
+            let end = objects.get(index + 1).and_then(|object| usize::try_from(object.0).ok())
                 .unwrap_or(lane.native_payload.len());
-            let paths = (start.saturating_add(12)
-                ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
-                .filter_map(|marker| {
-                    // Combine operands use the same type-3 vector framing as
-                    // body selections, but a path may contain identifier-less
-                    // lineage hops.  The component-path parser retains those
-                    // hops; the local-id-only helper would reject the whole
-                    // operand before projection.
-                    compact_body_component_path_at(&lane.native_payload, marker).map(|_| marker)
-                })
-                .collect::<Vec<_>>();
-            // A Combine object can carry auxiliary type-3 vectors between its two
-            // operand paths; the outermost recognized paths are the operands.
-            let selection = match (paths.first(), paths.last()) {
-                (Some(&target), Some(&tools)) if target != tools => {
+            let mut first = None;
+            let mut last = None;
+            if let (Some(scan_start), Some(scan_end)) = (start.checked_add(12), end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())) {
+                for marker in scan_start..scan_end {
+                    ctx.charge_work(32, OPERATION)?;
+                    if compact_body_component_path_at(&lane.native_payload, marker).is_some() {
+                        if first.is_none() { first = Some(marker); }
+                        last = Some(marker);
+                    }
+                }
+            }
+            let selection = match (first, last) {
+                (Some(target), Some(tools)) if target != tools => {
                     let operation = compact_combine_operation_at(&lane.native_payload, start);
-                    let lane_key = lane
-                        .id
-                        .rsplit_once('#')
-                        .map_or(lane.id.as_str(), |(_, key)| key);
-                    Some((
-                        format!("sldprt:feature-input:body-path:{lane_key}:{target}"),
-                        format!("sldprt:feature-input:body-path:{lane_key}:{tools}"),
-                        operation.map(str::to_string),
-                    ))
+                    let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
+                    ctx.charge_work(u64_from_index(lane_key.len()).checked_mul(2)
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                    Some(CombineSelection {
+                        target: ctx.format_retained(format_args!("sldprt:feature-input:body-path:{lane_key}:{target}"), OPERATION)?,
+                        tools: ctx.format_retained(format_args!("sldprt:feature-input:body-path:{lane_key}:{tools}"), OPERATION)?,
+                        operation: operation.map(|operation| copy_termination_text(ctx, operation, OPERATION)).transpose()?,
+                    })
                 }
                 _ => None,
             };
-            selections
-                .entry(feature_id.clone())
-                .or_default()
-                .push(selection);
+            ctx.charge_work(u64_from_index(feature_id.len()), OPERATION)?;
+            if !selections.contains_key(feature_id.as_str()) {
+                let key = copy_termination_text(ctx, feature_id, OPERATION)?;
+                ctx.charge_collection_items(1, OPERATION)?;
+                selections.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                selections.insert(key, Vec::new());
+            }
+            let votes = selections.get_mut(feature_id.as_str())
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("missing admitted combine vote bucket"))?;
+            ctx.reserve_collection_vec(votes, 1, OPERATION)?;
+            votes.push(selection);
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        let Some(votes) = selections.get(&feature.id) else {
-            continue;
-        };
-        let Some(Some(first)) = votes.first() else {
-            continue;
-        };
-        if !votes.iter().all(|vote| vote.as_ref() == Some(first)) {
-            continue;
+    for feature in histories.iter_mut().flat_map(|history| &mut history.features) {
+        ctx.charge_work(u64_from_index(feature.id.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let Some(votes) = selections.get(&feature.id) else { continue; };
+        let Some(Some(first)) = votes.first() else { continue; };
+        let mut agreement = true;
+        for vote in votes {
+            for text in [Some(first.target.as_str()), Some(first.tools.as_str()), first.operation.as_deref(),
+                vote.as_ref().map(|vote| vote.target.as_str()), vote.as_ref().map(|vote| vote.tools.as_str()),
+                vote.as_ref().and_then(|vote| vote.operation.as_deref())].into_iter().flatten() {
+                ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
+            }
+            ctx.charge_work(1, OPERATION)?;
+            if vote.as_ref() != Some(first) { agreement = false; break; }
         }
-        feature
-            .properties
-            .entry(cadmpeg_core::nonblank_literal!("Target"))
-            .or_insert_with(|| first.0.clone());
-        feature
-            .properties
-            .entry(cadmpeg_core::nonblank_literal!("Tools"))
-            .or_insert_with(|| first.1.clone());
-        if let Some(operation) = &first.2 {
-            feature
-                .properties
-                .entry(cadmpeg_core::nonblank_literal!("Operation"))
-                .or_insert_with(|| operation.clone());
+        if !agreement { continue; }
+        for (key, value) in [("Target", Some(first.target.as_str())), ("Tools", Some(first.tools.as_str())), ("Operation", first.operation.as_deref())] {
+            let Some(value) = value else { continue; };
+            ctx.charge_work(1, OPERATION)?;
+            if feature.properties.contains_key(key) { continue; }
+            let key = cadmpeg_core::text::NonBlankString::new(copy_termination_text(ctx, key, OPERATION)?)
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank combine property key"))?;
+            let value = copy_termination_text(ctx, value, OPERATION)?;
+            ctx.charge_collection_items(1, OPERATION)?;
+            feature.properties.insert(key, value);
         }
     }
+    Ok(())
 }
 
 fn compact_combine_operation_at(payload: &[u8], name_offset: usize) -> Option<&'static str> {
