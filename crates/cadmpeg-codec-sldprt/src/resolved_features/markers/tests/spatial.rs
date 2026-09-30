@@ -24,7 +24,6 @@ use crate::resolved_features::markers::marker_coordinates;
 use crate::resolved_features::markers::marker_local_id;
 use crate::resolved_features::markers::marker_object_index;
 use crate::resolved_features::markers::marker_spatial_coordinates;
-use crate::resolved_features::markers::reference_cells;
 use crate::resolved_features::markers::reference_cells_charged;
 use crate::resolved_features::markers::relation_bindings_charged;
 use crate::resolved_features::markers::relation_bindings_scoped;
@@ -185,6 +184,8 @@ fn sketch_marker_identity_refuses_retained_limit() {
 
 #[test]
 fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let parent = "sldprt:feature-input:resolved-features#synthetic";
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let reference = |offset| FeatureInputOperand {
@@ -215,7 +216,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         name: "sgEntHandle".into(),
     }];
 
-    let references = reference_cells(&scalars, &classes);
+    let references = reference_cells_charged(&ctx, &scalars, &classes).unwrap();
 
     assert_eq!(references.len(), 2);
     assert!(references
@@ -230,7 +231,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         offset: 299,
         name: "sgArcHandle".into(),
     });
-    assert!(reference_cells(&scalars, &ambiguous_classes)
+    assert!(reference_cells_charged(&ctx, &scalars, &ambiguous_classes).unwrap()
         .iter()
         .all(|reference| reference.class_ref.is_none()));
 }
@@ -272,7 +273,16 @@ fn reference_cells_refuse_collection_limit() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
         reference_cells_charged(&service, &[scalar.clone()], &[]).unwrap(),
-        reference_cells(&[scalar], &[])
+        vec![crate::records::FeatureInputReference {
+            id: scalar.operands[0].reference_ref.clone(),
+            parent: scalar.parent,
+            feature_ref: scalar.feature_ref,
+            ordinal: 0,
+            offset: scalar.operands[0].offset,
+            kind: scalar.operands[0].kind,
+            class_ref: None,
+            object_index: scalar.operands[0].entity_index,
+        }]
     );
 }
 
