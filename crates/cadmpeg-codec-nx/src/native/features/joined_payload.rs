@@ -108,98 +108,89 @@ mod tests {
 
     #[test]
     fn source_locations_follow_fragment_boundaries_and_skip_empty_blocks() {
-        
         crate::test_support::with_decode_context(|ctx| {
-
-        let ids = ["a".to_owned(), "empty".to_owned(), "b".to_owned()];
-        let blocks = BTreeMap::from([
-            ("a".to_owned(), (&[1, 2][..], 10)),
-            ("empty".to_owned(), (&[][..], u64::MAX)),
-            ("b".to_owned(), (&[3, 4, 5][..], 100)),
-        ]);
-        let joined = JoinedPayload::from_source(ctx, ids.iter(), &blocks)
-            .unwrap()
-            .unwrap();
-        assert_eq!(joined.bytes(), [1, 2, 3, 4, 5]);
-        assert_eq!(
-            [0, 1, 2, 4, 5, u64::MAX].map(|offset| joined.source_offset(offset)),
-            [Some(10), Some(11), Some(100), Some(102), None, None]
-        );
-    
-})
-}
+            let ids = ["a".to_owned(), "empty".to_owned(), "b".to_owned()];
+            let blocks = BTreeMap::from([
+                ("a".to_owned(), (&[1, 2][..], 10)),
+                ("empty".to_owned(), (&[][..], u64::MAX)),
+                ("b".to_owned(), (&[3, 4, 5][..], 100)),
+            ]);
+            let joined = JoinedPayload::from_source(ctx, ids.iter(), &blocks)
+                .unwrap()
+                .unwrap();
+            assert_eq!(joined.bytes(), [1, 2, 3, 4, 5]);
+            assert_eq!(
+                [0, 1, 2, 4, 5, u64::MAX].map(|offset| joined.source_offset(offset)),
+                [Some(10), Some(11), Some(100), Some(102), None, None]
+            );
+        });
+    }
 
     #[test]
     fn source_extent_overflow_is_rejected_at_construction() {
-        
         crate::test_support::with_decode_context(|ctx| {
-
-        let ids = ["a".to_owned()];
-        let blocks = BTreeMap::from([("a".to_owned(), (&[1, 2][..], u64::MAX))]);
-        assert!(JoinedPayload::from_source(ctx, ids.iter(), &blocks)
-            .unwrap()
-            .is_none());
-    
-})
-}
+            let ids = ["a".to_owned()];
+            let blocks = BTreeMap::from([("a".to_owned(), (&[1, 2][..], u64::MAX))]);
+            assert!(JoinedPayload::from_source(ctx, ids.iter(), &blocks)
+                .unwrap()
+                .is_none());
+        });
+    }
 
     #[test]
     fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
-        
         crate::test_support::with_decode_context(|ctx| {
-
-        let ids = ["block#2".to_string(), "block#3".to_string()];
-        let blocks = std::collections::BTreeMap::from([
-            ("block#2".to_string(), (&[0x30, 0x43][..], 120_u64)),
-            (
-                "block#3".to_string(),
-                (&[0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72][..], 900_u64),
-            ),
-        ]);
-        let joined = crate::native::features::joined_payload::JoinedPayload::from_source(
-            ctx,
-            ids.iter(),
-            &blocks,
-        )
-        .expect("required invariant")
-        .expect("required invariant");
-        assert_eq!(
-            joined.bytes(),
-            [0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72]
-        );
-        assert_eq!(
-            joined
-                .source_spans()
-                .map(|(start, _, _)| start)
-                .collect::<Vec<_>>(),
-            [0, 2]
-        );
-        assert_eq!(
-            joined
-                .source_spans()
-                .map(|(_, length, _)| length)
-                .collect::<Vec<_>>(),
-            [2, 6]
-        );
-        assert_eq!(
-            joined
-                .source_spans()
-                .map(|(_, _, source)| source)
-                .collect::<Vec<_>>(),
-            [120, 900]
-        );
-
-        let missing = ["block#2".to_string(), "missing".to_string()];
-        assert!(
-            crate::native::features::joined_payload::JoinedPayload::from_source(
+            let ids = ["block#2".to_string(), "block#3".to_string()];
+            let blocks = std::collections::BTreeMap::from([
+                ("block#2".to_string(), (&[0x30, 0x43][..], 120_u64)),
+                (
+                    "block#3".to_string(),
+                    (&[0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72][..], 900_u64),
+                ),
+            ]);
+            let joined = crate::native::features::joined_payload::JoinedPayload::from_source(
                 ctx,
-                missing.iter(),
-                &blocks
+                ids.iter(),
+                &blocks,
             )
-            .unwrap()
-            .is_none()
-        );
-    
-})
-}
+            .expect("required invariant")
+            .expect("required invariant");
+            assert_eq!(
+                joined.bytes(),
+                [0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72]
+            );
+            assert_eq!(
+                joined
+                    .source_spans()
+                    .map(|(start, _, _)| start)
+                    .collect::<Vec<_>>(),
+                [0, 2]
+            );
+            assert_eq!(
+                joined
+                    .source_spans()
+                    .map(|(_, length, _)| length)
+                    .collect::<Vec<_>>(),
+                [2, 6]
+            );
+            assert_eq!(
+                joined
+                    .source_spans()
+                    .map(|(_, _, source)| source)
+                    .collect::<Vec<_>>(),
+                [120, 900]
+            );
+
+            let missing = ["block#2".to_string(), "missing".to_string()];
+            assert!(
+                crate::native::features::joined_payload::JoinedPayload::from_source(
+                    ctx,
+                    missing.iter(),
+                    &blocks
+                )
+                .unwrap()
+                .is_none()
+            );
+        });
+    }
 }

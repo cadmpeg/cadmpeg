@@ -40,14 +40,14 @@ fn datum_payload_refusal(
     let admitted = crate::test_support::with_decode_context(|ctx| decode(ctx))
         .expect("admitted datum payload route");
     assert_eq!(admitted, 1);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("datum payload resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("datum payload resource limit"),
+    )
 }
 
 macro_rules! datum_payload_limit_tests {

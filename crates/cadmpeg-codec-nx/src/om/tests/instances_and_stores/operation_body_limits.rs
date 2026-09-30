@@ -11,16 +11,19 @@ fn body_continuation_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = b"\x01\x02\x10\x72\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x02\x2e\x41\x00\x01\x02\x80\x43\x00\x00\x01\x72\x00\x00";
-    
-    
-    
-    crate::test_support::with_decode_context_over(bytes, |policy| { configure(policy); }, |ctx| {
 
-    let record =
-        crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, "TRIM BODY").unwrap();
-    crate::om::operation_body_11_continuations(ctx, record).unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, "TRIM BODY")
+                    .unwrap();
+            crate::om::operation_body_11_continuations(ctx, record).unwrap_err()
+        },
+    )
 }
 
 #[test]
@@ -51,16 +54,19 @@ fn body_reference_lane_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = b"\x01\x02\x10\x6e\xff\x1c\x00\x00\x00\x01\x03\x80\x0d\x69\x00\x00\x0b\x00";
-    
-    
-    
-    crate::test_support::with_decode_context_over(bytes, |policy| { configure(policy); }, |ctx| {
 
-    let record =
-        crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, "OFFSET").unwrap();
-    crate::om::operation_body_reference_lanes(ctx, record).unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, "OFFSET")
+                    .unwrap();
+            crate::om::operation_body_reference_lanes(ctx, record).unwrap_err()
+        },
+    )
 }
 
 #[test]

@@ -215,14 +215,11 @@ mod tests {
         }
         assert!(CsysIdentity::try_from("A".repeat(30)).is_err());
         let identity = CsysIdentity::try_from("a".repeat(30)).unwrap();
-        assert!(CsysDescriptor::from_wire(&[b'b'], &identity, &[b'?']).is_err());
-        assert!(CsysDescriptor::from_wire(
-            &[0],
-            &identity,
-            b"?bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        )
-        .is_err());
-        let descriptor = CsysDescriptor::from_wire(&[2, 1], &identity, &[b'?']).unwrap();
+        assert!(CsysDescriptor::from_wire(b"b", &identity, b"?").is_err());
+        assert!(
+            CsysDescriptor::from_wire(&[0], &identity, b"?bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").is_err()
+        );
+        let descriptor = CsysDescriptor::from_wire(&[2, 1], &identity, b"?").unwrap();
         assert_eq!(
             LocatedCsysDescriptor::new(descriptor.clone(), u64::MAX - 2)
                 .unwrap()

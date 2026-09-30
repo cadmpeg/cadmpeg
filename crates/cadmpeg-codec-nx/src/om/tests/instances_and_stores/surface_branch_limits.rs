@@ -6,15 +6,17 @@ const PAYLOAD: &[u8] = b"\xa0\x5a\x14\x13\x01\x02\x40\x01\x04\xf1\x1b\xf4\xf1\x1
 fn surface_branch_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    
-    
-    
-    crate::test_support::with_decode_context_over(PAYLOAD, |policy| { configure(policy); }, |ctx| {
-
-    let record = crate::om::operation_record::OperationPayload::new(PAYLOAD, 0, "SKIN").unwrap();
-    crate::om::surface_branches::surface_feature_payload_branches(ctx, record).unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        PAYLOAD,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(PAYLOAD, 0, "SKIN").unwrap();
+            crate::om::surface_branches::surface_feature_payload_branches(ctx, record).unwrap_err()
+        },
+    )
 }
 
 #[test]

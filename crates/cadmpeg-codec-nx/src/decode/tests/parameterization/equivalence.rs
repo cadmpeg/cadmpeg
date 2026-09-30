@@ -241,7 +241,7 @@ fn cyclic_offset_supports_are_not_parameterization_equivalent() {
 
 #[test]
 fn equivalent_support_completion_refuses_model_index_collection_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::geometry::Surface;
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -260,18 +260,19 @@ fn equivalent_support_completion_refuses_model_index_collection_limit() {
         )),
         source_object: None,
     });
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-
-    assert!(matches!(
-        complete_parameterization_equivalent_support_uv(ctx, &mut ir),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "model procedural surface carriers"
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            assert!(matches!(
+                complete_parameterization_equivalent_support_uv(ctx, &mut ir),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "model procedural surface carriers"
+            ));
+        },
+    );
 }

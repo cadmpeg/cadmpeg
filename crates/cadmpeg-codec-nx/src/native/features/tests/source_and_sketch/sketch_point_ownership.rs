@@ -32,24 +32,29 @@ fn sketch_group_limit(dimension: cadmpeg_core::decode::ResourceDimension) {
         scalar_fields: ["scalar-a".into(), "scalar-b".into()],
     };
     assert_eq!(sketch_point_groups(std::slice::from_ref(&point)).len(), 1);
-    
-    
+
     let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => |policy| { policy.limits.max_materialized_bytes = 0; },
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| {
+            policy.limits.max_work_units = 0;
+        },
         _ => panic!("unsupported sketch group test dimension"),
     };
     crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-
-    let error =
-        feature_sketch_point_groups(ctx, &[point]).expect_err("sketch group resource limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
-    );
-
-})
+        let error =
+            feature_sketch_point_groups(ctx, &[point]).expect_err("sketch group resource limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+        );
+    });
 }
 
 #[test]

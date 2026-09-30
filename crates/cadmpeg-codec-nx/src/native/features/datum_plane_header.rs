@@ -578,15 +578,15 @@ mod tests {
         assert!(headers
             .iter()
             .any(|header| { matches!(header.construction, super::Construction::Resolved(_)) }));
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-        decode(ctx).expect_err("resolved datum header resource limit")
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| decode(ctx).expect_err("resolved datum header resource limit"),
+        )
+    }
 
     #[test]
     fn resolved_datum_header_refuses_collection_limit() {
@@ -662,36 +662,40 @@ mod tests {
     #[test]
     fn datum_plane_header_route_refuses_collection_limit() {
         let container = datum_plane_container();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-        let error = super::feature_datum_plane_headers(ctx, &container).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = super::feature_datum_plane_headers(ctx, &container).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn datum_plane_header_route_refuses_retained_limit() {
         let container = datum_plane_container();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-        let error = super::feature_datum_plane_headers(ctx, &container).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let error = super::feature_datum_plane_headers(ctx, &container).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn datum_plane_columns_stream_once_with_native_retained_limit() {

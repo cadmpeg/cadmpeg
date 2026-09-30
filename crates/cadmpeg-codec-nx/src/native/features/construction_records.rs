@@ -27,7 +27,7 @@ use super::{
     FeatureSurfaceConstructionString, FeatureThruCurveConstructionEnvelope,
 };
 use crate::container::Container;
-use crate::native::om::{ParameterFormula, ExpressionDeclaration};
+use crate::native::om::{ExpressionDeclaration, ParameterFormula};
 use crate::native::segments::SegmentBodyBinding;
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::reference_index::PayloadIndexToken;

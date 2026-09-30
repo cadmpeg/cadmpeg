@@ -7,21 +7,22 @@ use cadmpeg_core::CodecError;
 fn record_area_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
     let file =
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_om_record_area_payload())]);
-    
-    
-    crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
 
-    let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+    crate::test_support::with_decode_context_over(
+        &file,
+        |_| {},
+        |scan_ctx| {
+            let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
 
-    super::super::om_record_areas(ctx, &container).unwrap_err()
-
-})
-
-})
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    configure(policy);
+                },
+                |ctx| super::super::om_record_areas(ctx, &container).unwrap_err(),
+            )
+        },
+    )
 }
 
 #[test]

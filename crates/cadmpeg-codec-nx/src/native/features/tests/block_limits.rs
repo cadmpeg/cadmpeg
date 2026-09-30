@@ -35,14 +35,14 @@ fn block_construction_refusal(
             .len(),
         1
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("block construction resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("block construction resource limit"),
+    )
 }
 
 fn block_payload_input(
@@ -93,14 +93,14 @@ fn block_payload_refusal(
             .len(),
         1
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("block payload resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("block payload resource limit"),
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -141,14 +141,14 @@ fn block_field_refusal(
         crate::test_support::with_decode_context(|ctx| decode(ctx)).expect("admitted block field"),
         1
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("block field resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("block field resource limit"),
+    )
 }
 
 macro_rules! block_field_limit_tests {
@@ -231,14 +231,14 @@ fn block_named_record_refusal(
             .len(),
         1
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("block named record resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("block named record resource limit"),
+    )
 }
 
 #[test]
@@ -353,14 +353,14 @@ fn block_point_refusal(
             .expect("admitted block point route"),
         1
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("block point resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("block point resource limit"),
+    )
 }
 
 macro_rules! block_point_limit_tests {

@@ -224,18 +224,20 @@ mod tests {
     #[test]
     fn draft_identity_text_refuses_retained_limit() {
         let bytes = b"A\xf0\x27\xff\x02\x01abc123?";
-        
-        
-        
-        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-        let error = DraftIdentityFrame::read(ctx, bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let error = DraftIdentityFrame::read(ctx, bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn tagged_prefix_retains_alternate_compact_and_null_encodings() {

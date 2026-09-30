@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use cadmpeg_core::decode::{ResourceDimension};
+use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_test_support::EditableDecodeResult;
 
 const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
@@ -439,19 +439,21 @@ fn ordered_point_candidates_refuse_index_node_at_collection_limit() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
 
-    assert!(matches!(
-        ordered_point_candidates(ctx, &stream, &graph),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "nx analytic candidate index"
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 1;
+        },
+        |ctx| {
+            assert!(matches!(
+                ordered_point_candidates(ctx, &stream, &graph),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "nx analytic candidate index"
+            ));
+        },
+    );
 }
 
 #[test]
@@ -460,19 +462,21 @@ fn ordered_point_candidates_refuse_output_slot_at_collection_limit() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 2; }, |ctx| {
 
-    assert!(matches!(
-        ordered_point_candidates(ctx, &stream, &graph),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "nx ordered analytic candidates"
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 2;
+        },
+        |ctx| {
+            assert!(matches!(
+                ordered_point_candidates(ctx, &stream, &graph),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "nx ordered analytic candidates"
+            ));
+        },
+    );
 }
 
 #[test]
@@ -481,19 +485,21 @@ fn ordered_point_candidates_refuse_scan_work_at_caller_limit() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 1; }, |ctx| {
 
-    assert!(matches!(
-        ordered_point_candidates(ctx, &stream, &graph),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "scan NX analytic candidates"
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 1;
+        },
+        |ctx| {
+            assert!(matches!(
+                ordered_point_candidates(ctx, &stream, &graph),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "scan NX analytic candidates"
+            ));
+        },
+    );
 }
 
 #[test]

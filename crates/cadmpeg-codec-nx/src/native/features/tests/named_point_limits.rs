@@ -20,14 +20,14 @@ fn named_point_refusal(
             .expect("admitted named point route");
     assert!(!admitted.is_empty());
     assert!(admitted[0].data_blocks.len() >= 2);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    offset_store_named_points(ctx, &container).expect_err("named point resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| offset_store_named_points(ctx, &container).expect_err("named point resource limit"),
+    )
 }
 
 #[test]
@@ -88,15 +88,17 @@ fn named_point_block_use_refusal(
     })
     .expect("admitted block use")
     .is_empty());
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    feature_sketch_named_point_block_uses(ctx, &references, &points)
-        .expect_err("named point block-use resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_sketch_named_point_block_uses(ctx, &references, &points)
+                .expect_err("named point block-use resource limit")
+        },
+    )
 }
 
 #[test]
@@ -178,15 +180,17 @@ fn preceding_named_point_refusal(
     })
     .expect("admitted preceding named-point route");
     assert!(!admitted.is_empty());
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    feature_sketch_preceding_named_point_uses(ctx, &references, &points)
-        .expect_err("preceding named-point resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_sketch_preceding_named_point_uses(ctx, &references, &points)
+                .expect_err("preceding named-point resource limit")
+        },
+    )
 }
 
 #[test]

@@ -3400,8 +3400,7 @@ pub(super) fn display_jt_segments(
             let Some(segment_end) = segment_start.checked_add(segment_len) else {
                 return Ok(Vec::new());
             };
-            let Some(segment) = bytes.get(segment_start..segment_end)
-            else {
+            let Some(segment) = bytes.get(segment_start..segment_end) else {
                 return Ok(Vec::new());
             };
             let Some(segment_id) = segment

@@ -302,16 +302,19 @@ mod tests {
     }
 
     fn assert_limit(configure: impl FnOnce(&mut DecodePolicy), dimension: ResourceDimension) {
-        
-        
-        
-        crate::test_support::with_decode_context_over(TIFF, |policy| { configure(policy); }, |ctx| {
-
-        let error = material_texture_assets(ctx, &container()).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            TIFF,
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let error = material_texture_assets(ctx, &container()).unwrap_err();
+                assert!(
+                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+                );
+            },
+        );
+    }
 
     #[test]
     fn material_texture_assets_refuse_collection_limit() {
@@ -347,18 +350,18 @@ mod tests {
 
     #[test]
     fn material_texture_assets_preserve_identity_and_source() {
-        
-        
-        crate::test_support::with_decode_context_over(TIFF, |_| {}, |ctx| {
-
-        let assets = material_texture_assets(ctx, &container()).unwrap();
-        assert_eq!(assets.len(), 1);
-        assert_eq!(assets[0].id, "nx:container:material-texture#0");
-        assert_eq!(assets[0].name(), "Steel");
-        assert_eq!(assets[0].source_entry(), "/Root/materialsTif/Steel");
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            TIFF,
+            |_| {},
+            |ctx| {
+                let assets = material_texture_assets(ctx, &container()).unwrap();
+                assert_eq!(assets.len(), 1);
+                assert_eq!(assets[0].id, "nx:container:material-texture#0");
+                assert_eq!(assets[0].name(), "Steel");
+                assert_eq!(assets[0].source_entry(), "/Root/materialsTif/Steel");
+            },
+        );
+    }
 
     #[test]
     fn wire_keeps_derived_name_version_and_field_order() {

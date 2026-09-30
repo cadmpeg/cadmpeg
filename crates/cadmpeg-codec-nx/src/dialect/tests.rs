@@ -273,18 +273,18 @@ fn dialect_classification_refuses_collection_limit() {
         .unwrap(),
         streams: extract_streams(&bytes),
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-    let error = classify_layers(ctx, &scan)
-        .err()
-        .expect("resource refusal");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = classify_layers(ctx, &scan).err().expect("resource refusal");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-
-})
+        },
+    );
 }
 
 #[test]
@@ -297,18 +297,18 @@ fn dialect_classification_refuses_retained_limit() {
         .unwrap(),
         streams: extract_streams(&bytes),
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-    let error = classify_layers(ctx, &scan)
-        .err()
-        .expect("resource refusal");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = classify_layers(ctx, &scan).err().expect("resource refusal");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-
-})
+        },
+    );
 }
 
 #[test]
@@ -321,16 +321,16 @@ fn dialect_classification_refuses_work_limit() {
         .unwrap(),
         streams: extract_streams(&bytes),
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 0; }, |ctx| {
 
-    let error = classify_layers(ctx, &scan)
-        .err()
-        .expect("resource refusal");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error = classify_layers(ctx, &scan).err().expect("resource refusal");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
-
-})
+        },
+    );
 }

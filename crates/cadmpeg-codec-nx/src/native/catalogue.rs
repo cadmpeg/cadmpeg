@@ -947,9 +947,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.tri_strip_lod_headers, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.display_jt.tri_strip_lod_headers, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.tri_strip_lod_headers, r, ns),
         len: |m| m.display_jt.tri_strip_lod_headers.len(),
         counts_toward_emptiness: false,
     },
@@ -959,22 +957,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_INITIAL_FACE_DEGREE_SYMBOLS"),
             note: |m, r, tag, a| {
-                note_container(
-                    &m.display_jt.initial_face_degree_symbols,
-                    r,
-                    tag,
-                    a,
-                );
+                note_container(&m.display_jt.initial_face_degree_symbols, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.display_jt.initial_face_degree_symbols,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.initial_face_degree_symbols, r, ns),
         len: |m| m.display_jt.initial_face_degree_symbols.len(),
         counts_toward_emptiness: false,
     },
@@ -984,22 +970,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_TOPOLOGY_PACKET_SEQUENCE"),
             note: |m, r, tag, a| {
-                note_container(
-                    &m.display_jt.topology_packet_sequences,
-                    r,
-                    tag,
-                    a,
-                );
+                note_container(&m.display_jt.topology_packet_sequences, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.display_jt.topology_packet_sequences,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.topology_packet_sequences, r, ns),
         len: |m| m.display_jt.topology_packet_sequences.len(),
         counts_toward_emptiness: false,
     },
@@ -1012,9 +986,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.vertex_records_headers, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.display_jt.vertex_records_headers, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.vertex_records_headers, r, ns),
         len: |m| m.display_jt.vertex_records_headers.len(),
         counts_toward_emptiness: false,
     },
@@ -1027,14 +999,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.coordinate_array_headers, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.display_jt.coordinate_array_headers,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.coordinate_array_headers, r, ns),
         len: |m| m.display_jt.coordinate_array_headers.len(),
         counts_toward_emptiness: false,
     },
@@ -1083,22 +1048,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_VERTEX_TEXTURE_COORDINATES"),
             note: |m, r, tag, a| {
-                note_container(
-                    &m.display_jt.vertex_texture_coordinates,
-                    r,
-                    tag,
-                    a,
-                );
+                note_container(&m.display_jt.vertex_texture_coordinates, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.display_jt.vertex_texture_coordinates,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.vertex_texture_coordinates, r, ns),
         len: |m| m.display_jt.vertex_texture_coordinates.len(),
         counts_toward_emptiness: false,
     },
@@ -1119,22 +1072,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_GEOMETRIC_TRANSFORM"),
             note: |m, r, tag, a| {
-                note_container(
-                    &m.display_jt.geometric_transform_attributes,
-                    r,
-                    tag,
-                    a,
-                );
+                note_container(&m.display_jt.geometric_transform_attributes, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.display_jt.geometric_transform_attributes,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.geometric_transform_attributes, r, ns),
         len: |m| m.display_jt.geometric_transform_attributes.len(),
         counts_toward_emptiness: false,
     },
@@ -1206,9 +1147,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.string_property_atoms, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.display_jt.string_property_atoms, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.string_property_atoms, r, ns),
         len: |m| m.display_jt.string_property_atoms.len(),
         counts_toward_emptiness: false,
     },
@@ -1299,9 +1238,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.tri_strip_shape_nodes, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.display_jt.tri_strip_shape_nodes, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.tri_strip_shape_nodes, r, ns),
         len: |m| m.display_jt.tri_strip_shape_nodes.len(),
         counts_toward_emptiness: false,
     },
@@ -1379,9 +1316,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.deltas_transmit_headers, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.deltas_transmit_headers, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_transmit_headers, r, ns),
         len: |m| m.parasolid.deltas_transmit_headers.len(),
         counts_toward_emptiness: true,
     },
@@ -1391,22 +1326,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DELTAS_TERMINAL_NULL_REFERENCES"),
             note: |m, r, tag, a| {
-                note_per_stream(
-                    &m.parasolid.deltas_terminal_null_references,
-                    r,
-                    tag,
-                    a,
-                );
+                note_per_stream(&m.parasolid.deltas_terminal_null_references, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.deltas_terminal_null_references,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_terminal_null_references, r, ns),
         len: |m| m.parasolid.deltas_terminal_null_references.len(),
         counts_toward_emptiness: true,
     },
@@ -1455,22 +1378,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("TERM_USE_TAIL"),
             note: |m, r, tag, a| {
-                note_per_stream(
-                    &m.parasolid.deltas_term_use_numeric_tails,
-                    r,
-                    tag,
-                    a,
-                );
+                note_per_stream(&m.parasolid.deltas_term_use_numeric_tails, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.deltas_term_use_numeric_tails,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_term_use_numeric_tails, r, ns),
         len: |m| m.parasolid.deltas_term_use_numeric_tails.len(),
         counts_toward_emptiness: true,
     },
@@ -1480,22 +1391,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DELTAS_TAGGED_REFERENCES"),
             note: |m, r, tag, a| {
-                note_per_stream(
-                    &m.parasolid.deltas_tagged_reference_lanes,
-                    r,
-                    tag,
-                    a,
-                );
+                note_per_stream(&m.parasolid.deltas_tagged_reference_lanes, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.deltas_tagged_reference_lanes,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_tagged_reference_lanes, r, ns),
         len: |m| m.parasolid.deltas_tagged_reference_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -1508,14 +1407,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.deltas_reference_type_maps, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.deltas_reference_type_maps,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_reference_type_maps, r, ns),
         len: |m| m.parasolid.deltas_reference_type_maps.len(),
         counts_toward_emptiness: true,
     },
@@ -1525,22 +1417,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DELTAS_REFERENCE_STATE"),
             note: |m, r, tag, a| {
-                note_per_stream(
-                    &m.parasolid.deltas_reference_state_packets,
-                    r,
-                    tag,
-                    a,
-                );
+                note_per_stream(&m.parasolid.deltas_reference_state_packets, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.deltas_reference_state_packets,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_reference_state_packets, r, ns),
         len: |m| m.parasolid.deltas_reference_state_packets.len(),
         counts_toward_emptiness: true,
     },
@@ -1550,27 +1430,13 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DELTAS_SCHEMA_REFERENCE_PREAMBLE"),
             note: |m, r, tag, a| {
-                note_per_stream(
-                    &m.parasolid.deltas_schema_reference_preambles,
-                    r,
-                    tag,
-                    a,
-                );
+                note_per_stream(&m.parasolid.deltas_schema_reference_preambles, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.deltas_schema_reference_preambles,
-                r,
-                ns,
-            )
+            emit_arena(ctx, &m.parasolid.deltas_schema_reference_preambles, r, ns)
         },
-        len: |m| {
-            m.parasolid
-                .deltas_schema_reference_preambles
-                .len()
-        },
+        len: |m| m.parasolid.deltas_schema_reference_preambles.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -1579,22 +1445,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DELTAS_REFERENCE_MARKER"),
             note: |m, r, tag, a| {
-                note_per_stream(
-                    &m.parasolid.deltas_reference_marker_packets,
-                    r,
-                    tag,
-                    a,
-                );
+                note_per_stream(&m.parasolid.deltas_reference_marker_packets, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.deltas_reference_marker_packets,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_reference_marker_packets, r, ns),
         len: |m| m.parasolid.deltas_reference_marker_packets.len(),
         counts_toward_emptiness: true,
     },
@@ -1604,22 +1458,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DELTAS_TYPE_150_STATE"),
             note: |m, r, tag, a| {
-                note_per_stream(
-                    &m.parasolid.deltas_type_150_state_packets,
-                    r,
-                    tag,
-                    a,
-                );
+                note_per_stream(&m.parasolid.deltas_type_150_state_packets, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.deltas_type_150_state_packets,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_type_150_state_packets, r, ns),
         len: |m| m.parasolid.deltas_type_150_state_packets.len(),
         counts_toward_emptiness: true,
     },
@@ -1629,27 +1471,13 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DELTAS_INLINE_SCHEMA"),
             note: |m, r, tag, a| {
-                note_per_stream(
-                    &m.parasolid.deltas_inline_schema_declarations,
-                    r,
-                    tag,
-                    a,
-                );
+                note_per_stream(&m.parasolid.deltas_inline_schema_declarations, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.deltas_inline_schema_declarations,
-                r,
-                ns,
-            )
+            emit_arena(ctx, &m.parasolid.deltas_inline_schema_declarations, r, ns)
         },
-        len: |m| {
-            m.parasolid
-                .deltas_inline_schema_declarations
-                .len()
-        },
+        len: |m| m.parasolid.deltas_inline_schema_declarations.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -1661,9 +1489,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.deltas_inline_body_states, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.deltas_inline_body_states, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_inline_body_states, r, ns),
         len: |m| m.parasolid.deltas_inline_body_states.len(),
         counts_toward_emptiness: true,
     },
@@ -1844,9 +1670,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.entity_52_integer_records, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.entity_52_integer_records, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_52_integer_records, r, ns),
         len: |m| m.parasolid.entity_52_integer_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1859,9 +1683,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.entity_53_double_records, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.entity_53_double_records, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_53_double_records, r, ns),
         len: |m| m.parasolid.entity_53_double_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1874,9 +1696,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.entity_54_string_records, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.entity_54_string_records, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_54_string_records, r, ns),
         len: |m| m.parasolid.entity_54_string_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1928,9 +1748,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.entity_62_unicode_records, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.entity_62_unicode_records, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_62_unicode_records, r, ns),
         len: |m| m.parasolid.entity_62_unicode_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1969,9 +1787,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.entity_51_structured_uses, r, tag, a);
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.entity_51_structured_uses, r, ns)
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.entity_51_structured_uses, r, ns),
         len: |m| m.parasolid.entity_51_structured_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -2000,27 +1816,13 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("TOPOLOGY_ATTRIBUTE_LIST_REFERENCE"),
             note: |m, r, tag, a| {
-                note_per_stream(
-                    &m.parasolid.topology_attribute_list_references,
-                    r,
-                    tag,
-                    a,
-                );
+                note_per_stream(&m.parasolid.topology_attribute_list_references, r, tag, a);
             },
         },
         emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.topology_attribute_list_references,
-                r,
-                ns,
-            )
+            emit_arena(ctx, &m.parasolid.topology_attribute_list_references, r, ns)
         },
-        len: |m| {
-            m.parasolid
-                .topology_attribute_list_references
-                .len()
-        },
+        len: |m| m.parasolid.topology_attribute_list_references.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -2030,14 +1832,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_parasolid_parasolid_topology_attribute_class_uses,
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.parasolid.topology_attribute_class_uses,
-                r,
-                ns,
-            )
-        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.topology_attribute_class_uses, r, ns),
         len: |m| m.parasolid.topology_attribute_class_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -4153,103 +3948,115 @@ pub(super) const NATIVE_CATALOGUE: Catalogue<
 mod tests {
     #[test]
     fn roll_forward_catalog_refuses_scoped_reference_storage() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         let bytes = crate::test_support::test_prt::prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map(
             ),
         )]);
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-        let scan = crate::decode::scan(ctx, root).unwrap();
-        let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
-        let model = crate::native::model::NativeModel::extract(
-            ctx,
-            root,
-            &scan.container,
-            &scan.streams,
-            &mut parsed,
-            None,
-        )
-        .unwrap();
-        assert!(!model.om.operation_state_groups.is_empty());
-        let row = super::CATALOGUE
-            .iter()
-            .find(|row| row.arena == "om_roll_forward_state_groups")
-            .expect("roll-forward group family");
-        
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_materialized_bytes = 0; }, |refusal_ctx| {
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |_| {},
+            |ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        let error = (row.emit)(refusal_ctx, &model, row, &mut namespace).unwrap_err();
-        assert!(
-            matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+                let scan = crate::decode::scan(ctx, root).unwrap();
+                let mut parsed =
+                    crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
+                let model = crate::native::model::NativeModel::extract(
+                    ctx,
+                    root,
+                    &scan.container,
+                    &scan.streams,
+                    &mut parsed,
+                    None,
+                )
+                .unwrap();
+                assert!(!model.om.operation_state_groups.is_empty());
+                let row = super::CATALOGUE
+                    .iter()
+                    .find(|row| row.arena == "om_roll_forward_state_groups")
+                    .expect("roll-forward group family");
+
+                crate::test_support::with_decode_context_over(
+                    &bytes,
+                    |policy| {
+                        policy.limits.max_materialized_bytes = 0;
+                    },
+                    |refusal_ctx| {
+                        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+                        let error =
+                            (row.emit)(refusal_ctx, &model, row, &mut namespace).unwrap_err();
+                        assert!(
+                            matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes)
+                        );
+                    },
+                );
+            },
         );
-    
-})
-
-})
-}
+    }
 
     #[test]
     fn roll_forward_catalog_refuses_collection_reference_storage() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         let bytes = crate::test_support::test_prt::prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map(
             ),
         )]);
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-        let scan = crate::decode::scan(ctx, root).unwrap();
-        let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
-        let model = crate::native::model::NativeModel::extract(
-            ctx,
-            root,
-            &scan.container,
-            &scan.streams,
-            &mut parsed,
-            None,
-        )
-        .unwrap();
-        let count = model
-            .om
-            .operation_state_groups
-            .iter()
-            .map(|table| table.groups().len())
-            .sum::<usize>();
-        assert!(count > 0);
-        let row = super::CATALOGUE
-            .iter()
-            .find(|row| row.arena == "om_roll_forward_state_groups")
-            .expect("roll-forward group family");
-        
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items =
-            cadmpeg_core::decode::u64_from_index(count - 1); }, |refusal_ctx| {
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |_| {},
+            |ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        let error = (row.emit)(refusal_ctx, &model, row, &mut namespace).unwrap_err();
-        assert!(
-            matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+                let scan = crate::decode::scan(ctx, root).unwrap();
+                let mut parsed =
+                    crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
+                let model = crate::native::model::NativeModel::extract(
+                    ctx,
+                    root,
+                    &scan.container,
+                    &scan.streams,
+                    &mut parsed,
+                    None,
+                )
+                .unwrap();
+                let count = model
+                    .om
+                    .operation_state_groups
+                    .iter()
+                    .map(|table| table.groups().len())
+                    .sum::<usize>();
+                assert!(count > 0);
+                let row = super::CATALOGUE
+                    .iter()
+                    .find(|row| row.arena == "om_roll_forward_state_groups")
+                    .expect("roll-forward group family");
+
+                crate::test_support::with_decode_context_over(
+                    &bytes,
+                    |policy| {
+                        policy.limits.max_collection_items =
+                            cadmpeg_core::decode::u64_from_index(count - 1);
+                    },
+                    |refusal_ctx| {
+                        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+                        let error =
+                            (row.emit)(refusal_ctx, &model, row, &mut namespace).unwrap_err();
+                        assert!(
+                            matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "NX roll-forward catalog group references")
+                        );
+                    },
+                );
+            },
         );
-    
-})
-
-})
-}
+    }
 
     #[test]
     fn class_use_annotation_survives_absent_entity_record() {
@@ -4257,29 +4064,32 @@ let root = cadmpeg_core::decode::View::over_retained(&bytes);
         let bytes = crate::test_support::test_prt::prt_with_partition(
             &crate::test_support::test_streams::parasolid_entity_records_stream(),
         );
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
-let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
-        let scan = crate::decode::scan(ctx, root).unwrap();
-        let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
-        let mut model = crate::native::model::NativeModel::extract(
-            ctx,
-            root,
-            &scan.container,
-            &scan.streams,
-            &mut parsed,
-            None,
-        )
-        .unwrap();
-        assert!(!model.parasolid.attribute_class_uses.is_empty());
-        let id = model.parasolid.attribute_class_uses[0].id.clone();
-        model.parasolid.entity_51_records = Vec::new();
-        let mut annotations = super::AnnotationBuilder::new();
-        super::NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, &model, &mut annotations);
-        assert!(annotations.build().exactness().contains_key(&id));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |_| {},
+            |ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+                let scan = crate::decode::scan(ctx, root).unwrap();
+                let mut parsed =
+                    crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
+                let mut model = crate::native::model::NativeModel::extract(
+                    ctx,
+                    root,
+                    &scan.container,
+                    &scan.streams,
+                    &mut parsed,
+                    None,
+                )
+                .unwrap();
+                assert!(!model.parasolid.attribute_class_uses.is_empty());
+                let id = model.parasolid.attribute_class_uses[0].id.clone();
+                model.parasolid.entity_51_records = Vec::new();
+                let mut annotations = super::AnnotationBuilder::new();
+                super::NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, &model, &mut annotations);
+                assert!(annotations.build().exactness().contains_key(&id));
+            },
+        );
+    }
 }

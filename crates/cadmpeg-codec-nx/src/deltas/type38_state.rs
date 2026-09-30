@@ -133,8 +133,17 @@ pub(super) struct Type38StateParts<'inputs> {
 }
 
 impl Type38State {
-    pub(super) fn new(parts: Type38StateParts<'_>) -> Result<Self, &'static str> {
-        let Type38StateParts { xmt, node_id, leading_references, leading_statuses, marker, linked_references, state_references, numeric_values } = parts;
+    pub(super) fn new(parts: &Type38StateParts<'_>) -> Result<Self, &'static str> {
+        let &Type38StateParts {
+            xmt,
+            node_id,
+            leading_references,
+            leading_statuses,
+            marker,
+            linked_references,
+            state_references,
+            numeric_values,
+        } = parts;
         if leading_statuses[..4] != [1; 4] || !matches!(leading_statuses[4], 0 | 1) {
             return Err("leading_statuses: require four ones followed by zero or one");
         }
@@ -310,15 +319,26 @@ impl TryFrom<StateWire> for Type38State {
     fn try_from(wire: StateWire) -> Result<Self, Self::Error> {
         let xmt = NonNullXmt::try_from(wire.xmt)?;
         let marker = IntersectionMarker::try_from(wire.marker)?;
-        let linked_references = wire.linked_references.into_iter().map(NonNullXmt::try_from)
-            .collect::<Result<Vec<_>, _>>().map_err(|_| "linked_references: must be non-null")?;
-        let state_references = wire.state_references.into_iter().map(NonNullXmt::try_from)
-            .collect::<Result<Vec<_>, _>>().map_err(|_| "state_references: must be non-null")?;
-        Self::new(Type38StateParts {
-            xmt, node_id: wire.node_id,
-            leading_references: wire.leading_references, leading_statuses: wire.leading_statuses,
+        let linked_references = wire
+            .linked_references
+            .into_iter()
+            .map(NonNullXmt::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "linked_references: must be non-null")?;
+        let state_references = wire
+            .state_references
+            .into_iter()
+            .map(NonNullXmt::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "state_references: must be non-null")?;
+        Self::new(&Type38StateParts {
+            xmt,
+            node_id: wire.node_id,
+            leading_references: wire.leading_references,
+            leading_statuses: wire.leading_statuses,
             marker,
-            linked_references: &linked_references, state_references: &state_references,
+            linked_references: &linked_references,
+            state_references: &state_references,
             numeric_values: wire.numeric_values,
         })
     }

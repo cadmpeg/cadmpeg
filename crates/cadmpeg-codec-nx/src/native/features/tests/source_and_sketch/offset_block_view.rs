@@ -14,27 +14,29 @@ fn offset_block_view_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> Codec
         offset: 6,
         bytes: &[0xbb],
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    let mut reservation = ctx
-        .reserve_scoped(0, "NX offset block view storage")
-        .expect("empty reservation");
-    let mut blocks = BTreeMap::new();
-    offset_data_block_bytes_for_section(
-        ctx,
-        &mut reservation,
-        &mut blocks,
-        3,
-        100,
-        &control,
-        &[column],
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut reservation = ctx
+                .reserve_scoped(0, "NX offset block view storage")
+                .expect("empty reservation");
+            let mut blocks = BTreeMap::new();
+            offset_data_block_bytes_for_section(
+                ctx,
+                &mut reservation,
+                &mut blocks,
+                3,
+                100,
+                &control,
+                &[column],
+            )
+            .unwrap_err()
+        },
     )
-    .unwrap_err()
-
-})
 }
 
 #[test]

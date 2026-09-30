@@ -1204,7 +1204,10 @@ fn apply_complete_body_pattern(
     };
     let seed_bodies = seed_bodies.into_iter().flatten().collect::<Vec<_>>();
     let Some(copies) = occurrence_count.checked_sub(1) else {
-        return Err((feature_boundary(feature), UnsupportedBodyCensusReason::InvalidOutputLineage));
+        return Err((
+            feature_boundary(feature),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
     };
     let expected_outputs = seed_bodies.len().checked_mul(copies);
     if expected_outputs != Some(feature.evaluation.outputs().len())

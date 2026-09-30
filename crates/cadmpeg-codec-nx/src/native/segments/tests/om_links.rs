@@ -10,14 +10,14 @@ fn segment_om_links_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> cadmpe
     let container =
         crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
             .expect("valid segment OM container");
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    super::super::segment_om_links(ctx, &container).unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| super::super::segment_om_links(ctx, &container).unwrap_err(),
+    )
 }
 
 #[test]

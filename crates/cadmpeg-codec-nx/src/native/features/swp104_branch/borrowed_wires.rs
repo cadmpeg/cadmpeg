@@ -138,23 +138,25 @@ mod tests {
         })
         .unwrap()
         .unwrap();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&payload, |policy| { configure(policy); }, |ctx| {
 
-        FeatureSwp104LeadingBranch::from_source(
-            ctx,
-            "branch".to_owned(),
-            "operation".to_owned(),
-            1200,
-            source,
-            |_| Ok(None),
+        crate::test_support::with_decode_context_over(
+            &payload,
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                FeatureSwp104LeadingBranch::from_source(
+                    ctx,
+                    "branch".to_owned(),
+                    "operation".to_owned(),
+                    1200,
+                    source,
+                    |_| Ok(None),
+                )
+                .unwrap_err()
+            },
         )
-        .unwrap_err()
-    
-})
-}
+    }
 
     #[test]
     fn swp104_mapped_branch_refuses_collection_limit() {

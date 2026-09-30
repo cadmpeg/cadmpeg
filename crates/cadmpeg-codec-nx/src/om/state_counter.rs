@@ -134,7 +134,12 @@ impl StateCounterMap {
         let mut run_start = 0;
         let mut run_end = 0;
         let mut run_len = 0;
-        for at in bytes.len().checked_sub(2).into_iter().flat_map(|last| 0..last) {
+        for at in bytes
+            .len()
+            .checked_sub(2)
+            .into_iter()
+            .flat_map(|last| 0..last)
+        {
             if bytes.get(at) != Some(&0x05) || !matches!(bytes.get(at + 1), Some(0x01 | 0x02)) {
                 continue;
             }
@@ -153,7 +158,10 @@ impl StateCounterMap {
                 run_len = 1;
             }
             if run_len >= 2
-                && bytes.len().checked_sub(run_end).is_some_and(|tail| tail <= MAX_COUNTER_TAIL_BYTES)
+                && bytes
+                    .len()
+                    .checked_sub(run_end)
+                    .is_some_and(|tail| tail <= MAX_COUNTER_TAIL_BYTES)
                 && best.is_none_or(|(_, _, current_len)| run_len > current_len)
             {
                 best = Some((run_start, run_end, run_len));
@@ -252,18 +260,20 @@ mod tests {
             0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
             0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
         ];
-        
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-        let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn operation_state_counter_map_refuses_retained_limit() {
@@ -271,18 +281,20 @@ mod tests {
             0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
             0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
         ];
-        
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-        let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn operation_state_counter_map_refuses_work_limit() {
@@ -290,16 +302,18 @@ mod tests {
             0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
             0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
         ];
-        
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
 
-        let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+                );
+            },
         );
-    
-})
-}
+    }
 }

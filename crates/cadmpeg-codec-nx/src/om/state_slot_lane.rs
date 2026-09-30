@@ -113,39 +113,40 @@ mod tests {
     #[test]
     fn source_and_native_extents_follow_null_and_variable_width_slots() {
         let bytes = [2, 1, 0x11, 0xff, 1, 0x80, 1, 0x90, 0, 1, 2, 0x11];
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
 
-        let lane = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 100)
-            .unwrap()
-            .unwrap();
-        assert_eq!(lane.slots().len(), 4);
-        assert_eq!(lane.offset(), 100);
-        assert_eq!(lane.end_offset(), 112);
-        assert_eq!(StateSlotLane::end_at(&bytes, 0, bytes.len()), Some(12));
-        let native = StateSlotLane::new(
-            200 + cadmpeg_core::decode::u64_from_index(lane.offset()),
-            lane.clone().into_slots(),
-        )
-        .unwrap();
-        assert_eq!((native.offset(), native.end_offset()), (300, 312));
-        assert!(StateSlotLane::new(
-            u64::MAX - 112 + cadmpeg_core::decode::u64_from_index(lane.offset()),
-            lane.clone().into_slots()
-        )
-        .is_ok());
-        assert!(StateSlotLane::new(
-            u64::MAX - 111 + cadmpeg_core::decode::u64_from_index(lane.offset()),
-            lane.into_slots()
-        )
-        .is_err());
-        assert!(
-            StateSlotLane::read(ctx, &bytes, 0, bytes.len(), usize::MAX - 11)
-                .unwrap()
-                .is_none()
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |_| {},
+            |ctx| {
+                let lane = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 100)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(lane.slots().len(), 4);
+                assert_eq!(lane.offset(), 100);
+                assert_eq!(lane.end_offset(), 112);
+                assert_eq!(StateSlotLane::end_at(&bytes, 0, bytes.len()), Some(12));
+                let native = StateSlotLane::new(
+                    200 + cadmpeg_core::decode::u64_from_index(lane.offset()),
+                    lane.clone().into_slots(),
+                )
+                .unwrap();
+                assert_eq!((native.offset(), native.end_offset()), (300, 312));
+                assert!(StateSlotLane::new(
+                    u64::MAX - 112 + cadmpeg_core::decode::u64_from_index(lane.offset()),
+                    lane.clone().into_slots()
+                )
+                .is_ok());
+                assert!(StateSlotLane::new(
+                    u64::MAX - 111 + cadmpeg_core::decode::u64_from_index(lane.offset()),
+                    lane.into_slots()
+                )
+                .is_err());
+                assert!(
+                    StateSlotLane::read(ctx, &bytes, 0, bytes.len(), usize::MAX - 11)
+                        .unwrap()
+                        .is_none()
+                );
+            },
         );
-    
-})
-}
+    }
 }

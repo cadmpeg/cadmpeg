@@ -240,16 +240,19 @@ mod tests {
     }
 
     fn assert_limit(configure: impl FnOnce(&mut DecodePolicy), dimension: ResourceDimension) {
-        
-        
-        
-        crate::test_support::with_decode_context_over(UUID_FRAME, |policy| { configure(policy); }, |ctx| {
-
-        let error = object_uuid_values(ctx, &container()).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            UUID_FRAME,
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let error = object_uuid_values(ctx, &container()).unwrap_err();
+                assert!(
+                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+                );
+            },
+        );
+    }
 
     #[test]
     fn object_uuid_values_refuse_collection_limit() {
@@ -277,27 +280,27 @@ mod tests {
 
     #[test]
     fn object_uuid_values_preserve_wire_after_admission() {
-        
-        
-        crate::test_support::with_decode_context_over(UUID_FRAME, |_| {}, |ctx| {
-
-        let values = object_uuid_values(ctx, &container()).unwrap();
-        assert_eq!(values.len(), 1);
-        assert_eq!(
-            values[0].uuid.as_str(),
-            "01234567-89ab-cdef-0123-456789abcdef"
+        crate::test_support::with_decode_context_over(
+            UUID_FRAME,
+            |_| {},
+            |ctx| {
+                let values = object_uuid_values(ctx, &container()).unwrap();
+                assert_eq!(values.len(), 1);
+                assert_eq!(
+                    values[0].uuid.as_str(),
+                    "01234567-89ab-cdef-0123-456789abcdef"
+                );
+                assert_eq!(
+                    values[0]
+                        .records
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                    ["nx:om-record-directory-0:entry#0"]
+                );
+            },
         );
-        assert_eq!(
-            values[0]
-                .records
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            ["nx:om-record-directory-0:entry#0"]
-        );
-    
-})
-}
+    }
 
     #[test]
     fn uuid_records_preserve_order_and_reject_empty_ownership() {

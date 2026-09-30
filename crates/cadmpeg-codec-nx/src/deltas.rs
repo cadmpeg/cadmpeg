@@ -1232,7 +1232,16 @@ fn inline_schema_declaration(
                 };
                 return Some(InlineSchemaDeclaration {
                     fields: InlineSchemaFields::Type38 {
-                        state: Type38State::new(crate::deltas::type38_state::Type38StateParts { xmt: xmt, node_id: node_id, leading_references: leading_references, leading_statuses: leading_statuses, marker: marker, linked_references: &linked_references, state_references: &state_references, numeric_values: numeric_values })
+                        state: Type38State::new(&crate::deltas::type38_state::Type38StateParts {
+                            xmt,
+                            node_id,
+                            leading_references,
+                            leading_statuses,
+                            marker,
+                            linked_references: &linked_references,
+                            state_references: &state_references,
+                            numeric_values,
+                        })
                         .ok()?,
                     },
                     offset,
@@ -1244,7 +1253,16 @@ fn inline_schema_declaration(
             (end <= gap_end).then_some(())?;
             return Some(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
-                    state: Type38State::new(crate::deltas::type38_state::Type38StateParts { xmt: xmt, node_id: node_id, leading_references: leading_references, leading_statuses: leading_statuses, marker: marker, linked_references: &linked_references, state_references: &state_references, numeric_values: None })
+                    state: Type38State::new(&crate::deltas::type38_state::Type38StateParts {
+                        xmt,
+                        node_id,
+                        leading_references,
+                        leading_statuses,
+                        marker,
+                        linked_references: &linked_references,
+                        state_references: &state_references,
+                        numeric_values: None,
+                    })
                     .ok()?,
                 },
                 offset,
@@ -1441,7 +1459,10 @@ fn inline_body_state(
         ]
         .iter()
         .any(|header| {
-            candidate.checked_add(header.len()).and_then(|end| stream.get(*candidate..end)) == Some(*header)
+            candidate
+                .checked_add(header.len())
+                .and_then(|end| stream.get(*candidate..end))
+                == Some(*header)
         })
     });
     let expected_end = next_header.unwrap_or(gap_end);
@@ -2143,7 +2164,9 @@ fn merge_records(
     let merged_complete = merged_graph.has_complete_body_topology(ctx)?;
     let deletes_owner = deletions.keys().any(|(kind, _)| matches!(kind, 12 | 13));
     let deleted_faces = deletions.keys().filter(|(kind, _)| *kind == 14).count();
-    let accounted_faces = merged_graph.body_shape_face_count().checked_add(deleted_faces)
+    let accounted_faces = merged_graph
+        .body_shape_face_count()
+        .checked_add(deleted_faces)
         .ok_or_else(|| CodecError::Malformed("NX accounted face count overflow".into()))?;
     let unaccounted_face_loss = !deletes_owner && accounted_faces < graph.body_shape_face_count();
     if base_complete && (!merged_complete || unaccounted_face_loss) {
@@ -4005,34 +4028,38 @@ mod inline_schema_tests {
     #[test]
     fn deltas_attdef_route_refuses_collection_limit() {
         let stream = attdef_list_declaration();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&stream, |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
 
-        assert!(matches!(
-            super::census::walk(ctx, &stream),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &stream,
+            |policy| {
+                policy.limits.max_collection_items = 1;
+            },
+            |ctx| {
+                assert!(matches!(
+                    super::census::walk(ctx, &stream),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(_))
+                ));
+            },
+        );
+    }
 
     #[test]
     fn deltas_attdef_route_refuses_retained_limit() {
         let stream = attdef_list_declaration();
-        
-        
-        
-        crate::test_support::with_decode_context_over(&stream, |policy| { policy.limits.max_retained_bytes = 7; }, |ctx| {
 
-        assert!(matches!(
-            super::census::walk(ctx, &stream),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    
-})
-}
+        crate::test_support::with_decode_context_over(
+            &stream,
+            |policy| {
+                policy.limits.max_retained_bytes = 7;
+            },
+            |ctx| {
+                assert!(matches!(
+                    super::census::walk(ctx, &stream),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(_))
+                ));
+            },
+        );
+    }
 
     fn type_70_declaration() -> Vec<u8> {
         let mut bytes = TYPE_70_SCHEMA_HEADER.to_vec();
@@ -4141,18 +4168,27 @@ mod inline_schema_tests {
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
-                    state: Type38State::new(crate::deltas::type38_state::Type38StateParts { xmt: 40_000u32.try_into().unwrap(), node_id: 17, leading_references: [1, 7, 8, 9, 1], leading_statuses: [1; 5], marker: IntersectionMarker::Type2d, linked_references: &[11u32, 12]
+                    state: Type38State::new(&crate::deltas::type38_state::Type38StateParts {
+                        xmt: 40_000u32.try_into().unwrap(),
+                        node_id: 17,
+                        leading_references: [1, 7, 8, 9, 1],
+                        leading_statuses: [1; 5],
+                        marker: IntersectionMarker::Type2d,
+                        linked_references: &[11u32, 12]
                             .into_iter()
                             .map(|value| value.try_into().unwrap())
-                            .collect::<Vec<_>>(), state_references: &[40_003u32, 40_002, 40_001]
+                            .collect::<Vec<_>>(),
+                        state_references: &[40_003u32, 40_002, 40_001]
                             .into_iter()
                             .map(|value| value.try_into().unwrap())
-                            .collect::<Vec<_>>(), numeric_values: Some(
+                            .collect::<Vec<_>>(),
+                        numeric_values: Some(
                             FiniteVector::new([
                                 0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0
                             ])
                             .unwrap()
-                        ) })
+                        )
+                    })
                     .unwrap(),
                 },
                 offset: 0,
@@ -4994,21 +5030,23 @@ mod transmit_header_tests {
 
     #[test]
     fn deltas_census_route_refuses_retained_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         let bytes = header(&[0x04, 0x27, 0x04, 0x28]);
-        
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-        let error = walk(ctx, &bytes).expect_err("retained refusal");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let error = walk(ctx, &bytes).expect_err("retained refusal");
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes)
+                );
+            },
         );
-    
-})
-}
+    }
 
     fn header(references: &[u8]) -> Vec<u8> {
         let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";

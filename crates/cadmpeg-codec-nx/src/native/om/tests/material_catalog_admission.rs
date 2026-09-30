@@ -13,24 +13,29 @@ fn material_catalog_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> Co
         ("/Root/materialsTif/sample", texture.to_vec()),
         ("/Root/qafmetadata", qaf.to_vec()),
     ]);
-    
-    
-    crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
 
-    let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
-    let assets =
-        super::super::material_texture::material_texture_assets(scan_ctx, &container).unwrap();
-    assert_eq!(assets.len(), 1);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+    crate::test_support::with_decode_context_over(
+        &file,
+        |_| {},
+        |scan_ctx| {
+            let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
+            let assets =
+                super::super::material_texture::material_texture_assets(scan_ctx, &container)
+                    .unwrap();
+            assert_eq!(assets.len(), 1);
 
-    super::super::material_texture_catalog_entries(ctx, &container, &assets).unwrap_err()
-
-})
-
-})
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    configure(policy);
+                },
+                |ctx| {
+                    super::super::material_texture_catalog_entries(ctx, &container, &assets)
+                        .unwrap_err()
+                },
+            )
+        },
+    )
 }
 
 #[test]

@@ -8,29 +8,30 @@ use cadmpeg_ir::{AnnotationBuilder, CadIr};
 fn attach_one_configuration(
     configure: impl FnOnce(&mut DecodePolicy),
 ) -> Result<CadIr, CodecError> {
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
-
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    super::super::attach_configurations(
-        ctx,
-        &mut ir,
-        std::iter::once((
-            "nx:arrangements:configuration#0",
-            "Primary",
-            0,
-            Some("nx:arrangements:attribute-use#0"),
-        )),
-        &mut annotations,
-        &stream,
-    )?;
-    Ok(ir)
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+            super::super::attach_configurations(
+                ctx,
+                &mut ir,
+                std::iter::once((
+                    "nx:arrangements:configuration#0",
+                    "Primary",
+                    0,
+                    Some("nx:arrangements:attribute-use#0"),
+                )),
+                &mut annotations,
+                &stream,
+            )?;
+            Ok(ir)
+        },
+    )
 }
 
 #[test]

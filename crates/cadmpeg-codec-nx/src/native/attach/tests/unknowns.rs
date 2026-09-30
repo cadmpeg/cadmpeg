@@ -20,22 +20,24 @@ fn unknown_container_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> Codec
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    super::super::attach_container_layer(
-        ctx,
-        &mut ir,
-        &scan,
-        &mut annotations,
-        &mut unknowns,
-        crate::native::TypedNative::ContainerOnly,
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            super::super::attach_container_layer(
+                ctx,
+                &mut ir,
+                &scan,
+                &mut annotations,
+                &mut unknowns,
+                crate::native::TypedNative::ContainerOnly,
+            )
+            .unwrap_err()
+        },
     )
-    .unwrap_err()
-
-})
 }
 
 #[test]

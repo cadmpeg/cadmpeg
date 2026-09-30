@@ -57,14 +57,14 @@ fn parameter_binding_refusal(
             .len(),
         1
     );
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("parameter binding resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("parameter binding resource limit"),
+    )
 }
 
 #[test]
@@ -118,14 +118,14 @@ fn parameter_use_refusal(
         .expect("admitted parameter use");
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].bindings.len(), 2);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    decode(ctx).expect_err("parameter use resource limit")
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("parameter use resource limit"),
+    )
 }
 
 #[test]

@@ -14,16 +14,20 @@ fn branch_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = branch_bytes();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&bytes, |policy| { configure(policy); }, |ctx| {
 
-    let record =
-        crate::om::operation_record::OperationPayload::new(&bytes, 0, "THRU_CURVE").unwrap();
-    crate::om::thru_curve_branches::thru_curve_payload_branch_group(ctx, record).unwrap_err()
-
-})
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&bytes, 0, "THRU_CURVE")
+                    .unwrap();
+            crate::om::thru_curve_branches::thru_curve_payload_branch_group(ctx, record)
+                .unwrap_err()
+        },
+    )
 }
 
 #[test]

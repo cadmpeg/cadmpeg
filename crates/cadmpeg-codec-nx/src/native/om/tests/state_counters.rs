@@ -135,21 +135,22 @@ fn audit_trail_test_payload() -> Vec<u8> {
 
 fn audit_trail_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", audit_trail_test_payload())]);
-    
-    
-    crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
 
-    let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+    crate::test_support::with_decode_context_over(
+        &file,
+        |_| {},
+        |scan_ctx| {
+            let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
 
-    audit_trail_rows(ctx, &container).unwrap_err()
-
-})
-
-})
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    configure(policy);
+                },
+                |ctx| audit_trail_rows(ctx, &container).unwrap_err(),
+            )
+        },
+    )
 }
 
 #[test]
@@ -179,21 +180,22 @@ fn state_projection_limit_error(
     project: impl FnOnce(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
 ) -> CodecError {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
-    
-    
-    crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
 
-    let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+    crate::test_support::with_decode_context_over(
+        &file,
+        |_| {},
+        |scan_ctx| {
+            let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
 
-    project(ctx, &container).unwrap_err()
-
-})
-
-})
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    configure(policy);
+                },
+                |ctx| project(ctx, &container).unwrap_err(),
+            )
+        },
+    )
 }
 
 #[test]
@@ -378,7 +380,7 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
 
 #[test]
 fn native_operation_state_groups_refuse_retained_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let file = prt_with_named_payloads(&[(
         "/Root/UG_PART/UG_PART",
@@ -387,25 +389,27 @@ fn native_operation_state_groups_refuse_retained_limit() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
             .expect("feature-history container");
-    
-    
-    
-    crate::test_support::with_decode_context_over(&file, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-    let error = operation_state_groups(ctx, &container)
-        .expect_err("group vector exceeds zero retained bytes");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &file,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = operation_state_groups(ctx, &container)
+                .expect_err("group vector exceeds zero retained bytes");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+            ));
+        },
+    );
 }
 
 #[test]
 fn native_operation_state_groups_refuse_collection_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let file = prt_with_named_payloads(&[(
         "/Root/UG_PART/UG_PART",
@@ -414,24 +418,26 @@ fn native_operation_state_groups_refuse_collection_limit() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
             .expect("feature-history container");
-    
-    
-    
-    crate::test_support::with_decode_context_over(&file, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-    let error = operation_state_groups(ctx, &container)
-        .expect_err("group route exceeds zero collection items");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &file,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = operation_state_groups(ctx, &container)
+                .expect_err("group route exceeds zero collection items");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems)
+            );
+        },
     );
-
-})
 }
 
 #[test]
 fn native_operation_state_groups_refuse_work_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let file = prt_with_named_payloads(&[(
         "/Root/UG_PART/UG_PART",
@@ -440,20 +446,22 @@ fn native_operation_state_groups_refuse_work_limit() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
             .expect("feature-history container");
-    
-    
-    
-    crate::test_support::with_decode_context_over(&file, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
 
-    let error =
-        operation_state_groups(ctx, &container).expect_err("group scan exceeds zero work units");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &file,
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error = operation_state_groups(ctx, &container)
+                .expect_err("group scan exceeds zero work units");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+            ));
+        },
+    );
 }
 
 #[test]
@@ -500,7 +508,7 @@ fn native_catalog_emits_bounded_operation_state_messages() {
 
 #[test]
 fn native_operation_state_message_route_refuses_retained_bytes() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let file = prt_with_named_payloads(&[(
         "/Root/UG_PART/UG_PART",
@@ -509,20 +517,22 @@ fn native_operation_state_message_route_refuses_retained_bytes() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
             .expect("feature-history container");
-    
-    
-    
-    crate::test_support::with_decode_context_over(&file, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-    let error = operation_state_messages(ctx, &container)
-        .expect_err("message route exceeds zero retained bytes");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-    ));
-
-})
+    crate::test_support::with_decode_context_over(
+        &file,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = operation_state_messages(ctx, &container)
+                .expect_err("message route exceeds zero retained bytes");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+            ));
+        },
+    );
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use super::super::{evaluate_expression_graphs, ParameterFormula, ExpressionUnit};
+use super::super::{evaluate_expression_graphs, ExpressionUnit, ParameterFormula};
 
 #[test]
 fn graph_scopes_equal_names_by_native_unit_label() {

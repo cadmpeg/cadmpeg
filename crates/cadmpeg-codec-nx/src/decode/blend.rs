@@ -151,26 +151,41 @@ mod tests {
 
     #[test]
     fn blend_surface_frame_cache_evicts_old_entries_at_its_bound() {
-        
         crate::test_support::with_decode_context(|geometry_ctx| {
+            let mut cache = BlendSurfaceFrameCache::default();
+            let frame = (
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                1.0,
+            );
+            for index in 0..MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
+                let surface = SurfaceId::mint(format!("test:model:entity#surface-{index}"))
+                    .expect("identity grammar");
+                cache
+                    .remember(
+                        &surface,
+                        cadmpeg_core::convert::f64_from_index(index)
+                            .expect("bounded cache fixture index is exact"),
+                        false,
+                        frame,
+                        &GeometryWorkBudget::from_context(
+                            geometry_ctx,
+                            cadmpeg_core::decode::u64_from_index(100),
+                        ),
+                    )
+                    .expect("cache allocation succeeds");
+            }
+            let first = SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar");
+            assert_eq!(cache.get(&first, 0.0, false), Some(frame));
 
-
-        let mut cache = BlendSurfaceFrameCache::default();
-        let frame = (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            1.0,
-        );
-        for index in 0..MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
-            let surface = SurfaceId::mint(format!("test:model:entity#surface-{index}"))
-                .expect("identity grammar");
+            let newest =
+                SurfaceId::mint("test:model:entity#surface-newest").expect("identity grammar");
             cache
                 .remember(
-                    &surface,
-                    cadmpeg_core::convert::f64_from_index(index)
-                        .expect("bounded cache fixture index is exact"),
+                    &newest,
+                    0.0,
                     false,
                     frame,
                     &GeometryWorkBudget::from_context(
@@ -179,47 +194,47 @@ mod tests {
                     ),
                 )
                 .expect("cache allocation succeeds");
-        }
-        let first = SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar");
-        assert_eq!(cache.get(&first, 0.0, false), Some(frame));
-
-        let newest = SurfaceId::mint("test:model:entity#surface-newest").expect("identity grammar");
-        cache
-            .remember(
-                &newest,
-                0.0,
-                false,
-                frame,
-                &GeometryWorkBudget::from_context(
-                    geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(100),
-                ),
-            )
-            .expect("cache allocation succeeds");
-        assert!(cache.get(&first, 0.0, false).is_none());
-        assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
-        assert!(cache.get(&newest, -0.0, false).is_none());
-    
-})
-}
+            assert!(cache.get(&first, 0.0, false).is_none());
+            assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
+            assert!(cache.get(&newest, -0.0, false).is_none());
+        });
+    }
 
     #[test]
     fn blend_boundary_point_cache_evicts_old_entries_at_its_bound() {
-        
         crate::test_support::with_decode_context(|geometry_ctx| {
+            let mut cache = BlendSurfaceFrameCache::default();
+            let point = Point3::new(1.0, 2.0, 3.0);
+            for index in 0..MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
+                let surface =
+                    SurfaceId::mint(format!("test:model:entity#boundary-surface-{index}"))
+                        .expect("identity grammar");
+                cache
+                    .remember_boundary_point(
+                        &surface,
+                        cadmpeg_core::convert::f64_from_index(index)
+                            .expect("bounded cache fixture index is exact"),
+                        index % 2,
+                        point,
+                        &GeometryWorkBudget::from_context(
+                            geometry_ctx,
+                            cadmpeg_core::decode::u64_from_index(100),
+                        ),
+                    )
+                    .expect("cache allocation succeeds");
+            }
 
+            let first =
+                SurfaceId::mint("test:model:entity#boundary-surface-0").expect("identity grammar");
+            assert_eq!(cache.get_boundary_point(&first, 0.0, 0), Some(point));
 
-        let mut cache = BlendSurfaceFrameCache::default();
-        let point = Point3::new(1.0, 2.0, 3.0);
-        for index in 0..MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
-            let surface = SurfaceId::mint(format!("test:model:entity#boundary-surface-{index}"))
+            let newest = SurfaceId::mint("test:model:entity#boundary-surface-newest")
                 .expect("identity grammar");
             cache
                 .remember_boundary_point(
-                    &surface,
-                    cadmpeg_core::convert::f64_from_index(index)
-                        .expect("bounded cache fixture index is exact"),
-                    index % 2,
+                    &newest,
+                    0.0,
+                    1,
                     point,
                     &GeometryWorkBudget::from_context(
                         geometry_ctx,
@@ -227,87 +242,70 @@ mod tests {
                     ),
                 )
                 .expect("cache allocation succeeds");
-        }
-
-        let first =
-            SurfaceId::mint("test:model:entity#boundary-surface-0").expect("identity grammar");
-        assert_eq!(cache.get_boundary_point(&first, 0.0, 0), Some(point));
-
-        let newest =
-            SurfaceId::mint("test:model:entity#boundary-surface-newest").expect("identity grammar");
-        cache
-            .remember_boundary_point(
-                &newest,
-                0.0,
-                1,
-                point,
-                &GeometryWorkBudget::from_context(
-                    geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(100),
-                ),
-            )
-            .expect("cache allocation succeeds");
-        assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
-        assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
-        assert!(cache.get_boundary_point(&newest, 0.0, 0).is_none());
-        assert!(cache.get_boundary_point(&newest, -0.0, 1).is_none());
-    
-})
-}
+            assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
+            assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
+            assert!(cache.get_boundary_point(&newest, 0.0, 0).is_none());
+            assert!(cache.get_boundary_point(&newest, -0.0, 1).is_none());
+        });
+    }
 
     #[test]
     fn blend_frame_cache_refuses_retained_identity_at_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
-
-        let budget = GeometryWorkBudget::from_context(ctx, 100);
-        let surface = SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
-        let frame = (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            1.0,
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                let surface =
+                    SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
+                let frame = (
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    1.0,
+                );
+                let limit = BlendSurfaceFrameCache::default()
+                    .remember(&surface, 0.0, false, frame, &budget)
+                    .expect_err("frame identity exceeds retained limit");
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(limit.operation, "nx blend frame cache identity");
+            },
         );
-        let limit = BlendSurfaceFrameCache::default()
-            .remember(&surface, 0.0, false, frame, &budget)
-            .expect_err("frame identity exceeds retained limit");
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(limit.operation, "nx blend frame cache identity");
-    
-})
-}
+    }
 
     #[test]
     fn blend_frame_cache_refuses_entry_at_collection_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
 
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
-
-        let budget = GeometryWorkBudget::from_context(ctx, 100);
-        let surface = SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
-        let frame = (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            1.0,
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                let surface =
+                    SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
+                let frame = (
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    1.0,
+                );
+                let limit = BlendSurfaceFrameCache::default()
+                    .remember(&surface, 0.0, false, frame, &budget)
+                    .expect_err("frame entry exceeds collection limit");
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                assert_eq!(limit.operation, "nx blend frame cache entries");
+            },
         );
-        let limit = BlendSurfaceFrameCache::default()
-            .remember(&surface, 0.0, false, frame, &budget)
-            .expect_err("frame entry exceeds collection limit");
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "nx blend frame cache entries");
-    
-})
-}
+    }
 
     #[test]
     fn blend_section_boundary_clamps_only_nearby_roundoff() {
@@ -339,97 +337,90 @@ mod tests {
 
     #[test]
     fn blend_contact_seed_cache_is_bounded_and_uses_the_nearest_chart() {
-        
         crate::test_support::with_decode_context(|geometry_ctx| {
+            let support = SurfaceId::mint("test:model:entity#synthetic:seed-support")
+                .expect("identity grammar");
+            let spine =
+                CurveId::mint("test:model:entity#synthetic:seed-spine").expect("identity grammar");
+            let offset_surface = SurfaceId::mint("test:model:entity#synthetic:seed-offset")
+                .expect("identity grammar");
+            let mut cache = BlendContactSeedCache::default();
+            for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
+                let parameter = cadmpeg_core::convert::f64_from_index(parameter)
+                    .expect("fixture integer is exactly representable");
+                cache
+                    .remember(
+                        BlendContactSeed {
+                            support: support.as_str().to_owned(),
+                            spine: spine.as_str().to_owned(),
+                            parameter,
+                            offset_surface: offset_surface.as_str().to_owned(),
+                            parameters: Point2::new(parameter, -parameter),
+                        },
+                        &GeometryWorkBudget::from_context(
+                            geometry_ctx,
+                            cadmpeg_core::decode::u64_from_index(100),
+                        ),
+                    )
+                    .expect("cache allocation succeeds");
+            }
 
+            assert_eq!(cache.entries.len(), MAX_BLEND_CONTACT_SEEDS);
+            assert_eq!(
+                cache.seed_for(&support, &spine, 7.1, &offset_surface),
+                Some(Point2::new(7.0, -7.0))
+            );
+        });
+    }
 
-        let support =
-            SurfaceId::mint("test:model:entity#synthetic:seed-support").expect("identity grammar");
-        let spine =
-            CurveId::mint("test:model:entity#synthetic:seed-spine").expect("identity grammar");
-        let offset_surface =
-            SurfaceId::mint("test:model:entity#synthetic:seed-offset").expect("identity grammar");
-        let mut cache = BlendContactSeedCache::default();
-        for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
-            let parameter = cadmpeg_core::convert::f64_from_index(parameter)
-                .expect("fixture integer is exactly representable");
-            cache
-                .remember(
-                    BlendContactSeed {
-                        support: support.as_str().to_owned(),
-                        spine: spine.as_str().to_owned(),
-                        parameter,
-                        offset_surface: offset_surface.as_str().to_owned(),
-                        parameters: Point2::new(parameter, -parameter),
-                    },
+    #[test]
+    fn numerical_seventh_common_weights_preserve_closest_point() {
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+
+        crate::test_support::with_decode_context(|geometry_ctx| {
+            for weight in [1.0e-200, 1.0, 1.0e200] {
+                let controls = [
+                    [-0.25 * weight, 0.0, 0.0, weight],
+                    [0.75 * weight, 0.0, 0.0, weight],
+                ];
+                let distance = super::homogeneous_residual_distance(
+                    &controls,
+                    0.0,
+                    [0.0, 1.0],
                     &GeometryWorkBudget::from_context(
                         geometry_ctx,
                         cadmpeg_core::decode::u64_from_index(100),
                     ),
                 )
-                .expect("cache allocation succeeds");
-        }
-
-        assert_eq!(cache.entries.len(), MAX_BLEND_CONTACT_SEEDS);
-        assert_eq!(
-            cache.seed_for(&support, &spine, 7.1, &offset_surface),
-            Some(Point2::new(7.0, -7.0))
-        );
-    
-})
-}
-
-    #[test]
-    fn numerical_seventh_common_weights_preserve_closest_point() {
-        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-        
-        crate::test_support::with_decode_context(|geometry_ctx| {
-
-
-        for weight in [1.0e-200, 1.0, 1.0e200] {
-            let controls = [
-                [-0.25 * weight, 0.0, 0.0, weight],
-                [0.75 * weight, 0.0, 0.0, weight],
-            ];
-            let distance = super::homogeneous_residual_distance(
-                &controls,
-                0.0,
-                [0.0, 1.0],
-                &GeometryWorkBudget::from_context(
-                    geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(100),
-                ),
-            )
-            .expect("test solver allocation succeeds");
-            assert!((distance - 0.25).abs() <= 4.0 * f64::EPSILON);
-            let curve = NurbsCurve::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                Some(vec![weight; 2]),
-                false,
-            )
-            .unwrap();
-            let parameter = super::closest_nurbs_curve_parameter_with_budget(
-                &curve,
-                Point3::new(0.25, 0.0, 0.0),
-                None,
-                &super::GeometryWorkBudget::from_context(
-                    geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(super::MAX_ADAPTIVE_GEOMETRY_WORK),
-                ),
-            )
-            .expect("evaluator allocation succeeds")
-            .unwrap();
-            assert!((parameter - 0.25).abs() <= 128.0 * f64::EPSILON);
-        }
-    
-})
-}
+                .expect("test solver allocation succeeds");
+                assert!((distance - 0.25).abs() <= 4.0 * f64::EPSILON);
+                let curve = NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    Some(vec![weight; 2]),
+                    false,
+                )
+                .unwrap();
+                let parameter = super::closest_nurbs_curve_parameter_with_budget(
+                    &curve,
+                    Point3::new(0.25, 0.0, 0.0),
+                    None,
+                    &super::GeometryWorkBudget::from_context(
+                        geometry_ctx,
+                        cadmpeg_core::decode::u64_from_index(super::MAX_ADAPTIVE_GEOMETRY_WORK),
+                    ),
+                )
+                .expect("evaluator allocation succeeds")
+                .unwrap();
+                assert!((parameter - 0.25).abs() <= 128.0 * f64::EPSILON);
+            }
+        });
+    }
 
     #[test]
     fn nurbs_closest_parameter_refuses_weight_scratch_at_collection_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
@@ -440,28 +431,30 @@ mod tests {
             false,
         )
         .expect("valid rational curve");
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
 
-        let budget = super::GeometryWorkBudget::from_context(ctx, 8_000_000);
-        let result = super::closest_nurbs_curve_parameter_with_budget(
-            &curve,
-            Point3::new(0.25, 0.0, 0.0),
-            None,
-            &budget,
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 1;
+            },
+            |ctx| {
+                let budget = super::GeometryWorkBudget::from_context(ctx, 8_000_000);
+                let result = super::closest_nurbs_curve_parameter_with_budget(
+                    &curve,
+                    Point3::new(0.25, 0.0, 0.0),
+                    None,
+                    &budget,
+                );
+                let limit = result.expect_err("two weights exceed one collection item");
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                assert_eq!(limit.operation, "nx spine NURBS weights");
+            },
         );
-        let limit = result.expect_err("two weights exceed one collection item");
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "nx spine NURBS weights");
-    
-})
-}
+    }
 
     #[test]
     fn nurbs_closest_parameter_refuses_residual_scratch_at_collection_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
@@ -472,28 +465,30 @@ mod tests {
             false,
         )
         .expect("valid polynomial curve");
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
 
-        let budget = super::GeometryWorkBudget::from_context(ctx, 8_000_000);
-        let result = super::closest_nurbs_curve_parameter_with_budget(
-            &curve,
-            Point3::new(0.25, 0.0, 0.0),
-            None,
-            &budget,
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 1;
+            },
+            |ctx| {
+                let budget = super::GeometryWorkBudget::from_context(ctx, 8_000_000);
+                let result = super::closest_nurbs_curve_parameter_with_budget(
+                    &curve,
+                    Point3::new(0.25, 0.0, 0.0),
+                    None,
+                    &budget,
+                );
+                let limit = result.expect_err("two residuals exceed one collection item");
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                assert_eq!(limit.operation, "nx spine NURBS residuals");
+            },
         );
-        let limit = result.expect_err("two residuals exceed one collection item");
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "nx spine NURBS residuals");
-    
-})
-}
+    }
 
     #[test]
     fn nurbs_closest_parameter_refuses_session_work_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
@@ -504,27 +499,29 @@ mod tests {
             false,
         )
         .expect("valid polynomial curve");
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 0; }, |ctx| {
 
-        let budget = super::GeometryWorkBudget::from_context(ctx, 8_000_000);
-        let result = super::closest_nurbs_curve_parameter_with_budget(
-            &curve,
-            Point3::new(0.25, 0.0, 0.0),
-            None,
-            &budget,
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let budget = super::GeometryWorkBudget::from_context(ctx, 8_000_000);
+                let result = super::closest_nurbs_curve_parameter_with_budget(
+                    &curve,
+                    Point3::new(0.25, 0.0, 0.0),
+                    None,
+                    &budget,
+                );
+                let limit = result.expect_err("closest-parameter search needs work");
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            },
         );
-        let limit = result.expect_err("closest-parameter search needs work");
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    
-})
-}
+    }
 
     #[test]
     fn nurbs_closest_parameter_refuses_local_geometry_work_limit() {
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
@@ -535,25 +532,23 @@ mod tests {
             false,
         )
         .expect("valid polynomial curve");
-        
-        crate::test_support::with_decode_context(|ctx| {
 
-        let budget = super::GeometryWorkBudget::from_context(ctx, 0);
-        let result = super::closest_nurbs_curve_parameter_with_budget(
-            &curve,
-            Point3::new(0.25, 0.0, 0.0),
-            None,
-            &budget,
-        );
-        let limit = result.expect_err("closest-parameter search exceeds zero local work");
-        assert_eq!(
-            limit.dimension,
-            ResourceDimension::Codec("nx adaptive geometry work")
-        );
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    
-})
-}
+        crate::test_support::with_decode_context(|ctx| {
+            let budget = super::GeometryWorkBudget::from_context(ctx, 0);
+            let result = super::closest_nurbs_curve_parameter_with_budget(
+                &curve,
+                Point3::new(0.25, 0.0, 0.0),
+                None,
+                &budget,
+            );
+            let limit = result.expect_err("closest-parameter search exceeds zero local work");
+            assert_eq!(
+                limit.dimension,
+                ResourceDimension::Codec("nx adaptive geometry work")
+            );
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 }
 
 pub(super) fn decoded_surface_point_inner_with_budget(
@@ -633,11 +628,18 @@ pub(super) fn blend_surface_parameters(
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
     );
     blend_surface_parameters_inner(
-&index,
-surface,
-BlendSurfaceFit { point, seed, fit_tolerance: None, grid: BlendParameterGrid::Build, section_domain: BlendSectionDomain::Canonical, depth: 0 },
-&geometry_budget,
-)
+        &index,
+        surface,
+        &BlendSurfaceFit {
+            point,
+            seed,
+            fit_tolerance: None,
+            grid: BlendParameterGrid::Build,
+            section_domain: BlendSectionDomain::Canonical,
+            depth: 0,
+        },
+        &geometry_budget,
+    )
 }
 
 #[cfg(test)]
@@ -704,11 +706,17 @@ pub(super) fn blend_surface_parameters_for_fit_with_grid_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_for_fit_with_section_domain_and_budget(
-index,
-surface,
-BlendSectionFit { point: point, seed: seed, fit_tolerance: fit_tolerance, grid: grid, section_domain: BlendSectionDomain::Canonical },
-geometry_budget,
-)
+        index,
+        surface,
+        &BlendSectionFit {
+            point,
+            seed,
+            fit_tolerance,
+            grid,
+            section_domain: BlendSectionDomain::Canonical,
+        },
+        geometry_budget,
+    )
 }
 
 pub(super) fn blend_surface_parameters_for_fit_with_source_continuation_and_budget(
@@ -721,11 +729,17 @@ pub(super) fn blend_surface_parameters_for_fit_with_source_continuation_and_budg
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_for_fit_with_section_domain_and_budget(
-index,
-surface,
-BlendSectionFit { point: point, seed: seed, fit_tolerance: fit_tolerance, grid: grid, section_domain: BlendSectionDomain::SourceContinuation },
-geometry_budget,
-)
+        index,
+        surface,
+        &BlendSectionFit {
+            point,
+            seed,
+            fit_tolerance,
+            grid,
+            section_domain: BlendSectionDomain::SourceContinuation,
+        },
+        geometry_budget,
+    )
 }
 
 // The explicit search inputs keep canonical and source-continuation policies
@@ -740,19 +754,32 @@ struct BlendSectionFit<'inputs> {
 }
 
 fn blend_surface_parameters_for_fit_with_section_domain_and_budget(
-index: &cadmpeg_ir::index::ModelIndex<'_>,
-surface: &SurfaceId,
-inputs: BlendSectionFit<'_>,
-geometry_budget: &GeometryWorkBudget<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    inputs: &BlendSectionFit<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let BlendSectionFit { point, seed, fit_tolerance, grid, section_domain } = inputs;
+    let &BlendSectionFit {
+        point,
+        seed,
+        fit_tolerance,
+        grid,
+        section_domain,
+    } = inputs;
 
     blend_surface_parameters_inner(
-index,
-surface,
-BlendSurfaceFit { point, seed, fit_tolerance: Some(fit_tolerance), grid, section_domain, depth: 0 },
-geometry_budget,
-)
+        index,
+        surface,
+        &BlendSurfaceFit {
+            point,
+            seed,
+            fit_tolerance: Some(fit_tolerance),
+            grid,
+            section_domain,
+            depth: 0,
+        },
+        geometry_budget,
+    )
 }
 
 // The search state is explicit so every recursive evaluation shares the
@@ -768,12 +795,19 @@ struct BlendSurfaceFit<'inputs> {
 }
 
 fn blend_surface_parameters_inner(
-index: &cadmpeg_ir::index::ModelIndex<'_>,
-surface: &SurfaceId,
-blend_surface_fit: BlendSurfaceFit<'_>,
-geometry_budget: &GeometryWorkBudget<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    blend_surface_fit: &BlendSurfaceFit<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let BlendSurfaceFit { point, seed, fit_tolerance, grid, section_domain, depth } = blend_surface_fit;
+    let &BlendSurfaceFit {
+        point,
+        seed,
+        fit_tolerance,
+        grid,
+        section_domain,
+        depth,
+    } = blend_surface_fit;
 
     if depth >= 32 {
         return Ok(None);
@@ -992,15 +1026,29 @@ geometry_budget: &GeometryWorkBudget<'_>,
     if let Some(fit_tolerance) = fit_tolerance {
         let boundary_parameters = [
             blend_boundary_parameter_with_index_and_budget(
-index,
-BlendBoundaryFit { surface, point, boundary: 0, seed: seed.map(|seed| seed.u), fit_tolerance, depth: depth + 1 },
-geometry_budget,
-)?,
+                index,
+                &BlendBoundaryFit {
+                    surface,
+                    point,
+                    boundary: 0,
+                    seed: seed.map(|seed| seed.u),
+                    fit_tolerance,
+                    depth: depth + 1,
+                },
+                geometry_budget,
+            )?,
             blend_boundary_parameter_with_index_and_budget(
-index,
-BlendBoundaryFit { surface, point, boundary: 1, seed: seed.map(|seed| seed.u), fit_tolerance, depth: depth + 1 },
-geometry_budget,
-)?,
+                index,
+                &BlendBoundaryFit {
+                    surface,
+                    point,
+                    boundary: 1,
+                    seed: seed.map(|seed| seed.u),
+                    fit_tolerance,
+                    depth: depth + 1,
+                },
+                geometry_budget,
+            )?,
         ];
         if let Some((parameter, boundary)) = match boundary_parameters {
             [Some(parameter), None] => Some((parameter, 0usize)),
@@ -2040,14 +2088,19 @@ fn blend_surface_frame_with_index_and_budget_and_options(
             return Ok(None);
         };
         let first = spine_contact_direction_with_index_and_budget_and_options(
-index,
-SpineContactLocation { support: supports[0], spine, parameter: u, radius },
-center,
-depth + 1,
-allow_offset_contact,
-contact_seeds,
-geometry_budget,
-)?;
+            index,
+            &SpineContactLocation {
+                support: supports[0],
+                spine,
+                parameter: u,
+                radius,
+            },
+            center,
+            depth + 1,
+            allow_offset_contact,
+            contact_seeds,
+            geometry_budget,
+        )?;
         let first = if first.is_some() {
             first
         } else {
@@ -2064,14 +2117,19 @@ geometry_budget,
             return Ok(None);
         };
         let second = spine_contact_direction_with_index_and_budget_and_options(
-index,
-SpineContactLocation { support: supports[1], spine, parameter: u, radius },
-center,
-depth + 1,
-allow_offset_contact,
-contact_seeds,
-geometry_budget,
-)?;
+            index,
+            &SpineContactLocation {
+                support: supports[1],
+                spine,
+                parameter: u,
+                radius,
+            },
+            center,
+            depth + 1,
+            allow_offset_contact,
+            contact_seeds,
+            geometry_budget,
+        )?;
         let second = if second.is_some() {
             second
         } else {
@@ -2111,24 +2169,22 @@ struct SpineContactLocation<'inputs> {
 }
 
 fn spine_contact_direction_with_index_and_budget_and_options(
-index: &cadmpeg_ir::index::ModelIndex<'_>,
-spine_contact_location: SpineContactLocation<'_>,
-center: Point3,
-depth: usize,
-allow_offset_contact: bool,
-contact_seeds: &mut BlendContactSeedCache,
-geometry_budget: &GeometryWorkBudget<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    spine_contact_location: &SpineContactLocation<'_>,
+    center: Point3,
+    depth: usize,
+    allow_offset_contact: bool,
+    contact_seeds: &mut BlendContactSeedCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
-    let SpineContactLocation { support, spine, parameter, radius } = spine_contact_location;
-
     let Some(contact) = spine_contact_point_with_index_and_budget_and_options(
-index,
-SpineContactLocation { support, spine, parameter, radius },
-depth + 1,
-allow_offset_contact,
-contact_seeds,
-geometry_budget,
-)?
+        index,
+        spine_contact_location,
+        depth + 1,
+        allow_offset_contact,
+        contact_seeds,
+        geometry_budget,
+    )?
     else {
         return Ok(None);
     };
@@ -2199,11 +2255,18 @@ struct BlendBoundaryFit<'inputs> {
 }
 
 fn blend_boundary_parameter_with_index_and_budget(
-index: &cadmpeg_ir::index::ModelIndex<'_>,
-blend_boundary_fit: BlendBoundaryFit<'_>,
-geometry_budget: &GeometryWorkBudget<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    blend_boundary_fit: &BlendBoundaryFit<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let BlendBoundaryFit { surface, point, boundary, seed, fit_tolerance, depth } = blend_boundary_fit;
+    let &BlendBoundaryFit {
+        surface,
+        point,
+        boundary,
+        seed,
+        fit_tolerance,
+        depth,
+    } = blend_boundary_fit;
 
     if depth >= 32 {
         return Ok(None);
@@ -2251,14 +2314,18 @@ pub(super) fn blend_boundary_parameter_from_support_pcurve_with_budget(
     };
     let support_geometry = &carrier.geometry;
     blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
-index,
-blend,
-SupportCurveSample { support, support_geometry, support_pcurve, curve_parameter },
-target,
-geometry_budget,
-)
+        index,
+        blend,
+        &SupportCurveSample {
+            support,
+            support_geometry,
+            support_pcurve,
+            curve_parameter,
+        },
+        target,
+        geometry_budget,
+    )
 }
-
 
 struct SupportCurveSample<'inputs> {
     support: &'inputs SurfaceId,
@@ -2268,13 +2335,18 @@ struct SupportCurveSample<'inputs> {
 }
 
 fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
-index: &cadmpeg_ir::index::ModelIndex<'_>,
-blend: &SurfaceId,
-support_curve_sample: SupportCurveSample<'_>,
-target: BoundaryInverseTarget,
-geometry_budget: &GeometryWorkBudget<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    blend: &SurfaceId,
+    support_curve_sample: &SupportCurveSample<'_>,
+    target: BoundaryInverseTarget,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let SupportCurveSample { support, support_geometry, support_pcurve, curve_parameter } = support_curve_sample;
+    let &SupportCurveSample {
+        support,
+        support_geometry,
+        support_pcurve,
+        curve_parameter,
+    } = support_curve_sample;
 
     let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, blend)
     else {
@@ -2296,13 +2368,19 @@ geometry_budget: &GeometryWorkBudget<'_>,
         return Ok(None);
     };
     blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
-index,
-ContactCurveSample { support, support_geometry, contact_pcurve, boundary: *boundary, support_pcurve, curve_parameter },
-target,
-geometry_budget,
-)
+        index,
+        &ContactCurveSample {
+            support,
+            support_geometry,
+            contact_pcurve,
+            boundary: *boundary,
+            support_pcurve,
+            curve_parameter,
+        },
+        target,
+        geometry_budget,
+    )
 }
-
 
 pub(super) struct ContactCurveSample<'inputs> {
     pub(super) support: &'inputs SurfaceId,
@@ -2314,12 +2392,19 @@ pub(super) struct ContactCurveSample<'inputs> {
 }
 
 pub(super) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
-index: &cadmpeg_ir::index::ModelIndex<'_>,
-contact_curve_sample: ContactCurveSample<'_>,
-target: BoundaryInverseTarget,
-geometry_budget: &GeometryWorkBudget<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    contact_curve_sample: &ContactCurveSample<'_>,
+    target: BoundaryInverseTarget,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let ContactCurveSample { support, support_geometry, contact_pcurve, boundary, support_pcurve, curve_parameter } = contact_curve_sample;
+    let &ContactCurveSample {
+        support,
+        support_geometry,
+        contact_pcurve,
+        boundary,
+        support_pcurve,
+        curve_parameter,
+    } = contact_curve_sample;
 
     let Some(support_uv) =
         cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(support_pcurve, curve_parameter))?
@@ -2366,14 +2451,6 @@ geometry_budget: &GeometryWorkBudget<'_>,
     )
 }
 
-/// Transfer a source-chart sample from a blend boundary onto its declared
-/// support chart.
-///
-/// Nested blend supports are inverted from the source sample directly.  For
-/// analytic and offset supports, the serialized spine contact chart remains
-/// the fast path, with a bounded 3D closest-point fallback.  Every result is
-/// certified by reproducing the source sample on the target support.
-
 pub(super) struct SourcePcurveSample<'inputs> {
     pub(super) blend: &'inputs SurfaceId,
     pub(super) support: &'inputs SurfaceId,
@@ -2381,14 +2458,26 @@ pub(super) struct SourcePcurveSample<'inputs> {
     pub(super) curve_parameter: f64,
 }
 
+/// Transfer a source-chart sample from a blend boundary onto its declared
+/// support chart.
+///
+/// Nested blend supports are inverted from the source sample directly.  For
+/// analytic and offset supports, the serialized spine contact chart remains
+/// the fast path, with a bounded 3D closest-point fallback.  Every result is
+/// certified by reproducing the source sample on the target support.
 pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-index: &cadmpeg_ir::index::ModelIndex<'_>,
-source_pcurve_sample: SourcePcurveSample<'_>,
-target: BoundaryInverseTarget,
-contact_seeds: &mut BlendContactSeedCache,
-geometry_budget: &GeometryWorkBudget<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    source_pcurve_sample: &SourcePcurveSample<'_>,
+    target: BoundaryInverseTarget,
+    contact_seeds: &mut BlendContactSeedCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let SourcePcurveSample { blend, support, source_pcurve, curve_parameter } = source_pcurve_sample;
+    let &SourcePcurveSample {
+        blend,
+        support,
+        source_pcurve,
+        curve_parameter,
+    } = source_pcurve_sample;
 
     let Some((supports, _, _, _)) = blend_surface_definition_with_index(index, blend) else {
         return Ok(None);
@@ -2705,8 +2794,6 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
     }
     Ok(Some(parameter))
 }
-
-
 
 const LOCAL_PCURVE_SEARCH_STEPS: usize = 12;
 const COARSE_PCURVE_SEARCH_INTERVALS: usize = 16;
@@ -3605,26 +3692,36 @@ fn spine_contact_point_with_index_and_budget(
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let mut contact_seeds = BlendContactSeedCache::default();
     spine_contact_point_with_index_and_budget_and_options(
-index,
-SpineContactLocation { support, spine, parameter, radius },
-depth,
-false,
-&mut contact_seeds,
-geometry_budget,
-)
+        index,
+        &SpineContactLocation {
+            support,
+            spine,
+            parameter,
+            radius,
+        },
+        depth,
+        false,
+        &mut contact_seeds,
+        geometry_budget,
+    )
 }
 
 // Keep the support relation, recursion policy, bounded seed cache, and work
 // slice together so nested contact evaluation cannot hide an allocation.
 fn spine_contact_point_with_index_and_budget_and_options(
-index: &cadmpeg_ir::index::ModelIndex<'_>,
-spine_contact_location: SpineContactLocation<'_>,
-depth: usize,
-allow_offset_contact: bool,
-contact_seeds: &mut BlendContactSeedCache,
-geometry_budget: &GeometryWorkBudget<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    spine_contact_location: &SpineContactLocation<'_>,
+    depth: usize,
+    allow_offset_contact: bool,
+    contact_seeds: &mut BlendContactSeedCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
-    let SpineContactLocation { support, spine, parameter, radius } = spine_contact_location;
+    let &SpineContactLocation {
+        support,
+        spine,
+        parameter,
+        radius,
+    } = spine_contact_location;
 
     (|| -> Option<Result<Point3, cadmpeg_core::decode::ResourceLimit>> {
         (depth < 32).then_some(())?;
@@ -3662,25 +3759,35 @@ geometry_budget: &GeometryWorkBudget<'_>,
             return None;
         }
         spine_contact_point_from_offset_side_with_index_and_budget(
-index,
-SpineContactLocation { support, spine, parameter, radius },
-depth + 1,
-contact_seeds,
-geometry_budget,
-)
+            index,
+            &SpineContactLocation {
+                support,
+                spine,
+                parameter,
+                radius,
+            },
+            depth + 1,
+            contact_seeds,
+            geometry_budget,
+        )
         .transpose()
     })()
     .transpose()
 }
 
 fn spine_contact_point_from_offset_side_with_index_and_budget(
-index: &cadmpeg_ir::index::ModelIndex<'_>,
-spine_contact_location: SpineContactLocation<'_>,
-depth: usize,
-contact_seeds: &mut BlendContactSeedCache,
-geometry_budget: &GeometryWorkBudget<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    spine_contact_location: &SpineContactLocation<'_>,
+    depth: usize,
+    contact_seeds: &mut BlendContactSeedCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
-    let SpineContactLocation { support, spine, parameter, radius } = spine_contact_location;
+    let &SpineContactLocation {
+        support,
+        spine,
+        parameter,
+        radius,
+    } = spine_contact_location;
 
     (|| -> Option<Result<Point3, cadmpeg_core::decode::ResourceLimit>> {
         (depth < 32).then_some(())?;
@@ -4349,11 +4456,18 @@ fn surface_contact_direction_with_index_and_budget(
                 offset
             } else {
                 blend_surface_parameters_inner(
-index,
-surface,
-BlendSurfaceFit { point: center, seed: None, fit_tolerance: None, grid: BlendParameterGrid::Disabled, section_domain: BlendSectionDomain::Canonical, depth: depth + 1 },
-geometry_budget,
-)?
+                    index,
+                    surface,
+                    &BlendSurfaceFit {
+                        point: center,
+                        seed: None,
+                        fit_tolerance: None,
+                        grid: BlendParameterGrid::Disabled,
+                        section_domain: BlendSectionDomain::Canonical,
+                        depth: depth + 1,
+                    },
+                    geometry_budget,
+                )?
             }
         }
         geometry => geometry

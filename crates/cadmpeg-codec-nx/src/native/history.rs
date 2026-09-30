@@ -526,71 +526,74 @@ mod tests {
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
 
     #[test]
     fn body_writer_history_refuses_collection_limit() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
-
-        let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
-        let mut history = BodyWriterHistory::default();
-        let error = history
-            .record_writer(ctx, Some(7), None, &[], &feature)
-            .unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
+                let mut history = BodyWriterHistory::default();
+                let error = history
+                    .record_writer(ctx, Some(7), None, &[], &feature)
+                    .unwrap_err();
+                assert!(
+                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn body_writer_history_refuses_retained_limit() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
-
-        let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
-        let mut history = BodyWriterHistory::default();
-        let error = history
-            .record_writer(ctx, Some(7), None, &[], &feature)
-            .unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
+                let mut history = BodyWriterHistory::default();
+                let error = history
+                    .record_writer(ctx, Some(7), None, &[], &feature)
+                    .unwrap_err();
+                assert!(
+                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn primary_writer_dependency_refuses_collection_limit() {
-        
-        
-        
-        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
-
-        let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
-        let mut history = BodyWriterHistory::default();
-        history
-            .record_writer(ctx, Some(7), None, &[], &feature)
-            .unwrap();
-        let mut dependencies = Vec::new();
-        let error = history
-            .extend_primary_dependencies(ctx, None, Some(7), None, &[], &mut dependencies)
-            .unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 1;
+            },
+            |ctx| {
+                let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
+                let mut history = BodyWriterHistory::default();
+                history
+                    .record_writer(ctx, Some(7), None, &[], &feature)
+                    .unwrap();
+                let mut dependencies = Vec::new();
+                let error = history
+                    .extend_primary_dependencies(ctx, None, Some(7), None, &[], &mut dependencies)
+                    .unwrap_err();
+                assert!(
+                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     fn history_feature(
         id: &str,
@@ -639,23 +642,28 @@ mod tests {
             BTreeMap::new(),
             false,
         )]);
-        
-        
+
         let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-            ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
-            ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
-            ResourceDimension::MaterializedBytes => |policy| { policy.limits.max_materialized_bytes = 0; },
-            ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
+            ResourceDimension::CollectionItems => |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            ResourceDimension::RetainedBytes => |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            ResourceDimension::MaterializedBytes => |policy| {
+                policy.limits.max_materialized_bytes = 0;
+            },
+            ResourceDimension::WorkUnits => |policy| {
+                policy.limits.max_work_units = 0;
+            },
             _ => unreachable!("test only covers four closure dimensions"),
         };
         crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+            active_feature_closure_for_decode(ctx, &ir, &[body]).expect_err("closure must refuse")
+        })
+    }
 
-        active_feature_closure_for_decode(ctx, &ir, &[body]).expect_err("closure must refuse")
-    
-})
-}
-
-#[test]
+    #[test]
     fn active_feature_closure_refuses_collection_limit() {
         assert!(
             matches!(closure_refusal_for_limit(ResourceDimension::CollectionItems), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
@@ -783,198 +791,183 @@ mod tests {
 
     #[test]
     fn neutral_output_identity_closes_lineage_across_native_identities() {
-        
-        
         crate::test_support::with_decode_context(|ctx| {
+            let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+            let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
+            let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
+            let mut history = BodyWriterHistory::default();
+            history
+                .record_writer(ctx, Some(7), None, std::slice::from_ref(&body), &first)
+                .expect("admitted writer history");
 
+            let mut dependencies = Vec::new();
+            history
+                .extend_primary_dependencies(
+                    ctx,
+                    None,
+                    Some(8),
+                    None,
+                    std::slice::from_ref(&body),
+                    &mut dependencies,
+                )
+                .expect("admitted writer history");
 
-        let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-        let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
-        let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
-        let mut history = BodyWriterHistory::default();
-        history
-            .record_writer(ctx, Some(7), None, std::slice::from_ref(&body), &first)
-            .expect("admitted writer history");
+            assert_eq!(dependencies, [first]);
+            assert!(history.native_writer(8).is_none());
+            history
+                .record_writer(ctx, Some(8), None, std::slice::from_ref(&body), &second)
+                .expect("admitted writer history");
+            assert_eq!(history.native_writer(8), Some(&second));
+            dependencies.clear();
+            history
+                .extend_primary_dependencies(ctx, None, Some(7), None, &[body], &mut dependencies)
+                .expect("admitted writer history");
+            assert_eq!(dependencies, [second]);
 
-        let mut dependencies = Vec::new();
-        history
-            .extend_primary_dependencies(
-                ctx,
-                None,
-                Some(8),
-                None,
-                std::slice::from_ref(&body),
-                &mut dependencies,
-            )
-            .expect("admitted writer history");
-
-        assert_eq!(dependencies, [first]);
-        assert!(history.native_writer(8).is_none());
-        history
-            .record_writer(ctx, Some(8), None, std::slice::from_ref(&body), &second)
-            .expect("admitted writer history");
-        assert_eq!(history.native_writer(8), Some(&second));
-        dependencies.clear();
-        history
-            .extend_primary_dependencies(ctx, None, Some(7), None, &[body], &mut dependencies)
-            .expect("admitted writer history");
-        assert_eq!(dependencies, [second]);
-
-        dependencies.clear();
-        history
-            .extend_primary_dependencies(ctx, None, Some(7), None, &[], &mut dependencies)
-            .expect("admitted writer history");
-        assert_eq!(
-            dependencies,
-            [FeatureId::mint("synthetic:test:id#first").expect("identity grammar")]
-        );
-    
-})
-}
+            dependencies.clear();
+            history
+                .extend_primary_dependencies(ctx, None, Some(7), None, &[], &mut dependencies)
+                .expect("admitted writer history");
+            assert_eq!(
+                dependencies,
+                [FeatureId::mint("synthetic:test:id#first").expect("identity grammar")]
+            );
+        });
+    }
 
     #[test]
     fn provisional_output_writer_can_be_retracted_without_affecting_other_writers() {
-        
-        
         crate::test_support::with_decode_context(|ctx| {
+            let provisional =
+                FeatureId::mint("synthetic:test:id#provisional").expect("identity grammar");
+            let retained = FeatureId::mint("synthetic:test:id#retained").expect("identity grammar");
+            let created = BodyId::mint("test:model:entity#created").expect("identity grammar");
+            let existing = BodyId::mint("test:model:entity#existing").expect("identity grammar");
+            let mut history = BodyWriterHistory::default();
+            history
+                .record_writer(
+                    ctx,
+                    None,
+                    None,
+                    &[created.clone(), existing.clone()],
+                    &provisional,
+                )
+                .expect("admitted writer history");
+            history
+                .record_writer(
+                    ctx,
+                    Some(7),
+                    None,
+                    std::slice::from_ref(&existing),
+                    &retained,
+                )
+                .expect("admitted writer history");
 
-
-        let provisional =
-            FeatureId::mint("synthetic:test:id#provisional").expect("identity grammar");
-        let retained = FeatureId::mint("synthetic:test:id#retained").expect("identity grammar");
-        let created = BodyId::mint("test:model:entity#created").expect("identity grammar");
-        let existing = BodyId::mint("test:model:entity#existing").expect("identity grammar");
-        let mut history = BodyWriterHistory::default();
-        history
-            .record_writer(
-                ctx,
+            assert!(!history.has_preceding_writer(
+                Some(&provisional),
                 None,
                 None,
-                &[created.clone(), existing.clone()],
-                &provisional,
-            )
-            .expect("admitted writer history");
-        history
-            .record_writer(
-                ctx,
-                Some(7),
-                None,
-                std::slice::from_ref(&existing),
-                &retained,
-            )
-            .expect("admitted writer history");
-
-        assert!(!history.has_preceding_writer(
-            Some(&provisional),
-            None,
-            None,
-            std::slice::from_ref(&created)
-        ));
-        assert!(history.has_preceding_writer(
-            Some(&provisional),
-            Some(7),
-            None,
-            std::slice::from_ref(&existing)
-        ));
-
-        let mut dependencies = Vec::new();
-        history
-            .extend_primary_dependencies(
-                ctx,
+                std::slice::from_ref(&created)
+            ));
+            assert!(history.has_preceding_writer(
                 Some(&provisional),
                 Some(7),
                 None,
-                std::slice::from_ref(&existing),
-                &mut dependencies,
-            )
-            .expect("admitted writer history");
-        assert_eq!(dependencies, [retained]);
+                std::slice::from_ref(&existing)
+            ));
 
-        let mut dependencies = Vec::new();
-        history
-            .extend_primary_dependencies(
-                ctx,
-                Some(&provisional),
-                Some(7),
-                None,
-                std::slice::from_ref(&created),
-                &mut dependencies,
-            )
-            .expect("admitted writer history");
-        assert_eq!(
-            dependencies,
-            [FeatureId::mint("synthetic:test:id#retained").expect("identity grammar")]
-        );
+            let mut dependencies = Vec::new();
+            history
+                .extend_primary_dependencies(
+                    ctx,
+                    Some(&provisional),
+                    Some(7),
+                    None,
+                    std::slice::from_ref(&existing),
+                    &mut dependencies,
+                )
+                .expect("admitted writer history");
+            assert_eq!(dependencies, [retained]);
 
-        history.retract_outputs(&provisional, &[created.clone(), existing.clone()]);
+            let mut dependencies = Vec::new();
+            history
+                .extend_primary_dependencies(
+                    ctx,
+                    Some(&provisional),
+                    Some(7),
+                    None,
+                    std::slice::from_ref(&created),
+                    &mut dependencies,
+                )
+                .expect("admitted writer history");
+            assert_eq!(
+                dependencies,
+                [FeatureId::mint("synthetic:test:id#retained").expect("identity grammar")]
+            );
 
-        assert!(!history.has_preceding_writer(Some(&provisional), None, None, &[created]));
-        assert!(history.has_preceding_writer(Some(&provisional), Some(7), None, &[existing]));
-    
-})
-}
+            history.retract_outputs(&provisional, &[created.clone(), existing.clone()]);
+
+            assert!(!history.has_preceding_writer(Some(&provisional), None, None, &[created]));
+            assert!(history.has_preceding_writer(Some(&provisional), Some(7), None, &[existing]));
+        });
+    }
 
     #[test]
     fn exact_offset_store_identity_orders_writers_without_cross_store_aliases() {
-        
-        
         crate::test_support::with_decode_context(|ctx| {
+            let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
+            let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
+            let mut history = BodyWriterHistory::default();
+            history
+                .record_writer(ctx, None, Some("store-a:block#7"), &[], &first)
+                .expect("admitted writer history");
 
+            let mut dependencies = Vec::new();
+            history
+                .extend_primary_dependencies(
+                    ctx,
+                    None,
+                    None,
+                    Some("store-a:block#7"),
+                    &[],
+                    &mut dependencies,
+                )
+                .expect("admitted writer history");
+            assert_eq!(dependencies, [first]);
+            dependencies.clear();
+            history
+                .extend_primary_dependencies(
+                    ctx,
+                    None,
+                    None,
+                    Some("store-b:block#7"),
+                    &[],
+                    &mut dependencies,
+                )
+                .expect("admitted writer history");
+            assert!(dependencies.is_empty());
 
-        let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
-        let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
-        let mut history = BodyWriterHistory::default();
-        history
-            .record_writer(ctx, None, Some("store-a:block#7"), &[], &first)
-            .expect("admitted writer history");
-
-        let mut dependencies = Vec::new();
-        history
-            .extend_primary_dependencies(
-                ctx,
-                None,
-                None,
-                Some("store-a:block#7"),
-                &[],
-                &mut dependencies,
-            )
-            .expect("admitted writer history");
-        assert_eq!(dependencies, [first]);
-        dependencies.clear();
-        history
-            .extend_primary_dependencies(
-                ctx,
-                None,
-                None,
-                Some("store-b:block#7"),
-                &[],
-                &mut dependencies,
-            )
-            .expect("admitted writer history");
-        assert!(dependencies.is_empty());
-
-        history
-            .record_writer(ctx, None, Some("store-a:block#7"), &[], &second)
-            .expect("admitted writer history");
-        assert_eq!(
-            history.offset_store_writer("store-a:block#7"),
-            Some(&second)
-        );
-        dependencies.clear();
-        history
-            .extend_primary_dependencies(
-                ctx,
-                None,
-                None,
-                Some("store-a:block#7"),
-                &[],
-                &mut dependencies,
-            )
-            .expect("admitted writer history");
-        assert_eq!(dependencies, [second]);
-    
-})
-}
+            history
+                .record_writer(ctx, None, Some("store-a:block#7"), &[], &second)
+                .expect("admitted writer history");
+            assert_eq!(
+                history.offset_store_writer("store-a:block#7"),
+                Some(&second)
+            );
+            dependencies.clear();
+            history
+                .extend_primary_dependencies(
+                    ctx,
+                    None,
+                    None,
+                    Some("store-a:block#7"),
+                    &[],
+                    &mut dependencies,
+                )
+                .expect("admitted writer history");
+            assert_eq!(dependencies, [second]);
+        });
+    }
 
     #[test]
     fn native_primary_body_witness_closes_history_without_neutral_outputs() {

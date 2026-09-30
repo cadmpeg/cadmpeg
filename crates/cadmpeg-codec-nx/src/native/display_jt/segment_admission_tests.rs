@@ -19,53 +19,53 @@ fn compressed_member() -> Vec<u8> {
 fn display_jt_inflate_propagates_expansion_limit() {
     let member = compressed_member();
     let source = View::over_retained(&member);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_decompressed_bytes_total = 16; }, |ctx| {
 
-    let error = super::inflate_display_jt(ctx, source).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_decompressed_bytes_total = 16;
+        },
+        |ctx| {
+            let error = super::inflate_display_jt(ctx, source).unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::DecompressedBytes));
-    crate::test_support::with_decode_context(|service| {
-
-    assert_eq!(
-        super::inflate_display_jt(service, source)
-            .unwrap()
-            .as_deref(),
-        Some(b"DisplayJT payload".as_slice())
+            crate::test_support::with_decode_context(|service| {
+                assert_eq!(
+                    super::inflate_display_jt(service, source)
+                        .unwrap()
+                        .as_deref(),
+                    Some(b"DisplayJT payload".as_slice())
+                );
+            });
+        },
     );
-
-})
-
-})
 }
 
 #[test]
 fn display_jt_inflate_propagates_retained_copy_limit() {
     let member = compressed_member();
     let source = View::over_retained(&member);
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 16; }, |ctx| {
 
-    let error = super::inflate_display_jt(ctx, source).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 16;
+        },
+        |ctx| {
+            let error = super::inflate_display_jt(ctx, source).unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "retain inflated DisplayJT payload"));
-    crate::test_support::with_decode_context(|service| {
-
-    assert_eq!(
-        super::inflate_display_jt(service, source)
-            .unwrap()
-            .as_deref(),
-        Some(b"DisplayJT payload".as_slice())
+            crate::test_support::with_decode_context(|service| {
+                assert_eq!(
+                    super::inflate_display_jt(service, source)
+                        .unwrap()
+                        .as_deref(),
+                    Some(b"DisplayJT payload".as_slice())
+                );
+            });
+        },
     );
-
-})
-
-})
 }
 
 #[test]
@@ -75,32 +75,32 @@ fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
     data[165..181].copy_from_slice(&[2; 16]);
     data[181..185].copy_from_slice(&1_u32.to_le_bytes());
     data[185..189].copy_from_slice(&24_u32.to_le_bytes());
-    
-    
+
     crate::test_support::with_decode_context(|index_ctx| {
+        let indices = super::display_jt_indices(index_ctx, &container).unwrap();
+        let documents = super::display_jt_documents(index_ctx, &container, &indices).unwrap();
 
-    let indices = super::display_jt_indices(index_ctx, &container).unwrap();
-    let documents = super::display_jt_documents(index_ctx, &container, &indices).unwrap();
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_entities = 0; }, |ctx| {
-
-    let source = View::over_retained(container.data.as_ref());
-    let error = super::display_jt_segments((ctx, source), &container, &documents).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_entities = 0;
+            },
+            |ctx| {
+                let source = View::over_retained(container.data.as_ref());
+                let error =
+                    super::display_jt_segments((ctx, source), &container, &documents).unwrap_err();
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::Entities
             && limit.operation == "store DisplayJT segment"));
-    crate::test_support::with_decode_context(|service| {
-
-    let segments = super::display_jt_segments((service, source), &container, &documents).unwrap();
-    assert_eq!(segments.len(), 1);
-
-})
-
-})
-
-})
+                crate::test_support::with_decode_context(|service| {
+                    let segments =
+                        super::display_jt_segments((service, source), &container, &documents)
+                            .unwrap();
+                    assert_eq!(segments.len(), 1);
+                });
+            },
+        );
+    });
 }
 
 #[test]
@@ -145,28 +145,29 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
         compression: None,
         source_offset: 0,
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_entities = 0; }, |ctx| {
 
-    let source = View::over_retained(container.data.as_ref());
-    let error = super::display_jt_shape_lod_elements(
-        (ctx, source),
-        &container,
-        std::slice::from_ref(&segment),
-    )
-    .unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_entities = 0;
+        },
+        |ctx| {
+            let source = View::over_retained(container.data.as_ref());
+            let error = super::display_jt_shape_lod_elements(
+                (ctx, source),
+                &container,
+                std::slice::from_ref(&segment),
+            )
+            .unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::Entities
             && limit.operation == "store DisplayJT shape element"));
-    crate::test_support::with_decode_context(|service| {
-
-    let elements =
-        super::display_jt_shape_lod_elements((service, source), &container, &[segment]).unwrap();
-    assert_eq!(elements.len(), 1);
-
-})
-
-})
+            crate::test_support::with_decode_context(|service| {
+                let elements =
+                    super::display_jt_shape_lod_elements((service, source), &container, &[segment])
+                        .unwrap();
+                assert_eq!(elements.len(), 1);
+            });
+        },
+    );
 }

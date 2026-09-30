@@ -380,8 +380,8 @@ fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
 
 #[test]
 fn nx_formula_dependencies_resolve_to_section_parameters() {
-    let expression =
-        |key: u32, name: &str, text: &str, value: Option<f64>| crate::native::om::ParameterFormula {
+    let expression = |key: u32, name: &str, text: &str, value: Option<f64>| {
+        crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{key}"),
             owner: None,
             declaration: None,
@@ -393,7 +393,8 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: u64::from(key),
-        };
+        }
+    };
     let expressions = [
         expression(20, "p2", "5", Some(5.0)),
         expression(21, "p2_radius", "7", Some(7.0)),

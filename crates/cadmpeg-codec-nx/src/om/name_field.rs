@@ -109,7 +109,12 @@ pub(crate) fn scan<'a>(
             });
         }
     }
-    for start in bytes.len().checked_sub(5).into_iter().flat_map(|last| 0..last) {
+    for start in bytes
+        .len()
+        .checked_sub(5)
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         if bytes[start] != 0x66 {
             continue;
         }
@@ -160,18 +165,20 @@ mod tests {
     #[test]
     fn name_field_scan_refuses_collection_limit() {
         let bytes = [3, 3, b'A', 0];
-        
-        
-        
-        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-        let error = scan(ctx, &bytes).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = scan(ctx, &bytes).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn native_name_frames_bound_text_and_full_extent() {

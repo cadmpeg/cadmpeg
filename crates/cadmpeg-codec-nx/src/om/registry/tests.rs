@@ -240,6 +240,9 @@ fn separates_complete_reference_class_and_member_regions() {
 #[test]
 fn field_search_offset_overflow_refuses_record() {
     crate::test_support::with_decode_context(|ctx| {
-        assert!(matches!(super::field_definitions(ctx, &[], usize::MAX, 0), Err(cadmpeg_core::CodecError::Malformed(_))));
+        assert!(matches!(
+            super::field_definitions(ctx, &[], usize::MAX, 0),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     });
 }

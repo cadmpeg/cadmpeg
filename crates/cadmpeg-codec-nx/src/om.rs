@@ -429,7 +429,12 @@ pub(crate) fn construction_payload_scalar_fields(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "scan NX construction scalars",
     )?;
-    for start in bytes.len().checked_sub(12).into_iter().flat_map(|last| 0..last) {
+    for start in bytes
+        .len()
+        .checked_sub(12)
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         if bytes.get(start..start + 3) != Some(b"PYf") || bytes.get(start + 4) != Some(&0x00) {
             continue;
         }
@@ -1707,7 +1712,13 @@ pub(crate) fn hole_package_construction_group_lane(
         return None;
     }
     let mut candidate = None;
-    for start in record.payload().len().checked_sub(PREFIX.len()).into_iter().flat_map(|last| 0..last) {
+    for start in record
+        .payload()
+        .len()
+        .checked_sub(PREFIX.len())
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         if record.payload().get(start..start + PREFIX.len()) != Some(&PREFIX) {
             continue;
         }
@@ -1772,23 +1783,29 @@ pub(crate) fn sketch_payload_references(
         "scan NX sketch reference fields",
     )?;
     let mut failure = None;
-    let field = unique_candidate(record.payload().len().checked_sub(3).into_iter().flat_map(|last| 0..last).filter_map(
-        |start| {
-            if failure.is_some() {
-                return None;
-            }
-            if record.payload().get(start..start + 2) != Some(&[0x01, 0x00]) {
-                return None;
-            }
-            match SketchReferenceField::read(ctx, record, start) {
-                Ok(field) => field,
-                Err(error) => {
-                    failure = Some(error);
-                    None
+    let field = unique_candidate(
+        record
+            .payload()
+            .len()
+            .checked_sub(3)
+            .into_iter()
+            .flat_map(|last| 0..last)
+            .filter_map(|start| {
+                if failure.is_some() {
+                    return None;
                 }
-            }
-        },
-    ));
+                if record.payload().get(start..start + 2) != Some(&[0x01, 0x00]) {
+                    return None;
+                }
+                match SketchReferenceField::read(ctx, record, start) {
+                    Ok(field) => field,
+                    Err(error) => {
+                        failure = Some(error);
+                        None
+                    }
+                }
+            }),
+    );
     if let Some(error) = failure {
         return Err(error);
     }
@@ -1970,9 +1987,22 @@ pub(crate) fn pattern_payload_transform_lane(
         })
     };
     let candidate = unique_candidate(
-        record.payload().len().checked_sub(1).into_iter().flat_map(|last| 0..last)
+        record
+            .payload()
+            .len()
+            .checked_sub(1)
+            .into_iter()
+            .flat_map(|last| 0..last)
             .filter_map(decode)
-            .chain(record.payload().len().checked_sub(1).into_iter().flat_map(|last| 0..last).filter_map(decode_wide)),
+            .chain(
+                record
+                    .payload()
+                    .len()
+                    .checked_sub(1)
+                    .into_iter()
+                    .flat_map(|last| 0..last)
+                    .filter_map(decode_wide),
+            ),
     );
     if let Some(error) = failure.into_inner() {
         return Err(error);
@@ -2076,7 +2106,13 @@ pub(crate) fn multi_instance_output_payload_lane(
         })
     };
     let candidate = unique_candidate(
-        record.payload().len().checked_sub(ENVELOPE.len()).into_iter().flat_map(|last| 0..=last).filter_map(&mut decode),
+        record
+            .payload()
+            .len()
+            .checked_sub(ENVELOPE.len())
+            .into_iter()
+            .flat_map(|last| 0..=last)
+            .filter_map(&mut decode),
     );
     if let Some(error) = failure {
         return Err(error);
@@ -2134,9 +2170,15 @@ pub(crate) fn identical_instance_output_payload_lane(
             declared_count,
         ))
     };
-    let Some((start, leading_schema_index, count_schema_index, declared_count)) =
-        unique_candidate(record.payload().len().checked_sub(3).into_iter().flat_map(|last| 0..last).filter_map(decode))
-    else {
+    let Some((start, leading_schema_index, count_schema_index, declared_count)) = unique_candidate(
+        record
+            .payload()
+            .len()
+            .checked_sub(3)
+            .into_iter()
+            .flat_map(|last| 0..last)
+            .filter_map(decode),
+    ) else {
         return Ok(None);
     };
     let selector_count = usize::from(declared_count - 1);
@@ -3044,7 +3086,12 @@ pub(crate) fn expression_declaration_name<'a>(
     let mut declaration = None;
     let mut literal = None;
     let mut multiple_literals = false;
-    for at in bytes.len().checked_sub(4).into_iter().flat_map(|last| 0..last) {
+    for at in bytes
+        .len()
+        .checked_sub(4)
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         if bytes[at] != 0x04 {
             continue;
         }
@@ -3263,7 +3310,11 @@ fn operation_state_group_table_before_counter_map(
         return Ok(None);
     }
     let mut candidates = Vec::new();
-    for at in map_start.checked_sub(2).into_iter().flat_map(|last| 0..last) {
+    for at in map_start
+        .checked_sub(2)
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         ctx.charge_work(1, "nx operation-state group scan")?;
         if !matches!(bytes.get(at..at + 2), Some([0x01, 0x00 | 0x01])) {
             continue;
@@ -3378,36 +3429,36 @@ fn operation_state_group_table(
     end: usize,
     base_offset: usize,
 ) -> Option<OperationStateGroupTable> {
-    
-    
-    crate::test_support::with_decode_context_over(bytes, |_| {}, |ctx| {
-
-    if start >= end || end > bytes.len() {
-        return None;
-    }
-    let mut groups = Vec::new();
-    let mut at = start;
-    let mut trailing_start = end;
-    while at < end {
-        let Some(group) = operation_state_group_at(ctx, bytes, at, end, base_offset)
-            .expect("test group allocation is admitted")
-        else {
-            if bytes.get(at..end) == Some(&[0x01, 0x01]) {
-                trailing_start = at;
-                at = end;
-                break;
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |_| {},
+        |ctx| {
+            if start >= end || end > bytes.len() {
+                return None;
             }
-            return None;
-        };
-        at = group.end_offset().checked_sub(base_offset)?;
-        groups.push(group);
-    }
-    if at != end {
-        return None;
-    }
-    OperationStateGroupTable::new(groups, bytes.get(trailing_start..end)?)
-
-})
+            let mut groups = Vec::new();
+            let mut at = start;
+            let mut trailing_start = end;
+            while at < end {
+                let Some(group) = operation_state_group_at(ctx, bytes, at, end, base_offset)
+                    .expect("test group allocation is admitted")
+                else {
+                    if bytes.get(at..end) == Some(&[0x01, 0x01]) {
+                        trailing_start = at;
+                        at = end;
+                        break;
+                    }
+                    return None;
+                };
+                at = group.end_offset().checked_sub(base_offset)?;
+                groups.push(group);
+            }
+            if at != end {
+                return None;
+            }
+            OperationStateGroupTable::new(groups, bytes.get(trailing_start..end)?)
+        },
+    )
 }
 
 fn audit_trail_row_at(
@@ -3668,8 +3719,8 @@ pub(crate) fn operation_terminal_frame(
         return Ok(None);
     }
     let common_frames = operation_common_frames(ctx, record)?;
-    Ok(unique_candidate(
-        (0..terminator).rev().take(9).filter_map(|start| {
+    Ok(unique_candidate((0..terminator).rev().take(9).filter_map(
+        |start| {
             let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
             (start + suffix.byte_len() == record.payload().len()).then_some(())?;
             let frame =
@@ -3685,8 +3736,8 @@ pub(crate) fn operation_terminal_frame(
                 immediate_common_frame_offset,
                 frame,
             })
-        }),
-    ))
+        },
+    )))
 }
 
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.
@@ -4076,106 +4127,104 @@ mod uuid_string_value_tests {
 
     #[test]
     fn decodes_only_complete_canonical_uuid_frames() {
-        
-        
         crate::test_support::with_decode_context(|ctx| {
+            let mut bytes = b"prefix\x03\x2601234567-89ab-cdef-0123-456789abcdef\0suffix".to_vec();
+            let values = uuid_string_values(ctx, &bytes, 100).unwrap();
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0].offset, 106);
+            assert_eq!(
+                values[0].value.as_str(),
+                "01234567-89ab-cdef-0123-456789abcdef"
+            );
 
-        let mut bytes = b"prefix\x03\x2601234567-89ab-cdef-0123-456789abcdef\0suffix".to_vec();
-        let values = uuid_string_values(ctx, &bytes, 100).unwrap();
-        assert_eq!(values.len(), 1);
-        assert_eq!(values[0].offset, 106);
-        assert_eq!(
-            values[0].value.as_str(),
-            "01234567-89ab-cdef-0123-456789abcdef"
-        );
-
-        bytes[6 + 2 + 9] = b'A';
-        assert!(uuid_string_values(ctx, &bytes, 0).unwrap().is_empty());
-        assert!(
-            crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcde")
-                .is_err()
-        );
-        assert!(
-            crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123_456789abcdef")
-                .is_err()
-        );
-        assert!(
-            crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcdeg")
-                .is_err()
-        );
-    
-})
-}
+            bytes[6 + 2 + 9] = b'A';
+            assert!(uuid_string_values(ctx, &bytes, 0).unwrap().is_empty());
+            assert!(crate::canonical_uuid::CanonicalUuid::new(
+                "01234567-89ab-cdef-0123-456789abcde"
+            )
+            .is_err());
+            assert!(crate::canonical_uuid::CanonicalUuid::new(
+                "01234567-89ab-cdef-0123_456789abcdef"
+            )
+            .is_err());
+            assert!(crate::canonical_uuid::CanonicalUuid::new(
+                "01234567-89ab-cdef-0123-456789abcdeg"
+            )
+            .is_err());
+        });
+    }
 
     #[test]
     fn uuid_frames_refuse_collection_limit() {
         let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-        
-        
-        
-        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
 
-        let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn uuid_frames_refuse_retained_limit() {
         let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-        
-        
-        
-        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
 
-        let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn uuid_frames_refuse_work_limit() {
         let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-        
-        
-        
-        crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
 
-        let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+                );
+            },
         );
-    
-})
-}
+    }
 
     #[test]
     fn rejects_truncated_or_unterminated_uuid_frames() {
-        
-        
         crate::test_support::with_decode_context(|ctx| {
-
-        let frame = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-        assert!(uuid_string_values(ctx, &frame[..frame.len() - 1], 0)
-            .unwrap()
-            .is_empty());
-        let mut unterminated = frame.to_vec();
-        *unterminated.last_mut().expect("nonempty frame") = 1;
-        assert!(uuid_string_values(ctx, &unterminated, 0)
-            .unwrap()
-            .is_empty());
-    
-})
-}
+            let frame = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
+            assert!(uuid_string_values(ctx, &frame[..frame.len() - 1], 0)
+                .unwrap()
+                .is_empty());
+            let mut unterminated = frame.to_vec();
+            *unterminated.last_mut().expect("nonempty frame") = 1;
+            assert!(uuid_string_values(ctx, &unterminated, 0)
+                .unwrap()
+                .is_empty());
+        });
+    }
 }
 
 /// Decode `66 1b 03, byte-length, printable UTF-8, 00` values in `bytes`.
@@ -4589,7 +4638,12 @@ pub(crate) fn indexed_sections<'a>(
         }
     }
     let descending_u32_edges = DescendingU32Edges::new(ctx, &mut temporary, bytes)?;
-    for table in bytes.len().checked_sub(4).into_iter().flat_map(|last| 0..last) {
+    for table in bytes
+        .len()
+        .checked_sub(4)
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         let Some(count) = View::u32_le_at(bytes, table).map(cadmpeg_core::decode::index_from_u32)
         else {
             continue;
@@ -4646,7 +4700,12 @@ pub(crate) fn indexed_sections<'a>(
             kind: IndexedCandidateKind::Fixed(index),
         });
     }
-    for count_offset in bytes.len().checked_sub(4).into_iter().flat_map(|last| 8..last) {
+    for count_offset in bytes
+        .len()
+        .checked_sub(4)
+        .into_iter()
+        .flat_map(|last| 8..last)
+    {
         let Some(record_count) =
             View::u32_le_at(bytes, count_offset).map(cadmpeg_core::decode::index_from_u32)
         else {
@@ -4695,9 +4754,13 @@ pub(crate) fn indexed_sections<'a>(
         // table; malformed payloads commonly satisfy the cheap monotonicity
         // checks while carrying no self-framed NX record at all.
         let product_record_count =
-            product_record_count_within(&product_record_ranges, first, second).checked_add(
-                product_record_count_within(&product_record_ranges, second, third),
-            ).ok_or_else(|| CodecError::Malformed("NX product record count overflow".into()))?;
+            product_record_count_within(&product_record_ranges, first, second)
+                .checked_add(product_record_count_within(
+                    &product_record_ranges,
+                    second,
+                    third,
+                ))
+                .ok_or_else(|| CodecError::Malformed("NX product record count overflow".into()))?;
         if product_record_count != 1 {
             continue;
         }
@@ -4739,13 +4802,18 @@ pub(crate) fn indexed_sections<'a>(
 
 /// Decode the first self-framed NX product/version marker in `bytes`.
 pub(crate) fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
-    bytes.len().checked_sub(3).into_iter().flat_map(|last| 0..last).find_map(|at| {
-        let product = ProductRecord::read(&bytes[at..], ProductRecordForm::Modern)?;
-        Some(StoreVersion {
-            offset: base_offset.checked_add(at)?,
-            value: product.text(),
+    bytes
+        .len()
+        .checked_sub(3)
+        .into_iter()
+        .flat_map(|last| 0..last)
+        .find_map(|at| {
+            let product = ProductRecord::read(&bytes[at..], ProductRecordForm::Modern)?;
+            Some(StoreVersion {
+                offset: base_offset.checked_add(at)?,
+                value: product.text(),
+            })
         })
-    })
 }
 
 /// Decode the zero-prefixed offset-store control form as ordered 24-bit values.

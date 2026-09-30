@@ -23,23 +23,25 @@ fn material_asset_result(configure: impl FnOnce(&mut DecodePolicy)) -> Result<Ca
         container,
         streams: Vec::new(),
     };
-    
-    
-    
-    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
 
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    super::super::attach_material_texture_assets(
-        ctx,
-        &mut ir,
-        &textures,
-        &scan,
-        &mut annotations,
-    )?;
-    Ok(ir)
-
-})
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            super::super::attach_material_texture_assets(
+                ctx,
+                &mut ir,
+                &textures,
+                &scan,
+                &mut annotations,
+            )?;
+            Ok(ir)
+        },
+    )
 }
 
 #[test]

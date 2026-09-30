@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte identity and native admission for borrowed expression wires.
 
-use super::{ParameterFormula, ExpressionDeclaration, ExpressionDeclarationWire, ExpressionWire};
+use super::{ExpressionDeclaration, ExpressionDeclarationWire, ExpressionWire, ParameterFormula};
 
 #[test]
 fn expression_declaration_borrowed_wire_preserves_bytes() {
