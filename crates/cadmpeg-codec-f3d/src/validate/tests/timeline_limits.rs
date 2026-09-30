@@ -90,7 +90,7 @@ fn timeline_error_with(
     native: crate::native::F3dNative,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let arena = DecodeArena::new();
@@ -98,10 +98,10 @@ fn timeline_error_with(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_feature_timelines(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 fn timeline_error(max_items: u64) -> cadmpeg_core::CodecError {
     timeline_error_with(native(), max_items, u64::MAX)
@@ -172,14 +172,14 @@ fn timeline_item_identity_refuses_collection_limit() {
 }
 
 #[test]
-fn timeline_valid_records_keep_no_findings() {
+fn timeline_valid_records_keep_no_findings() { crate::test_support::with_decode_context(|service_ctx| {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native();
-    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
     let mut findings = Vec::new();
     super::super::validate_feature_timelines(&ctx, &mut findings).unwrap();
     assert!(findings.is_empty());
-}
+}) }
 
 #[test]
 fn timeline_scope_position_refuses_collection_limit() {
@@ -192,7 +192,7 @@ fn timeline_scope_position_refuses_collection_limit() {
             DesignFeatureKind::Hole,
             101,
         ));
-    let error = timeline_error_with(native, 11, u64::MAX);
+    let error = timeline_error_with(native, 18, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D feature timeline scope positions")
@@ -294,7 +294,7 @@ fn timeline_authored_order_finding_refuses_collection_limit() {
                 101,
             ));
     }
-    let error = timeline_error_with(native, 11, u64::MAX);
+    let error = timeline_error_with(native, 15, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -413,7 +413,7 @@ fn cyclic_history_native() -> crate::native::F3dNative {
 
 #[test]
 fn timeline_forward_history_finding_refuses_collection_limit() {
-    let error = timeline_error_with(forward_history_native(), 21, u64::MAX);
+    let error = timeline_error_with(forward_history_native(), 33, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -431,7 +431,7 @@ fn timeline_forward_history_entity_refuses_retained_limit() {
 
 #[test]
 fn timeline_cyclic_history_finding_refuses_collection_limit() {
-    let error = timeline_error_with(cyclic_history_native(), 21, u64::MAX);
+    let error = timeline_error_with(cyclic_history_native(), 34, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -440,7 +440,7 @@ fn timeline_cyclic_history_finding_refuses_collection_limit() {
 
 #[test]
 fn timeline_cyclic_history_entity_refuses_retained_limit() {
-    let error = timeline_error_with(cyclic_history_native(), u64::MAX, 457);
+    let error = timeline_error_with(cyclic_history_native(), u64::MAX, 549);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -448,7 +448,7 @@ fn timeline_cyclic_history_entity_refuses_retained_limit() {
 }
 
 #[test]
-fn timeline_history_findings_keep_specific_messages() {
+fn timeline_history_findings_keep_specific_messages() { crate::test_support::with_decode_context(|service_ctx| {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     for (native, message) in [
         (
@@ -460,9 +460,9 @@ fn timeline_history_findings_keep_specific_messages() {
             "Fusion Design scope history-state dependency is cyclic",
         ),
     ] {
-        let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         let mut findings = Vec::new();
         super::super::validate_feature_timelines(&ctx, &mut findings).unwrap();
         assert!(findings.iter().any(|finding| finding.message == message));
     }
-}
+}) }

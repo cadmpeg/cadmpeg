@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn path_error(max_items: u64, max_retained_bytes: u64) -> cadmpeg_core::CodecError {
+fn path_error(max_items: u64, max_retained_bytes: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use crate::records::feature::{
         extrude::DesignExtrudeOperation, path_features::DesignPipeConstruction,
         scope::DesignScopePayload, surface_ops::DesignPipeSectionShape,
@@ -29,10 +29,10 @@ fn path_error(max_items: u64, max_retained_bytes: u64) -> cadmpeg_core::CodecErr
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained_bytes;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_path_feature_operand_roles(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn path_feature_operand_group_refuses_collection_limit() {

@@ -84,7 +84,7 @@ pub(super) fn native_with_identity() -> crate::native::F3dNative {
 }
 
 #[test]
-fn operand_group_identity_members_refuse_collection_limit() {
+fn operand_group_identity_members_refuse_collection_limit() { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native_with_identity();
@@ -92,8 +92,8 @@ fn operand_group_identity_members_refuse_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     let error = super::super::validate_operand_group_carriers(
         &ctx,
         &mut Vec::new(),
@@ -108,13 +108,13 @@ fn operand_group_identity_members_refuse_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D operand group identity members")
     );
-}
+}) }
 
 fn carrier_error(
     trailing_only: bool,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native(trailing_only);
@@ -123,8 +123,8 @@ fn carrier_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_operand_group_carriers(
         &ctx,
         &mut Vec::new(),
@@ -135,7 +135,7 @@ fn carrier_error(
         &HashSet::new(),
     )
     .unwrap_err()
-}
+}) }
 
 #[test]
 fn operand_group_missing_member_refuses_finding_limit() {
@@ -174,10 +174,10 @@ fn operand_group_missing_trailing_carrier_refuses_entity_limit() {
 }
 
 #[test]
-fn operand_group_missing_member_preserves_finding_text() {
+fn operand_group_missing_member_preserves_finding_text() { crate::test_support::with_decode_context(|service_ctx| {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native(false);
-    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
     let mut findings = Vec::new();
     super::super::validate_operand_group_carriers(
         &ctx,
@@ -194,13 +194,13 @@ fn operand_group_missing_member_preserves_finding_text() {
         findings[0].message,
         "Fusion Design construction operand group has no exact typed member"
     );
-}
+}) }
 
 #[test]
-fn operand_group_exact_identity_member_has_no_finding() {
+fn operand_group_exact_identity_member_has_no_finding() { crate::test_support::with_decode_context(|service_ctx| {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native_with_identity();
-    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
     let mut findings = Vec::new();
     let exact_members = HashSet::from([("f3d:Design/BulkStream.dat", 101)]);
     super::super::validate_operand_group_carriers(
@@ -214,4 +214,4 @@ fn operand_group_exact_identity_member_has_no_finding() {
     )
     .unwrap();
     assert!(findings.is_empty());
-}
+}) }

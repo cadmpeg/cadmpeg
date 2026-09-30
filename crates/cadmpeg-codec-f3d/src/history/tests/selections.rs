@@ -1638,10 +1638,10 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
     }))
     .expect("grouped face operand");
     operand.recipe_prefix_bytes = prefix;
-    operand.recipe_references = crate::design::decode::dimension_frames::decode_recipe_references(
+    operand.recipe_references = crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
         &operand.recipe_prefix_bytes,
         0,
-    );
+    ).expect("recipe references"));
     let topology = AsmHistoricalTopology {
         faces: vec![10, 20],
         ..AsmHistoricalTopology::default()
@@ -1753,10 +1753,10 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         .expect("profile face operand");
         operand.recipe_prefix_bytes = paired_prefix();
         operand.recipe_references =
-            crate::design::decode::dimension_frames::decode_recipe_references(
+            crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
                 &operand.recipe_prefix_bytes,
                 0,
-            );
+            ).expect("recipe references"));
         operand
     };
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn group_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn group_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -17,8 +17,8 @@ fn group_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_edge_treatment_groups(
         &ctx,
         &mut Vec::new(),
@@ -27,7 +27,7 @@ fn group_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
         &std::collections::HashSet::new(),
     )
     .unwrap_err()
-}
+}) }
 
 #[test]
 fn edge_treatment_incomplete_group_finding_refuses_collection_limit() {

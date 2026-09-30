@@ -97,7 +97,7 @@ fn mesh_error_with_feature(
     tessellation: bool,
     max_items: u64,
     max_retained_bytes: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     if asset {
@@ -137,10 +137,10 @@ fn mesh_error_with_feature(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained_bytes;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_mesh_features(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 fn body_feature() -> crate::records::mesh::DesignMeshFeature {
     mesh_feature_with_body(false)

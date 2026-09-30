@@ -24,7 +24,6 @@ use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{
     DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureOperation,
 };
-use cadmpeg_ir::ids::FaceId;
 
 const DECAL_TARGET_ROLE: crate::records::topology::extrude_selection::DesignOperandRole =
     crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A;
@@ -90,14 +89,7 @@ pub(crate) fn project_decal_images(
             .iter()
             .flat_map(|reference| reference.candidate_faces.iter())
         {
-            let copied = String::from_utf8(
-                ctx.copy_retained(face.as_str().as_bytes(), "f3d Decal face identifier")?,
-            )
-            .map_err(|_| CodecError::malformed("F3D Decal face identifier must be UTF-8"))?;
-            let copied = FaceId::mint(copied).map_err(|error| {
-                crate::design::text::malformed_design(ctx, format_args!("{error}"))
-            })?;
-
+            let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
             ctx.reserve_vec(&mut faces, 1, "f3d Decal faces")?;
             faces.push(copied);
         }

@@ -14,7 +14,7 @@ enum Case {
     Invalid,
 }
 
-fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use crate::records::{
         decal::DesignRecordHeader,
         feature::scope::{DesignFeatureKind, DesignParameterScope},
@@ -40,7 +40,7 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
             prefix.extend_from_slice(&word.to_le_bytes());
         }
         assert_eq!(
-            crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_043).len(),
+            crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_043).expect("recipe references")).len(),
             1
         );
     }
@@ -66,9 +66,9 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
         recipe_record_byte_offset: 1_032,
         recipe_id: recipe_id.clone(),
         recipe_prefix_offset: 1_043,
-        recipe_references: crate::design::decode::dimension_frames::decode_recipe_references(
+        recipe_references: crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
             &prefix, 1_043,
-        ),
+        ).expect("recipe references")),
         recipe_prefix_bytes: prefix,
         recipe_kind: ConstructionRecipeKind::Face,
         recipe_program_offset: program_offset,
@@ -184,10 +184,10 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_face_operands(&ctx, &mut Vec::new(), &expected).unwrap_err()
-}
+}) }
 
 macro_rules! refuse_items {
     ($name:ident, $case:expr, $limit:expr, $operation:literal) => {
@@ -227,13 +227,13 @@ refuse_items!(
 refuse_items!(
     face_operand_referenced_faces_refuse_collection_limit,
     Case::Referenced,
-    1,
+    4,
     "index F3D referenced operand faces"
 );
 refuse_items!(
     face_operand_alternate_faces_refuse_collection_limit,
     Case::Alternate,
-    4,
+    8,
     "collect F3D alternate selector operand faces"
 );
 refuse_items!(

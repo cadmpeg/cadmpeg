@@ -75,7 +75,7 @@ fn act_error(
     native: crate::native::F3dNative,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let arena = DecodeArena::new();
@@ -83,10 +83,10 @@ fn act_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_act(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn act_stream_index_refuses_collection_limit() {
