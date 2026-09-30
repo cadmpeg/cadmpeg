@@ -19,7 +19,7 @@ fn suppressed_definition_kind_refuses_retained_limit() {
         u64::try_from(feature.id.as_str().len() + kind.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(super::bind_configuration_suppressed_features(
-        Some(&ctx), &mut configurations, std::slice::from_ref(&feature)),
+        &ctx, &mut configurations, std::slice::from_ref(&feature)),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d configuration suppressed definition"));
     assert!(configurations[0].feature_states.is_empty());
@@ -45,7 +45,7 @@ fn suppressed_definition_parameter_value_refuses_retained_limit() {
         u64::try_from(feature.id.as_str().len() + key.len() + value.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(super::bind_configuration_suppressed_features(
-        Some(&ctx), &mut configurations, std::slice::from_ref(&feature)),
+        &ctx, &mut configurations, std::slice::from_ref(&feature)),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d configuration suppressed definition"));
     assert!(configurations[0].feature_states.is_empty());
@@ -69,7 +69,7 @@ fn suppressed_definition_parameters_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(super::bind_configuration_suppressed_features(
-        Some(&ctx), &mut configurations, std::slice::from_ref(&feature)),
+        &ctx, &mut configurations, std::slice::from_ref(&feature)),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d configuration suppressed definition"));
     assert!(configurations[0].feature_states.is_empty());

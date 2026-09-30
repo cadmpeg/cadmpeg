@@ -17,94 +17,19 @@ use std::fmt;
 
 mod json;
 
-fn format_configuration_diagnostic(
-    ctx: Option<&DecodeContext<'_>>,
-    arguments: fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    impl fmt::Write for ChargedFormatter<'_, '_> {
-        fn write_str(&mut self, part: &str) -> fmt::Result {
-            let result = (|| -> Result<(), CodecError> {
-                let len = u64::try_from(part.len())
-                    .map_err(|_| self.ctx.refuse_codec_limit(self.operation, 0, 1))?;
-                self.ctx.charge_retained(len, self.operation)?;
-                self.text
-                    .try_reserve(part.len())
-                    .map_err(|_| self.ctx.refuse_codec_limit(self.operation, 0, 1))?;
-                Ok(())
-            })();
-            if let Err(error) = result {
-                self.refusal = Some(error);
-                return Err(fmt::Error);
-            }
-            self.text.push_str(part);
-            Ok(())
-        }
-    }
-
-    struct ChargedFormatter<'a, 'b> {
-        ctx: &'a DecodeContext<'b>,
-        text: String,
-        operation: &'static str,
-        refusal: Option<CodecError>,
-    }
-
-    let Some(ctx) = ctx else {
-        return Ok(arguments.to_string());
-    };
-
-    let mut formatter = ChargedFormatter {
-        ctx,
-        text: String::new(),
-        operation,
-        refusal: None,
-    };
-    if fmt::write(&mut formatter, arguments).is_err() {
-        return Err(formatter.refusal.unwrap_or_else(|| {
-            CodecError::malformed("configuration diagnostic formatting failed")
-        }));
-    }
-    ctx.charge_retained(
-        u64::try_from(formatter.text.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?,
-        operation,
-    )?;
-    Ok(formatter.text)
-}
-
-fn copy_configuration_text(
-    ctx: Option<&DecodeContext<'_>>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let Some(ctx) = ctx else {
-        return Ok(value.to_owned());
-    };
-    let bytes = ctx.copy_retained(value.as_bytes(), operation)?;
-    String::from_utf8(bytes)
-        .map_err(|_| CodecError::malformed("validated configuration text is not UTF-8"))
-}
-
 fn configuration_property_key(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     prefix: &'static str,
     suffix: &str,
     operation: &'static str,
 ) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
-    let Some(ctx) = ctx else {
-        return cadmpeg_core::text::NonBlankString::new(format!("{prefix}{suffix}"))
-            .ok_or_else(|| CodecError::malformed("configuration property key is blank"));
-    };
+
     let len = prefix
         .len()
         .checked_add(suffix.len())
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_retained(
-        u64::try_from(len).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?,
-        operation,
-    )?;
-    let mut key = String::new();
-    key.try_reserve(len)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+
+    let mut key = ctx.retained_string(len, operation)?;
     key.push_str(prefix);
     key.push_str(suffix);
     cadmpeg_core::text::NonBlankString::new(key)
@@ -112,27 +37,20 @@ fn configuration_property_key(
 }
 
 fn configuration_scalar_text(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     value: &ConfigurationScalar,
 ) -> Result<String, CodecError> {
     match value {
         ConfigurationScalar::String(text) => {
-            copy_configuration_text(ctx, text, "f3d configuration parameter value")
+            (ctx).copy_retained_text(text, "f3d configuration parameter value")
         }
-        ConfigurationScalar::Number(number) => crate::design::text::format_design_text(
-            ctx,
-            format_args!("{number}"),
-            "f3d configuration scalar text",
-        ),
-        _ => match ctx {
-            Some(ctx) => value.text_charged(ctx),
-            None => Ok(value.text()),
-        },
+        ConfigurationScalar::Number(number) => (ctx).format_retained(format_args!("{number}"), "f3d configuration scalar text"),
+        _ => value.text_charged(ctx),
     }
 }
 
 struct ConfigurationMemberOrderSeed<'a, 'b> {
-    ctx: Option<&'a DecodeContext<'b>>,
+    ctx: &'a DecodeContext<'b>,
     refusal: &'a mut Option<CodecError>,
 }
 
@@ -179,7 +97,7 @@ impl<'de> Visitor<'de> for ConfigurationMemberOrderSeed<'_, '_> {
 }
 
 struct OrderedVariantNamesSeed<'a, 'b> {
-    ctx: Option<&'a DecodeContext<'b>>,
+    ctx: &'a DecodeContext<'b>,
     refusal: &'a mut Option<CodecError>,
 }
 
@@ -215,11 +133,7 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
             expected: "a string",
         })? {
             if unique.contains(&name) {
-                let message = format_configuration_diagnostic(
-                    self.ctx,
-                    format_args!("duplicate configuration variant {name:?}"),
-                    "f3d duplicate configuration variant diagnostic",
-                );
+                let message = (self.ctx).format_retained(format_args!("duplicate configuration variant {name:?}"), "f3d duplicate configuration variant diagnostic");
                 return match message {
                     Ok(message) => Err(serde::de::Error::custom(message)),
                     Err(error) => {
@@ -230,25 +144,11 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
                     }
                 };
             }
-            if let Some(ctx) = self.ctx {
+            { let ctx = self.ctx;
                 let charge = (|| -> Result<String, CodecError> {
-                    let copy = copy_configuration_text(
-                        Some(ctx),
-                        &name,
-                        "f3d configuration variant unique name",
-                    )?;
-                    ctx.charge_collection_items(1, "f3d configuration variant name index")?;
-                    unique.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "f3d configuration variant name index allocation",
-                            0,
-                            1,
-                        )
-                    })?;
-                    ctx.charge_collection_items(1, "f3d configuration variant order")?;
-                    names.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("f3d configuration variant order allocation", 0, 1)
-                    })?;
+                    let copy = (ctx).copy_retained_text(&name, "f3d configuration variant unique name")?;
+                    ctx.reserve_set(&mut unique, 1, "f3d configuration variant name index")?;
+                    ctx.reserve_vec(&mut names, 1, "f3d configuration variant order")?;
                     Ok(copy)
                 })();
                 let copy = match charge {
@@ -261,8 +161,6 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
                     }
                 };
                 unique.insert(copy);
-            } else {
-                unique.insert(name.clone());
             }
             map.next_value::<IgnoredAny>()?;
             names.push(name);
@@ -272,19 +170,17 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
 }
 
 fn parse_configuration_variant_order(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     entry_name: &str,
     bytes: &[u8],
 ) -> Result<Vec<String>, CodecError> {
-    let _reservation = ctx
-        .map(|ctx| {
+    let _reservation = Some(({
             ctx.reserve_scoped(
                 u64::try_from(bytes.len())
                     .map_err(|_| ctx.refuse_codec_limit("f3d configuration order JSON", 0, 1))?,
                 "f3d configuration order JSON",
             )
-        })
-        .transpose()?;
+        })?);
     let mut refusal = None;
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let result = ConfigurationMemberOrderSeed {
@@ -301,11 +197,7 @@ fn parse_configuration_variant_order(
         Err(error) => match refusal {
             Some(error) => Err(error),
             None => Err(CodecError::Malformed(
-                crate::design::text::format_design_text(
-                    ctx,
-                    format_args!("invalid F3D configuration variant order {entry_name}: {error}"),
-                    "f3d configuration order diagnostic",
-                )?,
+                (ctx).format_retained(format_args!("invalid F3D configuration variant order {entry_name}: {error}"), "f3d configuration order diagnostic")?,
             )),
         },
     }
@@ -326,11 +218,7 @@ pub(crate) fn decode_configurations(
         let payload = json::parse_configuration_payload(ctx, &entry.name, bytes)?;
         let serde_json::Value::Object(payload) = payload else {
             return Err(CodecError::Malformed(
-                crate::design::text::format_design_text(
-                    Some(ctx),
-                    format_args!("F3D configuration JSON must be an object: {}", entry.name),
-                    "f3d configuration JSON root diagnostic",
-                )?,
+                (ctx).format_retained(format_args!("F3D configuration JSON must be an object: {}", entry.name), "f3d configuration JSON root diagnostic")?,
             ));
         };
         let kind = if entry.name.ends_with(".dsgcfgrule") {
@@ -339,12 +227,12 @@ pub(crate) fn decode_configurations(
             DesignConfigurationKind::Table
         };
         let variant_order = if kind == DesignConfigurationKind::Table {
-            parse_configuration_variant_order(Some(ctx), &entry.name, bytes)?
+            parse_configuration_variant_order(ctx, &entry.name, bytes)?
         } else {
             Vec::new()
         };
         let entry_name =
-            copy_configuration_text(Some(ctx), &entry.name, "f3d configuration entry name")?;
+            (ctx).copy_retained_text(&entry.name, "f3d configuration entry name")?;
         let configuration =
             DesignConfiguration::try_new_charged(ctx, entry_name, kind, variant_order, payload)?;
         ctx.push_vec(
@@ -357,20 +245,14 @@ pub(crate) fn decode_configurations(
     for configuration in &configurations {
         if names.contains(configuration.entry_name().as_str()) {
             return Err(CodecError::Malformed(
-                crate::design::text::format_design_text(
-                    Some(ctx),
-                    format_args!(
+                (ctx).format_retained(format_args!(
                         "duplicate F3D configuration identity: {}",
                         configuration.entry_name()
-                    ),
-                    "f3d configuration identity diagnostic",
-                )?,
+                    ), "f3d configuration identity diagnostic")?,
             ));
         }
-        ctx.charge_collection_items(1, "f3d configuration identity index")?;
-        names.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d configuration identity index allocation", 0, 1)
-        })?;
+
+        ctx.reserve_set(&mut names, 1, "f3d configuration identity index")?;
         names.insert(configuration.entry_name().as_str());
     }
     Ok(configurations)
@@ -380,7 +262,7 @@ pub(crate) fn decode_configurations(
 /// configuration arena. Rule documents remain in the native arena because a
 /// rule is a selector, not a model variant.
 pub(crate) fn project_configurations(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     native: &[DesignConfiguration],
 ) -> Result<Vec<cadmpeg_ir::features::DesignConfiguration>, CodecError> {
     use cadmpeg_ir::features::DesignConfiguration as NeutralConfiguration;
@@ -410,7 +292,7 @@ pub(crate) fn project_configurations(
                     "f3d configuration parameter key",
                 )?;
                 let value = configuration_scalar_text(ctx, value)?;
-                if let Some(ctx) = ctx {
+                {
                     ctx.charge_collection_items(1, "f3d configuration parameter property")?;
                 }
                 properties.insert(key, value);
@@ -422,7 +304,7 @@ pub(crate) fn project_configurations(
                     feature,
                     "f3d configuration suppression key",
                 )?;
-                if let Some(ctx) = ctx {
+                {
                     ctx.charge_collection_items(1, "f3d configuration suppression property")?;
                 }
                 properties.insert(key, "true".into());
@@ -430,18 +312,16 @@ pub(crate) fn project_configurations(
             let material = definition
                 .material()
                 .map(|material| {
-                    copy_configuration_text(ctx, material, "f3d configuration material")
+                    (ctx).copy_retained_text(material, "f3d configuration material")
                 })
                 .transpose()?;
             let ordinal = u32::try_from(projected.len()).map_err(|_| {
                 CodecError::Malformed("F3D configuration ordinal exceeds u32".into())
             })?;
-            let name = copy_configuration_text(ctx, name, "f3d configuration variant name")?;
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "f3d projected configuration")?;
-                projected.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d projected configuration allocation", 0, 1)
-                })?;
+            let name = (ctx).copy_retained_text(name, "f3d configuration variant name")?;
+            {
+
+                ctx.reserve_vec(&mut projected, 1, "f3d projected configuration")?;
             }
             projected.push(NeutralConfiguration {
                 id: neutral_configuration_id(ctx, table.entry_name(), &name)?,
@@ -484,12 +364,8 @@ pub(crate) fn project_configurations(
             rule.entry_name(),
             "f3d configuration activation rule key",
         )?;
-        let condition = copy_configuration_text(
-            ctx,
-            condition,
-            "f3d configuration activation rule condition",
-        )?;
-        if let Some(ctx) = ctx {
+        let condition = (ctx).copy_retained_text(condition, "f3d configuration activation rule condition")?;
+        {
             ctx.charge_collection_items(1, "f3d configuration activation rule property")?;
         }
         configuration.properties.insert(key, condition);
@@ -501,7 +377,7 @@ pub(crate) fn project_configurations(
 /// Replace name-keyed configuration properties with stable parameter references
 /// when exactly one neutral parameter has the named source identity.
 pub(crate) fn bind_configuration_parameter_overrides(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     parameters: &[cadmpeg_ir::features::DesignParameter],
 ) -> Result<(), CodecError> {
@@ -521,7 +397,7 @@ pub(crate) fn bind_configuration_parameter_overrides(
             if matches.next().is_some() {
                 return true;
             }
-            let id = if let Some(ctx) = ctx {
+            let id = {
                 match ctx
                     .copy_retained(
                         parameter.id.as_str().as_bytes(),
@@ -542,10 +418,8 @@ pub(crate) fn bind_configuration_parameter_overrides(
                         return true;
                     }
                 }
-            } else {
-                parameter.id.clone()
             };
-            if let Some(ctx) = ctx {
+            {
                 if let Err(error) =
                     ctx.charge_collection_items(1, "f3d configuration parameter override")
                 {
@@ -568,7 +442,7 @@ pub(crate) fn bind_configuration_parameter_overrides(
 /// Replace name-keyed suppression properties with stable feature references
 /// when exactly one neutral feature has the named source identity.
 pub(crate) fn bind_configuration_suppressed_features(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     features: &[cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
@@ -591,26 +465,18 @@ pub(crate) fn bind_configuration_suppressed_features(
                 return true;
             }
             let projected = (|| -> Result<_, CodecError> {
-                let id = copy_configuration_text(
-                    ctx,
-                    feature.id.as_str(),
-                    "f3d configuration suppressed feature id",
-                )?;
+                let id = (ctx).copy_retained_text(feature.id.as_str(), "f3d configuration suppressed feature id")?;
                 let id =
                     cadmpeg_ir::features::FeatureId::try_from(id).map_err(CodecError::malformed)?;
-                if let Some(ctx) = ctx {
+                {
                     ctx.charge_collection_items(1, "f3d configuration suppressed feature state")?;
                 }
                 let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
                 for dependency in &feature.dependencies {
-                    let copied = copy_configuration_text(
-                        ctx,
-                        dependency.as_str(),
-                        "f3d configuration suppressed dependency id",
-                    )?;
+                    let copied = (ctx).copy_retained_text(dependency.as_str(), "f3d configuration suppressed dependency id")?;
                     let copied = cadmpeg_ir::features::FeatureId::try_from(copied)
                         .map_err(CodecError::malformed)?;
-                    if let Some(ctx) = ctx {
+                    {
                         dependencies.reserve_for_decode(
                             ctx,
                             1,
@@ -624,13 +490,10 @@ pub(crate) fn bind_configuration_suppressed_features(
                     cadmpeg_ir::features::ConfigurationFeatureState {
                         evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
                         dependencies,
-                        definition: match ctx {
-                            Some(ctx) => feature
+                        definition: feature
                                 .evaluation
                                 .definition()
                                 .clone_for_decode(ctx, "f3d configuration suppressed definition")?,
-                            None => feature.evaluation.definition().clone(),
-                        },
                     },
                 ))
             })();
@@ -715,15 +578,15 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn configuration_variants_follow_serialized_member_order() {
+    fn configuration_variants_follow_serialized_member_order() { crate::test_support::with_decode_context(|decode_ctx| {
         let bytes = br#"{"configurations":{"Small":{},"Medium":{},"Large":{}},"active":"Medium"}"#;
         let payload: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        let variant_order = parse_configuration_variant_order(None, "table.dsgcfg", bytes).unwrap();
+        let variant_order = parse_configuration_variant_order(decode_ctx, "table.dsgcfg", bytes).unwrap();
         assert_eq!(variant_order, ["Small", "Medium", "Large"]);
 
         let table = crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "table.dsgcfg".into(), DesignConfigurationKind::Table, variant_order, (payload).as_object().unwrap().clone()))
         .unwrap();
-        let projected = project_configurations(None, std::slice::from_ref(&table)).unwrap();
+        let projected = project_configurations(decode_ctx, std::slice::from_ref(&table)).unwrap();
         let mut authored = projected
             .iter()
             .filter_map(|configuration| {
@@ -734,23 +597,15 @@ mod tests {
         assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
         let encoded = encode_configuration_payload(&table).unwrap();
         assert_eq!(
-            parse_configuration_variant_order(None, "table.dsgcfg", &encoded).unwrap(),
+            parse_configuration_variant_order(decode_ctx, "table.dsgcfg", &encoded).unwrap(),
             ["Small", "Medium", "Large"]
         );
 
-        assert!(parse_configuration_variant_order(
-            None,
-            "table.dsgcfg",
-            br#"{"configurations":{"Small":{},"Small":{}}}"#,
-        )
+        assert!(parse_configuration_variant_order(decode_ctx, "table.dsgcfg", br#"{"configurations":{"Small":{},"Small":{}}}"#)
         .is_err());
-        assert!(parse_configuration_variant_order(
-            None,
-            "table.dsgcfg",
-            br#"{"configurations":null}"#,
-        )
+        assert!(parse_configuration_variant_order(decode_ctx, "table.dsgcfg", br#"{"configurations":null}"#)
         .is_err());
-    }
+    }) }
 
     #[test]
     fn configuration_identity_is_stable_across_table_order_and_delimiter_names() {
@@ -792,19 +647,19 @@ mod tests {
     }
 
     #[test]
-    fn configuration_rule_without_the_typed_pair_is_retained_not_rejected() {
+    fn configuration_rule_without_the_typed_pair_is_retained_not_rejected() { crate::test_support::with_decode_context(|decode_ctx| {
         let native = [crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "partial.dsgcfgrule".into(), DesignConfigurationKind::Rule, Vec::new(), (serde_json::json!({"when": "width > 20 mm", "vendorExtension": 7}))
                 .as_object()
                 .unwrap()
                 .clone()))
         .unwrap()];
-        let projected = project_configurations(None, &native).expect("empty rule projection");
+        let projected = project_configurations(decode_ctx, &native).expect("empty rule projection");
         assert!(projected.is_empty());
         assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
-    }
+    }) }
 
     #[test]
-    fn configuration_rules_bind_only_one_named_variant() {
+    fn configuration_rules_bind_only_one_named_variant() { crate::test_support::with_decode_context(|decode_ctx| {
         let table = |entry_name: &str, variant_name: &str| {
             crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, entry_name.into(), DesignConfigurationKind::Table, vec![variant_name.into()], (serde_json::json!({"configurations": {variant_name: {}}}))
                     .as_object()
@@ -818,7 +673,7 @@ mod tests {
                 .clone()))
         .unwrap();
         let native = [table("table.dsgcfg", "wide"), rule.clone()];
-        let projected = project_configurations(None, &native).expect("ordered configuration table");
+        let projected = project_configurations(decode_ctx, &native).expect("ordered configuration table");
         assert_eq!(
             projected[0].properties["activation_rule:rule.dsgcfgrule"],
             "width > 20 mm"
@@ -830,15 +685,15 @@ mod tests {
             table("second.dsgcfg", "wide"),
             rule,
         ];
-        let error = project_configurations(None, &ambiguous)
+        let error = project_configurations(decode_ctx, &ambiguous)
             .expect_err("independent nonempty tables have no shared order");
         assert!(error
             .to_string()
             .contains("configuration tables have no shared authored order"));
-    }
+    }) }
 
     #[test]
-    fn configuration_parameter_overrides_bind_only_unique_parameter_names() {
+    fn configuration_parameter_overrides_bind_only_unique_parameter_names() { crate::test_support::with_decode_context(|decode_ctx| {
         let table = crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "table.dsgcfg".into(), DesignConfigurationKind::Table, vec!["wide".into()], (serde_json::json!({
                 "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
             }))
@@ -860,12 +715,8 @@ mod tests {
             native_ref: None,
         };
         let mut projected =
-            project_configurations(None, &[table]).expect("ordered configuration table");
-        bind_configuration_parameter_overrides(
-            None,
-            &mut projected,
-            std::slice::from_ref(&parameter),
-        )
+            project_configurations(decode_ctx, &[table]).expect("ordered configuration table");
+        bind_configuration_parameter_overrides(decode_ctx, &mut projected, std::slice::from_ref(&parameter))
         .unwrap();
         assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
         assert!(projected[0].properties.is_empty());
@@ -878,28 +729,25 @@ mod tests {
             id: ParameterId::mint("f3d:model:parameter#other-width").expect("identity grammar"),
             ..parameter.clone()
         };
-        let mut ambiguous = project_configurations(
-            None,
-            &[crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "other.dsgcfg".into(), DesignConfigurationKind::Table, vec!["wide".into()], (serde_json::json!({
+        let mut ambiguous = project_configurations(decode_ctx, &[crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "other.dsgcfg".into(), DesignConfigurationKind::Table, vec!["wide".into()], (serde_json::json!({
                     "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
                 }))
                 .as_object()
                 .unwrap()
                 .clone()))
-            .unwrap()],
-        )
+            .unwrap()])
         .expect("ordered configuration table");
-        bind_configuration_parameter_overrides(None, &mut ambiguous, &[parameter, duplicate])
+        bind_configuration_parameter_overrides(decode_ctx, &mut ambiguous, &[parameter, duplicate])
             .unwrap();
         assert!(ambiguous[0].parameter_overrides.is_empty());
         assert_eq!(
             unresolved_configuration_parameter_override_count(&ambiguous),
             1
         );
-    }
+    }) }
 
     #[test]
-    fn configuration_suppression_binds_only_unique_feature_names() {
+    fn configuration_suppression_binds_only_unique_feature_names() { crate::test_support::with_decode_context(|decode_ctx| {
         let table = crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "table.dsgcfg".into(), DesignConfigurationKind::Table, vec!["alternate".into()], (serde_json::json!({
                 "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
             }))
@@ -927,12 +775,8 @@ mod tests {
             native_ref: None,
         };
         let mut projected =
-            project_configurations(None, &[table]).expect("ordered configuration table");
-        bind_configuration_suppressed_features(
-            None,
-            &mut projected,
-            std::slice::from_ref(&feature),
-        )
+            project_configurations(decode_ctx, &[table]).expect("ordered configuration table");
+        bind_configuration_suppressed_features(decode_ctx, &mut projected, std::slice::from_ref(&feature))
         .unwrap();
         assert_eq!(
             projected[0].suppressed_features().collect::<Vec<_>>(),
@@ -948,27 +792,24 @@ mod tests {
             id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
             ..feature.clone()
         };
-        let mut ambiguous = project_configurations(
-            None,
-            &[crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "other.dsgcfg".into(), DesignConfigurationKind::Table, vec!["alternate".into()], (serde_json::json!({
+        let mut ambiguous = project_configurations(decode_ctx, &[crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "other.dsgcfg".into(), DesignConfigurationKind::Table, vec!["alternate".into()], (serde_json::json!({
                     "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
                 }))
                 .as_object()
                 .unwrap()
                 .clone()))
-            .unwrap()],
-        )
+            .unwrap()])
         .expect("ordered configuration table");
-        bind_configuration_suppressed_features(None, &mut ambiguous, &[feature, duplicate])
+        bind_configuration_suppressed_features(decode_ctx, &mut ambiguous, &[feature, duplicate])
             .unwrap();
         assert!(ambiguous[0].suppressed_features().next().is_none());
         assert_eq!(
             unresolved_configuration_suppressed_feature_count(&ambiguous),
             1
         );
-    }
+    }) }
 
-    fn suppression_limit_fixture() -> (Vec<cadmpeg_ir::features::DesignConfiguration>, Feature) {
+    fn suppression_limit_fixture() -> (Vec<cadmpeg_ir::features::DesignConfiguration>, Feature) { crate::test_support::with_decode_context(|decode_ctx| {
         let table = crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "table.dsgcfg".into(), DesignConfigurationKind::Table, vec!["alternate".into()], serde_json::json!({"configurations": {"alternate": {"suppressed": ["Fillet 1"]}}})
                 .as_object()
                 .unwrap()
@@ -992,8 +833,8 @@ mod tests {
             ),
             native_ref: None,
         };
-        (project_configurations(None, &[table]).unwrap(), feature)
-    }
+        (project_configurations(decode_ctx, &[table]).unwrap(), feature)
+    }) }
 
     #[test]
     fn configuration_suppressed_feature_id_refuses_retained_limit() {
@@ -1006,7 +847,7 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            bind_configuration_suppressed_features(Some(&ctx), &mut configurations, &[feature]),
+            bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == "f3d configuration suppressed feature id"
@@ -1025,7 +866,7 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            bind_configuration_suppressed_features(Some(&ctx), &mut configurations, &[feature]),
+            bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d configuration suppressed feature state"
@@ -1047,7 +888,7 @@ mod tests {
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            bind_configuration_suppressed_features(Some(&ctx), &mut configurations, &[feature]),
+            bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d configuration suppressed dependency"
@@ -1070,7 +911,7 @@ mod tests {
         policy.limits.max_retained_bytes = u64::try_from(feature_id_bytes).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            bind_configuration_suppressed_features(Some(&ctx), &mut configurations, &[feature]),
+            bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == "f3d configuration suppressed dependency id"
@@ -1079,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn configuration_parameter_override_refuses_retained_and_collection_limits() {
+    fn configuration_parameter_override_refuses_retained_and_collection_limits() { crate::test_support::with_decode_context(|decode_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
 
@@ -1120,15 +961,15 @@ mod tests {
             policy.limits.max_retained_bytes = retained;
             policy.limits.max_collection_items = collections;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut projected = project_configurations(None, std::slice::from_ref(&table)).unwrap();
+            let mut projected = project_configurations(decode_ctx, std::slice::from_ref(&table)).unwrap();
             assert!(matches!(
-                bind_configuration_parameter_overrides(Some(&ctx), &mut projected, std::slice::from_ref(&parameter)),
+                bind_configuration_parameter_overrides(&ctx, &mut projected, std::slice::from_ref(&parameter)),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == dimension && failure.operation == operation
             ));
             assert!(projected[0].parameter_overrides.is_empty());
         }
-    }
+    }) }
 
     #[test]
     fn configuration_projection_refuses_each_collection_limit() {
@@ -1161,7 +1002,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(
                 matches!(
-                    project_configurations(Some(&ctx), &[table.clone(), rule.clone()]),
+                    project_configurations(&ctx, &[table.clone(), rule.clone()]),
                     Err(CodecError::ResourceLimit(failure))
                         if failure.dimension == ResourceDimension::CollectionItems
                             && failure.operation == operation
@@ -1187,7 +1028,7 @@ mod tests {
             policy.limits.max_retained_bytes = 4;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
-                super::copy_configuration_text(Some(&ctx), "input", operation),
+                (&ctx).copy_retained_text("input", operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::RetainedBytes
                         && failure.operation == operation
@@ -1203,7 +1044,7 @@ mod tests {
             policy.limits.max_retained_bytes = 4;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
-                super::configuration_property_key(Some(&ctx), prefix, "input", operation),
+                super::configuration_property_key(&ctx, prefix, "input", operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::RetainedBytes
                         && failure.operation == operation
@@ -1255,7 +1096,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(
                 matches!(
-                    parse_configuration_variant_order(Some(&ctx), "table.dsgcfg", bytes),
+                    parse_configuration_variant_order(&ctx, "table.dsgcfg", bytes),
                     Err(CodecError::ResourceLimit(failure))
                         if failure.dimension == dimension && failure.operation == operation
                 ),
@@ -1265,7 +1106,7 @@ mod tests {
     }
 
     #[test]
-    fn configuration_duplicate_variant_diagnostic_refuses_retained_limit() {
+    fn configuration_duplicate_variant_diagnostic_refuses_retained_limit() { crate::test_support::with_decode_context(|decode_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
 
@@ -1276,7 +1117,7 @@ mod tests {
         policy.limits.max_retained_bytes = 15;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            parse_configuration_variant_order(Some(&ctx), "table.dsgcfg", bytes),
+            parse_configuration_variant_order(&ctx, "table.dsgcfg", bytes),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == "f3d duplicate configuration variant diagnostic"
@@ -1286,14 +1127,14 @@ mod tests {
         let policy = DecodePolicy::default();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert_eq!(
-            parse_configuration_variant_order(Some(&ctx), "table.dsgcfg", bytes)
+            parse_configuration_variant_order(&ctx, "table.dsgcfg", bytes)
                 .unwrap_err()
                 .to_string(),
-            parse_configuration_variant_order(None, "table.dsgcfg", bytes)
+            parse_configuration_variant_order(decode_ctx, "table.dsgcfg", bytes)
                 .unwrap_err()
                 .to_string(),
         );
-    }
+    }) }
     #[test]
     fn configuration_ordering_refuses_sort_collection_limit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -1315,7 +1156,7 @@ mod tests {
         policy.limits.max_collection_items = 41;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
-            matches!(project_configurations(Some(&ctx), std::slice::from_ref(&table)),
+            matches!(project_configurations(&ctx, std::slice::from_ref(&table)),
             Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d stable sort permutation")
         );
