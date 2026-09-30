@@ -3,7 +3,7 @@
 
 use super::{
     copy_feature_selection_text, DistinctMembers, FeatureId, GeneratedCurveRef, GeneratedVertexRef,
-    LinearTermination, NativeSelections, NonEmptyMembers, PlanarProfileRef,
+    LinearTermination, NativeSelections, NonEmptyMembers, ParameterValue, PlanarProfileRef,
     SelectionMembers, SelectionReference, SketchProfileBoundaryUse, SketchProfileLoops,
     SketchProfileRegion, SketchProfileRegions, VertexSelection,
 };
@@ -150,6 +150,21 @@ impl LinearTermination {
             Self::ToVertex { vertex } => Ok(Self::ToVertex { vertex: vertex.try_clone_charged(ctx, operation)? }),
             Self::OffsetFromFace { face, offset } => Ok(Self::OffsetFromFace { face: face.try_clone_charged(ctx, operation)?, offset: *offset }),
             Self::ToShape { target } => Ok(Self::ToShape { target: target.try_clone_charged(ctx, operation)? }),
+        }
+    }
+}
+
+impl ParameterValue {
+    /// Copy a scalar value, admitting retained text through the caller context.
+    pub fn try_clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        ctx.charge_work(u64_from_index(std::mem::size_of::<Self>()), operation)?;
+        match self {
+            Self::Length(value) => Ok(Self::Length(*value)),
+            Self::Angle(value) => Ok(Self::Angle(*value)),
+            Self::Real(value) => Ok(Self::Real(*value)),
+            Self::Integer(value) => Ok(Self::Integer(*value)),
+            Self::Boolean(value) => Ok(Self::Boolean(*value)),
+            Self::String(value) => Ok(Self::String(copy_feature_selection_text(ctx, value, operation)?)),
         }
     }
 }
