@@ -108,7 +108,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     .with_native_ref(Some(corner.id().to_string()))];
 
     assert_eq!(
-        doubled_profile_distance_loci(&relation, 0, 1, &sketch, &parameter, &entities, &markers,),
+        doubled_profile_distance_loci(&cadmpeg_test_support::service_decode_context(), &relation, (0, 1), &sketch, &parameter, &entities, &markers,).unwrap(),
         Some((
             SketchLocus::Start(line_id.clone()),
             SketchLocus::End(line_id.clone()),
@@ -120,15 +120,14 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        doubled_profile_distance_loci(
+        doubled_profile_distance_loci(&cadmpeg_test_support::service_decode_context(), 
             &relation,
-            0,
-            1,
+            (0, 1),
             &sketch,
             &parameter,
             &entities,
             &markers_without_handle,
-        ),
+        ).unwrap(),
         None
     );
 }
@@ -319,12 +318,12 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
     };
 
     assert_eq!(
-        relation_operand_marker(
+        relation_operand_marker(&cadmpeg_test_support::service_decode_context(), 
             &relation,
             0,
             &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
-        ),
+        ).unwrap(),
         Some("point")
     );
     let mut constrained_operand = relation.operands[0].clone();
@@ -334,21 +333,21 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
         ..relation.clone()
     };
     assert_eq!(
-        relation_operand_marker(
+        relation_operand_marker(&cadmpeg_test_support::service_decode_context(), 
             &constrained_relation,
             0,
             &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
-        ),
+        ).unwrap(),
         Some("constrained-point")
     );
     assert_eq!(
-        relation_operand_marker(
+        relation_operand_marker(&cadmpeg_test_support::service_decode_context(), 
             &relation,
             0,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &markers
-        ),
+        ).unwrap(),
         Some("stored-marker")
     );
 }

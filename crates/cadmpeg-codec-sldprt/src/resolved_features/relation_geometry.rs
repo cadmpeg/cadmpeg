@@ -1252,7 +1252,7 @@ pub(crate) fn project_relation_solved_line_geometry(
             }
             points.sort_by_key(|marker| marker.offset());
             let endpoint_line_markers = |operand_index: usize| -> Result<Option<[&SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
-                let marker = relation_operand_marker(relation, operand_index, sketch, &markers_by_id)
+                let marker = relation_operand_marker(ctx, relation, operand_index, sketch, &markers_by_id)?
                     .and_then(|marker_id| lane.sketch_entities.iter().find(|marker| marker.id() == marker_id));
                 let Some(marker) = marker else { return Ok(None); };
                 let endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers_by_id, &marker_roster)?;
@@ -1263,25 +1263,19 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let pair = usize::from(index).checked_mul(2)?;
                 Some([*points.get(pair)?, *points.get(pair + 1)?])
             };
-            let point_marker = (relation.family == FeatureInputRelationFamily::PointLineDistance)
-                .then(|| {
-                    first_operand
-                        .entity_ref
-                        .as_deref()
-                        .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id() == id))
-                        .or_else(|| {
-                            relation_operand_marker(relation, 0, sketch, &markers_by_id).and_then(
-                                |id| lane.sketch_entities.iter().find(|marker| marker.id() == id),
-                            )
-                        })
-                        .or_else(|| {
-                            (first_operand.kind
-                                == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD))
-                            .then(|| points.get(usize::from(first_operand.entity_index)).copied())
-                            .flatten()
-                        })
+            let point_marker = if relation.family == FeatureInputRelationFamily::PointLineDistance {
+                let explicit = first_operand.entity_ref.as_deref()
+                    .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id() == id));
+                let resolved = match explicit {
+                    Some(marker) => Some(marker),
+                    None => relation_operand_marker(ctx, relation, 0, sketch, &markers_by_id)?
+                        .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id() == id)),
+                };
+                resolved.or_else(|| {
+                    (first_operand.kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD))
+                        .then(|| points.get(usize::from(first_operand.entity_index)).copied()).flatten()
                 })
-                .flatten();
+            } else { None };
             let point_position = (|| -> Result<Option<Point2>, cadmpeg_core::CodecError> {
                 let Some(marker) = point_marker else {
                     return Ok(None);
